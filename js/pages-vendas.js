@@ -527,7 +527,6 @@ Router.register('vendas', async (params, el) => {
       }
     }, 100);
   }
-  }
 
   function kpiCard(label, val, sub, cor) {
     return `<div class="kpi-card">
