@@ -116,7 +116,7 @@ Router.register('vendas', async (params, el) => {
   }
 
   // ── Trocar aba ───────────────────────────────────────────────
-  function setAba(aba) {
+  async function setAba(aba) {
     abaAtiva = aba;
     ['dashboard','pedidos'].forEach(a => {
       const btn = document.getElementById(`tab-${a}`);
