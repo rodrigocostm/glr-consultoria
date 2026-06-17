@@ -126,12 +126,12 @@ Router.register('vendas', async (params, el) => {
         : 'padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:rgba(255,255,255,0.06);color:#9ca3af;';
       if (sec) sec.style.display = a===aba ? 'block' : 'none';
     });
-    if (aba==='dashboard') renderDashboard();
+    if (aba==='dashboard') await renderDashboard();
     if (aba==='pedidos')   renderPedidos();
   }
 
   // ── Dashboard ────────────────────────────────────────────────
-  function renderDashboard() {
+  async function renderDashboard() {
     const sec = document.getElementById('sec-dashboard');
     if (!sec) return;
     const lista = pedidosFiltrados();
@@ -441,15 +441,16 @@ Router.register('vendas', async (params, el) => {
         });
         salvarCustos();
         inp.style.borderColor = '#34d399';
-        setTimeout(() => { inp.style.borderColor = 'rgba(251,191,36,0.3)'; renderDashboard(); }, 800);
+        setTimeout(async () => { inp.style.borderColor = 'rgba(251,191,36,0.3)'; await renderDashboard(); }, 800);
       });
     });
 
     // Renderizar comparativo de marketplace
-    renderMarketplaceComparison().catch(e => {
+    try {
+      await renderMarketplaceComparison();
+    } catch(e) {
       console.error('Erro ao renderizar marketplace:', e);
-      renderMarketplaceComparison(); // Tentar novamente sem await
-    });
+    }
 
     // Atualizar ADS e Lucro pós-ADS
     const adsEl = sec.querySelector('#dashboard-ads');
@@ -614,7 +615,7 @@ Router.register('vendas', async (params, el) => {
 
   // ── Render lista ─────────────────────────────────────────────
   function renderLista() {
-    if (abaAtiva === 'dashboard') renderDashboard();
+    if (abaAtiva === 'dashboard') await renderDashboard();
     else renderPedidos();
   }
 
