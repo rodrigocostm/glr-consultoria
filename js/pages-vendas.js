@@ -192,10 +192,40 @@ Router.register('vendas', async (params, el) => {
     const area = vals => `${svgPath(vals)} L${xOf(n-1).toFixed(1)},${(H-PAD).toFixed(1)} L${xOf(0).toFixed(1)},${(H-PAD).toFixed(1)} Z`;
     const labStep = Math.max(1, Math.ceil((singleDay?dias:chartDias).length/7));
 
-    // ── Puxar ADS real da API ──
-    let totalAds = 0;
-    // TODO: Implementar busca real de ADS quando API estiver pronta
-    // Por enquanto deixamos como 0
+    // ── Puxar ADS real da API do Marketplace Connect ──
+    let totalAds = 0, adsML = 0, adsShopee = 0;
+    try {
+      const contas = await MarketplaceAPI.listAccounts();
+
+      // ML ADS
+      const mlConta = contas.find(c => c.tipo === 'Mercado Livre' || c.tipo === 'ML');
+      if (mlConta?.user_id) {
+        try {
+          const adsData = await MarketplaceAPI.mlAdsMetrics(mlConta.user_id, customFrom, customTo);
+          adsML = parseFloat(adsData.investimento) || 0;
+          totalAds += adsML;
+        } catch(e) {
+          console.warn('[ML] Erro ao puxar ADS:', e.message);
+        }
+      }
+
+      // Shopee ADS (se houver função disponível)
+      const shopeeConta = contas.find(c => c.tipo === 'Shopee');
+      if (shopeeConta?.shop_id) {
+        try {
+          // Tentar chamar API de ADS Shopee se existir
+          if (MarketplaceAPI.shopeeAdsMetrics) {
+            const adsData = await MarketplaceAPI.shopeeAdsMetrics(shopeeConta.shop_id, customFrom, customTo);
+            adsShopee = parseFloat(adsData.investimento) || 0;
+            totalAds += adsShopee;
+          }
+        } catch(e) {
+          console.warn('[Shopee] Erro ao puxar ADS:', e.message);
+        }
+      }
+    } catch(e) {
+      console.warn('[API] Erro ao puxar contas:', e.message);
+    }
 
     sec.innerHTML = `
     <!-- KPI Cards -->
