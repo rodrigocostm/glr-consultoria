@@ -464,13 +464,14 @@ Router.register('vendas', async (params, el) => {
     });
 
     // Renderizar comparativo de marketplace (com delay para evitar problemas)
-    setTimeout(async () => {
-      try {
-        await renderMarketplaceComparison();
-      } catch(e) {
-        console.error('Erro ao renderizar marketplace:', e);
-      }
-    }, 100);
+    // DESABILITADO TEMPORARIAMENTE
+    // setTimeout(async () => {
+    //   try {
+    //     await renderMarketplaceComparison();
+    //   } catch(e) {
+    //     console.error('Erro ao renderizar marketplace:', e);
+    //   }
+    // }, 100);
 
     // Atualizar ADS e Lucro pós-ADS
     const adsEl = sec.querySelector('#dashboard-ads');
