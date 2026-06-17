@@ -312,8 +312,9 @@ Router.register('vendas', async (params, el) => {
 
     <!-- Top 15 Produtos -->
     <div class="card" style="padding:0;overflow:hidden;">
-      <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06);">
+      <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">
         <div style="font-size:14px;font-weight:700;color:#e5e7eb;">🏆 Top ${top15.length} Produtos</div>
+        <div style="font-size:11px;color:#6b7280;">Comparação de vendas nos últimos dias</div>
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -323,7 +324,11 @@ Router.register('vendas', async (params, el) => {
               <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">UNID.</th>
               <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">FATURADO</th>
               <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">REPRESENT.</th>
-              <th style="padding:10px 12px;text-align:right;color:#fbbf24;font-weight:600;white-space:nowrap;">💰 CUSTO UNIT.</th>
+              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;border-left:1px solid rgba(255,255,255,0.06);">30 DIAS</th>
+              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">60 DIAS</th>
+              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">90 DIAS</th>
+              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">120 DIAS</th>
+              <th style="padding:10px 12px;text-align:right;color:#fbbf24;font-weight:600;white-space:nowrap;border-left:1px solid rgba(255,255,255,0.06);">💰 CUSTO UNIT.</th>
               <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">LÍQ. MP</th>
               <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">LUCRO</th>
               <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">MARGEM</th>
@@ -351,7 +356,11 @@ Router.register('vendas', async (params, el) => {
                 <td style="padding:10px 12px;text-align:right;">
                   <span style="background:rgba(99,102,241,0.15);color:#818cf8;padding:2px 7px;border-radius:10px;font-size:11px;">${pct(represent)}</span>
                 </td>
-                <td style="padding:8px 12px;text-align:right;">
+                <td style="padding:10px 12px;text-align:right;color:#9ca3af;border-left:1px solid rgba(255,255,255,0.06);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 30).length)()}</td>
+                <td style="padding:10px 12px;text-align:right;color:#9ca3af;">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 60).length)()}</td>
+                <td style="padding:10px 12px;text-align:right;color:#9ca3af;">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 90).length)()}</td>
+                <td style="padding:10px 12px;text-align:right;color:#9ca3af;">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 120).length)()}</td>
+                <td style="padding:8px 12px;text-align:right;border-left:1px solid rgba(255,255,255,0.06);">
                   <input type="number" min="0" step="0.01" placeholder="R$ 0,00"
                     value="${custoAtual}"
                     data-ids="${p.ids.join(',')}"
