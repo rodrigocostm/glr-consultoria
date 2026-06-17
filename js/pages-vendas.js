@@ -402,7 +402,10 @@ Router.register('vendas', async (params, el) => {
     });
 
     // Renderizar comparativo de marketplace
-    renderMarketplaceComparison();
+    renderMarketplaceComparison().catch(e => {
+      console.error('Erro ao renderizar marketplace:', e);
+      renderMarketplaceComparison(); // Tentar novamente sem await
+    });
 
     // Atualizar ADS e Lucro pós-ADS
     const adsEl = sec.querySelector('#dashboard-ads');
@@ -432,7 +435,7 @@ Router.register('vendas', async (params, el) => {
     </div>`;
   }
 
-  function renderMarketplaceComparison() {
+  async function renderMarketplaceComparison() {
     const lista = pedidosFiltrados();
     const ml = lista.filter(p => p.plataforma === 'Mercado Livre');
     const shopee = lista.filter(p => p.plataforma === 'Shopee');
@@ -442,9 +445,30 @@ Router.register('vendas', async (params, el) => {
     const shopeeVendas = shopee.length;
     const shopeeFat = shopee.reduce((s,p) => s + (parseFloat(p.valor)||0), 0);
 
-    // Estimativa de visitas (baseado em taxa de conversão típica ~2-4%)
-    const mlVisitas = mlFat > 0 ? Math.round(mlVendas / 0.03) : 0;
-    const shopeeVisitas = shopeeFat > 0 ? Math.round(shopeeVendas / 0.03) : 0;
+    // Puxar visitas reais da API
+    let mlVisitas = 0, shopeeVisitas = 0;
+    try {
+      // Puxar contas
+      const contas = await MarketplaceAPI.listAccounts();
+
+      // ML
+      const mlConta = contas.find(c => c.tipo === 'Mercado Livre' || c.tipo === 'ML');
+      if (mlConta && mlConta.user_id) {
+        mlVisitas = await MarketplaceAPI.mlVisitas(mlConta.user_id, customFrom, customTo);
+      }
+
+      // Shopee
+      const shopeeConta = contas.find(c => c.tipo === 'Shopee');
+      if (shopeeConta && shopeeConta.shop_id) {
+        const dias = Math.ceil((new Date(customTo) - new Date(customFrom)) / (1000*60*60*24));
+        shopeeVisitas = await MarketplaceAPI.shopeeVisitas(shopeeConta.shop_id, dias);
+      }
+    } catch(e) {
+      console.warn('Erro ao puxar visitas:', e.message);
+      // Fallback: estimativa
+      mlVisitas = mlFat > 0 ? Math.round(mlVendas / 0.03) : 0;
+      shopeeVisitas = shopeeFat > 0 ? Math.round(shopeeVendas / 0.03) : 0;
+    }
     const totalVisitas = mlVisitas + shopeeVisitas;
     const totalVendas = mlVendas + shopeeVendas;
     const totalFat = mlFat + shopeeFat;

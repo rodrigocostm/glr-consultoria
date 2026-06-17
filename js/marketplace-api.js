@@ -120,6 +120,19 @@ const MarketplaceAPI = {
     }
   },
 
+  // Visitas ML
+  async mlVisitas(meliUserId, dateFrom, dateTo) {
+    try {
+      const r = await this.call('ml_visits', { meliUserId, date_from: dateFrom, date_to: dateTo });
+      const data = r.data || {};
+      const visitas = parseInt(data.unique_visitors) || parseInt(data.visits) || 0;
+      return visitas;
+    } catch(e) {
+      console.warn('[ML] erro ao puxar visitas:', e.message);
+      return 0;
+    }
+  },
+
   // ── Shopee ────────────────────────────────────────────────
 
   // Resumo de vendas Shopee (até 90 dias)
@@ -156,6 +169,20 @@ const MarketplaceAPI = {
       ticketMedio,
       plataforma:  'Shopee',
     };
+  },
+
+  // Visitas Shopee
+  async shopeeVisitas(shopId, dias = 30) {
+    try {
+      const diasLimitado = Math.min(dias, 90);
+      const r = await this.call('shopee_traffic', { shopId, days: diasLimitado });
+      const data = r.data || {};
+      const visitas = parseInt(data.unique_visitors) || parseInt(data.visits) || parseInt(data.shop_visits) || 0;
+      return visitas;
+    } catch(e) {
+      console.warn('[SHOPEE] erro ao puxar visitas:', e.message);
+      return 0;
+    }
   },
 
   // Lista TODOS os order_sn da Shopee num intervalo de datas exato (paginado, multi-status)
