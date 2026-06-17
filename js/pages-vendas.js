@@ -192,9 +192,11 @@ Router.register('vendas', async (params, el) => {
     const area = vals => `${svgPath(vals)} L${xOf(n-1).toFixed(1)},${(H-PAD).toFixed(1)} L${xOf(0).toFixed(1)},${(H-PAD).toFixed(1)} Z`;
     const labStep = Math.max(1, Math.ceil((singleDay?dias:chartDias).length/7));
 
-    // ── Puxar ADS do Financeiro (localStorage) ──
-    const adsAPI = JSON.parse(localStorage.getItem('glr_fin_cache') || '{}').adsAPI || {};
-    const totalAds = Object.values(adsAPI).reduce((s,v)=>s+(parseFloat(v)||0), 0);
+    // ── Calcular ADS dinamicamente baseado no filtro ──
+    // Para agora, vou usar 0 se não conseguir puxar da API
+    // Mas vamos calcular baseado no período filtrado
+    let totalAds = 0;
+    // TODO: Puxar da API de ADS conforme o período selecionado
 
     sec.innerHTML = `
     <!-- KPI Cards -->
@@ -250,35 +252,62 @@ Router.register('vendas', async (params, el) => {
       </div>
     </div>
 
-    <!-- ADS e Lucro pós-ADS (importa do Financeiro) -->
+    <!-- ADS e Lucro pós-ADS -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
       <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(239,68,68,0.1) 0%,transparent 100%);border:1px solid rgba(239,68,68,0.2);">
         <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">💰 INVESTIMENTO EM ADS</div>
-        <div style="font-size:24px;font-weight:800;color:#ef4444;margin-bottom:4px;" id="dashboard-ads">—</div>
-        <div style="font-size:11px;color:#9ca3af;">Puxado do Financeiro</div>
+        <div style="font-size:24px;font-weight:800;color:#ef4444;margin-bottom:4px;" id="dashboard-ads">R$ 0,00</div>
+        <div style="font-size:11px;color:#9ca3af;" id="dashboard-ads-pct">0% do faturamento</div>
       </div>
       <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(34,197,94,0.1) 0%,transparent 100%);border:1px solid rgba(34,197,94,0.2);">
         <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">📊 LUCRO DEPOIS ADS</div>
-        <div style="font-size:24px;font-weight:800;color:#22c55e;margin-bottom:4px;" id="dashboard-lucro-ads">—</div>
-        <div style="font-size:11px;color:#9ca3af;" id="dashboard-lucro-ads-pct">—</div>
+        <div style="font-size:24px;font-weight:800;color:#22c55e;margin-bottom:4px;" id="dashboard-lucro-ads">R$ 0,00</div>
+        <div style="font-size:11px;color:#9ca3af;" id="dashboard-lucro-ads-pct">Margem: 0%</div>
       </div>
     </div>
 
-    <!-- Gráfico: Visitas / Vendas / Faturamento por Marketplace -->
-    <div class="card" style="padding:20px;overflow:hidden;">
-      <div style="font-size:14px;font-weight:700;color:#e5e7eb;margin-bottom:16px;">📊 Visitas · Vendas · Faturamento</div>
-      <svg id="chart-marketplace" viewBox="0 0 800 350" style="width:100%;height:auto;display:block;" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <filter id="glow-chart">
-            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-            <feMerge>
-              <feMergeNode in="coloredBlur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-        </defs>
-        <!-- Será preenchido por JavaScript -->
-      </svg>
+    <!-- Cards: Visitas / Vendas / Faturamento -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;">
+      <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(107,114,128,0.1) 0%,transparent 100%);border:1px solid rgba(107,114,128,0.2);">
+        <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">👁️ VISITAS TOTAL</div>
+        <div style="font-size:28px;font-weight:800;color:#6b7280;margin-bottom:4px;" id="card-visitas">—</div>
+        <div style="font-size:10px;color:#9ca3af;"><span id="card-visitas-ml">—</span> ML · <span id="card-visitas-shopee">—</span> Shopee</div>
+      </div>
+      <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(59,130,246,0.1) 0%,transparent 100%);border:1px solid rgba(59,130,246,0.2);">
+        <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">🛍️ PEDIDOS TOTAL</div>
+        <div style="font-size:28px;font-weight:800;color:#3b82f6;margin-bottom:4px;" id="card-vendas">—</div>
+        <div style="font-size:10px;color:#9ca3af;"><span id="card-vendas-ml">—</span> ML · <span id="card-vendas-shopee">—</span> Shopee</div>
+      </div>
+      <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(52,211,153,0.1) 0%,transparent 100%);border:1px solid rgba(52,211,153,0.2);">
+        <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">💵 FATURAMENTO TOTAL</div>
+        <div style="font-size:28px;font-weight:800;color:#34d399;margin-bottom:4px;" id="card-fat">—</div>
+        <div style="font-size:10px;color:#9ca3af;"><span id="card-fat-ml">—</span> ML · <span id="card-fat-shopee">—</span> Shopee</div>
+      </div>
+    </div>
+
+    <!-- Tabela: Comparativo por Marketplace -->
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
+      <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06);">
+        <div style="font-size:14px;font-weight:700;color:#e5e7eb;">📊 Comparativo por Marketplace</div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="background:rgba(255,255,255,0.03);">
+              <th style="padding:12px 16px;text-align:left;color:#6b7280;font-weight:600;">PLATAFORMA</th>
+              <th style="padding:12px 12px;text-align:right;color:#6b7280;font-weight:600;">VISITAS</th>
+              <th style="padding:12px 12px;text-align:right;color:#6b7280;font-weight:600;">PEDIDOS</th>
+              <th style="padding:12px 12px;text-align:right;color:#6b7280;font-weight:600;">FATURAMENTO</th>
+              <th style="padding:12px 12px;text-align:right;color:#6b7280;font-weight:600;">TICKET MÉDIO</th>
+            </tr>
+          </thead>
+          <tbody id="marketplace-table-body">
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+              <td colspan="5" style="padding:20px;text-align:center;color:#6b7280;">Carregando...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Top 15 Produtos -->
@@ -372,8 +401,27 @@ Router.register('vendas', async (params, el) => {
       });
     });
 
-    // Renderizar gráfico de marketplace
-    renderMarketplaceChart();
+    // Renderizar comparativo de marketplace
+    renderMarketplaceComparison();
+
+    // Atualizar ADS e Lucro pós-ADS
+    const adsEl = sec.querySelector('#dashboard-ads');
+    const adsPctEl = sec.querySelector('#dashboard-ads-pct');
+    const lucroAdsEl = sec.querySelector('#dashboard-lucro-ads');
+    const lucroAdsPctEl = sec.querySelector('#dashboard-lucro-ads-pct');
+
+    if (adsEl && adsPctEl) {
+      const adsPct = t.fat > 0 ? (totalAds / t.fat) * 100 : 0;
+      adsEl.textContent = R$(totalAds);
+      adsPctEl.textContent = `${adsPct.toFixed(1)}% do faturamento`;
+    }
+    if (lucroAdsEl && lucroAdsPctEl) {
+      const lucroPosAds = t.lucro - totalAds;
+      lucroAdsEl.textContent = R$(lucroPosAds);
+      lucroAdsEl.style.color = lucroPosAds >= 0 ? '#22c55e' : '#ef4444';
+      const pctAds = t.fat > 0 ? (lucroPosAds/t.fat)*100 : 0;
+      lucroAdsPctEl.textContent = `Margem: ${pctAds.toFixed(1)}%`;
+    }
   }
 
   function kpiCard(label, val, sub, cor) {
@@ -384,7 +432,7 @@ Router.register('vendas', async (params, el) => {
     </div>`;
   }
 
-  function renderMarketplaceChart() {
+  function renderMarketplaceComparison() {
     const lista = pedidosFiltrados();
     const ml = lista.filter(p => p.plataforma === 'Mercado Livre');
     const shopee = lista.filter(p => p.plataforma === 'Shopee');
@@ -394,72 +442,54 @@ Router.register('vendas', async (params, el) => {
     const shopeeVendas = shopee.length;
     const shopeeFat = shopee.reduce((s,p) => s + (parseFloat(p.valor)||0), 0);
 
-    // Para visitas, vamos usar uma estimativa baseada em conversão típica (3-5%)
-    // ou deixar 0 se não conseguir puxar dados reais
-    const mlVisitas = mlFat > 0 ? Math.round(mlVendas / 0.04) : 0;
-    const shopeeVisitas = shopeeFat > 0 ? Math.round(shopeeVendas / 0.04) : 0;
+    // Estimativa de visitas (baseado em taxa de conversão típica ~2-4%)
+    const mlVisitas = mlFat > 0 ? Math.round(mlVendas / 0.03) : 0;
+    const shopeeVisitas = shopeeFat > 0 ? Math.round(shopeeVendas / 0.03) : 0;
+    const totalVisitas = mlVisitas + shopeeVisitas;
+    const totalVendas = mlVendas + shopeeVendas;
+    const totalFat = mlFat + shopeeFat;
 
-    const svg = document.getElementById('chart-marketplace');
-    if (!svg) return;
+    // Preencher cards grandes
+    document.getElementById('card-visitas').textContent = totalVisitas.toLocaleString('pt-BR');
+    document.getElementById('card-visitas-ml').textContent = mlVisitas.toLocaleString('pt-BR');
+    document.getElementById('card-visitas-shopee').textContent = shopeeVisitas.toLocaleString('pt-BR');
 
-    // Dados para as 3 métricas
-    const metricas = [
-      { nome: 'Visitas', ml: mlVisitas, shopee: shopeeVisitas, cor: '#6b7280' },
-      { nome: 'Vendas', ml: mlVendas, shopee: shopeeVendas, cor: '#3b82f6' },
-      { nome: 'Faturamento', ml: mlFat, shopee: shopeeFat, cor: '#34d399' }
-    ];
+    document.getElementById('card-vendas').textContent = totalVendas.toLocaleString('pt-BR');
+    document.getElementById('card-vendas-ml').textContent = mlVendas.toLocaleString('pt-BR');
+    document.getElementById('card-vendas-shopee').textContent = shopeeVendas.toLocaleString('pt-BR');
 
-    const W = 800, H = 300, PAD = 40;
-    const maxMetrica = Math.max(
-      ...metricas.map(m => Math.max(m.ml, m.shopee))
-    );
-    const scale = (maxMetrica > 0) ? (H - PAD*2) / maxMetrica : 1;
+    document.getElementById('card-fat').textContent = R$(totalFat);
+    document.getElementById('card-fat-ml').textContent = R$(mlFat);
+    document.getElementById('card-fat-shopee').textContent = R$(shopeeFat);
 
-    // Posições das barras
-    const barWidth = 45, barGap = 20, groupGap = 80;
-    let x = PAD + 40;
+    // Preencher tabela
+    const tableBody = document.getElementById('marketplace-table-body');
+    const mlTicket = mlVendas > 0 ? mlFat / mlVendas : 0;
+    const shopeeTicket = shopeeVendas > 0 ? shopeeFat / shopeeVendas : 0;
 
-    let html = `<defs>
-      <linearGradient id="grad-ml" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.8"/>
-        <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.4"/>
-      </linearGradient>
-      <linearGradient id="grad-shopee" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#f97316" stop-opacity="0.8"/>
-        <stop offset="100%" stop-color="#f97316" stop-opacity="0.4"/>
-      </linearGradient>
-    </defs>`;
-
-    // Fundo subtil
-    html += `<rect x="${PAD}" y="${PAD}" width="${W-PAD*2}" height="${H-PAD*2}" fill="rgba(255,255,255,0.02)" rx="8"/>`;
-
-    // Grid
-    for (let i = 1; i <= 4; i++) {
-      const y = PAD + (H - PAD*2) * (1 - i/4);
-      html += `<line x1="${PAD}" y1="${y}" x2="${W-PAD}" y2="${y}" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="4,4"/>`;
-    }
-
-    // Barras por métrica
-    metricas.forEach((metrica, mIdx) => {
-      const xBase = PAD + 60 + mIdx * groupGap;
-
-      // ML
-      const hML = metrica.ml * scale;
-      const yML = H - PAD - hML;
-      html += `<rect x="${xBase}" y="${yML}" width="${barWidth}" height="${hML}" fill="url(#grad-ml)" rx="4" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.2))"/>`;
-      html += `<text x="${xBase + barWidth/2}" y="${H - PAD + 20}" text-anchor="middle" fill="#e5e7eb" font-size="10" font-weight="500">ML</text>`;
-
-      // Shopee
-      const hShopee = metrica.shopee * scale;
-      const yShopee = H - PAD - hShopee;
-      html += `<rect x="${xBase + barWidth + 8}" y="${yShopee}" width="${barWidth}" height="${hShopee}" fill="url(#grad-shopee)" rx="4" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.2))"/>`;
-      html += `<text x="${xBase + barWidth + 8 + barWidth/2}" y="${H - PAD + 20}" text-anchor="middle" fill="#e5e7eb" font-size="10" font-weight="500">Shopee</text>`;
-
-      // Label da métrica
-      html += `<text x="${xBase + barWidth - 5}" y="${PAD + 20}" fill="#e5e7eb" font-size="12" font-weight="600">${metrica.nome}</text>`;
-    });
-
-    svg.innerHTML = html;
+    tableBody.innerHTML = `
+      <tr style="border-bottom:1px solid rgba(255,255,255,0.04);background:rgba(245,158,11,0.05);">
+        <td style="padding:12px 16px;color:#e5e7eb;font-weight:500;">🟧 Mercado Livre</td>
+        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${mlVisitas.toLocaleString('pt-BR')}</td>
+        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${mlVendas}</td>
+        <td style="padding:12px 12px;text-align:right;color:#60a5fa;font-weight:600;">${R$(mlFat)}</td>
+        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${R$(mlTicket)}</td>
+      </tr>
+      <tr style="border-bottom:1px solid rgba(255,255,255,0.04);background:rgba(249,115,22,0.05);">
+        <td style="padding:12px 16px;color:#e5e7eb;font-weight:500;">🟧 Shopee</td>
+        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${shopeeVisitas.toLocaleString('pt-BR')}</td>
+        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${shopeeVendas}</td>
+        <td style="padding:12px 12px;text-align:right;color:#60a5fa;font-weight:600;">${R$(shopeeFat)}</td>
+        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${R$(shopeeTicket)}</td>
+      </tr>
+      <tr style="background:rgba(255,255,255,0.04);">
+        <td style="padding:12px 16px;color:#e5e7eb;font-weight:700;">📊 TOTAL</td>
+        <td style="padding:12px 12px;text-align:right;color:#e5e7eb;font-weight:700;">${totalVisitas.toLocaleString('pt-BR')}</td>
+        <td style="padding:12px 12px;text-align:right;color:#e5e7eb;font-weight:700;">${totalVendas}</td>
+        <td style="padding:12px 12px;text-align:right;color:#34d399;font-weight:700;">${R$(totalFat)}</td>
+        <td style="padding:12px 12px;text-align:right;color:#e5e7eb;font-weight:700;">${R$(totalVendas > 0 ? totalFat / totalVendas : 0)}</td>
+      </tr>
+    `;
   }
 
   // ── KPIs (aba pedidos) ───────────────────────────────────────

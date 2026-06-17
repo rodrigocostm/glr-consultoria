@@ -1,14 +1,14 @@
-import http.server, os, sys
+#!/usr/bin/env python3
+import http.server
+import socketserver
+import sys
+import os
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3200
-DIRECTORY = "/Users/macbook/Documents/glr-consultoria"
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=DIRECTORY, **kwargs)
-    def log_message(self, format, *args):
-        print(format % args, flush=True)
+port = int(sys.argv[1]) if len(sys.argv) > 1 else 3200
 
-with http.server.HTTPServer(("", PORT), Handler) as httpd:
-    print(f"Serving GLR Consultoria on port {PORT}", flush=True)
+Handler = http.server.SimpleHTTPRequestHandler
+with socketserver.TCPServer(("", port), Handler) as httpd:
+    print(f"GLR server on {port}")
     httpd.serve_forever()
