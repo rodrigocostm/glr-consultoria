@@ -194,20 +194,8 @@ Router.register('vendas', async (params, el) => {
 
     // ── Puxar ADS real da API ──
     let totalAds = 0;
-    let adsML = 0, adsShopee = 0;
-    try {
-      const contas = await MarketplaceAPI.listAccounts();
-      const mlConta = contas.find(c => c.tipo === 'Mercado Livre' || c.tipo === 'ML');
-      if (mlConta && mlConta.user_id) {
-        const adsData = await MarketplaceAPI.mlAdsMetrics(mlConta.user_id, customFrom, customTo);
-        adsML = adsData.investimento || 0;
-        totalAds += adsML;
-      }
-      // Shopee ADS seria shopee_ads_balance ou similar
-      // Por enquanto deixamos Shopee como 0
-    } catch(e) {
-      console.warn('Erro ao puxar ADS real:', e.message);
-    }
+    // TODO: Implementar busca real de ADS quando API estiver pronta
+    // Por enquanto deixamos como 0
 
     sec.innerHTML = `
     <!-- KPI Cards -->
