@@ -22,26 +22,18 @@ Router.register('dre', (params, el) => {
     return proj.plataformas.map(p => p.nome).filter(Boolean);
   }
 
-  // Busca os valores MANUAIS inseridos na projeção para uma plataforma específica
-  // Retorna: faturamento (fatBase), ads (adsBase), comissaoGLR (vendasBase × valorPorVenda)
-  // e produtosVendidos (vendasBase)
   function getValoresDaProjecao(clienteId, nomePlataforma) {
     const proj = projecoes.find(p => parseInt(p.chave) === parseInt(clienteId));
     if (!proj?.plataformas?.length) return null;
-
     const linha = proj.plataformas.find(p => p.nome === nomePlataforma);
     if (!linha) return null;
-
     const cliente       = clientes.find(c => c.id === parseInt(clienteId));
     const valorPorVenda = parseFloat(cliente?.valorPorVenda) || 0;
     const vendasBase    = parseFloat(linha.vendasBase) || 0;
     const fatBase       = parseFloat(linha.fatBase)    || 0;
     const adsBase       = parseFloat(linha.adsBase)    || 0;
     const comissaoGLR   = vendasBase * valorPorVenda;
-
-    // Só retorna se tiver pelo menos algum valor preenchido
     if (!fatBase && !adsBase && !vendasBase) return null;
-
     return { faturamento: fatBase, ads: adsBase, comissaoGLR, produtosVendidos: vendasBase };
   }
 
@@ -63,6 +55,11 @@ Router.register('dre', (params, el) => {
     mes: mesAtual,
     ano: anoAtual,
   };
+
+  // Linhas customizadas (estado em memória)
+  let linhasCustom   = [];
+  let nextLinhaId    = 1;
+  let ocultarGLR     = false;
 
   const camposDRE = [
     { key: 'faturamento',   label: 'Faturamento',     tipo: 'receita' },
@@ -87,11 +84,17 @@ Router.register('dre', (params, el) => {
   }
   function fmtPct(v) { return (v||0).toFixed(2).replace('.',',') + '%'; }
 
-  function calcular(vals) {
+  function calcular(vals, linhas, hideGLR) {
     const fat    = parseFloat(vals.faturamento) || 0;
-    const custos = camposDRE.filter(c=>c.tipo==='custo').reduce((s,c)=>s+(parseFloat(vals[c.key])||0),0);
-    const resultado = fat - custos;
-    const pct       = fat > 0 ? (resultado/fat)*100 : 0;
+    let custos   = camposDRE.filter(c=>c.tipo==='custo'&&!(hideGLR&&c.key==='comissaoGLR')).reduce((s,c)=>s+(parseFloat(vals[c.key])||0),0);
+    let recExtra = 0;
+    (linhas||[]).forEach(l => {
+      const v = parseFloat(l.valor) || 0;
+      if (l.tipo === 'receita') recExtra += v;
+      else custos += v;
+    });
+    const resultado = fat + recExtra - custos;
+    const pct       = (fat + recExtra) > 0 ? (resultado/(fat + recExtra))*100 : 0;
     const pv   = parseFloat(vals.produtosVendidos) || 0;
     const dias = diasNoMes(estado.mes, estado.ano);
     return {
@@ -104,11 +107,34 @@ Router.register('dre', (params, el) => {
     };
   }
 
-  // Lê os valores dos inputs
+  // Agrega DREs de todas as plataformas para o Geral
+  function getValoresGeral() {
+    const dres = getDREs().filter(d =>
+      parseInt(d.clienteId) === parseInt(estado.clienteId) &&
+      d.mes === estado.mes && d.ano === estado.ano &&
+      d.plataforma !== 'GERAL'
+    );
+    if (!dres.length) return null;
+    const vals = {};
+    camposDRE.forEach(c => {
+      vals[c.key] = dres.reduce((s,d) => s + (parseFloat(d.valores?.[c.key])||0), 0);
+    });
+    vals.produtosVendidos = dres.reduce((s,d) => s + (parseFloat(d.valores?.produtosVendidos)||0), 0);
+    return vals;
+  }
+
+  // Lê os valores dos inputs + linhas custom
   function lerInputs() {
     const vals = {};
     camposDRE.forEach(c => { vals[c.key] = parseVal(document.getElementById('inp-'+c.key)?.value); });
     vals.produtosVendidos = parseVal(document.getElementById('inp-produtosVendidos')?.value);
+    // ler linhas custom atualizadas
+    linhasCustom.forEach(l => {
+      const inp = document.getElementById('inp-custom-'+l.id);
+      if (inp) l.valor = parseVal(inp.value);
+      const lbl = document.getElementById('lbl-custom-'+l.id);
+      if (lbl) l.label = lbl.value || l.label;
+    });
     return vals;
   }
 
@@ -119,23 +145,39 @@ Router.register('dre', (params, el) => {
     const clienteNome = clientes.find(c=>c.id===estado.clienteId)?.nome || '—';
     const mesLabel   = meses[estado.mes];
     const anos       = [anoAtual-1, anoAtual, anoAtual+1];
+    const isGeral    = estado.plataforma === 'GERAL';
 
-    if (plats.length && !plats.includes(estado.plataforma)) estado.plataforma = plats[0];
+    if (plats.length && !isGeral && !plats.includes(estado.plataforma)) estado.plataforma = plats[0];
 
-    const saved = (!semProj && estado.plataforma)
-      ? findDRE(estado.clienteId, estado.plataforma, estado.mes, estado.ano) : null;
+    let saved = null;
+    if (!semProj && estado.plataforma) {
+      saved = findDRE(estado.clienteId, estado.plataforma, estado.mes, estado.ano);
+    }
 
-    // Se não há DRE salvo, pré-preenche com os valores manuais da projeção
+    // Carregar linhas custom do DRE salvo
+    if (saved?.linhasCustom) {
+      linhasCustom = saved.linhasCustom.map(l => ({...l}));
+      nextLinhaId  = linhasCustom.reduce((m,l)=>Math.max(m,l.id+1),1);
+    } else {
+      linhasCustom = [];
+      nextLinhaId  = 1;
+    }
+
     let vals = {};
     let preenchidoDaProjecao = false;
+    let preenchidoGeral = false;
+
     if (saved) {
       vals = saved.valores;
+    } else if (isGeral) {
+      const vGeral = getValoresGeral();
+      if (vGeral) { vals = vGeral; preenchidoGeral = true; }
     } else if (!semProj && estado.plataforma) {
       const vProj = getValoresDaProjecao(estado.clienteId, estado.plataforma);
       if (vProj) { vals = vProj; preenchidoDaProjecao = true; }
     }
 
-    const calc = calcular(vals);
+    const calc = calcular(vals, linhasCustom, ocultarGLR);
 
     el.innerHTML = `
     <div class="dre-wrap">
@@ -159,7 +201,7 @@ Router.register('dre', (params, el) => {
               ? `<div style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--text-muted);">
                    Cadastre plataformas na <a href="#projecao" style="color:var(--accent);" onclick="Router.navigate('projecao')">Projeção</a> primeiro
                  </div>`
-              : `<div style="display:flex;gap:6px;flex-wrap:wrap;">
+              : `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
                   ${plats.map(p=>`
                     <button onclick="dreOnPlat('${p}')"
                       style="padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;
@@ -168,6 +210,13 @@ Router.register('dre', (params, el) => {
                              color:${p===estado.plataforma?'white':'var(--text-secondary)'};">
                       ${p}
                     </button>`).join('')}
+                  <button onclick="dreOnPlat('GERAL')"
+                    style="padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;
+                           border:2px solid ${isGeral?'#10b981':'var(--border)'};
+                           background:${isGeral?'#10b981':'var(--bg-surface)'};
+                           color:${isGeral?'white':'var(--text-secondary)'};">
+                    📊 Geral
+                  </button>
                 </div>`}
           </div>
 
@@ -185,7 +234,16 @@ Router.register('dre', (params, el) => {
             </select>
           </div>
 
-          <div style="display:flex;gap:8px;flex-shrink:0;">
+          <div style="display:flex;gap:8px;flex-shrink:0;align-items:center;">
+            <button onclick="dreToggleGLR()" title="${ocultarGLR?'Mostrar':'Ocultar'} Comissão GLR"
+              style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;
+                     border:1px solid ${ocultarGLR?'rgba(251,191,36,.5)':'var(--border)'};
+                     background:${ocultarGLR?'rgba(251,191,36,.12)':'var(--bg-surface)'};
+                     color:${ocultarGLR?'#fbbf24':'var(--text-muted)'};display:flex;align-items:center;gap:5px;">
+              ${ocultarGLR
+                ? `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg> GLR oculta`
+                : `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Ocultar GLR`}
+            </button>
             <button class="btn btn-primary" onclick="dreSalvar()" ${semProj?'disabled':''}>
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
               Salvar
@@ -205,7 +263,7 @@ Router.register('dre', (params, el) => {
           <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Vá até Projeção de Crescimento e adicione as plataformas do cliente para liberar o DRE.</div>
           <button class="btn btn-primary" onclick="Router.navigate('projecao')">Ir para Projeção</button>
         </div>
-      ` : renderCard(clienteNome, mesLabel, vals, calc, preenchidoDaProjecao)}
+      ` : renderCard(clienteNome, mesLabel, vals, calc, preenchidoDaProjecao, preenchidoGeral, isGeral)}
 
       <!-- Histórico -->
       <div class="card" style="margin-top:20px;" id="dre-hist">
@@ -225,12 +283,20 @@ Router.register('dre', (params, el) => {
       .dre-resultado td{background:var(--bg-surface)!important;border-top:2px solid var(--border);
         font-weight:700;font-size:15px;padding:14px 12px;}
       .dre-calc td{color:var(--text-muted);font-size:13px;}
+      .dre-custom-row td{border-bottom:1px dashed var(--border);}
       .dre-inp{
         background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;
         color:var(--text-primary);font-size:14px;padding:5px 10px;
         text-align:right;width:150px;outline:none;transition:border .15s;
       }
       .dre-inp:focus{border-color:var(--accent);}
+      .dre-inp-label{
+        background:transparent;border:none;border-bottom:1px dashed var(--border);
+        color:var(--text-primary);font-size:13px;font-style:italic;padding:3px 4px;
+        width:100%;outline:none;
+      }
+      .dre-inp-label:focus{border-bottom-color:var(--accent);}
+      .dre-inp[readonly]{opacity:.65;cursor:default;}
       /* Print */
       .dre-print-header,.dre-print-footer{display:none;}
       @media print{
@@ -246,14 +312,15 @@ Router.register('dre', (params, el) => {
         .dre-resultado td{background:#f0f2f5!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
         .dre-tbl td,.dre-tbl th{color:#111!important;border-color:#ccc!important;}
         .dre-inp{border:none!important;background:transparent!important;color:#111!important;font-size:14px!important;}
-        #dre-hist,button{display:none!important;}
+        #dre-hist,button,.btn-add-linha,.btn-rem-linha{display:none!important;}
       }
     </style>`;
   }
 
-  function renderCard(clienteNome, mesLabel, vals, calc, preenchidoDaProjecao) {
+  function renderCard(clienteNome, mesLabel, vals, calc, preenchidoDaProjecao, preenchidoGeral, isGeral) {
     const dias = diasNoMes(estado.mes, estado.ano);
     const rc   = calc.resultado >= 0 ? 'var(--green)' : 'var(--red)';
+    const platLabel = isGeral ? 'Consolidado Geral' : estado.plataforma;
     return `
     <div class="card" id="dre-printable">
 
@@ -265,16 +332,29 @@ Router.register('dre', (params, el) => {
         </span>
       </div>` : ''}
 
+      ${preenchidoGeral ? `
+      <div style="margin-bottom:16px;padding:10px 14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px;">
+        <svg width="15" height="15" fill="none" stroke="#10b981" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span style="font-size:13px;color:#10b981;">
+          <strong>DRE Geral consolidado</strong> — Soma automática de todos os DREs de plataforma salvos neste período. Salve para fixar e adicionar linhas extras.
+        </span>
+      </div>` : ''}
+
+      ${isGeral && !preenchidoGeral && !findDRE(estado.clienteId,'GERAL',estado.mes,estado.ano) ? `
+      <div style="margin-bottom:16px;padding:10px 14px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:var(--radius-sm);font-size:13px;color:#fbbf24;">
+        ⚠️ Nenhum DRE de plataforma salvo para este período. Salve os DREs por plataforma primeiro para o Geral consolidar automaticamente.
+      </div>` : ''}
+
       <div class="dre-print-header">
         <div class="dre-print-logo">GLR</div>
         <h1 class="dre-print-title">${clienteNome}</h1>
-        <h2 class="dre-print-sub">${estado.plataforma} · ${mesLabel} ${estado.ano}</h2>
+        <h2 class="dre-print-sub">${platLabel} · ${mesLabel} ${estado.ano}</h2>
       </div>
 
       <div class="dre-screen-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
         <div>
           <h2 style="font-size:18px;font-weight:700;margin:0;">${clienteNome}</h2>
-          <p style="color:var(--text-muted);margin:4px 0 0;font-size:13px;">${estado.plataforma} · ${mesLabel} ${estado.ano} · ${dias} dias</p>
+          <p style="color:var(--text-muted);margin:4px 0 0;font-size:13px;">${platLabel} · ${mesLabel} ${estado.ano} · ${dias} dias</p>
         </div>
         <div style="text-align:right;">
           <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Resultado</div>
@@ -286,7 +366,7 @@ Router.register('dre', (params, el) => {
       <table class="dre-tbl">
         <thead>
           <tr>
-            <th style="width:38%;">${estado.plataforma}</th>
+            <th style="width:38%;">${platLabel}</th>
             <th style="width:8%;text-align:center;">Moeda</th>
             <th style="width:30%;text-align:right;">DRE</th>
             <th style="width:24%;text-align:right;">Percentual</th>
@@ -294,6 +374,7 @@ Router.register('dre', (params, el) => {
         </thead>
         <tbody>
           ${camposDRE.map(campo => {
+            if (ocultarGLR && campo.key === 'comissaoGLR') return '';
             const v   = parseFloat(vals[campo.key]) || 0;
             const pct = calc.fat > 0 ? (v/calc.fat)*100 : 0;
             return `
@@ -308,6 +389,48 @@ Router.register('dre', (params, el) => {
               <td style="text-align:right;font-style:italic;" id="pct-${campo.key}">${v>0?fmtPct(pct):'0,00%'}</td>
             </tr>`;
           }).join('')}
+
+          <!-- Linhas customizadas -->
+          ${linhasCustom.map(l => {
+            const v   = parseFloat(l.valor) || 0;
+            const pct = calc.fat > 0 ? (v/calc.fat)*100 : 0;
+            const corTipo = l.tipo==='receita' ? 'var(--green)' : 'var(--text-muted)';
+            return `
+            <tr class="dre-custom-row">
+              <td>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span style="font-size:10px;color:${corTipo};font-weight:700;text-transform:uppercase;">${l.tipo==='receita'?'↑':'↓'}</span>
+                  <input class="dre-inp-label" id="lbl-custom-${l.id}" type="text"
+                    value="${l.label}" placeholder="Nome da linha" oninput="dreCalc()">
+                  <button class="btn-rem-linha" onclick="dreRemoverLinha(${l.id})"
+                    style="border:none;background:none;cursor:pointer;color:var(--red);font-size:16px;line-height:1;padding:0 4px;opacity:.6;" title="Remover">×</button>
+                </div>
+              </td>
+              <td style="text-align:center;color:var(--text-muted);font-size:12px;">R$</td>
+              <td style="text-align:right;">
+                <input class="dre-inp" id="inp-custom-${l.id}" type="text" inputmode="decimal"
+                  value="${v>0?v.toFixed(2).replace('.',','):''}"
+                  placeholder="0,00" oninput="dreCalc()" onfocus="this.select()">
+              </td>
+              <td style="text-align:right;font-style:italic;" id="pct-custom-${l.id}">${v>0?fmtPct(pct):'0,00%'}</td>
+            </tr>`;
+          }).join('')}
+
+          <!-- Botões adicionar linha -->
+          <tr>
+            <td colspan="4" style="padding:8px 12px;border-bottom:none;">
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-add-linha" onclick="dreAdicionarLinha('custo')"
+                  style="font-size:12px;padding:4px 12px;background:rgba(248,113,113,0.08);border:1px dashed rgba(248,113,113,0.4);color:#f87171;border-radius:6px;cursor:pointer;">
+                  + Linha de Custo
+                </button>
+                <button class="btn btn-add-linha" onclick="dreAdicionarLinha('receita')"
+                  style="font-size:12px;padding:4px 12px;background:rgba(16,185,129,0.08);border:1px dashed rgba(16,185,129,0.4);color:#10b981;border-radius:6px;cursor:pointer;">
+                  + Linha de Receita
+                </button>
+              </div>
+            </td>
+          </tr>
 
           <tr class="dre-resultado">
             <td><strong>Resultado</strong></td>
@@ -382,11 +505,12 @@ Router.register('dre', (params, el) => {
       <tbody>
       ${dres.map(d=>{
         const c    = clientes.find(c=>c.id===parseInt(d.clienteId));
-        const calc = calcular(d.valores);
+        const calc = calcular(d.valores, d.linhasCustom||[]);
         const rc   = calc.resultado>=0?'var(--green)':'var(--red)';
+        const isG  = d.plataforma === 'GERAL';
         return `<tr>
           <td>${c?c.nome:'—'}</td>
-          <td>${d.plataforma}</td>
+          <td>${isG?'<span style="color:#10b981;font-weight:700;">📊 Geral</span>':d.plataforma}</td>
           <td>${meses[d.mes]} ${d.ano}</td>
           <td style="text-align:right;">${fmt(calc.fat)}</td>
           <td style="text-align:right;color:${rc};">${fmt(calc.resultado)}</td>
@@ -399,6 +523,13 @@ Router.register('dre', (params, el) => {
   }
 
   // ── Funções globais ───────────────────────────────────────────
+  window.dreToggleGLR = function() {
+    // Preservar valores digitados antes de re-render
+    lerInputs();
+    ocultarGLR = !ocultarGLR;
+    render();
+  };
+
   window.dreOnCliente = function() {
     estado.clienteId  = parseInt(document.getElementById('dre-cliente')?.value)||null;
     const plats = getPlataformasDoCliente(estado.clienteId);
@@ -412,16 +543,42 @@ Router.register('dre', (params, el) => {
     render();
   };
 
+  window.dreAdicionarLinha = function(tipo) {
+    linhasCustom.push({ id: nextLinhaId++, label: tipo==='receita'?'Nova Receita':'Novo Custo', tipo, valor: 0 });
+    // Re-render apenas a tabela — mais simples fazer render() completo
+    render();
+    // Focar no label da nova linha
+    setTimeout(()=>{
+      const ultima = linhasCustom[linhasCustom.length-1];
+      document.getElementById('lbl-custom-'+ultima.id)?.focus();
+    }, 50);
+  };
+
+  window.dreRemoverLinha = function(id) {
+    // Salvar valores atuais antes de remover
+    lerInputs();
+    linhasCustom = linhasCustom.filter(l => l.id !== id);
+    render();
+  };
+
   window.dreCalc = function() {
     const vals = lerInputs();
-    const calc = calcular(vals);
+    const calc = calcular(vals, linhasCustom, ocultarGLR);
     const rc   = calc.resultado>=0?'var(--green)':'var(--red)';
 
     camposDRE.forEach(c => {
       const v   = vals[c.key];
       const pct = calc.fat>0?(v/calc.fat)*100:0;
-      const el  = document.getElementById('pct-'+c.key);
-      if (el) el.textContent = fmtPct(pct);
+      const e  = document.getElementById('pct-'+c.key);
+      if (e) e.textContent = fmtPct(pct);
+    });
+
+    // Atualizar pcts das linhas custom
+    linhasCustom.forEach(l => {
+      const v   = parseFloat(l.valor) || 0;
+      const pct = calc.fat>0?(v/calc.fat)*100:0;
+      const e   = document.getElementById('pct-custom-'+l.id);
+      if (e) e.textContent = fmtPct(pct);
     });
 
     const s=(id,html)=>{const e=document.getElementById(id);if(e)e.innerHTML=html;};
@@ -440,11 +597,18 @@ Router.register('dre', (params, el) => {
   window.dreSalvar = function() {
     if (!estado.clienteId||!estado.plataforma) return;
     const vals  = lerInputs();
+    // Se comissaoGLR está oculta, preservar valor já salvo para não perder
+    if (ocultarGLR) {
+      const existente = findDRE(estado.clienteId, estado.plataforma, estado.mes, estado.ano);
+      if (existente?.valores?.comissaoGLR) vals.comissaoGLR = existente.valores.comissaoGLR;
+    }
     const dres  = getDREs();
     const chave = dreKey(estado.clienteId, estado.plataforma, estado.mes, estado.ano);
     const idx   = dres.findIndex(d=>d.chave===chave);
     const entry = { chave, clienteId:estado.clienteId, plataforma:estado.plataforma,
-                    mes:estado.mes, ano:estado.ano, valores:vals, at:new Date().toISOString() };
+                    mes:estado.mes, ano:estado.ano, valores:vals,
+                    linhasCustom: linhasCustom.map(l=>({...l})),
+                    at:new Date().toISOString() };
     if (idx>=0) dres[idx]=entry; else dres.push(entry);
     saveDREs(dres);
 
@@ -461,8 +625,9 @@ Router.register('dre', (params, el) => {
 
   window.dreExportarPDF = function() {
     const c    = clientes.find(c=>c.id===estado.clienteId)?.nome||'DRE';
+    const plat = estado.plataforma==='GERAL'?'Geral':estado.plataforma;
     const orig = document.title;
-    document.title=`DRE - ${c} - ${estado.plataforma} - ${meses[estado.mes]} ${estado.ano}`;
+    document.title=`DRE - ${c} - ${plat} - ${meses[estado.mes]} ${estado.ano}`;
     window.print();
     setTimeout(()=>{document.title=orig;},1000);
   };
@@ -475,13 +640,6 @@ Router.register('dre', (params, el) => {
     render();
     window.scrollTo({top:0,behavior:'smooth'});
   };
-
-  function lerInputs() {
-    const vals={};
-    camposDRE.forEach(c=>{vals[c.key]=parseVal(document.getElementById('inp-'+c.key)?.value);});
-    vals.produtosVendidos=parseVal(document.getElementById('inp-produtosVendidos')?.value);
-    return vals;
-  }
 
   render();
 });

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/styles.css?v=4">
   <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Chart.js -->
@@ -100,6 +100,11 @@
         Central de Alertas
         <span class="nav-badge" id="badge-alertas" style="display:none;">0</span>
       </button>
+      <button class="nav-item" data-page="financeiro" onclick="Router.navigate('financeiro')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        Financeiro
+        <span class="nav-badge green">NEW</span>
+      </button>
       <button class="nav-item" data-page="dre" onclick="Router.navigate('dre')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
         DRE
@@ -113,6 +118,16 @@
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
         IA Copiloto
         <span class="nav-badge green">IA</span>
+      </button>
+      <button class="nav-item" data-page="integracoes" onclick="Router.navigate('integracoes')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        Integrações
+        <span class="nav-badge" style="background:rgba(245,158,11,0.2);color:#f59e0b;">API</span>
+      </button>
+      <button class="nav-item" data-page="vendas" onclick="Router.navigate('vendas')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+        Vendas
+        <span class="nav-badge green">NEW</span>
       </button>
     </div>
 
@@ -147,6 +162,10 @@
         <input type="text" placeholder="Buscar clientes, tarefas..." id="global-search" oninput="handleSearch(this.value)">
       </div>
       <div class="header-actions">
+        <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema claro/escuro">
+          <svg id="theme-icon-moon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+          <svg id="theme-icon-sun" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="display:none;"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
         <button class="icon-btn" onclick="Router.navigate('alertas')" title="Alertas">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
           <span class="notif-dot"></span>
@@ -176,6 +195,21 @@
 <script src="js/data.js"></script>
 <script src="js/supabase-init.js"></script>
 <script>
+  // ── Tema claro/escuro ────────────────────────────────────────
+  function aplicarTema(tema) {
+    document.body.classList.toggle('light', tema === 'light');
+    const moon = document.getElementById('theme-icon-moon');
+    const sun  = document.getElementById('theme-icon-sun');
+    if (moon) moon.style.display = tema === 'light' ? 'none' : '';
+    if (sun)  sun.style.display  = tema === 'light' ? '' : 'none';
+  }
+  function toggleTheme() {
+    const novo = document.body.classList.contains('light') ? 'dark' : 'light';
+    localStorage.setItem('glr_tema', novo);
+    aplicarTema(novo);
+  }
+  aplicarTema(localStorage.getItem('glr_tema') || 'dark');
+
   // ── Carrega todos os dados persistidos do localStorage ──────────
   function carregarDadosSalvos() {
     const mapa = {
@@ -213,13 +247,17 @@
   }
   atualizarBadges();
 </script>
-<script src="js/router.js?v=8"></script>
+<script src="js/router.js?v=9"></script>
 <script src="js/pages-dashboard.js?v=11"></script>
 <script src="js/pages-gestores.js?v=14"></script>
-<script src="js/pages-clientes.js?v=11"></script>
+<script src="js/pages-clientes.js?v=13"></script>
 <script src="js/pages-operacional.js?v=11"></script>
-<script src="js/pages-avancados.js?v=23"></script>
-<script src="js/pages-dre.js?v=4"></script>
+<script src="js/pages-avancados.js?v=28"></script>
+<script src="js/pages-dre.js?v=6"></script>
+<script src="js/marketplace-api.js?v=11"></script>
+<script src="js/pages-integracoes.js?v=1"></script>
+<script src="js/pages-vendas.js?v=26"></script>
+<script src="js/pages-financeiro.js?v=23"></script>
 <script>
   // ---- App Init ----
   document.addEventListener('DOMContentLoaded', () => {

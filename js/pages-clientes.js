@@ -365,6 +365,55 @@ Router.register('cliente-perfil', (params, el) => {
               })()}
         </div>
 
+        <!-- Contas Marketplace vinculadas -->
+        ${(() => {
+          const vinc      = JSON.parse(localStorage.getItem('glr_mc_vinculos')   || '{}');
+          const aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas')      || '{}');
+          const contas = vinc[c.id] || [];
+          if (!contas.length) return '';
+          const platIcon  = { meli:'🟡', ml:'🟡', mercadolivre:'🟡', shopee:'🟠' };
+          const platNome  = { meli:'Mercado Livre', ml:'Mercado Livre', mercadolivre:'Mercado Livre', shopee:'Shopee' };
+          const platColor = { meli:'#f59e0b', ml:'#f59e0b', mercadolivre:'#f59e0b', shopee:'#f97316' };
+          return `<div class="card mb-16" id="card-contas-mp">
+            <div class="section-header" style="margin-bottom:12px;">
+              <div class="section-title">🔌 Contas Marketplace</div>
+              <button onclick="window.carregarDadosContas(${c.id})" class="btn btn-secondary btn-sm" id="btn-carregar-contas">📊 Carregar dados</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;" id="contas-mp-grid">
+              ${contas.map(ct => {
+                const mp   = ct.marketplace || ct.plataforma || '';
+                const extId = ct.external_id || ct.id || '';
+                const icon = platIcon[mp] || '🏪';
+                const nome = ct.nickname || platNome[mp] || mp;
+                const cor  = platColor[mp] || '#9ca3af';
+                const aliq = aliquotas[extId] || '';
+                return `<div id="conta-card-${extId}" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+                    <span style="font-size:20px;">${icon}</span>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:13px;font-weight:700;color:${cor};">${nome}</div>
+                      <div style="font-size:10px;color:#6b7280;">${extId}</div>
+                    </div>
+                  </div>
+
+                  <!-- Alíquota de imposto -->
+                  <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;padding:8px 10px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:7px;">
+                    <span style="font-size:11px;color:#fbbf24;font-weight:600;white-space:nowrap;">🧾 Imposto</span>
+                    <input type="number" min="0" max="100" step="0.1" placeholder="0"
+                      value="${aliq}"
+                      id="aliq-${extId}"
+                      onchange="window.salvarAliquota('${extId}', this.value)"
+                      style="flex:1;background:#1a2744;border:1px solid rgba(251,191,36,0.3);border-radius:5px;padding:4px 8px;color:#fbbf24;font-size:13px;font-weight:700;text-align:right;width:100%;box-sizing:border-box;">
+                    <span style="font-size:12px;color:#fbbf24;font-weight:600;">%</span>
+                  </div>
+
+                  <div id="dados-${extId}" style="font-size:12px;color:#6b7280;">Clique em "Carregar dados"</div>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>`;
+        })()}
+
         ${c.historico?.length ? `<div class="card mb-16">
           <div class="section-header">
             <div class="section-title">📈 Evolução de Faturamento</div>
@@ -492,6 +541,106 @@ Router.register('cliente-perfil', (params, el) => {
   </div>`;
 
   window.switchTab = (tab) => { activeTab = tab; renderTab(); };
+
+  // ── Salvar alíquota de imposto por conta ────────────────────
+  window.salvarAliquota = (extId, valor) => {
+    const aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas') || '{}');
+    aliquotas[extId] = parseFloat(valor) || 0;
+    localStorage.setItem('glr_aliquotas', JSON.stringify(aliquotas));
+    // Feedback visual
+    const inp = document.getElementById(`aliq-${extId}`);
+    if (inp) {
+      inp.style.borderColor = '#34d399';
+      setTimeout(() => { inp.style.borderColor = 'rgba(251,191,36,0.3)'; }, 1000);
+    }
+  };
+
+  // ── Carregar dados das contas marketplace ───────────────────
+  window.carregarDadosContas = async (cid) => {
+    const apiKey = localStorage.getItem('glr_mc_apikey') || '';
+    if (!apiKey) { alert('Configure a API Key nas Integrações primeiro.'); return; }
+
+    const btn = document.getElementById('btn-carregar-contas');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Carregando...'; }
+
+    const vinc  = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}');
+    const contas = vinc[cid] || [];
+    const hoje   = new Date();
+    const ontem  = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
+    const pad    = n => String(n).padStart(2,'0');
+    const fmtD   = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const R$     = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+    // Mês atual: 01/mês até ontem
+    const dataFrom = `${hoje.getFullYear()}-${pad(hoje.getMonth()+1)}-01`;
+    const dataTo   = fmtD(ontem);
+    const diasDec  = ontem.getDate();
+    const diasMes  = new Date(hoje.getFullYear(), hoje.getMonth()+1, 0).getDate();
+
+    for (const ct of contas) {
+      const extId = ct.external_id || ct.id || '';
+      const mp    = ct.marketplace || ct.plataforma || '';
+      const elId  = `dados-${extId}`;
+      const elDiv = document.getElementById(elId);
+      if (elDiv) elDiv.innerHTML = `<span style="color:#6b7280;">⏳ Buscando...</span>`;
+
+      try {
+        let fat = 0, pedidos = 0, ads = 0;
+
+        if (['meli','ml','mercadolivre'].includes(mp)) {
+          const orders = await MarketplaceAPI.mlOrders(extId, dataFrom, dataTo);
+          pedidos = orders.length;
+          fat = orders.reduce((s,o) => s + (parseFloat(o.total_amount)||0), 0);
+          try {
+            const adsr = await MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: extId, date_from: dataFrom, date_to: dataTo });
+            const camps = adsr.data || [];
+            ads = camps.reduce((s,c) => s + (parseFloat(c.cost)||0), 0);
+          } catch(e) {}
+        }
+
+        if (mp === 'shopee') {
+          for (const st of ['COMPLETED','READY_TO_SHIP','SHIPPED']) {
+            try {
+              const rs = await MarketplaceAPI.call('shopee_sales_summary', { shopId: extId, days: diasDec, order_status: st });
+              const d  = rs.data || rs;
+              fat     += parseFloat(d.total_revenue || 0);
+              pedidos += parseInt(d.total_orders || 0);
+            } catch(e) {}
+          }
+        }
+
+        const projecao = diasDec > 0 ? (fat / diasDec) * diasMes : 0;
+        const adsPct   = fat > 0 && ads > 0 ? (ads/fat*100).toFixed(1) : null;
+
+        if (elDiv) elDiv.innerHTML = `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:2px;">Faturamento (mês)</div>
+              <div style="font-size:14px;font-weight:700;color:#60a5fa;">${R$(fat)}</div>
+            </div>
+            <div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:2px;">Pedidos</div>
+              <div style="font-size:14px;font-weight:700;color:#e5e7eb;">${pedidos}</div>
+            </div>
+            <div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:2px;">Projeção mês</div>
+              <div style="font-size:13px;font-weight:600;color:#a78bfa;">${R$(projecao)}</div>
+            </div>
+            ${adsPct ? `<div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:2px;">ADS%</div>
+              <div style="font-size:13px;font-weight:600;color:#fbbf24;">${adsPct}%</div>
+            </div>` : ''}
+          </div>
+          <div style="margin-top:8px;font-size:10px;color:#4b5563;">Base: 01/${pad(hoje.getMonth()+1)} até ${pad(ontem.getDate())}/${pad(ontem.getMonth()+1)}</div>`;
+
+      } catch(e) {
+        if (elDiv) elDiv.innerHTML = `<span style="color:#ef4444;font-size:12px;">Erro: ${e.message}</span>`;
+      }
+    }
+
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Atualizar'; }
+  };
+
   setupClienteHandlers();
   renderTab();
 });

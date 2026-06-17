@@ -42,6 +42,47 @@
   --shadow-sm: 0 2px 8px rgba(0,0,0,0.2);
 }
 
+/* ── Modo Claro ───────────────────────────────────────────── */
+body.light {
+  --bg-base: #f4f5f9;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f0f1f7;
+  --bg-input: #f7f8fb;
+  --border: rgba(15,23,42,0.10);
+  --border-active: rgba(99,102,241,0.5);
+
+  --text-primary: #1a2030;
+  --text-secondary: #4b5268;
+  --text-muted: #8a90a5;
+
+  --accent: #5558e3;
+  --accent-light: #6366f1;
+  --accent-glow: rgba(99,102,241,0.10);
+
+  --green: #059669;
+  --green-bg: rgba(5,150,105,0.10);
+  --red: #dc2626;
+  --red-bg: rgba(220,38,38,0.08);
+  --yellow: #d97706;
+  --yellow-bg: rgba(217,119,6,0.10);
+  --orange: #ea580c;
+  --orange-bg: rgba(234,88,12,0.08);
+  --purple: #7c3aed;
+  --purple-bg: rgba(124,58,237,0.08);
+  --cyan: #0891b2;
+  --cyan-bg: rgba(8,145,178,0.08);
+
+  --shadow: 0 4px 24px rgba(15,23,42,0.08);
+  --shadow-sm: 0 2px 8px rgba(15,23,42,0.06);
+}
+body.light .dre-tbl tr:hover td { background: rgba(0,0,0,.02); }
+/* Logo branca → preta no modo claro (inverte e troca o blend de screen p/ multiply) */
+body.light .sidebar-logo img {
+  filter: invert(1) hue-rotate(180deg);
+  mix-blend-mode: multiply !important;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html { font-size: 14px; scroll-behavior: smooth; }

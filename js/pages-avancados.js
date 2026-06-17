@@ -786,6 +786,7 @@ Router.register('projecao', (params, el) => {
   const storageKey = 'glr_projecoes';
   let projecoes = [];
   try { projecoes = JSON.parse(localStorage.getItem(storageKey) || '[]'); } catch(e) {}
+  let ocultarGLR = false;
 
   // ── Determina qual cliente/projeção está ativa ─────────────────
   // Prioridade: param da URL > última projeção salva > primeiro cliente cadastrado
@@ -799,20 +800,29 @@ Router.register('projecao', (params, el) => {
     : null;
 
   // Se não existe projeção para este cliente, cria em branco vinculada a ele
+  const _hoje = new Date();
+  const _ontem = new Date(_hoje); _ontem.setDate(_hoje.getDate() - 1);
+  const _mesesNomesProj = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const _mesLabel = `${_mesesNomesProj[_hoje.getMonth()]} ${_hoje.getFullYear()}`;
+  const _diasNoMes = new Date(_hoje.getFullYear(), _hoje.getMonth() + 1, 0).getDate();
+
   if (!projecaoAtiva) {
     const clienteObj = GLR.clientes.find(c => c.id === clienteIdAtivo);
     projecaoAtiva = {
-      chave:       clienteIdAtivo ? String(clienteIdAtivo) : 'sem_cliente',
-      nomeCliente: clienteObj?.nome || '',
-      mes:         'Junho 2026',
-      diasNoMes:   30,
-      diasDecorridos: 2,
+      chave:          clienteIdAtivo ? String(clienteIdAtivo) : 'sem_cliente',
+      nomeCliente:    clienteObj?.nome || '',
+      mes:            _mesLabel,
+      diasNoMes:      _diasNoMes,
+      diasDecorridos: _ontem.getDate(),
       obs: '',
       plataformas: [
         { nome: 'Shopee',        fatBase: '', adsBase: '', maio: '', abril: '', marco: '' },
         { nome: 'Mercado Livre', fatBase: '', adsBase: '', maio: '', abril: '', marco: '' },
       ]
     };
+  } else {
+    // diasDecorridos: mantém o valor salvo manualmente — não sobrescreve
+    projecaoAtiva.diasNoMes = _diasNoMes;
   }
 
   function salvar() {
@@ -899,7 +909,7 @@ Router.register('projecao', (params, el) => {
         </td>
         <td style="background:rgba(16,185,129,0.1);text-align:right;white-space:nowrap;">
           <strong style="color:var(--green);">${fmtInt(vendasProj)}</strong>
-          ${valorVenda > 0 ? `<div style="font-size:10px;color:var(--green);opacity:0.7;">GLR: R$ ${fmtBRL(Math.round(vendasProj)*valorVenda)}</div>` : ''}
+          ${!ocultarGLR && valorVenda > 0 ? `<div style="font-size:10px;color:var(--green);opacity:0.7;">GLR: R$ ${fmtBRL(Math.round(vendasProj)*valorVenda)}</div>` : ''}
         </td>
         <td style="text-align:right;background:rgba(245,158,11,0.05);">
           <input class="proj-input money" value="${p.adsBase||''}" onchange="updatePlat(${i},'adsBase',this.value)" placeholder="0,00">
@@ -940,7 +950,7 @@ Router.register('projecao', (params, el) => {
       <td style="text-align:right;background:rgba(16,185,129,0.07);font-weight:700;">${Math.round(totVendasBase).toLocaleString('pt-BR')}</td>
       <td style="background:rgba(16,185,129,0.14);font-weight:800;color:var(--green);font-size:14px;text-align:right;">
         ${Math.round(totVendasProj).toLocaleString('pt-BR')}
-        ${valorVenda > 0 ? `<div style="font-size:11px;color:var(--green);opacity:0.8;">GLR: R$ ${fmtBRL(receitaGLR)}</div>` : ''}
+        ${!ocultarGLR && valorVenda > 0 ? `<div style="font-size:11px;color:var(--green);opacity:0.8;">GLR: R$ ${fmtBRL(receitaGLR)}</div>` : ''}
       </td>
       <td style="font-weight:700;text-align:right;background:rgba(245,158,11,0.07);">R$ ${fmtBRL(totAdsBase)}</td>
       <td style="background:rgba(245,158,11,0.12);font-weight:800;color:#f59e0b;font-size:14px;text-align:right;">R$ ${fmtBRL(totAdsProj)}</td>
@@ -993,19 +1003,10 @@ Router.register('projecao', (params, el) => {
           onchange="projecaoAtiva.mes=this.value;document.querySelectorAll('.mes-label').forEach(e=>e.textContent=this.value)"
           style="background:transparent;border:none;color:rgba(255,255,255,0.85);font-size:16px;font-weight:700;font-style:italic;outline:none;text-align:center;width:200px;">
         ${clienteIdAtivo ? `<span style="font-size:11px;color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.08);padding:2px 8px;border-radius:99px;">ID cliente: ${clienteIdAtivo}</span>` : ''}
+        <span id="lbl-atualizado" style="font-size:11px;color:rgba(255,255,255,0.55);background:rgba(255,255,255,0.08);padding:2px 10px;border-radius:99px;">${projecaoAtiva.atualizadoEm ? '🕓 Atualizado: ' + new Date(projecaoAtiva.atualizadoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '🕓 Nunca salvo'}</span>
       </div>
     </div>
 
-    <!-- Tabs de clientes se houver múltiplas projeções salvas -->
-    ${projecoes.length > 1 ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
-      ${projecoes.map(p => {
-        const cl = GLR.clientes.find(c => c.id === parseInt(p.chave));
-        const label = cl?.nome || p.nomeCliente || p.chave;
-        const ativo = parseInt(p.chave) === clienteIdAtivo;
-        return `<button onclick="trocarCliente(${parseInt(p.chave)||'"'+p.chave+'"'})"
-          class="btn btn-sm ${ativo?'btn-primary':'btn-secondary'}">${label}</button>`;
-      }).join('')}
-    </div>` : ''}
 
     <!-- Controles de período -->
     <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
@@ -1021,7 +1022,13 @@ Router.register('projecao', (params, el) => {
         <label style="font-size:12px;color:var(--text-muted);">Dias no mês</label>
         <input id="inp-dias-mes" class="form-input" type="number" value="${projecaoAtiva.diasNoMes}" min="28" max="31" style="width:70px;padding:6px 10px;font-size:12px;" oninput="updateDias()">
       </div>
-      <div style="margin-left:auto;display:flex;gap:8px;">
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+        <button id="btn-toggle-glr" onclick="toggleGLRProjecao()"
+          style="padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;
+                 border:1px solid var(--border);background:var(--bg-surface);color:var(--text-muted);display:flex;align-items:center;gap:5px;">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Ocultar GLR
+        </button>
         <button class="btn btn-secondary btn-sm" onclick="adicionarPlat()">+ Plataforma</button>
         <button class="btn btn-primary btn-sm" onclick="salvarProjecao(this)">💾 Salvar</button>
         <button class="btn btn-ghost btn-sm" onclick="exportarProjecao()">📄 Exportar</button>
@@ -1039,7 +1046,7 @@ Router.register('projecao', (params, el) => {
         <div class="kpi-value" id="kpi-vendas" style="font-size:22px;color:var(--green);">—</div>
         <div style="font-size:11px;color:var(--text-muted);">unidades projetadas</div>
       </div>
-      <div class="kpi-card" style="padding:14px;border-color:rgba(16,185,129,0.4);background:rgba(16,185,129,0.05);">
+      <div id="kpi-glr-card" class="kpi-card" style="padding:14px;border-color:rgba(16,185,129,0.4);background:rgba(16,185,129,0.05);">
         <div class="kpi-label">💰 Receita GLR</div>
         <div class="kpi-value" id="kpi-receita-glr" style="font-size:18px;">—</div>
         <div style="font-size:11px;color:var(--text-muted);">vendas × valor por venda</div>
@@ -1133,6 +1140,30 @@ Router.register('projecao', (params, el) => {
     atualizarGrafico();
   };
 
+  window.toggleGLRProjecao = () => {
+    ocultarGLR = !ocultarGLR;
+    // Atualiza o botão
+    const btn = document.getElementById('btn-toggle-glr');
+    if (btn) {
+      if (ocultarGLR) {
+        btn.innerHTML = `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg> GLR oculta`;
+        btn.style.borderColor = 'rgba(251,191,36,.5)';
+        btn.style.background  = 'rgba(251,191,36,.12)';
+        btn.style.color       = '#fbbf24';
+      } else {
+        btn.innerHTML = `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Ocultar GLR`;
+        btn.style.borderColor = '';
+        btn.style.background  = '';
+        btn.style.color       = '';
+      }
+    }
+    // Oculta/mostra o KPI card
+    const kpiCard = document.getElementById('kpi-glr-card');
+    if (kpiCard) kpiCard.style.display = ocultarGLR ? 'none' : '';
+    // Re-renderiza a tabela (inclui os sub-labels GLR nas linhas e no footer)
+    renderTabela();
+  };
+
   window.adicionarPlat = () => {
     projecaoAtiva.plataformas.push({ nome: 'Nova Plataforma', fatBase: '', ads: '', maio: '', abril: '', marco: '' });
     renderTabela();
@@ -1160,6 +1191,9 @@ Router.register('projecao', (params, el) => {
 
   window.salvarProjecao = (btn) => {
     projecaoAtiva.obs = document.getElementById('proj-obs')?.value || '';
+    projecaoAtiva.atualizadoEm = new Date().toISOString();
+    const lblAtt = document.getElementById('lbl-atualizado');
+    if (lblAtt) lblAtt.textContent = '🕓 Atualizado: ' + new Date().toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
 
     // ── Lê diasDecorridos/diasNoMes dos campos ao vivo ──────────────
     const dd = parseInt(document.getElementById('inp-dias-dec')?.value) || projecaoAtiva.diasDecorridos || 2;
