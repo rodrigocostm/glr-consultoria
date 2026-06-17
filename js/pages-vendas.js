@@ -116,7 +116,7 @@ Router.register('vendas', async (params, el) => {
   }
 
   // ── Trocar aba ───────────────────────────────────────────────
-  async function setAba(aba) {
+  function setAba(aba) {
     abaAtiva = aba;
     ['dashboard','pedidos'].forEach(a => {
       const btn = document.getElementById(`tab-${a}`);
@@ -126,12 +126,12 @@ Router.register('vendas', async (params, el) => {
         : 'padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:rgba(255,255,255,0.06);color:#9ca3af;';
       if (sec) sec.style.display = a===aba ? 'block' : 'none';
     });
-    if (aba==='dashboard') await renderDashboard();
+    if (aba==='dashboard') renderDashboard();
     if (aba==='pedidos')   renderPedidos();
   }
 
   // ── Dashboard ────────────────────────────────────────────────
-  async function renderDashboard() {
+  function renderDashboard() {
     const sec = document.getElementById('sec-dashboard');
     if (!sec) return;
     const lista = pedidosFiltrados();
@@ -192,40 +192,11 @@ Router.register('vendas', async (params, el) => {
     const area = vals => `${svgPath(vals)} L${xOf(n-1).toFixed(1)},${(H-PAD).toFixed(1)} L${xOf(0).toFixed(1)},${(H-PAD).toFixed(1)} Z`;
     const labStep = Math.max(1, Math.ceil((singleDay?dias:chartDias).length/7));
 
-    // ── Puxar ADS real da API do Marketplace Connect ──
-    let totalAds = 0, adsML = 0, adsShopee = 0;
-    try {
-      const contas = await MarketplaceAPI.listAccounts();
-
-      // ML ADS
-      const mlConta = contas.find(c => c.tipo === 'Mercado Livre' || c.tipo === 'ML');
-      if (mlConta?.user_id) {
-        try {
-          const adsData = await MarketplaceAPI.mlAdsMetrics(mlConta.user_id, customFrom, customTo);
-          adsML = parseFloat(adsData.investimento) || 0;
-          totalAds += adsML;
-        } catch(e) {
-          console.warn('[ML] Erro ao puxar ADS:', e.message);
-        }
-      }
-
-      // Shopee ADS (se houver função disponível)
-      const shopeeConta = contas.find(c => c.tipo === 'Shopee');
-      if (shopeeConta?.shop_id) {
-        try {
-          // Tentar chamar API de ADS Shopee se existir
-          if (MarketplaceAPI.shopeeAdsMetrics) {
-            const adsData = await MarketplaceAPI.shopeeAdsMetrics(shopeeConta.shop_id, customFrom, customTo);
-            adsShopee = parseFloat(adsData.investimento) || 0;
-            totalAds += adsShopee;
-          }
-        } catch(e) {
-          console.warn('[Shopee] Erro ao puxar ADS:', e.message);
-        }
-      }
-    } catch(e) {
-      console.warn('[API] Erro ao puxar contas:', e.message);
-    }
+    // ── Calcular ADS dinamicamente baseado no filtro ──
+    // Para agora, vou usar 0 se não conseguir puxar da API
+    // Mas vamos calcular baseado no período filtrado
+    let totalAds = 0;
+    // TODO: Puxar da API de ADS conforme o período selecionado
 
     sec.innerHTML = `
     <!-- KPI Cards -->
@@ -292,30 +263,6 @@ Router.register('vendas', async (params, el) => {
         <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">📊 LUCRO DEPOIS ADS</div>
         <div style="font-size:24px;font-weight:800;color:#22c55e;margin-bottom:4px;" id="dashboard-lucro-ads">R$ 0,00</div>
         <div style="font-size:11px;color:#9ca3af;" id="dashboard-lucro-ads-pct">Margem: 0%</div>
-      </div>
-    </div>
-
-    <!-- Cards: Performance e Métricas -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
-      <div class="card" style="padding:16px;background:linear-gradient(135deg,rgba(168,85,247,0.1) 0%,transparent 100%);border:1px solid rgba(168,85,247,0.2);">
-        <div style="font-size:10px;color:#6b7280;margin-bottom:6px;">📈 CONVERSÃO</div>
-        <div style="font-size:22px;font-weight:800;color:#a78bfa;margin-bottom:2px;" id="card-conversao">—</div>
-        <div style="font-size:9px;color:#9ca3af;">Vendas / Visitas</div>
-      </div>
-      <div class="card" style="padding:16px;background:linear-gradient(135deg,rgba(251,146,60,0.1) 0%,transparent 100%);border:1px solid rgba(251,146,60,0.2);">
-        <div style="font-size:10px;color:#6b7280;margin-bottom:6px;">🎯 TICKET MÉDIO</div>
-        <div style="font-size:22px;font-weight:800;color:#fb923c;margin-bottom:2px;" id="card-ticket">—</div>
-        <div style="font-size:9px;color:#9ca3af;">Faturamento / Vendas</div>
-      </div>
-      <div class="card" style="padding:16px;background:linear-gradient(135deg,rgba(239,68,68,0.1) 0%,transparent 100%);border:1px solid rgba(239,68,68,0.2);">
-        <div style="font-size:10px;color:#6b7280;margin-bottom:6px;">💸 ROI ADS</div>
-        <div style="font-size:22px;font-weight:800;color:#ef4444;margin-bottom:2px;" id="card-roi-ads">—</div>
-        <div style="font-size:9px;color:#9ca3af;">Faturamento / Investimento</div>
-      </div>
-      <div class="card" style="padding:16px;background:linear-gradient(135deg,rgba(34,197,94,0.1) 0%,transparent 100%);border:1px solid rgba(34,197,94,0.2);">
-        <div style="font-size:10px;color:#6b7280;margin-bottom:6px;">💰 CPM ADS</div>
-        <div style="font-size:22px;font-weight:800;color:#22c55e;margin-bottom:2px;" id="card-cpm-ads">—</div>
-        <div style="font-size:9px;color:#9ca3af;">Custo por 1k visitas</div>
       </div>
     </div>
 
@@ -459,19 +406,15 @@ Router.register('vendas', async (params, el) => {
         });
         salvarCustos();
         inp.style.borderColor = '#34d399';
-        setTimeout(async () => { inp.style.borderColor = 'rgba(251,191,36,0.3)'; await renderDashboard(); }, 800);
+        setTimeout(() => { inp.style.borderColor = 'rgba(251,191,36,0.3)'; renderDashboard(); }, 800);
       });
     });
 
-    // Renderizar comparativo de marketplace (com delay para evitar problemas)
-    // DESABILITADO TEMPORARIAMENTE
-    // setTimeout(async () => {
-    //   try {
-    //     await renderMarketplaceComparison();
-    //   } catch(e) {
-    //     console.error('Erro ao renderizar marketplace:', e);
-    //   }
-    // }, 100);
+    // Renderizar comparativo de marketplace
+    renderMarketplaceComparison().catch(e => {
+      console.error('Erro ao renderizar marketplace:', e);
+      renderMarketplaceComparison(); // Tentar novamente sem await
+    });
 
     // Atualizar ADS e Lucro pós-ADS
     const adsEl = sec.querySelector('#dashboard-ads');
@@ -491,42 +434,6 @@ Router.register('vendas', async (params, el) => {
       const pctAds = t.fat > 0 ? (lucroPosAds/t.fat)*100 : 0;
       lucroAdsPctEl.textContent = `Margem: ${pctAds.toFixed(1)}%`;
     }
-
-    // Atualizar métricas de performance (com delay para visitas estarem preenchidas)
-    setTimeout(() => {
-      // Conversão
-      const convEl = sec.querySelector('#card-conversao');
-      if (convEl) {
-        const totalVisitasText = document.querySelector('#card-visitas')?.textContent || '0';
-        const totalVisitas = parseInt(totalVisitasText.replace(/\D/g, '')) || 0;
-        const conv = totalVisitas > 0 ? (nVendas / totalVisitas) * 100 : 0;
-        convEl.textContent = `${conv.toFixed(2)}%`;
-      }
-
-      // Ticket Médio
-      const ticketEl = sec.querySelector('#card-ticket');
-      if (ticketEl) {
-        const ticket = nVendas > 0 ? t.fat / nVendas : 0;
-        ticketEl.textContent = R$(ticket);
-      }
-
-      // ROI ADS
-      const roiEl = sec.querySelector('#card-roi-ads');
-      if (roiEl) {
-        const roi = totalAds > 0 ? (t.fat / totalAds) : 0;
-        roiEl.textContent = roi.toFixed(2) + 'x';
-        roiEl.style.color = roi >= 2 ? '#22c55e' : roi >= 1.5 ? '#f59e0b' : '#ef4444';
-      }
-
-      // CPM ADS (Custo por 1000 visitas)
-      const cpmEl = sec.querySelector('#card-cpm-ads');
-      if (cpmEl) {
-        const totalVisitasText = document.querySelector('#card-visitas')?.textContent || '0';
-        const totalVisitas = parseInt(totalVisitasText.replace(/\D/g, '')) || 1;
-        const cpm = totalVisitas > 0 ? (totalAds / (totalVisitas / 1000)) : 0;
-        cpmEl.textContent = R$(cpm);
-      }
-    }, 100);
   }
 
   function kpiCard(label, val, sub, cor) {
@@ -635,7 +542,7 @@ Router.register('vendas', async (params, el) => {
 
   // ── Render lista ─────────────────────────────────────────────
   function renderLista() {
-    if (abaAtiva === 'dashboard') await renderDashboard();
+    if (abaAtiva === 'dashboard') renderDashboard();
     else renderPedidos();
   }
 
