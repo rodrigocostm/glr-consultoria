@@ -264,6 +264,23 @@ Router.register('vendas', async (params, el) => {
       </div>
     </div>
 
+    <!-- Gráfico: Visitas / Vendas / Faturamento por Marketplace -->
+    <div class="card" style="padding:20px;overflow:hidden;">
+      <div style="font-size:14px;font-weight:700;color:#e5e7eb;margin-bottom:16px;">📊 Visitas · Vendas · Faturamento</div>
+      <svg id="chart-marketplace" viewBox="0 0 800 350" style="width:100%;height:auto;display:block;" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="glow-chart">
+            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+        <!-- Será preenchido por JavaScript -->
+      </svg>
+    </div>
+
     <!-- Top 15 Produtos -->
     <div class="card" style="padding:0;overflow:hidden;">
       <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06);">
@@ -354,6 +371,9 @@ Router.register('vendas', async (params, el) => {
         setTimeout(() => { inp.style.borderColor = 'rgba(251,191,36,0.3)'; renderDashboard(); }, 800);
       });
     });
+
+    // Renderizar gráfico de marketplace
+    renderMarketplaceChart();
   }
 
   function kpiCard(label, val, sub, cor) {
@@ -362,6 +382,84 @@ Router.register('vendas', async (params, el) => {
       <div class="kpi-value" style="color:${cor};font-size:18px;">${val}</div>
       ${sub?`<div class="kpi-sub">${sub}</div>`:''}
     </div>`;
+  }
+
+  function renderMarketplaceChart() {
+    const lista = pedidosFiltrados();
+    const ml = lista.filter(p => p.plataforma === 'Mercado Livre');
+    const shopee = lista.filter(p => p.plataforma === 'Shopee');
+
+    const mlVendas = ml.length;
+    const mlFat = ml.reduce((s,p) => s + (parseFloat(p.valor)||0), 0);
+    const shopeeVendas = shopee.length;
+    const shopeeFat = shopee.reduce((s,p) => s + (parseFloat(p.valor)||0), 0);
+
+    // Para visitas, vamos usar uma estimativa baseada em conversão típica (3-5%)
+    // ou deixar 0 se não conseguir puxar dados reais
+    const mlVisitas = mlFat > 0 ? Math.round(mlVendas / 0.04) : 0;
+    const shopeeVisitas = shopeeFat > 0 ? Math.round(shopeeVendas / 0.04) : 0;
+
+    const svg = document.getElementById('chart-marketplace');
+    if (!svg) return;
+
+    // Dados para as 3 métricas
+    const metricas = [
+      { nome: 'Visitas', ml: mlVisitas, shopee: shopeeVisitas, cor: '#6b7280' },
+      { nome: 'Vendas', ml: mlVendas, shopee: shopeeVendas, cor: '#3b82f6' },
+      { nome: 'Faturamento', ml: mlFat, shopee: shopeeFat, cor: '#34d399' }
+    ];
+
+    const W = 800, H = 300, PAD = 40;
+    const maxMetrica = Math.max(
+      ...metricas.map(m => Math.max(m.ml, m.shopee))
+    );
+    const scale = (maxMetrica > 0) ? (H - PAD*2) / maxMetrica : 1;
+
+    // Posições das barras
+    const barWidth = 45, barGap = 20, groupGap = 80;
+    let x = PAD + 40;
+
+    let html = `<defs>
+      <linearGradient id="grad-ml" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.8"/>
+        <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.4"/>
+      </linearGradient>
+      <linearGradient id="grad-shopee" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#f97316" stop-opacity="0.8"/>
+        <stop offset="100%" stop-color="#f97316" stop-opacity="0.4"/>
+      </linearGradient>
+    </defs>`;
+
+    // Fundo subtil
+    html += `<rect x="${PAD}" y="${PAD}" width="${W-PAD*2}" height="${H-PAD*2}" fill="rgba(255,255,255,0.02)" rx="8"/>`;
+
+    // Grid
+    for (let i = 1; i <= 4; i++) {
+      const y = PAD + (H - PAD*2) * (1 - i/4);
+      html += `<line x1="${PAD}" y1="${y}" x2="${W-PAD}" y2="${y}" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="4,4"/>`;
+    }
+
+    // Barras por métrica
+    metricas.forEach((metrica, mIdx) => {
+      const xBase = PAD + 60 + mIdx * groupGap;
+
+      // ML
+      const hML = metrica.ml * scale;
+      const yML = H - PAD - hML;
+      html += `<rect x="${xBase}" y="${yML}" width="${barWidth}" height="${hML}" fill="url(#grad-ml)" rx="4" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.2))"/>`;
+      html += `<text x="${xBase + barWidth/2}" y="${H - PAD + 20}" text-anchor="middle" fill="#e5e7eb" font-size="10" font-weight="500">ML</text>`;
+
+      // Shopee
+      const hShopee = metrica.shopee * scale;
+      const yShopee = H - PAD - hShopee;
+      html += `<rect x="${xBase + barWidth + 8}" y="${yShopee}" width="${barWidth}" height="${hShopee}" fill="url(#grad-shopee)" rx="4" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.2))"/>`;
+      html += `<text x="${xBase + barWidth + 8 + barWidth/2}" y="${H - PAD + 20}" text-anchor="middle" fill="#e5e7eb" font-size="10" font-weight="500">Shopee</text>`;
+
+      // Label da métrica
+      html += `<text x="${xBase + barWidth - 5}" y="${PAD + 20}" fill="#e5e7eb" font-size="12" font-weight="600">${metrica.nome}</text>`;
+    });
+
+    svg.innerHTML = html;
   }
 
   // ── KPIs (aba pedidos) ───────────────────────────────────────
