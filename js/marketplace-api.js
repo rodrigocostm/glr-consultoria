@@ -133,6 +133,38 @@ const MarketplaceAPI = {
     }
   },
 
+  // Métricas detalhadas de ADS ML (cliques, impressões, CTR, etc)
+  async mlAdsMetricsDetailed(meliUserId, dateFrom, dateTo) {
+    try {
+      const r = await this.call('ml_ads_metrics', { meliUserId, date_from: dateFrom, date_to: dateTo });
+      const data = r.data || {};
+      return {
+        investimento: parseFloat(data.cost) || 0,
+        cliques: parseInt(data.clicks) || 0,
+        impressoes: parseInt(data.impressions) || 0,
+        vendas: parseInt(data.sales) || 0,
+        faturamentoAds: parseFloat(data.revenue) || 0,
+        ctr: parseFloat(data.ctr) || 0,
+        cpc: parseFloat(data.cpc) || 0,
+        roas: parseFloat(data.roas) || 0,
+      };
+    } catch(e) {
+      console.warn('[ML] erro ao puxar métricas ADS detalhadas:', e.message);
+      return {};
+    }
+  },
+
+  // Custos de envio por shipment (Mercado Livre)
+  async mlShipmentCosts(shipmentId) {
+    try {
+      const r = await this.call('get_shipment_costs', { shipment_id: shipmentId });
+      return r.data || {};
+    } catch(e) {
+      console.warn('[ML] erro ao puxar custos envio:', e.message);
+      return {};
+    }
+  },
+
   // ── Shopee ────────────────────────────────────────────────
 
   // Resumo de vendas Shopee (até 90 dias)
@@ -228,6 +260,119 @@ const MarketplaceAPI = {
       const r = await this.call('shopee_get_shop_performance', { shopId });
       return r.data || {};
     } catch(e) { return {}; }
+  },
+
+  // Receita detalhada por pedido (com taxas, comissões, etc) - SHOPEE
+  async shopeeIncomeDetail(shopId, orderSn) {
+    try {
+      const r = await this.call('shopee_income', { shopId, order_sn: orderSn });
+      const data = r.data || {};
+      return {
+        bruto: parseFloat(data.revenue) || 0,
+        taxaPlatforma: parseFloat(data.platform_fee) || 0,
+        taxaServico: parseFloat(data.service_fee) || 0,
+        comissao: parseFloat(data.commission) || 0,
+        freteDescontado: parseFloat(data.shipping_fee) || 0,
+        voucher: parseFloat(data.voucher) || 0,
+        outro: parseFloat(data.other_fee) || 0,
+        liquido: parseFloat(data.net_revenue) || 0,
+      };
+    } catch(e) {
+      console.warn('[SHOPEE] erro ao puxar receita detalhada:', e.message);
+      return {};
+    }
+  },
+
+  // Detalhes de Escrow (garantia/bloqueio) - SHOPEE - importante para taxas
+  async shopeeEscrowDetail(shopId, orderSn) {
+    try {
+      const r = await this.call('shopee_get_escrow_detail', { shopId, order_sn: orderSn });
+      const data = r.data || {};
+      return {
+        bruto: parseFloat(data.gross_amount) || 0,
+        comissao: parseFloat(data.commission) || 0,
+        taxaServico: parseFloat(data.service_fee) || 0,
+        taxaFrete: parseFloat(data.shipping_fee) || 0,
+        voucher: parseFloat(data.voucher_from_seller) || 0,
+        imposto: parseFloat(data.tax) || 0,
+        liquido: parseFloat(data.net_amount) || 0,
+        status: data.status || 'unknown',
+        dataLiberacao: data.release_time || null,
+      };
+    } catch(e) {
+      console.warn('[SHOPEE] erro ao puxar escrow:', e.message);
+      return {};
+    }
+  },
+
+  // Informações de pagamento/payout - SHOPEE
+  async shopeePayout(shopId) {
+    try {
+      const r = await this.call('shopee_get_payout_info', { shopId });
+      return r.data || {};
+    } catch(e) {
+      console.warn('[SHOPEE] erro ao puxar payout:', e.message);
+      return {};
+    }
+  },
+
+  // Saldo da carteira - SHOPEE
+  async shopeeWallet(shopId) {
+    try {
+      const r = await this.call('shopee_get_wallet_transactions', { shopId, page_size: 1 });
+      const data = r.data || {};
+      return {
+        saldo: parseFloat(data.wallet_balance) || 0,
+        totalReceito: parseFloat(data.total_received) || 0,
+        totalSacado: parseFloat(data.total_withdrawn) || 0,
+      };
+    } catch(e) {
+      console.warn('[SHOPEE] erro ao puxar carteira:', e.message);
+      return {};
+    }
+  },
+
+  // Métricas de ADS Shopee detalhadas
+  async shopeeAdsMetricsDetailed(shopId, dateFrom, dateTo) {
+    try {
+      const r = await this.call('shopee_ads_daily_performance', { shopId, start_date: dateFrom, end_date: dateTo });
+      const campaigns = r.data || [];
+      let totalInvest = 0, totalClicks = 0, totalImp = 0, totalSales = 0;
+      campaigns.forEach(c => {
+        totalInvest += parseFloat(c.cost) || 0;
+        totalClicks += parseInt(c.clicks) || 0;
+        totalImp += parseInt(c.impressions) || 0;
+        totalSales += parseFloat(c.gmv) || 0;
+      });
+      return {
+        investimento: totalInvest,
+        cliques: totalClicks,
+        impressoes: totalImp,
+        vendas: totalSales,
+        campanhas: campaigns.length,
+      };
+    } catch(e) {
+      console.warn('[SHOPEE ADS] erro ao puxar métricas:', e.message);
+      return {};
+    }
+  },
+
+  // Relatórios de Afiliados (comissões) - SHOPEE
+  async affiliateReports(dateFrom, dateTo) {
+    try {
+      const r = await this.call('affiliate_reports', { start_date: dateFrom, end_date: dateTo });
+      const data = r.data || {};
+      return {
+        totalComissao: parseFloat(data.total_commission) || 0,
+        totalVendas: parseFloat(data.total_sales) || 0,
+        totalPedidos: parseInt(data.total_orders) || 0,
+        totalAfiliados: parseInt(data.total_affiliates) || 0,
+        taxaMedia: parseFloat(data.average_rate) || 0,
+      };
+    } catch(e) {
+      console.warn('[AFILIADOS] erro ao puxar relatórios:', e.message);
+      return {};
+    }
   },
 
   // ── Importação completa de um cliente ─────────────────────
