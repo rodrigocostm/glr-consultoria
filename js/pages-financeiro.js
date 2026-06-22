@@ -244,7 +244,49 @@ Router.register('financeiro', async (params, el) => {
       <div class="fin-row"><span>Total líquido:</span><strong>${R$(totLiq)}</strong></div>` : '')
     );
 
-    // ── 3. Lucro Bruto ──
+    // ── 3. DETALHAMENTO COMPLETO DE TAXAS ──
+    const sDetalheTaxas = secao('detalhe-taxas', '📊 Detalhamento Completo de Taxas',
+      {num:-(totDeducoes + totArmaz), txt:R$s(-(totDeducoes + totArmaz))},
+      `<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;padding:10px;background:rgba(99,102,241,0.05);border-radius:8px;">
+        <strong>Aviso:</strong> Este detalhamento mostra todas as taxas e deduções aplicadas. Valores negativos representam custos.
+      </div>` +
+      nomes.map(n => {
+        const a = plats[n];
+        const totalTaxas = a.fat - a.liquido;
+        const numPedidos = Object.values(plats[n]).filter((v, i) => typeof v === 'number' && i === 0).length || 1;
+
+        return `
+          <div class="fin-grupo">
+            <div class="fin-row"><span style="font-weight:600;">${n}</span><span style="font-weight:600;">TOTAL: ${R$s(-(totalTaxas))}</span></div>
+
+            <div style="padding-left:16px;border-left:2px solid rgba(99,102,241,0.3);margin:8px 0;">
+              <div class="fin-row"><span>Faturamento Bruto:</span><strong>${R$(a.fat)}</strong></div>
+
+              <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(99,102,241,0.2);">
+                <div style="font-size:10px;color:var(--orange);font-weight:600;margin-bottom:6px;">TAXAS MARKETPLACE:</div>
+                ${a.comissao > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">💳 Comissão:</span><strong style="color:var(--red);">- ${R$(a.comissao)}</strong></div>` : ''}
+                ${a.taxaServico > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">⚙️ Taxa de Serviço:</span><strong style="color:var(--red);">- ${R$(a.taxaServico)}</strong></div>` : ''}
+                ${a.frete > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🚚 Frete Descontado:</span><strong style="color:var(--red);">- ${R$(a.frete)}</strong></div>` : ''}
+                ${a.voucher > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🎟️ Voucher Plataforma:</span><strong style="color:var(--green);">+ ${R$(a.voucher)}</strong></div>` : ''}
+              </div>
+
+              <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(99,102,241,0.2);">
+                <div style="font-size:10px;color:var(--blue);font-weight:600;margin-bottom:6px;">CUSTOS OPERACIONAIS:</div>
+                ${a.custoProd > 0 ? `<div class="fin-row"><span style="padding-left:12px;">📦 Custo dos Produtos:</span><strong style="color:var(--red);">- ${R$(a.custoProd)}</strong></div>` : ''}
+                ${a.custoExtra > 0 ? `<div class="fin-row"><span style="padding-left:12px;">📋 Custos Variáveis/Extras:</span><strong style="color:var(--red);">- ${R$(a.custoExtra)}</strong></div>` : ''}
+                ${a.imposto > 0 ? `<div class="fin-row"><span style="padding-left:12px;">📊 Impostos:</span><strong style="color:var(--red);">- ${R$(a.imposto)}</strong></div>` : ''}
+              </div>
+
+              <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(99,102,241,0.2);">
+                <div class="fin-row"><span style="font-weight:500;">Líquido após taxas:</span><strong style="color:var(--green);">${R$(a.liquido)}</strong></div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join(''), true
+    );
+
+    // ── 4. Lucro Bruto ──
     const sLucro = secao('lucro',`Lucro Bruto`,
       {num:totLucroBruto, txt:`${R$(totLucroBruto)} (${pctLucroBruto.toFixed(2).replace('.',',')}%)`},
       nomes.map(n=>{
@@ -331,7 +373,7 @@ Router.register('financeiro', async (params, el) => {
       </div>
     </div>`;
 
-    cont.innerHTML = sFat + sLiq + sLucro + sArmaz + sAds + sDepois + sReceita + sDespesas + sFinal;
+    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sLucro + sArmaz + sAds + sDepois + sReceita + sDespesas + sFinal;
 
     cont.querySelectorAll('.fin-inp').forEach(inp=>{
       inp.addEventListener('change', ()=>{
