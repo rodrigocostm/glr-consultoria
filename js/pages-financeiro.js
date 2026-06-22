@@ -23,6 +23,9 @@ Router.register('financeiro', async (params, el) => {
   let contas   = [];
   let aberto   = {};
   let adsAPI   = {};  // investimento em ADS vindo da API, por plataforma
+  let adsDetalhados = {};  // dados detalhados de ADS: cliques, impressões, ROI, etc
+  let afiliados = {};  // dados de afiliados: comissão, etc
+  let payout = {};  // dados de payout/carteira
 
   let manualAll = JSON.parse(localStorage.getItem(STORAGE_MANUAL)||'{}');
   function manual() {
@@ -31,12 +34,12 @@ Router.register('financeiro', async (params, el) => {
   }
   const salvarManual = () => localStorage.setItem(STORAGE_MANUAL, JSON.stringify(manualAll));
 
-  const CACHE_VER = 23; // bump quando a estrutura de taxas muda — invalida caches antigos
+  const CACHE_VER = 24; // bump quando a estrutura de taxas muda — invalida caches antigos
   function salvarCache() {
     try {
-      const cache = { ver: CACHE_VER, mesKey: mesSel, pedidos, adsAPI, at: Date.now() };
+      const cache = { ver: CACHE_VER, mesKey: mesSel, pedidos, adsAPI, adsDetalhados, afiliados, payout, at: Date.now() };
       localStorage.setItem(STORAGE_CACHE, JSON.stringify(cache));
-      console.log('[Cache] Salvou', pedidos.length, 'pedidos +', Object.keys(adsAPI).length, 'plataformas de ADS');
+      console.log('[Cache] Salvou', pedidos.length, 'pedidos +', Object.keys(adsAPI).length, 'plataformas de ADS + afiliados + payout');
     } catch(e){}
   }
   function carregarCache() {
@@ -45,7 +48,10 @@ Router.register('financeiro', async (params, el) => {
       if (c && c.ver === CACHE_VER && c.mesKey === mesSel) {
         pedidos = c.pedidos||[];
         adsAPI = c.adsAPI||{};
-        console.log('[Cache] Carregou', pedidos.length, 'pedidos + ADS:', Object.keys(adsAPI).map(k=>k+': '+c.adsAPI[k]?.toFixed?.(2)).join(' | '));
+        adsDetalhados = c.adsDetalhados||{};
+        afiliados = c.afiliados||{};
+        payout = c.payout||{};
+        console.log('[Cache] Carregou', pedidos.length, 'pedidos + dados complementares');
         return c.at;
       }
     } catch(e){}
@@ -331,6 +337,62 @@ Router.register('financeiro', async (params, el) => {
         Valores puxados automaticamente da API. Edite para sobrescrever.
       </div>${adsRows}`, true);
 
+    // ── 5b. ADS Detalhados (cliques, impressões, ROI, etc) ──
+    const sAdsDetalhados = secao('ads-det','📈 Métricas Detalhadas de ADS',
+      {num:0, txt:''},
+      Object.keys(adsDetalhados).length > 0
+        ? Object.entries(adsDetalhados).map(([plat, dados]) => `
+            <div class="fin-grupo">
+              <div class="fin-row" style="font-weight:600;"><span>${plat}</span></div>
+              ${dados.investimento ? `<div class="fin-row"><span style="padding-left:12px;">💰 Investimento:</span><strong>${R$(dados.investimento)}</strong></div>` : ''}
+              ${dados.cliques ? `<div class="fin-row"><span style="padding-left:12px;">🖱️ Cliques:</span><strong>${dados.cliques}</strong></div>` : ''}
+              ${dados.impressoes ? `<div class="fin-row"><span style="padding-left:12px;">👁️ Impressões:</span><strong>${dados.impressoes}</strong></div>` : ''}
+              ${dados.ctr ? `<div class="fin-row"><span style="padding-left:12px;">📊 CTR:</span><strong>${dados.ctr.toFixed(2)}%</strong></div>` : ''}
+              ${dados.cpc ? `<div class="fin-row"><span style="padding-left:12px;">💵 CPC:</span><strong>${R$(dados.cpc)}</strong></div>` : ''}
+              ${dados.vendas ? `<div class="fin-row"><span style="padding-left:12px;">🛒 Vendas ADS:</span><strong>${dados.vendas}</strong></div>` : ''}
+              ${dados.faturamentoAds ? `<div class="fin-row"><span style="padding-left:12px;">💸 Faturamento ADS:</span><strong>${R$(dados.faturamentoAds)}</strong></div>` : ''}
+              ${dados.roas ? `<div class="fin-row"><span style="padding-left:12px;">📈 ROAS:</span><strong style="color:var(--green);">${dados.roas.toFixed(2)}</strong></div>` : ''}
+            </div>
+          `).join('')
+        : '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:10px;">Nenhum dado de ADS detalhado disponível</div>',
+      true
+    );
+
+    // ── 5c. Afiliados (comissão) ──
+    const sAfiliados = secao('afil','👥 Comissão de Afiliados',
+      {num:afiliados.totalComissao||0, txt:R$(afiliados.totalComissao||0)},
+      afiliados.totalComissao > 0
+        ? `
+          <div class="fin-grupo">
+            <div class="fin-row"><span>💰 Total Comissão:</span><strong style="color:var(--green);">${R$(afiliados.totalComissao)}</strong></div>
+            <div class="fin-row"><span>🛍️ Total Vendas:</span><strong>${R$(afiliados.totalVendas||0)}</strong></div>
+            <div class="fin-row"><span>📦 Total Pedidos:</span><strong>${afiliados.totalPedidos||0}</strong></div>
+            <div class="fin-row"><span>👤 Total Afiliados:</span><strong>${afiliados.totalAfiliados||0}</strong></div>
+            <div class="fin-row"><span>📊 Taxa Média:</span><strong>${(afiliados.taxaMedia||0).toFixed(2)}%</strong></div>
+          </div>
+        `
+        : '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:10px;">Nenhuma comissão de afiliado registrada</div>',
+      true
+    );
+
+    // ── 5d. Payout/Carteira ──
+    const sPayout = secao('payout','💳 Payout & Carteira',
+      {num:0, txt:''},
+      Object.keys(payout).length > 0
+        ? Object.entries(payout).map(([chave, dados]) => `
+            <div class="fin-grupo">
+              <div class="fin-row" style="font-weight:600;"><span>${chave}</span></div>
+              ${dados.saldo != null ? `<div class="fin-row"><span style="padding-left:12px;">💵 Saldo:</span><strong style="color:var(--green);">${R$(dados.saldo)}</strong></div>` : ''}
+              ${dados.totalReceito ? `<div class="fin-row"><span style="padding-left:12px;">✅ Total Recebido:</span><strong>${R$(dados.totalReceito)}</strong></div>` : ''}
+              ${dados.totalSacado ? `<div class="fin-row"><span style="padding-left:12px;">🏦 Total Sacado:</span><strong>${R$(dados.totalSacado)}</strong></div>` : ''}
+              ${dados.bank_name ? `<div class="fin-row"><span style="padding-left:12px;">🏪 Banco:</span><strong>${dados.bank_name}</strong></div>` : ''}
+              ${dados.bank_account_number ? `<div class="fin-row"><span style="padding-left:12px;">🔐 Conta:</span><strong>***${String(dados.bank_account_number).slice(-4)}</strong></div>` : ''}
+            </div>
+          `).join('')
+        : '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:10px;">Nenhuma informação de payout disponível</div>',
+      true
+    );
+
     // ── 6. Lucro depois de ADS ──
     const sDepois = `
     <div class="fin-card fin-resumo" style="background:linear-gradient(135deg, ${lucroDepoisAds>=0?'rgba(16,185,129,0.08)':'rgba(239,68,68,0.08)'} 0%, transparent 100%);border-color:${lucroDepoisAds>=0?'rgba(16,185,129,0.3)':'rgba(239,68,68,0.3)'};border-width:2px;">
@@ -373,7 +435,7 @@ Router.register('financeiro', async (params, el) => {
       </div>
     </div>`;
 
-    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sLucro + sArmaz + sAds + sDepois + sReceita + sDespesas + sFinal;
+    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sLucro + sArmaz + sAds + sAdsDetalhados + sAfiliados + sPayout + sDepois + sReceita + sDespesas + sFinal;
 
     cont.querySelectorAll('.fin-inp').forEach(inp=>{
       inp.addEventListener('change', ()=>{
@@ -673,8 +735,9 @@ Router.register('financeiro', async (params, el) => {
         if (pedidos.length) renderConteudo();
       } // fim loop contas
 
-      // ── ADS: investimento via API (best-effort, não bloqueia o resto) ──
+      // ── ADS: investimento + métricas detalhadas ──
       adsAPI = {};
+      adsDetalhados = {};
       if (statusEl) statusEl.textContent = '📢 Buscando investimento em ADS...';
       for (const conta of contas) {
         try {
@@ -692,6 +755,16 @@ Router.register('financeiro', async (params, el) => {
                 off += 50;
               }
               adsAPI['Mercado Livre'] = custo;
+
+              // Puxar métricas detalhadas de ML ADS
+              try {
+                const det = await MarketplaceAPI.mlAdsMetricsDetailed(meliId, primeiroDia, dataTo);
+                adsDetalhados['Mercado Livre'] = det;
+                console.log(`[ADS] ML Detalhado:`, det);
+              } catch(e) {
+                console.warn('[ADS] Erro ao puxar métricas detalhadas ML:', e.message);
+              }
+
               console.log(`[ADS] ML: R$ ${custo.toFixed(2)} (${campanhas} campanhas)`);
             } catch(eML) {
               console.error('[ADS] ML falhou:', eML.message);
@@ -706,6 +779,16 @@ Router.register('financeiro', async (params, el) => {
               const dias = ra.data?.response || [];
               const custo = (Array.isArray(dias)?dias:[]).reduce((s,d)=>s+(parseFloat(d.expense)||0), 0);
               adsAPI['Shopee'] = custo;
+
+              // Puxar métricas detalhadas de Shopee ADS
+              try {
+                const det = await MarketplaceAPI.shopeeAdsMetricsDetailed(shopId, br(primeiroDia), br(dataTo));
+                adsDetalhados['Shopee'] = det;
+                console.log(`[ADS] Shopee Detalhado:`, det);
+              } catch(e) {
+                console.warn('[ADS] Erro ao puxar métricas detalhadas Shopee:', e.message);
+              }
+
               console.log(`[ADS] Shopee: R$ ${custo.toFixed(2)} (${dias.length} dias)`);
             } catch(eSh) {
               console.error('[ADS] Shopee falhou:', eSh.message);
@@ -717,6 +800,40 @@ Router.register('financeiro', async (params, el) => {
       }
       if (Object.keys(adsAPI).length === 0) {
         console.warn('[ADS] Nenhuma plataforma retornou ADS');
+      }
+
+      // ── Afiliados: comissão via API (best-effort) ──
+      afiliados = {};
+      if (statusEl) statusEl.textContent = '👥 Buscando dados de afiliados...';
+      try {
+        const af = await MarketplaceAPI.affiliateReports(primeiroDia, dataTo);
+        if (af.totalComissao > 0) {
+          afiliados = af;
+          console.log(`[Afiliados] Comissão: R$ ${af.totalComissao.toFixed(2)} | Pedidos: ${af.totalPedidos}`);
+        }
+      } catch(eAf) {
+        console.warn('[Afiliados] Erro ao puxar dados:', eAf.message);
+      }
+
+      // ── Payout/Carteira: informações de pagamento ──
+      payout = {};
+      if (statusEl) statusEl.textContent = '💳 Buscando informações de payout...';
+      for (const conta of contas) {
+        try {
+          if (conta.marketplace === 'shopee') {
+            const shopId = conta.param_to_use?.shopId||conta.external_id;
+            try {
+              const py = await MarketplaceAPI.shopeePayout(shopId);
+              if (py.bank_account_number) payout['Shopee'] = py;
+            } catch(e) {}
+            try {
+              const wl = await MarketplaceAPI.shopeeWallet(shopId);
+              if (wl.saldo != null) payout['Shopee Carteira'] = wl;
+            } catch(e) {}
+          }
+        } catch(ePay) {
+          console.warn('[Payout] Erro em', conta.nickname, ePay.message);
+        }
       }
 
       salvarCache();
