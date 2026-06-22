@@ -448,14 +448,30 @@ Router.register('financeiro', async (params, el) => {
 
   // ── Buscar da API ─────────────────────────────────────────
   let buscando = false; // trava: impede duas buscas simultâneas (zera/mistura dados)
+  let forceReprocess = false; // força reprocessamento mesmo se tiver cache
+
   async function buscar() {
     const statusEl = document.getElementById('fin-status');
     const btnEl    = document.getElementById('fin-btn-atualizar');
+    const reprocessBtn = document.getElementById('fin-btn-reprocessar');
     const apiKey   = localStorage.getItem('glr_mc_apikey')||'';
     if (!apiKey) { if(statusEl) statusEl.textContent='⚠️ Configure a API Key nas Integrações.'; return; }
     if (buscando) { if(statusEl) statusEl.textContent='⏳ Aguarde a busca atual terminar...'; return; }
+
+    // Verificar cache se não for reprocessamento
+    if (!forceReprocess && carregarCache()) {
+      if (statusEl) {
+        const cacheTime = new Date(carregarCache()).toLocaleTimeString('pt-BR');
+        statusEl.textContent = `✓ Dados do cache (${cacheTime}) · Clique em "♻️ Reprocessar" para atualizar`;
+      }
+      renderConteudo();
+      return;
+    }
+
+    forceReprocess = false; // reseta flag
     buscando = true;
     if (btnEl) { btnEl.disabled=true; btnEl.textContent='⏳ Buscando...'; }
+    if (reprocessBtn) { reprocessBtn.disabled=true; reprocessBtn.textContent='⏳ Reprocessando...'; }
 
     try {
       const [ano, mes] = mesSel.split('-').map(Number);
@@ -853,6 +869,8 @@ Router.register('financeiro', async (params, el) => {
     } finally {
       buscando = false;
       if (btnEl){ btnEl.disabled=false; btnEl.textContent='🔄 Atualizar'; }
+      const reprocessBtn = document.getElementById('fin-btn-reprocessar');
+      if (reprocessBtn){ reprocessBtn.disabled=false; reprocessBtn.textContent='♻️ Reprocessar'; }
     }
   }
 
@@ -901,6 +919,7 @@ Router.register('financeiro', async (params, el) => {
         </select>
         <input type="month" id="fin-sel-mes" class="form-input" value="${mesSel}" style="border-radius:99px;padding:6px 14px;width:150px;">
         <button id="fin-btn-atualizar" class="btn-primary" style="padding:7px 16px;border-radius:99px;">🔄 Atualizar</button>
+        <button id="fin-btn-reprocessar" class="btn-primary" style="padding:7px 16px;border-radius:99px;background:rgba(249,115,22,0.15);border:1px solid rgba(249,115,22,0.3);color:var(--orange);" title="Força reprocessamento mesmo com dados em cache">♻️ Reprocessar</button>
       </div>
     </div>
     <div id="fin-conteudo"></div>
@@ -1051,7 +1070,7 @@ Router.register('financeiro', async (params, el) => {
       transform: translateX(20px);
     }
     @media print {
-      #sidebar,#header,.btn,.btn-primary,#fin-sel-conta,#fin-sel-mes,#fin-btn-atualizar,#fin-status,.fin-switch{display:none!important;}
+      #sidebar,#header,.btn,.btn-primary,#fin-sel-conta,#fin-sel-mes,#fin-btn-atualizar,#fin-btn-reprocessar,#fin-status,.fin-switch{display:none!important;}
       .fin-card{break-inside:avoid;border-color:#ccc!important;background:white!important;box-shadow:none!important;}
       .fin-titulo,.fin-row,.fin-sub,.fin-final{color:#111!important;}
     }
@@ -1072,6 +1091,10 @@ Router.register('financeiro', async (params, el) => {
     }
   });
   document.getElementById('fin-btn-atualizar').addEventListener('click', buscar);
+  document.getElementById('fin-btn-reprocessar').addEventListener('click', () => {
+    forceReprocess = true;
+    buscar();
+  });
 
   // Início: cache ou busca
   const at = carregarCache();
