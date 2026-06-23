@@ -476,26 +476,30 @@ function renderGraficoDiario(diario) {
     return `<div style="text-align:center;padding:40px;color:var(--text-secondary);font-size:13px;">Sem dados diários disponíveis</div>`;
   }
 
+  const MAX_H = 120; // px máximo das barras
   const maxGasto = Math.max(...diario.map(d => d.gasto), 0.01);
-  const bars = diario.slice(-30).map(d => {
-    const pct = Math.max((d.gasto / maxGasto) * 100, 1);
-    const dataFmt = d.data ? d.data.slice(5) : '';
+  const slice = diario.slice(-30);
+  const bars = slice.map(d => {
+    const h = Math.max(Math.round((d.gasto / maxGasto) * MAX_H), 2);
+    // data vem como DD-MM-YYYY → mostra só DD/MM
+    const partes = (d.data || '').split('-');
+    const dataFmt = partes.length >= 2 ? `${partes[0]}/${partes[1]}` : d.data;
     return `
-      <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;min-width:0;" title="${dataFmt}: ${fmt(d.gasto)}">
-        <div style="width:100%;background:var(--primary);border-radius:3px 3px 0 0;height:${pct}%;min-height:2px;opacity:0.85;"></div>
-        ${diario.length <= 15 ? `<div style="font-size:9px;color:var(--text-secondary);writing-mode:vertical-lr;transform:rotate(180deg);">${dataFmt}</div>` : ''}
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;flex:1;min-width:0;height:${MAX_H}px;" title="${dataFmt}: ${fmt(d.gasto)}">
+        <div style="width:100%;background:var(--primary);border-radius:3px 3px 0 0;height:${h}px;opacity:0.85;"></div>
+        ${slice.length <= 15 ? `<div style="font-size:9px;color:var(--text-secondary);writing-mode:vertical-lr;transform:rotate(180deg);margin-top:2px;">${dataFmt}</div>` : ''}
       </div>
     `;
   }).join('');
 
   return `
-    <div style="display:flex;align-items:flex-end;gap:2px;height:140px;padding-bottom:4px;">
+    <div style="display:flex;align-items:flex-end;gap:2px;padding-bottom:4px;overflow:hidden;">
       ${bars}
     </div>
     <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--text-secondary);">
-      <span>${diario[0]?.data?.slice(5) || ''}</span>
+      <span>${slice[0]?.data?.split('-').slice(0,2).join('/') || ''}</span>
       <span>Total: ${fmt(diario.reduce((s, d) => s + d.gasto, 0))}</span>
-      <span>${diario[diario.length - 1]?.data?.slice(5) || ''}</span>
+      <span>${slice[slice.length-1]?.data?.split('-').slice(0,2).join('/') || ''}</span>
     </div>
   `;
 }
