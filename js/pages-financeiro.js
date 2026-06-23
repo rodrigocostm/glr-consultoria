@@ -822,6 +822,8 @@ Router.register('financeiro', async (params, el) => {
         if (pedidos.length) renderConteudo();
       } // fim loop contas
 
+      console.log('[FLUXO] Pedidos carregados. Iniciando ADS e Afiliados...');
+
       // ── ADS: investimento + métricas detalhadas ──
       adsAPI = {};
       adsDetalhados = {};
@@ -930,8 +932,11 @@ Router.register('financeiro', async (params, el) => {
         }
       }
 
+      console.log('[FLUXO] ADS e Afiliados carregados. Salvando cache...');
+      console.log('[FLUXO] adsAPI:', adsAPI, '| afiliados:', afiliados);
       salvarCache();
 
+      console.log('[FLUXO] Renderizando conteúdo...');
       if (statusEl) {
         const erroHtml = errosConta.length
           ? ` <span style="font-size:10px;background:rgba(239,68,68,0.15);color:var(--red);padding:2px 8px;border-radius:8px;">⚠️ ${errosConta.join(' · ')}</span>`
@@ -939,6 +944,7 @@ Router.register('financeiro', async (params, el) => {
         statusEl.innerHTML = `${pedidos.length} pedidos · ${log.join(' | ')} · ${primeiroDia} a ${dataTo}${erroHtml}`;
       }
       renderConteudo();
+      console.log('[FLUXO] ✓ Concluído!');
 
     } catch(e) {
       console.error('[Financeiro] Erro geral:', e);
