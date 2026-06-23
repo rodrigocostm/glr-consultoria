@@ -139,10 +139,6 @@ async function buscarDados(forcar = false) {
           resultado.resumo.impressoes   = resultado.diario.reduce((s, d) => s + d.impressoes, 0);
           resultado.resumo.pedidos      = resultado.diario.reduce((s, d) => s + d.pedidos, 0);
           resultado.resumo.receita      = resultado.diario.reduce((s, d) => s + d.receita, 0);
-          // Diagnóstico: se receita vier zerada, mostra campos disponíveis do primeiro dia
-          if (resultado.resumo.receita === 0 && dias.length > 0) {
-            resultado._erros.push(`Receita zerada — campos disponíveis no daily: ${Object.keys(dias[0]).join(', ')}`);
-          }
         } else {
           resultado._erros.push(`Daily Performance: API retornou estrutura inesperada — ${JSON.stringify(r).slice(0, 200)}`);
         }
@@ -158,39 +154,45 @@ async function buscarDados(forcar = false) {
       const campsRaw = campAtivasResp.status === 'fulfilled' ? campAtivasResp.value : (campResp.status === 'fulfilled' ? campResp.value : null);
       const campList = campsRaw?.data?.response?.campaign_list || campsRaw?.data?.campaign_list || campsRaw?.campaign_list || (Array.isArray(campsRaw?.data) ? campsRaw.data : []);
 
-      // Diagnóstico da primeira campanha para entender a estrutura
-      if (campList.length > 0) {
-        resultado._erros.push(`DEBUG campanhas — primeira campanha: ${JSON.stringify(campList[0]).slice(0, 300)}`);
-      }
-
       if (Array.isArray(campList) && campList.length > 0) {
-        // Busca performance diária de cada campanha (em lotes de 5 para não sobrecarregar)
+        // Busca nome+orçamento via settings E performance diária — em paralelo por campanha
         const LOTE = 5;
-        const campDetalhes = [];
+        const settingsRes = [];
+        const perfRes = [];
         for (let i = 0; i < campList.length; i += LOTE) {
           const lote = campList.slice(i, i + LOTE);
-          const res = await Promise.allSettled(
-            lote.map(c => MarketplaceAPI.call('shopee_ads_campaign_daily', {
-              shopId, campaign_id: c.campaign_id || c.id, start_date: sdFrom, end_date: sdTo
-            }))
-          );
-          campDetalhes.push(...res);
+          const [sRes, pRes] = await Promise.all([
+            Promise.allSettled(lote.map(c => MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, campaign_id: c.campaign_id || c.id }))),
+            Promise.allSettled(lote.map(c => MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, campaign_id: c.campaign_id || c.id, start_date: sdFrom, end_date: sdTo }))),
+          ]);
+          settingsRes.push(...sRes);
+          perfRes.push(...pRes);
         }
 
         resultado.campanhas = campList.map((c, i) => {
-          const perfRaw = campDetalhes[i]?.value;
+          // Settings — nome e orçamento
+          const cfgRaw = settingsRes[i]?.value;
+          const cfg = cfgRaw?.data?.response || cfgRaw?.data || {};
+
+          // Performance diária acumulada
+          const perfRaw = perfRes[i]?.value;
           const perfDias = perfRaw?.data?.response?.daily_performance_list
             || perfRaw?.data?.response
             || perfRaw?.data?.daily_performance_list
             || perfRaw?.data
             || [];
           const dias = Array.isArray(perfDias) ? perfDias : [];
+
+          const nome = cfg.campaign_name || cfg.name || c.campaign_name || c.name || `#${c.campaign_id || c.id}`;
+          const tipo = c.ad_type || cfg.ad_type || cfg.campaign_type || '';
+          const tipoLabel = tipo === 'manual' ? 'Manual' : tipo === 'auto' ? 'Automático' : tipo || '—';
+
           return {
             id:         c.campaign_id || c.id,
-            nome:       c.campaign_name || c.name || `Campanha ${c.campaign_id || c.id}`,
-            tipo:       c.ad_type || c.campaign_type || '',
-            ativa:      c.state === 'ongoing' || c.state == null, // se veio do filtro ongoing, está ativa
-            orcamento:  parseFloat(c.daily_budget) || parseFloat(c.budget) || 0,
+            nome,
+            tipo:       tipoLabel,
+            ativa:      true, // veio do filtro state_filter=ongoing
+            orcamento:  parseFloat(cfg.daily_budget) || parseFloat(cfg.budget) || parseFloat(c.daily_budget) || 0,
             gasto:      dias.reduce((s, d) => s + (parseFloat(d.expense) || parseFloat(d.cost) || 0), 0),
             cliques:    dias.reduce((s, d) => s + (parseInt(d.clicks) || parseInt(d.click) || 0), 0),
             impressoes: dias.reduce((s, d) => s + (parseInt(d.impressions) || parseInt(d.impression) || 0), 0),
