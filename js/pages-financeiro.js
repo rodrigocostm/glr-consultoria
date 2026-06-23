@@ -527,6 +527,9 @@ Router.register('financeiro', async (params, el) => {
       buscando = false; // Permite que o usuário interaja
     }
 
+    // IMPORTANTE: Guardar contaReprocess ANTES de resetar flags
+    const contaReprocessLocal = contaReprocess;
+
     forceReprocess = false; // reseta flag
     contaReprocess = null; // reseta conta a reprocessar
     buscando = true;
@@ -551,17 +554,17 @@ Router.register('financeiro', async (params, el) => {
       renderFiltroContas();
 
       // Se está reprocessando uma conta específica, buscar APENAS dela
-      const contasParaBuscar = contaReprocess ? contas.filter(c => c.external_id === contaReprocess) : contas;
-      if (contaReprocess) {
-        console.log(`[Buscar] Reprocessando apenas conta: ${contaReprocess} (${contasParaBuscar.length} contas)`);
+      const contasParaBuscar = contaReprocessLocal ? contas.filter(c => c.external_id === contaReprocessLocal) : contas;
+      if (contaReprocessLocal) {
+        console.log(`[Buscar] Reprocessando apenas conta: ${contaReprocessLocal} (${contasParaBuscar.length} contas)`);
       }
 
       // Se não está reprocessando, limpar pedidos. Se é reprocessamento parcial, manter os outros
-      if (!contaReprocess) {
+      if (!contaReprocessLocal) {
         pedidos = [];
       } else {
         // Remove pedidos dessa conta para reprocessar
-        pedidos = pedidos.filter(p => p.contaId !== contaReprocess);
+        pedidos = pedidos.filter(p => p.contaId !== contaReprocessLocal);
       }
 
       const errosConta = [];
