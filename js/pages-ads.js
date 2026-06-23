@@ -98,6 +98,7 @@ async function buscarDados(forcar = false) {
 
     if (mp === 'shopee') {
       const shopId = contaAtual.param_to_use?.shopId || contaAtual.external_id;
+      resultado._erros = [];
 
       // Busca paralela: diário + campanhas + saldo
       const [perfResp, campResp, balResp] = await Promise.allSettled([
@@ -109,27 +110,39 @@ async function buscarDados(forcar = false) {
       // Diário
       if (perfResp.status === 'fulfilled') {
         const r = perfResp.value;
-        const dias = r?.data?.response || r?.data?.data || r?.data || [];
-        if (Array.isArray(dias)) {
+        resultado._rawPerf = r; // guarda raw para diagnóstico
+        // Tenta todas as estruturas possíveis de resposta
+        const dias = r?.data?.response?.daily_performance_list
+          || r?.data?.response
+          || r?.data?.data
+          || r?.data
+          || r?.response
+          || [];
+        if (Array.isArray(dias) && dias.length > 0) {
           resultado.diario = dias.map(d => ({
-            data:       d.date || d.day || '',
-            gasto:      parseFloat(d.expense) || parseFloat(d.cost) || 0,
-            cliques:    parseInt(d.clicks) || 0,
-            impressoes: parseInt(d.impressions) || 0,
-            pedidos:    parseInt(d.orders) || parseInt(d.conversions) || 0,
-            receita:    parseFloat(d.gmv) || parseFloat(d.revenue) || 0,
+            data:       d.date || d.day || d.report_time || '',
+            gasto:      parseFloat(d.expense) || parseFloat(d.cost) || parseFloat(d.total_cost) || 0,
+            cliques:    parseInt(d.clicks) || parseInt(d.click) || 0,
+            impressoes: parseInt(d.impressions) || parseInt(d.impression) || 0,
+            pedidos:    parseInt(d.orders) || parseInt(d.conversions) || parseInt(d.order_count) || 0,
+            receita:    parseFloat(d.gmv) || parseFloat(d.revenue) || parseFloat(d.gmv_from_ads) || 0,
           }));
           resultado.resumo.investimento = resultado.diario.reduce((s, d) => s + d.gasto, 0);
           resultado.resumo.cliques      = resultado.diario.reduce((s, d) => s + d.cliques, 0);
           resultado.resumo.impressoes   = resultado.diario.reduce((s, d) => s + d.impressoes, 0);
           resultado.resumo.pedidos      = resultado.diario.reduce((s, d) => s + d.pedidos, 0);
           resultado.resumo.receita      = resultado.diario.reduce((s, d) => s + d.receita, 0);
+        } else {
+          resultado._erros.push(`Daily Performance: API retornou estrutura inesperada — ${JSON.stringify(r).slice(0, 200)}`);
         }
+      } else {
+        resultado._erros.push(`Daily Performance falhou: ${perfResp.reason?.message || perfResp.reason}`);
       }
 
       // Campanhas
       if (campResp.status === 'fulfilled') {
         const camps = campResp.value;
+        resultado._rawCamps = camps;
         if (Array.isArray(camps)) {
           resultado.campanhas = camps.map(c => ({
             id:         c.campaign_id || c.id,
@@ -137,19 +150,23 @@ async function buscarDados(forcar = false) {
             tipo:       c.campaign_type || c.type || '',
             ativa:      c.state === 'ongoing' || c.status === 'active' || c.is_active,
             orcamento:  parseFloat(c.daily_budget) || parseFloat(c.budget) || 0,
-            gasto:      parseFloat(c.expense) || parseFloat(d?.cost) || 0,
+            gasto:      parseFloat(c.expense) || parseFloat(c.cost) || 0,
             cliques:    parseInt(c.clicks) || 0,
             impressoes: parseInt(c.impressions) || 0,
             pedidos:    parseInt(c.orders) || parseInt(c.conversions) || 0,
             receita:    parseFloat(c.gmv) || parseFloat(c.revenue) || 0,
           }));
+        } else {
+          resultado._erros.push(`Campanhas: formato inesperado — ${JSON.stringify(camps).slice(0, 200)}`);
         }
       }
 
       // Saldo
       if (balResp.status === 'fulfilled') {
         const b = balResp.value;
-        resultado.saldo = parseFloat(b?.data?.balance) || parseFloat(b?.data?.current_balance) || 0;
+        resultado.saldo = parseFloat(b?.data?.balance) || parseFloat(b?.data?.current_balance) || parseFloat(b?.data?.response?.balance) || 0;
+      } else {
+        resultado._erros.push(`Saldo ADS falhou: ${balResp.reason?.message || balResp.reason}`);
       }
 
     } else if (['mercadolivre', 'ml', 'meli'].includes(mp)) {
@@ -324,7 +341,16 @@ function renderConteudo() {
   const acos    = rec > 0 ? (inv / rec) * 100 : 0;
   const cpa     = ped > 0 ? inv / ped : 0;
 
-  body.innerHTML = `
+  // Mostra erros de API diretamente na tela
+  const erros = d._erros || [];
+  const blocoErros = erros.length > 0 ? `
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:16px;margin-bottom:20px;">
+      <div style="font-weight:700;font-size:13px;color:#92400e;margin-bottom:8px;">⚠️ Erros ao buscar dados da API (${erros.length})</div>
+      ${erros.map(e => `<div style="font-size:12px;color:#78350f;padding:4px 0;border-bottom:1px solid #fde68a;word-break:break-all;">${e}</div>`).join('')}
+    </div>
+  ` : '';
+
+  body.innerHTML = blocoErros + `
     <!-- KPIs principais -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px;">
       ${kpiCard('💰 Investimento', fmt(inv), '', '#f0f9ff', '#0ea5e9')}
