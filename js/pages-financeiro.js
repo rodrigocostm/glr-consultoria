@@ -98,6 +98,7 @@ Router.register('financeiro', async (params, el) => {
 
   function calcularTudo() {
     const lista = pedidosFiltrados();
+    console.log('[Calc] Total pedidos:', pedidos.length, 'Filtrados:', lista.length, 'Conta:', contaSel);
     const plats = {};
     for (const p of lista) {
       const nome = p.plataforma;
@@ -147,6 +148,17 @@ Router.register('financeiro', async (params, el) => {
       const conhecidas = a.frete + a.comissao + a.taxaServico - a.voucher;
       a.outras = Math.max(0, (a.fat - a.liquido) - conhecidas);
     }
+
+    // DEBUG: mostra totais
+    console.log('[Calc] Resultados:', Object.fromEntries(
+      Object.entries(plats).map(([n, a]) => [n, {
+        fat: a.fat,
+        nReemb: a.nReemb,
+        valorReemb: a.valorReemb,
+        comissao: a.comissao,
+        adsAPI: adsAPI[n] || 0
+      }])
+    ));
     return plats;
   }
 
@@ -805,6 +817,7 @@ Router.register('financeiro', async (params, el) => {
       // ── ADS: investimento + métricas detalhadas ──
       adsAPI = {};
       adsDetalhados = {};
+      console.log('[ADS] Iniciando busca para', contas.length, 'contas');
       if (statusEl) statusEl.textContent = '📢 Buscando investimento em ADS...';
       for (const conta of contas) {
         try {
@@ -873,13 +886,17 @@ Router.register('financeiro', async (params, el) => {
       afiliados = {};
       if (statusEl) statusEl.textContent = '👥 Buscando dados de afiliados...';
       try {
+        console.log('[Afiliados] Chamando API:', primeiroDia, 'a', dataTo);
         const af = await MarketplaceAPI.affiliateReports(primeiroDia, dataTo);
+        console.log('[Afiliados] Resposta da API:', af);
         if (af.totalComissao > 0) {
           afiliados = af;
-          console.log(`[Afiliados] Comissão: R$ ${af.totalComissao.toFixed(2)} | Pedidos: ${af.totalPedidos}`);
+          console.log(`[Afiliados] ✓ Comissão: R$ ${af.totalComissao.toFixed(2)} | Pedidos: ${af.totalPedidos}`);
+        } else {
+          console.log('[Afiliados] Nenhuma comissão encontrada');
         }
       } catch(eAf) {
-        console.warn('[Afiliados] Erro ao puxar dados:', eAf.message);
+        console.warn('[Afiliados] ✗ Erro ao puxar dados:', eAf.message);
       }
 
       // ── Payout/Carteira: informações de pagamento ──
