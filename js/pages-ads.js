@@ -100,9 +100,14 @@ async function buscarDados(forcar = false) {
       const shopId = contaAtual.param_to_use?.shopId || contaAtual.external_id;
       resultado._erros = [];
 
+      // Shopee ADS exige formato DD-MM-YYYY
+      const toShopeeDate = iso => iso.split('-').reverse().join('-');
+      const sdFrom = toShopeeDate(primeiroDia);
+      const sdTo   = toShopeeDate(ultimoDia);
+
       // Busca paralela: diário + campanhas + saldo
       const [perfResp, campResp, balResp] = await Promise.allSettled([
-        MarketplaceAPI.shopeeAdsDailyPerformance({ shopId, start_date: primeiroDia, end_date: ultimoDia }),
+        MarketplaceAPI.shopeeAdsDailyPerformance({ shopId, start_date: sdFrom, end_date: sdTo }),
         MarketplaceAPI.shopeeAdsCampaigns({ shopId }),
         MarketplaceAPI.shopeeAdsBalance({ shopId }),
       ]);
@@ -143,11 +148,12 @@ async function buscarDados(forcar = false) {
       if (campResp.status === 'fulfilled') {
         const camps = campResp.value;
         resultado._rawCamps = camps;
-        if (Array.isArray(camps)) {
-          resultado.campanhas = camps.map(c => ({
+        const campList = camps?.campaign_list || camps?.data?.campaign_list || camps?.data?.response?.campaign_list || (Array.isArray(camps) ? camps : null);
+        if (Array.isArray(campList) && campList.length > 0) {
+          resultado.campanhas = campList.map(c => ({
             id:         c.campaign_id || c.id,
             nome:       c.campaign_name || c.name || `Campanha ${c.campaign_id || c.id}`,
-            tipo:       c.campaign_type || c.type || '',
+            tipo:       c.ad_type || c.campaign_type || c.type || '',
             ativa:      c.state === 'ongoing' || c.status === 'active' || c.is_active,
             orcamento:  parseFloat(c.daily_budget) || parseFloat(c.budget) || 0,
             gasto:      parseFloat(c.expense) || parseFloat(c.cost) || 0,
@@ -156,7 +162,7 @@ async function buscarDados(forcar = false) {
             pedidos:    parseInt(c.orders) || parseInt(c.conversions) || 0,
             receita:    parseFloat(c.gmv) || parseFloat(c.revenue) || 0,
           }));
-        } else {
+        } else if (!campList) {
           resultado._erros.push(`Campanhas: formato inesperado — ${JSON.stringify(camps).slice(0, 200)}`);
         }
       }
