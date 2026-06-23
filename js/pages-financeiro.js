@@ -38,8 +38,9 @@ Router.register('financeiro', async (params, el) => {
         receitas:[],
         despesas:[]
       };
-      // Inicializa taxas adicionais para cada plataforma conhecida
-      for (const n of nomes) {
+      // Inicializa taxas adicionais para cada plataforma conhecida (nomes pode não existir ainda)
+      const _nomes = (typeof nomes !== 'undefined') ? nomes : [];
+      for (const n of _nomes) {
         manualAll[mesSel][n] = manualAll[mesSel][n] || { taxaMoedas: 0, taxaCartao: 0 };
       }
     }
