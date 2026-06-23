@@ -372,13 +372,15 @@ Router.register('financeiro', async (params, el) => {
       const api = parseFloat(adsAPI[n])||0;
       const man = parseFloat(m.ads[n])||0;
       const efetivo = adsEfetivo(n);
+      const statusAds = api > 0 ? '✅ API' : (man > 0 ? '📝 Manual' : '⚠️ Sem dados');
+      const corStatus = api > 0 ? 'var(--green)' : (man > 0 ? 'var(--blue)' : 'var(--orange)');
       return `
         <div class="fin-grupo">
           <div class="fin-row">
             <span>${n}</span>
             <strong style="color:${efetivo>0?'var(--red)':'var(--text-secondary)'};">− ${R$(efetivo)}</strong>
           </div>
-          ${api>0?`<div class="fin-sub"><em style="color:var(--text-muted);">API: ${R$(api)}</em></div>`:''}
+          <div class="fin-sub"><em style="color:${corStatus};font-weight:500;">${statusAds}${api>0?` R$ ${R$(api)}`:(man>0?` R$ ${R$(man)}`:'')}</em></div>
           <div style="padding:6px 0;"><input class="fin-inp" data-tipo="ads" data-plat="${n}" type="number" min="0" step="0.01"
             value="${man>0?man:''}" placeholder="${api>0?'API: '+R$(api):'Manual'}" style="width:100%;"></div>
         </div>`;
