@@ -331,37 +331,6 @@ Router.register('financeiro', async (params, el) => {
       }).join(''), true
     );
 
-    // ── 3c. Taxas Adicionais (Moedas, Cartão) ──
-    const sTaxasAdicionais = secao('taxas-adic', '💳 Taxas Adicionais',
-      {num:0, txt:''},
-      `<div style="padding:12px;background:rgba(99,102,241,0.05);border-radius:8px;margin-bottom:12px;">
-        <strong>Configura taxas adicionais:</strong> moedas, cartão de crédito, etc.
-      </div>` +
-      nomes.map(n => {
-        const taxasN = m[n] || {};
-        return `
-          <div class="fin-grupo">
-            <div class="fin-row" style="font-weight:600;"><span>${n}</span></div>
-            <div style="padding-left:16px;">
-              <div class="fin-row">
-                <span>💱 Taxa de Moedas (%):</span>
-                <input type="number" min="0" step="0.01" placeholder="0.00"
-                  value="${parseFloat(taxasN.taxaMoedas)||''}"
-                  onchange="manualAll['${mesSel}']['${n}']=manualAll['${mesSel}']['${n}']||{};manualAll['${mesSel}']['${n}'].taxaMoedas=parseFloat(this.value)||0;salvarManual();renderConteudo();"
-                  style="width:80px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);">
-              </div>
-              <div class="fin-row">
-                <span>🏦 Taxa de Cartão (%):</span>
-                <input type="number" min="0" step="0.01" placeholder="0.00"
-                  value="${parseFloat(taxasN.taxaCartao)||''}"
-                  onchange="manualAll['${mesSel}']['${n}']=manualAll['${mesSel}']['${n}']||{};manualAll['${mesSel}']['${n}'].taxaCartao=parseFloat(this.value)||0;salvarManual();renderConteudo();"
-                  style="width:80px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);">
-              </div>
-            </div>
-          </div>
-        `;
-      }).join(''), true
-    );
 
     // ── 4. Lucro Bruto ──
     const sLucro = secao('lucro',`Lucro Bruto`,
@@ -506,7 +475,7 @@ Router.register('financeiro', async (params, el) => {
       </div>
     </div>`;
 
-    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sReembolsos + sTaxasAdicionais + sLucro + sArmaz + sAds + sAdsDetalhados + sAfiliados + sPayout + sDepois + sReceita + sDespesas + sFinal;
+    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sReembolsos + sLucro + sArmaz + sAds + sAdsDetalhados + sAfiliados + sPayout + sDepois + sReceita + sDespesas + sFinal;
 
     cont.querySelectorAll('.fin-inp').forEach(inp=>{
       inp.addEventListener('change', ()=>{
@@ -812,6 +781,18 @@ Router.register('financeiro', async (params, el) => {
             }
             log.push(`Shopee: ${uniq.length} pedidos (${comEscrow} com escrow)`);
             console.log(`[Shopee] ${uniq.length} pedidos, ${comEscrow} com dados de escrow`);
+
+            // Buscar devoluções/reembolsos Shopee
+            if (statusEl) statusEl.textContent = `🛒 Shopee (${conta.nickname||shopId}): buscando devoluções...`;
+            try {
+              const retUrl = await MarketplaceAPI.call('shopee_returns_list', { shopId, page_size: 100 });
+              const returns = retUrl.data?.response?.returns || retUrl.data?.returns || [];
+              if (returns.length > 0) {
+                console.log(`[Shopee Returns] ${returns.length} devoluções encontradas`);
+              }
+            } catch(eRet) {
+              console.warn('[Shopee Returns] Erro ao buscar devoluções:', eRet.message);
+            }
           }
 
         } catch(eConta) {
@@ -972,30 +953,6 @@ Router.register('financeiro', async (params, el) => {
     salvarManual(); renderConteudo();
   };
 
-  window.finDebugExportar = () => {
-    const dados = {
-      periodo: mesSel,
-      totalPedidos: pedidos.length,
-      faturamentoBruto: pedidos.reduce((s,p)=>s+parseFloat(p.valor||0), 0),
-      pedidos: pedidos.map(p => ({
-        id: p.id,
-        plataforma: p.plataforma,
-        valor_bruto: p.valor,
-        liquido: p.taxas?.liquido,
-        comissao: p.taxas?.comissao,
-        taxa_servico: p.taxas?.taxaServico,
-        frete: p.taxas?.frete,
-        voucher: p.taxas?.voucher,
-        status: p.status,
-        diferenca: (p.valor || 0) - (p.taxas?.liquido || 0)
-      }))
-    };
-    console.log('=== FINANCEIRO DEBUG ===');
-    console.log(JSON.stringify(dados, null, 2));
-    console.log('=== FIM DEBUG ===');
-    alert('✓ Dados exportados para console. Abra F12 > Console para ver.\n\nFaturamento Bruto: R$ ' + dados.faturamentoBruto.toFixed(2));
-  };
-
   // ── HTML base ─────────────────────────────────────────────
   el.innerHTML = `<div class="page" style="max-width:1000px;margin:0 auto;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
@@ -1008,7 +965,6 @@ Router.register('financeiro', async (params, el) => {
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <span id="fin-status" style="font-size:11px;color:var(--text-muted);margin-right:4px;"></span>
-        <button onclick="finDebugExportar()" class="btn" style="border:1px solid rgba(239,68,68,0.3);background:rgba(239,68,68,0.05);color:var(--red);padding:7px 14px;border-radius:99px;font-size:13px;" title="Exporta todos os pedidos para análise">🔍 Debug</button>
         <button onclick="window.print()" class="btn" style="border:1px solid var(--border);background:var(--bg-card);padding:7px 14px;border-radius:99px;font-size:13px;">📥 PDF</button>
         <select id="fin-sel-conta" class="form-input" style="border-radius:99px;padding:7px 14px;width:130px;">
           <option value="todas">Todas</option>

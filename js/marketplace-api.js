@@ -336,20 +336,21 @@ const MarketplaceAPI = {
   async shopeeAdsMetricsDetailed(shopId, dateFrom, dateTo) {
     try {
       const r = await this.call('shopee_ads_daily_performance', { shopId, start_date: dateFrom, end_date: dateTo });
-      const campaigns = r.data || [];
+      const dias = r.data?.response || r.data || [];
       let totalInvest = 0, totalClicks = 0, totalImp = 0, totalSales = 0;
-      campaigns.forEach(c => {
-        totalInvest += parseFloat(c.cost) || 0;
+      (Array.isArray(dias) ? dias : []).forEach(c => {
+        totalInvest += parseFloat(c.cost) || parseFloat(c.expense) || 0;
         totalClicks += parseInt(c.clicks) || 0;
         totalImp += parseInt(c.impressions) || 0;
         totalSales += parseFloat(c.gmv) || 0;
       });
+      console.log(`[SHOPEE ADS] Invest: ${totalInvest}, Clicks: ${totalClicks}, Imp: ${totalImp}, Sales: ${totalSales}`);
       return {
         investimento: totalInvest,
         cliques: totalClicks,
         impressoes: totalImp,
         vendas: totalSales,
-        campanhas: campaigns.length,
+        campanhas: Array.isArray(dias) ? dias.length : 0,
       };
     } catch(e) {
       console.warn('[SHOPEE ADS] erro ao puxar métricas:', e.message);
@@ -361,14 +362,16 @@ const MarketplaceAPI = {
   async affiliateReports(dateFrom, dateTo) {
     try {
       const r = await this.call('affiliate_reports', { start_date: dateFrom, end_date: dateTo });
-      const data = r.data || {};
-      return {
+      const data = r.data?.response || r.data || {};
+      const resultado = {
         totalComissao: parseFloat(data.total_commission) || 0,
         totalVendas: parseFloat(data.total_sales) || 0,
         totalPedidos: parseInt(data.total_orders) || 0,
         totalAfiliados: parseInt(data.total_affiliates) || 0,
         taxaMedia: parseFloat(data.average_rate) || 0,
       };
+      console.log('[AFILIADOS]', resultado);
+      return resultado;
     } catch(e) {
       console.warn('[AFILIADOS] erro ao puxar relatórios:', e.message);
       return {};
