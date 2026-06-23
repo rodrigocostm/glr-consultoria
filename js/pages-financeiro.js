@@ -502,6 +502,7 @@ Router.register('financeiro', async (params, el) => {
   let forceReprocess = false; // força reprocessamento mesmo se tiver cache
 
   async function buscar() {
+    console.log('[BUSCAR] Iniciado | forceReprocess:', forceReprocess);
     const statusEl = document.getElementById('fin-status');
     const btnEl    = document.getElementById('fin-btn-atualizar');
     const reprocessBtn = document.getElementById('fin-btn-reprocessar');
@@ -510,6 +511,7 @@ Router.register('financeiro', async (params, el) => {
     if (buscando) { if(statusEl) statusEl.textContent='⏳ Aguarde a busca atual terminar...'; return; }
 
     // Verificar cache se não for reprocessamento
+    console.log('[BUSCAR] Checando cache | !forceReprocess:', !forceReprocess, '| cache existe:', !!carregarCache());
     if (!forceReprocess && carregarCache()) {
       if (statusEl) {
         const cacheTime = new Date(carregarCache()).toLocaleTimeString('pt-BR');
