@@ -786,6 +786,12 @@ Router.register('financeiro', async (params, el) => {
             for (const o of uniq) {
               if (o.taxas.liquido > 0) {
                 comEscrow++;
+                // Se valor ainda é 0 mas temos líquido do escrow, recalcula valor como líquido + taxas
+                if (o.valor === 0 && o.taxas.liquido > 0) {
+                  const totalTaxas = (o.taxas.comissao||0) + (o.taxas.taxaServico||0) - (o.taxas.voucher||0) + (o.taxas.imposto||0);
+                  o.valor = o.taxas.liquido + totalTaxas;
+                  console.log(`[Shopee] Recalculado valor para pedido ${o.id}: R$ ${o.valor.toFixed(2)}`);
+                }
               } else {
                 // Sem escrow: usa valor como líquido estimado, sem taxas (dados incompletos)
                 o.taxas = { liquido: o.valor, comissao:0, taxaServico:0, imposto:0, frete:0, voucher:0 };
