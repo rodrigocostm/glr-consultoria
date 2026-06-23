@@ -861,10 +861,9 @@ Router.register('financeiro', async (params, el) => {
           if (conta.marketplace==='shopee') {
             try {
               const shopId = conta.param_to_use?.shopId||conta.external_id;
-              const br = iso => iso.split('-').reverse().join('-');
-              console.log(`[ADS] Shopee - Chamando API com shopId: ${shopId}, data: ${br(primeiroDia)} a ${br(dataTo)}`);
+              console.log(`[ADS] Shopee - Chamando API com shopId: ${shopId}, data: ${primeiroDia} a ${dataTo}`);
               const ra = await MarketplaceAPI.call('shopee_ads_daily_performance',
-                { shopId, start_date: br(primeiroDia), end_date: br(dataTo) });
+                { shopId, start_date: primeiroDia, end_date: dataTo });
               console.log(`[ADS] Shopee - Resposta da API:`, ra);
               const dias = ra.data?.response || ra.data || [];
               console.log(`[ADS] Shopee - Dias processados:`, dias);
