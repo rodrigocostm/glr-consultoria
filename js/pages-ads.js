@@ -155,26 +155,35 @@ async function buscarDados(forcar = false) {
       const campList = campsRaw?.data?.response?.campaign_list || campsRaw?.data?.campaign_list || campsRaw?.campaign_list || (Array.isArray(campsRaw?.data) ? campsRaw.data : []);
 
       if (Array.isArray(campList) && campList.length > 0) {
-        // Busca nome+orçamento via settings E performance diária — em paralelo por campanha
-        const LOTE = 5;
-        const settingsRes = [];
+        // Busca settings em lotes de 20 (API aceita campaign_id_list)
+        const LOTE_CFG = 20;
+        const cfgMap = {}; // campaign_id → common_info
+        for (let i = 0; i < campList.length; i += LOTE_CFG) {
+          const ids = campList.slice(i, i + LOTE_CFG).map(c => c.campaign_id || c.id);
+          try {
+            const r = await MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, campaign_id_list: ids });
+            const lista = r?.data?.response?.campaign_list || r?.data?.campaign_list || [];
+            lista.forEach(c => { cfgMap[c.campaign_id] = c.common_info || {}; });
+          } catch(e) {}
+        }
+
+        // Busca performance diária por campanha em lotes de 5
+        const LOTE_PERF = 5;
         const perfRes = [];
-        for (let i = 0; i < campList.length; i += LOTE) {
-          const lote = campList.slice(i, i + LOTE);
-          const [sRes, pRes] = await Promise.all([
-            Promise.allSettled(lote.map(c => MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, campaign_id: c.campaign_id || c.id }))),
-            Promise.allSettled(lote.map(c => MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, campaign_id: c.campaign_id || c.id, start_date: sdFrom, end_date: sdTo }))),
-          ]);
-          settingsRes.push(...sRes);
-          perfRes.push(...pRes);
+        for (let i = 0; i < campList.length; i += LOTE_PERF) {
+          const lote = campList.slice(i, i + LOTE_PERF);
+          const res = await Promise.allSettled(
+            lote.map(c => MarketplaceAPI.call('shopee_ads_campaign_daily', {
+              shopId, campaign_id: c.campaign_id || c.id, start_date: sdFrom, end_date: sdTo
+            }))
+          );
+          perfRes.push(...res);
         }
 
         resultado.campanhas = campList.map((c, i) => {
-          // Settings — nome e orçamento
-          const cfgRaw = settingsRes[i]?.value;
-          const cfg = cfgRaw?.data?.response || cfgRaw?.data || {};
+          const cid = c.campaign_id || c.id;
+          const cfg = cfgMap[cid] || {};
 
-          // Performance diária acumulada
           const perfRaw = perfRes[i]?.value;
           const perfDias = perfRaw?.data?.response?.daily_performance_list
             || perfRaw?.data?.response
@@ -183,23 +192,23 @@ async function buscarDados(forcar = false) {
             || [];
           const dias = Array.isArray(perfDias) ? perfDias : [];
 
-          const nome = cfg.campaign_name || cfg.name || c.campaign_name || c.name || `#${c.campaign_id || c.id}`;
-          const tipo = c.ad_type || cfg.ad_type || cfg.campaign_type || '';
-          const tipoLabel = tipo === 'manual' ? 'Manual' : tipo === 'auto' ? 'Automático' : tipo || '—';
+          const nome = cfg.ad_name || cfg.campaign_name || `#${cid}`;
+          const status = cfg.campaign_status || 'ongoing';
+          const ativa = status === 'ongoing' || status === 'active';
 
           return {
-            id:         c.campaign_id || c.id,
+            id:         cid,
             nome,
-            tipo:       tipoLabel,
-            ativa:      true, // veio do filtro state_filter=ongoing
-            orcamento:  parseFloat(cfg.daily_budget) || parseFloat(cfg.budget) || parseFloat(c.daily_budget) || 0,
+            tipo:       (c.ad_type || cfg.ad_type || '') === 'manual' ? 'Manual' : 'Automático',
+            ativa,
+            orcamento:  parseFloat(cfg.campaign_budget) || parseFloat(cfg.daily_budget) || 0,
             gasto:      dias.reduce((s, d) => s + (parseFloat(d.expense) || parseFloat(d.cost) || 0), 0),
             cliques:    dias.reduce((s, d) => s + (parseInt(d.clicks) || parseInt(d.click) || 0), 0),
             impressoes: dias.reduce((s, d) => s + (parseInt(d.impressions) || parseInt(d.impression) || 0), 0),
             pedidos:    dias.reduce((s, d) => s + (parseInt(d.order_count) || parseInt(d.orders) || 0), 0),
             receita:    dias.reduce((s, d) => s + (parseFloat(d.order_amount) || parseFloat(d.direct_item_gmv) || parseFloat(d.gmv) || 0), 0),
           };
-        });
+        }).filter(c => c.ativa); // mostra só ativas
       }
 
       // Saldo
