@@ -232,30 +232,49 @@ async function buscarDados(forcar = false) {
 
     } else if (['mercadolivre', 'ml', 'meli'].includes(mp)) {
       const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
+      resultado._erros = [];
 
       const [campResp] = await Promise.allSettled([
-        MarketplaceAPI.mlAdsCampaigns({ meliUserId: meliId, date_from: primeiroDia, date_to: ultimoDia }),
+        MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: primeiroDia, date_to: ultimoDia }),
       ]);
 
       if (campResp.status === 'fulfilled') {
-        const camps = Array.isArray(campResp.value) ? campResp.value : [];
-        resultado.campanhas = camps.map(c => ({
-          id:         c.id,
-          nome:       c.name || `Campanha ${c.id}`,
-          tipo:       c.type || '',
-          ativa:      c.status === 'active' || c.status === 'enabled',
-          orcamento:  parseFloat(c.daily_budget) || 0,
-          gasto:      parseFloat(c.cost) || parseFloat(c.spend) || 0,
-          cliques:    parseInt(c.clicks) || 0,
-          impressoes: parseInt(c.impressions) || 0,
-          pedidos:    parseInt(c.orders) || parseInt(c.conversions) || 0,
-          receita:    parseFloat(c.revenue) || 0,
-        }));
+        // API retorna { data: { paging: {...}, results: [...] } }
+        const raw = campResp.value;
+        const camps = raw?.data?.results || raw?.results || (Array.isArray(raw?.data) ? raw.data : []);
+
+        resultado.campanhas = camps.map(c => {
+          const m = c.metrics || {};
+          const orca = parseFloat(c.budget) || 0;
+          return {
+            id:             c.id,
+            nome:           c.name || `Campanha ${c.id}`,
+            tipo:           c.strategy || 'PROFITABILITY',
+            ativa:          c.status === 'active' || c.status === 'enabled',
+            orcamento:      orca,
+            orcamentoLabel: orca === 0 ? 'Ilimitado' : `R$ ${fmtN(orca, 2)}/dia`,
+            roasTarget:     parseFloat(c.roas_target) || null,
+            bidding:        'auto',
+            gasto:          parseFloat(m.cost)              || 0,
+            cliques:        parseInt(m.clicks)              || 0,
+            impressoes:     parseInt(m.prints)              || 0,
+            pedidos:        parseInt(m.units_quantity)      || 0,
+            receita:        parseFloat(m.total_amount)      || 0,
+          };
+        });
+
+        // Só ativas para o resumo (pausadas têm métricas zeradas de qualquer forma)
+        const ativas = resultado.campanhas.filter(c => c.ativa);
         resultado.resumo.investimento = resultado.campanhas.reduce((s, c) => s + c.gasto, 0);
         resultado.resumo.cliques      = resultado.campanhas.reduce((s, c) => s + c.cliques, 0);
         resultado.resumo.impressoes   = resultado.campanhas.reduce((s, c) => s + c.impressoes, 0);
         resultado.resumo.pedidos      = resultado.campanhas.reduce((s, c) => s + c.pedidos, 0);
         resultado.resumo.receita      = resultado.campanhas.reduce((s, c) => s + c.receita, 0);
+
+        // Filtra somente ativas para a tabela (igual Shopee)
+        resultado.campanhas = resultado.campanhas.filter(c => c.ativa);
+      } else {
+        resultado._erros.push(`ML ADS falhou: ${campResp.reason?.message || campResp.reason}`);
       }
     }
 
