@@ -972,6 +972,30 @@ Router.register('financeiro', async (params, el) => {
     salvarManual(); renderConteudo();
   };
 
+  window.finDebugExportar = () => {
+    const dados = {
+      periodo: mesSel,
+      totalPedidos: pedidos.length,
+      faturamentoBruto: pedidos.reduce((s,p)=>s+parseFloat(p.valor||0), 0),
+      pedidos: pedidos.map(p => ({
+        id: p.id,
+        plataforma: p.plataforma,
+        valor_bruto: p.valor,
+        liquido: p.taxas?.liquido,
+        comissao: p.taxas?.comissao,
+        taxa_servico: p.taxas?.taxaServico,
+        frete: p.taxas?.frete,
+        voucher: p.taxas?.voucher,
+        status: p.status,
+        diferenca: (p.valor || 0) - (p.taxas?.liquido || 0)
+      }))
+    };
+    console.log('=== FINANCEIRO DEBUG ===');
+    console.log(JSON.stringify(dados, null, 2));
+    console.log('=== FIM DEBUG ===');
+    alert('✓ Dados exportados para console. Abra F12 > Console para ver.\n\nFaturamento Bruto: R$ ' + dados.faturamentoBruto.toFixed(2));
+  };
+
   // ── HTML base ─────────────────────────────────────────────
   el.innerHTML = `<div class="page" style="max-width:1000px;margin:0 auto;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
@@ -984,6 +1008,7 @@ Router.register('financeiro', async (params, el) => {
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <span id="fin-status" style="font-size:11px;color:var(--text-muted);margin-right:4px;"></span>
+        <button onclick="finDebugExportar()" class="btn" style="border:1px solid rgba(239,68,68,0.3);background:rgba(239,68,68,0.05);color:var(--red);padding:7px 14px;border-radius:99px;font-size:13px;" title="Exporta todos os pedidos para análise">🔍 Debug</button>
         <button onclick="window.print()" class="btn" style="border:1px solid var(--border);background:var(--bg-card);padding:7px 14px;border-radius:99px;font-size:13px;">📥 PDF</button>
         <select id="fin-sel-conta" class="form-input" style="border-radius:99px;padding:7px 14px;width:130px;">
           <option value="todas">Todas</option>
