@@ -13,6 +13,8 @@ let mesSel      = new Date().getMonth();
 let anoSel      = new Date().getFullYear();
 let dadosADS    = null; // dados carregados
 let carregando  = false;
+let _aiHistory   = [];
+let _aiCarregando = false;
 
 // ─── Helpers ─────────────────────────────────────────────────
 const pad = n => String(n).padStart(2, '0');
@@ -449,8 +451,14 @@ function renderConteudo() {
       ${renderTabelaCampanhas(d.campanhas)}
     </div>
 
+    <!-- Tendências período -->
+    ${renderTendencias(d)}
+
     <!-- Sugestões de otimização -->
     ${renderOtimizacoes(d)}
+
+    <!-- Agente IA -->
+    ${renderAgentIA()}
   `;
 }
 
@@ -645,6 +653,148 @@ function renderModalOrcamento() {
   `;
 }
 
+// ─── Tendências ───────────────────────────────────────────────
+function renderTendencias(d) {
+  const diario = d.diario || [];
+  if (diario.length < 8) return '';
+
+  const ultimos7 = diario.slice(-7);
+  const ant7     = diario.slice(-14, -7);
+  if (ant7.length < 3) return '';
+
+  const soma = (arr, campo) => arr.reduce((s, x) => s + (x[campo] || 0), 0);
+
+  const inv7  = soma(ultimos7, 'gasto'),   rec7  = soma(ultimos7, 'receita');
+  const invA  = soma(ant7,     'gasto'),   recA  = soma(ant7,     'receita');
+  const cli7  = soma(ultimos7, 'cliques'), cliA  = soma(ant7,     'cliques');
+  const ped7  = soma(ultimos7, 'pedidos'), pedA  = soma(ant7,     'pedidos');
+  const roas7 = inv7 > 0 ? rec7 / inv7 : 0;
+  const roasA = invA > 0 ? recA / invA : 0;
+
+  const diff = (a, b) => b > 0 ? ((a - b) / b) * 100 : 0;
+
+  const card = (icon, label, valAtual, valAnt, pct, invertColor) => {
+    const sobe = pct >= 0;
+    const cor  = invertColor
+      ? (sobe ? '#d97706'  : '#16a34a')  // gasto: sobe é ruim
+      : (sobe ? '#16a34a' : '#dc2626');   // receita/roas/etc: sobe é bom
+    return `
+      <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:10px;padding:14px;">
+        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">${icon} ${label}</div>
+        <div style="font-size:18px;font-weight:700;color:var(--text-primary);">${valAtual}</div>
+        <div style="font-size:12px;font-weight:600;color:${cor};margin-top:4px;">${sobe ? '▲' : '▼'} ${fmtN(Math.abs(pct), 1)}% vs período anterior</div>
+        <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">Anterior: ${valAnt}</div>
+      </div>
+    `;
+  };
+
+  // Alertas automáticos de queda
+  const alertas = [];
+  const roasDiff = diff(roas7, roasA);
+  const recDiff  = diff(rec7,  recA);
+  const cliDiff  = diff(cli7,  cliA);
+  if (roasDiff < -20) alertas.push(`🚨 ROAS caiu <strong>${fmtN(Math.abs(roasDiff), 1)}%</strong> comparado ao período anterior — revise lances e produtos`);
+  if (recDiff  < -15) alertas.push(`📉 Receita ADS caiu <strong>${fmtN(Math.abs(recDiff),  1)}%</strong> — verifique se campanhas estão ativas e com saldo`);
+  if (cliDiff  < -20) alertas.push(`👁️ Cliques caíram <strong>${fmtN(Math.abs(cliDiff),  1)}%</strong> — anúncios podem estar perdendo relevância ou orçamento acabou`);
+  const invDiff  = diff(inv7, invA);
+  if (invDiff > 30 && roas7 < roasA * 0.8) alertas.push(`⚠️ Investimento subiu <strong>${fmtN(invDiff, 1)}%</strong> mas ROAS caiu — eficiência piorando`);
+
+  // Mini gráfico dia-a-dia com ROAS por dia (para ver tendência)
+  const diasRecentes = diario.slice(-14);
+  const roasPorDia = diasRecentes.map(d => d.gasto > 0 ? d.receita / d.gasto : 0);
+  const maxR = Math.max(...roasPorDia, 0.01);
+  const sparkline = roasPorDia.map((r, i) => {
+    const h = Math.max((r / maxR) * 60, 2);
+    const anterior = i > 0 ? roasPorDia[i - 1] : r;
+    const cor = r >= anterior ? '#16a34a' : '#dc2626';
+    const data = diasRecentes[i]?.data?.slice(5) || '';
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;" title="${data}: ROAS ${fmtN(r,2)}x">
+      <div style="width:100%;background:${cor};border-radius:2px 2px 0 0;height:${h}px;opacity:.8;"></div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
+      <h3 style="font-size:14px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">📊 Tendências — Últimos 7 dias vs período anterior</h3>
+      <p style="font-size:12px;color:var(--text-secondary);margin:0 0 16px;">Comparativo automático para detectar quedas de performance</p>
+
+      ${alertas.length > 0 ? `
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px;margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:700;color:#dc2626;margin-bottom:8px;">🚨 Alertas de Queda Detectados</div>
+          ${alertas.map(a => `<div style="font-size:12px;color:#7f1d1d;padding:3px 0;line-height:1.5;">${a}</div>`).join('')}
+        </div>
+      ` : `
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px;margin-bottom:16px;font-size:12px;color:#15803d;font-weight:600;">
+          ✅ Nenhuma queda significativa detectada no período
+        </div>
+      `}
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
+        ${card('💰', 'Investimento', fmt(inv7),  fmt(invA),  invDiff,  true)}
+        ${card('📈', 'Receita ADS',  fmt(rec7),  fmt(recA),  recDiff,  false)}
+        ${card('🎯', 'ROAS',         fmtN(roas7,2)+'x', fmtN(roasA,2)+'x', roasDiff, false)}
+        ${card('🖱️', 'Cliques',      fmtN(cli7), fmtN(cliA), cliDiff,  false)}
+        ${card('🛒', 'Pedidos ADS',  fmtN(ped7), fmtN(pedA), diff(ped7,pedA), false)}
+      </div>
+
+      <!-- Sparkline ROAS 14 dias -->
+      <div>
+        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:8px;">ROAS DIA A DIA — 🟢 subindo  🔴 caindo</div>
+        <div style="display:flex;align-items:flex-end;gap:3px;height:64px;padding:0 0 4px;">
+          ${sparkline}
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-secondary);margin-top:4px;">
+          <span>${diasRecentes[0]?.data?.slice(5) || ''}</span>
+          <span>${diasRecentes[diasRecentes.length-1]?.data?.slice(5) || ''}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Agente IA ────────────────────────────────────────────────
+function renderAgentIA() {
+  return `
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;" id="ads-ia-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <h3 style="font-size:14px;font-weight:700;margin:0 0 2px;color:var(--text-primary);">🤖 Agente IA — Consultoria de ADS</h3>
+          <p style="font-size:12px;color:var(--text-secondary);margin:0;">Análise inteligente com dados reais das suas campanhas</p>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="window._adsNovaConversa()" style="font-size:11px;color:var(--text-secondary);background:var(--bg-base);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;">🔄 Nova</button>
+          <button onclick="window._adsConfigurarApiKey()" style="font-size:11px;color:var(--text-secondary);background:var(--bg-base);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;">⚙️ API Key</button>
+        </div>
+      </div>
+
+      <!-- Área de mensagens -->
+      <div id="ads-ia-msgs" style="background:var(--bg-base);border:1px solid var(--border);border-radius:10px;padding:16px;min-height:160px;max-height:420px;overflow-y:auto;margin-bottom:12px;display:flex;flex-direction:column;gap:10px;">
+        <div style="text-align:center;color:var(--text-secondary);padding:24px 0;" id="ads-ia-placeholder">
+          <div style="font-size:32px;margin-bottom:8px;">🤖</div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Agente especialista em ADS pronto</div>
+          <div style="font-size:12px;">Clique em uma sugestão ou escreva sua pergunta</div>
+        </div>
+      </div>
+
+      <!-- Perguntas rápidas -->
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+        ${['📊 Analisar tudo agora', '📉 Quais campanhas pausar?', '📈 Como aumentar ROAS?', '💰 Onde investir mais?', '🔍 Por que os cliques caíram?']
+          .map(q => `<button onclick="window._adsEnviarMensagem('${q.replace(/'/g, '')}')"
+            style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">${q}</button>`).join('')}
+      </div>
+
+      <!-- Input -->
+      <div style="display:flex;gap:8px;">
+        <input id="ads-ia-input" type="text" placeholder="Pergunte sobre suas campanhas..."
+          onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();window._adsEnviarMensagem();}"
+          style="flex:1;padding:10px 16px;border:1px solid var(--border);border-radius:99px;background:var(--bg-base);color:var(--text-primary);font-size:13px;outline:none;">
+        <button onclick="window._adsEnviarMensagem()" id="ads-ia-btn"
+          style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:10px 22px;font-size:13px;font-weight:600;cursor:pointer;">Enviar</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderOtimizacoes(d) {
   const sugestoes = [];
 
@@ -749,6 +899,149 @@ window._adsSalvarRoas = async function() {
     msg.textContent = `✅ Meta ROAS atualizada para ${novoValor}x!`; msg.style.color = '#16a34a';
     setTimeout(() => { document.getElementById('ads-modal-roas').style.display = 'none'; buscarDados(true); }, 1500);
   } catch(e) { msg.textContent = '❌ Erro: ' + e.message; msg.style.color = '#dc2626'; }
+};
+
+// ─── Agente IA — funções globais ─────────────────────────────
+window._adsNovaConversa = function() {
+  _aiHistory = [];
+  const msgs = document.getElementById('ads-ia-msgs');
+  if (msgs) msgs.innerHTML = `
+    <div style="text-align:center;color:var(--text-secondary);padding:24px 0;" id="ads-ia-placeholder">
+      <div style="font-size:32px;margin-bottom:8px;">🤖</div>
+      <div style="font-size:13px;font-weight:600;">Nova conversa iniciada</div>
+    </div>`;
+};
+
+window._adsConfigurarApiKey = function() {
+  const atual = localStorage.getItem('glr_claude_apikey') || '';
+  const nova = prompt(
+    'Digite sua Claude API Key (sk-ant-...):\n\nObtida em: console.anthropic.com',
+    atual ? '*** chave salva — apague para substituir ***' : ''
+  );
+  if (nova === null) return;
+  if (nova.startsWith('sk-ant-')) {
+    localStorage.setItem('glr_claude_apikey', nova);
+    alert('✅ API Key salva!');
+  } else if (nova && !nova.startsWith('***')) {
+    alert('⚠️ API Key inválida. Deve começar com sk-ant-');
+  }
+};
+
+window._adsEnviarMensagem = async function(msgPredef) {
+  if (_aiCarregando) return;
+
+  const input = document.getElementById('ads-ia-input');
+  const msgs  = document.getElementById('ads-ia-msgs');
+  const btn   = document.getElementById('ads-ia-btn');
+  if (!msgs) return;
+
+  const texto = msgPredef || (input ? input.value.trim() : '');
+  if (!texto) return;
+
+  const apiKey = localStorage.getItem('glr_claude_apikey');
+  if (!apiKey) { window._adsConfigurarApiKey(); return; }
+
+  if (input) input.value = '';
+  document.getElementById('ads-ia-placeholder')?.remove();
+
+  _aiCarregando = true;
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+
+  // Bolha usuário
+  const divU = document.createElement('div');
+  divU.style.cssText = 'display:flex;justify-content:flex-end;';
+  divU.innerHTML = `<div style="background:var(--primary);color:#fff;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:80%;font-size:13px;line-height:1.5;">${texto}</div>`;
+  msgs.appendChild(divU);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  // Indicador digitando
+  const divT = document.createElement('div');
+  divT.id = 'ads-ia-typing';
+  divT.innerHTML = `<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px 12px 12px 0;padding:10px 14px;font-size:13px;color:var(--text-secondary);display:inline-block;">🤖 Analisando dados...</div>`;
+  msgs.appendChild(divT);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  // Monta contexto com dados reais
+  const d = dadosADS;
+  const ctx = d ? `
+Conta: ${d.conta} | Período: ${d.periodo.de} a ${d.periodo.ate}
+Marketplace: ${d.marketplace}
+
+RESUMO DO PERÍODO:
+- Investimento total: R$ ${(d.resumo.investimento||0).toFixed(2)}
+- Receita via ADS: R$ ${(d.resumo.receita||0).toFixed(2)}
+- ROAS: ${d.resumo.investimento > 0 ? (d.resumo.receita/d.resumo.investimento).toFixed(2) : '0'}x
+- ACoS: ${d.resumo.receita > 0 ? ((d.resumo.investimento/d.resumo.receita)*100).toFixed(1) : '0'}%
+- Cliques: ${d.resumo.cliques} | Impressões: ${d.resumo.impressoes}
+- CTR: ${d.resumo.impressoes > 0 ? ((d.resumo.cliques/d.resumo.impressoes)*100).toFixed(2) : '0'}%
+- Pedidos via ADS: ${d.resumo.pedidos}
+- Saldo ADS: R$ ${(d.saldo||0).toFixed(2)}
+
+CAMPANHAS ATIVAS (top 15 por investimento):
+${(d.campanhas||[]).slice(0,15).map(c => {
+  const roas = c.gasto > 0 && c.receita > 0 ? (c.receita/c.gasto).toFixed(2) : '—';
+  const acos = c.receita > 0 ? ((c.gasto/c.receita)*100).toFixed(1) : '—';
+  const ctr  = c.impressoes > 0 ? ((c.cliques/c.impressoes)*100).toFixed(2) : '0';
+  const meta = c.bidding === 'auto' && c.roasTarget ? `meta ${c.roasTarget}x` : 'lances manuais';
+  return `• ${c.nome}: investido R$${c.gasto.toFixed(2)}, receita R$${c.receita.toFixed(2)}, ROAS ${roas}x, ACoS ${acos}%, CTR ${ctr}%, ${meta}, orçamento: ${c.orcamentoLabel}`;
+}).join('\n')}
+
+DADOS DIÁRIOS (últimos 14 dias):
+${(d.diario||[]).slice(-14).map(dia => {
+  const r = dia.gasto > 0 ? (dia.receita/dia.gasto).toFixed(2) : '—';
+  return `${dia.data}: gasto R$${dia.gasto.toFixed(2)}, receita R$${dia.receita.toFixed(2)}, ROAS ${r}x, cliques ${dia.cliques}`;
+}).join('\n')}
+` : 'Nenhum dado carregado ainda.';
+
+  _aiHistory.push({ role: 'user', content: texto });
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1500,
+        system: `Você é um especialista sênior em performance de ADS para marketplaces brasileiros (Shopee, Mercado Livre).
+Analise os dados fornecidos e dê recomendações práticas, específicas e acionáveis.
+Seja direto. Use bullet points para listas. Destaque campanhas problemáticas pelo nome.
+Sugira ações concretas: pausar, aumentar orçamento, ajustar meta ROAS, etc.
+Responda em português brasileiro informal mas profissional.
+
+DADOS ATUAIS DAS CAMPANHAS:
+${ctx}`,
+        messages: _aiHistory,
+      }),
+    });
+
+    const json = await resp.json();
+    if (json.error) throw new Error(json.error.message);
+    const resposta = json.content?.[0]?.text || 'Sem resposta.';
+    _aiHistory.push({ role: 'assistant', content: resposta });
+
+    document.getElementById('ads-ia-typing')?.remove();
+
+    const divR = document.createElement('div');
+    divR.style.cssText = 'display:flex;justify-content:flex-start;';
+    divR.innerHTML = `<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px 12px 12px 0;padding:12px 16px;max-width:90%;font-size:13px;color:var(--text-primary);line-height:1.6;white-space:pre-wrap;">${resposta}</div>`;
+    msgs.appendChild(divR);
+    msgs.scrollTop = msgs.scrollHeight;
+
+  } catch(e) {
+    document.getElementById('ads-ia-typing')?.remove();
+    const divE = document.createElement('div');
+    divE.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 14px;font-size:12px;color:#dc2626;">❌ Erro: ${e.message}${e.message.includes('401') ? ' — verifique sua API Key' : ''}</div>`;
+    msgs.appendChild(divE);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  _aiCarregando = false;
+  if (btn) { btn.disabled = false; btn.textContent = 'Enviar'; }
 };
 
 // ─── Registro da rota ─────────────────────────────────────────
