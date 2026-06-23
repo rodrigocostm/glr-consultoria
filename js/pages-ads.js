@@ -150,42 +150,54 @@ async function buscarDados(forcar = false) {
         resultado._erros.push(`Daily Performance falhou: ${perfResp.reason?.message || perfResp.reason}`);
       }
 
-      // Campanhas — busca configurações + performance de cada uma em paralelo
-      if (campResp.status === 'fulfilled') {
-        const campsRaw = campResp.value;
-        const campList = campsRaw?.campaign_list || campsRaw?.data?.campaign_list || campsRaw?.data?.response?.campaign_list || (Array.isArray(campsRaw) ? campsRaw : []);
+      // Campanhas — busca somente ativas via state_filter, depois performance
+      const [campAtivasResp] = await Promise.allSettled([
+        MarketplaceAPI.call('shopee_ads_campaigns', { shopId, state_filter: 'ongoing' })
+      ]);
 
-        if (Array.isArray(campList) && campList.length > 0) {
-          // Para cada campanha busca configurações e performance em paralelo
-          const detalhes = await Promise.allSettled(
-            campList.map(c => MarketplaceAPI.call('shopee_ads_campaign_settings', {
-              shopId, campaign_id: c.campaign_id || c.id
-            }))
-          );
-          const perf = await Promise.allSettled(
-            campList.map(c => MarketplaceAPI.call('shopee_ads_campaign_daily', {
+      const campsRaw = campAtivasResp.status === 'fulfilled' ? campAtivasResp.value : (campResp.status === 'fulfilled' ? campResp.value : null);
+      const campList = campsRaw?.data?.response?.campaign_list || campsRaw?.data?.campaign_list || campsRaw?.campaign_list || (Array.isArray(campsRaw?.data) ? campsRaw.data : []);
+
+      // Diagnóstico da primeira campanha para entender a estrutura
+      if (campList.length > 0) {
+        resultado._erros.push(`DEBUG campanhas — primeira campanha: ${JSON.stringify(campList[0]).slice(0, 300)}`);
+      }
+
+      if (Array.isArray(campList) && campList.length > 0) {
+        // Busca performance diária de cada campanha (em lotes de 5 para não sobrecarregar)
+        const LOTE = 5;
+        const campDetalhes = [];
+        for (let i = 0; i < campList.length; i += LOTE) {
+          const lote = campList.slice(i, i + LOTE);
+          const res = await Promise.allSettled(
+            lote.map(c => MarketplaceAPI.call('shopee_ads_campaign_daily', {
               shopId, campaign_id: c.campaign_id || c.id, start_date: sdFrom, end_date: sdTo
             }))
           );
-
-          resultado.campanhas = campList.map((c, i) => {
-            const cfg = detalhes[i]?.value?.data?.response || detalhes[i]?.value?.data || {};
-            const perfDias = perf[i]?.value?.data?.response || perf[i]?.value?.data?.daily_performance_list || perf[i]?.value?.data || [];
-            const dias = Array.isArray(perfDias) ? perfDias : [];
-            return {
-              id:         c.campaign_id || c.id,
-              nome:       cfg.campaign_name || cfg.name || `Campanha ${c.campaign_id || c.id}`,
-              tipo:       c.ad_type || cfg.ad_type || cfg.campaign_type || '',
-              ativa:      cfg.state === 'ongoing' || cfg.status === 'active' || cfg.is_active === true,
-              orcamento:  parseFloat(cfg.daily_budget) || parseFloat(cfg.budget) || 0,
-              gasto:      dias.reduce((s, d) => s + (parseFloat(d.expense) || parseFloat(d.cost) || 0), 0),
-              cliques:    dias.reduce((s, d) => s + (parseInt(d.clicks) || parseInt(d.click) || 0), 0),
-              impressoes: dias.reduce((s, d) => s + (parseInt(d.impressions) || parseInt(d.impression) || 0), 0),
-              pedidos:    dias.reduce((s, d) => s + (parseInt(d.order_count) || parseInt(d.orders) || 0), 0),
-              receita:    dias.reduce((s, d) => s + (parseFloat(d.order_amount) || parseFloat(d.direct_item_gmv) || parseFloat(d.gmv) || 0), 0),
-            };
-          });
+          campDetalhes.push(...res);
         }
+
+        resultado.campanhas = campList.map((c, i) => {
+          const perfRaw = campDetalhes[i]?.value;
+          const perfDias = perfRaw?.data?.response?.daily_performance_list
+            || perfRaw?.data?.response
+            || perfRaw?.data?.daily_performance_list
+            || perfRaw?.data
+            || [];
+          const dias = Array.isArray(perfDias) ? perfDias : [];
+          return {
+            id:         c.campaign_id || c.id,
+            nome:       c.campaign_name || c.name || `Campanha ${c.campaign_id || c.id}`,
+            tipo:       c.ad_type || c.campaign_type || '',
+            ativa:      c.state === 'ongoing' || c.state == null, // se veio do filtro ongoing, está ativa
+            orcamento:  parseFloat(c.daily_budget) || parseFloat(c.budget) || 0,
+            gasto:      dias.reduce((s, d) => s + (parseFloat(d.expense) || parseFloat(d.cost) || 0), 0),
+            cliques:    dias.reduce((s, d) => s + (parseInt(d.clicks) || parseInt(d.click) || 0), 0),
+            impressoes: dias.reduce((s, d) => s + (parseInt(d.impressions) || parseInt(d.impression) || 0), 0),
+            pedidos:    dias.reduce((s, d) => s + (parseInt(d.order_count) || parseInt(d.orders) || 0), 0),
+            receita:    dias.reduce((s, d) => s + (parseFloat(d.order_amount) || parseFloat(d.direct_item_gmv) || parseFloat(d.gmv) || 0), 0),
+          };
+        });
       }
 
       // Saldo
