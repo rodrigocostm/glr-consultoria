@@ -29,7 +29,18 @@ Router.register('financeiro', async (params, el) => {
 
   let manualAll = JSON.parse(localStorage.getItem(STORAGE_MANUAL)||'{}');
   function manual() {
-    if (!manualAll[mesSel]) manualAll[mesSel] = { armazenamento:{}, ads:{}, receitas:[], despesas:[] };
+    if (!manualAll[mesSel]) {
+      manualAll[mesSel] = {
+        armazenamento:{},
+        ads:{},
+        receitas:[],
+        despesas:[]
+      };
+      // Inicializa taxas adicionais para cada plataforma conhecida
+      for (const n of nomes) {
+        manualAll[mesSel][n] = manualAll[mesSel][n] || { taxaMoedas: 0, taxaCartao: 0 };
+      }
+    }
     return manualAll[mesSel];
   }
   const salvarManual = () => localStorage.setItem(STORAGE_MANUAL, JSON.stringify(manualAll));
@@ -97,7 +108,12 @@ Router.register('financeiro', async (params, el) => {
         taxaServico:0,  // taxa de serviço / taxa fixa
         voucher:0,      // voucher da plataforma (positivo)
         outras:0,       // residual não identificado
-        custoProd:0, custoProdReemb:0, custoExtra:0, custoExtraReemb:0, imposto:0, n:0
+        custoProd:0, custoProdReemb:0, custoExtra:0, custoExtraReemb:0, imposto:0,
+        taxaMoedas:0,   // taxa de conversão de moedas
+        taxaCartao:0,   // taxa de cartão de crédito
+        nReemb:0,       // número de reembolsos
+        valorReemb:0,   // valor total reembolsado
+        n:0
       };
       const a  = plats[nome];
       const tx = p.taxas||{};
@@ -109,6 +125,8 @@ Router.register('financeiro', async (params, el) => {
       const extra = custoExtrasPedido(p);
 
       if (reemb) {
+        a.nReemb++;
+        a.valorReemb += valor;
         if (incluirReemb) { a.custoProdReemb += custo; a.custoExtraReemb += extra; }
         continue;
       }
@@ -292,6 +310,59 @@ Router.register('financeiro', async (params, el) => {
       }).join(''), true
     );
 
+    // ── 3b. Reembolsos e Devoluções ──
+    const sReembolsos = secao('reembolsos', '↩️ Reembolsos e Devoluções',
+      {num:0, txt:R$(nomes.reduce((s,n)=>s+plats[n].valorReemb, 0))},
+      nomes.map(n => {
+        const a = plats[n];
+        if (a.nReemb === 0) return `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:12px;">Nenhum reembolso em ${n}</div>`;
+        const custoReemb = a.custoProdReemb + a.custoExtraReemb;
+        return `
+          <div class="fin-grupo">
+            <div class="fin-row"><span style="font-weight:600;">${n}</span><span style="font-weight:600;">Reembolsos</span></div>
+            <div style="padding-left:16px;border-left:2px solid rgba(239,68,68,0.3);">
+              <div class="fin-row"><span>📦 Número de devoluções:</span><strong>${a.nReemb}</strong></div>
+              <div class="fin-row"><span>💰 Valor total reembolsado:</span><strong style="color:var(--red);">- ${R$(a.valorReemb)}</strong></div>
+              <div class="fin-row"><span>📊 Custo das devoluções:</span><strong style="color:var(--red);">- ${R$(custoReemb)}</strong></div>
+              <div class="fin-row"><span>💸 Custo unitário médio:</span><strong>${R$(a.nReemb > 0 ? custoReemb / a.nReemb : 0)}</strong></div>
+            </div>
+          </div>
+        `;
+      }).join(''), true
+    );
+
+    // ── 3c. Taxas Adicionais (Moedas, Cartão) ──
+    const sTaxasAdicionais = secao('taxas-adic', '💳 Taxas Adicionais',
+      {num:0, txt:''},
+      `<div style="padding:12px;background:rgba(99,102,241,0.05);border-radius:8px;margin-bottom:12px;">
+        <strong>Configura taxas adicionais:</strong> moedas, cartão de crédito, etc.
+      </div>` +
+      nomes.map(n => {
+        const taxasN = m[n] || {};
+        return `
+          <div class="fin-grupo">
+            <div class="fin-row" style="font-weight:600;"><span>${n}</span></div>
+            <div style="padding-left:16px;">
+              <div class="fin-row">
+                <span>💱 Taxa de Moedas (%):</span>
+                <input type="number" min="0" step="0.01" placeholder="0.00"
+                  value="${parseFloat(taxasN.taxaMoedas)||''}"
+                  onchange="manualAll['${mesSel}']['${n}']=manualAll['${mesSel}']['${n}']||{};manualAll['${mesSel}']['${n}'].taxaMoedas=parseFloat(this.value)||0;salvarManual();renderConteudo();"
+                  style="width:80px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);">
+              </div>
+              <div class="fin-row">
+                <span>🏦 Taxa de Cartão (%):</span>
+                <input type="number" min="0" step="0.01" placeholder="0.00"
+                  value="${parseFloat(taxasN.taxaCartao)||''}"
+                  onchange="manualAll['${mesSel}']['${n}']=manualAll['${mesSel}']['${n}']||{};manualAll['${mesSel}']['${n}'].taxaCartao=parseFloat(this.value)||0;salvarManual();renderConteudo();"
+                  style="width:80px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);">
+              </div>
+            </div>
+          </div>
+        `;
+      }).join(''), true
+    );
+
     // ── 4. Lucro Bruto ──
     const sLucro = secao('lucro',`Lucro Bruto`,
       {num:totLucroBruto, txt:`${R$(totLucroBruto)} (${pctLucroBruto.toFixed(2).replace('.',',')}%)`},
@@ -435,7 +506,7 @@ Router.register('financeiro', async (params, el) => {
       </div>
     </div>`;
 
-    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sLucro + sArmaz + sAds + sAdsDetalhados + sAfiliados + sPayout + sDepois + sReceita + sDespesas + sFinal;
+    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sReembolsos + sTaxasAdicionais + sLucro + sArmaz + sAds + sAdsDetalhados + sAfiliados + sPayout + sDepois + sReceita + sDespesas + sFinal;
 
     cont.querySelectorAll('.fin-inp').forEach(inp=>{
       inp.addEventListener('change', ()=>{
