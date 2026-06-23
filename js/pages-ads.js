@@ -543,8 +543,8 @@ function renderTabelaCampanhas(campanhas) {
     const roasCor = roas >= 3 ? '#16a34a' : roas >= 1.5 ? '#d97706' : roas > 0 ? '#dc2626' : 'var(--text-muted,#94a3b8)';
     const acosCor = acos === 0 ? 'var(--text-muted,#94a3b8)' : acos <= 30 ? '#16a34a' : acos <= 50 ? '#d97706' : '#dc2626';
 
-    // ROAS target (campanhas auto)
-    const roasTarget = c.roasTarget != null ? fmtN(c.roasTarget / 10, 1) + 'x' : '—';
+    // ROAS target (campanhas auto) — valor direto da Shopee, sem divisão
+    const roasTarget = c.roasTarget != null ? fmtN(c.roasTarget, 0) + 'x' : '—';
     const btnRoas = c.bidding === 'auto'
       ? `<button onclick="window._adsEditarRoas(${c.id},'${c.nome.replace(/'/g,'').slice(0,30)}',${c.roasTarget ?? 0})" title="Editar meta ROAS"
           style="background:#f0fdf4;color:#16a34a;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">🎯</button>`
@@ -626,8 +626,8 @@ function renderModalOrcamento() {
       <div style="background:var(--bg-surface);border-radius:16px;padding:28px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
         <h3 style="font-size:15px;font-weight:700;margin:0 0 6px;color:var(--text-primary);">🎯 Editar Meta de ROAS</h3>
         <p id="ads-modal-roas-nome" style="font-size:12px;color:var(--text-secondary);margin:0 0 4px;"></p>
-        <p style="font-size:11px;color:var(--text-secondary);margin:0 0 20px;">A Shopee armazena o ROAS × 10 (ex: meta 4.5x = valor 45)</p>
-        <label style="font-size:12px;font-weight:600;color:var(--text-secondary);">Meta ROAS (valor Shopee — ex: 45 = 4.5x)</label>
+        <p style="font-size:11px;color:var(--text-secondary);margin:0 0 20px;">Digite o valor de ROAS desejado (ex: 50 = meta de 50x)</p>
+        <label style="font-size:12px;font-weight:600;color:var(--text-secondary);">Meta ROAS (ex: 50 = 50x)</label>
         <input id="ads-modal-roas-valor" type="number" min="1" step="1"
           style="width:100%;margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:15px;background:var(--bg-base);color:var(--text-primary);box-sizing:border-box;">
         <div style="background:#f0fdf4;border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;color:#15803d;">
@@ -746,7 +746,7 @@ window._adsSalvarRoas = async function() {
   msg.textContent = 'Salvando...'; msg.style.color = 'var(--text-secondary)';
   try {
     await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: _adsModalCampId, roas_target: novoValor });
-    msg.textContent = `✅ Meta ROAS atualizada para ${fmtN(novoValor/10,1)}x!`; msg.style.color = '#16a34a';
+    msg.textContent = `✅ Meta ROAS atualizada para ${novoValor}x!`; msg.style.color = '#16a34a';
     setTimeout(() => { document.getElementById('ads-modal-roas').style.display = 'none'; buscarDados(true); }, 1500);
   } catch(e) { msg.textContent = '❌ Erro: ' + e.message; msg.style.color = '#dc2626'; }
 };
