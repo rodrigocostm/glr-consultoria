@@ -129,14 +129,20 @@ async function buscarDados(forcar = false) {
             gasto:      parseFloat(d.expense) || parseFloat(d.cost) || parseFloat(d.total_cost) || 0,
             cliques:    parseInt(d.clicks) || parseInt(d.click) || 0,
             impressoes: parseInt(d.impressions) || parseInt(d.impression) || 0,
-            pedidos:    parseInt(d.orders) || parseInt(d.conversions) || parseInt(d.order_count) || 0,
-            receita:    parseFloat(d.gmv) || parseFloat(d.revenue) || parseFloat(d.gmv_from_ads) || 0,
+            pedidos:    parseInt(d.order_count) || parseInt(d.orders) || parseInt(d.conversions) || 0,
+            receita:    parseFloat(d.order_amount) || parseFloat(d.direct_item_gmv) || parseFloat(d.broad_item_gmv)
+                     || parseFloat(d.gmv_from_ads) || parseFloat(d.gmv) || parseFloat(d.revenue)
+                     || parseFloat(d.item_gmv) || parseFloat(d.direct_gmv) || 0,
           }));
           resultado.resumo.investimento = resultado.diario.reduce((s, d) => s + d.gasto, 0);
           resultado.resumo.cliques      = resultado.diario.reduce((s, d) => s + d.cliques, 0);
           resultado.resumo.impressoes   = resultado.diario.reduce((s, d) => s + d.impressoes, 0);
           resultado.resumo.pedidos      = resultado.diario.reduce((s, d) => s + d.pedidos, 0);
           resultado.resumo.receita      = resultado.diario.reduce((s, d) => s + d.receita, 0);
+          // Diagnóstico: se receita vier zerada, mostra campos disponíveis do primeiro dia
+          if (resultado.resumo.receita === 0 && dias.length > 0) {
+            resultado._erros.push(`Receita zerada — campos disponíveis no daily: ${Object.keys(dias[0]).join(', ')}`);
+          }
         } else {
           resultado._erros.push(`Daily Performance: API retornou estrutura inesperada — ${JSON.stringify(r).slice(0, 200)}`);
         }
@@ -144,26 +150,41 @@ async function buscarDados(forcar = false) {
         resultado._erros.push(`Daily Performance falhou: ${perfResp.reason?.message || perfResp.reason}`);
       }
 
-      // Campanhas
+      // Campanhas — busca configurações + performance de cada uma em paralelo
       if (campResp.status === 'fulfilled') {
-        const camps = campResp.value;
-        resultado._rawCamps = camps;
-        const campList = camps?.campaign_list || camps?.data?.campaign_list || camps?.data?.response?.campaign_list || (Array.isArray(camps) ? camps : null);
+        const campsRaw = campResp.value;
+        const campList = campsRaw?.campaign_list || campsRaw?.data?.campaign_list || campsRaw?.data?.response?.campaign_list || (Array.isArray(campsRaw) ? campsRaw : []);
+
         if (Array.isArray(campList) && campList.length > 0) {
-          resultado.campanhas = campList.map(c => ({
-            id:         c.campaign_id || c.id,
-            nome:       c.campaign_name || c.name || `Campanha ${c.campaign_id || c.id}`,
-            tipo:       c.ad_type || c.campaign_type || c.type || '',
-            ativa:      c.state === 'ongoing' || c.status === 'active' || c.is_active,
-            orcamento:  parseFloat(c.daily_budget) || parseFloat(c.budget) || 0,
-            gasto:      parseFloat(c.expense) || parseFloat(c.cost) || 0,
-            cliques:    parseInt(c.clicks) || 0,
-            impressoes: parseInt(c.impressions) || 0,
-            pedidos:    parseInt(c.orders) || parseInt(c.conversions) || 0,
-            receita:    parseFloat(c.gmv) || parseFloat(c.revenue) || 0,
-          }));
-        } else if (!campList) {
-          resultado._erros.push(`Campanhas: formato inesperado — ${JSON.stringify(camps).slice(0, 200)}`);
+          // Para cada campanha busca configurações e performance em paralelo
+          const detalhes = await Promise.allSettled(
+            campList.map(c => MarketplaceAPI.call('shopee_ads_campaign_settings', {
+              shopId, campaign_id: c.campaign_id || c.id
+            }))
+          );
+          const perf = await Promise.allSettled(
+            campList.map(c => MarketplaceAPI.call('shopee_ads_campaign_daily', {
+              shopId, campaign_id: c.campaign_id || c.id, start_date: sdFrom, end_date: sdTo
+            }))
+          );
+
+          resultado.campanhas = campList.map((c, i) => {
+            const cfg = detalhes[i]?.value?.data?.response || detalhes[i]?.value?.data || {};
+            const perfDias = perf[i]?.value?.data?.response || perf[i]?.value?.data?.daily_performance_list || perf[i]?.value?.data || [];
+            const dias = Array.isArray(perfDias) ? perfDias : [];
+            return {
+              id:         c.campaign_id || c.id,
+              nome:       cfg.campaign_name || cfg.name || `Campanha ${c.campaign_id || c.id}`,
+              tipo:       c.ad_type || cfg.ad_type || cfg.campaign_type || '',
+              ativa:      cfg.state === 'ongoing' || cfg.status === 'active' || cfg.is_active === true,
+              orcamento:  parseFloat(cfg.daily_budget) || parseFloat(cfg.budget) || 0,
+              gasto:      dias.reduce((s, d) => s + (parseFloat(d.expense) || parseFloat(d.cost) || 0), 0),
+              cliques:    dias.reduce((s, d) => s + (parseInt(d.clicks) || parseInt(d.click) || 0), 0),
+              impressoes: dias.reduce((s, d) => s + (parseInt(d.impressions) || parseInt(d.impression) || 0), 0),
+              pedidos:    dias.reduce((s, d) => s + (parseInt(d.order_count) || parseInt(d.orders) || 0), 0),
+              receita:    dias.reduce((s, d) => s + (parseFloat(d.order_amount) || parseFloat(d.direct_item_gmv) || parseFloat(d.gmv) || 0), 0),
+            };
+          });
         }
       }
 
