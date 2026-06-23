@@ -438,7 +438,6 @@ const MarketplaceAPI = {
 
     return resultado;
   },
-};
 
   async affiliateOffers(params = {}) {
     return await this.call('affiliate_offers', params);
