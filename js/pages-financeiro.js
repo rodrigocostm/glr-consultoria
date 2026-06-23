@@ -894,23 +894,31 @@ Router.register('financeiro', async (params, el) => {
           if (conta.marketplace==='shopee') {
             try {
               const shopId = conta.param_to_use?.shopId || conta.external_id;
-              // Mesma chamada direta que a Central de ADS usa — comprovadamente funciona
-              const r = await MarketplaceAPI.call('shopee_ads_daily_performance', {
-                shopId, start_date: sdFrom, end_date: sdTo
-              });
-              const dias = r?.data?.response || [];
-              const totalCusto = Array.isArray(dias)
-                ? dias.reduce((s, d) => s + (parseFloat(d.expense) || 0), 0)
-                : 0;
+              // Shopee ADS limita 30 dias por request — divide em chunks se necessário
+              const toShopeeIso = sd => { const [d,m,y] = sd.split('-'); return `${y}-${m}-${d}`; };
+              const addDays = (iso, n) => { const d = new Date(iso); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+              const toSd = iso => iso.split('-').reverse().join('-');
+              let cur = toShopeeIso(sdFrom);
+              const fim = toShopeeIso(sdTo);
+              let todasDias = [];
+              while (cur <= fim) {
+                const chunkEnd = addDays(cur, 29) > fim ? fim : addDays(cur, 29);
+                const r = await MarketplaceAPI.call('shopee_ads_daily_performance', {
+                  shopId, start_date: toSd(cur), end_date: toSd(chunkEnd)
+                });
+                const chunk = r?.data?.response || [];
+                if (Array.isArray(chunk)) todasDias = todasDias.concat(chunk);
+                cur = addDays(chunkEnd, 1);
+              }
+              const totalCusto = todasDias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0);
               adsAPI['Shopee'] = totalCusto;
-              // Métricas detalhadas para exibição
-              if (Array.isArray(dias) && dias.length > 0) {
+              if (todasDias.length > 0) {
                 adsDetalhados['Shopee'] = {
                   investimento: totalCusto,
-                  cliques:    dias.reduce((s,d) => s + (parseInt(d.clicks) || 0), 0),
-                  impressoes: dias.reduce((s,d) => s + (parseInt(d.impression) || 0), 0),
-                  vendas:     dias.reduce((s,d) => s + (parseInt(d.broad_order) || 0), 0),
-                  faturamentoAds: dias.reduce((s,d) => s + (parseFloat(d.broad_gmv) || 0), 0),
+                  cliques:    todasDias.reduce((s,d) => s + (parseInt(d.clicks)||0), 0),
+                  impressoes: todasDias.reduce((s,d) => s + (parseInt(d.impression)||0), 0),
+                  vendas:     todasDias.reduce((s,d) => s + (parseInt(d.broad_order)||0), 0),
+                  faturamentoAds: todasDias.reduce((s,d) => s + (parseFloat(d.broad_gmv)||0), 0),
                 };
               }
             } catch(eSh) {
