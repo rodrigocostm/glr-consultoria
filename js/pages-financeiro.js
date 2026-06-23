@@ -47,7 +47,7 @@ Router.register('financeiro', async (params, el) => {
   }
   const salvarManual = () => localStorage.setItem(STORAGE_MANUAL, JSON.stringify(manualAll));
 
-  const CACHE_VER = 24; // bump quando a estrutura de taxas muda — invalida caches antigos
+  const CACHE_VER = 25; // bump quando a estrutura de taxas muda — invalida caches antigos
   function salvarCache() {
     try {
       const cache = { ver: CACHE_VER, mesKey: mesSel, pedidos, adsAPI, adsDetalhados, afiliados, payout, at: Date.now() };
