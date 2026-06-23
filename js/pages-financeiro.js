@@ -1240,16 +1240,20 @@ Router.register('financeiro', async (params, el) => {
     buscar();
   });
 
+  // Carregar contas SEMPRE (independente de cache)
+  MarketplaceAPI.call('list_accounts').then(r => {
+    contas = r.data?.accounts||[];
+    renderFiltroContas();
+    console.log('[Contas] Carregadas:', contas.length);
+  }).catch(e => {
+    console.error('[Contas] Erro:', e.message);
+  });
+
   // Início: cache ou busca
   const at = carregarCache();
   if (at) {
     const s = document.getElementById('fin-status');
     if (s) s.textContent = `${pedidos.length} pedidos (cache)`;
-    try {
-      const r2 = await MarketplaceAPI.call('list_accounts');
-      contas = r2.data?.accounts||[];
-      renderFiltroContas();
-    } catch(e){}
     renderConteudo();
   } else {
     buscar();
