@@ -335,25 +335,36 @@ const MarketplaceAPI = {
   // Métricas de ADS Shopee detalhadas
   async shopeeAdsMetricsDetailed(shopId, dateFrom, dateTo) {
     try {
+      console.log('[SHOPEE ADS] Chamando API com:', { shopId, dateFrom, dateTo });
       const r = await this.call('shopee_ads_daily_performance', { shopId, start_date: dateFrom, end_date: dateTo });
-      const dias = r.data?.response || r.data || [];
+      console.log('[SHOPEE ADS] Resposta bruta:', JSON.stringify(r).substring(0, 500));
+
+      // Tentar diferentes caminhos para os dados
+      let dias = [];
+      if (Array.isArray(r.data)) dias = r.data;
+      else if (Array.isArray(r.data?.response)) dias = r.data.response;
+      else if (Array.isArray(r.data?.data)) dias = r.data.data;
+      else if (r.data?.response && Array.isArray(r.data.response.daily_metrics)) dias = r.data.response.daily_metrics;
+
+      console.log('[SHOPEE ADS] Dias encontrados:', dias.length);
+
       let totalInvest = 0, totalClicks = 0, totalImp = 0, totalSales = 0;
-      (Array.isArray(dias) ? dias : []).forEach(c => {
+      dias.forEach(c => {
         totalInvest += parseFloat(c.cost) || parseFloat(c.expense) || 0;
         totalClicks += parseInt(c.clicks) || 0;
         totalImp += parseInt(c.impressions) || 0;
         totalSales += parseFloat(c.gmv) || 0;
       });
-      console.log(`[SHOPEE ADS] Invest: ${totalInvest}, Clicks: ${totalClicks}, Imp: ${totalImp}, Sales: ${totalSales}`);
+      console.log(`[SHOPEE ADS] ✓ Invest: ${totalInvest}, Clicks: ${totalClicks}, Imp: ${totalImp}, Sales: ${totalSales}`);
       return {
         investimento: totalInvest,
         cliques: totalClicks,
         impressoes: totalImp,
         vendas: totalSales,
-        campanhas: Array.isArray(dias) ? dias.length : 0,
+        campanhas: dias.length,
       };
     } catch(e) {
-      console.warn('[SHOPEE ADS] erro ao puxar métricas:', e.message);
+      console.error('[SHOPEE ADS] ✗ Erro:', e.message, e);
       return {};
     }
   },
@@ -361,8 +372,17 @@ const MarketplaceAPI = {
   // Relatórios de Afiliados (comissões) - SHOPEE
   async affiliateReports(dateFrom, dateTo) {
     try {
+      console.log('[AFILIADOS API] Chamando com:', { dateFrom, dateTo });
       const r = await this.call('affiliate_reports', { start_date: dateFrom, end_date: dateTo });
-      const data = r.data?.response || r.data || {};
+      console.log('[AFILIADOS API] Resposta bruta:', JSON.stringify(r).substring(0, 500));
+
+      // Tentar diferentes caminhos para os dados
+      let data = {};
+      if (r.data?.response && typeof r.data.response === 'object') data = r.data.response;
+      else if (typeof r.data === 'object') data = r.data;
+
+      console.log('[AFILIADOS API] Data extraída:', data);
+
       const resultado = {
         totalComissao: parseFloat(data.total_commission) || 0,
         totalVendas: parseFloat(data.total_sales) || 0,
@@ -370,10 +390,10 @@ const MarketplaceAPI = {
         totalAfiliados: parseInt(data.total_affiliates) || 0,
         taxaMedia: parseFloat(data.average_rate) || 0,
       };
-      console.log('[AFILIADOS]', resultado);
+      console.log('[AFILIADOS API] ✓ Resultado:', resultado);
       return resultado;
     } catch(e) {
-      console.warn('[AFILIADOS] erro ao puxar relatórios:', e.message);
+      console.error('[AFILIADOS API] ✗ Erro:', e.message, e);
       return {};
     }
   },
