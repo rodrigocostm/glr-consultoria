@@ -900,10 +900,29 @@ Router.register('financeiro', async (params, el) => {
                 console.log(`[ADS] Shopee - Uma chamada: ${primeiroDia} a ${dataTo}`);
                 const ra = await MarketplaceAPI.call('shopee_ads_daily_performance',
                   { shopId, start_date: primeiroDia, end_date: dataTo });
-                const dias = ra.data?.response || ra.data || [];
+                console.log('[ADS] Shopee - Resposta completa:', JSON.stringify(ra).substring(0, 1000));
+
+                let dias = ra.data?.response || ra.data || [];
+                console.log('[ADS] Shopee - Dias tipo:', Array.isArray(dias) ? 'array' : typeof dias);
+                console.log('[ADS] Shopee - Dias conteúdo:', dias);
+
                 if (Array.isArray(dias)) {
                   totalDias = dias;
                   totalCusto = dias.reduce((s,d)=>s+(parseFloat(d.expense)||parseFloat(d.cost)||0), 0);
+                } else {
+                  console.warn('[ADS] Shopee - "dias" não é array! Tentando outros caminhos...');
+                  // Tentar outros caminhos
+                  if (dias && typeof dias === 'object') {
+                    if (dias.daily_metrics && Array.isArray(dias.daily_metrics)) {
+                      dias = dias.daily_metrics;
+                      totalDias = dias;
+                      totalCusto = dias.reduce((s,d)=>s+(parseFloat(d.expense)||parseFloat(d.cost)||0), 0);
+                    } else if (dias.data && Array.isArray(dias.data)) {
+                      dias = dias.data;
+                      totalDias = dias;
+                      totalCusto = dias.reduce((s,d)=>s+(parseFloat(d.expense)||parseFloat(d.cost)||0), 0);
+                    }
+                  }
                 }
               } else {
                 // Precisa de múltiplas chamadas
