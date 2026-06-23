@@ -4,6 +4,7 @@
 // Docs: https://marketplaces.tiops.com.br/docs/api.html
 // ============================================================
 
+console.log('[marketplace-api.js] Carregando...');
 const MarketplaceAPI = {
   BASE_URL: 'https://mcp.tiops.com.br',
 
@@ -976,3 +977,4 @@ const MarketplaceAPI = {
   }
 
 };
+console.log('[marketplace-api.js] ✓ Carregado com sucesso!');
