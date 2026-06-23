@@ -448,10 +448,6 @@ const MarketplaceAPI = {
     return await this.call('affiliate_products', params);
   }
 
-  async affiliateReports(params = {}) {
-    return await this.call('affiliate_reports', params);
-  }
-
   async affiliateShops(params = {}) {
     return await this.call('affiliate_shops', params);
   }
