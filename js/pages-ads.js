@@ -167,10 +167,16 @@ async function buscarDados(forcar = false) {
             MarketplaceAPI.call('shopee_ads_campaign_daily',    { shopId, campaign_id_list: ids, start_date: sdFrom, end_date: sdTo }),
           ]);
 
-          // Settings → cfgMap
+          // Settings → cfgMap (inclui auto_bidding_info para roas_target)
           if (cfgRes.status === 'fulfilled') {
             const lista = cfgRes.value?.data?.response?.campaign_list || [];
-            lista.forEach(c => { cfgMap[c.campaign_id] = c.common_info || {}; });
+            lista.forEach(c => {
+              cfgMap[c.campaign_id] = {
+                ...(c.common_info || {}),
+                roas_target:    c.auto_bidding_info?.roas_target ?? null,
+                bidding_method: c.common_info?.bidding_method || 'manual',
+              };
+            });
           }
 
           // Daily → perfMap (soma todas as métricas do período)
@@ -196,17 +202,21 @@ async function buscarDados(forcar = false) {
           const perf = perfMap[cid] || {};
           const status = cfg.campaign_status || 'ongoing';
 
+          const orcamento = parseFloat(cfg.campaign_budget) ?? 0;
           return {
-            id:         cid,
-            nome:       cfg.ad_name || perf.nome || `#${cid}`,
-            tipo:       (c.ad_type || cfg.ad_type || '') === 'manual' ? 'Manual' : 'Automático',
-            ativa:      status === 'ongoing',
-            orcamento:  parseFloat(cfg.campaign_budget) || parseFloat(cfg.daily_budget) || 0,
-            gasto:      perf.gasto      || 0,
-            cliques:    perf.cliques    || 0,
-            impressoes: perf.impressoes || 0,
-            pedidos:    perf.pedidos    || 0,
-            receita:    perf.receita    || 0,
+            id:             cid,
+            nome:           cfg.ad_name || perf.nome || `#${cid}`,
+            tipo:           cfg.bidding_method === 'auto' ? 'Automático' : 'Manual',
+            ativa:          status === 'ongoing',
+            orcamento,
+            orcamentoLabel: orcamento === 0 ? 'Ilimitado' : `R$ ${fmtN(orcamento, 2)}/dia`,
+            roasTarget:     cfg.roas_target ?? null,
+            bidding:        cfg.bidding_method || 'manual',
+            gasto:          perf.gasto      || 0,
+            cliques:        perf.cliques    || 0,
+            impressoes:     perf.impressoes || 0,
+            pedidos:        perf.pedidos    || 0,
+            receita:        perf.receita    || 0,
           };
         }).filter(c => c.ativa);
       }
@@ -533,16 +543,26 @@ function renderTabelaCampanhas(campanhas) {
     const roasCor = roas >= 3 ? '#16a34a' : roas >= 1.5 ? '#d97706' : roas > 0 ? '#dc2626' : 'var(--text-muted,#94a3b8)';
     const acosCor = acos === 0 ? 'var(--text-muted,#94a3b8)' : acos <= 30 ? '#16a34a' : acos <= 50 ? '#d97706' : '#dc2626';
 
+    // ROAS target (campanhas auto)
+    const roasTarget = c.roasTarget != null ? fmtN(c.roasTarget / 10, 1) + 'x' : '—';
+    const btnRoas = c.bidding === 'auto'
+      ? `<button onclick="window._adsEditarRoas(${c.id},'${c.nome.replace(/'/g,'').slice(0,30)}',${c.roasTarget ?? 0})" title="Editar meta ROAS"
+          style="background:#f0fdf4;color:#16a34a;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">🎯</button>`
+      : '';
+
     const btnPausar = `<button onclick="window._adsPausar(${c.id})" title="Pausar campanha"
       style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">⏸</button>`;
 
-    const btnOrcamento = `<button onclick="window._adsEditarOrcamento(${c.id},'${c.nome.replace(/'/g,'').slice(0,30)}',${c.orcamento})" title="Editar orçamento"
+    const nomeOrca = c.nome.replace(/'/g,'').slice(0,30);
+    const btnOrcamento = `<button onclick="window._adsEditarOrcamento(${c.id},'${nomeOrca}',${c.orcamento})" title="Editar orçamento"
       style="background:#eff6ff;color:#2563eb;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">✏️</button>`;
 
     return `
       <tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:10px 12px;font-size:13px;font-weight:600;color:var(--text-primary);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.nome}">${c.nome}</td>
-        <td style="padding:10px 12px;font-size:12px;color:var(--text-secondary);">${c.tipo || '—'}</td>
+        <td style="padding:10px 12px;font-size:13px;font-weight:600;color:var(--text-primary);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.nome}">${c.nome}</td>
+        <td style="padding:10px 12px;">
+          <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${c.bidding==='auto'?'#f0fdf4':'#eff6ff'};color:${c.bidding==='auto'?'#16a34a':'#2563eb'};font-weight:600;">${c.tipo}</span>
+        </td>
         <td style="padding:10px 12px;font-size:13px;font-weight:700;text-align:right;color:var(--text-primary);">${fmt(c.gasto)}</td>
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:var(--text-secondary);">${fmtN(c.cliques)}</td>
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:var(--text-secondary);">${fmtN(c.impressoes)}</td>
@@ -550,8 +570,9 @@ function renderTabelaCampanhas(campanhas) {
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:var(--text-secondary);">${fmt(cpc)}</td>
         <td style="padding:10px 12px;font-size:13px;font-weight:700;text-align:right;color:${roasCor};">${roas > 0 ? fmtN(roas, 2) + 'x' : '—'}</td>
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:${acosCor};">${acos > 0 ? fmtN(acos, 1) + '%' : '—'}</td>
-        <td style="padding:10px 12px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmt(c.orcamento)}/dia</td>
-        <td style="padding:10px 12px;text-align:right;white-space:nowrap;display:flex;gap:4px;justify-content:flex-end;">${btnOrcamento}${btnPausar}</td>
+        <td style="padding:10px 12px;font-size:13px;text-align:right;color:${c.roasTarget!=null?'#16a34a':'var(--text-muted,#94a3b8)'};font-weight:${c.roasTarget!=null?'700':'400'};">${roasTarget}</td>
+        <td style="padding:10px 12px;font-size:12px;text-align:right;color:var(--text-secondary);">${c.orcamentoLabel}</td>
+        <td style="padding:10px 12px;text-align:right;white-space:nowrap;display:flex;gap:4px;justify-content:flex-end;">${btnRoas}${btnOrcamento}${btnPausar}</td>
       </tr>
     `;
   }).join('');
@@ -568,8 +589,9 @@ function renderTabelaCampanhas(campanhas) {
             <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">Impressões</th>
             <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">CTR</th>
             <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">CPC</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">ROAS</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">ROAS Real</th>
             <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">ACoS</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">Meta ROAS</th>
             <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">Orçamento</th>
             <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">Ações</th>
           </tr>
@@ -585,10 +607,10 @@ function renderModalOrcamento() {
   return `
     <div id="ads-modal-orc" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
       <div style="background:var(--bg-surface);border-radius:16px;padding:28px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-        <h3 id="ads-modal-titulo" style="font-size:15px;font-weight:700;margin:0 0 6px;color:var(--text-primary);">Editar Orçamento</h3>
-        <p id="ads-modal-nome" style="font-size:12px;color:var(--text-secondary);margin:0 0 20px;"></p>
-        <label style="font-size:12px;font-weight:600;color:var(--text-secondary);">Novo orçamento diário (R$)</label>
-        <input id="ads-modal-valor" type="number" min="1" step="0.01"
+        <h3 style="font-size:15px;font-weight:700;margin:0 0 6px;color:var(--text-primary);">✏️ Editar Orçamento Diário</h3>
+        <p id="ads-modal-orc-nome" style="font-size:12px;color:var(--text-secondary);margin:0 0 20px;"></p>
+        <label style="font-size:12px;font-weight:600;color:var(--text-secondary);">Novo orçamento diário (R$) — 0 = Ilimitado</label>
+        <input id="ads-modal-orc-valor" type="number" min="0" step="0.01"
           style="width:100%;margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:15px;background:var(--bg-base);color:var(--text-primary);box-sizing:border-box;">
         <div style="display:flex;gap:8px;margin-top:20px;">
           <button onclick="document.getElementById('ads-modal-orc').style.display='none'"
@@ -596,7 +618,28 @@ function renderModalOrcamento() {
           <button onclick="window._adsSalvarOrcamento()"
             style="flex:1;padding:10px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Salvar</button>
         </div>
-        <p id="ads-modal-msg" style="font-size:12px;text-align:center;margin:10px 0 0;"></p>
+        <p id="ads-modal-orc-msg" style="font-size:12px;text-align:center;margin:10px 0 0;"></p>
+      </div>
+    </div>
+
+    <div id="ads-modal-roas" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
+      <div style="background:var(--bg-surface);border-radius:16px;padding:28px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+        <h3 style="font-size:15px;font-weight:700;margin:0 0 6px;color:var(--text-primary);">🎯 Editar Meta de ROAS</h3>
+        <p id="ads-modal-roas-nome" style="font-size:12px;color:var(--text-secondary);margin:0 0 4px;"></p>
+        <p style="font-size:11px;color:var(--text-secondary);margin:0 0 20px;">A Shopee armazena o ROAS × 10 (ex: meta 4.5x = valor 45)</p>
+        <label style="font-size:12px;font-weight:600;color:var(--text-secondary);">Meta ROAS (valor Shopee — ex: 45 = 4.5x)</label>
+        <input id="ads-modal-roas-valor" type="number" min="1" step="1"
+          style="width:100%;margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:15px;background:var(--bg-base);color:var(--text-primary);box-sizing:border-box;">
+        <div style="background:#f0fdf4;border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;color:#15803d;">
+          💡 Shopee ajustará os lances automaticamente para atingir esta meta
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px;">
+          <button onclick="document.getElementById('ads-modal-roas').style.display='none'"
+            style="flex:1;padding:10px;background:var(--bg-base);border:1px solid var(--border);border-radius:8px;font-weight:600;cursor:pointer;color:var(--text-secondary);">Cancelar</button>
+          <button onclick="window._adsSalvarRoas()"
+            style="flex:1;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Salvar Meta</button>
+        </div>
+        <p id="ads-modal-roas-msg" style="font-size:12px;text-align:center;margin:10px 0 0;"></p>
       </div>
     </div>
   `;
@@ -668,31 +711,44 @@ window._adsPausar = async function(campaignId) {
 
 window._adsEditarOrcamento = function(campaignId, nome, orcamentoAtual) {
   _adsModalCampId = campaignId;
-  document.getElementById('ads-modal-nome').textContent = nome;
-  document.getElementById('ads-modal-valor').value = orcamentoAtual || '';
-  document.getElementById('ads-modal-msg').textContent = '';
+  document.getElementById('ads-modal-orc-nome').textContent = nome;
+  document.getElementById('ads-modal-orc-valor').value = orcamentoAtual || 0;
+  document.getElementById('ads-modal-orc-msg').textContent = '';
   document.getElementById('ads-modal-orc').style.display = 'flex';
-  document.getElementById('ads-modal-valor').focus();
+  setTimeout(() => document.getElementById('ads-modal-orc-valor').focus(), 100);
 };
 
 window._adsSalvarOrcamento = async function() {
-  const novoValor = parseFloat(document.getElementById('ads-modal-valor').value);
-  const msg = document.getElementById('ads-modal-msg');
-  if (!novoValor || novoValor < 1) { msg.textContent = '⚠️ Informe um valor válido (mín. R$ 1,00)'; msg.style.color = '#dc2626'; return; }
+  const novoValor = parseFloat(document.getElementById('ads-modal-orc-valor').value);
+  const msg = document.getElementById('ads-modal-orc-msg');
+  if (isNaN(novoValor) || novoValor < 0) { msg.textContent = '⚠️ Valor inválido'; msg.style.color = '#dc2626'; return; }
   msg.textContent = 'Salvando...'; msg.style.color = 'var(--text-secondary)';
   try {
-    await MarketplaceAPI.call('shopee_ads_edit_campaign', {
-      campaign_id: _adsModalCampId,
-      campaign_budget: novoValor,
-    });
+    await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: _adsModalCampId, campaign_budget: novoValor });
     msg.textContent = '✅ Orçamento atualizado!'; msg.style.color = '#16a34a';
-    setTimeout(() => {
-      document.getElementById('ads-modal-orc').style.display = 'none';
-      buscarDados(true);
-    }, 1200);
-  } catch(e) {
-    msg.textContent = '❌ Erro: ' + e.message; msg.style.color = '#dc2626';
-  }
+    setTimeout(() => { document.getElementById('ads-modal-orc').style.display = 'none'; buscarDados(true); }, 1200);
+  } catch(e) { msg.textContent = '❌ Erro: ' + e.message; msg.style.color = '#dc2626'; }
+};
+
+window._adsEditarRoas = function(campaignId, nome, roasAtual) {
+  _adsModalCampId = campaignId;
+  document.getElementById('ads-modal-roas-nome').textContent = nome;
+  document.getElementById('ads-modal-roas-valor').value = roasAtual || '';
+  document.getElementById('ads-modal-roas-msg').textContent = '';
+  document.getElementById('ads-modal-roas').style.display = 'flex';
+  setTimeout(() => document.getElementById('ads-modal-roas-valor').focus(), 100);
+};
+
+window._adsSalvarRoas = async function() {
+  const novoValor = parseInt(document.getElementById('ads-modal-roas-valor').value);
+  const msg = document.getElementById('ads-modal-roas-msg');
+  if (!novoValor || novoValor < 1) { msg.textContent = '⚠️ Informe um valor válido (ex: 45 para meta 4.5x)'; msg.style.color = '#dc2626'; return; }
+  msg.textContent = 'Salvando...'; msg.style.color = 'var(--text-secondary)';
+  try {
+    await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: _adsModalCampId, roas_target: novoValor });
+    msg.textContent = `✅ Meta ROAS atualizada para ${fmtN(novoValor/10,1)}x!`; msg.style.color = '#16a34a';
+    setTimeout(() => { document.getElementById('ads-modal-roas').style.display = 'none'; buscarDados(true); }, 1500);
+  } catch(e) { msg.textContent = '❌ Erro: ' + e.message; msg.style.color = '#dc2626'; }
 };
 
 // ─── Registro da rota ─────────────────────────────────────────
