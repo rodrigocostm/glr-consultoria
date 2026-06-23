@@ -1004,11 +1004,20 @@ Router.register('financeiro', async (params, el) => {
 
   function renderFiltroContas() {
     const sel = document.getElementById('fin-sel-conta');
-    if (!sel || !contas.length) return;
+    if (!sel) return;
     const atual = sel.value;
-    sel.innerHTML = `<option value="todas">Todas</option>` +
-      contas.map(c=>`<option value="${c.external_id}">${c.nickname||c.external_id}</option>`).join('');
-    if ([...sel.options].some(o=>o.value===atual)) sel.value = atual;
+    let html = `<option value="todas">Todas</option>`;
+    if (contas.length > 0) {
+      html += contas.map(c=>`<option value="${c.external_id}">${c.nickname||c.external_id}</option>`).join('');
+    }
+    sel.innerHTML = html;
+    // Tentar manter valor anterior, senão vai para "Todas"
+    if ([...sel.options].some(o=>o.value===atual)) {
+      sel.value = atual;
+    } else {
+      sel.value = 'todas';
+    }
+    console.log('[renderFiltroContas] Select preenchido com', contas.length, 'contas, selecionado:', sel.value);
   }
 
   // ── Globais ───────────────────────────────────────────────
