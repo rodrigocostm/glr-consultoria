@@ -17,10 +17,12 @@ Router.register('financeiro', async (params, el) => {
 
   // Mês selecionado persiste entre recarregamentos (não volta sozinho pro mês atual)
   let mesSel   = localStorage.getItem('glr_fin_mes') || `${hoje.getFullYear()}-${pad(hoje.getMonth()+1)}`;
-  let contaSel = 'todas';
+  let empresaSel = 'todas';  // empresa/tag selecionada
+  let contaSel = 'todas';    // conta individual selecionada
   let incluirReemb = true;
   let pedidos  = [];
   let contas   = [];
+  let empresas = [];  // lista de empresas/tags únicas
   let aberto   = {};
   let adsAPI   = {};  // investimento em ADS vindo da API, por plataforma
   let adsDetalhados = {};  // dados detalhados de ADS: cliques, impressões, ROI, etc
@@ -551,6 +553,7 @@ Router.register('financeiro', async (params, el) => {
       if (statusEl) statusEl.textContent = 'Buscando contas...';
       const r = await MarketplaceAPI.call('list_accounts');
       contas = r.data?.accounts||[];
+      renderFiltroEmpresas();
       renderFiltroContas();
 
       // Se está reprocessando uma conta específica, buscar APENAS dela
@@ -1002,13 +1005,33 @@ Router.register('financeiro', async (params, el) => {
     }
   }
 
+  function renderFiltroEmpresas() {
+    const sel = document.getElementById('fin-sel-empresa');
+    if (!sel) return;
+    // Extrair empresas únicas das tags das contas
+    const emps = new Set(contas.map(c => c.tag || 'Sem tag').filter(t => t));
+    empresas = ['Todas', ...Array.from(emps).sort()];
+
+    let html = empresas.map(e => `<option value="${e === 'Todas' ? 'todas' : e}">${e}</option>`).join('');
+    sel.innerHTML = html;
+    sel.value = empresaSel;
+    console.log('[renderFiltroEmpresas] Empresas:', empresas);
+  }
+
   function renderFiltroContas() {
     const sel = document.getElementById('fin-sel-conta');
     if (!sel) return;
     const atual = sel.value;
+
+    // Filtrar contas por empresa selecionada
+    let contasFiltradas = contas;
+    if (empresaSel !== 'todas') {
+      contasFiltradas = contas.filter(c => (c.tag || 'Sem tag') === empresaSel);
+    }
+
     let html = `<option value="todas">Todas</option>`;
-    if (contas.length > 0) {
-      html += contas.map(c=>`<option value="${c.external_id}">${c.nickname||c.external_id}</option>`).join('');
+    if (contasFiltradas.length > 0) {
+      html += contasFiltradas.map(c=>`<option value="${c.external_id}">${c.nickname||c.external_id}</option>`).join('');
     }
     sel.innerHTML = html;
     // Tentar manter valor anterior, senão vai para "Todas"
@@ -1016,8 +1039,9 @@ Router.register('financeiro', async (params, el) => {
       sel.value = atual;
     } else {
       sel.value = 'todas';
+      contaSel = 'todas';
     }
-    console.log('[renderFiltroContas] Select preenchido com', contas.length, 'contas, selecionado:', sel.value);
+    console.log('[renderFiltroContas] Select preenchido com', contasFiltradas.length, 'contas, selecionado:', sel.value);
   }
 
   // ── Globais ───────────────────────────────────────────────
@@ -1051,6 +1075,9 @@ Router.register('financeiro', async (params, el) => {
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <span id="fin-status" style="font-size:11px;color:var(--text-muted);margin-right:4px;"></span>
         <button onclick="window.print()" class="btn" style="border:1px solid var(--border);background:var(--bg-card);padding:7px 14px;border-radius:99px;font-size:13px;">📥 PDF</button>
+        <select id="fin-sel-empresa" class="form-input" style="border-radius:99px;padding:7px 14px;width:140px;" title="Filtrar por empresa/tag">
+          <option value="todas">Todas as Empresas</option>
+        </select>
         <select id="fin-sel-conta" class="form-input" style="border-radius:99px;padding:7px 14px;width:130px;">
           <option value="todas">Todas</option>
         </select>
@@ -1207,13 +1234,14 @@ Router.register('financeiro', async (params, el) => {
       transform: translateX(20px);
     }
     @media print {
-      #sidebar,#header,.btn,.btn-primary,#fin-sel-conta,#fin-sel-mes,#fin-btn-atualizar,#fin-btn-reprocessar,#fin-status,.fin-switch{display:none!important;}
+      #sidebar,#header,.btn,.btn-primary,#fin-sel-empresa,#fin-sel-conta,#fin-sel-mes,#fin-btn-atualizar,#fin-btn-reprocessar,#fin-status,.fin-switch{display:none!important;}
       .fin-card{break-inside:avoid;border-color:#ccc!important;background:white!important;box-shadow:none!important;}
       .fin-titulo,.fin-row,.fin-sub,.fin-final{color:#111!important;}
     }
   </style>`;
 
   document.getElementById('fin-chk-reemb').addEventListener('change', e=>{ incluirReemb=e.target.checked; renderConteudo(); });
+  document.getElementById('fin-sel-empresa').addEventListener('change', e=>{ empresaSel=e.target.value; renderFiltroContas(); renderConteudo(); });
   document.getElementById('fin-sel-conta').addEventListener('change', e=>{ contaSel=e.target.value; renderConteudo(); });
   document.getElementById('fin-sel-mes').addEventListener('change', e=>{
     mesSel = e.target.value;
@@ -1243,6 +1271,7 @@ Router.register('financeiro', async (params, el) => {
   // Carregar contas SEMPRE (independente de cache)
   MarketplaceAPI.call('list_accounts').then(r => {
     contas = r.data?.accounts||[];
+    renderFiltroEmpresas();
     renderFiltroContas();
     console.log('[Contas] Carregadas:', contas.length);
   }).catch(e => {
