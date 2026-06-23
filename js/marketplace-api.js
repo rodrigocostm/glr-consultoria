@@ -439,4 +439,540 @@ const MarketplaceAPI = {
   },
 };
 
-window.MarketplaceAPI = MarketplaceAPI;
+  async affiliateOffers(params = {}) {
+    return await this.call('affiliate_offers', params);
+  }
+
+  async affiliateProducts(params = {}) {
+    return await this.call('affiliate_products', params);
+  }
+
+  async affiliateReports(params = {}) {
+    return await this.call('affiliate_reports', params);
+  }
+
+  async affiliateShops(params = {}) {
+    return await this.call('affiliate_shops', params);
+  }
+
+  async affiliateShortLink(params = {}) {
+    return await this.call('affiliate_short_link', params);
+  }
+
+  async mlAcceptPreNegotiated(params = {}) {
+    return await this.call('ml_accept_pre_negotiated', params);
+  }
+
+  async mlAcceptUnhealthyStock(params = {}) {
+    return await this.call('ml_accept_unhealthy_stock', params);
+  }
+
+  async mlAddDodItem(params = {}) {
+    return await this.call('ml_add_dod_item', params);
+  }
+
+  async mlAddLightningItem(params = {}) {
+    return await this.call('ml_add_lightning_item', params);
+  }
+
+  async mlAddPixCampaignItem(params = {}) {
+    return await this.call('ml_add_pix_campaign_item', params);
+  }
+
+  async mlAddPriceMatchingItem(params = {}) {
+    return await this.call('ml_add_price_matching_item', params);
+  }
+
+  async mlAddPromotionItems(params = {}) {
+    return await this.call('ml_add_promotion_items', params);
+  }
+
+  async mlAddSellerCampaignItem(params = {}) {
+    return await this.call('ml_add_seller_campaign_item', params);
+  }
+
+  async mlAddSmartCampaignItem(params = {}) {
+    return await this.call('ml_add_smart_campaign_item', params);
+  }
+
+  async mlAdsAddItems(params = {}) {
+    return await this.call('ml_ads_add_items', params);
+  }
+
+  async mlAdsCampaignItems(params = {}) {
+    return await this.call('ml_ads_campaign_items', params);
+  }
+
+  async mlAdsCampaigns(params = {}) {
+    return await this.call('ml_ads_campaigns', params);
+  }
+
+  async mlAdsCreateCampaign(params = {}) {
+    return await this.call('ml_ads_create_campaign', params);
+  }
+
+  async mlAdsGetAd(params = {}) {
+    return await this.call('ml_ads_get_ad', params);
+  }
+
+  async mlAdsMetrics(params = {}) {
+    return await this.call('ml_ads_metrics', params);
+  }
+
+  async mlAdsRemoveItems(params = {}) {
+    return await this.call('ml_ads_remove_items', params);
+  }
+
+  async mlAdsUpdateAd(params = {}) {
+    return await this.call('ml_ads_update_ad', params);
+  }
+
+  async mlAdsUpdateCampaign(params = {}) {
+    return await this.call('ml_ads_update_campaign', params);
+  }
+
+  async mlBrandCentral(params = {}) {
+    return await this.call('ml_brand_central', params);
+  }
+
+  async mlCatalogBuybox(params = {}) {
+    return await this.call('ml_catalog_buybox', params);
+  }
+
+  async mlCatalogEligibility(params = {}) {
+    return await this.call('ml_catalog_eligibility', params);
+  }
+
+  async mlCatalogEligibleItems(params = {}) {
+    return await this.call('ml_catalog_eligible_items', params);
+  }
+
+  async mlCatalogForewarningDate(params = {}) {
+    return await this.call('ml_catalog_forewarning_date', params);
+  }
+
+  async mlCatalogForewarningItems(params = {}) {
+    return await this.call('ml_catalog_forewarning_items', params);
+  }
+
+  async mlCatalogListedItems(params = {}) {
+    return await this.call('ml_catalog_listed_items', params);
+  }
+
+  async mlCatalogNotListed(params = {}) {
+    return await this.call('ml_catalog_not_listed', params);
+  }
+
+  async mlCatalogOptin(params = {}) {
+    return await this.call('ml_catalog_optin', params);
+  }
+
+  async mlCatalogPriceToWin(params = {}) {
+    return await this.call('ml_catalog_price_to_win', params);
+  }
+
+  async mlCatalogSearchProducts(params = {}) {
+    return await this.call('ml_catalog_search_products', params);
+  }
+
+  async mlCatalogSuggestionsQuota(params = {}) {
+    return await this.call('ml_catalog_suggestions_quota', params);
+  }
+
+  async mlCatalogSuggestionsSearch(params = {}) {
+    return await this.call('ml_catalog_suggestions_search', params);
+  }
+
+  async mlCouponItems(params = {}) {
+    return await this.call('ml_coupon_items', params);
+  }
+
+  async mlCreateCoupon(params = {}) {
+    return await this.call('ml_create_coupon', params);
+  }
+
+  async mlCreateKit(params = {}) {
+    return await this.call('ml_create_kit', params);
+  }
+
+  async mlCreatePromotion(params = {}) {
+    return await this.call('ml_create_promotion', params);
+  }
+
+  async mlCreateSellerCampaign(params = {}) {
+    return await this.call('ml_create_seller_campaign', params);
+  }
+
+  async mlDeleteAutomation(params = {}) {
+    return await this.call('ml_delete_automation', params);
+  }
+
+  async mlDeleteCoupon(params = {}) {
+    return await this.call('ml_delete_coupon', params);
+  }
+
+  async mlDeleteCouponItem(params = {}) {
+    return await this.call('ml_delete_coupon_item', params);
+  }
+
+  async mlDeleteDodItem(params = {}) {
+    return await this.call('ml_delete_dod_item', params);
+  }
+
+  async mlDeleteItemPromotions(params = {}) {
+    return await this.call('ml_delete_item_promotions', params);
+  }
+
+  async mlDeleteLightningItem(params = {}) {
+    return await this.call('ml_delete_lightning_item', params);
+  }
+
+  async mlDeletePromotionItems(params = {}) {
+    return await this.call('ml_delete_promotion_items', params);
+  }
+
+  async mlDeleteSellerCampaign(params = {}) {
+    return await this.call('ml_delete_seller_campaign', params);
+  }
+
+  async mlDeleteSellerCampaignItem(params = {}) {
+    return await this.call('ml_delete_seller_campaign_item', params);
+  }
+
+  async mlDodItems(params = {}) {
+    return await this.call('ml_dod_items', params);
+  }
+
+  async mlExclusionListItem(params = {}) {
+    return await this.call('ml_exclusion_list_item', params);
+  }
+
+  async mlExclusionListSeller(params = {}) {
+    return await this.call('ml_exclusion_list_seller', params);
+  }
+
+  async mlGetAutomation(params = {}) {
+    return await this.call('ml_get_automation', params);
+  }
+
+  async mlGetCoupon(params = {}) {
+    return await this.call('ml_get_coupon', params);
+  }
+
+  async mlGetKit(params = {}) {
+    return await this.call('ml_get_kit', params);
+  }
+
+  async mlGetPixCampaign(params = {}) {
+    return await this.call('ml_get_pix_campaign', params);
+  }
+
+  async mlGetPreNegotiated(params = {}) {
+    return await this.call('ml_get_pre_negotiated', params);
+  }
+
+  async mlGetPriceMatchingCampaign(params = {}) {
+    return await this.call('ml_get_price_matching_campaign', params);
+  }
+
+  async mlGetPriceRules(params = {}) {
+    return await this.call('ml_get_price_rules', params);
+  }
+
+  async mlGetProductIdentifiers(params = {}) {
+    return await this.call('ml_get_product_identifiers', params);
+  }
+
+  async mlGetPromotion(params = {}) {
+    return await this.call('ml_get_promotion', params);
+  }
+
+  async mlGetSellerCampaign(params = {}) {
+    return await this.call('ml_get_seller_campaign', params);
+  }
+
+  async mlGetSmartCampaign(params = {}) {
+    return await this.call('ml_get_smart_campaign', params);
+  }
+
+  async mlGetUnhealthyStock(params = {}) {
+    return await this.call('ml_get_unhealthy_stock', params);
+  }
+
+  async mlItemPromotions(params = {}) {
+    return await this.call('ml_item_promotions', params);
+  }
+
+  async mlLightningItems(params = {}) {
+    return await this.call('ml_lightning_items', params);
+  }
+
+  async mlListAutomatedItems(params = {}) {
+    return await this.call('ml_list_automated_items', params);
+  }
+
+  async mlListPromotions(params = {}) {
+    return await this.call('ml_list_promotions', params);
+  }
+
+  async mlListingFees(params = {}) {
+    return await this.call('ml_listing_fees', params);
+  }
+
+  async mlMessagesAttachment(params = {}) {
+    return await this.call('ml_messages_attachment', params);
+  }
+
+  async mlMessagesGet(params = {}) {
+    return await this.call('ml_messages_get', params);
+  }
+
+  async mlMessagesSend(params = {}) {
+    return await this.call('ml_messages_send', params);
+  }
+
+  async mlMessagesUnread(params = {}) {
+    return await this.call('ml_messages_unread', params);
+  }
+
+  async mlPixCampaignItems(params = {}) {
+    return await this.call('ml_pix_campaign_items', params);
+  }
+
+  async mlPreNegotiatedItems(params = {}) {
+    return await this.call('ml_pre_negotiated_items', params);
+  }
+
+  async mlPriceMatchingItems(params = {}) {
+    return await this.call('ml_price_matching_items', params);
+  }
+
+  async mlPromotionCandidate(params = {}) {
+    return await this.call('ml_promotion_candidate', params);
+  }
+
+  async mlPromotionItems(params = {}) {
+    return await this.call('ml_promotion_items', params);
+  }
+
+  async mlPromotionOffer(params = {}) {
+    return await this.call('ml_promotion_offer', params);
+  }
+
+  async mlRelist(params = {}) {
+    return await this.call('ml_relist', params);
+  }
+
+  async mlSearchKitComponents(params = {}) {
+    return await this.call('ml_search_kit_components', params);
+  }
+
+  async mlSellerCampaignItems(params = {}) {
+    return await this.call('ml_seller_campaign_items', params);
+  }
+
+  async mlSetAutomation(params = {}) {
+    return await this.call('ml_set_automation', params);
+  }
+
+  async mlSetExclusionItem(params = {}) {
+    return await this.call('ml_set_exclusion_item', params);
+  }
+
+  async mlSetExclusionSeller(params = {}) {
+    return await this.call('ml_set_exclusion_seller', params);
+  }
+
+  async mlSetProductIdentifiers(params = {}) {
+    return await this.call('ml_set_product_identifiers', params);
+  }
+
+  async mlSmartCampaignItems(params = {}) {
+    return await this.call('ml_smart_campaign_items', params);
+  }
+
+  async mlUnhealthyStockItems(params = {}) {
+    return await this.call('ml_unhealthy_stock_items', params);
+  }
+
+  async mlUpdateCoupon(params = {}) {
+    return await this.call('ml_update_coupon', params);
+  }
+
+  async mlUpdateSellerCampaign(params = {}) {
+    return await this.call('ml_update_seller_campaign', params);
+  }
+
+  async shopeeAdsAddKeywords(params = {}) {
+    return await this.call('shopee_ads_add_keywords', params);
+  }
+
+  async shopeeAdsBalance(params = {}) {
+    return await this.call('shopee_ads_balance', params);
+  }
+
+  async shopeeAdsCampaignPerformance(params = {}) {
+    return await this.call('shopee_ads_campaign_performance', params);
+  }
+
+  async shopeeAdsCreateCampaign(params = {}) {
+    return await this.call('shopee_ads_create_campaign', params);
+  }
+
+  async shopeeAdsDailyPerformance(params = {}) {
+    return await this.call('shopee_ads_daily_performance', params);
+  }
+
+  async shopeeAdsHourlyPerformance(params = {}) {
+    return await this.call('shopee_ads_hourly_performance', params);
+  }
+
+  async shopeeAdsListCampaigns(params = {}) {
+    return await this.call('shopee_ads_list_campaigns', params);
+  }
+
+  async shopeeAdsListKeywords(params = {}) {
+    return await this.call('shopee_ads_list_keywords', params);
+  }
+
+  async shopeeAdsSuggestedBid(params = {}) {
+    return await this.call('shopee_ads_suggested_bid', params);
+  }
+
+  async shopeeAdsSuggestedKeywords(params = {}) {
+    return await this.call('shopee_ads_suggested_keywords', params);
+  }
+
+  async shopeeAdsUpdateBid(params = {}) {
+    return await this.call('shopee_ads_update_bid', params);
+  }
+
+  async shopeeAdsUpdateCampaign(params = {}) {
+    return await this.call('shopee_ads_update_campaign', params);
+  }
+
+  async shopeeAttributes(params = {}) {
+    return await this.call('shopee_attributes', params);
+  }
+
+  async shopeeBilling(params = {}) {
+    return await this.call('shopee_billing', params);
+  }
+
+  async shopeeBrands(params = {}) {
+    return await this.call('shopee_brands', params);
+  }
+
+  async shopeeCancelOrder(params = {}) {
+    return await this.call('shopee_cancel_order', params);
+  }
+
+  async shopeeCategories(params = {}) {
+    return await this.call('shopee_categories', params);
+  }
+
+  async shopeeConfirmReturn(params = {}) {
+    return await this.call('shopee_confirm_return', params);
+  }
+
+  async shopeeConversations(params = {}) {
+    return await this.call('shopee_conversations', params);
+  }
+
+  async shopeeCreateItem(params = {}) {
+    return await this.call('shopee_create_item', params);
+  }
+
+  async shopeeDisputeReturn(params = {}) {
+    return await this.call('shopee_dispute_return', params);
+  }
+
+  async shopeeEscrow(params = {}) {
+    return await this.call('shopee_escrow', params);
+  }
+
+  async shopeeGetItem(params = {}) {
+    return await this.call('shopee_get_item', params);
+  }
+
+  async shopeeGetVideoList(params = {}) {
+    return await this.call('shopee_get_video_list', params);
+  }
+
+  async shopeeIncome(params = {}) {
+    return await this.call('shopee_income', params);
+  }
+
+  async shopeeListItems(params = {}) {
+    return await this.call('shopee_list_items', params);
+  }
+
+  async shopeeMessages(params = {}) {
+    return await this.call('shopee_messages', params);
+  }
+
+  async shopeeOrderDetail(params = {}) {
+    return await this.call('shopee_order_detail', params);
+  }
+
+  async shopeeOrders(params = {}) {
+    return await this.call('shopee_orders', params);
+  }
+
+  async shopeePayout(params = {}) {
+    return await this.call('shopee_payout', params);
+  }
+
+  async shopeeReturnDetail(params = {}) {
+    return await this.call('shopee_return_detail', params);
+  }
+
+  async shopeeReturnsList(params = {}) {
+    return await this.call('shopee_returns_list', params);
+  }
+
+  async shopeeSalesSummary(params = {}) {
+    return await this.call('shopee_sales_summary', params);
+  }
+
+  async shopeeSendMessage(params = {}) {
+    return await this.call('shopee_send_message', params);
+  }
+
+  async shopeeSetOrderNote(params = {}) {
+    return await this.call('shopee_set_order_note', params);
+  }
+
+  async shopeeShipOrder(params = {}) {
+    return await this.call('shopee_ship_order', params);
+  }
+
+  async shopeeTracking(params = {}) {
+    return await this.call('shopee_tracking', params);
+  }
+
+  async shopeeUpdateItem(params = {}) {
+    return await this.call('shopee_update_item', params);
+  }
+
+  async shopeeUpdatePrice(params = {}) {
+    return await this.call('shopee_update_price', params);
+  }
+
+  async shopeeUpdateStock(params = {}) {
+    return await this.call('shopee_update_stock', params);
+  }
+
+  async shopeeUploadVideo(params = {}) {
+    return await this.call('shopee_upload_video', params);
+  }
+
+  async shopeeVideoStatus(params = {}) {
+    return await this.call('shopee_video_status', params);
+  }
+
+  async shopeeWallet(params = {}) {
+    return await this.call('shopee_wallet', params);
+  }
+
+};
