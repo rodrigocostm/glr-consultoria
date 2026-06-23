@@ -310,21 +310,20 @@ Router.register('financeiro', async (params, el) => {
       }).join(''), true
     );
 
-    // ── 3b. Reembolsos e Devoluções ──
-    const sReembolsos = secao('reembolsos', '↩️ Reembolsos e Devoluções',
-      {num:0, txt:R$(nomes.reduce((s,n)=>s+plats[n].valorReemb, 0))},
+    // ── 3b. Pedidos Cancelados/Reembolsados ──
+    const sPedidosCancelados = secao('cancelados', '❌ Pedidos Cancelados/Reembolsados',
+      {num:nomes.reduce((s,n)=>s+plats[n].nReemb,0), txt:R$(nomes.reduce((s,n)=>s+plats[n].valorReemb, 0))},
       nomes.map(n => {
         const a = plats[n];
-        if (a.nReemb === 0) return `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:12px;">Nenhum reembolso em ${n}</div>`;
+        if (a.nReemb === 0) return `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:12px;">Sem cancelamentos em ${n}</div>`;
         const custoReemb = a.custoProdReemb + a.custoExtraReemb;
         return `
           <div class="fin-grupo">
-            <div class="fin-row"><span style="font-weight:600;">${n}</span><span style="font-weight:600;">Reembolsos</span></div>
+            <div class="fin-row"><span style="font-weight:600;">${n}</span></div>
             <div style="padding-left:16px;border-left:2px solid rgba(239,68,68,0.3);">
-              <div class="fin-row"><span>📦 Número de devoluções:</span><strong>${a.nReemb}</strong></div>
-              <div class="fin-row"><span>💰 Valor total reembolsado:</span><strong style="color:var(--red);">- ${R$(a.valorReemb)}</strong></div>
-              <div class="fin-row"><span>📊 Custo das devoluções:</span><strong style="color:var(--red);">- ${R$(custoReemb)}</strong></div>
-              <div class="fin-row"><span>💸 Custo unitário médio:</span><strong>${R$(a.nReemb > 0 ? custoReemb / a.nReemb : 0)}</strong></div>
+              <div class="fin-row"><span>📦 Pedidos cancelados:</span><strong>${a.nReemb}</strong></div>
+              <div class="fin-row"><span>💰 Valor cancelado:</span><strong style="color:var(--red);">- ${R$(a.valorReemb)}</strong></div>
+              <div class="fin-row"><span>📊 Custo dos produtos:</span><strong style="color:var(--red);">- ${R$(custoReemb)}</strong></div>
             </div>
           </div>
         `;
@@ -475,7 +474,7 @@ Router.register('financeiro', async (params, el) => {
       </div>
     </div>`;
 
-    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sReembolsos + sLucro + sArmaz + sAds + sAdsDetalhados + sAfiliados + sPayout + sDepois + sReceita + sDespesas + sFinal;
+    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sPedidosCancelados + sLucro + sArmaz + sAds + sAdsDetalhados + sAfiliados + sPayout + sDepois + sReceita + sDespesas + sFinal;
 
     cont.querySelectorAll('.fin-inp').forEach(inp=>{
       inp.addEventListener('change', ()=>{
