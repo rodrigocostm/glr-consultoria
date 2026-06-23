@@ -514,13 +514,16 @@ Router.register('financeiro', async (params, el) => {
 
     // Verificar cache se não for reprocessamento
     console.log('[BUSCAR] Checando cache | !forceReprocess:', !forceReprocess, '| cache existe:', !!carregarCache());
-    if (!forceReprocess && carregarCache()) {
+    let tempoCache = null;
+    if (!forceReprocess && (tempoCache = carregarCache())) {
+      // ✅ OTIMIZAÇÃO: Mostrar cache IMEDIATAMENTE (sem esperar a busca nova)
       if (statusEl) {
-        const cacheTime = new Date(carregarCache()).toLocaleTimeString('pt-BR');
-        statusEl.textContent = `✓ Dados do cache (${cacheTime}) · Clique em "♻️ Reprocessar" para atualizar`;
+        const cacheTime = new Date(tempoCache).toLocaleTimeString('pt-BR');
+        statusEl.textContent = `✓ Cache (${cacheTime})... atualizando em background`;
       }
       renderConteudo();
-      return;
+      // Continua a função para buscar novos dados em background
+      buscando = false; // Permite que o usuário interaja
     }
 
     forceReprocess = false; // reseta flag
@@ -614,7 +617,7 @@ Router.register('financeiro', async (params, el) => {
             const collectionsMap = {};
             const pedidosComPayment = mlPedidos.filter(p=>p.paymentId);
             let colLogFeito = false;
-            const COL_CONC = 8;
+            const COL_CONC = 20; // Aumentado de 8 para 20 requisições simultâneas
             let colAtivos = 0, colIdx = 0, colDone = 0;
             await new Promise(colResolve => {
               if (!pedidosComPayment.length) { colResolve(); return; }
