@@ -195,6 +195,34 @@ const MarketplaceAPI = {
     return out;
   },
 
+  // Saldo de ADS Shopee
+  async shopeeAdsBalance({ shopId }) {
+    const r = await this.call('shopee_ads_balance', { shopId });
+    return r;
+  },
+
+  // Performance diária de ADS Shopee (gasto real por período)
+  async shopeeAdsDailyPerformance({ shopId, start_date, end_date }) {
+    const r = await this.call('shopee_ads_daily_performance', { shopId, start_date, end_date });
+    return r;
+  },
+
+  // Métricas detalhadas de ADS Shopee (agrupa diário em resumo)
+  async shopeeAdsMetricsDetailed(shopId, start_date, end_date) {
+    try {
+      const r = await this.call('shopee_ads_daily_performance', { shopId, start_date, end_date });
+      const dias = r?.data?.response || r?.data?.data || r?.data || [];
+      if (!Array.isArray(dias) || dias.length === 0) return { investimento: 0, cliques: 0, impressoes: 0 };
+      return {
+        investimento: dias.reduce((s, d) => s + (parseFloat(d.expense) || parseFloat(d.cost) || 0), 0),
+        cliques:      dias.reduce((s, d) => s + (parseInt(d.clicks)    || 0), 0),
+        impressoes:   dias.reduce((s, d) => s + (parseInt(d.impressions) || 0), 0),
+      };
+    } catch(e) {
+      return { investimento: 0, cliques: 0, impressoes: 0 };
+    }
+  },
+
   // Performance da loja Shopee
   async shopeePerformance(shopId) {
     try {

@@ -901,7 +901,7 @@ Router.register('financeiro', async (params, el) => {
                 });
                 console.log(`[ADS Shopee] Resposta recebida:`, perf);
 
-                const dias = perf?.data?.response || perf?.data || [];
+                const dias = perf?.data?.response || perf?.data?.data || perf?.data || [];
                 console.log(`[ADS Shopee] Dias processados:`, dias);
 
                 if (Array.isArray(dias) && dias.length > 0) {
