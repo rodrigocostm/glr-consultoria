@@ -891,30 +891,30 @@ Router.register('financeiro', async (params, el) => {
               const shopId = conta.param_to_use?.shopId||conta.external_id;
               let totalCusto = 0;
 
-              // Tentar: shopeeAdsBalance (saldo de créditos)
+              // PRIMARY: Puxar Daily Performance (gasto real do período)
               try {
-                const balance = await MarketplaceAPI.shopeeAdsBalance({ shopId });
-                if (balance && balance.data?.balance) {
-                  totalCusto = parseFloat(balance.data.balance) || 0;
-                  console.log(`[ADS] Shopee Balance: R$ ${totalCusto.toFixed(2)}`);
+                const perf = await MarketplaceAPI.shopeeAdsDailyPerformance({
+                  shopId, start_date: primeiroDia, end_date: dataTo
+                });
+                const dias = perf?.data?.response || perf?.data || [];
+                if (Array.isArray(dias) && dias.length > 0) {
+                  totalCusto = dias.reduce((s,d)=>s+(parseFloat(d.expense)||parseFloat(d.cost)||0), 0);
+                  console.log(`[ADS] Shopee Daily Performance: ${dias.length} dias, Total gasto: R$ ${totalCusto.toFixed(2)}`);
+                } else {
+                  console.log(`[ADS] Shopee Daily Performance: sem dados no período`);
                 }
-              } catch(eBalance) {
-                console.warn('[ADS] Shopee Balance falhou');
-              }
+              } catch(ePerf) {
+                console.warn('[ADS] Shopee Daily Performance falhou:', ePerf.message);
 
-              // Se não conseguiu saldo, tentar Daily Performance
-              if (totalCusto === 0) {
+                // FALLBACK: Se daily_performance falhar, tentar Balance
                 try {
-                  const perf = await MarketplaceAPI.shopeeAdsDailyPerformance({
-                    shopId, start_date: primeiroDia, end_date: dataTo
-                  });
-                  const dias = perf?.data?.response || perf?.data || [];
-                  if (Array.isArray(dias) && dias.length > 0) {
-                    totalCusto = dias.reduce((s,d)=>s+(parseFloat(d.expense)||parseFloat(d.cost)||0), 0);
-                    console.log(`[ADS] Shopee Daily: ${dias.length} dias, R$ ${totalCusto.toFixed(2)}`);
+                  const balance = await MarketplaceAPI.shopeeAdsBalance({ shopId });
+                  if (balance && balance.data?.balance) {
+                    totalCusto = parseFloat(balance.data.balance) || 0;
+                    console.log(`[ADS] Shopee Balance (fallback): R$ ${totalCusto.toFixed(2)}`);
                   }
-                } catch(ePerf) {
-                  console.warn('[ADS] Shopee Daily Performance falhou:', ePerf.message);
+                } catch(eBalance) {
+                  console.warn('[ADS] Shopee Balance também falhou');
                 }
               }
 
