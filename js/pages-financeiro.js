@@ -1230,14 +1230,7 @@ Router.register('financeiro', async (params, el) => {
   document.getElementById('fin-sel-mes').addEventListener('change', e=>{
     mesSel = e.target.value;
     localStorage.setItem('glr_fin_mes', mesSel);
-    const at = carregarCache();
-    if (at) {
-      renderConteudo();
-      const s=document.getElementById('fin-status');
-      if(s) s.textContent=`${pedidos.length} pedidos (cache)`;
-    } else {
-      buscar();
-    }
+    buscar(); // sempre busca (mostra cache imediatamente se existir + atualiza ADS em background)
   });
   document.getElementById('fin-btn-atualizar').addEventListener('click', buscar);
   document.getElementById('fin-btn-reprocessar').addEventListener('click', () => {
