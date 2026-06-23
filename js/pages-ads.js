@@ -131,10 +131,9 @@ async function buscarDados(forcar = false) {
             gasto:      parseFloat(d.expense) || parseFloat(d.cost) || parseFloat(d.total_cost) || 0,
             cliques:    parseInt(d.clicks) || parseInt(d.click) || 0,
             impressoes: parseInt(d.impressions) || parseInt(d.impression) || 0,
-            pedidos:    parseInt(d.order_count) || parseInt(d.orders) || parseInt(d.conversions) || 0,
-            receita:    parseFloat(d.order_amount) || parseFloat(d.direct_item_gmv) || parseFloat(d.broad_item_gmv)
-                     || parseFloat(d.gmv_from_ads) || parseFloat(d.gmv) || parseFloat(d.revenue)
-                     || parseFloat(d.item_gmv) || parseFloat(d.direct_gmv) || 0,
+            pedidos:    parseInt(d.broad_order) || parseInt(d.direct_order) || parseInt(d.order_count) || parseInt(d.orders) || 0,
+            receita:    parseFloat(d.broad_gmv) || parseFloat(d.direct_gmv) || parseFloat(d.order_amount)
+                     || parseFloat(d.gmv_from_ads) || parseFloat(d.gmv) || parseFloat(d.revenue) || 0,
           }));
           resultado.resumo.investimento = resultado.diario.reduce((s, d) => s + d.gasto, 0);
           resultado.resumo.cliques      = resultado.diario.reduce((s, d) => s + d.cliques, 0);
