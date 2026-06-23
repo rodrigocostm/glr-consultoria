@@ -502,6 +502,7 @@ Router.register('financeiro', async (params, el) => {
   // ── Buscar da API ─────────────────────────────────────────
   let buscando = false; // trava: impede duas buscas simultâneas (zera/mistura dados)
   let forceReprocess = false; // força reprocessamento mesmo se tiver cache
+  let contaReprocess = null; // se setado, reprocessa apenas essa conta
 
   async function buscar() {
     console.log('[BUSCAR] Iniciado | forceReprocess:', forceReprocess);
@@ -527,6 +528,7 @@ Router.register('financeiro', async (params, el) => {
     }
 
     forceReprocess = false; // reseta flag
+    contaReprocess = null; // reseta conta a reprocessar
     buscando = true;
     if (btnEl) { btnEl.disabled=true; btnEl.textContent='⏳ Buscando...'; }
     if (reprocessBtn) { reprocessBtn.disabled=true; reprocessBtn.textContent='⏳ Reprocessando...'; }
@@ -548,11 +550,24 @@ Router.register('financeiro', async (params, el) => {
       contas = r.data?.accounts||[];
       renderFiltroContas();
 
-      pedidos = [];
+      // Se está reprocessando uma conta específica, buscar APENAS dela
+      const contasParaBuscar = contaReprocess ? contas.filter(c => c.external_id === contaReprocess) : contas;
+      if (contaReprocess) {
+        console.log(`[Buscar] Reprocessando apenas conta: ${contaReprocess} (${contasParaBuscar.length} contas)`);
+      }
+
+      // Se não está reprocessando, limpar pedidos. Se é reprocessamento parcial, manter os outros
+      if (!contaReprocess) {
+        pedidos = [];
+      } else {
+        // Remove pedidos dessa conta para reprocessar
+        pedidos = pedidos.filter(p => p.contaId !== contaReprocess);
+      }
+
       const errosConta = [];
       const log = [];
 
-      for (const conta of contas) {
+      for (const conta of contasParaBuscar) {
         try {
 
           // ── Mercado Livre ──────────────────────────────────
@@ -1223,6 +1238,13 @@ Router.register('financeiro', async (params, el) => {
   document.getElementById('fin-btn-atualizar').addEventListener('click', buscar);
   document.getElementById('fin-btn-reprocessar').addEventListener('click', () => {
     forceReprocess = true;
+    // Se uma conta específica está selecionada, reprocessa APENAS ela
+    contaReprocess = contaSel !== 'todas' ? contaSel : null;
+    if (contaSel !== 'todas') {
+      console.log('[Reprocessar] Apenas conta:', contaSel);
+    } else {
+      console.log('[Reprocessar] Todas as contas');
+    }
     buscar();
   });
 
