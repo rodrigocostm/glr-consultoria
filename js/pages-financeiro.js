@@ -845,7 +845,8 @@ Router.register('financeiro', async (params, el) => {
         if (pedidos.length) renderConteudo();
       } // fim loop contas
 
-      console.log('[FLUXO] Pedidos carregados. Iniciando ADS e Afiliados...');
+      console.log('[✓ CHECKPOINT] Pedidos carregados:', pedidos.length, 'pedidos');
+      console.log('[✓ CHECKPOINT] Agora vou buscar ADS e Afiliados...');
 
       // ── ADS: investimento + métricas detalhadas ──
       adsAPI = {};
