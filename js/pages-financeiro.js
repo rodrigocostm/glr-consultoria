@@ -854,10 +854,13 @@ Router.register('financeiro', async (params, el) => {
             try {
               const shopId = conta.param_to_use?.shopId||conta.external_id;
               const br = iso => iso.split('-').reverse().join('-');
+              console.log(`[ADS] Shopee - Chamando API com shopId: ${shopId}, data: ${br(primeiroDia)} a ${br(dataTo)}`);
               const ra = await MarketplaceAPI.call('shopee_ads_daily_performance',
                 { shopId, start_date: br(primeiroDia), end_date: br(dataTo) });
-              const dias = ra.data?.response || [];
-              const custo = (Array.isArray(dias)?dias:[]).reduce((s,d)=>s+(parseFloat(d.expense)||0), 0);
+              console.log(`[ADS] Shopee - Resposta da API:`, ra);
+              const dias = ra.data?.response || ra.data || [];
+              console.log(`[ADS] Shopee - Dias processados:`, dias);
+              const custo = (Array.isArray(dias)?dias:[]).reduce((s,d)=>s+(parseFloat(d.expense)||parseFloat(d.cost)||0), 0);
               adsAPI['Shopee'] = custo;
 
               // Puxar métricas detalhadas de Shopee ADS
@@ -869,9 +872,9 @@ Router.register('financeiro', async (params, el) => {
                 console.warn('[ADS] Erro ao puxar métricas detalhadas Shopee:', e.message);
               }
 
-              console.log(`[ADS] Shopee: R$ ${custo.toFixed(2)} (${dias.length} dias)`);
+              console.log(`[ADS] ✓ Shopee: R$ ${custo.toFixed(2)} (${dias.length} dias)`);
             } catch(eSh) {
-              console.error('[ADS] Shopee falhou:', eSh.message);
+              console.error(`[ADS] ✗ Shopee falhou:`, eSh.message, eSh);
             }
           }
         } catch(eAds) {
