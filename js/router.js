@@ -58,6 +58,7 @@ const Router = {
       oportunidades: 'Central de Oportunidades',
       alertas: 'Central de Alertas',
       dre: 'DRE — Demonstração do Resultado',
+      ads: 'Central de ADS',
       financeiro: 'Financeiro',
       vendas: 'Vendas',
       integracoes: 'Integrações',

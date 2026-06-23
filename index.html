@@ -100,6 +100,11 @@
         Central de Alertas
         <span class="nav-badge" id="badge-alertas" style="display:none;">0</span>
       </button>
+      <button class="nav-item" data-page="ads" onclick="Router.navigate('ads')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Central de ADS
+        <span class="nav-badge green">NEW</span>
+      </button>
       <button class="nav-item" data-page="financeiro" onclick="Router.navigate('financeiro')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
         Financeiro
@@ -258,6 +263,7 @@
 <script src="js/pages-integracoes.js?v=1"></script>
 <script src="js/pages-vendas.js?v=30"></script>
 <script src="js/pages-financeiro.js?v=55"></script>
+<script src="js/pages-ads.js?v=1"></script>
 <script>
   // ---- App Init ----
   document.addEventListener('DOMContentLoaded', () => {

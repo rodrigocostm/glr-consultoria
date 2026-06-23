@@ -223,6 +223,24 @@ const MarketplaceAPI = {
     }
   },
 
+  // Lista campanhas de ADS Shopee
+  async shopeeAdsCampaigns({ shopId }) {
+    const r = await this.call('shopee_ads_campaigns', { shopId });
+    return r?.data?.response || r?.data || [];
+  },
+
+  // Performance diária por campanha Shopee
+  async shopeeAdsCampaignDaily({ shopId, campaign_id, start_date, end_date }) {
+    const r = await this.call('shopee_ads_campaign_daily', { shopId, campaign_id, start_date, end_date });
+    return r?.data?.response || r?.data || [];
+  },
+
+  // Campanhas ADS Mercado Livre com métricas
+  async mlAdsCampaigns({ meliUserId, date_from, date_to }) {
+    const r = await this.call('ml_ads_campaigns', { meliUserId, date_from, date_to });
+    return r?.data || [];
+  },
+
   // Performance da loja Shopee
   async shopeePerformance(shopId) {
     try {
