@@ -549,6 +549,10 @@ Router.register('financeiro', async (params, el) => {
         : `${ano}-${pad(mes)}-${pad(ultimoDia)}`;
       const tsFrom = new Date(`${primeiroDia}T00:00:00`).getTime();
       const tsTo   = new Date(`${dataTo}T23:59:59`).getTime();
+      // Shopee ADS exige DD-MM-YYYY
+      const toShopeeDate = iso => iso.split('-').reverse().join('-');
+      const sdFrom = toShopeeDate(primeiroDia);
+      const sdTo   = toShopeeDate(dataTo);
 
       if (statusEl) statusEl.textContent = 'Buscando contas...';
       const r = await MarketplaceAPI.call('list_accounts');
@@ -897,7 +901,7 @@ Router.register('financeiro', async (params, el) => {
               try {
                 console.log(`[ADS Shopee] Chamando shopeeAdsDailyPerformance...`);
                 const perf = await MarketplaceAPI.shopeeAdsDailyPerformance({
-                  shopId, start_date: primeiroDia, end_date: dataTo
+                  shopId, start_date: sdFrom, end_date: sdTo
                 });
                 console.log(`[ADS Shopee] Resposta recebida:`, perf);
 
@@ -937,7 +941,7 @@ Router.register('financeiro', async (params, el) => {
 
               // Puxar métricas detalhadas de Shopee ADS
               try {
-                const det = await MarketplaceAPI.shopeeAdsMetricsDetailed(shopId, primeiroDia, dataTo);
+                const det = await MarketplaceAPI.shopeeAdsMetricsDetailed(shopId, sdFrom, sdTo);
                 adsDetalhados['Shopee'] = det;
               } catch(e) {
                 console.warn('[ADS] Shopee métricas detalhadas:', e.message);
