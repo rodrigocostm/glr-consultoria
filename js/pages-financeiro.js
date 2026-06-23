@@ -893,64 +893,28 @@ Router.register('financeiro', async (params, el) => {
           }
           if (conta.marketplace==='shopee') {
             try {
-              const shopId = conta.param_to_use?.shopId||conta.external_id;
-              let totalCusto = 0;
-
-              console.log(`[ADS Shopee] Iniciando busca: shopId=${shopId}, período=${primeiroDia} a ${dataTo}`);
-
-              // PRIMARY: Puxar Daily Performance (gasto real do período)
-              try {
-                console.log(`[ADS Shopee] Chamando shopeeAdsDailyPerformance...`);
-                const perf = await MarketplaceAPI.shopeeAdsDailyPerformance({
-                  shopId, start_date: sdFrom, end_date: sdTo
-                });
-                console.log(`[ADS Shopee] Resposta recebida:`, perf);
-
-                const dias = perf?.data?.response || perf?.data?.data || perf?.data || [];
-                console.log(`[ADS Shopee] Dias processados:`, dias);
-
-                if (Array.isArray(dias) && dias.length > 0) {
-                  totalCusto = dias.reduce((s,d)=>{
-                    const expense = parseFloat(d.expense)||parseFloat(d.cost)||0;
-                    console.log(`[ADS Shopee] Dia: expense=${expense}`);
-                    return s + expense;
-                  }, 0);
-                  console.log(`[ADS Shopee] ✓ Total gasto: R$ ${totalCusto.toFixed(2)}`);
-                } else {
-                  console.log(`[ADS Shopee] ⚠️ Array vazio ou inválido`);
-                }
-              } catch(ePerf) {
-                console.error('[ADS Shopee] ✗ Daily Performance falhou:', ePerf.message, ePerf);
-
-                // FALLBACK: Se daily_performance falhar, tentar Balance
-                try {
-                  console.log(`[ADS Shopee] Tentando fallback: Balance...`);
-                  const balance = await MarketplaceAPI.shopeeAdsBalance({ shopId });
-                  console.log(`[ADS Shopee] Balance resposta:`, balance);
-
-                  if (balance && balance.data?.balance) {
-                    totalCusto = parseFloat(balance.data.balance) || 0;
-                    console.log(`[ADS Shopee] ✓ Balance: R$ ${totalCusto.toFixed(2)}`);
-                  }
-                } catch(eBalance) {
-                  console.error('[ADS Shopee] ✗ Balance também falhou:', eBalance.message);
-                }
-              }
-
-              console.log(`[ADS Shopee] Final: totalCusto=${totalCusto}`);
+              const shopId = conta.param_to_use?.shopId || conta.external_id;
+              // Mesma chamada direta que a Central de ADS usa — comprovadamente funciona
+              const r = await MarketplaceAPI.call('shopee_ads_daily_performance', {
+                shopId, start_date: sdFrom, end_date: sdTo
+              });
+              const dias = r?.data?.response || [];
+              const totalCusto = Array.isArray(dias)
+                ? dias.reduce((s, d) => s + (parseFloat(d.expense) || 0), 0)
+                : 0;
               adsAPI['Shopee'] = totalCusto;
-
-              // Puxar métricas detalhadas de Shopee ADS
-              try {
-                const det = await MarketplaceAPI.shopeeAdsMetricsDetailed(shopId, sdFrom, sdTo);
-                adsDetalhados['Shopee'] = det;
-              } catch(e) {
-                console.warn('[ADS] Shopee métricas detalhadas:', e.message);
+              // Métricas detalhadas para exibição
+              if (Array.isArray(dias) && dias.length > 0) {
+                adsDetalhados['Shopee'] = {
+                  investimento: totalCusto,
+                  cliques:    dias.reduce((s,d) => s + (parseInt(d.clicks) || 0), 0),
+                  impressoes: dias.reduce((s,d) => s + (parseInt(d.impression) || 0), 0),
+                  vendas:     dias.reduce((s,d) => s + (parseInt(d.broad_order) || 0), 0),
+                  faturamentoAds: dias.reduce((s,d) => s + (parseFloat(d.broad_gmv) || 0), 0),
+                };
               }
-
-              console.log(`[ADS] Shopee: R$ ${totalCusto.toFixed(2)}`);
             } catch(eSh) {
-              console.error(`[ADS] ✗ Shopee falhou:`, eSh.message, eSh);
+              console.error(`[ADS] Shopee falhou:`, eSh.message);
             }
           }
         } catch(eAds) {
