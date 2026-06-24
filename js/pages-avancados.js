@@ -860,10 +860,47 @@ Router.register('projecao', (params, el) => {
     return v >= 0 ? 'var(--green)' : 'var(--red)';
   }
 
+  // Lê cache do Financeiro do mês atual e retorna {fat, ads, vendas} por plataforma
+  function lerCacheAtual() {
+    try {
+      const c = JSON.parse(localStorage.getItem('glr_fin_cache') || 'null');
+      if (!c) return null;
+      const hoje = new Date();
+      const pad  = n => String(n).padStart(2, '0');
+      if (c.mesKey !== `${hoje.getFullYear()}-${pad(hoje.getMonth()+1)}`) return null;
+      return c;
+    } catch(e) { return null; }
+  }
+
+  function normalizaPlat(nome) {
+    const n = (nome||'').toLowerCase().trim();
+    if (n === 'shopee') return 'Shopee';
+    if (n === 'mercado livre' || n === 'ml' || n === 'mercadolivre' || n === 'meli') return 'Mercado Livre';
+    return nome;
+  }
+
+  function cacheParaPlat(cache, contasCliente, platNome) {
+    if (!cache || !contasCliente.length) return null;
+    const platFiltro = normalizaPlat(platNome);
+    const isReemb = st => { const s=(st||'').toLowerCase(); return s.includes('cancel')||s.includes('refund')||s.includes('devol')||s==='invalid'||s.includes('return'); };
+    const peds = (cache.pedidos||[]).filter(p => contasCliente.includes(p.contaId) && p.plataforma===platFiltro && !isReemb(p.status));
+    const fat  = peds.reduce((s,p) => s+(parseFloat(p.valor)||0), 0);
+    const qtd  = peds.reduce((s,p) => s+(parseInt(p.qtd)||1), 0);
+    const ads  = parseFloat((cache.adsAPI||{})[platFiltro]) || 0;
+    return fat > 0 ? { fat, ads, vendas: qtd } : null;
+  }
+
   function renderTabela() {
     const plats = projecaoAtiva.plataformas;
     const dd = parseInt(document.getElementById('inp-dias-dec')?.value) || projecaoAtiva.diasDecorridos;
     const dm = parseInt(document.getElementById('inp-dias-mes')?.value) || projecaoAtiva.diasNoMes;
+
+    // Dados reais da API para auto-preenchimento
+    const cache = lerCacheAtual();
+    let vinculos = {};
+    try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
+    const contasCliente = (vinculos[String(clienteIdAtivo)] || vinculos[clienteIdAtivo] || []).map(c => c.external_id);
+    const temCache = !!cache;
 
     // ── Totais ──────────────────────────────────────────────────────
     const totFatBase   = plats.reduce((s,p) => s + (parseFloat(p.fatBase)   || 0), 0);
@@ -887,9 +924,17 @@ Router.register('projecao', (params, el) => {
     const receitaGLR   = Math.round(totVendasProj) * valorVenda;
 
     const linhas = plats.map((p, i) => {
-      const proj       = calcProjecao(p.fatBase,   dd, dm);
-      const vendasProj = calcProjecao(p.vendasBase, dd, dm);
-      const adsProj    = calcProjecao(p.adsBase,    dd, dm);
+      // Auto-preenche fatBase/adsBase/vendasBase do cache se ainda estiverem vazios
+      const cd = cacheParaPlat(cache, contasCliente, p.nome);
+      const fatBaseEfetivo   = p.fatBase   || (cd ? cd.fat.toFixed(2)   : '');
+      const adsBaseEfetivo   = p.adsBase   || (cd ? cd.ads.toFixed(2)   : '');
+      const vendasBaseEfetivo= p.vendasBase|| (cd ? String(cd.vendas)   : '');
+      const autoFat = !p.fatBase  && cd;
+      const autoAds = !p.adsBase  && cd;
+
+      const proj       = calcProjecao(fatBaseEfetivo,    dd, dm);
+      const vendasProj = calcProjecao(vendasBaseEfetivo, dd, dm);
+      const adsProj    = calcProjecao(adsBaseEfetivo,    dd, dm);
       const pctAds     = proj > 0 && adsProj > 0 ? (adsProj / proj * 100) : 0;
       const evo        = calcEvolucao(proj, p.maio);
       const fmtInt     = v => Math.round(parseFloat(v)||0).toLocaleString('pt-BR');
@@ -898,21 +943,23 @@ Router.register('projecao', (params, el) => {
         <td style="min-width:150px;">
           <input class="proj-input" style="font-weight:600;font-size:13px;text-align:left;" value="${p.nome}" onchange="updatePlat(${i},'nome',this.value)" placeholder="Plataforma">
         </td>
-        <td style="text-align:right;">
-          <input class="proj-input money" value="${p.fatBase}" onchange="updatePlat(${i},'fatBase',this.value)" placeholder="0,00">
+        <td style="text-align:right;position:relative;">
+          <input class="proj-input money${autoFat?' proj-auto':''}" value="${fatBaseEfetivo}" onchange="updatePlat(${i},'fatBase',this.value)" placeholder="0,00">
+          ${autoFat ? `<span style="position:absolute;top:2px;right:4px;font-size:8px;color:#818cf8;font-weight:700;">API</span>` : ''}
         </td>
         <td style="background:rgba(99,102,241,0.07);text-align:right;white-space:nowrap;">
           <strong style="color:var(--accent-light);">R$ ${fmtBRL(proj)}</strong>
         </td>
         <td style="text-align:right;background:rgba(16,185,129,0.05);">
-          <input class="proj-input" value="${p.vendasBase||''}" onchange="updatePlat(${i},'vendasBase',this.value)" placeholder="0" style="text-align:right;">
+          <input class="proj-input" value="${vendasBaseEfetivo}" onchange="updatePlat(${i},'vendasBase',this.value)" placeholder="0" style="text-align:right;">
         </td>
         <td style="background:rgba(16,185,129,0.1);text-align:right;white-space:nowrap;">
           <strong style="color:var(--green);">${fmtInt(vendasProj)}</strong>
           ${!ocultarGLR && valorVenda > 0 ? `<div style="font-size:10px;color:var(--green);opacity:0.7;">GLR: R$ ${fmtBRL(Math.round(vendasProj)*valorVenda)}</div>` : ''}
         </td>
-        <td style="text-align:right;background:rgba(245,158,11,0.05);">
-          <input class="proj-input money" value="${p.adsBase||''}" onchange="updatePlat(${i},'adsBase',this.value)" placeholder="0,00">
+        <td style="text-align:right;background:rgba(245,158,11,0.05);position:relative;">
+          <input class="proj-input money${autoAds?' proj-auto':''}" value="${adsBaseEfetivo}" onchange="updatePlat(${i},'adsBase',this.value)" placeholder="0,00">
+          ${autoAds ? `<span style="position:absolute;top:2px;right:4px;font-size:8px;color:#818cf8;font-weight:700;">API</span>` : ''}
         </td>
         <td style="background:rgba(245,158,11,0.08);text-align:right;white-space:nowrap;">
           <strong style="color:#f59e0b;">R$ ${fmtBRL(adsProj)}</strong>
@@ -1072,7 +1119,7 @@ Router.register('projecao', (params, el) => {
           <thead>
             <tr style="background:linear-gradient(135deg,#0d2144,#1a3a6e);">
               <th style="padding:12px 14px;text-align:left;color:white;font-weight:700;white-space:nowrap;min-width:150px;">Plataformas</th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:120px;">Fat. Data Base<br><span style="font-weight:400;opacity:0.8;font-size:10px;" id="th-data-base">02/06/2026</span></th>
+              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:120px;">Fat. Data Base<br><span style="font-weight:400;opacity:0.8;font-size:10px;" id="th-data-base">02/06/2026</span>${temCache?`<br><span style="font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span>`:''}</th>
               <th style="padding:12px 14px;color:#a5f3fc;font-weight:800;white-space:nowrap;text-align:right;background:rgba(99,102,241,0.35);min-width:130px;">Projeção Fat.<br><span style="font-weight:400;font-size:10px;color:rgba(255,255,255,0.7);" class="mes-label">${projecaoAtiva.mes}</span></th>
               <th style="padding:12px 14px;color:#6ee7b7;font-weight:700;white-space:nowrap;text-align:right;background:rgba(16,185,129,0.15);min-width:110px;">Qtd. Vendas<br><span style="font-weight:400;opacity:0.8;font-size:10px;">Data Base</span></th>
               <th style="padding:12px 14px;color:#34d399;font-weight:800;white-space:nowrap;text-align:right;background:rgba(16,185,129,0.28);min-width:120px;">Proj. Vendas<br><span style="font-weight:400;font-size:10px;color:rgba(255,255,255,0.7);" class="mes-label">${projecaoAtiva.mes}</span></th>
@@ -1118,6 +1165,7 @@ Router.register('projecao', (params, el) => {
       .proj-input { background:transparent; border:none; outline:none; color:var(--text-primary); font-size:13px; width:100%; min-width:80px; padding:2px 4px; text-align:right; }
       .proj-input:focus { background:rgba(99,102,241,0.1); border-radius:4px; }
       .proj-input:not(.money) { text-align:left; }
+      .proj-auto { color:#818cf8 !important; }
       #proj-tbody td, #proj-tfoot td { padding:10px 14px; border-bottom:1px solid var(--border); vertical-align:middle; }
       #proj-tbody tr:hover { background:rgba(255,255,255,0.02); }
       #proj-tfoot td { padding:12px 14px; font-size:13.5px; color:var(--text-primary); }

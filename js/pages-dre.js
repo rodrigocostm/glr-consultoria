@@ -14,7 +14,8 @@ Router.register('dre', (params, el) => {
   const mesAtual = hoje.getMonth();
   const anoAtual = hoje.getFullYear();
 
-  // Retorna plataformas da projeção de um cliente
+  // ── Helpers de dados ─────────────────────────────────────────────
+
   function getPlataformasDoCliente(clienteId) {
     if (!clienteId) return [];
     const proj = projecoes.find(p => parseInt(p.chave) === parseInt(clienteId));
@@ -37,6 +38,130 @@ Router.register('dre', (params, el) => {
     return { faturamento: fatBase, ads: adsBase, comissaoGLR, produtosVendidos: vendasBase };
   }
 
+  // Lê o cache do Financeiro para o mês/ano indicado
+  function lerCacheFinanceiro(mes, ano) {
+    try {
+      const c = JSON.parse(localStorage.getItem('glr_fin_cache') || 'null');
+      if (!c) return null;
+      const pad = n => String(n).padStart(2, '0');
+      const key = `${ano}-${pad(mes + 1)}`;
+      if (c.mesKey !== key) return null;
+      return c;
+    } catch(e) { return null; }
+  }
+
+  // Normaliza nome de plataforma para o padrão do financeiro
+  function normalizaPlat(nome) {
+    const n = (nome || '').toLowerCase().trim();
+    if (n === 'shopee') return 'Shopee';
+    if (n === 'mercado livre' || n === 'ml' || n === 'mercadolivre' || n === 'meli') return 'Mercado Livre';
+    return nome; // retorna original se não reconhecer
+  }
+
+  function isReembolsado(status) {
+    const s = (status || '').toLowerCase();
+    return s.includes('cancel') || s.includes('refund') || s.includes('devol') ||
+           s === 'invalid' || s === 'to_return' || s.includes('return');
+  }
+
+  // Extrai dados reais da API para um cliente+plataforma+mês
+  function getAutoData(clienteId, platName, mes, ano) {
+    const cache = lerCacheFinanceiro(mes, ano);
+    if (!cache) return null;
+
+    let vinculos = {};
+    try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) {}
+    const contasCliente = (vinculos[String(clienteId)] || vinculos[clienteId] || []).map(c => c.external_id);
+    if (!contasCliente.length) return null;
+
+    const platFiltro = platName === 'GERAL' ? null : normalizaPlat(platName);
+    const pedidos = cache.pedidos || [];
+
+    const filtrados = pedidos.filter(p =>
+      contasCliente.includes(p.contaId) &&
+      (platFiltro === null || p.plataforma === platFiltro) &&
+      !isReembolsado(p.status)
+    );
+
+    if (!filtrados.length) return null;
+
+    const fat = filtrados.reduce((s, p) => s + (parseFloat(p.valor) || 0), 0);
+    const liq = filtrados.reduce((s, p) => {
+      const tx = p.taxas || {};
+      return s + (tx.liquido != null ? parseFloat(tx.liquido) : parseFloat(p.valor) || 0);
+    }, 0);
+    const comissaoFrete = Math.max(0, fat - liq);
+
+    // Imposto por pedido
+    let aliquotas = {};
+    let custos = {};
+    try { aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas') || '{}'); } catch(e) {}
+    try { custos    = JSON.parse(localStorage.getItem('glr_vendas_custos') || '{}'); } catch(e) {}
+
+    let imposto  = 0;
+    let custoProd = 0;
+    let qtdTotal  = 0;
+    for (const p of filtrados) {
+      const tx = p.taxas || {};
+      const impAPI = parseFloat(tx.imposto) || 0;
+      if (impAPI > 0) {
+        imposto += impAPI;
+      } else {
+        const c = custos[p.id] || {};
+        const aliq = parseFloat(c.imposto) || parseFloat(aliquotas[p.contaId] || 0);
+        imposto += (parseFloat(p.valor) || 0) * aliq / 100;
+      }
+      custoProd += parseFloat((custos[p.id] || {}).custo) || 0;
+      qtdTotal  += parseInt(p.qtd) || 1;
+    }
+
+    // ADS por plataforma
+    let ads = 0;
+    const adsAPI = cache.adsAPI || {};
+    if (platFiltro === null) {
+      ads = Object.values(adsAPI).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+    } else {
+      ads = parseFloat(adsAPI[platFiltro]) || 0;
+    }
+
+    // Comissão GLR
+    const cliente       = clientes.find(c => c.id === parseInt(clienteId));
+    const valorPorVenda = parseFloat(cliente?.valorPorVenda) || 0;
+    const comissaoGLR   = qtdTotal * valorPorVenda;
+
+    return {
+      faturamento:    fat,
+      comissaoFrete,
+      imposto,
+      ads,
+      produtos:       custoProd,
+      produtosVendidos: qtdTotal,
+      comissaoGLR,
+      // campos manuais permanecem 0 — usuário preenche
+      juros:    0,
+      custoFixo: 0,
+    };
+  }
+
+  // GERAL via cache (quando não há DREs individuais salvos)
+  function getGeralAutoData(clienteId, mes, ano) {
+    const plats = getPlataformasDoCliente(clienteId);
+    if (!plats.length) return null;
+    let totalVals = null;
+    for (const plat of plats) {
+      const d = getAutoData(clienteId, plat, mes, ano);
+      if (!d) continue;
+      if (!totalVals) {
+        totalVals = { ...d };
+      } else {
+        for (const k of Object.keys(d)) {
+          totalVals[k] = (totalVals[k] || 0) + (d[k] || 0);
+        }
+      }
+    }
+    return totalVals;
+  }
+
   function getDREs() {
     try { return JSON.parse(localStorage.getItem('glr_dre') || '[]'); } catch(e) { return []; }
   }
@@ -56,7 +181,6 @@ Router.register('dre', (params, el) => {
     ano: anoAtual,
   };
 
-  // Linhas customizadas (estado em memória)
   let linhasCustom   = [];
   let nextLinhaId    = 1;
   let ocultarGLR     = false;
@@ -71,6 +195,9 @@ Router.register('dre', (params, el) => {
     { key: 'custoFixo',     label: 'Custo Fixo',        tipo: 'custo'   },
     { key: 'comissaoGLR',   label: 'Comissão GLR',      tipo: 'custo'   },
   ];
+
+  // Campos que vêm automaticamente da API
+  const CAMPOS_AUTO = new Set(['faturamento','comissaoFrete','imposto','ads','comissaoGLR']);
 
   function parseVal(str) {
     if (!str && str !== 0) return 0;
@@ -107,7 +234,6 @@ Router.register('dre', (params, el) => {
     };
   }
 
-  // Agrega DREs de todas as plataformas para o Geral
   function getValoresGeral() {
     const dres = getDREs().filter(d =>
       parseInt(d.clienteId) === parseInt(estado.clienteId) &&
@@ -123,12 +249,10 @@ Router.register('dre', (params, el) => {
     return vals;
   }
 
-  // Lê os valores dos inputs + linhas custom
   function lerInputs() {
     const vals = {};
     camposDRE.forEach(c => { vals[c.key] = parseVal(document.getElementById('inp-'+c.key)?.value); });
     vals.produtosVendidos = parseVal(document.getElementById('inp-produtosVendidos')?.value);
-    // ler linhas custom atualizadas
     linhasCustom.forEach(l => {
       const inp = document.getElementById('inp-custom-'+l.id);
       if (inp) l.valor = parseVal(inp.value);
@@ -154,7 +278,6 @@ Router.register('dre', (params, el) => {
       saved = findDRE(estado.clienteId, estado.plataforma, estado.mes, estado.ano);
     }
 
-    // Carregar linhas custom do DRE salvo
     if (saved?.linhasCustom) {
       linhasCustom = saved.linhasCustom.map(l => ({...l}));
       nextLinhaId  = linhasCustom.reduce((m,l)=>Math.max(m,l.id+1),1);
@@ -164,20 +287,39 @@ Router.register('dre', (params, el) => {
     }
 
     let vals = {};
+    let modoAuto   = false;  // preenchido da API
     let preenchidoDaProjecao = false;
     let preenchidoGeral = false;
+    let autoVazio  = false;  // cache existe mas sem dados para combo cliente+plat
 
     if (saved) {
       vals = saved.valores;
     } else if (isGeral) {
       const vGeral = getValoresGeral();
-      if (vGeral) { vals = vGeral; preenchidoGeral = true; }
+      if (vGeral) {
+        vals = vGeral; preenchidoGeral = true;
+      } else {
+        const autoGeral = getGeralAutoData(estado.clienteId, estado.mes, estado.ano);
+        if (autoGeral) { vals = autoGeral; modoAuto = true; }
+      }
     } else if (!semProj && estado.plataforma) {
-      const vProj = getValoresDaProjecao(estado.clienteId, estado.plataforma);
-      if (vProj) { vals = vProj; preenchidoDaProjecao = true; }
+      // 1ª opção: dados reais da API (cache do Financeiro)
+      const autoData = getAutoData(estado.clienteId, estado.plataforma, estado.mes, estado.ano);
+      if (autoData) {
+        vals = autoData;
+        modoAuto = true;
+      } else {
+        // Verificar se há cache mas sem dados para esta combinação
+        const cache = lerCacheFinanceiro(estado.mes, estado.ano);
+        autoVazio = !!cache; // cache existe mas não tem dados para este cliente/plat
+        // 2ª opção: projeção manual
+        const vProj = getValoresDaProjecao(estado.clienteId, estado.plataforma);
+        if (vProj) { vals = vProj; preenchidoDaProjecao = true; }
+      }
     }
 
     const calc = calcular(vals, linhasCustom, ocultarGLR);
+    const temCache = !!lerCacheFinanceiro(estado.mes, estado.ano);
 
     el.innerHTML = `
     <div class="dre-wrap">
@@ -263,7 +405,7 @@ Router.register('dre', (params, el) => {
           <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Vá até Projeção de Crescimento e adicione as plataformas do cliente para liberar o DRE.</div>
           <button class="btn btn-primary" onclick="Router.navigate('projecao')">Ir para Projeção</button>
         </div>
-      ` : renderCard(clienteNome, mesLabel, vals, calc, preenchidoDaProjecao, preenchidoGeral, isGeral)}
+      ` : renderCard(clienteNome, mesLabel, vals, calc, modoAuto, preenchidoDaProjecao, preenchidoGeral, isGeral, autoVazio, temCache)}
 
       <!-- Histórico -->
       <div class="card" style="margin-top:20px;" id="dre-hist">
@@ -297,6 +439,9 @@ Router.register('dre', (params, el) => {
       }
       .dre-inp-label:focus{border-bottom-color:var(--accent);}
       .dre-inp[readonly]{opacity:.65;cursor:default;}
+      .dre-inp.auto-filled{border-color:rgba(99,102,241,0.4);background:rgba(99,102,241,0.04);}
+      .dre-auto-badge{font-size:9px;color:#818cf8;background:rgba(99,102,241,0.12);
+        border-radius:3px;padding:1px 4px;vertical-align:middle;margin-left:4px;font-weight:700;}
       /* Print */
       .dre-print-header,.dre-print-footer{display:none;}
       @media print{
@@ -312,23 +457,32 @@ Router.register('dre', (params, el) => {
         .dre-resultado td{background:#f0f2f5!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
         .dre-tbl td,.dre-tbl th{color:#111!important;border-color:#ccc!important;}
         .dre-inp{border:none!important;background:transparent!important;color:#111!important;font-size:14px!important;}
-        #dre-hist,button,.btn-add-linha,.btn-rem-linha{display:none!important;}
+        #dre-hist,button,.btn-add-linha,.btn-rem-linha,.dre-auto-badge{display:none!important;}
       }
     </style>`;
   }
 
-  function renderCard(clienteNome, mesLabel, vals, calc, preenchidoDaProjecao, preenchidoGeral, isGeral) {
+  function renderCard(clienteNome, mesLabel, vals, calc, modoAuto, preenchidoDaProjecao, preenchidoGeral, isGeral, autoVazio, temCache) {
     const dias = diasNoMes(estado.mes, estado.ano);
     const rc   = calc.resultado >= 0 ? 'var(--green)' : 'var(--red)';
     const platLabel = isGeral ? 'Consolidado Geral' : estado.plataforma;
     return `
     <div class="card" id="dre-printable">
 
+      ${modoAuto ? `
+      <div style="margin-bottom:16px;padding:10px 14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px;">
+        <svg width="15" height="15" fill="none" stroke="#10b981" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        <span style="font-size:13px;color:#10b981;">
+          <strong>Preenchido automaticamente da API</strong> — Faturamento, Comissão+Frete, ADS, Imposto e Comissão GLR vêm dos dados sincronizados no Financeiro.
+          Campos manuais (Juros, Custo Fixo) ficam em aberto. Salve para fixar.
+        </span>
+      </div>` : ''}
+
       ${preenchidoDaProjecao ? `
       <div style="margin-bottom:16px;padding:10px 14px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px;">
         <svg width="15" height="15" fill="none" stroke="#6366f1" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span style="font-size:13px;color:var(--accent-light);">
-          <strong>Pré-preenchido da Projeção</strong> — Faturamento, ADS e Comissão GLR vieram do último lançamento manual. Complete os demais campos e salve.
+          <strong>Pré-preenchido da Projeção</strong> — Dados da Projeção de Crescimento. Sincronize o Financeiro para puxar dados reais da API.
         </span>
       </div>` : ''}
 
@@ -336,13 +490,23 @@ Router.register('dre', (params, el) => {
       <div style="margin-bottom:16px;padding:10px 14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px;">
         <svg width="15" height="15" fill="none" stroke="#10b981" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span style="font-size:13px;color:#10b981;">
-          <strong>DRE Geral consolidado</strong> — Soma automática de todos os DREs de plataforma salvos neste período. Salve para fixar e adicionar linhas extras.
+          <strong>DRE Geral consolidado</strong> — Soma automática de todos os DREs de plataforma salvos neste período.
         </span>
       </div>` : ''}
 
-      ${isGeral && !preenchidoGeral && !findDRE(estado.clienteId,'GERAL',estado.mes,estado.ano) ? `
+      ${autoVazio && !modoAuto ? `
+      <div style="margin-bottom:16px;padding:10px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:var(--radius-sm);font-size:13px;color:#f59e0b;">
+        ⚠️ Cache do Financeiro disponível mas sem dados para este cliente/plataforma. Verifique os vínculos de conta em Integrações ou sincronize o mês correto no Financeiro.
+      </div>` : ''}
+
+      ${!temCache && !modoAuto && !preenchidoGeral && !preenchidoDaProjecao ? `
+      <div style="margin-bottom:16px;padding:10px 14px;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.2);border-radius:var(--radius-sm);font-size:13px;color:var(--text-muted);">
+        💡 Sincronize <strong>${meses[estado.mes]} ${estado.ano}</strong> na página Financeiro para preencher o DRE automaticamente.
+      </div>` : ''}
+
+      ${isGeral && !preenchidoGeral && !modoAuto && !findDRE(estado.clienteId,'GERAL',estado.mes,estado.ano) ? `
       <div style="margin-bottom:16px;padding:10px 14px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:var(--radius-sm);font-size:13px;color:#fbbf24;">
-        ⚠️ Nenhum DRE de plataforma salvo para este período. Salve os DREs por plataforma primeiro para o Geral consolidar automaticamente.
+        ⚠️ Nenhum DRE individual salvo e sem dados da API para este período. Sincronize o Financeiro ou salve os DREs por plataforma primeiro.
       </div>` : ''}
 
       <div class="dre-print-header">
@@ -377,12 +541,16 @@ Router.register('dre', (params, el) => {
             if (ocultarGLR && campo.key === 'comissaoGLR') return '';
             const v   = parseFloat(vals[campo.key]) || 0;
             const pct = calc.fat > 0 ? (v/calc.fat)*100 : 0;
+            const isAuto = modoAuto && CAMPOS_AUTO.has(campo.key);
             return `
             <tr class="${campo.tipo==='receita'?'dre-receita':''}">
-              <td style="font-style:italic;">${campo.label}</td>
+              <td style="font-style:italic;">
+                ${campo.label}
+                ${isAuto ? `<span class="dre-auto-badge">API</span>` : ''}
+              </td>
               <td style="text-align:center;color:var(--text-muted);font-size:12px;">R$</td>
               <td style="text-align:right;">
-                <input class="dre-inp" id="inp-${campo.key}" type="text" inputmode="decimal"
+                <input class="dre-inp${isAuto?' auto-filled':''}" id="inp-${campo.key}" type="text" inputmode="decimal"
                   value="${v>0 ? v.toFixed(2).replace('.',',') : ''}"
                   placeholder="0,00" oninput="dreCalc()" onfocus="this.select()">
               </td>
@@ -449,10 +617,13 @@ Router.register('dre', (params, el) => {
         <table class="dre-tbl">
           <tbody>
             <tr>
-              <td style="font-style:italic;width:38%;">Produtos Vendidos</td>
+              <td style="font-style:italic;width:38%;">
+                Produtos Vendidos
+                ${modoAuto ? `<span class="dre-auto-badge">API</span>` : ''}
+              </td>
               <td style="width:8%;"></td>
               <td style="text-align:right;width:30%;">
-                <input class="dre-inp" id="inp-produtosVendidos" type="text" inputmode="decimal"
+                <input class="dre-inp${modoAuto?' auto-filled':''}" id="inp-produtosVendidos" type="text" inputmode="decimal"
                   value="${vals.produtosVendidos>0?Math.round(vals.produtosVendidos):''}"
                   placeholder="0" oninput="dreCalc()" onfocus="this.select()">
               </td>
@@ -524,7 +695,6 @@ Router.register('dre', (params, el) => {
 
   // ── Funções globais ───────────────────────────────────────────
   window.dreToggleGLR = function() {
-    // Preservar valores digitados antes de re-render
     lerInputs();
     ocultarGLR = !ocultarGLR;
     render();
@@ -545,9 +715,7 @@ Router.register('dre', (params, el) => {
 
   window.dreAdicionarLinha = function(tipo) {
     linhasCustom.push({ id: nextLinhaId++, label: tipo==='receita'?'Nova Receita':'Novo Custo', tipo, valor: 0 });
-    // Re-render apenas a tabela — mais simples fazer render() completo
     render();
-    // Focar no label da nova linha
     setTimeout(()=>{
       const ultima = linhasCustom[linhasCustom.length-1];
       document.getElementById('lbl-custom-'+ultima.id)?.focus();
@@ -555,7 +723,6 @@ Router.register('dre', (params, el) => {
   };
 
   window.dreRemoverLinha = function(id) {
-    // Salvar valores atuais antes de remover
     lerInputs();
     linhasCustom = linhasCustom.filter(l => l.id !== id);
     render();
@@ -573,7 +740,6 @@ Router.register('dre', (params, el) => {
       if (e) e.textContent = fmtPct(pct);
     });
 
-    // Atualizar pcts das linhas custom
     linhasCustom.forEach(l => {
       const v   = parseFloat(l.valor) || 0;
       const pct = calc.fat>0?(v/calc.fat)*100:0;
@@ -597,7 +763,6 @@ Router.register('dre', (params, el) => {
   window.dreSalvar = function() {
     if (!estado.clienteId||!estado.plataforma) return;
     const vals  = lerInputs();
-    // Se comissaoGLR está oculta, preservar valor já salvo para não perder
     if (ocultarGLR) {
       const existente = findDRE(estado.clienteId, estado.plataforma, estado.mes, estado.ano);
       if (existente?.valores?.comissaoGLR) vals.comissaoGLR = existente.valores.comissaoGLR;
