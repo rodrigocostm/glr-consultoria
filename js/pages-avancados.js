@@ -1079,6 +1079,7 @@ Router.register('projecao', (params, el) => {
           Ocultar GLR
         </button>
         <button class="btn btn-secondary btn-sm" onclick="adicionarPlat()">+ Plataforma</button>
+        <button class="btn btn-sm" style="background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);color:#f87171;" onclick="limparDadosManuais()" title="Apaga fatBase, adsBase, vendasBase e histórico inseridos à mão — mantém só dados da API">🗑️ Limpar manuais</button>
         <button class="btn btn-primary btn-sm" onclick="salvarProjecao(this)">💾 Salvar</button>
         <button class="btn btn-ghost btn-sm" onclick="exportarProjecao()">📄 Exportar</button>
       </div>
@@ -1176,6 +1177,18 @@ Router.register('projecao', (params, el) => {
   }
 
   // ---- Handlers ----
+  window.limparDadosManuais = () => {
+    if (!confirm('Limpar todos os dados inseridos manualmente (faturamento base, ADS, vendas e histórico)? Os dados da API continuam visíveis automaticamente.')) return;
+    projecaoAtiva.plataformas = projecaoAtiva.plataformas.map(p => ({
+      nome: p.nome,
+      fatBase: '', adsBase: '', vendasBase: '',
+      maio: '', abril: '', marco: '',
+    }));
+    salvar();
+    renderTabela();
+    atualizarGrafico();
+  };
+
   window.updatePlat = (i, campo, valor) => {
     projecaoAtiva.plataformas[i][campo] = valor;
     salvar(); // auto-save ao editar qualquer campo
