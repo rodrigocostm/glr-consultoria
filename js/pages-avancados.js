@@ -911,16 +911,18 @@ Router.register('projecao', (params, el) => {
     const keyAtual = `${hoje.getFullYear()}-${pad2(hoje.getMonth()+1)}`;
     let diagMsg = '';
     if (!cache) {
-      diagMsg = `⚠️ Cache do Financeiro não encontrado para ${keyAtual}. Sincronize a página <strong>Financeiro</strong> neste mês primeiro.`;
+      diagMsg = `⚠️ Cache não encontrado para ${keyAtual}. Sincronize <strong>Financeiro</strong> neste mês primeiro.`;
     } else if (!contasCliente.length) {
-      diagMsg = `⚠️ Nenhuma conta vinculada a este cliente (ID ${cidAtivo}). Vincule as contas em <strong>Integrações</strong>.`;
+      diagMsg = `⚠️ Nenhuma conta vinculada (cliente ID ${cidAtivo}). Vincule em <strong>Integrações</strong>.`;
     } else {
-      // Contar pedidos que batem
+      const todosContaIds = [...new Set((cache.pedidos||[]).map(p => p.contaId))];
       const totalPeds = (cache.pedidos||[]).filter(p => contasCliente.includes(p.contaId)).length;
       if (totalPeds === 0) {
-        diagMsg = `⚠️ Cache encontrado mas nenhum pedido para as contas deste cliente. ContaIDs vinculados: <code>${contasCliente.join(', ')}</code>. Verifique se o vínculo está correto em Integrações.`;
+        diagMsg = `⚠️ Cache OK | IDs vinculados ao cliente: <code>${contasCliente.join(', ')}</code> | IDs no cache: <code>${todosContaIds.join(', ')}</code> — não batem. Verifique o vínculo em Integrações.`;
       }
     }
+    // Log de diagnóstico no console para debug
+    console.log('[Proj diag] cidAtivo:', cidAtivo, '| contasCliente:', contasCliente, '| cache mesKey:', cache?.mesKey, '| pedidos no cache:', (cache?.pedidos||[]).length, '| contaIds no cache:', [...new Set((cache?.pedidos||[]).map(p=>p.contaId))]);
 
     // ── Totais ──────────────────────────────────────────────────────
     const totFatBase   = plats.reduce((s,p) => s + (parseFloat(p.fatBase)   || 0), 0);
