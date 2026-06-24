@@ -119,8 +119,8 @@ Router.register('financeiro', async (params, el) => {
         outras:0,       // residual não identificado
         custoProd:0, custoProdReemb:0, custoExtra:0, custoExtraReemb:0, imposto:0,
         rebate:0,       // rebate produto Shopee (devolução de taxa/comissão)
-        taxaMoedas:0,   // taxa de conversão de moedas
-        taxaCartao:0,   // taxa de cartão de crédito
+        taxaMoedas:0,   // moedas Shopee (desconto coberto pela Shopee)
+        taxaCartao:0,   // taxa de cartão de crédito (credit_card_promotion_fee)
         nReemb:0,       // número de cancelamentos (ignorados)
         valorReemb:0,   // valor total cancelado
         nDevolv:0,      // número de devoluções (após envio)
@@ -158,6 +158,8 @@ Router.register('financeiro', async (params, el) => {
       a.taxaServico += parseFloat(tx.taxaServico)||0;
       a.voucher     += parseFloat(tx.voucher)||0;
       a.rebate      += parseFloat(tx.rebate)||0;
+      a.taxaCartao  += parseFloat(tx.taxaCartao)||0;
+      a.taxaMoedas  += parseFloat(tx.moedas)||0;
       a.custoProd   += custo;
       a.custoExtra  += extra;
       a.imposto     += impostoPedido(p);
@@ -165,7 +167,7 @@ Router.register('financeiro', async (params, el) => {
     // Residual: diferença não explicada pelas taxas conhecidas
     for (const nome in plats) {
       const a = plats[nome];
-      const conhecidas = a.frete + a.comissao + a.taxaServico - a.voucher - a.rebate;
+      const conhecidas = a.frete + a.comissao + a.taxaServico + a.taxaCartao - a.voucher - a.rebate - a.taxaMoedas;
       a.outras = Math.max(0, (a.fat - a.liquido) - conhecidas);
     }
 
@@ -277,9 +279,11 @@ Router.register('financeiro', async (params, el) => {
           if (a.comissao > 0.01)    rows.push(sublinha('Comissão Shopee', a.comissao));
           if (a.taxaServico > 0.01) rows.push(sublinha('Taxa de serviço', a.taxaServico));
           if (a.frete > 0.01)       rows.push(sublinha('Frete descontado (vendedor)', a.frete));
+          if (a.taxaCartao > 0.01)  rows.push(sublinha('Taxa de cartão de crédito', a.taxaCartao));
           if (a.voucher > 0.01)     rows.push(sublinha('Voucher Shopee', a.voucher, '+'));
+          if (a.taxaMoedas > 0.01)  rows.push(sublinha('Moedas Shopee (cobertas pela Shopee)', a.taxaMoedas, '+'));
           if (a.rebate > 0.01)      rows.push(sublinha('Rebate Shopee (devolução de taxa)', a.rebate, '+'));
-          const residualSh = totalTaxasSh - a.comissao - a.taxaServico - a.frete + a.voucher;
+          const residualSh = totalTaxasSh - a.comissao - a.taxaServico - a.frete - a.taxaCartao + a.voucher + a.taxaMoedas;
           if (residualSh > 1) rows.push(sublinha(
             a.comissao > 0.01 ? 'Outras deduções Shopee' : 'Comissão + Frete + Taxas Shopee',
             residualSh
@@ -324,7 +328,9 @@ Router.register('financeiro', async (params, el) => {
                 ${a.comissao > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">💳 Comissão:</span><strong style="color:var(--red);">- ${R$(a.comissao)}</strong></div>` : ''}
                 ${a.taxaServico > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">⚙️ Taxa de Serviço:</span><strong style="color:var(--red);">- ${R$(a.taxaServico)}</strong></div>` : ''}
                 ${a.frete > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🚚 Frete Descontado:</span><strong style="color:var(--red);">- ${R$(a.frete)}</strong></div>` : ''}
+                ${a.taxaCartao > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">💳 Taxa Cartão de Crédito:</span><strong style="color:var(--red);">- ${R$(a.taxaCartao)}</strong></div>` : ''}
                 ${a.voucher > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🎟️ Voucher Plataforma:</span><strong style="color:var(--green);">+ ${R$(a.voucher)}</strong></div>` : ''}
+                ${a.taxaMoedas > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🪙 Moedas Shopee:</span><strong style="color:var(--green);">+ ${R$(a.taxaMoedas)}</strong></div>` : ''}
                 ${a.rebate > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🔄 Rebate Shopee:</span><strong style="color:var(--green);">+ ${R$(a.rebate)}</strong></div>` : ''}
               </div>
 
@@ -822,6 +828,8 @@ Router.register('financeiro', async (params, el) => {
                 frete:       freteVendedor + n(oi.shipping_seller_protection_fee_amount),
                 voucher:     n(oi.voucher_from_shopee),
                 rebate,
+                taxaCartao:  n(oi.credit_card_promotion_fee),
+                moedas:      n(oi.coins) + n(oi.shopee_coins_cash_back),
               };
             };
 

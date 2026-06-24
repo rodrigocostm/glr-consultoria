@@ -1127,6 +1127,8 @@ Router.register('vendas', async (params, el) => {
               frete:       freteVendedor + n(oi.shipping_seller_protection_fee_amount),
               voucher:     n(oi.voucher_from_shopee),
               rebate:      n(oi.seller_product_rebate?.amount) + n(oi.shopee_discount),
+              taxaCartao:  n(oi.credit_card_promotion_fee),
+              moedas:      n(oi.coins) + n(oi.shopee_coins_cash_back),
               instalment:  oi.instalment_plan||'',
             };
           };
