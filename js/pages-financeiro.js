@@ -77,11 +77,15 @@ Router.register('financeiro', async (params, el) => {
     return pedidos.filter(p => contaSel==='todas' || p.contaId===contaSel);
   }
 
-  function isReembolsado(p) {
+  function isCancelado(p) {
     const st = (p.status||'').toLowerCase();
-    return st.includes('cancel') || st.includes('refund') || st.includes('devol') || st==='invalid'
-        || st==='to_return' || st.includes('return');
+    return st.includes('cancel') || st==='invalid' || st==='cancelled_unpaid' || st==='in_cancel';
   }
+  function isDevolvido(p) {
+    const st = (p.status||'').toLowerCase();
+    return st.includes('return') || st.includes('refund') || st.includes('devol') || st==='to_return';
+  }
+  function isReembolsado(p) { return isCancelado(p) || isDevolvido(p); }
 
   function custoExtrasPedido(p) {
     const c = custosVendas[p.id]||{};
@@ -117,23 +121,33 @@ Router.register('financeiro', async (params, el) => {
         rebate:0,       // rebate produto Shopee (devolução de taxa/comissão)
         taxaMoedas:0,   // taxa de conversão de moedas
         taxaCartao:0,   // taxa de cartão de crédito
-        nReemb:0,       // número de reembolsos
-        valorReemb:0,   // valor total reembolsado
+        nReemb:0,       // número de cancelamentos (ignorados)
+        valorReemb:0,   // valor total cancelado
+        nDevolv:0,      // número de devoluções (após envio)
+        valorDevolv:0,  // valor total devolvido
+        custoProdDevolv:0, custoExtraDevolv:0,
         n:0
       };
       const a  = plats[nome];
       const tx = p.taxas||{};
-      const reemb = isReembolsado(p);
       const valor = parseFloat(p.valor)||0;
       const liq   = tx.liquido!=null ? parseFloat(tx.liquido) : valor;
       const c     = custosVendas[p.id]||{};
       const custo = parseFloat(c.custo)||0;
       const extra = custoExtrasPedido(p);
 
-      if (reemb) {
+      if (isCancelado(p)) {
+        // Cancelado antes do envio — ignorar completamente
         a.nReemb++;
         a.valorReemb += valor;
-        if (incluirReemb) { a.custoProdReemb += custo; a.custoExtraReemb += extra; }
+        continue;
+      }
+      if (isDevolvido(p)) {
+        // Devolvido após envio — contabilizar como custo de devolução
+        a.nDevolv++;
+        a.valorDevolv += valor;
+        a.custoProdDevolv += custo;
+        a.custoExtraDevolv += extra;
         continue;
       }
       a.n++;
@@ -206,7 +220,7 @@ Router.register('financeiro', async (params, el) => {
     const lucroPlat = {};
     for (const n of nomes) {
       const a = plats[n];
-      lucroPlat[n] = a.liquido - a.custoProd - a.custoProdReemb - a.custoExtra - a.custoExtraReemb - a.imposto;
+      lucroPlat[n] = a.liquido - a.custoProd - a.custoProdDevolv - a.custoExtra - a.custoExtraDevolv - a.imposto;
     }
     const totLucroBruto = nomes.reduce((s,n)=>s+lucroPlat[n],0);
     const pctLucroBruto = totFat>0 ? (totLucroBruto/totFat)*100 : 0;
@@ -330,25 +344,46 @@ Router.register('financeiro', async (params, el) => {
       }).join(''), true
     );
 
-    // ── 3b. Pedidos Cancelados/Reembolsados ──
-    const sPedidosCancelados = secao('cancelados', '❌ Pedidos Cancelados/Reembolsados',
-      {num:nomes.reduce((s,n)=>s+plats[n].nReemb,0), txt:R$(nomes.reduce((s,n)=>s+plats[n].valorReemb, 0))},
+    // ── 3b. Cancelamentos (ignorados) ──
+    const totalCancelados = nomes.reduce((s,n)=>s+plats[n].nReemb, 0);
+    const sPedidosCancelados = totalCancelados > 0 ? secao('cancelados', '⛔ Pedidos Cancelados (não contabilizados)',
+      {num:totalCancelados, txt:R$(nomes.reduce((s,n)=>s+plats[n].valorReemb, 0))},
       nomes.map(n => {
         const a = plats[n];
-        if (a.nReemb === 0) return `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:12px;">Sem cancelamentos em ${n}</div>`;
-        const custoReemb = a.custoProdReemb + a.custoExtraReemb;
+        if (a.nReemb === 0) return '';
         return `
           <div class="fin-grupo">
             <div class="fin-row"><span style="font-weight:600;">${n}</span></div>
             <div style="padding-left:16px;border-left:2px solid rgba(239,68,68,0.3);">
               <div class="fin-row"><span>📦 Pedidos cancelados:</span><strong>${a.nReemb}</strong></div>
-              <div class="fin-row"><span>💰 Valor cancelado:</span><strong style="color:var(--red);">- ${R$(a.valorReemb)}</strong></div>
-              <div class="fin-row"><span>📊 Custo dos produtos:</span><strong style="color:var(--red);">- ${R$(custoReemb)}</strong></div>
+              <div class="fin-row"><span>💰 Valor cancelado (não entrou):</span><strong style="color:var(--text-muted);">${R$(a.valorReemb)}</strong></div>
+              <div style="font-size:11px;color:var(--text-muted);padding:4px 0;">Cancelados antes do envio — sem impacto financeiro.</div>
             </div>
           </div>
         `;
       }).join(''), true
-    );
+    ) : '';
+
+    // ── 3c. Devoluções (custo real) ──
+    const totalDevolv = nomes.reduce((s,n)=>s+plats[n].nDevolv, 0);
+    const sPedidosDevolvidos = totalDevolv > 0 ? secao('devolucoes', '🔄 Devoluções (após envio)',
+      {num:totalDevolv, txt:'- '+R$(nomes.reduce((s,n)=>s+plats[n].valorDevolv, 0))},
+      nomes.map(n => {
+        const a = plats[n];
+        if (a.nDevolv === 0) return '';
+        const custoTotal = a.custoProdDevolv + a.custoExtraDevolv;
+        return `
+          <div class="fin-grupo">
+            <div class="fin-row"><span style="font-weight:600;">${n}</span></div>
+            <div style="padding-left:16px;border-left:2px solid rgba(239,68,68,0.3);">
+              <div class="fin-row"><span>🔄 Pedidos devolvidos:</span><strong>${a.nDevolv}</strong></div>
+              <div class="fin-row"><span>💰 Valor devolvido ao comprador:</span><strong style="color:var(--red);">- ${R$(a.valorDevolv)}</strong></div>
+              ${custoTotal>0 ? `<div class="fin-row"><span>📦 Custo de produto (não recuperado):</span><strong style="color:var(--red);">- ${R$(custoTotal)}</strong></div>` : ''}
+            </div>
+          </div>
+        `;
+      }).join(''), true
+    ) : '';
 
 
     // ── 4. Lucro Bruto ──
@@ -358,9 +393,8 @@ Router.register('financeiro', async (params, el) => {
         const a = plats[n];
         const rows = [linha(n, a.liquido)];
         if (a.custoProd>0)                          rows.push(sublinha('Custo dos produtos', a.custoProd));
-        if (incluirReemb && a.custoProdReemb>0)     rows.push(sublinha('Custo produtos reembolsados', a.custoProdReemb));
         if (a.custoExtra>0)                         rows.push(sublinha('Custos extras / variáveis', a.custoExtra));
-        if (incluirReemb && a.custoExtraReemb>0)    rows.push(sublinha('Custos extras reembolsados', a.custoExtraReemb));
+        if (a.custoProdDevolv>0)                    rows.push(sublinha('Custo produtos devolvidos', a.custoProdDevolv));
         if (a.imposto>0)                            rows.push(sublinha('Impostos', a.imposto));
         rows.push(subfinal(lucroPlat[n]));
         return `<div class="fin-grupo">${rows.join('')}</div>`;
@@ -496,7 +530,7 @@ Router.register('financeiro', async (params, el) => {
       </div>
     </div>`;
 
-    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sPedidosCancelados + sLucro + sArmaz + sAds + sAdsDetalhados + sAfiliados + sPayout + sDepois + sReceita + sDespesas + sFinal;
+    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sPedidosCancelados + sPedidosDevolvidos + sLucro + sArmaz + sAds + sAdsDetalhados + sAfiliados + sPayout + sDepois + sReceita + sDespesas + sFinal;
 
     cont.querySelectorAll('.fin-inp').forEach(inp=>{
       inp.addEventListener('change', ()=>{
