@@ -849,7 +849,14 @@ Router.register('vendas', async (params, el) => {
 
       pedidos = [];
 
-      for (const conta of contas) {
+      // Respeita filtro de conta/empresa selecionado — só busca o que está no filtro
+      const contasParaBuscar = filtroConta !== 'todas'
+        ? contas.filter(c => c.external_id === filtroConta)
+        : filtroEmpresa !== 'todas'
+          ? contas.filter(c => (c.tags?.[0]?.name || 'Sem tag') === filtroEmpresa)
+          : contas;
+
+      for (const conta of contasParaBuscar) {
         // ── Mercado Livre ──
         if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
           if (statusEl) statusEl.textContent='Buscando Mercado Livre...';
