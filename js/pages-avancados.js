@@ -942,6 +942,15 @@ Router.register('projecao', (params, el) => {
       // Salva cache mesclado
       localStorage.setItem('glr_fin_cache', JSON.stringify({ ...(cacheExist||{}), ver:25, mesKey, pedidos }));
 
+      // Atualiza data base para hoje (dia da busca)
+      const hojeIso = `${ano}-${pad(mes)}-${pad(hoje.getDate())}`;
+      projecaoAtiva.dataBase = hojeIso;
+      projecaoAtiva.diasDecorridos = hoje.getDate();
+      const inpDb = document.getElementById('inp-data-base');
+      if (inpDb) inpDb.value = hojeIso;
+      const inpDd = document.getElementById('inp-dias-dec');
+      if (inpDd) inpDd.value = hoje.getDate();
+
       // Cria/atualiza uma linha por conta vinculada (identifica pelo contaId)
       const platMap = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
       const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
@@ -1217,7 +1226,7 @@ Router.register('projecao', (params, el) => {
     <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:8px;">
         <label style="font-size:12px;color:var(--text-muted);white-space:nowrap;">Faturamento Data Base</label>
-        <input id="inp-data-base" class="form-input" type="date" value="2026-06-02" style="width:140px;padding:6px 10px;font-size:12px;" onchange="updateDataBase(this.value)">
+        <input id="inp-data-base" class="form-input" type="date" value="${projecaoAtiva.dataBase || (() => { const h=new Date(); return `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`; })()}" style="width:140px;padding:6px 10px;font-size:12px;" onchange="updateDataBase(this.value)">
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
         <label style="font-size:12px;color:var(--text-muted);">Dias decorridos</label>
@@ -1402,6 +1411,7 @@ Router.register('projecao', (params, el) => {
 
   window.updateDataBase = (dataStr) => {
     if (!dataStr) return;
+    projecaoAtiva.dataBase = dataStr;
     const d = new Date(dataStr + 'T12:00:00');
     const dia = d.getDate();
     projecaoAtiva.diasDecorridos = dia;
