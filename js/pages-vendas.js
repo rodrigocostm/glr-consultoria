@@ -373,7 +373,7 @@ Router.register('vendas', async (params, el) => {
                   <div style="display:flex;align-items:center;gap:8px;">
                     ${p.imagem ? `<img src="${p.imagem}" style="width:32px;height:32px;border-radius:5px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : `<div style="width:32px;height:32px;background:rgba(255,255,255,0.06);border-radius:5px;flex-shrink:0;"></div>`}
                     <div style="min-width:0;">
-                      <div style="color:#e5e7eb;font-weight:500;line-height:1.3;word-break:break-word;max-width:320px;">${p.nome}</div>
+                      <div style="color:#ffffff;font-weight:600;font-size:13px;line-height:1.4;word-break:break-word;max-width:320px;">${p.nome}</div>
                       <div style="display:flex;gap:8px;align-items:center;margin-top:2px;flex-wrap:wrap;">
                         ${p.sku ? `<span style="background:rgba(99,102,241,0.15);color:#818cf8;font-size:9px;padding:1px 6px;border-radius:4px;font-family:monospace;">SKU: ${p.sku}</span>` : ''}
                         <span style="color:#6b7280;font-size:10px;">${p.n} pedido${p.n!==1?'s':''} · ${p.qtd} un.</span>
