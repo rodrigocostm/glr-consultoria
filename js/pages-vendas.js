@@ -346,59 +346,58 @@ Router.register('vendas', async (params, el) => {
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
-            <tr style="background:rgba(255,255,255,0.03);">
-              <th style="padding:10px 16px;text-align:left;color:#6b7280;font-weight:600;white-space:nowrap;min-width:280px;">PRODUTO</th>
-              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">UNID.</th>
-              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">FATURADO</th>
-              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">REPRESENT.</th>
-              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;border-left:1px solid rgba(255,255,255,0.06);">30 DIAS</th>
-              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">60 DIAS</th>
-              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">90 DIAS</th>
-              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">120 DIAS</th>
-              <th style="padding:10px 12px;text-align:right;color:#fbbf24;font-weight:600;white-space:nowrap;border-left:1px solid rgba(255,255,255,0.06);">💰 CUSTO UNIT.</th>
-              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">LÍQ. MP</th>
-              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">LUCRO</th>
-              <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">MARGEM</th>
+            <tr style="background:var(--bg-card-hover);">
+              <th style="padding:10px 16px;text-align:left;color:var(--text-muted);font-weight:600;white-space:nowrap;min-width:280px;">PRODUTO</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">UNID.</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">FATURADO</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">REPRESENT.</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;border-left:1px solid var(--border);">30 DIAS</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">60 DIAS</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">90 DIAS</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">120 DIAS</th>
+              <th style="padding:10px 12px;text-align:right;color:#f59e0b;font-weight:600;white-space:nowrap;border-left:1px solid var(--border);">💰 CUSTO UNIT.</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">LÍQ. MP</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">LUCRO</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">MARGEM</th>
             </tr>
           </thead>
           <tbody>
             ${top15.map((p,i)=>{
               const margem = p.fat>0 ? p.lucro/p.fat*100 : 0;
               const represent = t.fat>0 ? p.fat/t.fat*100 : 0;
-              // Custo atual: pega do primeiro pedido desse produto
               const custoAtual = custos[p.ids[0]]?.custo || '';
               const prodKey = encodeURIComponent(JSON.stringify(p.ids));
-              return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);${i%2===0?'':'background:rgba(255,255,255,0.015);'}">
+              return `<tr style="border-bottom:1px solid var(--border);${i%2!==0?'background:var(--bg-card-hover);':''}">
                 <td style="padding:10px 16px;">
                   <div style="display:flex;align-items:center;gap:8px;">
-                    ${p.imagem ? `<img src="${p.imagem}" style="width:32px;height:32px;border-radius:5px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : `<div style="width:32px;height:32px;background:rgba(255,255,255,0.06);border-radius:5px;flex-shrink:0;"></div>`}
+                    ${p.imagem ? `<img src="${p.imagem}" style="width:32px;height:32px;border-radius:5px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : `<div style="width:32px;height:32px;background:var(--border);border-radius:5px;flex-shrink:0;"></div>`}
                     <div style="min-width:0;">
-                      <div style="color:#ffffff;font-weight:600;font-size:13px;line-height:1.4;word-break:break-word;max-width:320px;">${p.nome}</div>
+                      <div style="color:var(--text-primary);font-weight:600;font-size:13px;line-height:1.4;word-break:break-word;max-width:320px;">${p.nome}</div>
                       <div style="display:flex;gap:8px;align-items:center;margin-top:2px;flex-wrap:wrap;">
                         ${p.sku ? `<span style="background:rgba(99,102,241,0.15);color:#818cf8;font-size:9px;padding:1px 6px;border-radius:4px;font-family:monospace;">SKU: ${p.sku}</span>` : ''}
-                        <span style="color:#6b7280;font-size:10px;">${p.n} pedido${p.n!==1?'s':''} · ${p.qtd} un.</span>
+                        <span style="color:var(--text-muted);font-size:10px;">${p.n} pedido${p.n!==1?'s':''} · ${p.qtd} un.</span>
                       </div>
                     </div>
                   </div>
                 </td>
-                <td style="padding:10px 12px;text-align:right;color:#d1d5db;">${p.qtd}</td>
-                <td style="padding:10px 12px;text-align:right;color:#60a5fa;font-weight:600;">${R$(p.fat)}</td>
+                <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${p.qtd}</td>
+                <td style="padding:10px 12px;text-align:right;color:#3b82f6;font-weight:600;">${R$(p.fat)}</td>
                 <td style="padding:10px 12px;text-align:right;">
                   <span style="background:rgba(99,102,241,0.15);color:#818cf8;padding:2px 7px;border-radius:10px;font-size:11px;">${pct(represent)}</span>
                 </td>
-                <td style="padding:10px 12px;text-align:right;color:#9ca3af;border-left:1px solid rgba(255,255,255,0.06);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 30).length)()}</td>
-                <td style="padding:10px 12px;text-align:right;color:#9ca3af;">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 60).length)()}</td>
-                <td style="padding:10px 12px;text-align:right;color:#9ca3af;">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 90).length)()}</td>
-                <td style="padding:10px 12px;text-align:right;color:#9ca3af;">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 120).length)()}</td>
-                <td style="padding:8px 12px;text-align:right;border-left:1px solid rgba(255,255,255,0.06);">
-                  <input type="number" min="0" step="0.01" placeholder="R$ 0,00"
+                <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);border-left:1px solid var(--border);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 30).length)()}</td>
+                <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 60).length)()}</td>
+                <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 90).length)()}</td>
+                <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 120).length)()}</td>
+                <td style="padding:8px 12px;text-align:right;border-left:1px solid var(--border);">
+                  <input type="number" min="0" step="0.01" placeholder="0,00"
                     value="${custoAtual}"
                     data-ids="${p.ids.join(',')}"
                     class="inp-custo-prod"
-                    style="width:90px;background:#1a2744;border:1px solid rgba(251,191,36,0.3);border-radius:6px;padding:5px 8px;color:#fbbf24;font-size:12px;text-align:right;"
+                    style="width:90px;background:var(--bg-input);border:1px solid rgba(245,158,11,0.4);border-radius:6px;padding:5px 8px;color:#f59e0b;font-size:12px;text-align:right;"
                     title="Custo unitário — aplica a todos os ${p.n} pedidos deste produto">
                 </td>
-                <td style="padding:10px 12px;text-align:right;color:#a78bfa;">${p.liq>0?R$(p.liq):'—'}</td>
+                <td style="padding:10px 12px;text-align:right;color:#8b5cf6;">${p.liq>0?R$(p.liq):'—'}</td>
                 <td style="padding:10px 12px;text-align:right;color:${corMargem(margem)};font-weight:600;">${R$(p.lucro)}</td>
                 <td style="padding:10px 12px;text-align:right;">
                   <span style="background:${corMargem(margem)}22;color:${corMargem(margem)};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">${pct(margem)}</span>
