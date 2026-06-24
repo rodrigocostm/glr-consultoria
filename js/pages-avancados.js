@@ -1071,11 +1071,11 @@ Router.register('projecao', (params, el) => {
              </select>`
         }
       </div>
-      <div style="padding:10px 24px;text-align:center;display:flex;align-items:center;justify-content:center;gap:12px;">
+      <div style="padding:10px 24px;text-align:center;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
         <input id="inp-mes-label" value="${projecaoAtiva.mes}"
           onchange="projecaoAtiva.mes=this.value;document.querySelectorAll('.mes-label').forEach(e=>e.textContent=this.value)"
           style="background:transparent;border:none;color:rgba(255,255,255,0.85);font-size:16px;font-weight:700;font-style:italic;outline:none;text-align:center;width:200px;">
-        ${clienteIdAtivo ? `<span style="font-size:11px;color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.08);padding:2px 8px;border-radius:99px;">ID cliente: ${clienteIdAtivo}</span>` : ''}
+        <button onclick="abrirVinculoProjecao()" style="background:rgba(99,102,241,0.25);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;">🔗 Vincular conta</button>
         <span id="lbl-atualizado" style="font-size:11px;color:rgba(255,255,255,0.55);background:rgba(255,255,255,0.08);padding:2px 10px;border-radius:99px;">${projecaoAtiva.atualizadoEm ? '🕓 Atualizado: ' + new Date(projecaoAtiva.atualizadoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '🕓 Nunca salvo'}</span>
       </div>
     </div>
@@ -1440,6 +1440,118 @@ Router.register('projecao', (params, el) => {
       pageEl.innerHTML = '';
       Router.routes['projecao'](Router.currentParams, pageEl);
     }
+  };
+
+  window.abrirVinculoProjecao = () => {
+    const cidAtivo = parseInt(document.getElementById('sel-cliente')?.value) || clienteIdAtivo;
+    const cliente  = GLR.clientes.find(c => c.id === cidAtivo);
+    if (!cidAtivo) { alert('Selecione um cliente primeiro.'); return; }
+
+    let vinculos = {};
+    try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
+    let contas = [];
+    try { contas = JSON.parse(localStorage.getItem('glr_mc_accounts')||'[]'); } catch(e) {}
+    // Tenta também a chave usada pelo Integrações
+    if (!contas.length) try { contas = JSON.parse(localStorage.getItem('glr_mc_contas')||'[]'); } catch(e) {}
+
+    const vinculadas = vinculos[String(cidAtivo)] || [];
+    const vinculadasIds = new Set(vinculadas.map(c => c.external_id));
+
+    const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
+    const platIcon = { mercadolivre:'🟡', ml:'🟡', meli:'🟡', shopee:'🟠', bling:'🔵' };
+    const platNome = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+    const renderModalBody = () => {
+      const contasDisponiveis = contas.filter(c => !vinculadasIds.has(c.external_id));
+      overlay.innerHTML = `
+        <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:28px 32px;max-width:520px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.5);max-height:85vh;overflow-y:auto;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+            <div>
+              <div style="font-size:16px;font-weight:800;color:var(--text-primary);">🔗 Contas vinculadas</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${cliente?.nome || 'Cliente #'+cidAtivo}</div>
+            </div>
+            <button id="btn-fechar-vinculos" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted);">✕</button>
+          </div>
+
+          ${vinculadas.length === 0
+            ? `<div style="padding:16px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;font-size:13px;color:#f59e0b;margin-bottom:16px;">⚠️ Nenhuma conta vinculada ainda</div>`
+            : `<div style="margin-bottom:16px;">
+                <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Contas vinculadas (${vinculadas.length})</div>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                  ${vinculadas.map(c => {
+                    const tag = (c.tags||[]).map(t=>t.name||t.value).filter(Boolean).join(' · ');
+                    const nick = nicks[c.external_id] || '';
+                    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-base);border:1px solid rgba(34,197,94,0.3);border-radius:8px;">
+                      <span style="font-size:16px;">${platIcon[c.marketplace]||'🏪'}</span>
+                      <div style="flex:1;min-width:0;">
+                        <div style="font-size:12px;font-weight:600;">${nick || tag || platNome[c.marketplace]||c.marketplace}</div>
+                        <div style="font-size:10px;color:var(--text-muted);">ID: ${c.external_id}</div>
+                      </div>
+                      <button onclick="window._desvincularProj('${c.external_id}')" style="background:rgba(239,68,68,0.15);border:none;color:#ef4444;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">✕ remover</button>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>`
+          }
+
+          ${contasDisponiveis.length > 0 ? `
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Adicionar conta</div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              ${contasDisponiveis.map(c => {
+                const tag = (c.tags||[]).map(t=>t.name||t.value).filter(Boolean).join(' · ');
+                const nick = nicks[c.external_id] || '';
+                return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:8px;">
+                  <span style="font-size:16px;">${platIcon[c.marketplace]||'🏪'}</span>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:12px;font-weight:600;">${nick || tag || platNome[c.marketplace]||c.marketplace}</div>
+                    <div style="font-size:10px;color:var(--text-muted);">ID: ${c.external_id}</div>
+                    ${tag ? `<div style="font-size:10px;color:#818cf8;">${tag}</div>` : ''}
+                  </div>
+                  <button onclick="window._vincularProj('${c.external_id}')" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">+ vincular</button>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>` : `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:8px;">Todas as contas disponíveis já estão vinculadas.</div>`}
+
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
+            <button id="btn-fechar-vinculos2" style="padding:8px 20px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-hover);color:var(--text-primary);font-weight:600;cursor:pointer;">Fechar</button>
+          </div>
+        </div>`;
+
+      document.getElementById('btn-fechar-vinculos').onclick  = () => { overlay.remove(); renderTabela(); };
+      document.getElementById('btn-fechar-vinculos2').onclick = () => { overlay.remove(); renderTabela(); };
+    };
+
+    window._vincularProj = (extId) => {
+      const conta = contas.find(c => c.external_id === extId);
+      if (!conta) return;
+      if (!vinculos[String(cidAtivo)]) vinculos[String(cidAtivo)] = [];
+      if (!vinculos[String(cidAtivo)].some(c => c.external_id === extId)) {
+        vinculos[String(cidAtivo)].push(conta);
+        localStorage.setItem('glr_mc_vinculos', JSON.stringify(vinculos));
+        vinculadasIds.add(extId);
+        vinculadas.push(conta);
+      }
+      renderModalBody();
+    };
+
+    window._desvincularProj = (extId) => {
+      if (!vinculos[String(cidAtivo)]) return;
+      vinculos[String(cidAtivo)] = vinculos[String(cidAtivo)].filter(c => c.external_id !== extId);
+      localStorage.setItem('glr_mc_vinculos', JSON.stringify(vinculos));
+      vinculadasIds.delete(extId);
+      const idx = vinculadas.findIndex(c => c.external_id === extId);
+      if (idx > -1) vinculadas.splice(idx, 1);
+      renderModalBody();
+    };
+
+    renderModalBody();
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); renderTabela(); } });
   };
 
   window.novaProjecao = () => {
