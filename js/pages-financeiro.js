@@ -600,18 +600,34 @@ Router.register('financeiro', async (params, el) => {
       renderFiltroEmpresas();
       renderFiltroContas();
 
-      // Se está reprocessando uma conta específica, buscar APENAS dela
-      const contasParaBuscar = contaReprocessLocal ? contas.filter(c => c.external_id === contaReprocessLocal) : contas;
+      // Determinar quais contas buscar:
+      // 1) Reprocessamento de conta específica → só ela
+      // 2) Conta individual selecionada no filtro → só ela
+      // 3) Empresa selecionada → só as contas dessa empresa
+      // 4) Todos → todas as contas
+      let contasParaBuscar;
+      let contasFiltroIds = null; // IDs das contas cujos pedidos serão removidos antes de buscar
+
       if (contaReprocessLocal) {
-        console.log(`[Buscar] Reprocessando apenas conta: ${contaReprocessLocal} (${contasParaBuscar.length} contas)`);
+        contasParaBuscar = contas.filter(c => c.external_id === contaReprocessLocal);
+        contasFiltroIds  = [contaReprocessLocal];
+      } else if (contaSel !== 'todas') {
+        contasParaBuscar = contas.filter(c => c.external_id === contaSel);
+        contasFiltroIds  = [contaSel];
+      } else if (empresaSel !== 'todas') {
+        contasParaBuscar = contas.filter(c => (c.tags?.[0]?.name || 'Sem tag') === empresaSel);
+        contasFiltroIds  = contasParaBuscar.map(c => c.external_id);
+      } else {
+        contasParaBuscar = contas;
       }
 
-      // Se não está reprocessando, limpar pedidos. Se é reprocessamento parcial, manter os outros
-      if (!contaReprocessLocal) {
-        pedidos = [];
+      console.log(`[Buscar] ${contasFiltroIds ? `Apenas contas: ${contasFiltroIds.join(', ')}` : 'Todas as contas'} (${contasParaBuscar.length})`);
+
+      // Limpar apenas os pedidos das contas que vamos rebuscar, manter o resto do cache
+      if (contasFiltroIds) {
+        pedidos = pedidos.filter(p => !contasFiltroIds.includes(p.contaId));
       } else {
-        // Remove pedidos dessa conta para reprocessar
-        pedidos = pedidos.filter(p => p.contaId !== contaReprocessLocal);
+        pedidos = [];
       }
 
       const errosConta = [];
