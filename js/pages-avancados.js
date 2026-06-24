@@ -899,8 +899,28 @@ Router.register('projecao', (params, el) => {
     const cache = lerCacheAtual();
     let vinculos = {};
     try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
-    const contasCliente = (vinculos[String(clienteIdAtivo)] || vinculos[clienteIdAtivo] || []).map(c => c.external_id);
+    // Tenta pelo clienteIdAtivo atual (pode ter mudado via dropdown)
+    const cidAtivo = parseInt(document.getElementById('sel-cliente')?.value) || clienteIdAtivo;
+    const contasVinc = vinculos[String(cidAtivo)] || vinculos[cidAtivo] || [];
+    const contasCliente = contasVinc.map(c => c.external_id);
     const temCache = !!cache;
+
+    // Diagnóstico inline — mostra estado do auto-fill no rodapé da tabela
+    const pad2 = n => String(n).padStart(2,'0');
+    const hoje = new Date();
+    const keyAtual = `${hoje.getFullYear()}-${pad2(hoje.getMonth()+1)}`;
+    let diagMsg = '';
+    if (!cache) {
+      diagMsg = `⚠️ Cache do Financeiro não encontrado para ${keyAtual}. Sincronize a página <strong>Financeiro</strong> neste mês primeiro.`;
+    } else if (!contasCliente.length) {
+      diagMsg = `⚠️ Nenhuma conta vinculada a este cliente (ID ${cidAtivo}). Vincule as contas em <strong>Integrações</strong>.`;
+    } else {
+      // Contar pedidos que batem
+      const totalPeds = (cache.pedidos||[]).filter(p => contasCliente.includes(p.contaId)).length;
+      if (totalPeds === 0) {
+        diagMsg = `⚠️ Cache encontrado mas nenhum pedido para as contas deste cliente. ContaIDs vinculados: <code>${contasCliente.join(', ')}</code>. Verifique se o vínculo está correto em Integrações.`;
+      }
+    }
 
     // ── Totais ──────────────────────────────────────────────────────
     const totFatBase   = plats.reduce((s,p) => s + (parseFloat(p.fatBase)   || 0), 0);
@@ -992,6 +1012,8 @@ Router.register('projecao', (params, el) => {
     document.getElementById('proj-tbody').innerHTML = linhas;
     const cacheBadge = document.getElementById('th-cache-badge');
     if (cacheBadge) cacheBadge.style.display = temCache ? 'inline' : 'none';
+    const diagEl = document.getElementById('proj-diag');
+    if (diagEl) { diagEl.innerHTML = diagMsg; diagEl.style.display = diagMsg ? 'block' : 'none'; }
     document.getElementById('proj-tfoot').innerHTML = `<tr style="background:rgba(99,102,241,0.08);">
       <td style="font-weight:800;color:var(--text-primary);font-size:13.5px;">Total</td>
       <td style="font-weight:700;text-align:right;">R$ ${fmtBRL(totFatBase)}</td>
@@ -1140,6 +1162,7 @@ Router.register('projecao', (params, el) => {
           <tfoot id="proj-tfoot" style="border-top:2px solid rgba(99,102,241,0.4);"></tfoot>
         </table>
       </div>
+      <div id="proj-diag" style="display:none;padding:10px 16px;font-size:12px;color:#f59e0b;border-top:1px solid rgba(245,158,11,0.2);"></div>
     </div>
 
     <!-- Gráfico evolução -->
