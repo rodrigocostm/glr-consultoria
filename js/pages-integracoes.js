@@ -17,6 +17,20 @@ Router.register('integracoes', (params, el) => {
   const platIcon = { mercadolivre:'🟡', ml:'🟡', meli:'🟡', shopee:'🟠', bling:'🔵' };
   const platNome = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling ERP' };
 
+  // Apelidos customizados por external_id (editável no sistema)
+  let nicknames = {};
+  try { nicknames = JSON.parse(localStorage.getItem('glr_mc_nicknames') || '{}'); } catch(e) {}
+  const salvarNickname = (extId, val) => {
+    nicknames[extId] = val;
+    localStorage.setItem('glr_mc_nicknames', JSON.stringify(nicknames));
+  };
+  window.salvarNickname = salvarNickname;
+
+  // Helper: retorna todas as tags como string legível
+  const contaTagsStr = c => (c.tags || []).map(t => t.name || t.value).filter(Boolean).join(' · ');
+  // Nome de exibição: apelido customizado > label da API > tags > external_id
+  const contaDisplayName = c => nicknames[c.external_id] || c.label || contaTagsStr(c) || c.nickname || c.external_id;
+
   el.innerHTML = `<div class="page">
 
     <!-- Header -->
@@ -130,25 +144,38 @@ Router.register('integracoes', (params, el) => {
         return;
       }
 
-      el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;">
-        ${contas.map(c => `
-          <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;align-items:center;gap:10px;">
-            <span style="font-size:22px;">${platIcon[c.marketplace] || '🏪'}</span>
-            <div>
-              <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${c.nickname || c.external_id}</div>
-              <div style="font-size:11px;color:var(--text-muted);">${platNome[c.marketplace] || c.marketplace} · ID: ${c.external_id}</div>
-              <div style="font-size:10px;margin-top:2px;">
+      el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">
+        ${contas.map(c => {
+          const tags = contaTagsStr(c);
+          const nick = nicknames[c.external_id] || '';
+          return `
+          <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;align-items:flex-start;gap:10px;">
+            <span style="font-size:22px;margin-top:2px;">${platIcon[c.marketplace] || '🏪'}</span>
+            <div style="min-width:0;flex:1;">
+              <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${platNome[c.marketplace] || c.marketplace}</div>
+              <div style="font-size:11px;color:var(--text-muted);">ID: ${c.external_id}</div>
+              ${tags ? `<div style="font-size:10px;color:#818cf8;margin-top:2px;font-weight:600;">${tags}</div>` : ''}
+              <input type="text" value="${nick}" placeholder="Apelido (opcional)"
+                onchange="salvarNickname('${c.external_id}', this.value)"
+                style="margin-top:5px;width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--text-primary);outline:none;">
+              <div style="font-size:10px;margin-top:4px;">
                 <span style="background:${c.connected ? '#10b98120' : '#ef444420'};color:${c.connected ? '#10b981' : '#ef4444'};padding:1px 6px;border-radius:99px;">
                   ${c.connected ? '● Conectado' : '○ Desconectado'}
                 </span>
               </div>
             </div>
-          </div>`).join('')}
+          </div>`;
+        }).join('')}
       </div>`;
 
-      // Atualiza select de vínculo
+      // Atualiza select de vínculo — mostra tag + apelido
       sel.innerHTML = '<option value="">Selecione uma conta...</option>' +
-        contas.map(c => `<option value='${JSON.stringify(c).replace(/'/g,"&apos;")}'>${platIcon[c.marketplace]||'🏪'} ${c.nickname||c.external_id} (${platNome[c.marketplace]||c.marketplace})</option>`).join('');
+        contas.map(c => {
+          const tags = contaTagsStr(c);
+          const nick = nicknames[c.external_id];
+          const label = nick || tags || c.nickname || c.external_id;
+          return `<option value='${JSON.stringify(c).replace(/'/g,"&apos;")}'>${platIcon[c.marketplace]||'🏪'} ${platNome[c.marketplace]||c.marketplace} ${c.external_id} — ${label}</option>`;
+        }).join('');
 
     } catch(e) {
       el.innerHTML = `<div style="color:#ef4444;font-size:13px;">✗ Erro: ${e.message}</div>`;
@@ -335,25 +362,36 @@ function renderClientesVinculados(vinc, mesesNomes, hoje) {
 
       <div style="padding:14px 18px;">
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
-          ${contas.map(c => `
-            <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-              <span>${platIcon[c.marketplace] || '🏪'}</span>
-              <div style="min-width:0;">
-                <div style="font-size:12px;font-weight:600;">${c.label || c.nickname || c.external_id}</div>
-                <div style="font-size:10px;color:var(--text-muted);">${c.marketplace}</div>
+          ${contas.map(c => {
+            const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
+            const tags = (c.tags||[]).map(t => t.name||t.value).filter(Boolean).join(' · ');
+            const nick = nicks[c.external_id] || '';
+            return `
+            <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;min-width:200px;">
+              <span style="font-size:18px;">${platIcon[c.marketplace] || '🏪'}</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;font-weight:700;">${platNome[c.marketplace]||c.marketplace}</div>
+                <div style="font-size:10px;color:var(--text-muted);">ID: ${c.external_id}</div>
+                ${tags ? `<div style="font-size:10px;color:#818cf8;font-weight:600;margin-top:2px;">${tags}</div>` : ''}
+                <input type="text" value="${nick}" placeholder="Apelido (ex: GAMA SHOPEE)"
+                  onchange="(function(v){var n={};try{n=JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}')||{};}catch(e){}n['${c.external_id}']=v;localStorage.setItem('glr_mc_nicknames',JSON.stringify(n));})(this.value)"
+                  style="margin-top:5px;width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--text-primary);outline:none;box-sizing:border-box;">
               </div>
-              <div style="display:flex;align-items:center;gap:5px;margin-left:4px;">
-                <label style="font-size:10px;color:var(--text-muted);white-space:nowrap;">Alíquota imposto:</label>
-                <input type="number" min="0" max="100" step="0.1"
-                  value="${aliquotas[c.external_id] || ''}"
-                  placeholder="0"
-                  oninput="salvarAliquota('${c.external_id}', parseFloat(this.value)||0)"
-                  style="width:58px;background:var(--bg-input);border:1px solid var(--border-active);border-radius:5px;padding:3px 6px;color:var(--text-primary);font-size:12px;text-align:right;">
-                <span style="font-size:11px;color:var(--text-muted);">%</span>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">
+                <div style="display:flex;align-items:center;gap:4px;">
+                  <label style="font-size:10px;color:var(--text-muted);white-space:nowrap;">Imposto:</label>
+                  <input type="number" min="0" max="100" step="0.1"
+                    value="${aliquotas[c.external_id] || ''}"
+                    placeholder="0"
+                    oninput="salvarAliquota('${c.external_id}', parseFloat(this.value)||0)"
+                    style="width:52px;background:var(--bg-input);border:1px solid var(--border-active);border-radius:5px;padding:3px 6px;color:var(--text-primary);font-size:12px;text-align:right;">
+                  <span style="font-size:11px;color:var(--text-muted);">%</span>
+                </div>
+                <button onclick="desvincularConta(${clienteId},'${c.external_id}')"
+                  style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:0;" title="Desvincular">✕ remover</button>
               </div>
-              <button onclick="desvincularConta(${clienteId},'${c.external_id}')"
-                style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:2px 4px;font-size:12px;" title="Desvincular">✕</button>
-            </div>`).join('')}
+            </div>`;
+          }).join('')}
         </div>
         <div id="res-import-${clienteId}"></div>
       </div>
