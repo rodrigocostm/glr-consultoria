@@ -162,7 +162,7 @@ const MarketplaceAPI = {
   // tsFrom/tsTo em segundos (epoch). Retorna [{ sn, status }]
   // A API Shopee limita create_time a 15 dias por request — divide em chunks de 14 dias
   async shopeeListOrderSns(shopId, tsFrom, tsTo, statuses) {
-    const sts = statuses || ['COMPLETED','READY_TO_SHIP','PROCESSED','SHIPPED','INVOICE_PENDING'];
+    const sts = statuses || ['COMPLETED','READY_TO_SHIP','PROCESSED','SHIPPED','INVOICE_PENDING','CANCELLED','IN_CANCEL','TO_RETURN'];
     const CHUNK = 14 * 24 * 3600; // 14 dias em segundos (seguro abaixo do limite de 15)
     const out = [];
     const seen = new Set();

@@ -79,7 +79,8 @@ Router.register('financeiro', async (params, el) => {
 
   function isReembolsado(p) {
     const st = (p.status||'').toLowerCase();
-    return st.includes('cancel') || st.includes('refund') || st.includes('devol') || st==='invalid';
+    return st.includes('cancel') || st.includes('refund') || st.includes('devol') || st==='invalid'
+        || st==='to_return' || st.includes('return');
   }
 
   function custoExtrasPedido(p) {
@@ -588,22 +589,14 @@ Router.register('financeiro', async (params, el) => {
 
             const orders = await MarketplaceAPI.mlOrders(meliId, primeiroDia, dataTo);
 
-            // Filtrar cancelados/inválidos
-            const ordensValidas = orders.filter(o => {
-              const st = (o.status||'').toLowerCase();
-              return !['cancelled','invalid'].includes(st);
-            });
-            const cancelados = orders.length - ordensValidas.length;
-            if (cancelados > 0) console.log(`[ML] Ignorando ${cancelados} pedidos cancelados/inválidos`);
-
             // Log do primeiro pedido ML para diagnóstico de campos
-            if (ordensValidas.length > 0) {
-              const sample = ordensValidas[0];
+            if (orders.length > 0) {
+              const sample = orders[0];
               console.log('[ML order sample] order_items:', JSON.stringify(sample.order_items||[]).substring(0,400));
               console.log('[ML order sample] payments:', JSON.stringify(sample.payments||[]).substring(0,200));
             }
 
-            const mlPedidos = ordensValidas.map(o=>{
+            const mlPedidos = orders.map(o=>{
               // sale_fee é POR UNIDADE — multiplica pela quantidade
               const itens = (o.order_items||o.items||[]).map(i=>({
                 qtd: i.quantity||1,
@@ -633,7 +626,8 @@ Router.register('financeiro', async (params, el) => {
             // Adiciona os pedidos IMEDIATAMENTE (por referência) — assim o faturamento
             // fica garantido mesmo se a busca de taxas falhar logo abaixo.
             pedidos.push(...mlPedidos);
-            log.push(`ML: ${mlPedidos.length} pedidos`);
+            const mlCancel = mlPedidos.filter(p => isReembolsado(p)).length;
+            log.push(`ML: ${mlPedidos.length} pedidos (${mlCancel} cancelados/reembolsos)`);
 
             if (statusEl) statusEl.textContent=`📦 ML: buscando taxas (${mlPedidos.length} pedidos)...`;
 
