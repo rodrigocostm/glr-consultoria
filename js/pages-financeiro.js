@@ -114,6 +114,7 @@ Router.register('financeiro', async (params, el) => {
         voucher:0,      // voucher da plataforma (positivo)
         outras:0,       // residual não identificado
         custoProd:0, custoProdReemb:0, custoExtra:0, custoExtraReemb:0, imposto:0,
+        rebate:0,       // rebate produto Shopee (devolução de taxa/comissão)
         taxaMoedas:0,   // taxa de conversão de moedas
         taxaCartao:0,   // taxa de cartão de crédito
         nReemb:0,       // número de reembolsos
@@ -142,6 +143,7 @@ Router.register('financeiro', async (params, el) => {
       a.comissao    += parseFloat(tx.comissao)||0;
       a.taxaServico += parseFloat(tx.taxaServico)||0;
       a.voucher     += parseFloat(tx.voucher)||0;
+      a.rebate      += parseFloat(tx.rebate)||0;
       a.custoProd   += custo;
       a.custoExtra  += extra;
       a.imposto     += impostoPedido(p);
@@ -149,7 +151,7 @@ Router.register('financeiro', async (params, el) => {
     // Residual: diferença não explicada pelas taxas conhecidas
     for (const nome in plats) {
       const a = plats[nome];
-      const conhecidas = a.frete + a.comissao + a.taxaServico - a.voucher;
+      const conhecidas = a.frete + a.comissao + a.taxaServico - a.voucher - a.rebate;
       a.outras = Math.max(0, (a.fat - a.liquido) - conhecidas);
     }
 
@@ -262,6 +264,7 @@ Router.register('financeiro', async (params, el) => {
           if (a.taxaServico > 0.01) rows.push(sublinha('Taxa de serviço', a.taxaServico));
           if (a.frete > 0.01)       rows.push(sublinha('Frete descontado (vendedor)', a.frete));
           if (a.voucher > 0.01)     rows.push(sublinha('Voucher Shopee', a.voucher, '+'));
+          if (a.rebate > 0.01)      rows.push(sublinha('Rebate Shopee (devolução de taxa)', a.rebate, '+'));
           const residualSh = totalTaxasSh - a.comissao - a.taxaServico - a.frete + a.voucher;
           if (residualSh > 1) rows.push(sublinha(
             a.comissao > 0.01 ? 'Outras deduções Shopee' : 'Comissão + Frete + Taxas Shopee',
@@ -308,6 +311,7 @@ Router.register('financeiro', async (params, el) => {
                 ${a.taxaServico > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">⚙️ Taxa de Serviço:</span><strong style="color:var(--red);">- ${R$(a.taxaServico)}</strong></div>` : ''}
                 ${a.frete > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🚚 Frete Descontado:</span><strong style="color:var(--red);">- ${R$(a.frete)}</strong></div>` : ''}
                 ${a.voucher > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🎟️ Voucher Plataforma:</span><strong style="color:var(--green);">+ ${R$(a.voucher)}</strong></div>` : ''}
+                ${a.rebate > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🔄 Rebate Shopee:</span><strong style="color:var(--green);">+ ${R$(a.rebate)}</strong></div>` : ''}
               </div>
 
               <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(99,102,241,0.2);">
@@ -751,17 +755,23 @@ Router.register('financeiro', async (params, el) => {
                 console.log('[Shopee escrow fields]', JSON.stringify(oi).substring(0, 500));
               }
               const n = v => parseFloat(v)||0;
-              // Frete que sobra pro vendedor = custo real − pago pelo comprador − rebate Shopee
+              // Frete líquido vendedor = custo real − pago pelo comprador − rebate frete Shopee
               const freteVendedor = Math.max(0,
                 n(oi.actual_shipping_fee) - n(oi.buyer_paid_shipping_fee) - n(oi.shopee_shipping_rebate)
               );
+              // Usa net_commission/net_service (já descontado rebate produto) quando disponível
+              const comissao    = n(oi.net_commission_fee  ?? oi.commission_fee);
+              const taxaServico = n(oi.net_service_fee     ?? oi.service_fee);
+              // Rebate de produto Shopee (devolução de parte da comissão/taxa)
+              const rebate = n(oi.seller_product_rebate?.amount) + n(oi.shopee_discount);
               return {
                 liquido:     n(oi.escrow_amount),
-                comissao:    n(oi.commission_fee),
-                taxaServico: n(oi.service_fee),
+                comissao,
+                taxaServico,
                 imposto:     n(oi.seller_transaction_fee) + n(oi.buyer_tax_amount) + n(oi.seller_coin_cash_back),
                 frete:       freteVendedor + n(oi.shipping_seller_protection_fee_amount),
                 voucher:     n(oi.voucher_from_shopee),
+                rebate,
               };
             };
 

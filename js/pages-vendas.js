@@ -1028,15 +1028,22 @@ Router.register('vendas', async (params, el) => {
           // A API retorna lista na mesma ordem do input — mapeamos por índice
           if (statusEl) statusEl.textContent=`Shopee: taxas (${uniq.length} pedidos)...`;
           const escrowMap={};
-          const parseEscrow = oi => ({
-            liquido:     parseFloat(oi.escrow_amount)||0,
-            comissao:    parseFloat(oi.commission_fee)||0,
-            taxaServico: parseFloat(oi.service_fee)||0,
-            imposto:     parseFloat(oi.escrow_tax)||0,
-            frete:       Math.abs(parseFloat(oi.final_shipping_fee)||0),
-            voucher:     parseFloat(oi.voucher_from_shopee)||0,
-            instalment:  oi.instalment_plan||'',
-          });
+          const parseEscrow = oi => {
+            const n = v => parseFloat(v)||0;
+            const freteVendedor = Math.max(0,
+              n(oi.actual_shipping_fee) - n(oi.buyer_paid_shipping_fee) - n(oi.shopee_shipping_rebate)
+            );
+            return {
+              liquido:     n(oi.escrow_amount),
+              comissao:    n(oi.net_commission_fee ?? oi.commission_fee),
+              taxaServico: n(oi.net_service_fee    ?? oi.service_fee),
+              imposto:     n(oi.seller_transaction_fee) + n(oi.buyer_tax_amount) + n(oi.seller_coin_cash_back),
+              frete:       freteVendedor + n(oi.shipping_seller_protection_fee_amount),
+              voucher:     n(oi.voucher_from_shopee),
+              rebate:      n(oi.seller_product_rebate?.amount) + n(oi.shopee_discount),
+              instalment:  oi.instalment_plan||'',
+            };
+          };
           for (let i=0;i<uniq.length;i+=50) {
             const lote = uniq.slice(i,i+50);
             const sns  = lote.map(o=>o.id);
