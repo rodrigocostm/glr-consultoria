@@ -1205,8 +1205,15 @@ Router.register('vendas', async (params, el) => {
 
   renderLinhasExtras();
 
-  // Ao abrir a página: usa cache se existir para o período atual, senão busca
-  (() => {
+  // Ao abrir a página: busca contas para popular filtros, depois usa cache de pedidos se existir
+  (async () => {
+    // Busca contas sempre para popular empresa/conta — independente de cache de pedidos
+    try {
+      const r = await MarketplaceAPI.call('list_accounts');
+      contas = r.data?.accounts || [];
+      renderFiltroEmpresaConta();
+    } catch(e) { console.warn('[Vendas] Falha ao carregar contas:', e.message); }
+
     let dataFrom, dataTo;
     if (filtroPeriodo === 'custom') { dataFrom = customFrom; dataTo = customTo; }
     else {
@@ -1217,7 +1224,7 @@ Router.register('vendas', async (params, el) => {
     }
     const at = carregarCache(dataFrom, dataTo);
     if (at) {
-      custos = JSON.parse(localStorage.getItem(STORAGE_CUSTOS)||'{}'); // recarrega por garantia
+      custos = JSON.parse(localStorage.getItem(STORAGE_CUSTOS)||'{}');
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
       const statusEl = document.getElementById('vendas-status');
       if (statusEl) statusEl.innerHTML = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;">📦 cache ${fmtAgo(at)}</span>`;
