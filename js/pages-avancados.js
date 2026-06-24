@@ -860,6 +860,107 @@ Router.register('projecao', (params, el) => {
     return v >= 0 ? 'var(--green)' : 'var(--red)';
   }
 
+  // ── Busca simplificada de ordens para contas vinculadas (GMV apenas, sem escrow) ──
+  async function buscarDadosProjecao() {
+    const cidAtivo = parseInt(document.getElementById('sel-cliente')?.value) || clienteIdAtivo;
+    let vinculos = {};
+    try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
+    const contasVinc = vinculos[String(cidAtivo)] || [];
+    if (!contasVinc.length) { alert('Nenhuma conta vinculada. Use 🔗 Vincular conta primeiro.'); return; }
+    const apiKey = localStorage.getItem('glr_mc_apikey')||'';
+    if (!apiKey) { alert('Configure a API Key nas Integrações.'); return; }
+
+    const btn = document.getElementById('btn-buscar-proj');
+    if (btn) { btn.disabled=true; btn.textContent='⏳ Buscando...'; }
+
+    try {
+      const hoje = new Date();
+      const pad  = n => String(n).padStart(2,'0');
+      const ano = hoje.getFullYear(), mes = hoje.getMonth()+1;
+      const primeiroDia = `${ano}-${pad(mes)}-01`;
+      const dataTo = `${ano}-${pad(mes)}-${pad(hoje.getDate())}`;
+      const tsFrom = new Date(`${primeiroDia}T00:00:00`).getTime();
+      const tsTo   = new Date(`${dataTo}T23:59:59`).getTime();
+      const mesKey = `${ano}-${pad(mes)}`;
+
+      // Carrega cache existente para merge
+      let cacheExist = {};
+      try { cacheExist = JSON.parse(localStorage.getItem('glr_fin_cache')||'{}'); } catch(e) {}
+      let pedidos = (cacheExist.mesKey === mesKey) ? (cacheExist.pedidos || []) : [];
+      const contaIds = contasVinc.map(c => c.external_id);
+      // Remove ordens antigas das contas que vamos re-buscar
+      pedidos = pedidos.filter(p => !contaIds.includes(p.contaId));
+
+      const totalContas = contasVinc.length;
+      let idx = 0;
+
+      for (const conta of contasVinc) {
+        idx++;
+        const mkt = (conta.marketplace||'').toLowerCase();
+        const label = conta.nickname || conta.external_id;
+        if (btn) btn.textContent = `⏳ ${idx}/${totalContas}: ${label}`;
+
+        try {
+          if (['meli','ml','mercadolivre'].includes(mkt)) {
+            const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+            const orders = await MarketplaceAPI.mlOrders(meliId, primeiroDia, dataTo);
+            for (const o of orders) {
+              pedidos.push({
+                id: String(o.id), plataforma:'Mercado Livre', contaId: conta.external_id,
+                valor: parseFloat(o.total_amount)||0, status: o.status||'', qtd: (o.order_items||[]).length||1, taxas:{},
+              });
+            }
+          } else if (mkt === 'shopee') {
+            const shopId = conta.param_to_use?.shopId || conta.external_id;
+            const snsList = await MarketplaceAPI.shopeeListOrderSns(shopId, Math.floor(tsFrom/1000), Math.floor(tsTo/1000));
+            for (let i=0; i<snsList.length; i+=50) {
+              const lote = snsList.slice(i,i+50).map(o=>o.sn);
+              try {
+                const rd = await MarketplaceAPI.call('shopee_get_order_detail',{shopId, order_sn_list:lote});
+                const orderList = rd.data?.response?.order_list || rd.data?.order_list || [];
+                for (const ord of orderList) {
+                  const items = ord.item_list || ord.items || [];
+                  const subtotal = items.reduce((s,it) => {
+                    const p = parseFloat(it.model_discounted_price)||parseFloat(it.item_price)||0;
+                    const q = parseInt(it.model_quantity_purchased)||parseInt(it.quantity)||1;
+                    return s + p*q;
+                  }, 0);
+                  pedidos.push({
+                    id: ord.order_sn, plataforma:'Shopee', contaId: conta.external_id,
+                    valor: subtotal > 0 ? subtotal : (parseFloat(ord.total_amount)||0),
+                    status: ord.order_status||'', qtd: items.length||1, taxas:{},
+                  });
+                }
+              } catch(e) { console.warn('[Proj] Shopee batch erro:', e.message); }
+            }
+          }
+        } catch(e) {
+          console.warn(`[Proj] Erro conta ${label}:`, e.message);
+        }
+      }
+
+      // Salva cache mesclado
+      localStorage.setItem('glr_fin_cache', JSON.stringify({ ...(cacheExist||{}), ver:25, mesKey, pedidos }));
+
+      // Auto-cria linhas de plataforma que ainda não existem na tabela
+      const platMap = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
+      const platsExistentes = new Set((projecaoAtiva.plataformas||[]).map(p=>(p.nome||'').toLowerCase()));
+      contasVinc.forEach(c => {
+        const nomePlat = platMap[(c.marketplace||'').toLowerCase()];
+        if (nomePlat && !platsExistentes.has(nomePlat.toLowerCase())) {
+          projecaoAtiva.plataformas.push({nome:nomePlat, fatBase:'', adsBase:'', vendasBase:'', maio:'', abril:'', marco:''});
+          platsExistentes.add(nomePlat.toLowerCase());
+        }
+      });
+
+      renderTabela();
+    } catch(e) {
+      alert('Erro ao buscar dados: '+e.message);
+    } finally {
+      if (btn) { btn.disabled=false; btn.textContent='🔄 Buscar dados'; }
+    }
+  }
+
   // Lê cache do Financeiro do mês atual e retorna {fat, ads, vendas} por plataforma
   function lerCacheAtual() {
     try {
@@ -1111,6 +1212,7 @@ Router.register('projecao', (params, el) => {
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           Ocultar GLR
         </button>
+        <button id="btn-buscar-proj" class="btn btn-sm" style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);color:#4ade80;" onclick="buscarDadosProjecao()" title="Busca ordens das contas vinculadas e atualiza os dados">🔄 Buscar dados</button>
         <button class="btn btn-secondary btn-sm" onclick="adicionarPlat()">+ Plataforma</button>
         <button class="btn btn-sm" style="background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);color:#f87171;" onclick="limparDadosManuais()" title="Apaga fatBase, adsBase, vendasBase e histórico inseridos à mão — mantém só dados da API">🗑️ Limpar manuais</button>
         <button class="btn btn-primary btn-sm" onclick="salvarProjecao(this)">💾 Salvar</button>
@@ -1260,6 +1362,8 @@ Router.register('projecao', (params, el) => {
     // Re-renderiza a tabela (inclui os sub-labels GLR nas linhas e no footer)
     renderTabela();
   };
+
+  window.buscarDadosProjecao = buscarDadosProjecao;
 
   window.adicionarPlat = () => {
     projecaoAtiva.plataformas.push({ nome: 'Nova Plataforma', fatBase: '', ads: '', maio: '', abril: '', marco: '' });
