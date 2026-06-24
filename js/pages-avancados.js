@@ -990,6 +990,8 @@ Router.register('projecao', (params, el) => {
       : '—';
 
     document.getElementById('proj-tbody').innerHTML = linhas;
+    const cacheBadge = document.getElementById('th-cache-badge');
+    if (cacheBadge) cacheBadge.style.display = temCache ? 'inline' : 'none';
     document.getElementById('proj-tfoot').innerHTML = `<tr style="background:rgba(99,102,241,0.08);">
       <td style="font-weight:800;color:var(--text-primary);font-size:13.5px;">Total</td>
       <td style="font-weight:700;text-align:right;">R$ ${fmtBRL(totFatBase)}</td>
@@ -1119,7 +1121,7 @@ Router.register('projecao', (params, el) => {
           <thead>
             <tr style="background:linear-gradient(135deg,#0d2144,#1a3a6e);">
               <th style="padding:12px 14px;text-align:left;color:white;font-weight:700;white-space:nowrap;min-width:150px;">Plataformas</th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:120px;">Fat. Data Base<br><span style="font-weight:400;opacity:0.8;font-size:10px;" id="th-data-base">02/06/2026</span>${temCache?`<br><span style="font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span>`:''}</th>
+              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:120px;">Fat. Data Base<br><span style="font-weight:400;opacity:0.8;font-size:10px;" id="th-data-base">02/06/2026</span><br><span id="th-cache-badge" style="font-size:9px;color:#818cf8;display:none;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
               <th style="padding:12px 14px;color:#a5f3fc;font-weight:800;white-space:nowrap;text-align:right;background:rgba(99,102,241,0.35);min-width:130px;">Projeção Fat.<br><span style="font-weight:400;font-size:10px;color:rgba(255,255,255,0.7);" class="mes-label">${projecaoAtiva.mes}</span></th>
               <th style="padding:12px 14px;color:#6ee7b7;font-weight:700;white-space:nowrap;text-align:right;background:rgba(16,185,129,0.15);min-width:110px;">Qtd. Vendas<br><span style="font-weight:400;opacity:0.8;font-size:10px;">Data Base</span></th>
               <th style="padding:12px 14px;color:#34d399;font-weight:800;white-space:nowrap;text-align:right;background:rgba(16,185,129,0.28);min-width:120px;">Proj. Vendas<br><span style="font-weight:400;font-size:10px;color:rgba(255,255,255,0.7);" class="mes-label">${projecaoAtiva.mes}</span></th>
