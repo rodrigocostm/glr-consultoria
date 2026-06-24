@@ -896,7 +896,7 @@ Router.register('financeiro', async (params, el) => {
               const shopId = conta.param_to_use?.shopId || conta.external_id;
               // Shopee ADS limita 30 dias por request — divide em chunks se necessário
               const toShopeeIso = sd => { const [d,m,y] = sd.split('-'); return `${y}-${m}-${d}`; };
-              const addDays = (iso, n) => { const d = new Date(iso); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+              const addDays = (iso, n) => { const [y,mo,dy] = iso.split('-').map(Number); return new Date(Date.UTC(y,mo-1,dy+n)).toISOString().slice(0,10); };
               const toSd = iso => iso.split('-').reverse().join('-');
               let cur = toShopeeIso(sdFrom);
               const fim = toShopeeIso(sdTo);
