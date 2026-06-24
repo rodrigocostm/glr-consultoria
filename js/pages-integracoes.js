@@ -5,6 +5,11 @@
 Router.register('integracoes', (params, el) => {
   const apiKey   = localStorage.getItem('glr_mc_apikey') || '';
   const vinc     = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); // { clienteId: [conta, ...] }
+  let aliquotas  = JSON.parse(localStorage.getItem('glr_aliquotas') || '{}'); // { [extId]: pct }
+  const salvarAliquota = (extId, val) => {
+    aliquotas[extId] = val;
+    localStorage.setItem('glr_aliquotas', JSON.stringify(aliquotas));
+  };
   const mesesNomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                       'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const hoje     = new Date();
@@ -173,6 +178,11 @@ Router.register('integracoes', (params, el) => {
     alert(`✓ ${conta.nickname} vinculada com sucesso!`);
   };
 
+  window.salvarAliquota = (extId, val) => {
+    aliquotas[extId] = val;
+    localStorage.setItem('glr_aliquotas', JSON.stringify(aliquotas));
+  };
+
   window.desvincularConta = (clienteId, externalId) => {
     let vinc = {};
     try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) {}
@@ -325,14 +335,23 @@ function renderClientesVinculados(vinc, mesesNomes, hoje) {
       <div style="padding:14px 18px;">
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
           ${contas.map(c => `
-            <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:8px;">
+            <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
               <span>${platIcon[c.marketplace] || '🏪'}</span>
-              <div>
-                <div style="font-size:12px;font-weight:600;">${c.nickname || c.external_id}</div>
+              <div style="min-width:0;">
+                <div style="font-size:12px;font-weight:600;">${c.label || c.nickname || c.external_id}</div>
                 <div style="font-size:10px;color:var(--text-muted);">${c.marketplace}</div>
               </div>
+              <div style="display:flex;align-items:center;gap:5px;margin-left:4px;">
+                <label style="font-size:10px;color:var(--text-muted);white-space:nowrap;">Alíquota imposto:</label>
+                <input type="number" min="0" max="100" step="0.1"
+                  value="${aliquotas[c.external_id] || ''}"
+                  placeholder="0"
+                  oninput="salvarAliquota('${c.external_id}', parseFloat(this.value)||0)"
+                  style="width:58px;background:var(--bg-input);border:1px solid var(--border-active);border-radius:5px;padding:3px 6px;color:var(--text-primary);font-size:12px;text-align:right;">
+                <span style="font-size:11px;color:var(--text-muted);">%</span>
+              </div>
               <button onclick="desvincularConta(${clienteId},'${c.external_id}')"
-                style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:2px 4px;font-size:12px;margin-left:4px;" title="Desvincular">✕</button>
+                style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:2px 4px;font-size:12px;" title="Desvincular">✕</button>
             </div>`).join('')}
         </div>
         <div id="res-import-${clienteId}"></div>
