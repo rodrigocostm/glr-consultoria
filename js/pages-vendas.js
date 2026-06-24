@@ -148,8 +148,8 @@ Router.register('vendas', async (params, el) => {
       const btn = document.getElementById(`tab-${a}`);
       const sec = document.getElementById(`sec-${a}`);
       if (btn) btn.style.cssText = a===aba
-        ? 'padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:#6366f1;color:white;'
-        : 'padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:rgba(255,255,255,0.06);color:#9ca3af;';
+        ? 'padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:#6366f1;color:var(--text-primary);'
+        : 'padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);';
       if (sec) sec.style.display = a===aba ? 'block' : 'none';
     });
     if (aba==='dashboard') renderDashboard();
@@ -240,7 +240,7 @@ Router.register('vendas', async (params, el) => {
 
     <!-- Gráfico -->
     <div class="card" style="margin-bottom:20px;padding:20px;">
-      <div style="font-size:14px;font-weight:700;color:#e5e7eb;margin-bottom:16px;">📈 Resumo de Receitas</div>
+      <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:16px;">📈 Resumo de Receitas</div>
       <div style="display:flex;gap:16px;margin-bottom:12px;font-size:11px;">
         <span style="display:flex;align-items:center;gap:4px;"><span style="width:12px;height:3px;background:#60a5fa;display:inline-block;border-radius:2px;"></span> Faturamento</span>
         <span style="display:flex;align-items:center;gap:4px;"><span style="width:12px;height:3px;background:#a78bfa;display:inline-block;border-radius:2px;"></span> Líquido MP</span>
@@ -282,55 +282,55 @@ Router.register('vendas', async (params, el) => {
     <!-- ADS e Lucro pós-ADS -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
       <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(239,68,68,0.1) 0%,transparent 100%);border:1px solid rgba(239,68,68,0.2);">
-        <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">💰 INVESTIMENTO EM ADS</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">💰 INVESTIMENTO EM ADS</div>
         <div style="font-size:24px;font-weight:800;color:#ef4444;margin-bottom:4px;" id="dashboard-ads">R$ 0,00</div>
-        <div style="font-size:11px;color:#9ca3af;" id="dashboard-ads-pct">0% do faturamento</div>
+        <div style="font-size:11px;color:var(--text-secondary);" id="dashboard-ads-pct">0% do faturamento</div>
       </div>
       <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(34,197,94,0.1) 0%,transparent 100%);border:1px solid rgba(34,197,94,0.2);">
-        <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">📊 LUCRO DEPOIS ADS</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">📊 LUCRO DEPOIS ADS</div>
         <div style="font-size:24px;font-weight:800;color:#22c55e;margin-bottom:4px;" id="dashboard-lucro-ads">R$ 0,00</div>
-        <div style="font-size:11px;color:#9ca3af;" id="dashboard-lucro-ads-pct">Margem: 0%</div>
+        <div style="font-size:11px;color:var(--text-secondary);" id="dashboard-lucro-ads-pct">Margem: 0%</div>
       </div>
     </div>
 
     <!-- Cards: Visitas / Vendas / Faturamento -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;">
       <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(107,114,128,0.1) 0%,transparent 100%);border:1px solid rgba(107,114,128,0.2);">
-        <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">👁️ VISITAS TOTAL</div>
-        <div style="font-size:28px;font-weight:800;color:#6b7280;margin-bottom:4px;" id="card-visitas">—</div>
-        <div style="font-size:10px;color:#9ca3af;"><span id="card-visitas-ml">—</span> ML · <span id="card-visitas-shopee">—</span> Shopee</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">👁️ VISITAS TOTAL</div>
+        <div style="font-size:28px;font-weight:800;color:var(--text-muted);margin-bottom:4px;" id="card-visitas">—</div>
+        <div style="font-size:10px;color:var(--text-secondary);"><span id="card-visitas-ml">—</span> ML · <span id="card-visitas-shopee">—</span> Shopee</div>
       </div>
       <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(59,130,246,0.1) 0%,transparent 100%);border:1px solid rgba(59,130,246,0.2);">
-        <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">🛍️ PEDIDOS TOTAL</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">🛍️ PEDIDOS TOTAL</div>
         <div style="font-size:28px;font-weight:800;color:#3b82f6;margin-bottom:4px;" id="card-vendas">—</div>
-        <div style="font-size:10px;color:#9ca3af;"><span id="card-vendas-ml">—</span> ML · <span id="card-vendas-shopee">—</span> Shopee</div>
+        <div style="font-size:10px;color:var(--text-secondary);"><span id="card-vendas-ml">—</span> ML · <span id="card-vendas-shopee">—</span> Shopee</div>
       </div>
       <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(52,211,153,0.1) 0%,transparent 100%);border:1px solid rgba(52,211,153,0.2);">
-        <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">💵 FATURAMENTO TOTAL</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">💵 FATURAMENTO TOTAL</div>
         <div style="font-size:28px;font-weight:800;color:#34d399;margin-bottom:4px;" id="card-fat">—</div>
-        <div style="font-size:10px;color:#9ca3af;"><span id="card-fat-ml">—</span> ML · <span id="card-fat-shopee">—</span> Shopee</div>
+        <div style="font-size:10px;color:var(--text-secondary);"><span id="card-fat-ml">—</span> ML · <span id="card-fat-shopee">—</span> Shopee</div>
       </div>
     </div>
 
     <!-- Tabela: Comparativo por Marketplace -->
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
-      <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06);">
-        <div style="font-size:14px;font-weight:700;color:#e5e7eb;">📊 Comparativo por Marketplace</div>
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+        <div style="font-size:14px;font-weight:700;color:var(--text-primary);">📊 Comparativo por Marketplace</div>
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
-            <tr style="background:rgba(255,255,255,0.03);">
-              <th style="padding:12px 16px;text-align:left;color:#6b7280;font-weight:600;">PLATAFORMA</th>
-              <th style="padding:12px 12px;text-align:right;color:#6b7280;font-weight:600;">VISITAS</th>
-              <th style="padding:12px 12px;text-align:right;color:#6b7280;font-weight:600;">PEDIDOS</th>
-              <th style="padding:12px 12px;text-align:right;color:#6b7280;font-weight:600;">FATURAMENTO</th>
-              <th style="padding:12px 12px;text-align:right;color:#6b7280;font-weight:600;">TICKET MÉDIO</th>
+            <tr style="background:var(--bg-card-hover);">
+              <th style="padding:12px 16px;text-align:left;color:var(--text-muted);font-weight:600;">PLATAFORMA</th>
+              <th style="padding:12px 12px;text-align:right;color:var(--text-muted);font-weight:600;">VISITAS</th>
+              <th style="padding:12px 12px;text-align:right;color:var(--text-muted);font-weight:600;">PEDIDOS</th>
+              <th style="padding:12px 12px;text-align:right;color:var(--text-muted);font-weight:600;">FATURAMENTO</th>
+              <th style="padding:12px 12px;text-align:right;color:var(--text-muted);font-weight:600;">TICKET MÉDIO</th>
             </tr>
           </thead>
           <tbody id="marketplace-table-body">
-            <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-              <td colspan="5" style="padding:20px;text-align:center;color:#6b7280;">Carregando...</td>
+            <tr style="border-bottom:1px solid var(--border);">
+              <td colspan="5" style="padding:20px;text-align:center;color:var(--text-muted);">Carregando...</td>
             </tr>
           </tbody>
         </table>
@@ -339,9 +339,9 @@ Router.register('vendas', async (params, el) => {
 
     <!-- Top 15 Produtos -->
     <div class="card" style="padding:0;overflow:hidden;">
-      <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-size:14px;font-weight:700;color:#e5e7eb;">🏆 Top ${top15.length} Produtos</div>
-        <div style="font-size:11px;color:#6b7280;">Comparação de vendas nos últimos dias</div>
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:14px;font-weight:700;color:var(--text-primary);">🏆 Top ${top15.length} Produtos</div>
+        <div style="font-size:11px;color:var(--text-muted);">Comparação de vendas nos últimos dias</div>
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -530,26 +530,26 @@ Router.register('vendas', async (params, el) => {
     const shopeeTicket = shopeeVendas > 0 ? shopeeFat / shopeeVendas : 0;
 
     tableBody.innerHTML = `
-      <tr style="border-bottom:1px solid rgba(255,255,255,0.04);background:rgba(245,158,11,0.05);">
-        <td style="padding:12px 16px;color:#e5e7eb;font-weight:500;">🟧 Mercado Livre</td>
-        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${mlVisitas.toLocaleString('pt-BR')}</td>
-        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${mlVendas}</td>
+      <tr style="border-bottom:1px solid var(--border);background:rgba(245,158,11,0.05);">
+        <td style="padding:12px 16px;color:var(--text-primary);font-weight:500;">🟧 Mercado Livre</td>
+        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${mlVisitas.toLocaleString('pt-BR')}</td>
+        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${mlVendas}</td>
         <td style="padding:12px 12px;text-align:right;color:#60a5fa;font-weight:600;">${R$(mlFat)}</td>
-        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${R$(mlTicket)}</td>
+        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${R$(mlTicket)}</td>
       </tr>
-      <tr style="border-bottom:1px solid rgba(255,255,255,0.04);background:rgba(249,115,22,0.05);">
-        <td style="padding:12px 16px;color:#e5e7eb;font-weight:500;">🟧 Shopee</td>
-        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${shopeeVisitas.toLocaleString('pt-BR')}</td>
-        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${shopeeVendas}</td>
+      <tr style="border-bottom:1px solid var(--border);background:rgba(249,115,22,0.05);">
+        <td style="padding:12px 16px;color:var(--text-primary);font-weight:500;">🟧 Shopee</td>
+        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${shopeeVisitas.toLocaleString('pt-BR')}</td>
+        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${shopeeVendas}</td>
         <td style="padding:12px 12px;text-align:right;color:#60a5fa;font-weight:600;">${R$(shopeeFat)}</td>
-        <td style="padding:12px 12px;text-align:right;color:#9ca3af;">${R$(shopeeTicket)}</td>
+        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${R$(shopeeTicket)}</td>
       </tr>
-      <tr style="background:rgba(255,255,255,0.04);">
-        <td style="padding:12px 16px;color:#e5e7eb;font-weight:700;">📊 TOTAL</td>
-        <td style="padding:12px 12px;text-align:right;color:#e5e7eb;font-weight:700;">${totalVisitas.toLocaleString('pt-BR')}</td>
-        <td style="padding:12px 12px;text-align:right;color:#e5e7eb;font-weight:700;">${totalVendas}</td>
+      <tr style="background:var(--bg-card-hover);">
+        <td style="padding:12px 16px;color:var(--text-primary);font-weight:700;">📊 TOTAL</td>
+        <td style="padding:12px 12px;text-align:right;color:var(--text-primary);font-weight:700;">${totalVisitas.toLocaleString('pt-BR')}</td>
+        <td style="padding:12px 12px;text-align:right;color:var(--text-primary);font-weight:700;">${totalVendas}</td>
         <td style="padding:12px 12px;text-align:right;color:#34d399;font-weight:700;">${R$(totalFat)}</td>
-        <td style="padding:12px 12px;text-align:right;color:#e5e7eb;font-weight:700;">${R$(totalVendas > 0 ? totalFat / totalVendas : 0)}</td>
+        <td style="padding:12px 12px;text-align:right;color:var(--text-primary);font-weight:700;">${R$(totalVendas > 0 ? totalFat / totalVendas : 0)}</td>
       </tr>
     `;
   }
@@ -582,7 +582,7 @@ Router.register('vendas', async (params, el) => {
     if (!cont) return;
 
     if (!lista.length) {
-      cont.innerHTML = `<div style="text-align:center;padding:48px;color:#6b7280;">
+      cont.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">
         ${pedidos.length ? 'Nenhum pedido para este filtro.' : '⏳ Carregando pedidos...'}
       </div>`;
       return;
@@ -596,16 +596,16 @@ Router.register('vendas', async (params, el) => {
       const t = calcTotais(peds);
       return `
       <div style="margin-bottom:14px;">
-        <div style="display:flex;align-items:center;gap:12px;padding:8px 16px;background:rgba(255,255,255,0.04);border-radius:8px 8px 0 0;border-bottom:1px solid rgba(255,255,255,0.08);">
-          <span style="font-size:13px;font-weight:700;color:#e5e7eb;">📅 ${data}</span>
-          <span style="font-size:11px;color:#6b7280;">${peds.length} pedidos</span>
+        <div style="display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--bg-card-hover);border-radius:8px 8px 0 0;border-bottom:1px solid var(--border);">
+          <span style="font-size:13px;font-weight:700;color:var(--text-primary);">📅 ${data}</span>
+          <span style="font-size:11px;color:var(--text-muted);">${peds.length} pedidos</span>
           <span style="margin-left:auto;font-size:12px;color:#60a5fa;font-weight:600;">${R$(t.fat)}</span>
           ${t.liq!=null?`<span style="font-size:12px;color:#a78bfa;">Líq. ${R$(t.liq)}</span>`:''}
           <span style="font-size:12px;font-weight:700;color:${corMargem(t.margem)};">Lucro ${R$(t.lucro)} · ${pct(t.margem)}</span>
         </div>
-        <div style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px 90px 90px 80px;padding:6px 16px;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.05);">
+        <div style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px 90px 90px 80px;padding:6px 16px;background:var(--bg-card-hover);border-bottom:1px solid var(--border);">
           ${['ITEM','QTD','TOTAL','LÍQ. MP','CUSTO PROD.','IMPOSTO','OUTROS','LUCRO','MARGEM'].map((h,i)=>
-            `<div style="font-size:10px;color:#6b7280;font-weight:600;text-align:${i<=1?'left':'right'};white-space:nowrap;">${h}</div>`).join('')}
+            `<div style="font-size:10px;color:var(--text-muted);font-weight:600;text-align:${i<=1?'left':'right'};white-space:nowrap;">${h}</div>`).join('')}
         </div>
         ${peds.map(p => renderRow(p)).join('')}
       </div>`;
@@ -643,7 +643,7 @@ Router.register('vendas', async (params, el) => {
     const cor = platCor[p.plataforma]||'#9ca3af';
     const img = p.imagem
       ? `<img src="${p.imagem}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">`
-      : `<div style="width:44px;height:44px;background:rgba(255,255,255,0.07);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;">${p.plataforma==='Shopee'?'🟠':'🟡'}</div>`;
+      : `<div style="width:44px;height:44px;background:var(--border);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;">${p.plataforma==='Shopee'?'🟠':'🟡'}</div>`;
 
     const taxasAuto = p.taxas != null; // tem dados automáticos da API
     const impVeioDeAPI = taxasAuto && (p.taxas?.imposto != null) && parseFloat(p.taxas?.imposto) > 0;
@@ -653,32 +653,32 @@ Router.register('vendas', async (params, el) => {
     const impCell = taxasAuto
       ? `<div style="text-align:right;">
            <span style="font-size:12px;color:#fbbf24;font-weight:600;">${R$(l.impVal)}</span><br>
-           <span style="font-size:9px;color:#6b7280;">${impVeioDeAPI ? 'escrow' : (l.impPct ? l.impPct+'% conta' : 'escrow')}</span>
+           <span style="font-size:9px;color:var(--text-muted);">${impVeioDeAPI ? 'escrow' : (l.impPct ? l.impPct+'% conta' : 'escrow')}</span>
          </div>`
       : `<div style="text-align:right;" onclick="event.stopPropagation()">
            <div style="display:flex;align-items:center;justify-content:flex-end;gap:2px;">
              <input type="number" min="0" max="100" step="0.1" placeholder="${aliqConta||'0'}" value="${c.imposto||''}" data-id="${p.id}" data-campo="imposto" class="inp-custo"
-               style="width:50px;background:#1a2744;border:1px solid rgba(255,255,255,0.12);border-radius:5px;padding:4px 6px;color:white;font-size:12px;text-align:right;">
-             <span style="color:#6b7280;font-size:10px;">%</span>
+               style="width:50px;background:var(--bg-input);border:1px solid var(--border);border-radius:5px;padding:4px 6px;color:var(--text-primary);font-size:12px;text-align:right;">
+             <span style="color:var(--text-muted);font-size:10px;">%</span>
            </div>
            ${aliqConta && !c.imposto ? `<div style="font-size:9px;color:#fbbf24;text-align:right;">${aliqConta}% (conta)</div>` : ''}
          </div>`;
 
     const liqCell = l.liquido != null
-      ? `<div style="text-align:right;font-size:13px;font-weight:700;color:#a78bfa;">${R$(l.liquido)}<br><span style="font-size:9px;color:#6b7280;font-weight:400;">após taxas</span></div>`
+      ? `<div style="text-align:right;font-size:13px;font-weight:700;color:#a78bfa;">${R$(l.liquido)}<br><span style="font-size:9px;color:var(--text-muted);font-weight:400;">após taxas</span></div>`
       : `<div style="text-align:right;font-size:12px;color:#4b5563;">—</div>`;
 
     return `
-    <div style="border-bottom:1px solid rgba(255,255,255,0.04);">
+    <div style="border-bottom:1px solid var(--border);">
       <div class="row-click" data-id="${p.id}" style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px 90px 90px 80px;padding:10px 16px;align-items:center;cursor:pointer;transition:background .15s;"
-           onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background=''">
+           onmouseover="this.style.background='var(--bg-card-hover)'" onmouseout="this.style.background=''">
 
         <!-- Item -->
         <div style="display:flex;align-items:center;gap:10px;min-width:0;">
           ${img}
           <div style="min-width:0;">
-            <div style="font-size:12px;font-weight:600;color:#e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;" title="${(p.produto||'').replace(/"/g,'&quot;')}">${p.produto||'—'}</div>
-            <div style="font-size:10px;color:#6b7280;margin-top:2px;display:flex;gap:6px;align-items:center;">
+            <div style="font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;" title="${(p.produto||'').replace(/"/g,'&quot;')}">${p.produto||'—'}</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;display:flex;gap:6px;align-items:center;">
               <span style="color:${cor};font-weight:600;">${p.plataforma}</span>
               <span>${p.id}</span>
               ${taxasAuto ? '<span style="background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 5px;border-radius:8px;font-size:9px;">taxas auto</span>' : ''}
@@ -687,7 +687,7 @@ Router.register('vendas', async (params, el) => {
         </div>
 
         <!-- Qtd -->
-        <div style="text-align:center;font-size:13px;color:#d1d5db;">${p.qtd||1}</div>
+        <div style="text-align:center;font-size:13px;color:var(--text-secondary);">${p.qtd||1}</div>
 
         <!-- Total bruto -->
         <div style="text-align:right;font-size:13px;font-weight:700;color:#60a5fa;">${R$(l.receita)}</div>
@@ -698,7 +698,7 @@ Router.register('vendas', async (params, el) => {
         <!-- Custo Produto (manual) -->
         <div style="text-align:right;" onclick="event.stopPropagation()">
           <input type="number" min="0" step="0.01" placeholder="0,00" value="${c.custo||''}" data-id="${p.id}" data-campo="custo" class="inp-custo"
-            style="width:80px;background:#1a2744;border:1px solid rgba(255,255,255,0.12);border-radius:5px;padding:4px 6px;color:white;font-size:12px;text-align:right;">
+            style="width:80px;background:var(--bg-input);border:1px solid var(--border);border-radius:5px;padding:4px 6px;color:var(--text-primary);font-size:12px;text-align:right;">
         </div>
 
         <!-- Imposto -->
@@ -707,7 +707,7 @@ Router.register('vendas', async (params, el) => {
         <!-- Outros (manual) -->
         <div style="text-align:right;" onclick="event.stopPropagation()">
           <input type="number" min="0" step="0.01" placeholder="0,00" value="${c.outros||''}" data-id="${p.id}" data-campo="outros" class="inp-custo"
-            style="width:80px;background:#1a2744;border:1px solid rgba(255,255,255,0.12);border-radius:5px;padding:4px 6px;color:white;font-size:12px;text-align:right;">
+            style="width:80px;background:var(--bg-input);border:1px solid var(--border);border-radius:5px;padding:4px 6px;color:var(--text-primary);font-size:12px;text-align:right;">
         </div>
 
         <!-- Lucro -->
@@ -783,41 +783,41 @@ Router.register('vendas', async (params, el) => {
     }
 
     return `
-    <div style="display:flex;background:rgba(255,255,255,0.02);border-top:1px solid rgba(255,255,255,0.06);">
+    <div style="display:flex;background:var(--bg-card-hover);border-top:1px solid var(--border);">
       <!-- Info + itens -->
-      <div style="flex:1;padding:16px 20px;border-right:1px solid rgba(255,255,255,0.06);min-width:0;">
-        <div style="font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;margin-bottom:10px;">Detalhes do Pedido</div>
+      <div style="flex:1;padding:16px 20px;border-right:1px solid var(--border);min-width:0;">
+        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:10px;">Detalhes do Pedido</div>
         <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px;">
-          <div><div style="font-size:10px;color:#6b7280;">ID</div><div style="font-size:12px;color:#e5e7eb;">${p.id}</div></div>
-          <div><div style="font-size:10px;color:#6b7280;">Plataforma</div><div style="font-size:12px;color:${platCor[p.plataforma]||'#fff'};font-weight:600;">${p.plataforma}</div></div>
-          <div><div style="font-size:10px;color:#6b7280;">Data</div><div style="font-size:12px;color:#e5e7eb;">${p.data}</div></div>
-          <div><div style="font-size:10px;color:#6b7280;">Status</div><div style="font-size:12px;color:#e5e7eb;">${p.status||'—'}</div></div>
-          ${tx.instalment ? `<div><div style="font-size:10px;color:#6b7280;">Parcelamento</div><div style="font-size:12px;color:#e5e7eb;">${tx.instalment}</div></div>` : ''}
+          <div><div style="font-size:10px;color:var(--text-muted);">ID</div><div style="font-size:12px;color:var(--text-primary);">${p.id}</div></div>
+          <div><div style="font-size:10px;color:var(--text-muted);">Plataforma</div><div style="font-size:12px;color:${platCor[p.plataforma]||'#fff'};font-weight:600;">${p.plataforma}</div></div>
+          <div><div style="font-size:10px;color:var(--text-muted);">Data</div><div style="font-size:12px;color:var(--text-primary);">${p.data}</div></div>
+          <div><div style="font-size:10px;color:var(--text-muted);">Status</div><div style="font-size:12px;color:var(--text-primary);">${p.status||'—'}</div></div>
+          ${tx.instalment ? `<div><div style="font-size:10px;color:var(--text-muted);">Parcelamento</div><div style="font-size:12px;color:var(--text-primary);">${tx.instalment}</div></div>` : ''}
         </div>
         ${p.itens && p.itens.length ? `
-        <div style="font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;margin-bottom:8px;">Itens</div>
+        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:8px;">Itens</div>
         ${p.itens.map(it=>`
-          <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
             ${it.imagem?`<img src="${it.imagem}" style="width:36px;height:36px;object-fit:cover;border-radius:5px;flex-shrink:0;">` : ''}
-            <div style="flex:1;font-size:12px;color:#d1d5db;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.nome}</div>
-            <div style="font-size:11px;color:#9ca3af;flex-shrink:0;">x${it.qtd}</div>
+            <div style="flex:1;font-size:12px;color:var(--text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.nome}</div>
+            <div style="font-size:11px;color:var(--text-secondary);flex-shrink:0;">x${it.qtd}</div>
             <div style="font-size:12px;color:#60a5fa;font-weight:600;flex-shrink:0;">${R$(it.preco)}</div>
           </div>`).join('')}` : ''}
       </div>
       <!-- Breakdown financeiro -->
       <div style="width:300px;flex-shrink:0;padding:16px 20px;">
-        <div style="font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;margin-bottom:10px;">
+        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:10px;">
           Composição do Lucro ${hasEscrow ? '<span style="color:#a78bfa;font-size:9px;background:rgba(167,139,250,0.15);padding:1px 6px;border-radius:8px;margin-left:4px;">dados da API</span>' : ''}
         </div>
         ${linhasBreakdown.map(r=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
-            <span style="font-size:12px;${r.bold?'font-weight:700;color:#e5e7eb;':'color:#9ca3af;'}">${r.label}</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+            <span style="font-size:12px;${r.bold?'font-weight:700;color:var(--text-primary);':'color:var(--text-secondary);'}">${r.label}</span>
             <span style="font-size:13px;font-weight:${r.bold?'800':'600'};color:${r.cor};">
               ${r.sinal==='='?'= ':r.sinal==='+'?'+':'-'}${R$(Math.abs(r.v))}
             </span>
           </div>`).join('')}
-        <div style="margin-top:10px;padding-top:10px;border-top:2px solid rgba(255,255,255,0.1);display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:12px;color:#9ca3af;">Margem s/ receita</span>
+        <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:12px;color:var(--text-secondary);">Margem s/ receita</span>
           <span style="font-size:18px;font-weight:800;color:${corMargem(l.margem)};">${pct(l.margem)}</span>
         </div>
       </div>
@@ -1090,12 +1090,12 @@ Router.register('vendas', async (params, el) => {
     const el=document.getElementById('linhas-extras-lista');
     if (!el) return;
     el.innerHTML=!linhasExt.length
-      ? `<div style="color:#6b7280;font-size:13px;padding:6px 0;">Nenhuma linha extra.</div>`
+      ? `<div style="color:var(--text-muted);font-size:13px;padding:6px 0;">Nenhuma linha extra.</div>`
       : linhasExt.map(l=>`
-        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
-          <span style="flex:1;font-size:13px;color:#e5e7eb;">${l.nome}</span>
-          <span style="font-size:12px;color:#9ca3af;">${l.tipo==='pct'?l.valor+'%':'R$ '+parseFloat(l.valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
-          <span style="font-size:10px;color:#6b7280;background:rgba(255,255,255,0.08);padding:1px 6px;border-radius:8px;">${l.tipo==='pct'?'% pedido':'fixo'}</span>
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);">
+          <span style="flex:1;font-size:13px;color:var(--text-primary);">${l.nome}</span>
+          <span style="font-size:12px;color:var(--text-secondary);">${l.tipo==='pct'?l.valor+'%':'R$ '+parseFloat(l.valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
+          <span style="font-size:10px;color:var(--text-muted);background:var(--border);padding:1px 6px;border-radius:8px;">${l.tipo==='pct'?'% pedido':'fixo'}</span>
           <button onclick="window.removerLinhaExtra('${l.id}')" style="background:rgba(239,68,68,0.15);border:none;color:#ef4444;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:12px;">✕</button>
         </div>`).join('');
   }
@@ -1106,7 +1106,7 @@ Router.register('vendas', async (params, el) => {
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
       <div>
         <div class="section-title" style="font-size:20px;">🛒 Vendas</div>
-        <div id="vendas-status" style="font-size:12px;color:#6b7280;margin-top:4px;">Carregando...</div>
+        <div id="vendas-status" style="font-size:12px;color:var(--text-muted);margin-top:4px;">Carregando...</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <select id="sel-periodo" class="form-input" style="width:155px;">
@@ -1119,7 +1119,7 @@ Router.register('vendas', async (params, el) => {
         </select>
         <div id="custom-range" style="display:flex;align-items:center;gap:6px;">
           <input type="date" id="inp-date-from" class="form-input" value="${customFrom}" style="width:140px;padding:7px 10px;">
-          <span style="color:#9ca3af;">até</span>
+          <span style="color:var(--text-secondary);">até</span>
           <input type="date" id="inp-date-to" class="form-input" value="${customTo}" style="width:140px;padding:7px 10px;">
         </div>
         <select id="sel-empresa" class="form-input" style="width:145px;">
@@ -1139,13 +1139,13 @@ Router.register('vendas', async (params, el) => {
 
     <!-- Abas -->
     <div style="display:flex;gap:8px;margin-bottom:20px;">
-      <button id="tab-dashboard" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:#6366f1;color:white;">📊 Dashboard</button>
-      <button id="tab-pedidos"   style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:rgba(255,255,255,0.06);color:#9ca3af;">📋 Pedidos</button>
+      <button id="tab-dashboard" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:#6366f1;color:var(--text-primary);">📊 Dashboard</button>
+      <button id="tab-pedidos"   style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">📋 Pedidos</button>
     </div>
 
     <!-- Aba Dashboard -->
     <div id="sec-dashboard">
-      <div style="text-align:center;padding:48px;color:#6b7280;">Carregando dashboard...</div>
+      <div style="text-align:center;padding:48px;color:var(--text-muted);">Carregando dashboard...</div>
     </div>
 
     <!-- Aba Pedidos -->
@@ -1153,9 +1153,9 @@ Router.register('vendas', async (params, el) => {
       <div id="vendas-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;"></div>
 
       <details style="margin-bottom:16px;">
-        <summary style="cursor:pointer;padding:10px 16px;background:rgba(255,255,255,0.04);border-radius:8px;font-size:13px;color:#d1d5db;font-weight:600;list-style:none;display:flex;align-items:center;gap:8px;">
+        <summary style="cursor:pointer;padding:10px 16px;background:var(--bg-card-hover);border-radius:8px;font-size:13px;color:var(--text-secondary);font-weight:600;list-style:none;display:flex;align-items:center;gap:8px;">
           ⚙️ Configurações de Custo
-          <span style="font-size:11px;color:#6b7280;font-weight:400;">Linhas extras e aplicação em massa</span>
+          <span style="font-size:11px;color:var(--text-muted);font-weight:400;">Linhas extras e aplicação em massa</span>
         </summary>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
           <div class="card">
@@ -1173,11 +1173,11 @@ Router.register('vendas', async (params, el) => {
           </div>
           <div class="card">
             <div class="section-title mb-10" style="font-size:13px;">⚡ Aplicar em Massa</div>
-            <div style="font-size:11px;color:#6b7280;margin-bottom:10px;">Aplica custo a todos os pedidos filtrados.</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Aplica custo a todos os pedidos filtrados.</div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
-              <div><div style="font-size:10px;color:#9ca3af;margin-bottom:3px;">Custo Prod. (R$)</div><input id="inp-global-custo" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
-              <div><div style="font-size:10px;color:#9ca3af;margin-bottom:3px;">Imposto (%)</div><input id="inp-global-imposto" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="0" style="width:100%;box-sizing:border-box;"></div>
-              <div><div style="font-size:10px;color:#9ca3af;margin-bottom:3px;">Outros (R$)</div><input id="inp-global-outros" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
+              <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Custo Prod. (R$)</div><input id="inp-global-custo" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
+              <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Imposto (%)</div><input id="inp-global-imposto" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="0" style="width:100%;box-sizing:border-box;"></div>
+              <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Outros (R$)</div><input id="inp-global-outros" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
             </div>
             <button onclick="aplicarCustoGlobal()" class="btn-primary" style="padding:7px 16px;">⚡ Aplicar a todos</button>
           </div>
@@ -1185,7 +1185,7 @@ Router.register('vendas', async (params, el) => {
       </details>
 
       <div class="card" style="padding:0;overflow:hidden;">
-        <div id="vendas-lista" style="padding:24px;text-align:center;color:#6b7280;">Carregando pedidos...</div>
+        <div id="vendas-lista" style="padding:24px;text-align:center;color:var(--text-muted);">Carregando pedidos...</div>
       </div>
     </div>
   </div>`;
