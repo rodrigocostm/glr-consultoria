@@ -17,8 +17,11 @@ Router.register('vendas', async (params, el) => {
   let linhasExt  = JSON.parse(localStorage.getItem(STORAGE_LINHAS)||'[]');
   const aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas')||'{}'); // { [extId]: pct }
   let pedidos   = [];  // { id, plataforma, data, dataTs, produto, imagem, qtd, valor, status, itens[], taxas{} }
+  let contas    = [];  // todas as contas da API
   let filtroPeriodo = 'custom'; // padrão: só ontem
   let filtroPlat    = 'todas';
+  let filtroEmpresa = 'todas';
+  let filtroConta   = 'todas';
   let customFrom    = fmtDate(ontem); // ontem
   let customTo      = fmtDate(ontem); // ontem
   let expandido     = null;
@@ -112,7 +115,26 @@ Router.register('vendas', async (params, el) => {
   }
 
   function pedidosFiltrados() {
-    return pedidos.filter(p => filtroPlat==='todas' || p.plataforma===filtroPlat);
+    return pedidos.filter(p => {
+      if (filtroPlat !== 'todas' && p.plataforma !== filtroPlat) return false;
+      if (filtroConta !== 'todas' && p.contaId !== filtroConta) return false;
+      return true;
+    });
+  }
+
+  function renderFiltroEmpresaConta() {
+    const selEmp  = document.getElementById('sel-empresa');
+    const selCont = document.getElementById('sel-conta');
+    if (!selEmp || !selCont) return;
+
+    const empresas = ['todas', ...new Set(contas.map(c => c.tag || 'Sem tag').filter(Boolean)).values()].sort((a,b) => a==='todas'?-1:b==='todas'?1:a.localeCompare(b));
+    selEmp.innerHTML = empresas.map(e => `<option value="${e}">${e==='todas'?'Todas empresas':e}</option>`).join('');
+    selEmp.value = filtroEmpresa;
+
+    const contasFiltradas = filtroEmpresa === 'todas' ? contas : contas.filter(c => (c.tag||'Sem tag') === filtroEmpresa);
+    selCont.innerHTML = `<option value="todas">Todas contas</option>` +
+      contasFiltradas.map(c => `<option value="${c.external_id}">${c.nickname||c.external_id}</option>`).join('');
+    selCont.value = filtroConta;
   }
 
   // ── Trocar aba ───────────────────────────────────────────────
@@ -806,8 +828,9 @@ Router.register('vendas', async (params, el) => {
     if (statusEl) statusEl.textContent='Conectando...';
 
     try {
-      const r      = await MarketplaceAPI.call('list_accounts');
-      const contas = r.data?.accounts||[];
+      const r = await MarketplaceAPI.call('list_accounts');
+      contas  = r.data?.accounts||[];
+      renderFiltroEmpresaConta();
       let dataFrom, dataTo;
       if (filtroPeriodo==='custom') { dataFrom=customFrom; dataTo=customTo; }
       else {
@@ -1090,7 +1113,13 @@ Router.register('vendas', async (params, el) => {
           <span style="color:#9ca3af;">até</span>
           <input type="date" id="inp-date-to" class="form-input" value="${customTo}" style="width:140px;padding:7px 10px;">
         </div>
-        <select id="sel-plat" class="form-input" style="width:155px;">
+        <select id="sel-empresa" class="form-input" style="width:145px;">
+          <option value="todas">Todas empresas</option>
+        </select>
+        <select id="sel-conta" class="form-input" style="width:145px;">
+          <option value="todas">Todas contas</option>
+        </select>
+        <select id="sel-plat" class="form-input" style="width:150px;">
           <option value="todas">Todas plataformas</option>
           <option value="Mercado Livre">🟡 Mercado Livre</option>
           <option value="Shopee">🟠 Shopee</option>
@@ -1156,6 +1185,13 @@ Router.register('vendas', async (params, el) => {
     filtroPeriodo=e.target.value;
     document.getElementById('custom-range').style.display=filtroPeriodo==='custom'?'flex':'none';
   });
+  document.getElementById('sel-empresa').addEventListener('change', e => {
+    filtroEmpresa = e.target.value;
+    filtroConta   = 'todas';
+    renderFiltroEmpresaConta();
+    renderLista();
+  });
+  document.getElementById('sel-conta').addEventListener('change', e => { filtroConta=e.target.value; renderLista(); });
   document.getElementById('sel-plat').addEventListener('change', e => { filtroPlat=e.target.value; renderLista(); });
   document.getElementById('inp-date-from').addEventListener('change', e => { customFrom=e.target.value; });
   document.getElementById('inp-date-to').addEventListener('change',   e => { customTo=e.target.value; });
