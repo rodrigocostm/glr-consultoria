@@ -227,7 +227,7 @@ Router.register('vendas', async (params, el) => {
 
     sec.innerHTML = `
     <!-- KPI Cards -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;">
+    <div id="dash-kpi-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;">
       ${kpiCard('💰 Faturamento',   R$(t.fat),    `${nVendas} vendas`,  '#60a5fa')}
       ${kpiCard('🏦 Líq. Marketplace', R$(t.liq!=null?t.liq:0), t.fat>0?pct(liqPct)+' do fat.':'—', '#a78bfa')}
       ${kpiCard('✅ Lucro Bruto',    R$(t.lucro),  'Margem: '+pct(t.margem), corMargem(t.margem))}
@@ -435,7 +435,9 @@ Router.register('vendas', async (params, el) => {
         });
         salvarCustos();
         inp.style.borderColor = '#34d399';
-        setTimeout(() => { inp.style.borderColor = 'rgba(251,191,36,0.3)'; renderDashboard(); }, 800);
+        setTimeout(() => { inp.style.borderColor = 'rgba(245,158,11,0.4)'; }, 1200);
+        // Atualiza só os KPI cards sem re-renderizar tudo (evita quebrar renderMarketplaceComparison)
+        atualizarKpiCards();
       });
     });
 
@@ -471,6 +473,26 @@ Router.register('vendas', async (params, el) => {
       <div class="kpi-value" style="color:${cor};font-size:18px;">${val}</div>
       ${sub?`<div class="kpi-sub">${sub}</div>`:''}
     </div>`;
+  }
+
+  function atualizarKpiCards() {
+    const grid = document.getElementById('dash-kpi-grid');
+    if (!grid) return;
+    const lista = pedidosFiltrados();
+    const t = calcTotais(lista);
+    const nVendas = lista.length;
+    const unidades = lista.reduce((s,p)=>s+p.qtd,0);
+    const ticketMedio = nVendas > 0 ? t.fat/nVendas : 0;
+    const liqPct = t.fat > 0 ? t.liq/t.fat*100 : 0;
+    grid.innerHTML = `
+      ${kpiCard('💰 Faturamento',      R$(t.fat),                `${nVendas} vendas`,          '#60a5fa')}
+      ${kpiCard('🏦 Líq. Marketplace', R$(t.liq!=null?t.liq:0), t.fat>0?pct(liqPct)+' do fat.':'—', '#a78bfa')}
+      ${kpiCard('✅ Lucro Bruto',      R$(t.lucro),              'Margem: '+pct(t.margem),      corMargem(t.margem))}
+      ${kpiCard('📊 Margem',           pct(t.margem),            '',                            corMargem(t.margem))}
+      ${kpiCard('🛒 Nº de Vendas',     nVendas,                  `${unidades} unidades`,        '#34d399')}
+      ${kpiCard('📦 Unidades Vend.',   unidades,                 '',                            '#34d399')}
+      ${kpiCard('🎯 Ticket Médio',     R$(ticketMedio),          '',                            '#fbbf24')}
+      ${kpiCard('📦 Custo Produto',    R$(t.custo),              '',                            '#f87171')}`;
   }
 
   async function renderMarketplaceComparison() {
