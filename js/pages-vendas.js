@@ -114,8 +114,14 @@ Router.register('vendas', async (params, el) => {
     return { fat, liq: nLiq>0?liq:null, custo, imp, out, lucro, margem: fat>0?(lucro/fat)*100:0 };
   }
 
+  function isCanceladoVendas(p) {
+    const st = (p.status||'').toLowerCase();
+    return st.includes('cancel') || st === 'invalid' || st === 'cancelled_unpaid';
+  }
+
   function pedidosFiltrados() {
     return pedidos.filter(p => {
+      if (isCanceladoVendas(p)) return false; // cancelados nunca entram nos totais
       if (filtroPlat !== 'todas' && p.plataforma !== filtroPlat) return false;
       if (filtroConta !== 'todas' && p.contaId !== filtroConta) return false;
       return true;
@@ -415,8 +421,7 @@ Router.register('vendas', async (params, el) => {
       const lista = pedidosFiltrados();
       const grupos = {};
       for (const p of lista) {
-        const st = (p.status||'').toLowerCase();
-        if (st.includes('cancel') || st==='invalid') continue; // ignora cancelados
+        if (isCanceladoVendas(p)) continue;
         const nome = p.produto || '(sem nome)';
         if (!grupos[nome]) grupos[nome] = { nome, ids: [], fat: 0, qtd: 0, imagem: p.imagem || '' };
         grupos[nome].ids.push(p.id);
