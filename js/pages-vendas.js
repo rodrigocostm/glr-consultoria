@@ -189,6 +189,7 @@ Router.register('vendas', async (params, el) => {
       const key = p.itens?.[0]?.itemId || p.produto;
       if (!prodMap[key]) prodMap[key] = {
         nome: p.produto, imagem: p.imagem,
+        sku: p.itens?.[0]?.sku || '',
         fat:0, liq:0, lucro:0, qtd:0, n:0, ids:[]
       };
       const l = calcLucro(p);
@@ -346,7 +347,7 @@ Router.register('vendas', async (params, el) => {
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
             <tr style="background:rgba(255,255,255,0.03);">
-              <th style="padding:10px 16px;text-align:left;color:#6b7280;font-weight:600;white-space:nowrap;">PRODUTO</th>
+              <th style="padding:10px 16px;text-align:left;color:#6b7280;font-weight:600;white-space:nowrap;min-width:280px;">PRODUTO</th>
               <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">UNID.</th>
               <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">FATURADO</th>
               <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;white-space:nowrap;">REPRESENT.</th>
@@ -372,8 +373,11 @@ Router.register('vendas', async (params, el) => {
                   <div style="display:flex;align-items:center;gap:8px;">
                     ${p.imagem ? `<img src="${p.imagem}" style="width:32px;height:32px;border-radius:5px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : `<div style="width:32px;height:32px;background:rgba(255,255,255,0.06);border-radius:5px;flex-shrink:0;"></div>`}
                     <div style="min-width:0;">
-                      <div style="color:#e5e7eb;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;">${p.nome}</div>
-                      <div style="color:#6b7280;font-size:10px;">${p.n} pedido${p.n!==1?'s':''} · ${p.qtd} un.</div>
+                      <div style="color:#e5e7eb;font-weight:500;line-height:1.3;word-break:break-word;max-width:320px;">${p.nome}</div>
+                      <div style="display:flex;gap:8px;align-items:center;margin-top:2px;flex-wrap:wrap;">
+                        ${p.sku ? `<span style="background:rgba(99,102,241,0.15);color:#818cf8;font-size:9px;padding:1px 6px;border-radius:4px;font-family:monospace;">SKU: ${p.sku}</span>` : ''}
+                        <span style="color:#6b7280;font-size:10px;">${p.n} pedido${p.n!==1?'s':''} · ${p.qtd} un.</span>
+                      </div>
                     </div>
                   </div>
                 </td>
@@ -862,6 +866,7 @@ Router.register('vendas', async (params, el) => {
               nome:  i.item?.title||'—', qtd: i.quantity||1,
               preco: parseFloat(i.unit_price)||0, imagem: '',
               itemId: i.item?.id||'',
+              sku: i.item?.seller_sku || i.seller_sku || '',
               saleFee: parseFloat(i.sale_fee)||0,
             }));
             const totalAmount = parseFloat(o.total_amount)||0;
@@ -968,6 +973,7 @@ Router.register('vendas', async (params, el) => {
                 const itens=(ord.item_list||[]).map(it=>({
                   nome: it.item_name||'—', qtd: it.model_quantity_purchased||1,
                   preco: parseFloat(it.model_discounted_price)||0, imagem: it.image_info?.image_url||'',
+                  sku: it.item_sku || it.model_sku || '',
                 }));
                 detMap[ord.order_sn]={ itens, imagem:itens[0]?.imagem||'', produto:itens.length>1?`${itens[0].nome} (+${itens.length-1})`:(itens[0]?.nome||'—') };
                 const dt = ord.create_time?new Date(ord.create_time*1000):null;
