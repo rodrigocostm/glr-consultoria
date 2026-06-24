@@ -1538,8 +1538,24 @@ Router.register('projecao', (params, el) => {
           </div>
         </div>`;
 
-      document.getElementById('btn-fechar-vinculos').onclick  = () => { overlay.remove(); renderTabela(); };
-      document.getElementById('btn-fechar-vinculos2').onclick = () => { overlay.remove(); renderTabela(); };
+      const fecharVinculos = () => {
+        overlay.remove();
+        // Auto-adiciona linhas para plataformas vinculadas que ainda não existem na tabela
+        const platMap = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
+        const vinculadasAtual = (vinculos[String(cidAtivo)] || []);
+        const platsExistentes = new Set((projecaoAtiva.plataformas || []).map(p => (p.nome||'').toLowerCase()));
+        vinculadasAtual.forEach(c => {
+          const mkt = (c.marketplace || '').toLowerCase();
+          const nomePlat = platMap[mkt] || (c.marketplace ? c.marketplace.charAt(0).toUpperCase() + c.marketplace.slice(1) : null);
+          if (nomePlat && !platsExistentes.has(nomePlat.toLowerCase())) {
+            projecaoAtiva.plataformas.push({ nome: nomePlat, fatBase:'', adsBase:'', vendasBase:'', maio:'', abril:'', marco:'' });
+            platsExistentes.add(nomePlat.toLowerCase());
+          }
+        });
+        renderTabela();
+      };
+      document.getElementById('btn-fechar-vinculos').onclick  = fecharVinculos;
+      document.getElementById('btn-fechar-vinculos2').onclick = fecharVinculos;
     };
 
     window._vincularProj = (extId) => {
