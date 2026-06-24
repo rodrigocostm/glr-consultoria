@@ -924,13 +924,23 @@ Router.register('projecao', (params, el) => {
     // Log de diagnóstico no console para debug
     console.log('[Proj diag] cidAtivo:', cidAtivo, '| contasCliente:', contasCliente, '| cache mesKey:', cache?.mesKey, '| pedidos no cache:', (cache?.pedidos||[]).length, '| contaIds no cache:', [...new Set((cache?.pedidos||[]).map(p=>p.contaId))]);
 
+    // ── Valores efetivos (manual salvo OU API) — usados em totais e linhas ──
+    const efetivos = plats.map(p => {
+      const cd = cacheParaPlat(cache, contasCliente, p.nome);
+      return {
+        fat:    p.fatBase    || (cd ? cd.fat.toFixed(2)    : ''),
+        ads:    p.adsBase    || (cd ? cd.ads.toFixed(2)    : ''),
+        vendas: p.vendasBase || (cd ? String(cd.vendas)    : ''),
+      };
+    });
+
     // ── Totais ──────────────────────────────────────────────────────
-    const totFatBase   = plats.reduce((s,p) => s + (parseFloat(p.fatBase)   || 0), 0);
-    const totProj      = plats.reduce((s,p) => s + calcProjecao(p.fatBase,  dd, dm), 0);
-    const totVendasBase= plats.reduce((s,p) => s + (parseFloat(p.vendasBase)|| 0), 0);
-    const totVendasProj= plats.reduce((s,p) => s + calcProjecao(p.vendasBase,dd, dm), 0);
-    const totAdsBase   = plats.reduce((s,p) => s + (parseFloat(p.adsBase)   || 0), 0);
-    const totAdsProj   = plats.reduce((s,p) => s + calcProjecao(p.adsBase,  dd, dm), 0);
+    const totFatBase   = efetivos.reduce((s,e) => s + (parseFloat(e.fat)    || 0), 0);
+    const totProj      = efetivos.reduce((s,e) => s + calcProjecao(e.fat,   dd, dm), 0);
+    const totVendasBase= efetivos.reduce((s,e) => s + (parseFloat(e.vendas) || 0), 0);
+    const totVendasProj= efetivos.reduce((s,e) => s + calcProjecao(e.vendas,dd, dm), 0);
+    const totAdsBase   = efetivos.reduce((s,e) => s + (parseFloat(e.ads)    || 0), 0);
+    const totAdsProj   = efetivos.reduce((s,e) => s + calcProjecao(e.ads,   dd, dm), 0);
     const totPctAds    = totProj > 0 && totAdsProj > 0 ? (totAdsProj / totProj * 100) : 0;
     const totMaio      = plats.reduce((s,p) => s + (parseFloat(p.maio)  || 0), 0);
     const totAbril     = plats.reduce((s,p) => s + (parseFloat(p.abril) || 0), 0);
@@ -946,13 +956,12 @@ Router.register('projecao', (params, el) => {
     const receitaGLR   = Math.round(totVendasProj) * valorVenda;
 
     const linhas = plats.map((p, i) => {
-      // Auto-preenche fatBase/adsBase/vendasBase do cache se ainda estiverem vazios
+      const fatBaseEfetivo    = efetivos[i].fat;
+      const adsBaseEfetivo    = efetivos[i].ads;
+      const vendasBaseEfetivo = efetivos[i].vendas;
       const cd = cacheParaPlat(cache, contasCliente, p.nome);
-      const fatBaseEfetivo   = p.fatBase   || (cd ? cd.fat.toFixed(2)   : '');
-      const adsBaseEfetivo   = p.adsBase   || (cd ? cd.ads.toFixed(2)   : '');
-      const vendasBaseEfetivo= p.vendasBase|| (cd ? String(cd.vendas)   : '');
-      const autoFat = !p.fatBase  && cd;
-      const autoAds = !p.adsBase  && cd;
+      const autoFat = !p.fatBase && cd;
+      const autoAds = !p.adsBase && cd;
 
       const proj       = calcProjecao(fatBaseEfetivo,    dd, dm);
       const vendasProj = calcProjecao(vendasBaseEfetivo, dd, dm);
@@ -1442,17 +1451,27 @@ Router.register('projecao', (params, el) => {
     }
   };
 
-  window.abrirVinculoProjecao = () => {
+  window.abrirVinculoProjecao = async () => {
     const cidAtivo = parseInt(document.getElementById('sel-cliente')?.value) || clienteIdAtivo;
     const cliente  = GLR.clientes.find(c => c.id === cidAtivo);
     if (!cidAtivo) { alert('Selecione um cliente primeiro.'); return; }
 
+    // Mostrar loading enquanto busca contas da API
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `<div style="background:var(--bg-surface);border-radius:14px;padding:40px 48px;text-align:center;color:var(--text-muted);font-size:14px;">⏳ Carregando contas...</div>`;
+    document.body.appendChild(overlay);
+
     let vinculos = {};
     try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
     let contas = [];
-    try { contas = JSON.parse(localStorage.getItem('glr_mc_accounts')||'[]'); } catch(e) {}
-    // Tenta também a chave usada pelo Integrações
-    if (!contas.length) try { contas = JSON.parse(localStorage.getItem('glr_mc_contas')||'[]'); } catch(e) {}
+    try {
+      const r = await MarketplaceAPI.call('list_accounts');
+      contas = r.data?.accounts || [];
+    } catch(e) {
+      // fallback para localStorage
+      try { contas = JSON.parse(localStorage.getItem('glr_mc_accounts')||'[]'); } catch(e2) {}
+    }
 
     const vinculadas = vinculos[String(cidAtivo)] || [];
     const vinculadasIds = new Set(vinculadas.map(c => c.external_id));
@@ -1460,9 +1479,6 @@ Router.register('projecao', (params, el) => {
     const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
     const platIcon = { mercadolivre:'🟡', ml:'🟡', meli:'🟡', shopee:'🟠', bling:'🔵' };
     const platNome = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
-
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;';
 
     const renderModalBody = () => {
       const contasDisponiveis = contas.filter(c => !vinculadasIds.has(c.external_id));
@@ -1550,7 +1566,6 @@ Router.register('projecao', (params, el) => {
     };
 
     renderModalBody();
-    document.body.appendChild(overlay);
     overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); renderTabela(); } });
   };
 
