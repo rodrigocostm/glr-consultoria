@@ -299,6 +299,7 @@ Router.register('integracoes', (params, el) => {
 
 // ── Render clientes vinculados ──────────────────────────────
 function renderClientesVinculados(vinc, mesesNomes, hoje) {
+  const aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas') || '{}');
   const platIcon = { mercadolivre:'🟡', ml:'🟡', meli:'🟡', shopee:'🟠', bling:'🔵' };
   const ids = Object.keys(vinc);
   if (!ids.length) return `<div class="card" style="text-align:center;padding:32px;color:var(--text-muted);">
