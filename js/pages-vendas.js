@@ -1210,6 +1210,82 @@ Router.register('vendas', async (params, el) => {
     alert(`Aplicado a ${pedidosFiltrados().length} pedidos!`);
   };
 
+  window.confirmarLimpezaManuais = () => {
+    // Contar o que existe antes de limpar
+    const nCustos   = Object.keys(JSON.parse(localStorage.getItem('glr_vendas_custos')||'{}')).length;
+    const nLinhas   = (JSON.parse(localStorage.getItem('glr_vendas_linhas')||'[]')).length;
+    const temFin    = !!localStorage.getItem('glr_fin_manual');
+    const temDre    = !!localStorage.getItem('glr_dre');
+    const temProj   = (() => {
+      try {
+        const p = JSON.parse(localStorage.getItem('glr_projecoes')||'{}');
+        return Object.values(p).some(pr => pr.plataformas?.some(pl => pl.fatBase||pl.adsBase||pl.vendasBase));
+      } catch(e) { return false; }
+    })();
+
+    // Monta o modal
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `
+      <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:28px 32px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <div style="font-size:18px;font-weight:800;color:#ef4444;margin-bottom:6px;">🗑️ Limpar dados manuais</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Os seguintes dados serão removidos permanentemente:</div>
+        <div style="background:var(--bg-base);border-radius:8px;padding:14px;margin-bottom:20px;font-size:13px;display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;justify-content:space-between;"><span>📦 Custos de produto por pedido</span><strong style="color:${nCustos?'#ef4444':'#6b7280'};">${nCustos ? nCustos+' pedidos' : 'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>➕ Linhas extras de custo</span><strong style="color:${nLinhas?'#ef4444':'#6b7280'};">${nLinhas ? nLinhas+' linhas' : 'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>💰 Dados manuais do Financeiro</span><strong style="color:${temFin?'#ef4444':'#6b7280'};">${temFin?'sim':'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>📊 Entradas manuais do DRE</span><strong style="color:${temDre?'#ef4444':'#6b7280'};">${temDre?'sim':'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>📈 Dados manuais da Projeção</span><strong style="color:${temProj?'#ef4444':'#6b7280'};">${temProj?'sim':'vazio'}</strong></div>
+        </div>
+        <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:12px;color:#10b981;">
+          ✅ Mantidos: vínculos de contas, API key, alíquotas, apelidos, cache da API
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button id="btn-cancelar-limpeza" style="padding:9px 20px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-hover);color:var(--text-primary);font-weight:600;cursor:pointer;">Cancelar</button>
+          <button id="btn-confirmar-limpeza" style="padding:9px 20px;border-radius:8px;border:none;background:#ef4444;color:white;font-weight:700;cursor:pointer;">🗑️ Confirmar limpeza</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    document.getElementById('btn-cancelar-limpeza').onclick = () => overlay.remove();
+    document.getElementById('btn-confirmar-limpeza').onclick = () => {
+      // Limpar dados manuais
+      localStorage.removeItem('glr_vendas_custos');
+      localStorage.removeItem('glr_vendas_linhas');
+      localStorage.removeItem('glr_fin_manual');
+      localStorage.removeItem('glr_dre');
+      // Projeções: limpa só os campos manuais (fatBase, adsBase, vendasBase), mantém a estrutura
+      try {
+        const prj = JSON.parse(localStorage.getItem('glr_projecoes')||'{}');
+        for (const k in prj) {
+          if (prj[k].plataformas) {
+            prj[k].plataformas = prj[k].plataformas.map(p => ({
+              nome: p.nome,
+              fatBase: '', adsBase: '', vendasBase: '',
+              maio: '', abril: '', marco: '',
+            }));
+          }
+        }
+        localStorage.setItem('glr_projecoes', JSON.stringify(prj));
+      } catch(e) {}
+
+      // Recarregar estado local
+      custos    = {};
+      linhasExt = [];
+      overlay.remove();
+
+      // Feedback e re-render
+      const toast = document.createElement('div');
+      toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#10b981;color:white;font-weight:700;padding:12px 20px;border-radius:10px;z-index:9999;font-size:14px;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+      toast.textContent = '✅ Dados manuais removidos com sucesso';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3500);
+
+      renderPedidos();
+      renderDashboard();
+    };
+  };
+
   function renderLinhasExtras() {
     const el=document.getElementById('linhas-extras-lista');
     if (!el) return;
@@ -1305,6 +1381,15 @@ Router.register('vendas', async (params, el) => {
             </div>
             <button onclick="aplicarCustoGlobal()" class="btn-primary" style="padding:7px 16px;">⚡ Aplicar a todos</button>
           </div>
+        </div>
+
+        <!-- Zona de limpeza -->
+        <div style="margin-top:12px;padding:14px 18px;background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.2);border-radius:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:#ef4444;">🗑️ Limpar todos os dados manuais</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Remove custos de produto, impostos manuais, linhas extras, armazenamento, despesas e entradas do DRE. Mantém vínculos, API key, alíquotas e cache da API.</div>
+          </div>
+          <button onclick="confirmarLimpezaManuais()" style="background:#ef4444;color:white;border:none;border-radius:8px;padding:8px 16px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;">🗑️ Limpar dados manuais</button>
         </div>
       </details>
 
