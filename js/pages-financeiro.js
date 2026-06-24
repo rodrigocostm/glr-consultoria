@@ -995,7 +995,7 @@ Router.register('financeiro', async (params, el) => {
     const sel = document.getElementById('fin-sel-empresa');
     if (!sel) return;
     // Extrair empresas únicas das tags das contas
-    const emps = new Set(contas.map(c => c.tag || 'Sem tag').filter(t => t));
+    const emps = new Set(contas.map(c => c.tags?.[0]?.name || 'Sem tag').filter(t => t));
     empresas = ['Todas', ...Array.from(emps).sort()];
 
     let html = empresas.map(e => `<option value="${e === 'Todas' ? 'todas' : e}">${e}</option>`).join('');
@@ -1012,12 +1012,12 @@ Router.register('financeiro', async (params, el) => {
     // Filtrar contas por empresa selecionada
     let contasFiltradas = contas;
     if (empresaSel !== 'todas') {
-      contasFiltradas = contas.filter(c => (c.tag || 'Sem tag') === empresaSel);
+      contasFiltradas = contas.filter(c => (c.tags?.[0]?.name || 'Sem tag') === empresaSel);
     }
 
     let html = `<option value="todas">Todas</option>`;
     if (contasFiltradas.length > 0) {
-      html += contasFiltradas.map(c=>`<option value="${c.external_id}">${c.nickname||c.external_id}</option>`).join('');
+      html += contasFiltradas.map(c=>`<option value="${c.external_id}">${c.label||c.nickname||c.external_id}</option>`).join('');
     }
     sel.innerHTML = html;
     // Tentar manter valor anterior, senão vai para "Todas"

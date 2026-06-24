@@ -122,18 +122,22 @@ Router.register('vendas', async (params, el) => {
     });
   }
 
+  const contaTag    = c => c.tags?.[0]?.name || 'Sem tag';
+  const contaNome   = c => c.label || c.nickname || c.external_id;
+
   function renderFiltroEmpresaConta() {
     const selEmp  = document.getElementById('sel-empresa');
     const selCont = document.getElementById('sel-conta');
     if (!selEmp || !selCont) return;
 
-    const empresas = ['todas', ...new Set(contas.map(c => c.tag || 'Sem tag').filter(Boolean)).values()].sort((a,b) => a==='todas'?-1:b==='todas'?1:a.localeCompare(b));
-    selEmp.innerHTML = empresas.map(e => `<option value="${e}">${e==='todas'?'Todas empresas':e}</option>`).join('');
+    const empresas = [...new Set(contas.map(contaTag))].sort();
+    selEmp.innerHTML = `<option value="todas">Todas empresas</option>` +
+      empresas.map(e => `<option value="${e}">${e}</option>`).join('');
     selEmp.value = filtroEmpresa;
 
-    const contasFiltradas = filtroEmpresa === 'todas' ? contas : contas.filter(c => (c.tag||'Sem tag') === filtroEmpresa);
+    const contasFiltradas = filtroEmpresa === 'todas' ? contas : contas.filter(c => contaTag(c) === filtroEmpresa);
     selCont.innerHTML = `<option value="todas">Todas contas</option>` +
-      contasFiltradas.map(c => `<option value="${c.external_id}">${c.nickname||c.external_id}</option>`).join('');
+      contasFiltradas.map(c => `<option value="${c.external_id}">${contaNome(c)}</option>`).join('');
     selCont.value = filtroConta;
   }
 
