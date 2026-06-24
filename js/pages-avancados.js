@@ -942,15 +942,24 @@ Router.register('projecao', (params, el) => {
       // Salva cache mesclado
       localStorage.setItem('glr_fin_cache', JSON.stringify({ ...(cacheExist||{}), ver:25, mesKey, pedidos }));
 
-      // Auto-cria linhas de plataforma que ainda não existem na tabela
+      // Cria/atualiza uma linha por conta vinculada (identifica pelo contaId)
       const platMap = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
-      const platsExistentes = new Set((projecaoAtiva.plataformas||[]).map(p=>(p.nome||'').toLowerCase()));
+      const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
+
+      // Remove linhas existentes ligadas a contas vinculadas (serão recriadas)
+      const contaIdsSet = new Set(contasVinc.map(c => c.external_id));
+      projecaoAtiva.plataformas = (projecaoAtiva.plataformas||[]).filter(p => !p.contaId || !contaIdsSet.has(p.contaId));
+
       contasVinc.forEach(c => {
-        const nomePlat = platMap[(c.marketplace||'').toLowerCase()];
-        if (nomePlat && !platsExistentes.has(nomePlat.toLowerCase())) {
-          projecaoAtiva.plataformas.push({nome:nomePlat, fatBase:'', adsBase:'', vendasBase:'', maio:'', abril:'', marco:''});
-          platsExistentes.add(nomePlat.toLowerCase());
-        }
+        const mktKey = (c.marketplace||'').toLowerCase();
+        const nomePlat = platMap[mktKey] || c.marketplace || 'Outro';
+        const tag = c.tags?.[0]?.name || '';
+        const nome = nicks[c.external_id] || tag || c.nickname || c.external_id;
+        projecaoAtiva.plataformas.push({
+          nome, contaId: c.external_id, marketplace: c.marketplace,
+          fatBase:'', adsBase:'', vendasBase:'', maio:'', abril:'', marco:'',
+          _platNome: nomePlat,
+        });
       });
 
       renderTabela();
@@ -980,14 +989,20 @@ Router.register('projecao', (params, el) => {
     return nome;
   }
 
-  function cacheParaPlat(cache, contasCliente, platNome) {
-    if (!cache || !contasCliente.length) return null;
+  // contaId: quando fornecido, filtra só essa conta; caso contrário usa contasCliente (modo legado por plataforma)
+  function cacheParaPlat(cache, contasCliente, platNome, contaId) {
+    if (!cache) return null;
     const platFiltro = normalizaPlat(platNome);
     const isReemb = st => { const s=(st||'').toLowerCase(); return s.includes('cancel')||s.includes('refund')||s.includes('devol')||s==='invalid'||s.includes('return'); };
-    const peds = (cache.pedidos||[]).filter(p => contasCliente.includes(p.contaId) && p.plataforma===platFiltro && !isReemb(p.status));
-    const fat  = peds.reduce((s,p) => s+(parseFloat(p.valor)||0), 0);
-    const qtd  = peds.reduce((s,p) => s+(parseInt(p.qtd)||1), 0);
-    const ads  = parseFloat((cache.adsAPI||{})[platFiltro]) || 0;
+    const peds = (cache.pedidos||[]).filter(p => {
+      if (isReemb(p.status)) return false;
+      if (contaId) return p.contaId === contaId && p.plataforma === platFiltro;
+      return contasCliente.includes(p.contaId) && p.plataforma === platFiltro;
+    });
+    const fat = peds.reduce((s,p) => s+(parseFloat(p.valor)||0), 0);
+    const qtd = peds.reduce((s,p) => s+(parseInt(p.qtd)||1), 0);
+    // ADS por conta ainda não está no cache; usa por plataforma como fallback
+    const ads = parseFloat((cache.adsAPI||{})[platFiltro]) || 0;
     return fat > 0 ? { fat, ads, vendas: qtd } : null;
   }
 
@@ -1026,8 +1041,9 @@ Router.register('projecao', (params, el) => {
     console.log('[Proj diag] cidAtivo:', cidAtivo, '| contasCliente:', contasCliente, '| cache mesKey:', cache?.mesKey, '| pedidos no cache:', (cache?.pedidos||[]).length, '| contaIds no cache:', [...new Set((cache?.pedidos||[]).map(p=>p.contaId))]);
 
     // ── Valores efetivos (manual salvo OU API) — usados em totais e linhas ──
+    // p.contaId presente → filtra por conta específica; ausente → filtra por plataforma (legado)
     const efetivos = plats.map(p => {
-      const cd = cacheParaPlat(cache, contasCliente, p.nome);
+      const cd = cacheParaPlat(cache, contasCliente, p._platNome || p.nome, p.contaId);
       return {
         fat:    p.fatBase    || (cd ? cd.fat.toFixed(2)    : ''),
         ads:    p.adsBase    || (cd ? cd.ads.toFixed(2)    : ''),
@@ -1060,9 +1076,12 @@ Router.register('projecao', (params, el) => {
       const fatBaseEfetivo    = efetivos[i].fat;
       const adsBaseEfetivo    = efetivos[i].ads;
       const vendasBaseEfetivo = efetivos[i].vendas;
-      const cd = cacheParaPlat(cache, contasCliente, p.nome);
+      const cd = cacheParaPlat(cache, contasCliente, p.nome, p.contaId);
       const autoFat = !p.fatBase && cd;
       const autoAds = !p.adsBase && cd;
+      // Ícone de plataforma para linhas por conta
+      const platIcon = { shopee:'🟠', mercadolivre:'🟡', ml:'🟡', meli:'🟡', bling:'🔵' };
+      const mktIcon = p.marketplace ? (platIcon[(p.marketplace||'').toLowerCase()] || '⚫') : '';
 
       const proj       = calcProjecao(fatBaseEfetivo,    dd, dm);
       const vendasProj = calcProjecao(vendasBaseEfetivo, dd, dm);
@@ -1073,7 +1092,10 @@ Router.register('projecao', (params, el) => {
 
       return `<tr data-idx="${i}">
         <td style="min-width:150px;">
-          <input class="proj-input" style="font-weight:600;font-size:13px;text-align:left;" value="${p.nome}" onchange="updatePlat(${i},'nome',this.value)" placeholder="Plataforma">
+          ${p.contaId
+            ? `<div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px;">${mktIcon} <span title="ID: ${p.contaId}">${p.nome}</span></div>`
+            : `<input class="proj-input" style="font-weight:600;font-size:13px;text-align:left;" value="${p.nome}" onchange="updatePlat(${i},'nome',this.value)" placeholder="Plataforma">`
+          }
         </td>
         <td style="text-align:right;position:relative;">
           <input class="proj-input money${autoFat?' proj-auto':''}" value="${fatBaseEfetivo}" onchange="updatePlat(${i},'fatBase',this.value)" placeholder="0,00">
@@ -1644,17 +1666,26 @@ Router.register('projecao', (params, el) => {
 
       const fecharVinculos = () => {
         overlay.remove();
-        // Auto-adiciona linhas para plataformas vinculadas que ainda não existem na tabela
-        const platMap = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
+        // Cria uma linha por conta vinculada (identificada por contaId)
+        const platMap2 = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
+        const nicks2 = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
         const vinculadasAtual = (vinculos[String(cidAtivo)] || []);
-        const platsExistentes = new Set((projecaoAtiva.plataformas || []).map(p => (p.nome||'').toLowerCase()));
+        const contaIdsVinc = new Set(vinculadasAtual.map(c => c.external_id));
+        // Remove linhas antigas ligadas a contas que foram removidas do vínculo
+        projecaoAtiva.plataformas = (projecaoAtiva.plataformas||[]).filter(p => !p.contaId || contaIdsVinc.has(p.contaId));
+        // Adiciona linhas para contas vinculadas que ainda não têm linha
+        const existingIds = new Set((projecaoAtiva.plataformas||[]).map(p => p.contaId).filter(Boolean));
         vinculadasAtual.forEach(c => {
-          const mkt = (c.marketplace || '').toLowerCase();
-          const nomePlat = platMap[mkt] || (c.marketplace ? c.marketplace.charAt(0).toUpperCase() + c.marketplace.slice(1) : null);
-          if (nomePlat && !platsExistentes.has(nomePlat.toLowerCase())) {
-            projecaoAtiva.plataformas.push({ nome: nomePlat, fatBase:'', adsBase:'', vendasBase:'', maio:'', abril:'', marco:'' });
-            platsExistentes.add(nomePlat.toLowerCase());
-          }
+          if (existingIds.has(c.external_id)) return;
+          const mktKey = (c.marketplace||'').toLowerCase();
+          const platNomeDisplay = platMap2[mktKey] || c.marketplace || 'Outro';
+          const tag = c.tags?.[0]?.name || '';
+          const nome = nicks2[c.external_id] || tag || c.nickname || c.external_id;
+          projecaoAtiva.plataformas.push({
+            nome, contaId: c.external_id, marketplace: c.marketplace,
+            fatBase:'', adsBase:'', vendasBase:'', maio:'', abril:'', marco:'',
+            _platNome: platNomeDisplay,
+          });
         });
         renderTabela();
       };
