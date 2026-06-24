@@ -407,7 +407,76 @@ Router.register('vendas', async (params, el) => {
           </tbody>
         </table>
       </div>
-    </div>`;
+    </div>
+
+    <!-- Produtos Sem Custo -->
+    ${(() => {
+      // Agrupa pedidos filtrados por nome de produto
+      const lista = pedidosFiltrados();
+      const grupos = {};
+      for (const p of lista) {
+        const st = (p.status||'').toLowerCase();
+        if (st.includes('cancel') || st==='invalid') continue; // ignora cancelados
+        const nome = p.produto || '(sem nome)';
+        if (!grupos[nome]) grupos[nome] = { nome, ids: [], fat: 0, qtd: 0, imagem: p.imagem || '' };
+        grupos[nome].ids.push(p.id);
+        grupos[nome].fat += parseFloat(p.valor) || 0;
+        grupos[nome].qtd += p.qtd || 1;
+      }
+      // Filtra apenas os que NÃO têm custo em nenhum dos pedidos
+      const semCusto = Object.values(grupos).filter(g =>
+        g.ids.every(id => !(custos[id]?.custo > 0))
+      ).sort((a,b) => b.fat - a.fat);
+
+      if (!semCusto.length) return `<div class="card" style="padding:16px 20px;display:flex;align-items:center;gap:10px;border:1px solid rgba(34,197,94,0.3);background:rgba(34,197,94,0.05);">
+        <span style="font-size:18px;">✅</span>
+        <span style="font-size:13px;color:#22c55e;font-weight:600;">Todos os produtos têm custo preenchido!</span>
+      </div>`;
+
+      return `<div class="card" style="padding:0;overflow:hidden;">
+        <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <div>
+            <span style="font-size:14px;font-weight:700;color:#f59e0b;">⚠️ Produtos sem custo</span>
+            <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${semCusto.length} produto${semCusto.length!==1?'s':''} · ${semCusto.reduce((s,g)=>s+g.ids.length,0)} pedidos sem custo preenchido</span>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);">Digite o custo e pressione Enter para aplicar a todos os pedidos daquele produto</span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead>
+              <tr style="background:var(--bg-card-hover);">
+                <th style="padding:10px 16px;text-align:left;color:var(--text-muted);font-weight:600;min-width:260px;">PRODUTO</th>
+                <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;">UNID.</th>
+                <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;">PEDIDOS</th>
+                <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;">FATURADO</th>
+                <th style="padding:10px 12px;text-align:right;color:#f59e0b;font-weight:600;border-left:1px solid var(--border);">💰 CUSTO UNIT.</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${semCusto.map((g,i) => `
+              <tr style="border-bottom:1px solid var(--border);${i%2!==0?'background:var(--bg-card-hover);':''}">
+                <td style="padding:10px 16px;">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    ${g.imagem ? `<img src="${g.imagem}" style="width:32px;height:32px;border-radius:5px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : `<div style="width:32px;height:32px;background:var(--border);border-radius:5px;flex-shrink:0;"></div>`}
+                    <span style="color:var(--text-primary);font-weight:600;max-width:300px;word-break:break-word;">${g.nome}</span>
+                  </div>
+                </td>
+                <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${g.qtd}</td>
+                <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${g.ids.length}</td>
+                <td style="padding:10px 12px;text-align:right;color:#3b82f6;font-weight:600;">${R$(g.fat)}</td>
+                <td style="padding:8px 12px;text-align:right;border-left:1px solid var(--border);">
+                  <input type="number" min="0" step="0.01" placeholder="0,00"
+                    data-ids="${g.ids.join(',')}"
+                    class="inp-custo-prod inp-sem-custo"
+                    style="width:100px;background:var(--bg-input);border:1px solid rgba(245,158,11,0.5);border-radius:6px;padding:5px 8px;color:#f59e0b;font-size:12px;text-align:right;"
+                    title="Aplica a ${g.ids.length} pedido${g.ids.length!==1?'s':''} deste produto">
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    })()}`;
 
     // ── Preencher ADS e Lucro pós-ADS ──
     const adEl = sec.querySelector('#dashboard-ads');
@@ -434,10 +503,20 @@ Router.register('vendas', async (params, el) => {
           custos[id].custo = val;
         });
         salvarCustos();
-        inp.style.borderColor = '#34d399';
-        setTimeout(() => { inp.style.borderColor = 'rgba(245,158,11,0.4)'; }, 1200);
-        // Atualiza só os KPI cards sem re-renderizar tudo (evita quebrar renderMarketplaceComparison)
-        atualizarKpiCards();
+        const isSemCusto = inp.classList.contains('inp-sem-custo');
+        if (isSemCusto && val > 0) {
+          // Remove a linha da tabela "sem custo" e re-renderiza o dashboard para atualizar contagem
+          const row = inp.closest('tr');
+          if (row) {
+            row.style.transition = 'opacity 0.4s';
+            row.style.opacity = '0';
+            setTimeout(() => renderDashboard(), 450);
+          }
+        } else {
+          inp.style.borderColor = '#34d399';
+          setTimeout(() => { inp.style.borderColor = 'rgba(245,158,11,0.4)'; }, 1200);
+          atualizarKpiCards();
+        }
       });
     });
 
