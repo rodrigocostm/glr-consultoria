@@ -615,7 +615,7 @@ Router.register('financeiro', async (params, el) => {
         contasParaBuscar = contas.filter(c => c.external_id === contaSel);
         contasFiltroIds  = [contaSel];
       } else if (empresaSel !== 'todas') {
-        contasParaBuscar = contas.filter(c => (c.tags?.[0]?.name || 'Sem tag') === empresaSel);
+        contasParaBuscar = contas.filter(c => nomeEmpresaDaTag(c.tags?.[0]?.name || '') === empresaSel);
         contasFiltroIds  = contasParaBuscar.map(c => c.external_id);
       } else {
         contasParaBuscar = contas;
@@ -1051,11 +1051,27 @@ Router.register('financeiro', async (params, el) => {
     }
   }
 
+  // Extrai nome da empresa a partir de uma tag — pega tudo antes de " - " ou ": " ou ":"
+  function nomeEmpresaDaTag(tag) {
+    if (!tag || tag === 'Sem tag') return tag;
+    // Remove sufixo de plataforma e número: "EAP - Mercado Livre: 2" → "EAP", "LTB: 1" → "LTB"
+    return tag.replace(/\s*[-:]\s*(Mercado Livre|Shopee|ML|SHOPEE|MELI).*$/i, '').replace(/\s*:\s*\d+\s*$/, '').trim();
+  }
+
+  // Nome de exibição da conta: apelido customizado > tag > platform+id
+  function nomeContaDisplay(c) {
+    const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
+    if (nicks[c.external_id]) return nicks[c.external_id];
+    const tag = (c.tags||[]).map(t => t.name||t.value).filter(Boolean).join(' · ');
+    if (tag) return tag;
+    return (c.label || c.nickname || c.external_id);
+  }
+
   function renderFiltroEmpresas() {
     const sel = document.getElementById('fin-sel-empresa');
     if (!sel) return;
-    // Extrair empresas únicas das tags das contas
-    const emps = new Set(contas.map(c => c.tags?.[0]?.name || 'Sem tag').filter(t => t));
+    // Extrair nome de empresa único de cada tag — agrupa "EAP - ML" e "EAP - SHOPEE" em "EAP"
+    const emps = new Set(contas.map(c => nomeEmpresaDaTag(c.tags?.[0]?.name || '')).filter(Boolean));
     empresas = ['Todas', ...Array.from(emps).sort()];
 
     let html = empresas.map(e => `<option value="${e === 'Todas' ? 'todas' : e}">${e}</option>`).join('');
@@ -1069,15 +1085,15 @@ Router.register('financeiro', async (params, el) => {
     if (!sel) return;
     const atual = sel.value;
 
-    // Filtrar contas por empresa selecionada
+    // Filtrar contas por empresa selecionada (usando nome de empresa extraído da tag)
     let contasFiltradas = contas;
     if (empresaSel !== 'todas') {
-      contasFiltradas = contas.filter(c => (c.tags?.[0]?.name || 'Sem tag') === empresaSel);
+      contasFiltradas = contas.filter(c => nomeEmpresaDaTag(c.tags?.[0]?.name || '') === empresaSel);
     }
 
     let html = `<option value="todas">Todas</option>`;
     if (contasFiltradas.length > 0) {
-      html += contasFiltradas.map(c=>`<option value="${c.external_id}">${c.label||c.nickname||c.external_id}</option>`).join('');
+      html += contasFiltradas.map(c => `<option value="${c.external_id}">${nomeContaDisplay(c)}</option>`).join('');
     }
     sel.innerHTML = html;
     // Tentar manter valor anterior, senão vai para "Todas"
