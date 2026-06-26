@@ -127,6 +127,45 @@ Router.register('afiliados', async (params, el) => {
 
     try {
       if (plataforma === 'shopee') {
+        // Testa rapidamente se AMS está disponível antes de iterar
+        const testeAMS = await (async () => {
+          const contas = contasDoCliente(clienteSelecionado, 'shopee');
+          if (!contas.length) return { semPermissao: false };
+          const shopId = contas[0].param_to_use?.shopId || contas[0].external_id;
+          try {
+            await MarketplaceAPI.call('shopee_ams_shop_performance', { shopId, start_date: dataInicio.replaceAll('-',''), end_date: dataFim.replaceAll('-','') });
+            return { semPermissao: false };
+          } catch(e) {
+            const semPerm = e.message.includes('no permission') || e.message.includes('403');
+            return { semPermissao: semPerm, erro: e.message };
+          }
+        })();
+
+        if (testeAMS.semPermissao) {
+          const content = document.getElementById('afil-content');
+          if (content) content.innerHTML = `
+            <div class="card" style="text-align:center;padding:40px 32px;">
+              <div style="font-size:40px;margin-bottom:16px;">🔒</div>
+              <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Shopee AMS sem permissão de acesso</div>
+              <div style="font-size:13px;color:var(--text-muted);max-width:480px;margin:0 auto 20px;">
+                A integração atual com o MarketplaceConnect (tiops.com.br) não tem permissão para acessar as APIs do Shopee AMS (programa de afiliados).<br><br>
+                Para liberar o acesso, entre em contato com o suporte da <strong>tiops.com.br</strong> solicitando habilitação do escopo <strong>Shopee AMS</strong> na integração.
+              </div>
+              <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+                <a href="https://seller.shopee.com.br/portal/marketing/affiliate" target="_blank" class="btn btn-primary">
+                  📊 Acessar AMS na Shopee
+                </a>
+                <a href="https://marketplaces.tiops.com.br" target="_blank" class="btn btn-secondary">
+                  🔑 Suporte tiops.com.br
+                </a>
+              </div>
+              <div style="margin-top:20px;padding:12px 16px;background:rgba(239,68,68,0.08);border-radius:var(--radius-sm);font-size:12px;color:var(--text-muted);font-family:monospace;text-align:left;max-width:500px;margin-left:auto;margin-right:auto;">
+                Erro: ${testeAMS.erro}
+              </div>
+            </div>`;
+          return;
+        }
+
         const contas = contasDoCliente(clienteSelecionado, 'shopee');
         const resultados = [];
 
