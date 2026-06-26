@@ -24,6 +24,115 @@ function scoreColor(s) {
   return '#ef4444';
 }
 
+// ── Helpers de dados API ──────────────────────────────────────────────────────
+
+function _dashCache() {
+  try { return JSON.parse(localStorage.getItem('glr_fin_cache') || 'null'); } catch(e) { return null; }
+}
+function _dashVinculos() {
+  try { return JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) { return {}; }
+}
+function _dashProjecoes() {
+  try { return JSON.parse(localStorage.getItem('glr_projecoes') || '[]'); } catch(e) { return []; }
+}
+
+const _isCancelDash = st => { const s=(st||'').toLowerCase(); return s.includes('cancel')||s.includes('refund')||s.includes('devol')||s==='invalid'||s.includes('return'); };
+
+// Faturamento atual do mês (cache API) para um cliente
+function _fatAtualCliente(clienteId, cache, vinculos) {
+  if (!cache) return null;
+  const contaIds = (vinculos[String(clienteId)] || []).map(c => c.external_id);
+  if (!contaIds.length) return null;
+  const total = (cache.pedidos || [])
+    .filter(p => contaIds.includes(p.contaId) && !_isCancelDash(p.status))
+    .reduce((s, p) => s + (parseFloat(p.valor) || 0), 0);
+  return total; // retorna 0 se tem contas mas sem pedidos (diferente de null = sem vinculos)
+}
+
+// Faturamento mês anterior (campo 'maio' nas projeções salvas)
+function _fatAnteriorCliente(clienteId, projecoes) {
+  const proj = projecoes.find(p => parseInt(p.chave) === clienteId);
+  if (!proj) return null;
+  return (proj.plataformas || []).reduce((s, p) => s + (parseFloat(p.maio) || 0), 0) || null;
+}
+
+// Retorna array de clientes enriquecidos com dados reais da API
+function computarClientesAPI() {
+  const cache    = _dashCache();
+  const vinculos = _dashVinculos();
+  const projecoes = _dashProjecoes();
+
+  return GLR.clientes.map(c => {
+    const fatAPI      = _fatAtualCliente(c.id, cache, vinculos);
+    const fatAnterior = _fatAnteriorCliente(c.id, projecoes);
+    const fat = fatAPI !== null ? fatAPI : (c.faturamento || 0);
+
+    const crescPct = (fatAnterior > 0 && fatAPI !== null)
+      ? parseFloat(((fatAPI - fatAnterior) / fatAnterior * 100).toFixed(1))
+      : (c.crescimento || 0);
+
+    let status = c.status || 'ativo';
+    if (fatAnterior > 0 && fatAPI !== null) {
+      if (crescPct > 5)       status = 'crescimento';
+      else if (crescPct < -20) status = 'risco';
+      else if (crescPct < -5)  status = 'queda';
+      else                     status = 'ativo';
+    }
+
+    return { ...c, faturamento: fat, crescimento: crescPct, status, _fatAnterior: fatAnterior, _temAPI: fatAPI !== null };
+  });
+}
+
+// Histórico mensal da carteira (gráfico) a partir de projeções + cache atual
+function computarHistoricoAPI() {
+  const mesesNomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const hoje = new Date();
+  const cache    = _dashCache();
+  const vinculos = _dashVinculos();
+  const projecoes = _dashProjecoes();
+
+  // Totais históricos das projeções (marco, abril, maio = últimos 3 meses relativos)
+  const camposMeses = [
+    { campo: 'marco', offset: 3 },
+    { campo: 'abril', offset: 2 },
+    { campo: 'maio',  offset: 1 },
+  ];
+
+  const resultado = [];
+
+  camposMeses.forEach(({ campo, offset }) => {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() - offset, 1);
+    const nomeMes = mesesNomes[d.getMonth()] + ' ' + d.getFullYear();
+    const total = projecoes.reduce((s, proj) =>
+      s + (proj.plataformas || []).reduce((ss, p) => ss + (parseFloat(p[campo]) || 0), 0), 0);
+    if (total > 0) resultado.push({ mes: nomeMes, total });
+  });
+
+  // Mês atual do cache
+  if (cache) {
+    const nomeMesAtual = mesesNomes[hoje.getMonth()] + ' ' + hoje.getFullYear();
+    const totalAtual = GLR.clientes.reduce((s, c) => {
+      const fatAPI = _fatAtualCliente(c.id, cache, vinculos);
+      return s + (fatAPI || 0);
+    }, 0);
+    if (totalAtual > 0) resultado.push({ mes: nomeMesAtual + ' (parcial)', total: totalAtual });
+  }
+
+  // Se sem dados da API, usa histórico manual (legado)
+  if (!resultado.length) {
+    GLR.clientes.forEach(c => {
+      (c.historico || []).forEach(h => {
+        const fat = parseFloat(h.faturamento) || 0;
+        if (fat > 0 && h.mes) GLR.evolucaoCarteira.push({ mes: h.mes, total: fat });
+      });
+    });
+    return null; // sinaliza para usar lógica antiga
+  }
+
+  return resultado;
+}
+
 // ---- Dashboard Executivo ----
 Router.register('dashboard', (params, el) => {
   if (!GLR.clientes.length) {
@@ -44,16 +153,18 @@ Router.register('dashboard', (params, el) => {
     return;
   }
 
-  const ativos    = GLR.clientes.filter(c => c.status === 'ativo').length;
-  const crescimento = GLR.clientes.filter(c => c.status === 'crescimento').length;
-  const queda     = GLR.clientes.filter(c => c.status === 'queda').length;
-  const risco     = GLR.clientes.filter(c => c.status === 'risco').length;
+  const clientes  = computarClientesAPI(); // enriquecidos com dados da API
+
+  const ativos      = clientes.filter(c => c.status === 'ativo').length;
+  const crescimento = clientes.filter(c => c.status === 'crescimento').length;
+  const queda       = clientes.filter(c => c.status === 'queda').length;
+  const risco       = clientes.filter(c => c.status === 'risco').length;
   const tarefasPendentes = GLR.tarefas.filter(t => t.status === 'pendente' || t.status === 'atrasada').length;
   const reunioesSemana   = GLR.eventos.filter(e => e.tipo === 'reuniao').length;
 
-  const faturamentoTotal = GLR.clientes.reduce((s, c) => s + (c.faturamento || 0), 0);
-  const crescimentoMedio = GLR.clientes.length
-    ? (GLR.clientes.reduce((s, c) => s + (c.crescimento || 0), 0) / GLR.clientes.length).toFixed(1)
+  const faturamentoTotal = clientes.reduce((s, c) => s + (c.faturamento || 0), 0);
+  const crescimentoMedio = clientes.length
+    ? (clientes.reduce((s, c) => s + (c.crescimento || 0), 0) / clientes.length).toFixed(1)
     : '0.0';
 
   // Receita GLR = soma de (vendas projetadas × valor por venda) de cada cliente
@@ -61,7 +172,7 @@ Router.register('dashboard', (params, el) => {
   let receitaGLR = 0;
   try {
     const projs = JSON.parse(localStorage.getItem('glr_projecoes') || '[]');
-    GLR.clientes.forEach(c => {
+    clientes.forEach(c => {
       const proj = projs.find(p => parseInt(p.chave) === c.id);
       if (!proj || !c.valorPorVenda) return;
       const dd = proj.diasDecorridos || 2;
@@ -74,10 +185,14 @@ Router.register('dashboard', (params, el) => {
     });
   } catch(e) {}
 
+  const crescimentoMedioReal = clientes.filter(c => c._temAPI).length > 0
+    ? `${delta(parseFloat(crescimentoMedio))} vs mês ant.`
+    : 'dado manual';
+
   el.innerHTML = `<div class="page">
     <!-- KPIs -->
     <div class="kpi-grid">
-      ${kpiCard('Clientes Ativos', GLR.clientes.length, '+2 este mês', true, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
+      ${kpiCard('Clientes Ativos', clientes.length, `${clientes.filter(c=>c._temAPI).length} com dados API`, true, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
       ${kpiCard('Em Crescimento', crescimento, '+1 este mês', true, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
       ${kpiCard('Em Queda', queda, 'vs mês anterior', false, 'rgba(249,115,22,0.12)', '📉', '#f97316')}
       ${kpiCard('Em Risco', risco, 'atenção imediata', false, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
@@ -114,8 +229,8 @@ Router.register('dashboard', (params, el) => {
           </div>
           <div style="flex:1;">
             ${['crescimento','ativo','queda','risco'].map(s => {
-              const count = GLR.clientes.filter(c => c.status === s).length;
-              const pct = GLR.clientes.length ? Math.round(count / GLR.clientes.length * 100) : 0;
+              const count = clientes.filter(c => c.status === s).length;
+              const pct = clientes.length ? Math.round(count / clientes.length * 100) : 0;
               return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
                 <div style="width:10px;height:10px;border-radius:50%;background:${{'crescimento':'#10b981','ativo':'#6366f1','queda':'#f97316','risco':'#ef4444'}[s]};flex-shrink:0;"></div>
                 <span style="flex:1;font-size:13px;color:var(--text-secondary);text-transform:capitalize;">${GLR.statusLabel[s]}</span>
@@ -135,9 +250,9 @@ Router.register('dashboard', (params, el) => {
           <div class="section-title">🏆 Ranking — Melhor Desempenho</div>
           <button class="btn btn-ghost btn-sm" onclick="Router.navigate('clientes')">Ver todos</button>
         </div>
-        ${GLR.clientes.length === 0
+        ${clientes.length === 0
           ? `<div style="color:var(--text-muted);font-size:13px;padding:16px 0;text-align:center;">Nenhum cliente cadastrado</div>`
-          : [...GLR.clientes].sort((a,b) => (b.crescimento||0) - (a.crescimento||0)).slice(0,6).map((c, i) => `
+          : [...clientes].sort((a,b) => (b.crescimento||0) - (a.crescimento||0)).slice(0,6).map((c, i) => `
           <div class="ranking-item" onclick="Router.navigate('cliente-perfil', {id: ${c.id}})" style="cursor:pointer;">
             <span class="ranking-num">#${i+1}</span>
             <div style="flex:1;">
@@ -225,57 +340,49 @@ Router.register('dashboard', (params, el) => {
     </div>
   </div>`;
 
-  // ── Constrói evolucaoCarteira a partir de historico + DRE reais ──
+  // ── Constrói evolucaoCarteira prioritariamente da API ──
   (function() {
-    const mesesNomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-                        'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-    const mapa = {}; // chave: "Mês Ano" → total faturamento
+    const historicoAPI = computarHistoricoAPI();
+    let ordenado;
 
-    // 1. Soma historico de cada cliente
-    GLR.clientes.forEach(c => {
-      (c.historico || []).forEach(h => {
-        const fat = parseFloat(h.faturamento) || 0;
-        if (fat > 0 && h.mes) {
-          mapa[h.mes] = (mapa[h.mes] || 0) + fat;
-        }
+    if (historicoAPI) {
+      // Dados da API disponíveis — usa direto
+      ordenado = historicoAPI;
+    } else {
+      // Fallback: histórico manual + DRE
+      const mesesNomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                          'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+      const mapa = {};
+      clientes.forEach(c => {
+        (c.historico || []).forEach(h => {
+          const fat = parseFloat(h.faturamento) || 0;
+          if (fat > 0 && h.mes) mapa[h.mes] = (mapa[h.mes] || 0) + fat;
+        });
       });
-    });
-
-    // 2. Soma DRE lançados (têm prioridade / complementam historico)
-    let dres = [];
-    try { dres = JSON.parse(localStorage.getItem('glr_dre') || '[]'); } catch(e) {}
-    dres.forEach(d => {
-      const fat = parseFloat(d.valores?.faturamento) || 0;
-      if (fat <= 0) return;
-      const nomeMes = mesesNomes[parseInt(d.mes)] + ' ' + d.ano;
-      // DRE substitui qualquer valor do historico para esse mês
-      // (acumula por cliente para não somar duas vezes)
-      mapa['_dre_' + nomeMes] = (mapa['_dre_' + nomeMes] || 0) + fat;
-    });
-
-    // Mescla: para cada mês com DRE, usa o DRE; senão usa historico
-    const merged = {};
-    Object.keys(mapa).forEach(k => {
-      if (k.startsWith('_dre_')) {
-        const mes = k.replace('_dre_', '');
-        merged[mes] = mapa[k]; // DRE tem prioridade
-      } else {
-        if (!merged[k]) merged[k] = mapa[k]; // historico só se não tem DRE
-      }
-    });
-
-    // 3. Ordena cronologicamente
-    const ordenado = Object.entries(merged)
-      .map(([mes, total]) => {
-        const partes = mes.split(' ');
-        const nomeMes = partes[0];
-        const ano = parseInt(partes[1]) || 2025;
-        const idxMes = mesesNomes.indexOf(nomeMes);
-        return { mes, total, ordem: ano * 12 + idxMes };
-      })
-      .filter(d => d.ordem >= 0)
-      .sort((a, b) => a.ordem - b.ordem)
-      .slice(-12); // últimos 12 meses
+      let dres = [];
+      try { dres = JSON.parse(localStorage.getItem('glr_dre') || '[]'); } catch(e) {}
+      dres.forEach(d => {
+        const fat = parseFloat(d.valores?.faturamento) || 0;
+        if (fat <= 0) return;
+        const nomeMes = mesesNomes[parseInt(d.mes)] + ' ' + d.ano;
+        mapa['_dre_' + nomeMes] = (mapa['_dre_' + nomeMes] || 0) + fat;
+      });
+      const merged = {};
+      Object.keys(mapa).forEach(k => {
+        if (k.startsWith('_dre_')) { merged[k.replace('_dre_','')] = mapa[k]; }
+        else { if (!merged[k]) merged[k] = mapa[k]; }
+      });
+      ordenado = Object.entries(merged)
+        .map(([mes, total]) => {
+          const partes = mes.split(' ');
+          const idxMes = mesesNomes.indexOf(partes[0]);
+          const ano = parseInt(partes[1]) || 2025;
+          return { mes, total, ordem: ano * 12 + idxMes };
+        })
+        .filter(d => d.ordem >= 0)
+        .sort((a,b) => a.ordem - b.ordem)
+        .slice(-12);
+    }
 
     GLR.evolucaoCarteira = ordenado;
   })();
@@ -347,8 +454,7 @@ Router.register('dashboard', (params, el) => {
 
 // ---- Dashboard da Diretoria ----
 Router.register('diretoria', (params, el) => {
-  // Tudo calculado de dados reais
-  const clientes  = GLR.clientes;
+  const clientes  = computarClientesAPI(); // enriquecidos com dados da API
   const gestores  = GLR.gestores;
   const tarefas   = GLR.tarefas;
 
