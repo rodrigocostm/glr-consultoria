@@ -1101,9 +1101,12 @@ Router.register('projecao', (params, el) => {
       const fmtInt     = v => Math.round(parseFloat(v)||0).toLocaleString('pt-BR');
 
       return `<tr data-idx="${i}">
-        <td style="min-width:150px;">
+        <td style="min-width:160px;">
           ${p.contaId
-            ? `<div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px;">${mktIcon} <span title="ID: ${p.contaId}">${p.nome}</span></div>`
+            ? `<div style="display:flex;flex-direction:column;gap:2px;">
+                <div style="display:flex;align-items:center;gap:5px;font-weight:600;font-size:13px;">${mktIcon} <span>${p.nome}</span></div>
+                <div style="font-size:10px;color:var(--text-muted);font-family:monospace;">ID: ${p.contaId}</div>
+               </div>`
             : `<input class="proj-input" style="font-weight:600;font-size:13px;text-align:left;" value="${p.nome}" onchange="updatePlat(${i},'nome',this.value)" placeholder="Plataforma">`
           }
         </td>
