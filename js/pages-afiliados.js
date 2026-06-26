@@ -136,18 +136,39 @@ Router.register('afiliados', async (params, el) => {
           const nicks  = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
           const nome   = nicks[conta.external_id] || tag || conta.nickname || String(conta.external_id);
 
-          let perf = {}, campMetrics = [], openCamp = [];
-          try {
-            const r = await MarketplaceAPI.call('shopee_ams_shop_performance', { shopId });
-            perf = r?.data?.response || r?.data || {};
-          } catch(e) { console.warn('[AFIL Shopee perf]', e.message); }
+          // Shopee AMS — tenta shop_performance com datas, depois afil_performance
+          let perf = {}, openCamp = [], afilPerf = [];
+          const startDate = dataInicio.replaceAll('-','');
+          const endDate   = dataFim.replaceAll('-','');
 
           try {
-            const r = await MarketplaceAPI.call('shopee_ams_open_campaign_performance', { shopId });
-            openCamp = r?.data?.response?.campaign_performance_list || r?.data?.campaign_performance_list || [];
-          } catch(e) { console.warn('[AFIL Shopee camp]', e.message); }
+            const r = await MarketplaceAPI.call('shopee_ams_shop_performance', {
+              shopId, start_date: startDate, end_date: endDate,
+            });
+            perf = r?.data?.response || r?.data?.data || r?.data || {};
+          } catch(e) { console.warn('[AFIL shopee_ams_shop_performance]', e.message); }
 
-          resultados.push({ conta: nome, shopId, perf, openCamp });
+          try {
+            const r = await MarketplaceAPI.call('shopee_ams_open_campaign_performance', {
+              shopId, start_date: startDate, end_date: endDate,
+            });
+            openCamp = r?.data?.response?.campaign_performance_list
+                    || r?.data?.campaign_performance_list
+                    || r?.data?.data
+                    || [];
+          } catch(e) { console.warn('[AFIL shopee_ams_open_campaign_performance]', e.message); }
+
+          try {
+            const r = await MarketplaceAPI.call('shopee_ams_affiliate_performance', {
+              shopId, start_date: startDate, end_date: endDate,
+            });
+            afilPerf = r?.data?.response?.affiliate_performance_list
+                     || r?.data?.affiliate_performance_list
+                     || r?.data?.data
+                     || [];
+          } catch(e) { console.warn('[AFIL shopee_ams_affiliate_performance]', e.message); }
+
+          resultados.push({ conta: nome, shopId, perf, openCamp, afilPerf });
         }
 
         _dadosCache['shopee'] = { plat: 'shopee', resultados };
@@ -163,17 +184,21 @@ Router.register('afiliados', async (params, el) => {
           const tag    = conta.tags?.[0]?.name || '';
           const nome   = nicks[conta.external_id] || tag || conta.nickname || String(conta.external_id);
 
+          // ML Afiliados — tenta buscar via ml_exclusion_list (programa de afiliados)
+          // A API do ML para afiliados usa endpoints de publisher, não disponível via MCP padrão
           let afil = {};
-          try {
-            const r = await MarketplaceAPI.call('ml_affiliate_commissions', {
-              meliUserId,
-              date_from: dataInicio,
-              date_to:   dataFim,
-            });
-            afil = r?.data || {};
-          } catch(e) {
-            console.warn('[AFIL ML]', e.message);
-            afil = { _erro: e.message };
+          const acoesML = [
+            { action: 'ml_affiliate_report',      params: { meliUserId, date_from: dataInicio, date_to: dataFim } },
+            { action: 'ml_affiliate_performance', params: { meliUserId, date_from: dataInicio, date_to: dataFim } },
+          ];
+          for (const { action, params } of acoesML) {
+            try {
+              const r = await MarketplaceAPI.call(action, params);
+              if (r?.data) { afil = r.data; break; }
+            } catch(e) {
+              console.warn(`[AFIL ML ${action}]`, e.message);
+              afil = { _semSuporteAPI: true };
+            }
           }
 
           resultados.push({ conta: nome, meliUserId, afil });
@@ -249,6 +274,29 @@ Router.register('afiliados', async (params, el) => {
             <span style="font-size:12px;">Verifique se o programa AMS está ativo na conta Shopee.</span>
           </div>`}
 
+          ${r.afilPerf?.length > 0 ? `
+          <div style="margin-top:12px;">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary);">Top Afiliados</div>
+            <table class="table" style="font-size:12px;">
+              <thead><tr>
+                <th>Afiliado</th>
+                <th style="text-align:right;">Receita</th>
+                <th style="text-align:right;">Comissão</th>
+                <th style="text-align:right;">Pedidos</th>
+                <th style="text-align:right;">Cliques</th>
+              </tr></thead>
+              <tbody>
+              ${r.afilPerf.slice(0,10).map(a => `<tr>
+                <td style="font-weight:500;">${a.affiliate_name || a.name || a.id || '—'}</td>
+                <td style="text-align:right;color:var(--green);">R$ ${fmtBRL(a.gmv || a.revenue || 0)}</td>
+                <td style="text-align:right;color:var(--red);">R$ ${fmtBRL(a.commission || 0)}</td>
+                <td style="text-align:right;">${fmtNum(a.orders || 0)}</td>
+                <td style="text-align:right;">${fmtNum(a.clicks || 0)}</td>
+              </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>` : ''}
+
           ${r.openCamp.length > 0 ? `
           <div style="margin-top:12px;">
             <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary);">Campanhas Open</div>
@@ -285,15 +333,20 @@ Router.register('afiliados', async (params, el) => {
   // ── Renderiza dados ML ────────────────────────────────────
   function renderML(resultados) {
     return resultados.map(r => {
-      if (r.afil._erro) {
+      if (r.afil._semSuporteAPI || r.afil._erro) {
         return `
         <div class="card mb-16">
           <div class="section-header">
-            <div class="section-title">🟡 ${r.conta} <span style="font-size:11px;color:var(--text-muted);font-family:monospace;">ID: ${r.meliUserId}</span></div>
+            <div class="section-title">🟡 ${r.conta}</div>
+            <div style="font-size:11px;color:var(--text-muted);font-family:monospace;">User ID: ${r.meliUserId}</div>
           </div>
-          <div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">
-            Erro ao buscar dados: ${r.afil._erro}<br>
-            <span style="font-size:12px;">A API de afiliados do Mercado Livre pode não estar disponível para esta conta.</span>
+          <div style="padding:32px;text-align:center;">
+            <div style="font-size:32px;margin-bottom:12px;">🔗</div>
+            <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px;">API de Afiliados ML não disponível</div>
+            <div style="font-size:13px;color:var(--text-muted);max-width:420px;margin:0 auto;">
+              O Mercado Livre não expõe dados de afiliados (Publishers) via API pública.<br>
+              Acesse o painel de afiliados diretamente em <strong>afiliados.mercadolivre.com.br</strong> para ver comissões e performance.
+            </div>
           </div>
         </div>`;
       }
