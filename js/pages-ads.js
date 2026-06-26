@@ -349,20 +349,31 @@ function renderShell() {
 
 async function carregarContas() {
   try {
-    const raw = localStorage.getItem('glr_mc_accounts');
-    let contas = raw ? JSON.parse(raw) : [];
-    if (!contas.length) {
+    // Sempre busca da API para garantir lista atualizada
+    let contas = [];
+    try {
       contas = await MarketplaceAPI.listAccounts();
       localStorage.setItem('glr_mc_accounts', JSON.stringify(contas));
+    } catch(e) {
+      // Fallback para cache local se API falhar
+      const raw = localStorage.getItem('glr_mc_accounts');
+      contas = raw ? JSON.parse(raw) : [];
+      console.warn('[ADS] Fallback para cache local:', e.message);
     }
     contasSel = contas.filter(c => ['shopee','mercadolivre','ml','meli'].includes(c.marketplace));
+
+    const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
+    const nomeConta = c => {
+      const tag = c.tags?.[0]?.name || '';
+      return nicks[c.external_id] || tag || c.nickname || c.name || c.external_id;
+    };
 
     const sel = document.getElementById('ads-sel-conta');
     if (!sel) return;
     sel.innerHTML = `<option value="">— Selecione a conta —</option>` +
       contasSel.map((c, i) => {
         const mp = c.marketplace === 'shopee' ? '🟠 Shopee' : '🟡 ML';
-        return `<option value="${i}">${mp} — ${c.nickname || c.name || c.external_id}</option>`;
+        return `<option value="${i}">${mp} — ${nomeConta(c)}</option>`;
       }).join('');
 
     sel.addEventListener('change', e => {
