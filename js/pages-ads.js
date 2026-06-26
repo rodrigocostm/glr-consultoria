@@ -796,7 +796,6 @@ function renderAgentIA() {
         </div>
         <div style="display:flex;gap:6px;">
           <button onclick="window._adsNovaConversa()" style="font-size:11px;color:var(--text-secondary);background:var(--bg-base);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;">🔄 Nova</button>
-          <button onclick="window._adsConfigurarApiKey()" style="font-size:11px;color:var(--text-secondary);background:var(--bg-base);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;">⚙️ API Key</button>
         </div>
       </div>
 
@@ -945,21 +944,6 @@ window._adsNovaConversa = function() {
     </div>`;
 };
 
-window._adsConfigurarApiKey = function() {
-  const atual = localStorage.getItem('glr_claude_apikey') || '';
-  const nova = prompt(
-    'Digite sua Claude API Key (sk-ant-...):\n\nObtida em: console.anthropic.com',
-    atual ? '*** chave salva — apague para substituir ***' : ''
-  );
-  if (nova === null) return;
-  if (nova.startsWith('sk-ant-')) {
-    localStorage.setItem('glr_claude_apikey', nova);
-    alert('✅ API Key salva!');
-  } else if (nova && !nova.startsWith('***')) {
-    alert('⚠️ API Key inválida. Deve começar com sk-ant-');
-  }
-};
-
 window._adsEnviarMensagem = async function(msgPredef) {
   if (_aiCarregando) return;
 
@@ -970,9 +954,6 @@ window._adsEnviarMensagem = async function(msgPredef) {
 
   const texto = msgPredef || (input ? input.value.trim() : '');
   if (!texto) return;
-
-  const apiKey = localStorage.getItem('glr_claude_apikey');
-  if (!apiKey) { window._adsConfigurarApiKey(); return; }
 
   if (input) input.value = '';
   document.getElementById('ads-ia-placeholder')?.remove();
@@ -1029,17 +1010,10 @@ ${(d.diario||[]).slice(-14).map(dia => {
   _aiHistory.push({ role: 'user', content: texto });
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetch('/api/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1500,
         system: `Você é um especialista sênior em performance de ADS para marketplaces brasileiros (Shopee, Mercado Livre).
 Analise os dados fornecidos e dê recomendações práticas, específicas e acionáveis.
 Seja direto. Use bullet points para listas. Destaque campanhas problemáticas pelo nome.
@@ -1053,8 +1027,8 @@ ${ctx}`,
     });
 
     const json = await resp.json();
-    if (json.error) throw new Error(json.error.message);
-    const resposta = json.content?.[0]?.text || 'Sem resposta.';
+    if (json.error) throw new Error(json.error);
+    const resposta = json.content || 'Sem resposta.';
     _aiHistory.push({ role: 'assistant', content: resposta });
 
     document.getElementById('ads-ia-typing')?.remove();
