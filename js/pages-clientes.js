@@ -47,15 +47,21 @@ Router.register('clientes', (params, el) => {
   }
 
   function renderClientes() {
-    let lista = GLR.clientes;
+    // Enriquece com dados da API (faturamento, crescimento, status reais)
+    const clientesAPI = typeof computarClientesAPI === 'function' ? computarClientesAPI() : GLR.clientes;
+    const mapaAPI = {};
+    clientesAPI.forEach(c => { mapaAPI[c.id] = c; });
+
+    let lista = GLR.clientes.map(c => mapaAPI[c.id] || c);
     if (filtroGestor) lista = lista.filter(c => c.gestorId === parseInt(filtroGestor));
     if (filtroStatus) lista = lista.filter(c => c.status === filtroStatus);
 
     if (!lista.length) return `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text-muted);">Nenhum cliente encontrado com os filtros aplicados.</td></tr>`;
 
     return lista.map(c => {
-      const fat = c.faturamento || 0;
-      const cresc = c.crescimento || 0;
+      const temAPI = c._temAPI === true;
+      const fat  = temAPI ? (c.faturamento || 0) : null;
+      const cresc = temAPI ? (c.crescimento || 0) : null;
 
       return `<tr onclick="Router.navigate('cliente-perfil', {id: ${c.id}})">
         <td>
@@ -79,9 +85,11 @@ Router.register('clientes', (params, el) => {
           ${c.valorPorVenda ? `<span style="font-size:13px;font-weight:600;color:var(--green);">R$ ${parseFloat(c.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>` : '<span style="color:var(--text-muted);">—</span>'}
         </td>
         <td><span class="badge ${GLR.statusColor[c.status] || 'status-ativo'}">${GLR.statusLabel[c.status] || c.status}</span></td>
-        <td>${fat ? GLR.formatCurrency(fat) : '—'}</td>
+        <td>${fat !== null && fat > 0 ? GLR.formatCurrency(fat) : '<span style="color:var(--text-muted);">—</span>'}</td>
         <td>
-          <span class="fw-700 ${cresc >= 0 ? 'text-green' : 'text-red'}">${cresc >= 0 ? '+' : ''}${cresc}%</span>
+          ${cresc !== null
+            ? `<span class="fw-700 ${cresc >= 0 ? 'text-green' : 'text-red'}">${cresc >= 0 ? '+' : ''}${cresc}%</span>`
+            : '<span style="color:var(--text-muted);">—</span>'}
         </td>
         <td>
           <div style="display:flex;align-items:center;gap:6px;">
