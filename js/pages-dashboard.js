@@ -41,12 +41,12 @@ const _isCancelDash = st => { const s=(st||'').toLowerCase(); return s.includes(
 // Faturamento atual do mês (cache API) para um cliente
 function _fatAtualCliente(clienteId, cache, vinculos) {
   if (!cache) return null;
-  const contaIds = (vinculos[String(clienteId)] || []).map(c => c.external_id);
+  const contaIds = (vinculos[String(clienteId)] || []).map(c => String(c.external_id));
   if (!contaIds.length) return null;
   const total = (cache.pedidos || [])
-    .filter(p => contaIds.includes(p.contaId) && !_isCancelDash(p.status))
+    .filter(p => contaIds.includes(String(p.contaId)) && !_isCancelDash(p.status))
     .reduce((s, p) => s + (parseFloat(p.valor) || 0), 0);
-  return total; // retorna 0 se tem contas mas sem pedidos (diferente de null = sem vinculos)
+  return total;
 }
 
 // Faturamento mês anterior (campo 'maio' nas projeções salvas)
