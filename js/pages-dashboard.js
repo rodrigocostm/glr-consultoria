@@ -153,7 +153,8 @@ Router.register('dashboard', (params, el) => {
     return;
   }
 
-  const clientes  = computarClientesAPI(); // enriquecidos com dados da API
+  // Apenas clientes com contas vinculadas na API
+  const clientes  = computarClientesAPI().filter(c => c._temAPI);
 
   const ativos      = clientes.filter(c => c.status === 'ativo').length;
   const crescimento = clientes.filter(c => c.status === 'crescimento').length;
@@ -459,7 +460,8 @@ Router.register('dashboard', (params, el) => {
 
 // ---- Dashboard da Diretoria ----
 Router.register('diretoria', (params, el) => {
-  const clientes  = computarClientesAPI(); // enriquecidos com dados da API
+  // Apenas clientes com contas vinculadas na API
+  const clientes  = computarClientesAPI().filter(c => c._temAPI);
   const gestores  = GLR.gestores;
   const tarefas   = GLR.tarefas;
 
