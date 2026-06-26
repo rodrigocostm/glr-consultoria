@@ -26,7 +26,11 @@ const MarketplaceAPI = {
       body: JSON.stringify({ action, params }),
     });
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      let detail = '';
+      try { const j = await res.json(); detail = j.message || j.error || JSON.stringify(j); } catch(e) {}
+      throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
+    }
     const json = await res.json();
     if (json.status && json.status !== 200) throw new Error(json.message || 'Erro na API');
     return json;
