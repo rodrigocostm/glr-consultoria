@@ -185,21 +185,26 @@ Router.register('dashboard', (params, el) => {
     });
   } catch(e) {}
 
-  const crescimentoMedioReal = clientes.filter(c => c._temAPI).length > 0
-    ? `${delta(parseFloat(crescimentoMedio))} vs mês ant.`
-    : 'dado manual';
+  const comAPI = clientes.filter(c => c._temAPI).length;
+  const semAPI = clientes.length - comAPI;
+  const crescMedioAPI = comAPI > 0
+    ? (clientes.filter(c=>c._temAPI).reduce((s,c)=>s+(c.crescimento||0),0) / comAPI)
+    : null;
+  const fatSubtitulo = comAPI > 0
+    ? `${delta(parseFloat(crescMedioAPI.toFixed(1)))} vs mês ant.`
+    : (semAPI > 0 ? 'vincule contas para ver dados reais' : '');
 
   el.innerHTML = `<div class="page">
     <!-- KPIs -->
     <div class="kpi-grid">
-      ${kpiCard('Clientes Ativos', clientes.length, `${clientes.filter(c=>c._temAPI).length} com dados API`, true, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
-      ${kpiCard('Em Crescimento', crescimento, '+1 este mês', true, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
-      ${kpiCard('Em Queda', queda, 'vs mês anterior', false, 'rgba(249,115,22,0.12)', '📉', '#f97316')}
-      ${kpiCard('Em Risco', risco, 'atenção imediata', false, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
-      ${kpiCard('Tarefas Pendentes', tarefasPendentes, `${GLR.tarefas.filter(t=>t.status==='atrasada').length} atrasadas`, false, 'rgba(245,158,11,0.12)', '✅', '#f59e0b')}
+      ${kpiCard('Clientes Ativos', clientes.length, `${comAPI} com dados API`, comAPI > 0, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
+      ${kpiCard('Em Crescimento', crescimento, `${clientes.length ? Math.round(crescimento/clientes.length*100) : 0}% da carteira`, true, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
+      ${kpiCard('Em Queda', queda, `${clientes.length ? Math.round(queda/clientes.length*100) : 0}% da carteira`, queda === 0, 'rgba(249,115,22,0.12)', '📉', '#f97316')}
+      ${kpiCard('Em Risco', risco, risco === 0 ? 'carteira saudável' : 'atenção imediata', risco === 0, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
+      ${kpiCard('Tarefas Pendentes', tarefasPendentes, `${GLR.tarefas.filter(t=>t.status==='atrasada').length} atrasadas`, tarefasPendentes === 0, 'rgba(245,158,11,0.12)', '✅', '#f59e0b')}
       ${kpiCard('Reuniões na Semana', reunioesSemana, 'próximos 7 dias', true, 'rgba(6,182,212,0.12)', '📅', '#06b6d4')}
-      ${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', 'vendas × valor por venda', true, 'rgba(16,185,129,0.15)', '💰', '#10b981')}
-      ${kpiCard('Fat. Carteira', GLR.formatCurrency(faturamentoTotal), `${delta(parseFloat(crescimentoMedio))}`, true, 'rgba(99,102,241,0.12)', '🏆', '#6366f1', true)}
+      ${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', 'vendas × valor por venda', receitaGLR > 0, 'rgba(16,185,129,0.15)', '💰', '#10b981')}
+      ${kpiCard('Fat. Carteira', GLR.formatCurrency(faturamentoTotal), fatSubtitulo, true, 'rgba(99,102,241,0.12)', '🏆', '#6366f1', comAPI > 0)}
     </div>
 
     <!-- Gráficos principais -->
@@ -208,9 +213,9 @@ Router.register('dashboard', (params, el) => {
         <div class="section-header">
           <div>
             <div class="section-title">Evolução da Carteira</div>
-            <div class="section-subtitle">Faturamento total — últimos 20 meses</div>
+            <div class="section-subtitle">Faturamento total — últimos meses${comAPI > 0 ? ' · dados API' : ' · histórico manual'}</div>
           </div>
-          <span class="badge status-crescimento">+16.4%</span>
+          ${crescMedioAPI !== null ? `<span class="badge ${crescMedioAPI >= 0 ? 'status-crescimento' : 'status-queda'}">${crescMedioAPI >= 0 ? '+' : ''}${crescMedioAPI.toFixed(1)}% vs ant.</span>` : ''}
         </div>
         <div class="chart-wrapper">
           <canvas id="chart-evolucao"></canvas>
@@ -525,7 +530,7 @@ Router.register('diretoria', (params, el) => {
     <!-- KPIs -->
     <div class="kpi-grid">
       ${kpiCard('Total de Clientes', total, `${emCrescimento} em crescimento`, true, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
-      ${kpiCard('Faturamento da Carteira', GLR.formatCurrency(fatTotal), 'soma das projeções', true, 'rgba(16,185,129,0.12)', '🏆', '#10b981')}
+      ${kpiCard('Faturamento da Carteira', GLR.formatCurrency(fatTotal), crescMedio !== 0 ? `${crescMedio >= 0 ? '+' : ''}${crescMedio.toFixed(1)}% vs mês ant.` : 'mês atual', crescMedio >= 0, 'rgba(16,185,129,0.12)', '🏆', '#10b981')}
       ${kpiCard('Receita GLR', receitaGLR>0?GLR.formatCurrency(receitaGLR):'—', 'vendas × valor por venda', true, 'rgba(16,185,129,0.15)', '💰', '#10b981')}
       ${kpiCard('Crescimento Médio', `${crescMedio>=0?'+':''}${crescMedio.toFixed(1)}%`, 'média da carteira', crescMedio>=0, 'rgba(99,102,241,0.12)', '📈', '#6366f1')}
       ${kpiCard('Em Crescimento', emCrescimento, `${Math.round(emCrescimento/total*100)}% da carteira`, true, 'rgba(16,185,129,0.12)', '🚀', '#10b981')}
