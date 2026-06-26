@@ -136,39 +136,46 @@ Router.register('afiliados', async (params, el) => {
           const nicks  = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
           const nome   = nicks[conta.external_id] || tag || conta.nickname || String(conta.external_id);
 
-          // Shopee AMS — tenta shop_performance com datas, depois afil_performance
-          let perf = {}, openCamp = [], afilPerf = [];
-          const startDate = dataInicio.replaceAll('-','');
+          // Shopee AMS — tenta múltiplos endpoints e formatos de data
+          let perf = {}, openCamp = [], afilPerf = [], convReport = [], debug = [];
+          const startDate = dataInicio.replaceAll('-',''); // YYYYMMDD
           const endDate   = dataFim.replaceAll('-','');
 
-          try {
-            const r = await MarketplaceAPI.call('shopee_ams_shop_performance', {
-              shopId, start_date: startDate, end_date: endDate,
-            });
-            perf = r?.data?.response || r?.data?.data || r?.data || {};
-          } catch(e) { console.warn('[AFIL shopee_ams_shop_performance]', e.message); }
+          // Helper para testar endpoint e registrar resultado
+          const tryAMS = async (action, params) => {
+            try {
+              const r = await MarketplaceAPI.call(action, params);
+              const raw = r?.data?.response || r?.data?.data || r?.data || r || {};
+              debug.push({ action, ok: true, raw });
+              return raw;
+            } catch(e) {
+              debug.push({ action, ok: false, erro: e.message });
+              return null;
+            }
+          };
 
-          try {
-            const r = await MarketplaceAPI.call('shopee_ams_open_campaign_performance', {
-              shopId, start_date: startDate, end_date: endDate,
-            });
-            openCamp = r?.data?.response?.campaign_performance_list
-                    || r?.data?.campaign_performance_list
-                    || r?.data?.data
-                    || [];
-          } catch(e) { console.warn('[AFIL shopee_ams_open_campaign_performance]', e.message); }
+          // 1. Performance geral da loja
+          const shopPerf = await tryAMS('shopee_ams_shop_performance', { shopId, start_date: startDate, end_date: endDate });
+          if (shopPerf && typeof shopPerf === 'object' && !Array.isArray(shopPerf)) {
+            perf = shopPerf;
+          }
 
-          try {
-            const r = await MarketplaceAPI.call('shopee_ams_affiliate_performance', {
-              shopId, start_date: startDate, end_date: endDate,
-            });
-            afilPerf = r?.data?.response?.affiliate_performance_list
-                     || r?.data?.affiliate_performance_list
-                     || r?.data?.data
-                     || [];
-          } catch(e) { console.warn('[AFIL shopee_ams_affiliate_performance]', e.message); }
+          // 2. Campanhas open
+          const openR = await tryAMS('shopee_ams_open_campaign_performance', { shopId, start_date: startDate, end_date: endDate });
+          openCamp = openR?.campaign_performance_list || (Array.isArray(openR) ? openR : []);
 
-          resultados.push({ conta: nome, shopId, perf, openCamp, afilPerf });
+          // 3. Performance por afiliado
+          const afilR = await tryAMS('shopee_ams_affiliate_performance', { shopId, start_date: startDate, end_date: endDate });
+          afilPerf = afilR?.affiliate_performance_list || (Array.isArray(afilR) ? afilR : []);
+
+          // 4. Relatório de conversão
+          const convR = await tryAMS('shopee_ams_conversion_report', { shopId, start_date: startDate, end_date: endDate });
+          convReport = Array.isArray(convR) ? convR : (convR?.list || []);
+
+          // Log de debug no console
+          console.log(`[AFIL Shopee ${nome}]`, debug);
+
+          resultados.push({ conta: nome, shopId, perf, openCamp, afilPerf, convReport, debug });
         }
 
         _dadosCache['shopee'] = { plat: 'shopee', resultados };
@@ -272,7 +279,8 @@ Router.register('afiliados', async (params, el) => {
           <div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px;">
             Nenhum dado de afiliados encontrado para esta conta no período.<br>
             <span style="font-size:12px;">Verifique se o programa AMS está ativo na conta Shopee.</span>
-          </div>`}
+          </div>
+          ${r.debug?.length ? `<details style="margin-top:8px;font-size:11px;text-align:left;"><summary style="cursor:pointer;color:var(--text-muted);padding:8px;">🔍 Diagnóstico API</summary><div style="padding:8px 12px;background:var(--surface);border-radius:var(--radius-sm);margin-top:4px;">${r.debug.map(d=>`<div style="margin-bottom:6px;padding:6px;border-left:3px solid ${d.ok?'#10b981':'#ef4444'};"><div style="font-weight:600;color:${d.ok?'#10b981':'#ef4444'};">${d.ok?'✅':'❌'} ${d.action}</div><div style="color:var(--text-muted);font-family:monospace;font-size:10px;word-break:break-all;">${d.ok?JSON.stringify(d.raw).substring(0,300):d.erro}</div></div>`).join('')}</div></details>` : ''}`}
 
           ${r.afilPerf?.length > 0 ? `
           <div style="margin-top:12px;">
