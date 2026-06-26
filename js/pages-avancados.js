@@ -955,9 +955,10 @@ Router.register('projecao', (params, el) => {
       const platMap = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
       const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
 
-      // Remove linhas existentes ligadas a contas vinculadas (serão recriadas)
-      const contaIdsSet = new Set(contasVinc.map(c => c.external_id));
-      projecaoAtiva.plataformas = (projecaoAtiva.plataformas||[]).filter(p => !p.contaId || !contaIdsSet.has(p.contaId));
+      // Remove TODAS as linhas sem contaId (antigas/manuais por plataforma) e
+      // as que têm contaId vinculado (serão recriadas com dados frescos)
+      const contaIdsSet = new Set(contasVinc.map(c => String(c.external_id)));
+      projecaoAtiva.plataformas = (projecaoAtiva.plataformas||[]).filter(p => p.contaId && !contaIdsSet.has(String(p.contaId)));
 
       contasVinc.forEach(c => {
         const mktKey = (c.marketplace||'').toLowerCase();
@@ -1005,8 +1006,8 @@ Router.register('projecao', (params, el) => {
     const isReemb = st => { const s=(st||'').toLowerCase(); return s.includes('cancel')||s.includes('refund')||s.includes('devol')||s==='invalid'||s.includes('return'); };
     const peds = (cache.pedidos||[]).filter(p => {
       if (isReemb(p.status)) return false;
-      if (contaId) return p.contaId === contaId && p.plataforma === platFiltro;
-      return contasCliente.includes(p.contaId) && p.plataforma === platFiltro;
+      if (contaId) return String(p.contaId) === String(contaId) && p.plataforma === platFiltro;
+      return contasCliente.map(String).includes(String(p.contaId)) && p.plataforma === platFiltro;
     });
     const fat = peds.reduce((s,p) => s+(parseFloat(p.valor)||0), 0);
     const qtd = peds.reduce((s,p) => s+(parseInt(p.qtd)||1), 0);
@@ -1680,11 +1681,11 @@ Router.register('projecao', (params, el) => {
         const platMap2 = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
         const nicks2 = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
         const vinculadasAtual = (vinculos[String(cidAtivo)] || []);
-        const contaIdsVinc = new Set(vinculadasAtual.map(c => c.external_id));
-        // Remove linhas antigas ligadas a contas que foram removidas do vínculo
-        projecaoAtiva.plataformas = (projecaoAtiva.plataformas||[]).filter(p => !p.contaId || contaIdsVinc.has(p.contaId));
+        const contaIdsVinc = new Set(vinculadasAtual.map(c => String(c.external_id)));
+        // Remove linhas sem contaId (antigas/manuais) e linhas de contas desvinculadas
+        projecaoAtiva.plataformas = (projecaoAtiva.plataformas||[]).filter(p => p.contaId && contaIdsVinc.has(String(p.contaId)));
         // Adiciona linhas para contas vinculadas que ainda não têm linha
-        const existingIds = new Set((projecaoAtiva.plataformas||[]).map(p => p.contaId).filter(Boolean));
+        const existingIds = new Set((projecaoAtiva.plataformas||[]).map(p => String(p.contaId)).filter(Boolean));
         vinculadasAtual.forEach(c => {
           if (existingIds.has(c.external_id)) return;
           const mktKey = (c.marketplace||'').toLowerCase();
