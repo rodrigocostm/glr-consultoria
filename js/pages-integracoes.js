@@ -48,6 +48,8 @@ Router.register('integracoes', (params, el) => {
         <input id="inp-apikey" class="form-input" type="password"
           value="${apiKey}" placeholder="mc_live_xxxxxxxxxxxxxxxx"
           style="flex:1;min-width:280px;font-family:monospace;">
+        <button onclick="const i=document.getElementById('inp-apikey');i.type=i.type==='password'?'text':'password';this.textContent=i.type==='password'?'👁 Mostrar':'🙈 Ocultar';"
+          style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:8px 12px;cursor:pointer;font-size:12px;white-space:nowrap;">👁 Mostrar</button>
         <button class="btn btn-primary" onclick="salvarApiKey()">Salvar</button>
         <button class="btn btn-secondary" onclick="testarApiKey()">Testar conexão</button>
         <span id="status-apikey" style="font-size:13px;"></span>
