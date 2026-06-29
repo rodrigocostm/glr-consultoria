@@ -15,6 +15,8 @@ let dadosADS    = null; // dados carregados
 let carregando  = false;
 let _aiHistory   = [];
 let _aiCarregando = false;
+let _estoqueProdutos = [];
+let _rankingSnaps = {};
 
 // ─── Helpers ─────────────────────────────────────────────────
 const pad = n => String(n).padStart(2, '0');
@@ -486,9 +488,21 @@ function renderConteudo() {
     <!-- Sugestões de otimização -->
     ${renderOtimizacoes(d)}
 
+    <!-- Estoque & Rompimento -->
+    ${renderEstoque()}
+
+    <!-- Ranqueamento de Mercado -->
+    ${renderRanqueamento()}
+
     <!-- Agente IA -->
     ${renderAgentIA()}
   `;
+
+  // auto-carrega estoque e histórico de ranking
+  setTimeout(() => {
+    window._adsCarregarEstoque(false);
+    _renderRankingHistorico();
+  }, 80);
 }
 
 function kpiCard(titulo, valor, sub, bg, cor) {
@@ -1007,6 +1021,30 @@ ${(d.diario||[]).slice(-14).map(dia => {
 }).join('\n')}
 ` : 'Nenhum dado carregado ainda.';
 
+  const ctxEstoque = _estoqueProdutos.length > 0 ? `
+
+ESTOQUE ATUAL (${_estoqueProdutos.length} produtos):
+${[..._estoqueProdutos].sort((a,b)=>(a.estoque||0)-(b.estoque||0)).slice(0,20).map(p => {
+  const est = p.estoque||0;
+  const flag = est <= 3 ? '🔴 CRÍTICO' : est <= 15 ? '🟡 BAIXO' : '🟢 OK';
+  return `• ${p.nome}: ${est} un. — ${flag}`;
+}).join('\n')}` : '';
+
+  const ctxRanking = (() => {
+    if (!contaAtual) return '';
+    const sk = `glr_rank_${contaAtual.external_id}`;
+    let snaps = {};
+    try { snaps = JSON.parse(localStorage.getItem(sk)||'{}'); } catch {}
+    const kws = Object.keys(snaps);
+    if (!kws.length) return '';
+    return `\n\nRANQUEAMENTO RECENTE:\n` + kws.slice(0,5).map(kw => {
+      const s = snaps[kw];
+      if (!s.posicoes?.length) return `• "${kw}": nenhum produto encontrado no top`;
+      const best = Math.min(...s.posicoes.map(p=>p.pos));
+      return `• "${kw}": melhor posição #${best} (${s.posicoes.length} produto(s) encontrado(s))`;
+    }).join('\n');
+  })();
+
   _aiHistory.push({ role: 'user', content: texto });
 
   try {
@@ -1014,14 +1052,15 @@ ${(d.diario||[]).slice(-14).map(dia => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        system: `Você é um especialista sênior em performance de ADS para marketplaces brasileiros (Shopee, Mercado Livre).
+        system: `Você é um especialista sênior em performance de ADS e estratégia de marketplace para o Brasil (Shopee, Mercado Livre).
 Analise os dados fornecidos e dê recomendações práticas, específicas e acionáveis.
 Seja direto. Use bullet points para listas. Destaque campanhas problemáticas pelo nome.
-Sugira ações concretas: pausar, aumentar orçamento, ajustar meta ROAS, etc.
+Sugira ações concretas: pausar, aumentar orçamento, ajustar meta ROAS, repor estoque crítico, investir em ADS para keywords com baixo ranqueamento, etc.
 Responda em português brasileiro informal mas profissional.
+Quando houver dados de estoque ou ranqueamento, integre-os na análise junto com os dados de ADS.
 
 DADOS ATUAIS DAS CAMPANHAS:
-${ctx}`,
+${ctx}${ctxEstoque}${ctxRanking}`,
         messages: _aiHistory,
       }),
     });
@@ -1050,6 +1089,348 @@ ${ctx}`,
   _aiCarregando = false;
   if (btn) { btn.disabled = false; btn.textContent = 'Enviar'; }
 };
+
+// ─── Estoque ─────────────────────────────────────────────────
+function renderEstoque() {
+  return `
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <h3 style="font-size:14px;font-weight:700;margin:0 0 2px;color:var(--text-primary);">📦 Estoque & Rompimento</h3>
+          <p style="font-size:12px;color:var(--text-secondary);margin:0;">Produtos com estoque crítico ou em risco de ruptura</p>
+        </div>
+        <button onclick="window._adsCarregarEstoque(true)" style="font-size:11px;color:var(--text-secondary);background:var(--bg-base);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;">🔄 Atualizar</button>
+      </div>
+      <div id="ads-estoque-body">
+        <div style="text-align:center;padding:32px;color:var(--text-secondary);font-size:13px;">Carregando estoque...</div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Ranqueamento ─────────────────────────────────────────────
+function renderRanqueamento() {
+  return `
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
+      <div style="margin-bottom:16px;">
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 2px;color:var(--text-primary);">🔍 Ranqueamento de Mercado</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin:0;">Pesquise uma palavra-chave e veja onde seus produtos aparecem nos resultados do marketplace</p>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <input id="ads-rank-input" type="text" placeholder="Ex: tênis masculino, fone bluetooth..."
+          onkeydown="if(event.key==='Enter'){window._adsBuscarRanking();}"
+          style="flex:1;padding:10px 16px;border:1px solid var(--border);border-radius:99px;background:var(--bg-base);color:var(--text-primary);font-size:13px;outline:none;">
+        <button onclick="window._adsBuscarRanking()"
+          style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;">Pesquisar</button>
+      </div>
+      <div id="ads-rank-body">
+        <div style="text-align:center;padding:24px;color:var(--text-secondary);font-size:12px;">
+          Pesquise palavras-chave que seus clientes usam para encontrar seus produtos
+        </div>
+      </div>
+      <div id="ads-rank-historico" style="margin-top:12px;"></div>
+    </div>
+  `;
+}
+
+// ─── Estoque handlers ─────────────────────────────────────────
+window._adsCarregarEstoque = async function(forcar = false) {
+  if (!contaAtual) return;
+  const body = document.getElementById('ads-estoque-body');
+  if (!body) return;
+
+  const ck = `glr_estoque_${contaAtual.external_id}`;
+  if (!forcar) {
+    try {
+      const raw = localStorage.getItem(ck);
+      if (raw) {
+        const c = JSON.parse(raw);
+        if (Date.now() - c.at < 30 * 60 * 1000) {
+          _estoqueProdutos = c.produtos;
+          _renderEstoqueTabela();
+          return;
+        }
+      }
+    } catch {}
+  }
+
+  body.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-secondary);">⟳ Carregando estoque...</div>`;
+
+  try {
+    let produtos = [];
+    const mkt = contaAtual.marketplace;
+    const contaId = String(contaAtual.external_id);
+
+    if (mkt === 'shopee') {
+      const mine = await MarketplaceAPI.call('shopee_list_items', { shopId: contaId, item_status: 'NORMAL', page_size: 100 });
+      const items = mine?.response?.item || mine?.item || [];
+      if (items.length > 0) {
+        const itemIds = items.map(i => i.item_id).slice(0, 50);
+        try {
+          const detail = await MarketplaceAPI.call('shopee_get_items_batch', { shopId: contaId, item_id_list: itemIds });
+          const dl = detail?.response?.item_list || [];
+          produtos = dl.map(i => ({
+            id: i.item_id,
+            nome: i.item_name,
+            estoque: i.stock_info_v2?.summary_info?.total_available_stock ?? i.stock_info?.current_stock ?? 0,
+            preco: (i.price_info?.[0]?.current_price || 0) / 100000,
+          }));
+        } catch {
+          produtos = items.map(i => ({ id: i.item_id, nome: i.item_name, estoque: 0, preco: 0 }));
+        }
+      }
+    } else {
+      // ML: tenta low_stock primeiro, depois lista geral
+      const seen = new Set();
+      try {
+        const ls = await MarketplaceAPI.call('low_stock_items', { contaId, limit: 50 });
+        (ls?.results || ls?.data || []).forEach(i => {
+          seen.add(String(i.id));
+          produtos.push({ id: i.id, nome: i.title, estoque: i.available_quantity ?? 0, preco: i.price ?? 0 });
+        });
+      } catch {}
+      try {
+        const all = await MarketplaceAPI.call('list_items', { contaId, status: 'active', limit: 100 });
+        (all?.results || all?.data || []).forEach(i => {
+          if (!seen.has(String(i.id))) {
+            produtos.push({ id: i.id, nome: i.title, estoque: i.available_quantity ?? 0, preco: i.price ?? 0 });
+          }
+        });
+      } catch {}
+    }
+
+    _estoqueProdutos = produtos;
+    try { localStorage.setItem(ck, JSON.stringify({ at: Date.now(), produtos })); } catch {}
+    _renderEstoqueTabela();
+  } catch(e) {
+    if (body) body.innerHTML = `<div style="color:#dc2626;font-size:12px;padding:12px;">❌ Erro: ${e.message}</div>`;
+  }
+};
+
+function _renderEstoqueTabela() {
+  const body = document.getElementById('ads-estoque-body');
+  if (!body) return;
+  const produtos = _estoqueProdutos;
+  if (!produtos || produtos.length === 0) {
+    body.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-secondary);font-size:12px;">Nenhum produto encontrado</div>`;
+    return;
+  }
+
+  const sorted = [...produtos].sort((a, b) => (a.estoque||0) - (b.estoque||0));
+  const criticos = sorted.filter(p => (p.estoque||0) <= 3);
+  const baixos   = sorted.filter(p => (p.estoque||0) > 3 && (p.estoque||0) <= 15);
+  const ok       = sorted.filter(p => (p.estoque||0) > 15);
+
+  const row = p => {
+    const est = p.estoque || 0;
+    const cor = est <= 3 ? '#dc2626' : est <= 15 ? '#d97706' : '#16a34a';
+    const bg  = est <= 3 ? '#fef2f2' : est <= 15 ? '#fffbeb' : '#f0fdf4';
+    const ico = est <= 3 ? '🔴' : est <= 15 ? '🟡' : '🟢';
+    const label = est <= 3 ? '<span style="color:#dc2626;font-weight:700;">CRÍTICO</span>' : est <= 15 ? '<span style="color:#d97706;font-weight:700;">BAIXO</span>' : '<span style="color:#16a34a;">OK</span>';
+    return `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:9px 12px;font-size:12px;color:var(--text-primary);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.nome}</td>
+      <td style="padding:9px 12px;text-align:center;"><span style="background:${bg};color:${cor};border-radius:99px;padding:3px 10px;font-size:11px;font-weight:700;">${ico} ${est} un.</span></td>
+      <td style="padding:9px 12px;text-align:center;font-size:11px;">${label}</td>
+      <td style="padding:9px 12px;text-align:right;font-size:12px;color:var(--text-secondary);">${p.preco > 0 ? p.preco.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '—'}</td>
+    </tr>`;
+  };
+
+  const resumo = [
+    criticos.length ? `<span style="background:#fef2f2;color:#dc2626;border-radius:99px;padding:3px 12px;font-size:11px;font-weight:700;">🔴 ${criticos.length} crítico(s)</span>` : '',
+    baixos.length   ? `<span style="background:#fffbeb;color:#d97706;border-radius:99px;padding:3px 12px;font-size:11px;font-weight:700;">🟡 ${baixos.length} baixo(s)</span>` : '',
+    ok.length       ? `<span style="background:#f0fdf4;color:#16a34a;border-radius:99px;padding:3px 12px;font-size:11px;font-weight:700;">🟢 ${ok.length} OK</span>` : '',
+  ].filter(Boolean).join(' ');
+
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">${resumo}</div>
+    ${criticos.length ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:12px;color:#dc2626;font-weight:600;">🚨 ${criticos.length} produto(s) com estoque CRÍTICO (≤3 unidades) — risco imediato de ruptura!</div>` : ''}
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="background:var(--bg-base);border-bottom:2px solid var(--border);">
+          <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Produto</th>
+          <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Estoque</th>
+          <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Status</th>
+          <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Preço</th>
+        </tr></thead>
+        <tbody>${sorted.map(row).join('')}</tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--text-secondary);">Total: ${produtos.length} produtos • 🔴 ≤3 un. (crítico) • 🟡 4-15 un. (baixo) • 🟢 >15 un. (OK)</div>
+  `;
+}
+
+// ─── Ranking handlers ─────────────────────────────────────────
+window._adsBuscarRanking = async function() {
+  const input = document.getElementById('ads-rank-input');
+  const body  = document.getElementById('ads-rank-body');
+  if (!input || !body || !contaAtual) return;
+
+  const keyword = input.value.trim();
+  if (!keyword) return;
+
+  body.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-secondary);">🔍 Pesquisando "<strong>${keyword}</strong>" no marketplace...</div>`;
+
+  try {
+    const mkt = contaAtual.marketplace;
+    const contaId = String(contaAtual.external_id);
+    const meusIds = new Set();
+    const meusNomes = {};
+
+    if (mkt === 'shopee') {
+      try {
+        const mine = await MarketplaceAPI.call('shopee_list_items', { shopId: contaId, item_status: 'NORMAL', page_size: 100 });
+        (mine?.response?.item || mine?.item || []).forEach(i => {
+          meusIds.add(String(i.item_id));
+          meusNomes[String(i.item_id)] = i.item_name;
+        });
+      } catch {}
+
+      const result = await MarketplaceAPI.call('shopee_search_items', { shopId: contaId, keyword, limit: 50 });
+      const items = result?.response?.items || result?.items || result?.data || [];
+
+      const posicoes = [];
+      items.forEach((item, idx) => {
+        const itemId = String(item.item_id || item.itemid || item.id || '');
+        const shopId = String(item.shop_id || item.shopid || '');
+        if (shopId === contaId || meusIds.has(itemId)) {
+          posicoes.push({ pos: idx + 1, id: itemId, nome: meusNomes[itemId] || item.name || item.item_name || itemId, preco: (item.price || 0) / 100000 });
+        }
+      });
+
+      _salvarRankingSnap(keyword, posicoes);
+      _renderRankingResultado(keyword, items.length, posicoes);
+
+    } else {
+      try {
+        const mine = await MarketplaceAPI.call('list_items', { contaId, status: 'active', limit: 200 });
+        (mine?.results || mine?.data || []).forEach(i => {
+          meusIds.add(String(i.id));
+          meusNomes[String(i.id)] = i.title;
+        });
+      } catch {}
+
+      const result = await MarketplaceAPI.call('search', { q: keyword, marketplace: 'ml', contaId, limit: 50 });
+      const items = result?.results || result?.data || result?.items || [];
+
+      const posicoes = [];
+      items.forEach((item, idx) => {
+        const id = String(item.id || item.item_id || '');
+        if (meusIds.has(id)) {
+          posicoes.push({ pos: idx + 1, id, nome: meusNomes[id] || item.title || id, preco: item.price || 0 });
+        }
+      });
+
+      _salvarRankingSnap(keyword, posicoes);
+      _renderRankingResultado(keyword, items.length, posicoes);
+    }
+  } catch(e) {
+    body.innerHTML = `<div style="color:#dc2626;font-size:12px;padding:12px;">❌ Erro ao pesquisar: ${e.message}</div>`;
+  }
+};
+
+function _salvarRankingSnap(keyword, posicoes) {
+  if (!contaAtual) return;
+  const sk = `glr_rank_${contaAtual.external_id}`;
+  try {
+    const snaps = JSON.parse(localStorage.getItem(sk) || '{}');
+    const prev = snaps[keyword] ? { ts: snaps[keyword].ts, posicoes: snaps[keyword].posicoes } : null;
+    snaps[keyword] = { ts: Date.now(), posicoes, prev };
+    localStorage.setItem(sk, JSON.stringify(snaps));
+    _rankingSnaps = snaps;
+  } catch {}
+}
+
+function _renderRankingResultado(keyword, total, posicoes) {
+  const body = document.getElementById('ads-rank-body');
+  if (!body) return;
+
+  if (posicoes.length === 0) {
+    body.innerHTML = `
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;font-size:13px;color:#92400e;">
+        <strong>Nenhum produto seu encontrado</strong> nos primeiros ${total} resultados para "<strong>${keyword}</strong>".<br>
+        <span style="font-size:12px;display:block;margin-top:6px;">Isso pode indicar oportunidade de melhoria nos títulos ou necessidade de aumentar investimento em ADS para esta keyword.</span>
+      </div>`;
+    _renderRankingHistorico();
+    return;
+  }
+
+  const sk = `glr_rank_${contaAtual?.external_id}`;
+  let prevSnap = null;
+  try { prevSnap = JSON.parse(localStorage.getItem(sk) || '{}')?.[keyword]?.prev; } catch {}
+
+  const rows = posicoes.map(p => {
+    let delta = '';
+    if (prevSnap?.posicoes) {
+      const ant = prevSnap.posicoes.find(x => String(x.id) === String(p.id));
+      if (ant) {
+        const d = ant.pos - p.pos;
+        delta = d > 0 ? `<span style="color:#16a34a;font-size:11px;font-weight:700;">▲ +${d}</span>`
+               : d < 0 ? `<span style="color:#dc2626;font-size:11px;font-weight:700;">▼ ${d}</span>`
+               : `<span style="color:var(--text-secondary);font-size:11px;">—</span>`;
+      } else {
+        delta = `<span style="color:#9333ea;font-size:11px;font-weight:700;">✨ Novo</span>`;
+      }
+    }
+    const corPos = p.pos <= 3 ? '#16a34a' : p.pos <= 10 ? '#d97706' : 'var(--text-secondary)';
+    return `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:10px 12px;text-align:center;"><span style="font-size:18px;font-weight:700;color:${corPos};">#${p.pos}</span></td>
+      <td style="padding:10px 12px;font-size:12px;color:var(--text-primary);">${p.nome || p.id}</td>
+      <td style="padding:10px 12px;text-align:center;">${delta}</td>
+      <td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text-secondary);">${p.preco > 0 ? p.preco.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  const bestPos = Math.min(...posicoes.map(p => p.pos));
+  const alerta = bestPos <= 3
+    ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#15803d;margin-bottom:12px;font-weight:600;">✅ Excelente! Seu melhor produto está na posição #${bestPos} para "<strong>${keyword}</strong>"</div>`
+    : bestPos <= 10
+    ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;font-size:12px;color:#92400e;margin-bottom:12px;">⚠️ Melhor posição: #${bestPos}. Aumentar lance de ADS pode ajudar a chegar ao Top 3.</div>`
+    : `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:12px;color:#dc2626;margin-bottom:12px;font-weight:600;">🔴 Melhor posição: #${bestPos}. Revise títulos e invista em ADS para esta keyword.</div>`;
+
+  const comparativo = prevSnap ? `<span style="font-size:10px;color:var(--text-secondary);margin-left:8px;">vs pesquisa de ${new Date(prevSnap.ts).toLocaleDateString('pt-BR')}</span>` : '';
+
+  body.innerHTML = `
+    ${alerta}
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">
+      <strong>${posicoes.length}</strong> produto(s) seus nos primeiros <strong>${total}</strong> resultados para "<strong>${keyword}</strong>"${comparativo}
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="background:var(--bg-base);border-bottom:2px solid var(--border);">
+          <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--text-secondary);">POSIÇÃO</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text-secondary);">PRODUTO</th>
+          <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--text-secondary);">VARIAÇÃO</th>
+          <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:700;color:var(--text-secondary);">PREÇO</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  _renderRankingHistorico();
+}
+
+function _renderRankingHistorico() {
+  const el = document.getElementById('ads-rank-historico');
+  if (!el || !contaAtual) return;
+  const sk = `glr_rank_${contaAtual.external_id}`;
+  let snaps = {};
+  try { snaps = JSON.parse(localStorage.getItem(sk) || '{}'); } catch {}
+  const kws = Object.keys(snaps);
+  if (!kws.length) return;
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px;">Pesquisas Salvas</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+      ${kws.map(kw => {
+        const s = snaps[kw];
+        const best = s.posicoes?.length ? Math.min(...s.posicoes.map(p => p.pos)) : null;
+        const badge = best ? `<span style="font-size:10px;opacity:.7;margin-left:3px;">#${best}</span>` : '';
+        return `<button onclick="document.getElementById('ads-rank-input').value='${kw.replace(/'/g,'')}';window._adsBuscarRanking();"
+          style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:4px 10px;cursor:pointer;color:var(--text-secondary);display:flex;align-items:center;gap:2px;">
+          🔍 ${kw}${badge}
+        </button>`;
+      }).join('')}
+    </div>`;
+}
 
 // ─── Registro da rota ─────────────────────────────────────────
 if (typeof Router !== 'undefined') {
