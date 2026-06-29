@@ -501,13 +501,10 @@ function renderConteudo() {
     ${renderAgentIA()}
   `;
 
-  // auto-carrega estoque, ranking e dispara análise IA
+  // auto-carrega estoque e histórico de ranking
   setTimeout(() => {
     window._adsCarregarEstoque(false);
     _renderRankingHistorico();
-    if (dadosADS?.resumo?.investimento > 0) {
-      window._adsAutoAnalisar();
-    }
   }, 300);
 }
 
