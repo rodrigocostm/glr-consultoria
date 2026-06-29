@@ -837,7 +837,7 @@ function renderAgentIA() {
           <div style="font-size:11px;color:rgba(255,255,255,.75);">Especialista sênior • Shopee & Mercado Livre • Análise em tempo real</div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button onclick="window._adsAutoAnalisar()" style="font-size:11px;font-weight:600;color:#fff;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:5px 12px;cursor:pointer;">⚡ Auto-análise</button>
+          <button onclick="window._adsAutoAnalisar()" style="font-size:11px;font-weight:600;color:#fff;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:5px 12px;cursor:pointer;">⚡ Analisar</button>
           <button onclick="window._adsNovaConversa()" style="font-size:11px;color:rgba(255,255,255,.8);background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:5px 10px;cursor:pointer;">🔄 Nova</button>
         </div>
       </div>
