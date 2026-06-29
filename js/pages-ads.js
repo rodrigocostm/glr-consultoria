@@ -501,11 +501,14 @@ function renderConteudo() {
     ${renderAgentIA()}
   `;
 
-  // auto-carrega estoque e histórico de ranking
+  // auto-carrega estoque, ranking e dispara análise IA
   setTimeout(() => {
     window._adsCarregarEstoque(false);
     _renderRankingHistorico();
-  }, 80);
+    if (dadosADS?.resumo?.investimento > 0) {
+      window._adsAutoAnalisar();
+    }
+  }, 300);
 }
 
 function kpiCard(titulo, valor, sub, bg, cor) {
@@ -803,42 +806,77 @@ function renderTendencias(d) {
 }
 
 // ─── Agente IA ────────────────────────────────────────────────
+function _mdToHtml(text) {
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/^### (.+)$/gm,'<div style="font-size:13px;font-weight:700;color:var(--text-primary);margin:10px 0 4px;">$1</div>')
+    .replace(/^## (.+)$/gm,'<div style="font-size:14px;font-weight:700;color:var(--text-primary);margin:12px 0 6px;">$1</div>')
+    .replace(/^# (.+)$/gm,'<div style="font-size:15px;font-weight:700;color:var(--text-primary);margin:12px 0 6px;">$1</div>')
+    .replace(/^[-•] (.+)$/gm,'<div style="display:flex;gap:6px;margin:3px 0;"><span style="color:var(--primary);flex-shrink:0;">•</span><span>$1</span></div>')
+    .replace(/^\d+\. (.+)$/gm,'<div style="display:flex;gap:6px;margin:3px 0;"><span style="color:var(--primary);flex-shrink:0;font-weight:600;">$1</span></div>')
+    .replace(/`(.+?)`/g,'<code style="background:var(--bg-base);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-family:monospace;font-size:12px;">$1</code>')
+    .replace(/\n\n/g,'<br><br>')
+    .replace(/\n/g,'<br>');
+}
+
+const _WORKFLOWS = [
+  { icon:'📊', label:'Diagnóstico Completo',   msg:'Faça um diagnóstico completo das campanhas: identifique os 3 principais problemas, causa raiz de cada um e plano de ação priorizado com ações para hoje.' },
+  { icon:'📋', label:'Relatório para Cliente',  msg:'Gere um relatório executivo desta conta para apresentar ao cliente: resumo de performance, pontos positivos, pontos de melhoria e próximos passos.' },
+  { icon:'📅', label:'Plano Semanal',           msg:'Monte um plano de otimização semanal: o que fazer hoje, amanhã e nos próximos 7 dias para maximizar ROAS e reduzir desperdício de budget.' },
+  { icon:'🎯', label:'Auditoria de ROAS',       msg:'Audite o ROAS de cada campanha: quais estão acima da meta, quais estão abaixo, o que está causando a diferença e como ajustar os lances.' },
+  { icon:'💰', label:'Distribuição de Budget',  msg:'Analise a distribuição de orçamento entre as campanhas: onde estamos desperdiçando, onde falta budget e qual a alocação ideal para maximizar retorno.' },
+  { icon:'🚀', label:'Como Escalar',            msg:'Quais campanhas têm potencial de escala? Onde podemos aumentar investimento com segurança mantendo ROAS positivo? Crie um plano de escala.' },
+];
+
 function renderAgentIA() {
   return `
-    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;" id="ads-ia-section">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px;" id="ads-ia-section">
+      <!-- Header -->
+      <div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <h3 style="font-size:14px;font-weight:700;margin:0 0 2px;color:var(--text-primary);">🤖 Agente IA — Consultoria de ADS</h3>
-          <p style="font-size:12px;color:var(--text-secondary);margin:0;">Análise inteligente com dados reais das suas campanhas</p>
+          <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:2px;">🤖 Consultor IA de ADS</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.75);">Especialista sênior • Shopee & Mercado Livre • Análise em tempo real</div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button onclick="window._adsNovaConversa()" style="font-size:11px;color:var(--text-secondary);background:var(--bg-base);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;">🔄 Nova</button>
+          <button onclick="window._adsAutoAnalisar()" style="font-size:11px;font-weight:600;color:#fff;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:5px 12px;cursor:pointer;">⚡ Auto-análise</button>
+          <button onclick="window._adsNovaConversa()" style="font-size:11px;color:rgba(255,255,255,.8);background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:5px 10px;cursor:pointer;">🔄 Nova</button>
         </div>
       </div>
 
-      <!-- Área de mensagens -->
-      <div id="ads-ia-msgs" style="background:var(--bg-base);border:1px solid var(--border);border-radius:10px;padding:16px;min-height:160px;max-height:420px;overflow-y:auto;margin-bottom:12px;display:flex;flex-direction:column;gap:10px;">
-        <div style="text-align:center;color:var(--text-secondary);padding:24px 0;" id="ads-ia-placeholder">
-          <div style="font-size:32px;margin-bottom:8px;">🤖</div>
-          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Agente especialista em ADS pronto</div>
-          <div style="font-size:12px;">Clique em uma sugestão ou escreva sua pergunta</div>
+      <div style="padding:20px;">
+        <!-- Workflows -->
+        <div style="margin-bottom:14px;">
+          <div style="font-size:10px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Workflows de Consultoria</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${_WORKFLOWS.map(w => `
+              <button onclick="window._adsEnviarMensagem('${w.msg.replace(/'/g,"\\'")}')"
+                style="font-size:11px;font-weight:600;background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:6px 12px;cursor:pointer;color:var(--text-primary);display:flex;align-items:center;gap:5px;transition:all .15s;"
+                onmouseover="this.style.borderColor='#6366f1';this.style.color='#6366f1';"
+                onmouseout="this.style.borderColor='';this.style.color='';">
+                ${w.icon} ${w.label}
+              </button>`).join('')}
+          </div>
         </div>
-      </div>
 
-      <!-- Perguntas rápidas -->
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
-        ${['📊 Analisar tudo agora', '📉 Quais campanhas pausar?', '📈 Como aumentar ROAS?', '💰 Onde investir mais?', '🔍 Por que os cliques caíram?']
-          .map(q => `<button onclick="window._adsEnviarMensagem('${q.replace(/'/g, '')}')"
-            style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">${q}</button>`).join('')}
-      </div>
+        <!-- Área de mensagens -->
+        <div id="ads-ia-msgs" style="background:var(--bg-base);border:1px solid var(--border);border-radius:10px;padding:16px;min-height:200px;max-height:500px;overflow-y:auto;margin-bottom:12px;display:flex;flex-direction:column;gap:12px;">
+          <div style="text-align:center;color:var(--text-secondary);padding:32px 0;" id="ads-ia-placeholder">
+            <div style="font-size:40px;margin-bottom:10px;">🤖</div>
+            <div style="font-size:14px;font-weight:700;margin-bottom:6px;color:var(--text-primary);">Consultor especialista pronto</div>
+            <div style="font-size:12px;line-height:1.6;">Clique em um workflow acima para uma análise estruturada<br>ou faça uma pergunta específica sobre as campanhas</div>
+          </div>
+        </div>
 
-      <!-- Input -->
-      <div style="display:flex;gap:8px;">
-        <input id="ads-ia-input" type="text" placeholder="Pergunte sobre suas campanhas..."
-          onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();window._adsEnviarMensagem();}"
-          style="flex:1;padding:10px 16px;border:1px solid var(--border);border-radius:99px;background:var(--bg-base);color:var(--text-primary);font-size:13px;outline:none;">
-        <button onclick="window._adsEnviarMensagem()" id="ads-ia-btn"
-          style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:10px 22px;font-size:13px;font-weight:600;cursor:pointer;">Enviar</button>
+        <!-- Input -->
+        <div style="display:flex;gap:8px;">
+          <input id="ads-ia-input" type="text" placeholder="Ex: Por que o ROAS caiu? Qual campanha pausar? Como reduzir ACoS?"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window._adsEnviarMensagem();}"
+            style="flex:1;padding:11px 16px;border:1px solid var(--border);border-radius:99px;background:var(--bg-base);color:var(--text-primary);font-size:13px;outline:none;">
+          <button onclick="window._adsEnviarMensagem()" id="ads-ia-btn"
+            style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:99px;padding:11px 24px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Enviar</button>
+        </div>
       </div>
     </div>
   `;
@@ -955,10 +993,15 @@ window._adsNovaConversa = function() {
   _aiHistory = [];
   const msgs = document.getElementById('ads-ia-msgs');
   if (msgs) msgs.innerHTML = `
-    <div style="text-align:center;color:var(--text-secondary);padding:24px 0;" id="ads-ia-placeholder">
-      <div style="font-size:32px;margin-bottom:8px;">🤖</div>
-      <div style="font-size:13px;font-weight:600;">Nova conversa iniciada</div>
+    <div style="text-align:center;color:var(--text-secondary);padding:32px 0;" id="ads-ia-placeholder">
+      <div style="font-size:40px;margin-bottom:10px;">🤖</div>
+      <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">Nova conversa iniciada</div>
+      <div style="font-size:12px;">Escolha um workflow ou faça sua pergunta</div>
     </div>`;
+};
+
+window._adsAutoAnalisar = function() {
+  window._adsEnviarMensagem('Faça um diagnóstico completo das campanhas: identifique os 3 principais problemas, causa raiz de cada um e plano de ação priorizado com ações para hoje.');
 };
 
 window._adsEnviarMensagem = async function(msgPredef) {
@@ -976,19 +1019,19 @@ window._adsEnviarMensagem = async function(msgPredef) {
   document.getElementById('ads-ia-placeholder')?.remove();
 
   _aiCarregando = true;
-  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  if (btn) { btn.disabled = true; btn.style.opacity = '.6'; btn.textContent = '⟳ Analisando...'; }
 
   // Bolha usuário
   const divU = document.createElement('div');
   divU.style.cssText = 'display:flex;justify-content:flex-end;';
-  divU.innerHTML = `<div style="background:var(--primary);color:#fff;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:80%;font-size:13px;line-height:1.5;">${texto}</div>`;
+  divU.innerHTML = `<div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:85%;font-size:13px;line-height:1.5;">${texto}</div>`;
   msgs.appendChild(divU);
   msgs.scrollTop = msgs.scrollHeight;
 
   // Indicador digitando
   const divT = document.createElement('div');
   divT.id = 'ads-ia-typing';
-  divT.innerHTML = `<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px 12px 12px 0;padding:10px 14px;font-size:13px;color:var(--text-secondary);display:inline-block;">🤖 Analisando dados...</div>`;
+  divT.innerHTML = `<div style="background:var(--bg-surface);border:1px solid #6366f133;border-radius:0 12px 12px 12px;padding:12px 16px;font-size:13px;color:var(--text-secondary);display:inline-flex;align-items:center;gap:8px;"><span style="animation:spin 1s linear infinite;display:inline-block;">⟳</span> Consultor IA analisando dados...</div>`;
   msgs.appendChild(divT);
   msgs.scrollTop = msgs.scrollHeight;
 
@@ -1055,14 +1098,38 @@ ${[..._estoqueProdutos].sort((a,b)=>(a.estoque||0)-(b.estoque||0)).slice(0,20).m
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        system: `Você é um especialista sênior em performance de ADS e estratégia de marketplace para o Brasil (Shopee, Mercado Livre).
-Analise os dados fornecidos e dê recomendações práticas, específicas e acionáveis.
-Seja direto. Use bullet points para listas. Destaque campanhas problemáticas pelo nome.
-Sugira ações concretas: pausar, aumentar orçamento, ajustar meta ROAS, repor estoque crítico, investir em ADS para keywords com baixo ranqueamento, etc.
-Responda em português brasileiro informal mas profissional.
-Quando houver dados de estoque ou ranqueamento, integre-os na análise junto com os dados de ADS.
+        system: `Você é um consultor sênior especializado em performance de ADS para marketplaces brasileiros, com expertise profunda em Shopee e Mercado Livre. Você atua como parceiro estratégico de uma agência de consultoria de ADS que precisa escalar atendimentos com qualidade.
 
-DADOS ATUAIS DAS CAMPANHAS:
+## SUA METODOLOGIA
+Para cada análise, siga esta estrutura:
+1. **Diagnóstico rápido** — top 3 problemas ou oportunidades identificados nos dados
+2. **Causa raiz** — por que cada problema existe (não apenas o sintoma)
+3. **Plano de ação** — ações específicas em ordem de prioridade (🔴 urgente hoje / 🟡 esta semana / 🟢 próximo mês)
+4. **Impacto esperado** — estime o resultado de cada ação em % ou R$
+
+## BENCHMARKS QUE VOCÊ USA
+- ROAS ideal Shopee: ≥3x (bom), ≥5x (excelente)
+- ROAS ideal ML: ≥4x (bom), ≥6x (excelente)
+- ACoS ideal: <30% (bom), <20% (excelente)
+- CTR Shopee: >0.5% (bom), >1% (excelente)
+- CTR ML: >1% (bom), >2% (excelente)
+- Budget diário: nunca deixar campanha parar por saldo
+
+## SEU CONHECIMENTO TÉCNICO
+**Shopee ADS:** campanhas automáticas vs manuais, meta ROAS (roi_target), lances por keyword, Shopee Ads Fácil, GMS, campanhas de descoberta vs conversão, gestão de saldo, pausar em horários de baixo retorno
+
+**Mercado Livre ADS:** Product Ads (CPC), estratégias PROFITABILITY vs VOLUME, catálogo e buybox, automações de lance, campanhas por categoria
+
+**Contexto BR:** sazonalidade (Black Friday nov, Dia das Mães mai, Namorados jun, Natal dez), comportamento do consumidor, categorias de alta concorrência, precificação competitiva
+
+## FORMATO DE RESPOSTA
+- Use **negrito** para destacar números e campanhas por nome
+- Use bullet points (•) para listas de ações
+- Use ### para separar seções quando a resposta for longa
+- Seja direto e prático — o analista precisa sair da leitura com ações claras
+- Nunca use linguagem genérica. Sempre cite campanhas, números e percentuais específicos dos dados fornecidos
+
+DADOS ATUAIS:
 ${ctx}${ctxEstoque}${ctxRanking}`,
         messages: _aiHistory,
       }),
@@ -1077,20 +1144,28 @@ ${ctx}${ctxEstoque}${ctxRanking}`,
 
     const divR = document.createElement('div');
     divR.style.cssText = 'display:flex;justify-content:flex-start;';
-    divR.innerHTML = `<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px 12px 12px 0;padding:12px 16px;max-width:90%;font-size:13px;color:var(--text-primary);line-height:1.6;white-space:pre-wrap;">${resposta}</div>`;
+    divR.innerHTML = `
+      <div style="background:var(--bg-surface);border:1px solid #6366f122;border-radius:0 12px 12px 12px;padding:14px 18px;max-width:92%;font-size:13px;color:var(--text-primary);line-height:1.7;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);">
+          <span style="font-size:16px;">🤖</span>
+          <span style="font-size:11px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:.5px;">Consultor IA</span>
+          <span style="font-size:10px;color:var(--text-secondary);margin-left:auto;">${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
+        </div>
+        <div>${_mdToHtml(resposta)}</div>
+      </div>`;
     msgs.appendChild(divR);
     msgs.scrollTop = msgs.scrollHeight;
 
   } catch(e) {
     document.getElementById('ads-ia-typing')?.remove();
     const divE = document.createElement('div');
-    divE.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 14px;font-size:12px;color:#dc2626;">❌ Erro: ${e.message}${e.message.includes('401') ? ' — verifique sua API Key' : ''}</div>`;
+    divE.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 16px;font-size:12px;color:#dc2626;">❌ Erro ao conectar com o Consultor IA: ${e.message}${e.message.includes('401') ? ' — verifique a API Key do Claude nas configurações do Vercel' : ''}</div>`;
     msgs.appendChild(divE);
     msgs.scrollTop = msgs.scrollHeight;
   }
 
   _aiCarregando = false;
-  if (btn) { btn.disabled = false; btn.textContent = 'Enviar'; }
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = 'Enviar'; }
 };
 
 // ─── Estoque ─────────────────────────────────────────────────
