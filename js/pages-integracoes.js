@@ -120,10 +120,19 @@ Router.register('integracoes', (params, el) => {
     st.textContent = '⏳ Testando...';
     try {
       const r = await MarketplaceAPI.call('credits_status', {}, key);
-      const d = r.data || {};
+      const d = r?.data || r || {};
+      const plano   = d.plan || d.plan_name || d.subscription || d.tier || d.type || '—';
+      const creditos = d.credits ?? d.credit ?? d.balance ?? d.remaining ?? '—';
+      const modulos  = d.modules || d.features || d.addons || null;
+      const adsAtivo = modulos
+        ? (Array.isArray(modulos) ? modulos.some(m => /ads/i.test(String(m))) : /ads/i.test(JSON.stringify(modulos)))
+        : null;
       st.style.color = '#10b981';
       st.textContent = '✓ Conectado!';
-      cr.innerHTML = `Plano: <strong>${d.plan || '—'}</strong> · Créditos: <strong>${d.credits ?? '—'}</strong>`;
+      cr.innerHTML = `Plano: <strong>${plano}</strong> · Créditos: <strong>${creditos}</strong>`
+        + (adsAtivo === true  ? ' · <span style="color:#16a34a;font-weight:700;">✅ Módulo ADS ativo</span>' : '')
+        + (adsAtivo === false ? ' · <span style="color:#dc2626;font-weight:700;">❌ Módulo ADS inativo</span>' : '')
+        + `<details style="margin-top:6px;font-size:11px;color:var(--text-muted);cursor:pointer;"><summary>Ver resposta bruta</summary><pre style="font-size:10px;overflow:auto;max-height:120px;">${JSON.stringify(d, null, 2)}</pre></details>`;
       localStorage.setItem('glr_mc_apikey', key);
     } catch(e) {
       st.style.color = '#ef4444';
