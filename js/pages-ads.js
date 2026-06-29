@@ -346,7 +346,10 @@ function renderShell() {
     buscarDados(false);
   });
 
-  window._adsAtualizar = () => buscarDados(true);
+  window._adsAtualizar = () => {
+    try { Object.keys(localStorage).filter(k => k.startsWith(ADS_CACHE_KEY)).forEach(k => localStorage.removeItem(k)); } catch {}
+    buscarDados(true);
+  };
 }
 
 async function carregarContas() {
