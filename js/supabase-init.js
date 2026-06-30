@@ -170,8 +170,18 @@ window.fazerLogin = async function() {
   await sincronizarDoSupabase();
   document.getElementById('glr-login-overlay')?.remove();
   ativarRealtime();
-  atualizarSidebarUsuario();
 
+  // Detecta se é cliente do portal ou admin GLR
+  const portalCfg = _detectarPortalCliente(email);
+  if (portalCfg) {
+    // Cliente do portal — mostra apenas páginas permitidas
+    atualizarSidebarUsuario();
+    if (typeof window._initPortalCliente === 'function') window._initPortalCliente(portalCfg);
+    return;
+  }
+
+  // Admin normal
+  atualizarSidebarUsuario();
   if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();
   if (typeof Router !== 'undefined' && typeof Router.resolve === 'function') Router.resolve();
   if (typeof atualizarBadges === 'function') atualizarBadges();
@@ -215,5 +225,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Já está logado — sincroniza e inicia
   await sincronizarDoSupabase();
   ativarRealtime();
+
+  const userEmail = session.user?.email || '';
+  const portalCfg = _detectarPortalCliente(userEmail);
+  if (portalCfg) {
+    atualizarSidebarUsuario();
+    if (typeof window._initPortalCliente === 'function') window._initPortalCliente(portalCfg);
+    return;
+  }
+
   atualizarSidebarUsuario();
 });
+
+// ── Detecta se email é de cliente do portal ───────────────────
+function _detectarPortalCliente(email) {
+  try {
+    const configs = JSON.parse(localStorage.getItem('glr_portal_configs')||'[]');
+    const cfg = configs.find(c => c.email?.toLowerCase() === email?.toLowerCase() && c.ativo !== false);
+    return cfg || null;
+  } catch { return null; }
+}
