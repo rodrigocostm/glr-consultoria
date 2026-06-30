@@ -8,6 +8,7 @@ const _PORTAL_CFG_KEY = 'glr_portal_configs';
 const _pR$ = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const _pN  = (v,d=0) => (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const _pPad = n => String(n).padStart(2,'0');
+const _pCorMargem = m => m >= 15 ? '#16a34a' : m >= 5 ? '#d97706' : '#dc2626';
 
 // glr_vendas_cache traz pedidos com nome de produto e itens — fonte certa para o portal
 // (glr_fin_cache só tem totais por pedido, sem nome de produto)
@@ -23,13 +24,75 @@ function _portalCustos() {
   try { return JSON.parse(localStorage.getItem('glr_vendas_custos')||'{}'); } catch(e) { return {}; }
 }
 
+// ── Filtro de data (compartilhado entre as páginas do portal) ─
+function _portalFiltroDefault() {
+  const hoje = new Date();
+  const ate  = hoje.toISOString().slice(0,10);
+  const d30  = new Date(hoje); d30.setDate(d30.getDate()-29);
+  const de   = d30.toISOString().slice(0,10);
+  return { de, ate };
+}
+
+function _portalFiltroData() {
+  try {
+    const f = JSON.parse(localStorage.getItem('glr_portal_filtro_data')||'null');
+    if (f && f.de && f.ate) return f;
+  } catch {}
+  return _portalFiltroDefault();
+}
+
+window._portalAplicarFiltro = function(de, ate) {
+  localStorage.setItem('glr_portal_filtro_data', JSON.stringify({ de, ate }));
+  if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
+};
+
+window._portalFiltroRapido = function(dias) {
+  const hoje = new Date();
+  const ate = hoje.toISOString().slice(0,10);
+  let de;
+  if (dias === 'mes') {
+    de = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0,10);
+  } else if (dias === 'tudo') {
+    de = '2020-01-01';
+  } else {
+    const d = new Date(hoje); d.setDate(d.getDate()-(dias-1));
+    de = d.toISOString().slice(0,10);
+  }
+  window._portalAplicarFiltro(de, ate);
+};
+
+function _portalFiltroBar(pageAtual) {
+  const f = _portalFiltroData();
+  return `
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">📅 Período:</span>
+      <input type="date" id="pf-de" value="${f.de}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
+      <span style="color:var(--text-secondary);font-size:12px;">até</span>
+      <input type="date" id="pf-ate" value="${f.ate}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
+      <button onclick="window._portalAplicarFiltro(document.getElementById('pf-de').value, document.getElementById('pf-ate').value)"
+        style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:600;cursor:pointer;">Aplicar</button>
+      <div style="display:flex;gap:6px;margin-left:auto;flex-wrap:wrap;">
+        <button onclick="window._portalFiltroRapido(7)" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">7 dias</button>
+        <button onclick="window._portalFiltroRapido(30)" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">30 dias</button>
+        <button onclick="window._portalFiltroRapido('mes')" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">Mês atual</button>
+        <button onclick="window._portalFiltroRapido('tudo')" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">Tudo</button>
+      </div>
+    </div>`;
+}
+
 function _portalPedidos() {
   const cfg = window._portalConfig;
   if (!cfg) return [];
   const cache = _portalCache();
   if (!cache?.pedidos) return [];
   const ids = (cfg.contaIds||[]).map(String);
-  return cache.pedidos.filter(p => ids.includes(String(p.contaId)));
+  const f = _portalFiltroData();
+  const deTs  = f.de  ? new Date(`${f.de}T00:00:00`).getTime()  : -Infinity;
+  const ateTs = f.ate ? new Date(`${f.ate}T23:59:59`).getTime() : Infinity;
+  return cache.pedidos.filter(p =>
+    ids.includes(String(p.contaId)) &&
+    (!p.dataTs || (p.dataTs >= deTs && p.dataTs <= ateTs))
+  );
 }
 
 const _isCancelPortal = s => {
@@ -62,6 +125,34 @@ function _portalItens(pedidos) {
     }
   }
   return out;
+}
+
+// Soma investimento em ADS (varre glr_ads_cache_{contaId}_{ano}_{mes}) no período filtrado
+function _portalAdsInvestimento(contaIds) {
+  const f = _portalFiltroData();
+  const deTs  = new Date(`${f.de}T00:00:00`).getTime();
+  const ateTs = new Date(`${f.ate}T23:59:59`).getTime();
+  const ids = new Set((contaIds||[]).map(String));
+  let total = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith('glr_ads_cache_')) continue;
+    const partes = key.replace('glr_ads_cache_','').split('_');
+    if (partes.length < 3) continue;
+    const mes = parseInt(partes[partes.length-1]);
+    const ano = parseInt(partes[partes.length-2]);
+    const contaId = partes.slice(0, partes.length-2).join('_');
+    if (!ids.has(contaId)) continue;
+    const mesStart = new Date(ano, mes, 1).getTime();
+    const mesEnd   = new Date(ano, mes+1, 0, 23,59,59).getTime();
+    if (mesEnd < deTs || mesStart > ateTs) continue;
+    try {
+      const raw = JSON.parse(localStorage.getItem(key)||'null');
+      const inv = raw?.dados?.resumo?.investimento;
+      if (inv) total += parseFloat(inv)||0;
+    } catch {}
+  }
+  return total;
 }
 
 // ── Inicializar portal cliente ────────────────────────────────
@@ -123,11 +214,11 @@ function _pKpi(label, valor, sub, cor='#6366f1') {
 // ─────────────────────────────────────────────────────────────
 Router.register('portal-dashboard', (params, el) => {
   const cfg   = window._portalConfig || {};
-  const cache = _portalCache();
   const finCache = _portalFinCache();
   const custos = _portalCustos();
   const todos = _portalPedidos();
   const ativos = todos.filter(p => !_isCancelPortal(p.status));
+  const filtro = _portalFiltroData();
 
   const fat      = ativos.reduce((s,p) => s+(parseFloat(p.valor)||0), 0);
   const qtd      = ativos.length;
@@ -155,6 +246,12 @@ Router.register('portal-dashboard', (params, el) => {
   }
   const lucroBruto = liquido - custoTotal;
   const margem = fat > 0 ? (lucroBruto/fat*100) : 0;
+
+  // ADS — investimento no período + margem pós-ADS
+  const adsInvestimento = _portalAdsInvestimento(cfg.contaIds);
+  const roas = adsInvestimento > 0 ? fat/adsInvestimento : 0;
+  const lucroPosAds = lucroBruto - adsInvestimento;
+  const margemPosAds = fat > 0 ? (lucroPosAds/fat*100) : 0;
 
   // Top 5 produtos — agrupado por ITEM real (corrige pedidos com múltiplos produtos)
   const itensAtivos = _portalItens(ativos);
@@ -185,24 +282,29 @@ Router.register('portal-dashboard', (params, el) => {
     </div>`;
   }).join('');
 
-  const mesLabel = cache?.dataFrom ? `${cache.dataFrom} a ${cache.dataTo||''}` : (finCache?.mesKey ? (() => {
-    const [y,m] = finCache.mesKey.split('-');
-    return new Date(y,parseInt(m)-1,1).toLocaleString('pt-BR',{month:'long',year:'numeric'});
-  })() : 'Período atual');
-
   el.innerHTML = `
     <div style="padding:24px;max-width:1200px;margin:0 auto;">
-      <div style="margin-bottom:24px;">
+      <div style="margin-bottom:16px;">
         <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">📊 Dashboard de Vendas</h2>
-        <div style="font-size:13px;color:var(--text-secondary);">${cfg.clienteNome || 'Minha Conta'} · ${mesLabel}</div>
+        <div style="font-size:13px;color:var(--text-secondary);">${cfg.clienteNome || 'Minha Conta'}</div>
       </div>
+
+      ${_portalFiltroBar()}
 
       <!-- KPIs principais -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:16px;">
         ${_pKpi('💰 Faturamento', _pR$(fat), `${_pN(qtd)} pedidos`, '#16a34a')}
         ${_pKpi('🏦 Líq. do Marketplace', _pR$(liquido), temLiquido?'após taxas':'estimado', '#0ea5e9')}
         ${_pKpi('📈 Lucro Bruto', _pR$(lucroBruto), temCusto?'líquido − custo produto':'sem custo cadastrado', lucroBruto>=0?'#16a34a':'#dc2626')}
-        ${_pKpi('🎯 Margem', _pN(margem,1)+'%', 'lucro bruto / faturamento', margem>=15?'#16a34a':margem>=5?'#d97706':'#dc2626')}
+        ${_pKpi('🎯 Margem', _pN(margem,1)+'%', 'lucro bruto / faturamento', _pCorMargem(margem))}
+      </div>
+
+      <!-- KPIs ADS -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:16px;">
+        ${_pKpi('📢 Investimento em ADS', _pR$(adsInvestimento), 'no período selecionado', '#9333ea')}
+        ${_pKpi('🎯 ROAS', adsInvestimento>0?_pN(roas,2)+'x':'—', 'receita / investido em ADS', roas>=3?'#16a34a':roas>0?'#d97706':'#6366f1')}
+        ${_pKpi('📉 Lucro Pós-ADS', _pR$(lucroPosAds), 'lucro bruto − investimento ADS', lucroPosAds>=0?'#16a34a':'#dc2626')}
+        ${_pKpi('🧮 Margem Pós-ADS', _pN(margemPosAds,1)+'%', 'considerando o gasto com anúncios', _pCorMargem(margemPosAds))}
       </div>
 
       <!-- KPIs secundários -->
@@ -221,7 +323,7 @@ Router.register('portal-dashboard', (params, el) => {
             <div style="display:flex;align-items:flex-end;gap:2px;height:100px;">${bars}</div>
             <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--text-secondary);">
               <span>${dias[0]?.[0]||''}</span><span>Total: ${_pR$(fat)}</span><span>${dias[dias.length-1]?.[0]||''}</span>
-            </div>` : `<div style="text-align:center;padding:40px;color:var(--text-secondary);font-size:13px;">Nenhum dado carregado ainda</div>`}
+            </div>` : `<div style="text-align:center;padding:40px;color:var(--text-secondary);font-size:13px;">Nenhum dado no período</div>`}
         </div>
 
         <!-- Top produtos -->
@@ -247,8 +349,8 @@ Router.register('portal-dashboard', (params, el) => {
       ${ativos.length === 0 ? `
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:48px;text-align:center;color:var(--text-secondary);">
           <div style="font-size:40px;margin-bottom:12px;">📦</div>
-          <div style="font-size:15px;font-weight:600;margin-bottom:6px;">Nenhum dado disponível ainda</div>
-          <div style="font-size:13px;">Aguarde a atualização dos dados pela consultoria.</div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:6px;">Nenhum dado disponível no período</div>
+          <div style="font-size:13px;">Tente ampliar o período ou aguarde a atualização dos dados pela consultoria.</div>
         </div>` : ''}
 
       ${!temCusto && ativos.length > 0 ? `
@@ -260,63 +362,181 @@ Router.register('portal-dashboard', (params, el) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// PÁGINA: Minhas Vendas
+// PÁGINA: Minhas Vendas — mesmo padrão detalhado da Central (somente leitura)
 // ─────────────────────────────────────────────────────────────
+const _PORTAL_PLAT_COR = { 'Shopee':'#f97316', 'Mercado Livre':'#fbbf24' };
+let _portalVendasExpandido = null;
+
+function _portalCalcLucro(p, custos) {
+  const c = custos[p.id] || {};
+  const custo    = parseFloat(c.custo) || 0;
+  const receita  = parseFloat(p.valor) || 0;
+  const liquido  = p.taxas?.liquido != null ? parseFloat(p.taxas.liquido) : null;
+  const base     = liquido != null ? liquido : receita;
+  const lucro    = base - custo;
+  const margem   = receita > 0 ? (lucro/receita*100) : 0;
+  return { receita, liquido, custo, lucro, margem };
+}
+
 Router.register('portal-vendas', (params, el) => {
-  const cfg   = window._portalConfig || {};
+  const cfg = window._portalConfig || {};
+  const custos = _portalCustos();
   const todos = _portalPedidos();
-
-  const _fmtData = ts => ts ? new Date(ts).toLocaleDateString('pt-BR') : '—';
-  const _statusBadge = s => {
-    if (_isCancelPortal(s)) return `<span style="background:#fef2f2;color:#dc2626;border-radius:99px;padding:2px 10px;font-size:11px;font-weight:600;">Cancelado</span>`;
-    return `<span style="background:#f0fdf4;color:#16a34a;border-radius:99px;padding:2px 10px;font-size:11px;font-weight:600;">Concluído</span>`;
-  };
-
-  const rows = todos.slice().sort((a,b) => (b.dataTs||0)-(a.dataTs||0)).map(p => `
-    <tr style="border-bottom:1px solid var(--border);">
-      <td style="padding:10px 12px;font-size:12px;color:var(--text-secondary);">${_fmtData(p.dataTs)}</td>
-      <td style="padding:10px 12px;font-size:12px;color:var(--text-primary);">${p.plataforma||'—'}</td>
-      <td style="padding:10px 12px;font-size:12px;color:var(--text-primary);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.produto||p.item_name||p.id||'—'}</td>
-      <td style="padding:10px 12px;font-size:12px;text-align:right;font-weight:600;color:var(--text-primary);">${_pR$(p.valor)}</td>
-      <td style="padding:10px 12px;text-align:center;">${_statusBadge(p.status)}</td>
-    </tr>
-  `).join('');
 
   const fat = todos.filter(p=>!_isCancelPortal(p.status)).reduce((s,p)=>s+(parseFloat(p.valor)||0),0);
 
   el.innerHTML = `
-    <div style="padding:24px;max-width:1200px;margin:0 auto;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
-        <div>
-          <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">🛒 Minhas Vendas</h2>
-          <div style="font-size:13px;color:var(--text-secondary);">${todos.length} pedidos · Faturamento: ${_pR$(fat)}</div>
-        </div>
+    <div style="padding:24px;max-width:1300px;margin:0 auto;">
+      <div style="margin-bottom:16px;">
+        <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">🛒 Minhas Vendas</h2>
+        <div style="font-size:13px;color:var(--text-secondary);">${todos.length} pedidos · Faturamento: ${_pR$(fat)}</div>
       </div>
 
-      <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
-        ${todos.length > 0 ? `
-          <div style="overflow-x:auto;">
-            <table style="width:100%;border-collapse:collapse;">
-              <thead>
-                <tr style="background:var(--bg-base);border-bottom:2px solid var(--border);">
-                  <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Data</th>
-                  <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Plataforma</th>
-                  <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Produto</th>
-                  <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Valor</th>
-                  <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Status</th>
-                </tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
-          </div>` : `
-          <div style="text-align:center;padding:60px;color:var(--text-secondary);">
-            <div style="font-size:40px;margin-bottom:12px;">📦</div>
-            <div style="font-size:15px;font-weight:600;">Nenhuma venda encontrada</div>
-          </div>`}
-      </div>
+      ${_portalFiltroBar()}
+
+      <div id="portal-vendas-lista"></div>
     </div>
   `;
+
+  _renderPortalVendasLista(todos, custos);
 });
+
+function _renderPortalVendasLista(todos, custos) {
+  const cont = document.getElementById('portal-vendas-lista');
+  if (!cont) return;
+
+  if (!todos.length) {
+    cont.innerHTML = `
+      <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:60px;text-align:center;color:var(--text-secondary);">
+        <div style="font-size:40px;margin-bottom:12px;">📦</div>
+        <div style="font-size:15px;font-weight:600;">Nenhuma venda no período</div>
+      </div>`;
+    return;
+  }
+
+  // Agrupa por data (campo p.data já vem formatado de glr_vendas_cache)
+  const grupos = {};
+  for (const p of todos) { const k = p.data || '—'; if (!grupos[k]) grupos[k] = []; grupos[k].push(p); }
+
+  // Ordena grupos por data desc
+  const gruposOrdenados = Object.entries(grupos).sort(([,a],[,b]) => (b[0]?.dataTs||0)-(a[0]?.dataTs||0));
+
+  cont.innerHTML = `<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+    ${gruposOrdenados.map(([data, peds]) => {
+      const fatGrupo = peds.filter(p=>!_isCancelPortal(p.status)).reduce((s,p)=>s+(parseFloat(p.valor)||0),0);
+      const lucroGrupo = peds.filter(p=>!_isCancelPortal(p.status)).reduce((s,p)=>s+_portalCalcLucro(p,custos).lucro,0);
+      const margemGrupo = fatGrupo > 0 ? (lucroGrupo/fatGrupo*100) : 0;
+      return `
+      <div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--bg-base);border-bottom:1px solid var(--border);">
+          <span style="font-size:13px;font-weight:700;color:var(--text-primary);">📅 ${data}</span>
+          <span style="font-size:11px;color:var(--text-secondary);">${peds.length} pedidos</span>
+          <span style="margin-left:auto;font-size:12px;color:#0ea5e9;font-weight:600;">${_pR$(fatGrupo)}</span>
+          <span style="font-size:12px;font-weight:700;color:${_pCorMargem(margemGrupo)};">Lucro ${_pR$(lucroGrupo)} · ${_pN(margemGrupo,1)}%</span>
+        </div>
+        <div style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px;padding:6px 16px;background:var(--bg-base);border-bottom:1px solid var(--border);">
+          ${['ITEM','QTD','TOTAL','LÍQ. MP','LUCRO','MARGEM'].map((h,i)=>
+            `<div style="font-size:10px;color:var(--text-secondary);font-weight:700;text-align:${i<=1?'left':'right'};white-space:nowrap;">${h}</div>`).join('')}
+        </div>
+        ${peds.map(p => _renderPortalVendaRow(p, custos)).join('')}
+      </div>`;
+    }).join('')}
+  </div>`;
+
+  cont.querySelectorAll('.portal-row-click').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = row.dataset.id;
+      _portalVendasExpandido = _portalVendasExpandido === id ? null : id;
+      _renderPortalVendasLista(todos, custos);
+    });
+  });
+}
+
+function _renderPortalVendaRow(p, custos) {
+  const l = _portalCalcLucro(p, custos);
+  const exp = _portalVendasExpandido === p.id;
+  const cor = _PORTAL_PLAT_COR[p.plataforma] || '#9ca3af';
+  const isCancelled = _isCancelPortal(p.status);
+  const img = p.imagem
+    ? `<img src="${p.imagem}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">`
+    : `<div style="width:40px;height:40px;background:var(--bg-base);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;">${p.plataforma==='Shopee'?'🟠':'🟡'}</div>`;
+
+  return `
+  <div style="border-bottom:1px solid var(--border);">
+    <div class="portal-row-click" data-id="${p.id}" style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px;padding:10px 16px;align-items:center;cursor:pointer;">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        ${img}
+        <div style="min-width:0;">
+          <div style="font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;" title="${(p.produto||'').replace(/"/g,'&quot;')}">${p.produto||'—'}</div>
+          <div style="font-size:10px;color:var(--text-secondary);margin-top:2px;display:flex;gap:6px;align-items:center;">
+            <span style="color:${cor};font-weight:600;">${p.plataforma}</span>
+            <span>${p.id}</span>
+            ${isCancelled ? '<span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;">● Cancelado</span>' : ''}
+          </div>
+        </div>
+      </div>
+      <div style="text-align:left;font-size:13px;color:var(--text-secondary);">${p.qtd||1}</div>
+      <div style="text-align:right;font-size:13px;font-weight:700;color:#0ea5e9;">${_pR$(l.receita)}</div>
+      <div style="text-align:right;font-size:13px;font-weight:700;color:#8b5cf6;">${l.liquido!=null?_pR$(l.liquido):'—'}</div>
+      <div style="text-align:right;font-size:13px;font-weight:700;color:${_pCorMargem(l.margem)};">${_pR$(l.lucro)}</div>
+      <div style="text-align:right;">
+        <span style="background:${_pCorMargem(l.margem)}22;color:${_pCorMargem(l.margem)};padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;">${_pN(l.margem,1)}%</span>
+      </div>
+    </div>
+    ${exp ? _renderPortalVendaDetalhe(p, l) : ''}
+  </div>`;
+}
+
+function _renderPortalVendaDetalhe(p, l) {
+  const tx = p.taxas || {};
+  const hasEscrow = p.taxas != null;
+  const linhas = [
+    { label:'💰 Total do Pedido', v: l.receita, cor:'#0ea5e9', sinal:'+' },
+    tx.comissao>0    ? { label:'🏦 Comissão',       v:-tx.comissao,    cor:'#dc2626', sinal:'-' } : null,
+    tx.taxaServico>0 ? { label:'⚙️ Taxa de Serviço', v:-tx.taxaServico, cor:'#dc2626', sinal:'-' } : null,
+    tx.frete>0       ? { label:'🚚 Frete',           v:-Math.abs(tx.frete), cor:'#f97316', sinal:'-' } : null,
+    tx.voucher>0     ? { label:'🎟️ Voucher',         v: tx.voucher,     cor:'#16a34a', sinal:'+' } : null,
+    l.liquido!=null  ? { label:'💳 Líquido (após taxas)', v:l.liquido, cor:'#8b5cf6', sinal:'=', bold:true } : null,
+    { label:'📦 Custo do Produto', v:-l.custo, cor:'#dc2626', sinal:'-' },
+    { label:'✅ Lucro Bruto', v:l.lucro, cor:_pCorMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
+  ].filter(Boolean);
+
+  return `
+  <div style="display:flex;background:var(--bg-base);border-top:1px solid var(--border);flex-wrap:wrap;">
+    <div style="flex:1;min-width:260px;padding:16px 20px;border-right:1px solid var(--border);">
+      <div style="font-size:10px;color:var(--text-secondary);font-weight:700;text-transform:uppercase;margin-bottom:10px;">Detalhes do Pedido</div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px;">
+        <div><div style="font-size:10px;color:var(--text-secondary);">ID</div><div style="font-size:12px;color:var(--text-primary);">${p.id}</div></div>
+        <div><div style="font-size:10px;color:var(--text-secondary);">Plataforma</div><div style="font-size:12px;color:var(--text-primary);font-weight:600;">${p.plataforma}</div></div>
+        <div><div style="font-size:10px;color:var(--text-secondary);">Data</div><div style="font-size:12px;color:var(--text-primary);">${p.data}</div></div>
+        <div><div style="font-size:10px;color:var(--text-secondary);">Status</div><div style="font-size:12px;color:var(--text-primary);">${p.status||'—'}</div></div>
+      </div>
+      ${p.itens && p.itens.length ? `
+      <div style="font-size:10px;color:var(--text-secondary);font-weight:700;text-transform:uppercase;margin-bottom:8px;">Itens</div>
+      ${p.itens.map(it=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+          ${it.imagem?`<img src="${it.imagem}" style="width:32px;height:32px;object-fit:cover;border-radius:5px;flex-shrink:0;">` : ''}
+          <div style="flex:1;font-size:12px;color:var(--text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.nome}</div>
+          <div style="font-size:11px;color:var(--text-secondary);flex-shrink:0;">x${it.qtd}</div>
+          <div style="font-size:12px;color:#0ea5e9;font-weight:600;flex-shrink:0;">${_pR$(it.preco)}</div>
+        </div>`).join('')}` : ''}
+    </div>
+    <div style="width:280px;flex-shrink:0;padding:16px 20px;">
+      <div style="font-size:10px;color:var(--text-secondary);font-weight:700;text-transform:uppercase;margin-bottom:10px;">
+        Composição do Lucro ${hasEscrow ? '<span style="color:#8b5cf6;font-size:9px;background:#8b5cf622;padding:1px 6px;border-radius:8px;margin-left:4px;">dados da API</span>' : ''}
+      </div>
+      ${linhas.map(r=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+          <span style="font-size:12px;${r.bold?'font-weight:700;color:var(--text-primary);':'color:var(--text-secondary);'}">${r.label}</span>
+          <span style="font-size:13px;font-weight:${r.bold?'800':'600'};color:${r.cor};">${r.sinal==='='?'= ':r.sinal==='+'?'+':'-'}${_pR$(Math.abs(r.v))}</span>
+        </div>`).join('')}
+      <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:12px;color:var(--text-secondary);">Margem s/ receita</span>
+        <span style="font-size:18px;font-weight:800;color:${_pCorMargem(l.margem)};">${_pN(l.margem,1)}%</span>
+      </div>
+    </div>
+  </div>`;
+}
 
 // ─────────────────────────────────────────────────────────────
 // PÁGINA: Curva ABC
@@ -379,10 +599,12 @@ Router.register('portal-abc', (params, el) => {
 
   el.innerHTML = `
     <div style="padding:24px;max-width:1200px;margin:0 auto;">
-      <div style="margin-bottom:24px;">
+      <div style="margin-bottom:16px;">
         <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">📈 Curva ABC de Produtos</h2>
         <div style="font-size:13px;color:var(--text-secondary);">${sorted.length} produtos analisados · Faturamento total: ${_pR$(total)}</div>
       </div>
+
+      ${_portalFiltroBar()}
 
       <!-- Resumo ABC -->
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;">
@@ -427,7 +649,7 @@ Router.register('portal-abc', (params, el) => {
           </div>` : `
           <div style="text-align:center;padding:60px;color:var(--text-secondary);">
             <div style="font-size:40px;margin-bottom:12px;">📈</div>
-            <div style="font-size:15px;font-weight:600;">Nenhum dado disponível ainda</div>
+            <div style="font-size:15px;font-weight:600;">Nenhum dado no período</div>
           </div>`}
       </div>
 
