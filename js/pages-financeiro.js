@@ -228,9 +228,10 @@ Router.register('financeiro', async (params, el) => {
       }
     }
     // Residual: diferença não explicada pelas taxas conhecidas (deve bater com soma de detalhesOutros)
+    // Nota: voucher e rebate são informativos (não reduzem o escrow do vendedor), por isso não entram aqui.
     for (const nome in plats) {
       const a = plats[nome];
-      const conhecidas = a.frete + a.comissao + a.taxaServico + a.taxaCartao - a.voucher - a.rebate - a.taxaMoedas;
+      const conhecidas = a.frete + a.comissao + a.taxaServico + a.taxaCartao - a.taxaMoedas;
       a.outras = Math.max(0, (a.fat - a.liquido) - conhecidas);
     }
 
@@ -343,9 +344,7 @@ Router.register('financeiro', async (params, el) => {
           if (a.taxaServico > 0.01) rows.push(sublinha('Taxa de serviço', a.taxaServico));
           if (a.frete > 0.01)       rows.push(sublinha('Frete descontado (vendedor)', a.frete));
           if (a.taxaCartao > 0.01)  rows.push(sublinha('Taxa de cartão de crédito', a.taxaCartao));
-          if (a.voucher > 0.01)     rows.push(sublinha('Voucher Shopee', a.voucher, '+'));
           if (a.taxaMoedas > 0.01)  rows.push(sublinha('Moedas Shopee (cobertas pela Shopee)', a.taxaMoedas, '+'));
-          if (a.rebate > 0.01)      rows.push(sublinha('Rebate Shopee (devolução de taxa)', a.rebate, '+'));
 
           // Detalhamento campo-a-campo de TODAS as demais taxas/créditos do escrow — nenhuma fica sem nome
           const detEntries = Object.entries(a.detalhesOutros||{}).filter(([,v]) => Math.abs(v) > 0.01);
@@ -356,8 +355,16 @@ Router.register('financeiro', async (params, el) => {
 
           // Ajuste residual: só aparece se sobrar algo não identificado pelos campos acima
           const somaDetalhes = detEntries.reduce((s,[,v]) => s + v, 0);
-          const residualSh = totalTaxasSh - a.comissao - a.taxaServico - a.frete - a.taxaCartao + a.voucher + a.taxaMoedas - somaDetalhes;
+          const residualSh = totalTaxasSh - a.comissao - a.taxaServico - a.frete - a.taxaCartao + a.taxaMoedas - somaDetalhes;
           if (Math.abs(residualSh) > 1) rows.push(sublinha('Ajuste não identificado pela API', Math.abs(residualSh), residualSh >= 0 ? '−' : '+'));
+
+          // Voucher e Rebate são informativos: a Shopee absorve esses valores e eles NÃO reduzem seu repasse.
+          // Mostrados separados, fora da soma de deduções, só para transparência.
+          if (a.voucher > 0.01 || a.rebate > 0.01) {
+            rows.push(`<div class="fin-sub" style="opacity:.65;font-style:italic;"><span>ℹ️ Informativo (não afeta seu repasse):</span><em></em></div>`);
+            if (a.voucher > 0.01) rows.push(sublinha('Voucher Shopee (custeado pela Shopee)', a.voucher, '+'));
+            if (a.rebate > 0.01)  rows.push(sublinha('Rebate de comissão (já embutido nas taxas acima)', a.rebate, '+'));
+          }
           if (totalTaxasSh < 1) rows.push(sublinha('Taxas disponíveis após entrega dos pedidos', 0));
         } else {
           if (a.comissao > 0.01)    rows.push(sublinha('Comissão', a.comissao));
@@ -399,13 +406,17 @@ Router.register('financeiro', async (params, el) => {
                 ${a.taxaServico > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">⚙️ Taxa de Serviço:</span><strong style="color:var(--red);">- ${R$(a.taxaServico)}</strong></div>` : ''}
                 ${a.frete > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🚚 Frete Descontado:</span><strong style="color:var(--red);">- ${R$(a.frete)}</strong></div>` : ''}
                 ${a.taxaCartao > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">💳 Taxa Cartão de Crédito:</span><strong style="color:var(--red);">- ${R$(a.taxaCartao)}</strong></div>` : ''}
-                ${a.voucher > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🎟️ Voucher Plataforma:</span><strong style="color:var(--green);">+ ${R$(a.voucher)}</strong></div>` : ''}
                 ${a.taxaMoedas > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🪙 Moedas Shopee:</span><strong style="color:var(--green);">+ ${R$(a.taxaMoedas)}</strong></div>` : ''}
-                ${a.rebate > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🔄 Rebate Shopee:</span><strong style="color:var(--green);">+ ${R$(a.rebate)}</strong></div>` : ''}
                 ${Object.entries(a.detalhesOutros||{}).filter(([,v])=>Math.abs(v)>0.01).sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).map(([k,v]) =>
                   `<div class="fin-row"><span style="padding-left:12px;">🔸 ${_shopeeFeeLabel(k)}:</span><strong style="color:${v>=0?'var(--green)':'var(--red)'};">${v>=0?'+':'-'} ${R$(Math.abs(v))}</strong></div>`
                 ).join('')}
               </div>
+              ${(a.voucher > 0.01 || a.rebate > 0.01) ? `
+              <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(99,102,241,0.2);opacity:.65;">
+                <div style="font-size:10px;font-style:italic;margin-bottom:4px;">ℹ️ Informativo (não afeta seu repasse):</div>
+                ${a.voucher > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🎟️ Voucher Shopee (custeado pela Shopee):</span><strong>+ ${R$(a.voucher)}</strong></div>` : ''}
+                ${a.rebate > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🔄 Rebate de comissão (já embutido acima):</span><strong>+ ${R$(a.rebate)}</strong></div>` : ''}
+              </div>` : ''}
 
               <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(99,102,241,0.2);">
                 <div style="font-size:10px;color:var(--blue);font-weight:600;margin-bottom:6px;">CUSTOS OPERACIONAIS:</div>
@@ -888,20 +899,33 @@ Router.register('financeiro', async (params, el) => {
               const freteVendedor = Math.max(0,
                 n(oi.actual_shipping_fee) - n(oi.buyer_paid_shipping_fee) - n(oi.shopee_shipping_rebate)
               );
-              // Usa net_commission/net_service (já descontado rebate produto) quando disponível
-              const comissao    = n(oi.net_commission_fee  ?? oi.commission_fee);
-              const taxaServico = n(oi.net_service_fee     ?? oi.service_fee);
-              // Rebate de produto Shopee (devolução de parte da comissão/taxa)
-              const rebate = n(oi.seller_product_rebate?.amount) + n(oi.shopee_discount);
+              // IMPORTANTE: usa commission_fee/service_fee BRUTOS (não net_*) — são esses que batem com o
+              // escrow_amount real. net_commission_fee/net_service_fee já vêm líquidos do rebate de produto,
+              // e somar o rebate de novo causava dupla contabilização (conferido com pedido real via API).
+              const comissao    = n(oi.commission_fee);
+              const taxaServico = n(oi.service_fee);
+              // Rebate de produto Shopee — já está embutido nas taxas brutas acima (commission_fee_offset +
+              // service_fee_offset = seller_product_rebate.amount). Mostrado só como informação, sem impacto no total.
+              const rebateInformativo = n(oi.seller_product_rebate?.amount);
+              // Voucher Shopee normalmente é absorvido pela própria Shopee, não reduz o escrow do vendedor.
+              // Mostrado como informação, sem impacto no total.
+              const voucherInformativo = n(oi.voucher_from_shopee);
 
               // Campos já consumidos pelas categorias nomeadas acima — não entram no detalhamento genérico
               const usedKeys = new Set([
                 'actual_shipping_fee','buyer_paid_shipping_fee','shopee_shipping_rebate',
                 'net_commission_fee','commission_fee','net_service_fee','service_fee',
                 'seller_product_rebate','shopee_discount','escrow_amount',
+                'escrow_amount_after_adjustment',
                 'seller_transaction_fee','buyer_tax_amount','seller_coin_cash_back',
                 'shipping_seller_protection_fee_amount','voucher_from_shopee',
-                'credit_card_promotion_fee','coins','shopee_coins_cash_back',
+                'credit_card_promotion_fee','credit_card_promotion','coins','shopee_coins_cash_back',
+                // Campos informativos/duplicados que não representam dedução real (confirmado via API real)
+                'buyer_total_amount','cost_of_goods_sold','original_cost_of_goods_sold',
+                'order_discounted_price','order_original_price','order_selling_price',
+                'original_price','original_shopee_discount','pix_discount','estimated_shipping_fee',
+                'remaining_voucher','net_commission_fee_info_list','net_service_fee_info_list',
+                'tenure_info_list','items','seller_voucher_code','buyer_payment_method','instalment_plan',
               ]);
               // Varre TODOS os outros campos numéricos do retorno, incluindo objetos aninhados — nada fica sem nome
               const detalhes = {};
@@ -927,9 +951,9 @@ Router.register('financeiro', async (params, el) => {
                 taxaServico,
                 imposto:     n(oi.seller_transaction_fee) + n(oi.buyer_tax_amount) + n(oi.seller_coin_cash_back),
                 frete:       freteVendedor + n(oi.shipping_seller_protection_fee_amount),
-                voucher:     n(oi.voucher_from_shopee),
-                rebate,
-                taxaCartao:  n(oi.credit_card_promotion_fee),
+                voucher:     voucherInformativo,    // informativo — não entra na conta do líquido
+                rebate:      rebateInformativo,      // informativo — já embutido em commission/service fee brutos
+                taxaCartao:  n(oi.credit_card_promotion),
                 moedas:      n(oi.coins) + n(oi.shopee_coins_cash_back),
                 detalhes,
               };
