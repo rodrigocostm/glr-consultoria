@@ -99,24 +99,78 @@ window._portalAplicarFiltroUI = function() {
   window._portalAplicarFiltro(document.getElementById('pf-de').value, document.getElementById('pf-ate').value);
 };
 
-// ── Busca real na API (ML + Shopee), scoped às contas do cliente ──
-async function _portalBuscarVendas(dataFrom, dataTo) {
+// Chama o proxy serverless /api/mcp — API key fica no servidor, nunca no browser do cliente
+async function _portalMcCall(action, params = {}) {
+  const resp = await fetch('/api/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, params }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(()=>({}));
+    throw new Error(err.error || `HTTP ${resp.status}`);
+  }
+  return resp.json();
+}
+
+// ML paginado via proxy (replica MarketplaceAPI.mlOrders mas sem expor a key)
+async function _portalMlOrders(meliId, dataFrom, dataTo) {
+  const PAGE = 50;
+  let offset = 0, all = [];
+  do {
+    let r = null;
+    for (let t = 0; t < 3; t++) {
+      try {
+        r = await _portalMcCall('list_orders_detail', { meliUserId: meliId, date_from: dataFrom, date_to: dataTo, limit: PAGE, offset });
+        break;
+      } catch(e) { if (t >= 2) break; await new Promise(res=>setTimeout(res, 1500*(t+1))); }
+    }
+    if (!r) break;
+    const results = r.data?.results || [];
+    all = all.concat(results);
+    if (results.length < PAGE) break;
+    offset += PAGE;
+  } while (true);
+  return all;
+}
+
+// Shopee: lista SNs paginado via proxy
+async function _portalShopeeSns(shopId, tsFrom, tsTo) {
+  const all = [];
+  let cursor = '';
+  do {
+    try {
+      const r = await _portalMcCall('shopee_list_orders', { shopId, time_range_field:'create_time', time_from:tsFrom, time_to:tsTo, page_size:50, cursor });
+      const resp = r.data?.response || r.data || {};
+      const orders = resp.order_list || resp.orders || [];
+      all.push(...orders.map(o => ({ sn: o.order_sn || o })));
+      cursor = resp.next_cursor || '';
+      if (!resp.more || !cursor) break;
+    } catch(e) { break; }
+  } while (true);
+  return all;
+}
+
+// ── Busca real na API (ML + Shopee), via proxy — API key nunca chega ao browser do cliente ──
+// incremental=true: mescla novos pedidos ao cache existente (não substitui tudo)
+// incremental=false: substitui o cache completamente (full refresh)
+async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
   const cfg = window._portalConfig;
   const cacheKey = _portalCacheKey();
   if (!cfg || !cacheKey) return;
 
   try {
-    const contasResp = await MarketplaceAPI.listAccounts();
+    const contasResp = await _portalMcCall('list_accounts', {});
     const ids = (cfg.contaIds||[]).map(String);
-    const contas = (contasResp||[]).filter(c => ids.includes(String(c.external_id)));
+    const contas = (contasResp.data?.accounts || contasResp.data || []).filter(c => ids.includes(String(c.external_id)));
 
-    const pedidos = [];
+    const novosPedidos = [];
 
     for (const conta of contas) {
       // ── Mercado Livre ──
       if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
         const meliId = conta.param_to_use?.meliUserId || conta.external_id;
-        const orders = await MarketplaceAPI.mlOrders(meliId, dataFrom, dataTo);
+        const orders = await _portalMlOrders(meliId, dataFrom, dataTo);
 
         const mlPedidos = orders.map(o => {
           const itens = (o.order_items||o.items||[]).map(i => ({
@@ -139,27 +193,26 @@ async function _portalBuscarVendas(dataFrom, dataTo) {
           };
         });
 
-        // Imagens + líquido real + frete, em paralelo
         const itemIdsUnicos = [...new Set(mlPedidos.flatMap(p=>p.itens.map(i=>i.itemId)).filter(Boolean))];
         const thumbMap = {}, collectionsMap = {}, freteMap = {};
         await Promise.allSettled([
           ...itemIdsUnicos.map(async itemId => {
             try {
-              const r = await MarketplaceAPI.call('get_item', { itemId });
+              const r = await _portalMcCall('get_item', { itemId });
               const thumb = r.data?.thumbnail || r.data?.pictures?.[0]?.secure_url || '';
               if (thumb) thumbMap[itemId] = thumb;
             } catch(e) {}
           }),
           ...mlPedidos.filter(p=>p.paymentId).map(async p => {
             try {
-              const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/collections/${p.paymentId}` });
+              const r = await _portalMcCall('raw', { method:'GET', path:`/collections/${p.paymentId}` });
               const net = parseFloat(r.data?.net_received_amount);
               if (!isNaN(net)) collectionsMap[p.paymentId] = net;
             } catch(e) {}
           }),
           ...mlPedidos.filter(p=>p.shippingId).map(async p => {
             try {
-              const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/shipments/${p.shippingId}` });
+              const r = await _portalMcCall('raw', { method:'GET', path:`/shipments/${p.shippingId}` });
               const s = r.data || {};
               const listCost = parseFloat(s.shipping_option?.list_cost);
               const baseCost = parseFloat(s.base_cost);
@@ -178,7 +231,7 @@ async function _portalBuscarVendas(dataFrom, dataTo) {
           else if (p.taxas.comissao > 0) p.taxas.liquido = p.valor - p.taxas.comissao;
           if (p.shippingId && freteMap[p.shippingId] != null) p.taxas.frete = freteMap[p.shippingId];
         }
-        pedidos.push(...mlPedidos);
+        novosPedidos.push(...mlPedidos);
       }
 
       // ── Shopee ──
@@ -186,13 +239,13 @@ async function _portalBuscarVendas(dataFrom, dataTo) {
         const shopId = conta.param_to_use?.shopId || conta.external_id;
         const tsFrom = Math.floor(new Date(`${dataFrom}T00:00:00`).getTime()/1000);
         const tsTo   = Math.floor(new Date(`${dataTo}T23:59:59`).getTime()/1000);
-        const sns = await MarketplaceAPI.shopeeListOrderSns(shopId, tsFrom, tsTo);
+        const sns = await _portalShopeeSns(shopId, tsFrom, tsTo);
 
         const uniq = [], detMap = {};
         for (let i=0; i<sns.length; i+=50) {
           const lote = sns.slice(i,i+50).map(o=>o.sn);
           try {
-            const rd = await MarketplaceAPI.call('shopee_get_order_detail', { shopId, order_sn_list: lote });
+            const rd = await _portalMcCall('shopee_get_order_detail', { shopId, order_sn_list: lote });
             const lista = rd.data?.response?.order_list || [];
             for (const ord of lista) {
               const itens = (ord.item_list||[]).map(it => ({
@@ -224,10 +277,9 @@ async function _portalBuscarVendas(dataFrom, dataTo) {
           };
         };
         for (let i=0; i<uniq.length; i+=50) {
-          const lote = uniq.slice(i,i+50);
-          const snsLote = lote.map(o=>o.id);
+          const snsLote = uniq.slice(i,i+50).map(o=>o.id);
           try {
-            const re = await MarketplaceAPI.call('shopee_get_escrow_detail_batch', { shopId, order_sn_list: snsLote });
+            const re = await _portalMcCall('shopee_get_escrow_detail_batch', { shopId, order_sn_list: snsLote });
             const lista = re.data?.response || re.data?.result_list || [];
             lista.forEach((item, idx) => {
               const oi = item.escrow_detail?.order_income || item.order_income || {};
@@ -241,13 +293,32 @@ async function _portalBuscarVendas(dataFrom, dataTo) {
           const d = detMap[o.id]||{};
           o.produto = d.produto||o.id; o.imagem = d.imagem||''; o.itens = d.itens||[];
           o.taxas = escrowMap[o.id]||null;
-          pedidos.push(o);
+          novosPedidos.push(o);
         }
       }
     }
 
-    pedidos.sort((a,b) => (b.dataTs||0)-(a.dataTs||0));
-    localStorage.setItem(cacheKey, JSON.stringify({ pedidos, dataFrom, dataTo, at: Date.now() }));
+    // Merge incremental ou substituição completa
+    let pedidosFinal;
+    const cacheAtual = _portalCache();
+    if (incremental && cacheAtual?.pedidos) {
+      // Atualiza pedidos existentes + adiciona novos, sem apagar os que ficaram fora do range
+      const mapaExistente = {};
+      cacheAtual.pedidos.forEach(p => { mapaExistente[p.id] = p; });
+      novosPedidos.forEach(p => { mapaExistente[p.id] = p; }); // sobrescreve/adiciona
+      pedidosFinal = Object.values(mapaExistente);
+    } else {
+      pedidosFinal = novosPedidos;
+    }
+
+    pedidosFinal.sort((a,b) => (b.dataTs||0)-(a.dataTs||0));
+    const payload = {
+      pedidos: pedidosFinal,
+      dataFrom: incremental ? (cacheAtual?.dataFrom || dataFrom) : dataFrom,
+      dataTo,
+      at: Date.now(),
+    };
+    localStorage.setItem(cacheKey, JSON.stringify(payload));
   } catch(e) {
     console.warn('[Portal] Erro ao buscar vendas:', e.message);
   }
@@ -339,10 +410,38 @@ window._initPortalCliente = async function(cfg) {
   // Primeira vez: busca dados automaticamente no período padrão
   if (!_portalCache()) {
     const f = _portalFiltroData();
-    await _portalBuscarVendas(f.de, f.ate);
+    await _portalBuscarVendas(f.de, f.ate, false);
     if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
   }
+
+  // Auto-refresh: incremental a cada minuto, full refresh às 3h
+  _iniciarAutoRefreshPortal();
 };
+
+let _portalAutoRefreshTimer = null;
+
+function _iniciarAutoRefreshPortal() {
+  if (_portalAutoRefreshTimer) clearInterval(_portalAutoRefreshTimer);
+  _portalAutoRefreshTimer = setInterval(async () => {
+    const cfg = window._portalConfig;
+    if (!cfg) return;
+
+    const agora = new Date();
+    const hora = agora.getHours();
+
+    if (hora === 3) {
+      // Full refresh às 3h — substitui o cache completamente
+      const f = _portalFiltroData();
+      await _portalBuscarVendas(f.de, f.ate, false);
+    } else {
+      // Incremental: só hoje, mesclando novos pedidos sem apagar os anteriores
+      const hoje = agora.toISOString().slice(0, 10);
+      await _portalBuscarVendas(hoje, hoje, true);
+    }
+    // Atualiza UI silenciosamente sem navegar (apenas re-renderiza a página atual)
+    if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
+  }, 60 * 1000); // 1 minuto
+}
 
 function _configurarSidebarCliente(cfg) {
   const sidebar = document.getElementById('sidebar');

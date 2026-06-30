@@ -15,7 +15,7 @@ const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 const GLR_KEYS = [
   'glr_clientes', 'glr_gestores', 'glr_tarefas', 'glr_acoes',
   'glr_alertas', 'glr_oportunidades', 'glr_projecoes', 'glr_dre',
-  'glr_mc_vinculos', 'glr_mc_nicknames', 'glr_portal_configs', 'glr_mc_apikey'
+  'glr_mc_vinculos', 'glr_mc_nicknames', 'glr_portal_configs'
 ];
 
 // ── Intercepta localStorage.setItem para sincronizar com Supabase ──
