@@ -177,7 +177,7 @@ window.fazerLogin = async function() {
   if (portalCfg) {
     // Cliente do portal — mostra apenas páginas permitidas
     atualizarSidebarUsuario();
-    if (typeof window._initPortalCliente === 'function') window._initPortalCliente(portalCfg);
+    if (typeof window._initPortalCliente === 'function') await window._initPortalCliente(portalCfg);
     return;
   }
 
@@ -231,7 +231,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const portalCfg = await _detectarPortalCliente(userEmail);
   if (portalCfg) {
     atualizarSidebarUsuario();
-    if (typeof window._initPortalCliente === 'function') window._initPortalCliente(portalCfg);
+    if (typeof window._initPortalCliente === 'function') await window._initPortalCliente(portalCfg);
     return;
   }
 

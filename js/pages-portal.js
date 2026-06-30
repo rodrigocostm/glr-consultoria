@@ -321,6 +321,10 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
     localStorage.setItem(cacheKey, JSON.stringify(payload));
   } catch(e) {
     console.warn('[Portal] Erro ao buscar vendas:', e.message);
+    const ck = _portalCacheKey();
+    if (ck && !_portalCache()) {
+      localStorage.setItem(ck, JSON.stringify({ pedidos:[], erro: e.message, at: Date.now() }));
+    }
   }
 }
 
@@ -407,16 +411,35 @@ window._initPortalCliente = async function(cfg) {
   _configurarSidebarCliente(cfg);
   if (typeof Router !== 'undefined') Router.navigate('portal-dashboard');
 
-  // Primeira vez: busca dados automaticamente no período padrão
+  // Mostra loading enquanto busca dados pela primeira vez
   if (!_portalCache()) {
+    _portalMostrarLoading('Carregando seus dados...');
     const f = _portalFiltroData();
     await _portalBuscarVendas(f.de, f.ate, false);
+    _portalOcultarLoading();
     if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
   }
 
   // Auto-refresh: incremental a cada minuto, full refresh às 3h
   _iniciarAutoRefreshPortal();
 };
+
+function _portalMostrarLoading(msg) {
+  const el = document.getElementById('page-content');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:var(--text-secondary);">
+      <div style="font-size:36px;animation:spin 1s linear infinite;display:inline-block;">⟳</div>
+      <div style="font-size:15px;font-weight:600;">${msg || 'Carregando...'}</div>
+      <div style="font-size:12px;">Buscando seus pedidos nas plataformas...</div>
+    </div>
+    <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>
+  `;
+}
+
+function _portalOcultarLoading() {
+  // A re-navegação após busca substituirá o conteúdo automaticamente
+}
 
 let _portalAutoRefreshTimer = null;
 
@@ -495,6 +518,24 @@ function _pKpi(label, valor, sub, cor='#6366f1') {
 // ─────────────────────────────────────────────────────────────
 Router.register('portal-dashboard', (params, el) => {
   const cfg   = window._portalConfig || {};
+
+  // Mostra erro se a busca falhou
+  const cache = _portalCache();
+  if (cache?.erro) {
+    el.innerHTML = `
+      <div style="padding:40px;max-width:600px;margin:60px auto;text-align:center;">
+        <div style="font-size:48px;margin-bottom:16px;">⚠️</div>
+        <div style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Erro ao carregar dados</div>
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:24px;">${cache.erro}</div>
+        <button onclick="window._portalRecarregar()" style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:12px 28px;font-size:14px;font-weight:600;cursor:pointer;">🔄 Tentar novamente</button>
+      </div>`;
+    window._portalRecarregar = async () => {
+      localStorage.removeItem(_portalCacheKey());
+      await window._initPortalCliente(cfg);
+    };
+    return;
+  }
+
   const finCache = _portalFinCache();
   const custos = _portalCustos();
   const todos = _portalPedidos();
