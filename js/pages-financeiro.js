@@ -52,7 +52,12 @@ Router.register('financeiro', async (params, el) => {
     drc_deduction: 'Dedução DRC',
   };
   function _shopeeFeeLabel(key) {
-    return SHOPEE_FEE_LABELS[key] || key.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+    if (SHOPEE_FEE_LABELS[key]) return SHOPEE_FEE_LABELS[key];
+    // Para chaves aninhadas (ex: "seller_voucher.amount"), tenta mapear cada parte e junta com " — "
+    const partes = key.split('.');
+    return partes
+      .map(p => SHOPEE_FEE_LABELS[p] || p.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase()))
+      .join(' — ');
   }
   // Campos não-monetários que devem ser ignorados na varredura genérica
   const SHOPEE_FEE_SKIP = new Set([
@@ -873,10 +878,10 @@ Router.register('financeiro', async (params, el) => {
 
             // Busca escrow só para pedidos COMPLETED — sobrescreve com dados precisos
             const parseEscrow = oi => {
-              // Log do primeiro escrow para diagnóstico de campos
+              // Log completo do primeiro escrow para diagnóstico de campos (sem corte)
               if (!parseEscrow._logged) {
                 parseEscrow._logged = true;
-                console.log('[Shopee escrow fields]', JSON.stringify(oi).substring(0, 500));
+                console.log('[Shopee escrow fields] objeto completo:', oi);
               }
               const n = v => parseFloat(v)||0;
               // Frete líquido vendedor = custo real − pago pelo comprador − rebate frete Shopee
@@ -898,13 +903,23 @@ Router.register('financeiro', async (params, el) => {
                 'shipping_seller_protection_fee_amount','voucher_from_shopee',
                 'credit_card_promotion_fee','coins','shopee_coins_cash_back',
               ]);
-              // Varre TODOS os outros campos numéricos do retorno — nada fica sem nome
+              // Varre TODOS os outros campos numéricos do retorno, incluindo objetos aninhados — nada fica sem nome
               const detalhes = {};
-              for (const [k, v] of Object.entries(oi||{})) {
-                if (usedKeys.has(k) || SHOPEE_FEE_SKIP.has(k)) continue;
-                const num = typeof v === 'number' ? v : (typeof v === 'string' ? parseFloat(v) : NaN);
-                if (!isNaN(num) && Math.abs(num) > 0.001) detalhes[k] = num;
-              }
+              const varrer = (obj, prefixo) => {
+                for (const [k, v] of Object.entries(obj||{})) {
+                  if (usedKeys.has(k) || SHOPEE_FEE_SKIP.has(k)) continue;
+                  if (v && typeof v === 'object' && !Array.isArray(v)) {
+                    varrer(v, prefixo ? `${prefixo}.${k}` : k);
+                    continue;
+                  }
+                  const num = typeof v === 'number' ? v : (typeof v === 'string' ? parseFloat(v) : NaN);
+                  if (!isNaN(num) && Math.abs(num) > 0.001) {
+                    const chave = prefixo ? `${prefixo}.${k}` : k;
+                    detalhes[chave] = num;
+                  }
+                }
+              };
+              varrer(oi, '');
 
               return {
                 liquido:     n(oi.escrow_amount),
