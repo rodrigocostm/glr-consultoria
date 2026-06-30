@@ -173,7 +173,7 @@ window.fazerLogin = async function() {
   ativarRealtime();
 
   // Detecta se é cliente do portal ou admin GLR
-  const portalCfg = _detectarPortalCliente(email);
+  const portalCfg = await _detectarPortalCliente(email);
   if (portalCfg) {
     // Cliente do portal — mostra apenas páginas permitidas
     atualizarSidebarUsuario();
@@ -228,7 +228,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   ativarRealtime();
 
   const userEmail = session.user?.email || '';
-  const portalCfg = _detectarPortalCliente(userEmail);
+  const portalCfg = await _detectarPortalCliente(userEmail);
   if (portalCfg) {
     atualizarSidebarUsuario();
     if (typeof window._initPortalCliente === 'function') window._initPortalCliente(portalCfg);
@@ -239,9 +239,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ── Detecta se email é de cliente do portal ───────────────────
-function _detectarPortalCliente(email) {
+async function _detectarPortalCliente(email) {
   try {
-    const configs = JSON.parse(localStorage.getItem('glr_portal_configs')||'[]');
+    // Tenta localStorage primeiro
+    let configs = JSON.parse(localStorage.getItem('glr_portal_configs')||'[]');
+
+    // Se não encontrou, busca direto no Supabase (garante dados frescos)
+    if (!configs.length) {
+      const { data } = await _sb.from('glr_storage').select('dados').eq('chave','glr_portal_configs').single();
+      if (data?.dados) {
+        configs = Array.isArray(data.dados) ? data.dados : [];
+        localStorage.setItem('glr_portal_configs', JSON.stringify(configs));
+      }
+    }
+
     const cfg = configs.find(c => c.email?.toLowerCase() === email?.toLowerCase() && c.ativo !== false);
     return cfg || null;
   } catch { return null; }
