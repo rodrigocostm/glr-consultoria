@@ -10,10 +10,17 @@ const _pN  = (v,d=0) => (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFracti
 const _pPad = n => String(n).padStart(2,'0');
 const _pCorMargem = m => m >= 15 ? '#16a34a' : m >= 5 ? '#d97706' : '#dc2626';
 
-// glr_vendas_cache traz pedidos com nome de produto e itens — fonte certa para o portal
-// (glr_fin_cache só tem totais por pedido, sem nome de produto)
+// Cache próprio do portal (por acesso de cliente) — populado pela busca real na API,
+// scoped somente às contas vinculadas a esse cliente
+function _portalCacheKey() {
+  const cfg = window._portalConfig;
+  return cfg ? `glr_portal_vendas_${cfg.id || cfg.email}` : null;
+}
+
 function _portalCache() {
-  try { return JSON.parse(localStorage.getItem('glr_vendas_cache')||'null'); } catch(e) { return null; }
+  const key = _portalCacheKey();
+  if (!key) return null;
+  try { return JSON.parse(localStorage.getItem(key)||'null'); } catch(e) { return null; }
 }
 
 function _portalFinCache() {
@@ -41,8 +48,9 @@ function _portalFiltroData() {
   return _portalFiltroDefault();
 }
 
-window._portalAplicarFiltro = function(de, ate) {
+window._portalAplicarFiltro = async function(de, ate) {
   localStorage.setItem('glr_portal_filtro_data', JSON.stringify({ de, ate }));
+  await _portalBuscarVendas(de, ate);
   if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
 };
 
@@ -63,14 +71,19 @@ window._portalFiltroRapido = function(dias) {
 
 function _portalFiltroBar(pageAtual) {
   const f = _portalFiltroData();
+  const cache = _portalCache();
+  const status = cache?.at
+    ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>`
+    : `<span style="font-size:11px;color:#d97706;">⚠️ Clique em Aplicar para buscar os dados</span>`;
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">📅 Período:</span>
       <input type="date" id="pf-de" value="${f.de}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
       <span style="color:var(--text-secondary);font-size:12px;">até</span>
       <input type="date" id="pf-ate" value="${f.ate}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
-      <button onclick="window._portalAplicarFiltro(document.getElementById('pf-de').value, document.getElementById('pf-ate').value)"
+      <button id="pf-btn-aplicar" onclick="window._portalAplicarFiltroUI()"
         style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:600;cursor:pointer;">Aplicar</button>
+      ${status}
       <div style="display:flex;gap:6px;margin-left:auto;flex-wrap:wrap;">
         <button onclick="window._portalFiltroRapido(7)" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">7 dias</button>
         <button onclick="window._portalFiltroRapido(30)" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">30 dias</button>
@@ -78,6 +91,166 @@ function _portalFiltroBar(pageAtual) {
         <button onclick="window._portalFiltroRapido('tudo')" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">Tudo</button>
       </div>
     </div>`;
+}
+
+window._portalAplicarFiltroUI = function() {
+  const btn = document.getElementById('pf-btn-aplicar');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando...'; }
+  window._portalAplicarFiltro(document.getElementById('pf-de').value, document.getElementById('pf-ate').value);
+};
+
+// ── Busca real na API (ML + Shopee), scoped às contas do cliente ──
+async function _portalBuscarVendas(dataFrom, dataTo) {
+  const cfg = window._portalConfig;
+  const cacheKey = _portalCacheKey();
+  if (!cfg || !cacheKey) return;
+
+  try {
+    const contasResp = await MarketplaceAPI.listAccounts();
+    const ids = (cfg.contaIds||[]).map(String);
+    const contas = (contasResp||[]).filter(c => ids.includes(String(c.external_id)));
+
+    const pedidos = [];
+
+    for (const conta of contas) {
+      // ── Mercado Livre ──
+      if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
+        const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+        const orders = await MarketplaceAPI.mlOrders(meliId, dataFrom, dataTo);
+
+        const mlPedidos = orders.map(o => {
+          const itens = (o.order_items||o.items||[]).map(i => ({
+            nome: i.item?.title || '—', qtd: i.quantity||1,
+            preco: parseFloat(i.unit_price)||0, imagem: '',
+            itemId: i.item?.id || '',
+          }));
+          const totalAmount = parseFloat(o.total_amount)||0;
+          const comissaoML = itens.reduce((s,i) => s+((parseFloat(i.sale_fee)||0)*(i.qtd||1)), 0);
+          return {
+            id: String(o.id), plataforma:'Mercado Livre', contaId: conta.external_id,
+            data: o.date_created ? new Date(o.date_created).toLocaleDateString('pt-BR') : '—',
+            dataTs: new Date(o.date_created||0).getTime(),
+            produto: itens[0]?.nome||'—', imagem:'',
+            qtd: itens.reduce((s,i)=>s+i.qtd,0)||1,
+            valor: totalAmount, status: o.status||'',
+            paymentId: o.payments?.[0]?.id||null, shippingId: o.shipping?.id||null,
+            itens,
+            taxas: { liquido:null, comissao:comissaoML, taxaServico:0, imposto:0, frete:null, voucher:0 },
+          };
+        });
+
+        // Imagens + líquido real + frete, em paralelo
+        const itemIdsUnicos = [...new Set(mlPedidos.flatMap(p=>p.itens.map(i=>i.itemId)).filter(Boolean))];
+        const thumbMap = {}, collectionsMap = {}, freteMap = {};
+        await Promise.allSettled([
+          ...itemIdsUnicos.map(async itemId => {
+            try {
+              const r = await MarketplaceAPI.call('get_item', { itemId });
+              const thumb = r.data?.thumbnail || r.data?.pictures?.[0]?.secure_url || '';
+              if (thumb) thumbMap[itemId] = thumb;
+            } catch(e) {}
+          }),
+          ...mlPedidos.filter(p=>p.paymentId).map(async p => {
+            try {
+              const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/collections/${p.paymentId}` });
+              const net = parseFloat(r.data?.net_received_amount);
+              if (!isNaN(net)) collectionsMap[p.paymentId] = net;
+            } catch(e) {}
+          }),
+          ...mlPedidos.filter(p=>p.shippingId).map(async p => {
+            try {
+              const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/shipments/${p.shippingId}` });
+              const s = r.data || {};
+              const listCost = parseFloat(s.shipping_option?.list_cost);
+              const baseCost = parseFloat(s.base_cost);
+              freteMap[p.shippingId] = !isNaN(listCost) ? listCost : (!isNaN(baseCost) ? baseCost : 0);
+            } catch(e) {}
+          }),
+        ]);
+
+        for (const p of mlPedidos) {
+          const firstItemId = p.itens[0]?.itemId;
+          if (firstItemId && thumbMap[firstItemId]) {
+            p.imagem = thumbMap[firstItemId];
+            p.itens.forEach(i => { i.imagem = thumbMap[i.itemId] || ''; });
+          }
+          if (p.paymentId && collectionsMap[p.paymentId] != null) p.taxas.liquido = collectionsMap[p.paymentId];
+          else if (p.taxas.comissao > 0) p.taxas.liquido = p.valor - p.taxas.comissao;
+          if (p.shippingId && freteMap[p.shippingId] != null) p.taxas.frete = freteMap[p.shippingId];
+        }
+        pedidos.push(...mlPedidos);
+      }
+
+      // ── Shopee ──
+      if (conta.marketplace === 'shopee') {
+        const shopId = conta.param_to_use?.shopId || conta.external_id;
+        const tsFrom = Math.floor(new Date(`${dataFrom}T00:00:00`).getTime()/1000);
+        const tsTo   = Math.floor(new Date(`${dataTo}T23:59:59`).getTime()/1000);
+        const sns = await MarketplaceAPI.shopeeListOrderSns(shopId, tsFrom, tsTo);
+
+        const uniq = [], detMap = {};
+        for (let i=0; i<sns.length; i+=50) {
+          const lote = sns.slice(i,i+50).map(o=>o.sn);
+          try {
+            const rd = await MarketplaceAPI.call('shopee_get_order_detail', { shopId, order_sn_list: lote });
+            const lista = rd.data?.response?.order_list || [];
+            for (const ord of lista) {
+              const itens = (ord.item_list||[]).map(it => ({
+                nome: it.item_name||'—', qtd: it.model_quantity_purchased||1,
+                preco: parseFloat(it.model_discounted_price)||0, imagem: it.image_info?.image_url||'',
+              }));
+              detMap[ord.order_sn] = { itens, imagem: itens[0]?.imagem||'', produto: itens.length>1?`${itens[0].nome} (+${itens.length-1})`:(itens[0]?.nome||'—') };
+              const dt = ord.create_time ? new Date(ord.create_time*1000) : null;
+              const totalPedido = parseFloat(ord.total_amount)||0;
+              const subtotal = itens.reduce((s,it)=>s+it.preco*it.qtd,0);
+              uniq.push({
+                id: ord.order_sn, plataforma:'Shopee', contaId: conta.external_id,
+                data: dt ? dt.toLocaleDateString('pt-BR') : '—', dataTs: (ord.create_time||0)*1000,
+                produto:'…', imagem:'', qtd: itens.reduce((s,it)=>s+it.qtd,0)||1,
+                valor: subtotal>0 ? subtotal : totalPedido, status: ord.order_status||'', itens:[], taxas:{},
+              });
+            }
+          } catch(e) {}
+        }
+
+        const escrowMap = {};
+        const parseEscrow = oi => {
+          const n = v => parseFloat(v)||0;
+          const freteVendedor = Math.max(0, n(oi.actual_shipping_fee)-n(oi.buyer_paid_shipping_fee)-n(oi.shopee_shipping_rebate));
+          return {
+            liquido: n(oi.escrow_amount), comissao: n(oi.commission_fee), taxaServico: n(oi.service_fee),
+            imposto: n(oi.seller_transaction_fee)+n(oi.buyer_tax_amount)+n(oi.seller_coin_cash_back),
+            frete: freteVendedor+n(oi.shipping_seller_protection_fee_amount), voucher: n(oi.voucher_from_shopee),
+          };
+        };
+        for (let i=0; i<uniq.length; i+=50) {
+          const lote = uniq.slice(i,i+50);
+          const snsLote = lote.map(o=>o.id);
+          try {
+            const re = await MarketplaceAPI.call('shopee_get_escrow_detail_batch', { shopId, order_sn_list: snsLote });
+            const lista = re.data?.response || re.data?.result_list || [];
+            lista.forEach((item, idx) => {
+              const oi = item.escrow_detail?.order_income || item.order_income || {};
+              const sn = snsLote[idx];
+              if (sn) escrowMap[sn] = parseEscrow(oi);
+            });
+          } catch(e) {}
+        }
+
+        for (const o of uniq) {
+          const d = detMap[o.id]||{};
+          o.produto = d.produto||o.id; o.imagem = d.imagem||''; o.itens = d.itens||[];
+          o.taxas = escrowMap[o.id]||null;
+          pedidos.push(o);
+        }
+      }
+    }
+
+    pedidos.sort((a,b) => (b.dataTs||0)-(a.dataTs||0));
+    localStorage.setItem(cacheKey, JSON.stringify({ pedidos, dataFrom, dataTo, at: Date.now() }));
+  } catch(e) {
+    console.warn('[Portal] Erro ao buscar vendas:', e.message);
+  }
 }
 
 function _portalPedidos() {
@@ -114,12 +287,14 @@ function _portalItens(pedidos) {
           nome:   it.nome || p.produto || `Pedido ${p.id}`,
           qtd:    it.qtd || 1,
           valor:  (it.preco != null ? it.preco * (it.qtd||1) : (parseFloat(p.valor)||0) * fracao),
+          imagem: it.imagem || p.imagem || '',
           status: p.status, dataTs: p.dataTs, contaId: p.contaId, plataforma: p.plataforma,
         });
       }
     } else {
       out.push({
         nome: p.produto || `Pedido ${p.id}`, qtd: p.qtd || 1, valor: parseFloat(p.valor)||0,
+        imagem: p.imagem || '',
         status: p.status, dataTs: p.dataTs, contaId: p.contaId, plataforma: p.plataforma,
       });
     }
@@ -156,10 +331,17 @@ function _portalAdsInvestimento(contaIds) {
 }
 
 // ── Inicializar portal cliente ────────────────────────────────
-window._initPortalCliente = function(cfg) {
+window._initPortalCliente = async function(cfg) {
   window._portalConfig = cfg;
   _configurarSidebarCliente(cfg);
   if (typeof Router !== 'undefined') Router.navigate('portal-dashboard');
+
+  // Primeira vez: busca dados automaticamente no período padrão
+  if (!_portalCache()) {
+    const f = _portalFiltroData();
+    await _portalBuscarVendas(f.de, f.ate);
+    if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
+  }
 };
 
 function _configurarSidebarCliente(cfg) {
@@ -550,9 +732,10 @@ Router.register('portal-abc', (params, el) => {
   const prodMap = {};
   for (const it of itens) {
     const nome = it.nome;
-    if (!prodMap[nome]) prodMap[nome] = { fat:0, qtd:0 };
+    if (!prodMap[nome]) prodMap[nome] = { fat:0, qtd:0, imagem:'' };
     prodMap[nome].fat += it.valor;
     prodMap[nome].qtd += it.qtd;
+    if (!prodMap[nome].imagem && it.imagem) prodMap[nome].imagem = it.imagem;
   }
 
   const total = Object.values(prodMap).reduce((s,d)=>s+d.fat, 0);
@@ -565,7 +748,7 @@ Router.register('portal-abc', (params, el) => {
     const pctAcum = total > 0 ? acum/total*100 : 0;
     const pctProd = total > 0 ? d.fat/total*100 : 0;
     const cls = pctAcum <= 80 ? 'A' : pctAcum <= 95 ? 'B' : 'C';
-    return { nome, fat: d.fat, qtd: d.qtd, pctProd, pctAcum, cls };
+    return { nome, fat: d.fat, qtd: d.qtd, imagem: d.imagem, pctProd, pctAcum, cls };
   });
 
   const countA = classificados.filter(p=>p.cls==='A').length;
@@ -583,10 +766,18 @@ Router.register('portal-abc', (params, el) => {
 
   const rows = classificados.map((p, i) => {
     const c = clsCfg[p.cls];
+    const img = p.imagem
+      ? `<img src="${p.imagem}" style="width:32px;height:32px;object-fit:cover;border-radius:5px;flex-shrink:0;" onerror="this.style.display='none'">`
+      : `<div style="width:32px;height:32px;background:var(--bg-base);border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;">📦</div>`;
     return `
       <tr style="border-bottom:1px solid var(--border);">
         <td style="padding:10px 12px;text-align:center;font-size:13px;color:var(--text-secondary);">${i+1}</td>
-        <td style="padding:10px 12px;font-size:12px;color:var(--text-primary);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.nome}</td>
+        <td style="padding:10px 12px;font-size:12px;color:var(--text-primary);">
+          <div style="display:flex;align-items:center;gap:8px;max-width:280px;">
+            ${img}
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${p.nome}">${p.nome}</span>
+          </div>
+        </td>
         <td style="padding:10px 12px;text-align:right;font-size:12px;font-weight:600;color:var(--text-primary);">${_pR$(p.fat)}</td>
         <td style="padding:10px 12px;text-align:center;font-size:12px;color:var(--text-secondary);">${_pN(p.qtd)} un.</td>
         <td style="padding:10px 12px;text-align:center;font-size:12px;color:var(--text-secondary);">${_pN(p.pctProd,1)}%</td>
