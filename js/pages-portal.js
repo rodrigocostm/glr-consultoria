@@ -9,8 +9,18 @@ const _pR$ = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFrac
 const _pN  = (v,d=0) => (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const _pPad = n => String(n).padStart(2,'0');
 
+// glr_vendas_cache traz pedidos com nome de produto e itens — fonte certa para o portal
+// (glr_fin_cache só tem totais por pedido, sem nome de produto)
 function _portalCache() {
+  try { return JSON.parse(localStorage.getItem('glr_vendas_cache')||'null'); } catch(e) { return null; }
+}
+
+function _portalFinCache() {
   try { return JSON.parse(localStorage.getItem('glr_fin_cache')||'null'); } catch(e) { return null; }
+}
+
+function _portalCustos() {
+  try { return JSON.parse(localStorage.getItem('glr_vendas_custos')||'{}'); } catch(e) { return {}; }
 }
 
 function _portalPedidos() {
@@ -26,6 +36,33 @@ const _isCancelPortal = s => {
   const v = (s||'').toLowerCase();
   return v.includes('cancel')||v.includes('refund')||v.includes('devol')||v==='invalid'||v.includes('return');
 };
+
+// Explode pedidos em itens individuais (nome do produto, qtd, valor proporcional)
+// — essencial para a Curva ABC agrupar corretamente por produto, não por pedido
+function _portalItens(pedidos) {
+  const out = [];
+  for (const p of pedidos) {
+    const itens = p.itens && p.itens.length ? p.itens : null;
+    if (itens) {
+      const totalQtd = itens.reduce((s,i)=>s+(i.qtd||1), 0) || 1;
+      for (const it of itens) {
+        const fracao = (it.qtd||1) / totalQtd;
+        out.push({
+          nome:   it.nome || p.produto || `Pedido ${p.id}`,
+          qtd:    it.qtd || 1,
+          valor:  (it.preco != null ? it.preco * (it.qtd||1) : (parseFloat(p.valor)||0) * fracao),
+          status: p.status, dataTs: p.dataTs, contaId: p.contaId, plataforma: p.plataforma,
+        });
+      }
+    } else {
+      out.push({
+        nome: p.produto || `Pedido ${p.id}`, qtd: p.qtd || 1, valor: parseFloat(p.valor)||0,
+        status: p.status, dataTs: p.dataTs, contaId: p.contaId, plataforma: p.plataforma,
+      });
+    }
+  }
+  return out;
+}
 
 // ── Inicializar portal cliente ────────────────────────────────
 window._initPortalCliente = function(cfg) {
@@ -87,22 +124,45 @@ function _pKpi(label, valor, sub, cor='#6366f1') {
 Router.register('portal-dashboard', (params, el) => {
   const cfg   = window._portalConfig || {};
   const cache = _portalCache();
+  const finCache = _portalFinCache();
+  const custos = _portalCustos();
   const todos = _portalPedidos();
   const ativos = todos.filter(p => !_isCancelPortal(p.status));
 
   const fat      = ativos.reduce((s,p) => s+(parseFloat(p.valor)||0), 0);
   const qtd      = ativos.length;
   const ticket   = qtd > 0 ? fat/qtd : 0;
+  const unidades = ativos.reduce((s,p) => s+(parseFloat(p.qtd)||1), 0);
   const cancelados = todos.filter(p => _isCancelPortal(p.status)).length;
   const txCancel = todos.length > 0 ? (cancelados/todos.length*100) : 0;
 
-  // Top 5 produtos
-  const prodMap = {};
+  // Líquido do marketplace — casa pelo ID do pedido com glr_fin_cache (que tem taxas.liquido)
+  const finPorId = {};
+  (finCache?.pedidos||[]).forEach(p => { finPorId[String(p.id)] = p; });
+  let liquido = 0, temLiquido = false;
   for (const p of ativos) {
-    const nome = p.produto || p.item_name || `Pedido ${p.id}`;
-    if (!prodMap[nome]) prodMap[nome] = {fat:0, qtd:0};
-    prodMap[nome].fat += parseFloat(p.valor)||0;
-    prodMap[nome].qtd += 1;
+    const fp = finPorId[String(p.id)];
+    const liq = fp?.taxas?.liquido ?? p?.taxas?.liquido;
+    if (liq != null) { liquido += parseFloat(liq)||0; temLiquido = true; }
+  }
+  if (!temLiquido) liquido = fat; // fallback se ainda não processado no financeiro
+
+  // Custo de produto (preenchido na página Vendas) → lucro bruto
+  let custoTotal = 0, temCusto = false;
+  for (const p of ativos) {
+    const c = custos[p.id];
+    if (c?.custo) { custoTotal += (parseFloat(c.custo)||0) * (parseFloat(p.qtd)||1); temCusto = true; }
+  }
+  const lucroBruto = liquido - custoTotal;
+  const margem = fat > 0 ? (lucroBruto/fat*100) : 0;
+
+  // Top 5 produtos — agrupado por ITEM real (corrige pedidos com múltiplos produtos)
+  const itensAtivos = _portalItens(ativos);
+  const prodMap = {};
+  for (const it of itensAtivos) {
+    if (!prodMap[it.nome]) prodMap[it.nome] = {fat:0, qtd:0};
+    prodMap[it.nome].fat += it.valor;
+    prodMap[it.nome].qtd += it.qtd;
   }
   const top5 = Object.entries(prodMap).sort((a,b)=>b[1].fat-a[1].fat).slice(0,5);
 
@@ -125,10 +185,10 @@ Router.register('portal-dashboard', (params, el) => {
     </div>`;
   }).join('');
 
-  const mesLabel = cache?.mesKey ? (() => {
-    const [y,m] = cache.mesKey.split('-');
+  const mesLabel = cache?.dataFrom ? `${cache.dataFrom} a ${cache.dataTo||''}` : (finCache?.mesKey ? (() => {
+    const [y,m] = finCache.mesKey.split('-');
     return new Date(y,parseInt(m)-1,1).toLocaleString('pt-BR',{month:'long',year:'numeric'});
-  })() : 'Período atual';
+  })() : 'Período atual');
 
   el.innerHTML = `
     <div style="padding:24px;max-width:1200px;margin:0 auto;">
@@ -137,11 +197,19 @@ Router.register('portal-dashboard', (params, el) => {
         <div style="font-size:13px;color:var(--text-secondary);">${cfg.clienteNome || 'Minha Conta'} · ${mesLabel}</div>
       </div>
 
-      <!-- KPIs -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px;">
+      <!-- KPIs principais -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:16px;">
         ${_pKpi('💰 Faturamento', _pR$(fat), `${_pN(qtd)} pedidos`, '#16a34a')}
-        ${_pKpi('🛒 Pedidos', _pN(qtd), `cancelados: ${_pN(cancelados)}`, '#6366f1')}
-        ${_pKpi('🎯 Ticket Médio', _pR$(ticket), 'por pedido', '#0ea5e9')}
+        ${_pKpi('🏦 Líq. do Marketplace', _pR$(liquido), temLiquido?'após taxas':'estimado', '#0ea5e9')}
+        ${_pKpi('📈 Lucro Bruto', _pR$(lucroBruto), temCusto?'líquido − custo produto':'sem custo cadastrado', lucroBruto>=0?'#16a34a':'#dc2626')}
+        ${_pKpi('🎯 Margem', _pN(margem,1)+'%', 'lucro bruto / faturamento', margem>=15?'#16a34a':margem>=5?'#d97706':'#dc2626')}
+      </div>
+
+      <!-- KPIs secundários -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px;">
+        ${_pKpi('🛒 Número de Vendas', _pN(qtd), `cancelados: ${_pN(cancelados)}`, '#6366f1')}
+        ${_pKpi('📦 Unidades Vendidas', _pN(unidades), 'itens despachados', '#8b5cf6')}
+        ${_pKpi('🎫 Ticket Médio', _pR$(ticket), 'por pedido', '#0ea5e9')}
         ${_pKpi('❌ Cancelamentos', _pN(txCancel,1)+'%', `${_pN(cancelados)} pedidos`, txCancel>10?'#dc2626':'#d97706')}
       </div>
 
@@ -165,7 +233,7 @@ Router.register('portal-dashboard', (params, el) => {
             return `
               <div style="margin-bottom:12px;">
                 <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
-                  <span style="color:var(--text-primary);font-weight:600;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i+1}. ${nome}</span>
+                  <span style="color:var(--text-primary);font-weight:600;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${nome}">${i+1}. ${nome}</span>
                   <span style="color:var(--text-secondary);">${_pR$(d.fat)}</span>
                 </div>
                 <div style="background:var(--border);border-radius:99px;height:4px;">
@@ -181,6 +249,11 @@ Router.register('portal-dashboard', (params, el) => {
           <div style="font-size:40px;margin-bottom:12px;">📦</div>
           <div style="font-size:15px;font-weight:600;margin-bottom:6px;">Nenhum dado disponível ainda</div>
           <div style="font-size:13px;">Aguarde a atualização dos dados pela consultoria.</div>
+        </div>` : ''}
+
+      ${!temCusto && ativos.length > 0 ? `
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;margin-top:16px;font-size:12px;color:#92400e;">
+          ℹ️ Lucro Bruto e Margem ficam mais precisos quando o custo dos produtos é cadastrado na página Vendas.
         </div>` : ''}
     </div>
   `;
@@ -252,13 +325,14 @@ Router.register('portal-abc', (params, el) => {
   const cfg   = window._portalConfig || {};
   const ativos = _portalPedidos().filter(p => !_isCancelPortal(p.status));
 
-  // Agrupa por produto
+  // Agrupa por PRODUTO real (item a item) — corrige pedidos com múltiplos produtos
+  const itens = _portalItens(ativos);
   const prodMap = {};
-  for (const p of ativos) {
-    const nome = p.produto || p.item_name || `ID ${p.id}`;
+  for (const it of itens) {
+    const nome = it.nome;
     if (!prodMap[nome]) prodMap[nome] = { fat:0, qtd:0 };
-    prodMap[nome].fat += parseFloat(p.valor)||0;
-    prodMap[nome].qtd += 1;
+    prodMap[nome].fat += it.valor;
+    prodMap[nome].qtd += it.qtd;
   }
 
   const total = Object.values(prodMap).reduce((s,d)=>s+d.fat, 0);
