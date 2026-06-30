@@ -162,7 +162,8 @@ function _portalModalAtualizarContasInterno(clienteId, selecionadas) {
   if (!clienteId) { el.innerHTML = '<span>Selecione um cliente acima</span>'; return; }
 
   const vinculos = window._portalModalVinculos || {};
-  const contas = vinculos[String(clienteId)] || [];
+  // Tenta string e número — glr_mc_vinculos pode ter chave em qualquer formato
+  const contas = vinculos[String(clienteId)] || vinculos[parseInt(clienteId)] || [];
   const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch{ return {}; } })();
 
   if (!contas.length) {
