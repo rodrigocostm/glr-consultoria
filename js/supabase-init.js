@@ -179,17 +179,24 @@ window.fazerLogin = async function() {
     return;
   }
 
-  // Admin GLR — sincroniza e inicia normalmente
+  // Admin GLR — limpa qualquer estado do portal e inicia normalmente
+  window._portalConfig = null;
   await sincronizarDoSupabase();
   ativarRealtime();
   atualizarSidebarUsuario();
   if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();
-  if (typeof Router !== 'undefined' && typeof Router.resolve === 'function') Router.resolve();
+  if (typeof Router !== 'undefined') {
+    const rotasPortal = ['portal-dashboard','portal-vendas','curva-abc'];
+    const hashAtual = window.location.hash.replace('#','');
+    if (rotasPortal.includes(hashAtual)) Router.navigate('dashboard');
+    else if (typeof Router.resolve === 'function') Router.resolve();
+  }
   if (typeof atualizarBadges === 'function') atualizarBadges();
 };
 
 // ── Fazer Logout ──────────────────────────────────────────────
 window.fazerLogout = async function() {
+  window._portalConfig = null;
   await _sb.auth.signOut();
   GLR_KEYS.forEach(k => localStorage.removeItem(k));
   mostrarLogin();
@@ -248,11 +255,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Admin GLR — sincroniza tudo e inicia normalmente
+    // Admin GLR — limpa qualquer estado do portal e inicia normalmente
+    window._portalConfig = null;
     await sincronizarDoSupabase();
     ativarRealtime();
     _ocultarLoadingInicial();
     atualizarSidebarUsuario();
+    if (typeof Router !== 'undefined') {
+      const rotasPortal = ['portal-dashboard','portal-vendas','curva-abc'];
+      const hashAtual = window.location.hash.replace('#','');
+      if (rotasPortal.includes(hashAtual)) Router.navigate('dashboard');
+    }
 
   } catch (err) {
     console.error('[GLR] Erro na inicialização:', err);
