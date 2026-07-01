@@ -177,22 +177,28 @@ async function _portalShopeeSns(shopId, tsFrom, tsTo) {
   const out = [];
   const seen = new Set();
   let primeiroErro = null;
+  let primeiraResposta = null; // para debug visível
 
   for (let cFrom = tsFrom; cFrom < tsTo; cFrom += CHUNK) {
     const cTo = Math.min(cFrom + CHUNK - 1, tsTo);
     for (const st of STATUSES) {
       let cursor = '';
       do {
-        const params = { shopId, time_range_field:'create_time', time_from:cFrom, time_to:cTo, page_size:100, order_status:st };
+        // Tenta com shopId como número (alguns endpoints Shopee exigem integer)
+        const sid = isNaN(Number(shopId)) ? shopId : Number(shopId);
+        const params = { shopId: sid, time_range_field:'create_time', time_from:cFrom, time_to:cTo, page_size:100, order_status:st };
         if (cursor) params.cursor = cursor;
         let r;
         try { r = await _portalMcCall('shopee_list_orders', params); }
         catch(e) { if (!primeiroErro) primeiroErro = e.message; break; }
 
+        // Captura a primeira resposta completa para diagnóstico
+        if (!primeiraResposta) primeiraResposta = JSON.stringify(r).slice(0, 300);
+
         // Detecta erro no corpo da resposta (Shopee retorna 200 mesmo em erro)
         const apiErr = r?.error || r?.message || r?.error_msg;
         if (apiErr && !r?.data?.response?.order_list) {
-          if (!primeiroErro) primeiroErro = `API: ${apiErr}`;
+          if (!primeiroErro) primeiroErro = `${apiErr}`;
           break;
         }
 
@@ -204,8 +210,13 @@ async function _portalShopeeSns(shopId, tsFrom, tsTo) {
         cursor = resp.more ? (resp.next_cursor || '') : '';
       } while (cursor);
     }
+    // Só faz um chunk para o diagnóstico quando não há resultados
+    if (out.length === 0 && primeiraResposta) break;
   }
-  return { sns: out, erro: primeiroErro };
+
+  const erroFinal = primeiroErro || (out.length === 0 && primeiraResposta
+    ? `0 pedidos. Resposta: ${primeiraResposta}` : null);
+  return { sns: out, erro: erroFinal };
 }
 
 // ── Busca real na API (ML + Shopee), via proxy — API key nunca chega ao browser do cliente ──
