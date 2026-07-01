@@ -644,7 +644,8 @@ Router.register('portal-dashboard', (params, el) => {
   const cfg   = window._portalConfig || {};
 
   // Se não há cache, carrega agora (primeira abertura ou cache expirado)
-  if (!_portalCache() && cfg.id) {
+  if (!_portalCache() && cfg.id && !window._portalCarregando) {
+    window._portalCarregando = true;
     el.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:var(--text-secondary);">
         <div style="font-size:36px;animation:spin 1s linear infinite;display:inline-block;">⟳</div>
@@ -654,6 +655,7 @@ Router.register('portal-dashboard', (params, el) => {
       <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>`;
     const f = _portalFiltroData();
     _portalBuscarVendas(f.de, f.ate, false).then(() => {
+      window._portalCarregando = false;
       if (typeof Router !== 'undefined' && Router.navigate) Router.navigate('portal-dashboard');
     });
     return;
