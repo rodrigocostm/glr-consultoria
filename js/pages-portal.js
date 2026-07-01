@@ -31,6 +31,15 @@ function _portalCustos() {
   try { return JSON.parse(localStorage.getItem('glr_vendas_custos')||'{}'); } catch(e) { return {}; }
 }
 
+// ── Conta selecionada (filtro por conta individual) ──────────
+function _portalContaSelecionada() {
+  try { return localStorage.getItem('glr_portal_conta_sel') || 'todas'; } catch { return 'todas'; }
+}
+window._portalSelecionarConta = function(contaId) {
+  localStorage.setItem('glr_portal_conta_sel', contaId);
+  if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
+};
+
 // ── Filtro de data (compartilhado entre as páginas do portal) ─
 function _portalFiltroDefault() {
   const hoje = new Date();
@@ -72,12 +81,30 @@ window._portalFiltroRapido = function(dias) {
 function _portalFiltroBar(pageAtual) {
   const f = _portalFiltroData();
   const cache = _portalCache();
-  const resumo = (cache?.resumoContas||[]).map(r =>
-    `<span style="font-size:10px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:2px 8px;color:var(--text-secondary);">${r.mp === 'Shopee' ? '🟠' : '🟡'} ${r.mp}: ${r.qtd}</span>`
-  ).join('');
+  const contaSel = _portalContaSelecionada();
+
+  // Seletor de contas — só aparece se há mais de uma conta
+  const contas = cache?.contasInfo || [];
+  const btnSel = (id, label, mp) => {
+    const ativo = contaSel === id;
+    const ico = mp?.includes('shopee') ? '🟠' : '🟡';
+    return `<button onclick="window._portalSelecionarConta('${id}')"
+      style="font-size:11px;border-radius:99px;padding:5px 12px;cursor:pointer;border:1px solid ${ativo ? 'var(--primary)' : 'var(--border)'};
+             background:${ativo ? 'var(--primary)' : 'var(--bg-base)'};color:${ativo ? '#fff' : 'var(--text-secondary)'};">
+      ${id === 'todas' ? '📊' : ico} ${label}
+    </button>`;
+  };
+  const seletorContas = contas.length > 1 ? `
+    <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border);margin-top:4px;">
+      <span style="font-size:11px;font-weight:600;color:var(--text-secondary);align-self:center;">Conta:</span>
+      ${btnSel('todas','Todas','')}
+      ${contas.map(c => btnSel(c.id, c.nome, c.marketplace)).join('')}
+    </div>` : '';
+
   const status = cache?.at
-    ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>${resumo ? ' ' + resumo : ''}`
+    ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>`
     : `<span style="font-size:11px;color:#d97706;">⚠️ Clique em Aplicar para buscar os dados</span>`;
+
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">📅 Período:</span>
@@ -93,6 +120,7 @@ function _portalFiltroBar(pageAtual) {
         <button onclick="window._portalFiltroRapido('mes')" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">Mês atual</button>
         <button onclick="window._portalFiltroRapido('tudo')" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">Tudo</button>
       </div>
+      ${seletorContas}
     </div>`;
 }
 
@@ -185,7 +213,12 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
     const contas = todasContas.filter(c => ids.includes(String(c.external_id)));
 
     const novosPedidos = [];
-    const resumoContas = []; // para diagnóstico visível no dashboard
+    const resumoContas = [];
+    const contasInfo = contas.map(c => ({
+      id: String(c.external_id),
+      nome: c.nickname || c.name || c.external_id,
+      marketplace: (c.marketplace||'').toLowerCase(),
+    }));
 
     for (const conta of contas) {
       // ── Mercado Livre ──
@@ -377,6 +410,7 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
       dataFrom: incremental ? (cacheAtual?.dataFrom || dataFrom) : dataFrom,
       dataTo,
       resumoContas,
+      contasInfo,
       at: Date.now(),
     };
     localStorage.setItem(cacheKey, JSON.stringify(payload));
@@ -395,11 +429,13 @@ function _portalPedidos() {
   const cache = _portalCache();
   if (!cache?.pedidos) return [];
   const ids = (cfg.contaIds||[]).map(String);
+  const contaSel = _portalContaSelecionada();
   const f = _portalFiltroData();
   const deTs  = f.de  ? new Date(`${f.de}T00:00:00`).getTime()  : -Infinity;
   const ateTs = f.ate ? new Date(`${f.ate}T23:59:59`).getTime() : Infinity;
   return cache.pedidos.filter(p =>
     ids.includes(String(p.contaId)) &&
+    (contaSel === 'todas' || String(p.contaId) === contaSel) &&
     (!p.dataTs || (p.dataTs >= deTs && p.dataTs <= ateTs))
   );
 }
