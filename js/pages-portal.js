@@ -169,39 +169,31 @@ async function _portalMlOrders(meliId, dataFrom, dataTo) {
   return all;
 }
 
-// Shopee: lista SNs paginado via proxy — espelha MarketplaceAPI.shopeeListOrderSns
-// Retorna { sns, erro } — erro é string se houve falha na primeira chamada
+// Shopee: lista SNs paginado via proxy
+// Retorna { sns, erro }
 async function _portalShopeeSns(shopId, tsFrom, tsTo) {
   const STATUSES = ['COMPLETED','READY_TO_SHIP','PROCESSED','SHIPPED','INVOICE_PENDING','CANCELLED','IN_CANCEL','TO_RETURN'];
   const CHUNK = 14 * 24 * 3600;
+  const sid = isNaN(Number(shopId)) ? shopId : Number(shopId);
   const out = [];
   const seen = new Set();
   let primeiroErro = null;
-  let primeiraResposta = null; // para debug visível
 
   for (let cFrom = tsFrom; cFrom < tsTo; cFrom += CHUNK) {
     const cTo = Math.min(cFrom + CHUNK - 1, tsTo);
     for (const st of STATUSES) {
       let cursor = '';
       do {
-        // Tenta com shopId como número (alguns endpoints Shopee exigem integer)
-        const sid = isNaN(Number(shopId)) ? shopId : Number(shopId);
         const params = { shopId: sid, time_range_field:'create_time', time_from:cFrom, time_to:cTo, page_size:100, order_status:st };
         if (cursor) params.cursor = cursor;
         let r;
         try { r = await _portalMcCall('shopee_list_orders', params); }
         catch(e) { if (!primeiroErro) primeiroErro = e.message; break; }
-
-        // Captura a primeira resposta completa para diagnóstico
-        if (!primeiraResposta) primeiraResposta = JSON.stringify(r).slice(0, 300);
-
-        // Detecta erro no corpo da resposta (Shopee retorna 200 mesmo em erro)
         const apiErr = r?.error || r?.message || r?.error_msg;
         if (apiErr && !r?.data?.response?.order_list) {
           if (!primeiroErro) primeiroErro = `${apiErr}`;
           break;
         }
-
         const resp = r?.data?.response || {};
         const orders = resp.order_list || [];
         for (const o of orders) {
@@ -210,13 +202,30 @@ async function _portalShopeeSns(shopId, tsFrom, tsTo) {
         cursor = resp.more ? (resp.next_cursor || '') : '';
       } while (cursor);
     }
-    // Só faz um chunk para o diagnóstico quando não há resultados
-    if (out.length === 0 && primeiraResposta) break;
   }
 
-  const erroFinal = primeiroErro || (out.length === 0 && primeiraResposta
-    ? `0 pedidos. Resposta: ${primeiraResposta}` : null);
-  return { sns: out, erro: erroFinal };
+  // Fallback: tenta sem order_status (alguns setups MCP não exigem)
+  if (out.length === 0 && !primeiroErro) {
+    for (let cFrom = tsFrom; cFrom < tsTo; cFrom += CHUNK) {
+      const cTo = Math.min(cFrom + CHUNK - 1, tsTo);
+      let cursor = '';
+      do {
+        const params = { shopId: sid, time_range_field:'create_time', time_from:cFrom, time_to:cTo, page_size:100 };
+        if (cursor) params.cursor = cursor;
+        let r;
+        try { r = await _portalMcCall('shopee_list_orders', params); }
+        catch(e) { break; }
+        const resp = r?.data?.response || {};
+        const orders = resp.order_list || [];
+        for (const o of orders) {
+          if (!seen.has(o.order_sn)) { seen.add(o.order_sn); out.push({ sn: o.order_sn }); }
+        }
+        cursor = resp.more ? (resp.next_cursor || '') : '';
+      } while (cursor);
+    }
+  }
+
+  return { sns: out, erro: primeiroErro };
 }
 
 // ── Busca real na API (ML + Shopee), via proxy — API key nunca chega ao browser do cliente ──
@@ -235,11 +244,15 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
 
     const novosPedidos = [];
     const resumoContas = [];
-    const contasInfo = contas.map(c => ({
-      id: String(c.external_id),
-      nome: c.nickname || c.name || c.external_id,
-      marketplace: (c.marketplace||'').toLowerCase(),
-    }));
+    const contasInfo = contas.map(c => {
+      const mp = (c.marketplace||'').toLowerCase();
+      const nomeBase = mp.includes('shopee') ? 'Shopee' : 'Mercado Livre';
+      return {
+        id: String(c.external_id),
+        nome: c.nickname && c.nickname !== c.external_id ? c.nickname : nomeBase,
+        marketplace: mp,
+      };
+    });
 
     for (const conta of contas) {
       // ── Mercado Livre ──
@@ -270,24 +283,25 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
 
         const itemIdsUnicos = [...new Set(mlPedidos.flatMap(p=>p.itens.map(i=>i.itemId)).filter(Boolean))];
         const thumbMap = {}, collectionsMap = {}, freteMap = {};
+        // meliUserId é necessário para o MCP saber qual conta ML autenticar nas chamadas raw/get_item
         await Promise.allSettled([
           ...itemIdsUnicos.map(async itemId => {
             try {
-              const r = await _portalMcCall('get_item', { itemId });
-              const thumb = r.data?.thumbnail || r.data?.pictures?.[0]?.secure_url || '';
+              const r = await _portalMcCall('get_item', { itemId, meliUserId: meliId });
+              const thumb = r.data?.thumbnail || r.data?.pictures?.[0]?.secure_url || r.data?.pictures?.[0]?.url || '';
               if (thumb) thumbMap[itemId] = thumb;
             } catch(e) {}
           }),
           ...mlPedidos.filter(p=>p.paymentId).map(async p => {
             try {
-              const r = await _portalMcCall('raw', { method:'GET', path:`/collections/${p.paymentId}` });
+              const r = await _portalMcCall('raw', { method:'GET', path:`/collections/${p.paymentId}`, meliUserId: meliId });
               const net = parseFloat(r.data?.net_received_amount);
               if (!isNaN(net)) collectionsMap[p.paymentId] = net;
             } catch(e) {}
           }),
           ...mlPedidos.filter(p=>p.shippingId).map(async p => {
             try {
-              const r = await _portalMcCall('raw', { method:'GET', path:`/shipments/${p.shippingId}` });
+              const r = await _portalMcCall('raw', { method:'GET', path:`/shipments/${p.shippingId}`, meliUserId: meliId });
               const s = r.data || {};
               const listCost = parseFloat(s.shipping_option?.list_cost);
               const baseCost = parseFloat(s.base_cost);
