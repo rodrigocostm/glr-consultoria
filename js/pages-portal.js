@@ -72,8 +72,11 @@ window._portalFiltroRapido = function(dias) {
 function _portalFiltroBar(pageAtual) {
   const f = _portalFiltroData();
   const cache = _portalCache();
+  const resumo = (cache?.resumoContas||[]).map(r =>
+    `<span style="font-size:10px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:2px 8px;color:var(--text-secondary);">${r.mp === 'Shopee' ? '🟠' : '🟡'} ${r.mp}: ${r.qtd}</span>`
+  ).join('');
   const status = cache?.at
-    ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>`
+    ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>${resumo ? ' ' + resumo : ''}`
     : `<span style="font-size:11px;color:#d97706;">⚠️ Clique em Aplicar para buscar os dados</span>`;
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -181,11 +184,8 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
     const todasContas = contasResp.data?.accounts || contasResp.data || [];
     const contas = todasContas.filter(c => ids.includes(String(c.external_id)));
 
-    console.log('[PORTAL] contaIds cfg:', ids);
-    console.log('[PORTAL] todas contas:', todasContas.map(c=>({ id:String(c.external_id), mp:c.marketplace })));
-    console.log('[PORTAL] contas filtradas:', contas.map(c=>({ id:String(c.external_id), mp:c.marketplace })));
-
     const novosPedidos = [];
+    const resumoContas = []; // para diagnóstico visível no dashboard
 
     for (const conta of contas) {
       // ── Mercado Livre ──
@@ -253,16 +253,16 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
           if (p.shippingId && freteMap[p.shippingId] != null) p.taxas.frete = freteMap[p.shippingId];
         }
         novosPedidos.push(...mlPedidos);
+        resumoContas.push({ mp:'Mercado Livre', qtd: mlPedidos.length });
       }
 
       // ── Shopee ──
-      if (conta.marketplace === 'shopee') {
+      const mpLower = (conta.marketplace||'').toLowerCase();
+      if (mpLower === 'shopee' || mpLower.includes('shopee')) {
         const shopId = conta.param_to_use?.shopId || conta.external_id;
         const tsFrom = Math.floor(new Date(`${dataFrom}T00:00:00`).getTime()/1000);
         const tsTo   = Math.floor(new Date(`${dataTo}T23:59:59`).getTime()/1000);
-        console.log('[PORTAL SHOPEE] shopId:', shopId, 'tsFrom:', tsFrom, 'tsTo:', tsTo);
         const sns = await _portalShopeeSns(shopId, tsFrom, tsTo);
-        console.log('[PORTAL SHOPEE] sns encontrados:', sns.length);
 
         const uniq = [], detMap = {};
         for (let i=0; i<sns.length; i+=50) {
@@ -318,6 +318,7 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
           o.taxas = escrowMap[o.id]||null;
           novosPedidos.push(o);
         }
+        resumoContas.push({ mp:'Shopee', qtd: uniq.length });
       }
     }
 
@@ -375,6 +376,7 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
       adsTotal: incremental ? ((cacheAtual?.adsTotal || 0) + adsTotal) : adsTotal,
       dataFrom: incremental ? (cacheAtual?.dataFrom || dataFrom) : dataFrom,
       dataTo,
+      resumoContas,
       at: Date.now(),
     };
     localStorage.setItem(cacheKey, JSON.stringify(payload));
