@@ -12,7 +12,7 @@ const _pCorMargem = m => m >= 15 ? '#16a34a' : m >= 5 ? '#d97706' : '#dc2626';
 
 // Cache próprio do portal (por acesso de cliente) — populado pela busca real na API,
 // scoped somente às contas vinculadas a esse cliente
-const PORTAL_CACHE_VERSION = 7; // incrementar invalida cache de todos os clientes
+const PORTAL_CACHE_VERSION = 8; // incrementar invalida cache de todos os clientes
 function _portalCacheKey() {
   const cfg = window._portalConfig;
   return cfg ? `glr_portal_vendas_v${PORTAL_CACHE_VERSION}_${cfg.id || cfg.email}` : null;
@@ -543,8 +543,14 @@ function _portalAdsInvestimento(contaIds) {
 window._initPortalCliente = async function(cfg) {
   window._portalConfig = cfg;
   _configurarSidebarCliente(cfg);
+
+  // Busca inicial: await bloqueante garante que os dados chegam antes do render
+  if (!_portalCache()) {
+    const f = _portalFiltroData();
+    await _portalBuscarVendas(f.de, f.ate, false);
+  }
+
   if (typeof Router !== 'undefined') Router.navigate('portal-dashboard');
-  // O fetch inicial é feito pela rota portal-dashboard quando detecta ausência de cache
 
   // Auto-refresh: incremental a cada minuto, full refresh às 3h
   _iniciarAutoRefreshPortal();
@@ -645,23 +651,7 @@ function _pKpi(label, valor, sub, cor='#6366f1') {
 Router.register('portal-dashboard', (params, el) => {
   const cfg   = window._portalConfig || {};
 
-  // Se não há cache, carrega agora (primeira abertura ou cache expirado)
-  if (!_portalCache() && cfg.id && !window._portalCarregando) {
-    window._portalCarregando = true;
-    el.innerHTML = `
-      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:var(--text-secondary);">
-        <div style="font-size:36px;animation:spin 1s linear infinite;display:inline-block;">⟳</div>
-        <div style="font-size:15px;font-weight:600;">Carregando seus dados...</div>
-        <div style="font-size:12px;">Buscando pedidos nas plataformas...</div>
-      </div>
-      <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>`;
-    const f = _portalFiltroData();
-    _portalBuscarVendas(f.de, f.ate, false).then(() => {
-      window._portalCarregando = false;
-      if (typeof Router !== 'undefined' && Router.navigate) Router.navigate('portal-dashboard');
-    });
-    return;
-  }
+  // Fetch é feito pelo _initPortalCliente antes de navegar aqui
 
   // Mostra erro se a busca falhou
   const cache = _portalCache();
