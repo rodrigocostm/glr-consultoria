@@ -155,27 +155,31 @@ async function _portalMcCall(action, params = {}) {
   return resp.json();
 }
 
-// ML paginado via proxy (replica MarketplaceAPI.mlOrders mas sem expor a key)
+// ML paginado via proxy — lógica idêntica ao MarketplaceAPI.mlOrders do admin
 async function _portalMlOrders(meliId, dataFrom, dataTo) {
   const PAGE = 50;
-  let offset = 0, all = [];
+  let offset = 0, all = [], pagingTotal = null;
   do {
     let r = null;
     for (let t = 0; t < 3; t++) {
       try {
-        r = await _portalMcCall('list_orders_detail', { meliUserId: meliId, date_created_from: dataFrom, date_created_to: dataTo, limit: PAGE, offset });
+        r = await _portalMcCall('list_orders_detail', { meliUserId: meliId, date_from: dataFrom, date_to: dataTo, limit: PAGE, offset });
         break;
       } catch(e) { if (t >= 2) break; await new Promise(res=>setTimeout(res, 1500*(t+1))); }
     }
     if (!r) break;
-    // Diagnóstico visível: guarda resposta bruta da primeira página
-    if (offset === 0) window._diagMlP0 = `meliId=${meliId} de=${dataFrom} ate=${dataTo} | p0=${(r.data?.results||[]).length} | resp=${JSON.stringify(r).slice(0,300)}`;
     const results = r.data?.results || [];
+    const paging  = r.data?.paging  || {};
+    if (offset === 0) {
+      if (paging.total > 0) pagingTotal = paging.total;
+      window._diagMlP0 = `meliId=${meliId} de=${dataFrom} ate=${dataTo} | p0=${results.length} | paging.total=${paging.total??'?'} | resp=${JSON.stringify(r).slice(0,200)}`;
+    }
     all = all.concat(results);
     if (results.length < PAGE) break;
+    if (pagingTotal !== null && all.length >= pagingTotal) break;
     offset += PAGE;
   } while (true);
-  window._diagMlTotal = `total=${all.length} pedidos ML`;
+  window._diagMlTotal = `total=${all.length} pedidos ML | paging.total=${pagingTotal??'?'}`;
   return all;
 }
 
