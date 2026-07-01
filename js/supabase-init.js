@@ -167,21 +167,21 @@ window.fazerLogin = async function() {
     return;
   }
 
-  // Login OK — sincroniza dados e inicia sistema
-  await sincronizarDoSupabase();
-  document.getElementById('glr-login-overlay')?.remove();
-  ativarRealtime();
-
-  // Detecta se é cliente do portal ou admin GLR
+  // Verifica tipo ANTES de expor qualquer conteúdo
   const portalCfg = await _detectarPortalCliente(email);
+
+  document.getElementById('glr-login-overlay')?.remove();
+
   if (portalCfg) {
-    // Cliente do portal — mostra apenas páginas permitidas
+    // Cliente do portal — NÃO sincroniza dados admin, NÃO ativa realtime admin
     atualizarSidebarUsuario();
     if (typeof window._initPortalCliente === 'function') await window._initPortalCliente(portalCfg);
     return;
   }
 
-  // Admin normal
+  // Admin GLR — sincroniza e inicia normalmente
+  await sincronizarDoSupabase();
+  ativarRealtime();
   atualizarSidebarUsuario();
   if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();
   if (typeof Router !== 'undefined' && typeof Router.resolve === 'function') Router.resolve();
@@ -214,27 +214,61 @@ async function atualizarSidebarUsuario() {
   if (headerAvatar) headerAvatar.textContent = iniciais;
 }
 
+// ── Overlay de carregamento inicial (bloqueia UI até identificar o usuário) ──
+function _mostrarLoadingInicial() {
+  document.getElementById('glr-loading-inicial')?.remove();
+  const el = document.createElement('div');
+  el.id = 'glr-loading-inicial';
+  el.style.cssText = `
+    position:fixed;inset:0;background:#0d0d14;
+    display:flex;align-items:center;justify-content:center;z-index:9998;
+  `;
+  el.innerHTML = `
+    <div style="text-align:center;">
+      <div style="width:40px;height:40px;border:3px solid rgba(99,102,241,0.2);
+                  border-top-color:#6366f1;border-radius:50%;
+                  animation:glr-spin 0.8s linear infinite;margin:0 auto 16px;"></div>
+      <p style="color:#5a5b72;font-size:13px;font-family:Inter,sans-serif;margin:0;">Carregando...</p>
+    </div>
+    <style>@keyframes glr-spin{to{transform:rotate(360deg)}}</style>
+  `;
+  document.body.appendChild(el);
+}
+function _ocultarLoadingInicial() {
+  document.getElementById('glr-loading-inicial')?.remove();
+}
+
 // ── Inicialização ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  // Bloqueia imediatamente qualquer conteúdo antes de saber quem é o usuário
+  _mostrarLoadingInicial();
+
   const { data: { session } } = await _sb.auth.getSession();
 
   if (!session) {
+    _ocultarLoadingInicial();
     mostrarLogin();
     return;
   }
 
-  // Já está logado — sincroniza e inicia
-  await sincronizarDoSupabase();
-  ativarRealtime();
-
   const userEmail = session.user?.email || '';
+
+  // Verifica tipo ANTES de sincronizar qualquer dado admin
+  // _detectarPortalCliente faz query direta ao Supabase se necessário
   const portalCfg = await _detectarPortalCliente(userEmail);
+
   if (portalCfg) {
+    // Cliente do portal — NUNCA sincroniza dados admin, NUNCA ativa realtime admin
+    _ocultarLoadingInicial();
     atualizarSidebarUsuario();
     if (typeof window._initPortalCliente === 'function') await window._initPortalCliente(portalCfg);
     return;
   }
 
+  // Admin GLR — sincroniza tudo e inicia normalmente
+  await sincronizarDoSupabase();
+  ativarRealtime();
+  _ocultarLoadingInicial();
   atualizarSidebarUsuario();
 });
 
