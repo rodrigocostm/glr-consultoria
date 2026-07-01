@@ -12,7 +12,7 @@ const _pCorMargem = m => m >= 15 ? '#16a34a' : m >= 5 ? '#d97706' : '#dc2626';
 
 // Cache próprio do portal (por acesso de cliente) — populado pela busca real na API,
 // scoped somente às contas vinculadas a esse cliente
-const PORTAL_CACHE_VERSION = 9; // incrementar invalida cache de todos os clientes
+const PORTAL_CACHE_VERSION = 10; // incrementar invalida cache de todos os clientes
 function _portalCacheKey() {
   const cfg = window._portalConfig;
   return cfg ? `glr_portal_vendas_v${PORTAL_CACHE_VERSION}_${cfg.id || cfg.email}` : null;
@@ -107,10 +107,13 @@ function _portalFiltroBar(pageAtual) {
     </div>${avisoErro}` : avisoErro;
 
   const diagML = window._diagMlP0 || '';
+  const diagTotal = window._diagMlTotal || '';
+  const diagCache = window._diagCacheSaved || '';
   const status = cache?.at
     ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} | ${cache.pedidos?.length||0} pedidos no cache</span>`
     : `<span style="font-size:11px;color:#d97706;">⚠️ Clique em Aplicar para buscar os dados</span>`;
-  const diagBanner = diagML ? `<div style="width:100%;margin-top:8px;padding:6px 10px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.3);border-radius:6px;font-size:10px;color:#a5b4fc;word-break:break-all;">[ML DIAG] ${diagML}</div>` : '';
+  const diagLines = [diagTotal&&`[TOTAL] ${diagTotal}`, diagCache&&`[CACHE] ${diagCache}`, diagML&&`[ML P0] ${diagML}`].filter(Boolean).join('<br>');
+  const diagBanner = diagLines ? `<div style="width:100%;margin-top:8px;padding:6px 10px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.3);border-radius:6px;font-size:10px;color:#a5b4fc;word-break:break-all;">${diagLines}</div>` : '';
 
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -160,18 +163,19 @@ async function _portalMlOrders(meliId, dataFrom, dataTo) {
     let r = null;
     for (let t = 0; t < 3; t++) {
       try {
-        r = await _portalMcCall('list_orders_detail', { meliUserId: meliId, date_from: dataFrom, date_to: dataTo, limit: PAGE, offset });
+        r = await _portalMcCall('list_orders_detail', { meliUserId: meliId, date_created_from: dataFrom, date_created_to: dataTo, limit: PAGE, offset });
         break;
       } catch(e) { if (t >= 2) break; await new Promise(res=>setTimeout(res, 1500*(t+1))); }
     }
     if (!r) break;
     // Diagnóstico visível: guarda resposta bruta da primeira página
-    if (offset === 0) window._diagMlP0 = `meliId=${meliId} de=${dataFrom} ate=${dataTo} | resp=${JSON.stringify(r).slice(0,400)}`;
+    if (offset === 0) window._diagMlP0 = `meliId=${meliId} de=${dataFrom} ate=${dataTo} | p0=${(r.data?.results||[]).length} | resp=${JSON.stringify(r).slice(0,300)}`;
     const results = r.data?.results || [];
     all = all.concat(results);
     if (results.length < PAGE) break;
     offset += PAGE;
   } while (true);
+  window._diagMlTotal = `total=${all.length} pedidos ML`;
   return all;
 }
 
@@ -476,13 +480,34 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
       contasInfo,
       at: Date.now(),
     };
-    localStorage.setItem(cacheKey, JSON.stringify(payload));
+    const payloadStr = JSON.stringify(payload);
+    try {
+      localStorage.setItem(cacheKey, payloadStr);
+      window._diagCacheSaved = `OK key=${cacheKey} | ${payload.pedidos.length} pedidos | ${Math.round(payloadStr.length/1024)}KB`;
+    } catch(qe) {
+      // QuotaExceededError — limpa entradas antigas e tenta de novo
+      const keysToClean = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('glr_portal_vendas_v') && k !== cacheKey) keysToClean.push(k);
+      }
+      keysToClean.forEach(k => localStorage.removeItem(k));
+      try {
+        localStorage.setItem(cacheKey, payloadStr);
+        window._diagCacheSaved = `OK (após limpar ${keysToClean.length} entradas antigas) | ${payload.pedidos.length} pedidos`;
+      } catch(qe2) {
+        window._diagCacheSaved = `ERRO quota: ${qe2.message}`;
+      }
+    }
   } catch(e) {
     console.warn('[Portal] Erro ao buscar vendas:', e.message);
-    const ck = _portalCacheKey();
-    if (ck && !_portalCache()) {
-      localStorage.setItem(ck, JSON.stringify({ pedidos:[], erro: e.message, at: Date.now() }));
-    }
+    window._diagCacheSaved = `ERRO fetch: ${e.message}`;
+    try {
+      const ck = _portalCacheKey();
+      if (ck && !_portalCache()) {
+        localStorage.setItem(ck, JSON.stringify({ pedidos:[], erro: e.message, at: Date.now() }));
+      }
+    } catch(_) {}
   }
 }
 
@@ -551,7 +576,12 @@ window._initPortalCliente = async function(cfg) {
   // Busca inicial: await bloqueante garante que os dados chegam antes do render
   if (!_portalCache()) {
     const f = _portalFiltroData();
-    await _portalBuscarVendas(f.de, f.ate, false);
+    try {
+      await _portalBuscarVendas(f.de, f.ate, false);
+    } catch(err) {
+      console.error('[Portal] _portalBuscarVendas lançou exceção:', err);
+      window._diagCacheSaved = `EXCEÇÃO não tratada: ${err.message}`;
+    }
   }
 
   if (typeof Router !== 'undefined') Router.navigate('portal-dashboard');
