@@ -224,36 +224,41 @@ function _ocultarLoadingInicial() {
 
 // ── Inicialização ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-  // Bloqueia imediatamente qualquer conteúdo antes de saber quem é o usuário
-  _mostrarLoadingInicial();
+  // O overlay e #app{visibility:hidden} já estão no HTML — não precisamos criar nada.
+  // Qualquer erro aqui revelaria uma tela em branco; o try/finally garante fallback.
+  try {
+    const { data: { session } } = await _sb.auth.getSession();
 
-  const { data: { session } } = await _sb.auth.getSession();
+    if (!session) {
+      _ocultarLoadingInicial();
+      mostrarLogin();
+      return;
+    }
 
-  if (!session) {
-    _ocultarLoadingInicial();
-    mostrarLogin();
-    return;
-  }
+    const userEmail = session.user?.email || '';
 
-  const userEmail = session.user?.email || '';
+    // Verifica tipo ANTES de sincronizar qualquer dado admin
+    const portalCfg = await _detectarPortalCliente(userEmail);
 
-  // Verifica tipo ANTES de sincronizar qualquer dado admin
-  // _detectarPortalCliente faz query direta ao Supabase se necessário
-  const portalCfg = await _detectarPortalCliente(userEmail);
+    if (portalCfg) {
+      // Cliente do portal — NUNCA sincroniza dados admin, NUNCA ativa realtime admin
+      _ocultarLoadingInicial();
+      atualizarSidebarUsuario();
+      if (typeof window._initPortalCliente === 'function') await window._initPortalCliente(portalCfg);
+      return;
+    }
 
-  if (portalCfg) {
-    // Cliente do portal — NUNCA sincroniza dados admin, NUNCA ativa realtime admin
+    // Admin GLR — sincroniza tudo e inicia normalmente
+    await sincronizarDoSupabase();
+    ativarRealtime();
     _ocultarLoadingInicial();
     atualizarSidebarUsuario();
-    if (typeof window._initPortalCliente === 'function') await window._initPortalCliente(portalCfg);
-    return;
-  }
 
-  // Admin GLR — sincroniza tudo e inicia normalmente
-  await sincronizarDoSupabase();
-  ativarRealtime();
-  _ocultarLoadingInicial();
-  atualizarSidebarUsuario();
+  } catch (err) {
+    console.error('[GLR] Erro na inicialização:', err);
+    _ocultarLoadingInicial();
+    mostrarLogin('Erro ao inicializar. Tente novamente.');
+  }
 });
 
 // ── Detecta se email é de cliente do portal ───────────────────
