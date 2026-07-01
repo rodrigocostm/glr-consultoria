@@ -298,6 +298,41 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
       }
     }
 
+    // ── ADS: busca investimento para o período ──
+    let adsTotal = 0;
+    const toShopeeDate = iso => iso.split('-').reverse().join('-');
+    const addDaysIso = (iso, n) => { const [y,m,d] = iso.split('-').map(Number); return new Date(Date.UTC(y,m-1,d+n)).toISOString().slice(0,10); };
+
+    for (const conta of contas) {
+      try {
+        if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
+          const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+          let custo = 0, off = 0;
+          while (true) {
+            const ra = await _portalMcCall('ml_ads_campaigns', { meliUserId: meliId, date_from: dataFrom, date_to: dataTo, limit: 50, offset: off });
+            const res = ra.data?.results || [];
+            custo += res.reduce((s,c) => s + (parseFloat(c.metrics?.cost)||0), 0);
+            if (res.length < 50) break;
+            off += 50;
+          }
+          adsTotal += custo;
+        }
+        if (conta.marketplace === 'shopee') {
+          const shopId = conta.param_to_use?.shopId || conta.external_id;
+          let cur = dataFrom;
+          while (cur <= dataTo) {
+            const chunkEnd = addDaysIso(cur, 29) > dataTo ? dataTo : addDaysIso(cur, 29);
+            try {
+              const r = await _portalMcCall('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(cur), end_date: toShopeeDate(chunkEnd) });
+              const dias = r?.data?.response || [];
+              if (Array.isArray(dias)) adsTotal += dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0);
+            } catch(e) {}
+            cur = addDaysIso(chunkEnd, 1);
+          }
+        }
+      } catch(e) {}
+    }
+
     // Merge incremental ou substituição completa
     let pedidosFinal;
     const cacheAtual = _portalCache();
@@ -314,6 +349,7 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
     pedidosFinal.sort((a,b) => (b.dataTs||0)-(a.dataTs||0));
     const payload = {
       pedidos: pedidosFinal,
+      adsTotal: incremental ? ((cacheAtual?.adsTotal || 0) + adsTotal) : adsTotal,
       dataFrom: incremental ? (cacheAtual?.dataFrom || dataFrom) : dataFrom,
       dataTo,
       at: Date.now(),
@@ -377,32 +413,10 @@ function _portalItens(pedidos) {
   return out;
 }
 
-// Soma investimento em ADS (varre glr_ads_cache_{contaId}_{ano}_{mes}) no período filtrado
+// Retorna investimento em ADS do cache do portal (buscado junto com as vendas)
 function _portalAdsInvestimento(contaIds) {
-  const f = _portalFiltroData();
-  const deTs  = new Date(`${f.de}T00:00:00`).getTime();
-  const ateTs = new Date(`${f.ate}T23:59:59`).getTime();
-  const ids = new Set((contaIds||[]).map(String));
-  let total = 0;
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key || !key.startsWith('glr_ads_cache_')) continue;
-    const partes = key.replace('glr_ads_cache_','').split('_');
-    if (partes.length < 3) continue;
-    const mes = parseInt(partes[partes.length-1]);
-    const ano = parseInt(partes[partes.length-2]);
-    const contaId = partes.slice(0, partes.length-2).join('_');
-    if (!ids.has(contaId)) continue;
-    const mesStart = new Date(ano, mes, 1).getTime();
-    const mesEnd   = new Date(ano, mes+1, 0, 23,59,59).getTime();
-    if (mesEnd < deTs || mesStart > ateTs) continue;
-    try {
-      const raw = JSON.parse(localStorage.getItem(key)||'null');
-      const inv = raw?.dados?.resumo?.investimento;
-      if (inv) total += parseFloat(inv)||0;
-    } catch {}
-  }
-  return total;
+  const cache = _portalCache();
+  return parseFloat(cache?.adsTotal) || 0;
 }
 
 // ── Inicializar portal cliente ────────────────────────────────
