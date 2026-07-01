@@ -12,9 +12,10 @@ const _pCorMargem = m => m >= 15 ? '#16a34a' : m >= 5 ? '#d97706' : '#dc2626';
 
 // Cache próprio do portal (por acesso de cliente) — populado pela busca real na API,
 // scoped somente às contas vinculadas a esse cliente
+const PORTAL_CACHE_VERSION = 3; // incrementar invalida cache de todos os clientes
 function _portalCacheKey() {
   const cfg = window._portalConfig;
-  return cfg ? `glr_portal_vendas_${cfg.id || cfg.email}` : null;
+  return cfg ? `glr_portal_vendas_v${PORTAL_CACHE_VERSION}_${cfg.id || cfg.email}` : null;
 }
 
 function _portalCache() {
