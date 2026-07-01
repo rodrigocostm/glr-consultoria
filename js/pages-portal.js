@@ -12,7 +12,7 @@ const _pCorMargem = m => m >= 15 ? '#16a34a' : m >= 5 ? '#d97706' : '#dc2626';
 
 // Cache próprio do portal (por acesso de cliente) — populado pela busca real na API,
 // scoped somente às contas vinculadas a esse cliente
-const PORTAL_CACHE_VERSION = 8; // incrementar invalida cache de todos os clientes
+const PORTAL_CACHE_VERSION = 9; // incrementar invalida cache de todos os clientes
 function _portalCacheKey() {
   const cfg = window._portalConfig;
   return cfg ? `glr_portal_vendas_v${PORTAL_CACHE_VERSION}_${cfg.id || cfg.email}` : null;
@@ -106,10 +106,11 @@ function _portalFiltroBar(pageAtual) {
       ${contas.map(c => btnSel(c.id, c.nome, c.marketplace)).join('')}
     </div>${avisoErro}` : avisoErro;
 
-  const diagContas = window._portalDiagContas ? ` | contas: ${window._portalDiagContas}` : '';
+  const diagML = window._diagMlP0 || '';
   const status = cache?.at
-    ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} | fetch: ${cache.dataFrom||'?'} → ${cache.dataTo||'?'} | ${cache.pedidos?.length||0} no cache${diagContas}</span>`
+    ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} | ${cache.pedidos?.length||0} pedidos no cache</span>`
     : `<span style="font-size:11px;color:#d97706;">⚠️ Clique em Aplicar para buscar os dados</span>`;
+  const diagBanner = diagML ? `<div style="width:100%;margin-top:8px;padding:6px 10px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.3);border-radius:6px;font-size:10px;color:#a5b4fc;word-break:break-all;">[ML DIAG] ${diagML}</div>` : '';
 
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -127,6 +128,7 @@ function _portalFiltroBar(pageAtual) {
         <button onclick="window._portalFiltroRapido('tudo')" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">Tudo</button>
       </div>
       ${seletorContas}
+      ${diagBanner}
     </div>`;
 }
 
@@ -163,6 +165,8 @@ async function _portalMlOrders(meliId, dataFrom, dataTo) {
       } catch(e) { if (t >= 2) break; await new Promise(res=>setTimeout(res, 1500*(t+1))); }
     }
     if (!r) break;
+    // Diagnóstico visível: guarda resposta bruta da primeira página
+    if (offset === 0) window._diagMlP0 = `meliId=${meliId} de=${dataFrom} ate=${dataTo} | resp=${JSON.stringify(r).slice(0,400)}`;
     const results = r.data?.results || [];
     all = all.concat(results);
     if (results.length < PAGE) break;
