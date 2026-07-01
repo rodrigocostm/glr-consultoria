@@ -12,7 +12,7 @@ const _pCorMargem = m => m >= 15 ? '#16a34a' : m >= 5 ? '#d97706' : '#dc2626';
 
 // Cache próprio do portal (por acesso de cliente) — populado pela busca real na API,
 // scoped somente às contas vinculadas a esse cliente
-const PORTAL_CACHE_VERSION = 3; // incrementar invalida cache de todos os clientes
+const PORTAL_CACHE_VERSION = 4; // incrementar invalida cache de todos os clientes
 function _portalCacheKey() {
   const cfg = window._portalConfig;
   return cfg ? `glr_portal_vendas_v${PORTAL_CACHE_VERSION}_${cfg.id || cfg.email}` : null;
@@ -171,15 +171,18 @@ async function _portalMlOrders(meliId, dataFrom, dataTo) {
 }
 
 // Shopee: lista SNs paginado via proxy
-// Retorna { sns, erro }
+// Retorna { sns, erro, diagRaw }
 async function _portalShopeeSns(shopId, tsFrom, tsTo) {
-  const STATUSES = ['COMPLETED','READY_TO_SHIP','PROCESSED','SHIPPED','INVOICE_PENDING','CANCELLED','IN_CANCEL','TO_RETURN'];
+  const STATUSES = ['COMPLETED','READY_TO_SHIP','RETRY_SHIP','SHIPPED','TO_CONFIRM_RECEIVE',
+    'PROCESSED','INVOICE_PENDING','CANCELLED','IN_CANCEL','TO_RETURN','UNPAID'];
   const CHUNK = 14 * 24 * 3600;
   const sid = isNaN(Number(shopId)) ? shopId : Number(shopId);
   const out = [];
   const seen = new Set();
   let primeiroErro = null;
+  let primeiraResposta = null;
 
+  // Estratégia 1: com order_status
   for (let cFrom = tsFrom; cFrom < tsTo; cFrom += CHUNK) {
     const cTo = Math.min(cFrom + CHUNK - 1, tsTo);
     for (const st of STATUSES) {
@@ -190,6 +193,7 @@ async function _portalShopeeSns(shopId, tsFrom, tsTo) {
         let r;
         try { r = await _portalMcCall('shopee_list_orders', params); }
         catch(e) { if (!primeiroErro) primeiroErro = e.message; break; }
+        if (!primeiraResposta) primeiraResposta = JSON.stringify(r).slice(0,300);
         const apiErr = r?.error || r?.message || r?.error_msg;
         if (apiErr && !r?.data?.response?.order_list) {
           if (!primeiroErro) primeiroErro = `${apiErr}`;
@@ -205,28 +209,36 @@ async function _portalShopeeSns(shopId, tsFrom, tsTo) {
     }
   }
 
-  // Fallback: tenta sem order_status (alguns setups MCP não exigem)
+  // Estratégia 2: sem order_status (apenas 1 chunk para diagnóstico se vazio)
   if (out.length === 0 && !primeiroErro) {
-    for (let cFrom = tsFrom; cFrom < tsTo; cFrom += CHUNK) {
-      const cTo = Math.min(cFrom + CHUNK - 1, tsTo);
-      let cursor = '';
-      do {
-        const params = { shopId: sid, time_range_field:'create_time', time_from:cFrom, time_to:cTo, page_size:100 };
-        if (cursor) params.cursor = cursor;
-        let r;
-        try { r = await _portalMcCall('shopee_list_orders', params); }
-        catch(e) { break; }
-        const resp = r?.data?.response || {};
-        const orders = resp.order_list || [];
-        for (const o of orders) {
-          if (!seen.has(o.order_sn)) { seen.add(o.order_sn); out.push({ sn: o.order_sn }); }
+    const cTo = Math.min(tsFrom + CHUNK - 1, tsTo);
+    let r;
+    try {
+      r = await _portalMcCall('shopee_list_orders', { shopId: sid, time_range_field:'create_time', time_from:tsFrom, time_to:cTo, page_size:50 });
+      if (!primeiraResposta) primeiraResposta = JSON.stringify(r).slice(0,300);
+      const resp = r?.data?.response || {};
+      const orders = resp.order_list || [];
+      for (const o of orders) {
+        if (!seen.has(o.order_sn)) { seen.add(o.order_sn); out.push({ sn: o.order_sn }); }
+      }
+      // Se ainda vazio, tenta todos os chunks
+      if (out.length === 0) {
+        for (let cFrom = tsFrom + CHUNK; cFrom < tsTo; cFrom += CHUNK) {
+          const cTo2 = Math.min(cFrom + CHUNK - 1, tsTo);
+          try {
+            const r2 = await _portalMcCall('shopee_list_orders', { shopId: sid, time_range_field:'create_time', time_from:cFrom, time_to:cTo2, page_size:50 });
+            const orders2 = r2?.data?.response?.order_list || [];
+            for (const o of orders2) {
+              if (!seen.has(o.order_sn)) { seen.add(o.order_sn); out.push({ sn: o.order_sn }); }
+            }
+          } catch(e) {}
         }
-        cursor = resp.more ? (resp.next_cursor || '') : '';
-      } while (cursor);
-    }
+      }
+    } catch(e) {}
   }
 
-  return { sns: out, erro: primeiroErro };
+  const erroFinal = primeiroErro || (out.length === 0 ? `0 pedidos Shopee (shopId=${sid}). Resp: ${primeiraResposta||'sem resposta'}` : null);
+  return { sns: out, erro: erroFinal };
 }
 
 // ── Busca real na API (ML + Shopee), via proxy — API key nunca chega ao browser do cliente ──
