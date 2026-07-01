@@ -631,6 +631,22 @@ function _pKpi(label, valor, sub, cor='#6366f1') {
 Router.register('portal-dashboard', (params, el) => {
   const cfg   = window._portalConfig || {};
 
+  // Se não há cache, carrega agora (primeira abertura ou cache expirado)
+  if (!_portalCache() && cfg.id) {
+    el.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:var(--text-secondary);">
+        <div style="font-size:36px;animation:spin 1s linear infinite;display:inline-block;">⟳</div>
+        <div style="font-size:15px;font-weight:600;">Carregando seus dados...</div>
+        <div style="font-size:12px;">Buscando pedidos nas plataformas...</div>
+      </div>
+      <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>`;
+    const f = _portalFiltroData();
+    _portalBuscarVendas(f.de, f.ate, false).then(() => {
+      if (typeof Router !== 'undefined' && Router.navigate) Router.navigate('portal-dashboard');
+    });
+    return;
+  }
+
   // Mostra erro se a busca falhou
   const cache = _portalCache();
   if (cache?.erro) {
