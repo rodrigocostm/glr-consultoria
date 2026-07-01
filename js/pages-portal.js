@@ -283,7 +283,27 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
 
         const itemIdsUnicos = [...new Set(mlPedidos.flatMap(p=>p.itens.map(i=>i.itemId)).filter(Boolean))];
         const thumbMap = {}, collectionsMap = {}, freteMap = {};
-        // meliUserId é necessário para o MCP saber qual conta ML autenticar nas chamadas raw/get_item
+
+        // — Diagnóstico: testa UMA chamada de cada tipo e mostra resultado no alerta —
+        const _diagItemId = itemIdsUnicos[0];
+        const _diagPayment = mlPedidos.find(p=>p.paymentId)?.paymentId;
+        const _diagShipping = mlPedidos.find(p=>p.shippingId)?.shippingId;
+        let _diagMsg = `[ML DIAG] meliId=${meliId}\n`;
+        if (_diagItemId) {
+          try { const r = await _portalMcCall('get_item', { itemId: _diagItemId, meliUserId: meliId }); _diagMsg += `get_item(${_diagItemId}): ${JSON.stringify(r).slice(0,200)}\n`; }
+          catch(e) { _diagMsg += `get_item ERRO: ${e.message}\n`; }
+        }
+        if (_diagPayment) {
+          try { const r = await _portalMcCall('raw', { method:'GET', path:`/collections/${_diagPayment}`, meliUserId: meliId }); _diagMsg += `collections(${_diagPayment}): ${JSON.stringify(r).slice(0,200)}\n`; }
+          catch(e) { _diagMsg += `collections ERRO: ${e.message}\n`; }
+        }
+        if (_diagShipping) {
+          try { const r = await _portalMcCall('raw', { method:'GET', path:`/shipments/${_diagShipping}`, meliUserId: meliId }); _diagMsg += `shipments(${_diagShipping}): ${JSON.stringify(r).slice(0,200)}\n`; }
+          catch(e) { _diagMsg += `shipments ERRO: ${e.message}\n`; }
+        }
+        alert(_diagMsg);
+        // — Fim diagnóstico —
+
         await Promise.allSettled([
           ...itemIdsUnicos.map(async itemId => {
             try {
