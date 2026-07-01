@@ -150,14 +150,17 @@ async function _portalShopeeSns(shopId, tsFrom, tsTo) {
         try {
           const params = { shopId, time_range_field:'create_time', time_from:cFrom, time_to:cTo, page_size:100, order_status:st };
           if (cursor) params.cursor = cursor;
-          const r = await _portalMcCall('shopee_list_orders', params);
+          let r;
+          try { r = await _portalMcCall('shopee_list_orders', params); }
+          catch(e) { console.warn('[PORTAL SHOPEE] erro list_orders', st, e.message); break; }
+          console.log('[PORTAL SHOPEE] list_orders', st, 'resposta:', JSON.stringify(r).slice(0,200));
           const resp = r.data?.response || {};
           const orders = resp.order_list || [];
           for (const o of orders) {
             if (!seen.has(o.order_sn)) { seen.add(o.order_sn); out.push({ sn: o.order_sn }); }
           }
           cursor = resp.more ? (resp.next_cursor || '') : '';
-        } catch(e) { break; }
+        } catch(e) { console.warn('[PORTAL SHOPEE] erro inesperado', e.message); break; }
       } while (cursor);
     }
   }
@@ -175,7 +178,12 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
   try {
     const contasResp = await _portalMcCall('list_accounts', {});
     const ids = (cfg.contaIds||[]).map(String);
-    const contas = (contasResp.data?.accounts || contasResp.data || []).filter(c => ids.includes(String(c.external_id)));
+    const todasContas = contasResp.data?.accounts || contasResp.data || [];
+    const contas = todasContas.filter(c => ids.includes(String(c.external_id)));
+
+    console.log('[PORTAL] contaIds cfg:', ids);
+    console.log('[PORTAL] todas contas:', todasContas.map(c=>({ id:String(c.external_id), mp:c.marketplace })));
+    console.log('[PORTAL] contas filtradas:', contas.map(c=>({ id:String(c.external_id), mp:c.marketplace })));
 
     const novosPedidos = [];
 
@@ -252,7 +260,9 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
         const shopId = conta.param_to_use?.shopId || conta.external_id;
         const tsFrom = Math.floor(new Date(`${dataFrom}T00:00:00`).getTime()/1000);
         const tsTo   = Math.floor(new Date(`${dataTo}T23:59:59`).getTime()/1000);
+        console.log('[PORTAL SHOPEE] shopId:', shopId, 'tsFrom:', tsFrom, 'tsTo:', tsTo);
         const sns = await _portalShopeeSns(shopId, tsFrom, tsTo);
+        console.log('[PORTAL SHOPEE] sns encontrados:', sns.length);
 
         const uniq = [], detMap = {};
         for (let i=0; i<sns.length; i+=50) {
