@@ -12,7 +12,7 @@ const _pCorMargem = m => m >= 15 ? '#16a34a' : m >= 5 ? '#d97706' : '#dc2626';
 
 // Cache próprio do portal (por acesso de cliente) — populado pela busca real na API,
 // scoped somente às contas vinculadas a esse cliente
-const PORTAL_CACHE_VERSION = 4; // incrementar invalida cache de todos os clientes
+const PORTAL_CACHE_VERSION = 5; // incrementar invalida cache de todos os clientes
 function _portalCacheKey() {
   const cfg = window._portalConfig;
   return cfg ? `glr_portal_vendas_v${PORTAL_CACHE_VERSION}_${cfg.id || cfg.email}` : null;
@@ -269,14 +269,15 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
       const nomeBase = mp.includes('shopee') ? 'Shopee' : 'Mercado Livre';
       return {
         id: String(c.external_id),
-        nome: c.nickname && c.nickname !== c.external_id ? c.nickname : nomeBase,
+        nome: nomeBase, // usa sempre o nome do marketplace — o nickname do MCP já contém o ID
         marketplace: mp,
       };
     });
 
     for (const conta of contas) {
+      const mpLower = (conta.marketplace||'').toLowerCase();
       // ── Mercado Livre ──
-      if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
+      if (mpLower.includes('meli') || mpLower.includes('mercado')) {
         const meliId = conta.param_to_use?.meliUserId || conta.external_id;
         const orders = await _portalMlOrders(meliId, dataFrom, dataTo);
 
@@ -345,8 +346,7 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
       }
 
       // ── Shopee ──
-      const mpLower = (conta.marketplace||'').toLowerCase();
-      if (mpLower === 'shopee' || mpLower.includes('shopee')) {
+      if (mpLower.includes('shopee')) {
         const shopId = conta.param_to_use?.shopId || conta.external_id;
         const tsFrom = Math.floor(new Date(`${dataFrom}T00:00:00`).getTime()/1000);
         const tsTo   = Math.floor(new Date(`${dataTo}T23:59:59`).getTime()/1000);
