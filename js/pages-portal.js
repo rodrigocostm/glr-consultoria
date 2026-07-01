@@ -12,7 +12,7 @@ const _pCorMargem = m => m >= 15 ? '#16a34a' : m >= 5 ? '#d97706' : '#dc2626';
 
 // Cache próprio do portal (por acesso de cliente) — populado pela busca real na API,
 // scoped somente às contas vinculadas a esse cliente
-const PORTAL_CACHE_VERSION = 6; // incrementar invalida cache de todos os clientes
+const PORTAL_CACHE_VERSION = 7; // incrementar invalida cache de todos os clientes
 function _portalCacheKey() {
   const cfg = window._portalConfig;
   return cfg ? `glr_portal_vendas_v${PORTAL_CACHE_VERSION}_${cfg.id || cfg.email}` : null;
@@ -106,8 +106,9 @@ function _portalFiltroBar(pageAtual) {
       ${contas.map(c => btnSel(c.id, c.nome, c.marketplace)).join('')}
     </div>${avisoErro}` : avisoErro;
 
+  const diagContas = window._portalDiagContas ? ` | contas: ${window._portalDiagContas}` : '';
   const status = cache?.at
-    ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>`
+    ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} | fetch: ${cache.dataFrom||'?'} → ${cache.dataTo||'?'} | ${cache.pedidos?.length||0} no cache${diagContas}</span>`
     : `<span style="font-size:11px;color:#d97706;">⚠️ Clique em Aplicar para buscar os dados</span>`;
 
   return `
@@ -261,9 +262,8 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
       const idsDisp = todasContas.map(c=>c.external_id).join(', ');
       throw new Error(`Contas do portal [${ids.join(', ')}] não encontradas na API. Disponíveis: [${idsDisp}]`);
     }
-    // Diagnóstico: mostra marketplace real das contas no cache para debug
-    const _dbgMp = contas.map(c=>`${c.external_id}→"${c.marketplace}"`).join(' | ');
-    console.log('[Portal] marketplaces:', _dbgMp);
+    // Salva info de diagnóstico para exibir na UI
+    window._portalDiagContas = contas.map(c=>`${c.external_id}→"${c.marketplace}"`).join(' | ');
 
     const novosPedidos = [];
     const resumoContas = [];
