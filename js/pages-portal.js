@@ -12,7 +12,7 @@ const _pCorMargem = m => m >= 15 ? '#16a34a' : m >= 5 ? '#d97706' : '#dc2626';
 
 // Cache próprio do portal (por acesso de cliente) — populado pela busca real na API,
 // scoped somente às contas vinculadas a esse cliente
-const PORTAL_CACHE_VERSION = 5; // incrementar invalida cache de todos os clientes
+const PORTAL_CACHE_VERSION = 6; // incrementar invalida cache de todos os clientes
 function _portalCacheKey() {
   const cfg = window._portalConfig;
   return cfg ? `glr_portal_vendas_v${PORTAL_CACHE_VERSION}_${cfg.id || cfg.email}` : null;
@@ -261,6 +261,9 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
       const idsDisp = todasContas.map(c=>c.external_id).join(', ');
       throw new Error(`Contas do portal [${ids.join(', ')}] não encontradas na API. Disponíveis: [${idsDisp}]`);
     }
+    // Diagnóstico: mostra marketplace real das contas no cache para debug
+    const _dbgMp = contas.map(c=>`${c.external_id}→"${c.marketplace}"`).join(' | ');
+    console.log('[Portal] marketplaces:', _dbgMp);
 
     const novosPedidos = [];
     const resumoContas = [];
@@ -277,7 +280,7 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
     for (const conta of contas) {
       const mpLower = (conta.marketplace||'').toLowerCase();
       // ── Mercado Livre ──
-      if (mpLower.includes('meli') || mpLower.includes('mercado')) {
+      if (!mpLower.includes('shopee')) {
         const meliId = conta.param_to_use?.meliUserId || conta.external_id;
         const orders = await _portalMlOrders(meliId, dataFrom, dataTo);
 
@@ -418,7 +421,7 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
 
     for (const conta of contas) {
       try {
-        if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
+        if (!conta.marketplace?.toLowerCase().includes('shopee')) {
           const meliId = conta.param_to_use?.meliUserId || conta.external_id;
           let custo = 0, off = 0;
           while (true) {
@@ -430,7 +433,7 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
           }
           adsTotal += custo;
         }
-        if (conta.marketplace === 'shopee') {
+        if (conta.marketplace?.toLowerCase().includes('shopee')) {
           const shopId = conta.param_to_use?.shopId || conta.external_id;
           let cur = dataFrom;
           while (cur <= dataTo) {
