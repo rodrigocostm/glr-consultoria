@@ -214,28 +214,12 @@ async function atualizarSidebarUsuario() {
   if (headerAvatar) headerAvatar.textContent = iniciais;
 }
 
-// ── Overlay de carregamento inicial (bloqueia UI até identificar o usuário) ──
-function _mostrarLoadingInicial() {
-  document.getElementById('glr-loading-inicial')?.remove();
-  const el = document.createElement('div');
-  el.id = 'glr-loading-inicial';
-  el.style.cssText = `
-    position:fixed;inset:0;background:#0d0d14;
-    display:flex;align-items:center;justify-content:center;z-index:9998;
-  `;
-  el.innerHTML = `
-    <div style="text-align:center;">
-      <div style="width:40px;height:40px;border:3px solid rgba(99,102,241,0.2);
-                  border-top-color:#6366f1;border-radius:50%;
-                  animation:glr-spin 0.8s linear infinite;margin:0 auto 16px;"></div>
-      <p style="color:#5a5b72;font-size:13px;font-family:Inter,sans-serif;margin:0;">Carregando...</p>
-    </div>
-    <style>@keyframes glr-spin{to{transform:rotate(360deg)}}</style>
-  `;
-  document.body.appendChild(el);
-}
+// ── Revela o app e remove o overlay de loading ──
+// O overlay e o #app{visibility:hidden} estão no HTML/CSS, bloqueando desde o início.
 function _ocultarLoadingInicial() {
   document.getElementById('glr-loading-inicial')?.remove();
+  const app = document.getElementById('app');
+  if (app) app.style.visibility = 'visible';
 }
 
 // ── Inicialização ─────────────────────────────────────────────

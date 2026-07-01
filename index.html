@@ -13,6 +13,19 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <style>
+    /* Bloqueia toda a UI por padrão — liberada só após verificação de sessão */
+    #app { visibility: hidden; }
+    #glr-loading-inicial {
+      position:fixed;inset:0;background:#0d0d14;
+      display:flex;align-items:center;justify-content:center;z-index:9999;
+      font-family:Inter,sans-serif;
+    }
+    #glr-loading-inicial .spinner {
+      width:40px;height:40px;border:3px solid rgba(99,102,241,0.2);
+      border-top-color:#6366f1;border-radius:50%;
+      animation:glr-spin 0.8s linear infinite;margin:0 auto 16px;
+    }
+    @keyframes glr-spin { to { transform:rotate(360deg); } }
     @keyframes pulse { 0%,100%{opacity:0.3;transform:scale(0.8)} 50%{opacity:1;transform:scale(1)} }
     @media print {
       #sidebar,#header { display:none!important; }
@@ -23,6 +36,14 @@
   </style>
 </head>
 <body>
+<!-- Loading overlay — aparece antes de qualquer conteúdo do app -->
+<div id="glr-loading-inicial">
+  <div style="text-align:center;">
+    <div class="spinner"></div>
+    <p style="color:#5a5b72;font-size:13px;margin:0;">Carregando...</p>
+  </div>
+</div>
+
 <div id="app">
 
   <!-- SIDEBAR -->
