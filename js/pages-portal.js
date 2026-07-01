@@ -94,12 +94,16 @@ function _portalFiltroBar(pageAtual) {
       ${id === 'todas' ? '📊' : ico} ${label}
     </button>`;
   };
+  const erroShopee = (cache?.resumoContas||[]).find(r => r.erro)?.erro;
+  const avisoErro = erroShopee
+    ? `<div style="width:100%;margin-top:8px;padding:8px 12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;font-size:11px;color:#ef4444;">⚠️ Shopee: ${erroShopee}</div>`
+    : '';
   const seletorContas = contas.length > 1 ? `
     <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border);margin-top:4px;">
       <span style="font-size:11px;font-weight:600;color:var(--text-secondary);align-self:center;">Conta:</span>
       ${btnSel('todas','Todas','')}
       ${contas.map(c => btnSel(c.id, c.nome, c.marketplace)).join('')}
-    </div>` : '';
+    </div>${avisoErro}` : avisoErro;
 
   const status = cache?.at
     ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>`
@@ -166,36 +170,42 @@ async function _portalMlOrders(meliId, dataFrom, dataTo) {
 }
 
 // Shopee: lista SNs paginado via proxy — espelha MarketplaceAPI.shopeeListOrderSns
-// A API exige order_status e tem limite de 15 dias por chamada
+// Retorna { sns, erro } — erro é string se houve falha na primeira chamada
 async function _portalShopeeSns(shopId, tsFrom, tsTo) {
   const STATUSES = ['COMPLETED','READY_TO_SHIP','PROCESSED','SHIPPED','INVOICE_PENDING','CANCELLED','IN_CANCEL','TO_RETURN'];
-  const CHUNK = 14 * 24 * 3600; // 14 dias em segundos
+  const CHUNK = 14 * 24 * 3600;
   const out = [];
   const seen = new Set();
+  let primeiroErro = null;
 
   for (let cFrom = tsFrom; cFrom < tsTo; cFrom += CHUNK) {
     const cTo = Math.min(cFrom + CHUNK - 1, tsTo);
     for (const st of STATUSES) {
       let cursor = '';
       do {
-        try {
-          const params = { shopId, time_range_field:'create_time', time_from:cFrom, time_to:cTo, page_size:100, order_status:st };
-          if (cursor) params.cursor = cursor;
-          let r;
-          try { r = await _portalMcCall('shopee_list_orders', params); }
-          catch(e) { console.warn('[PORTAL SHOPEE] erro list_orders', st, e.message); break; }
-          console.log('[PORTAL SHOPEE] list_orders', st, 'resposta:', JSON.stringify(r).slice(0,200));
-          const resp = r.data?.response || {};
-          const orders = resp.order_list || [];
-          for (const o of orders) {
-            if (!seen.has(o.order_sn)) { seen.add(o.order_sn); out.push({ sn: o.order_sn }); }
-          }
-          cursor = resp.more ? (resp.next_cursor || '') : '';
-        } catch(e) { console.warn('[PORTAL SHOPEE] erro inesperado', e.message); break; }
+        const params = { shopId, time_range_field:'create_time', time_from:cFrom, time_to:cTo, page_size:100, order_status:st };
+        if (cursor) params.cursor = cursor;
+        let r;
+        try { r = await _portalMcCall('shopee_list_orders', params); }
+        catch(e) { if (!primeiroErro) primeiroErro = e.message; break; }
+
+        // Detecta erro no corpo da resposta (Shopee retorna 200 mesmo em erro)
+        const apiErr = r?.error || r?.message || r?.error_msg;
+        if (apiErr && !r?.data?.response?.order_list) {
+          if (!primeiroErro) primeiroErro = `API: ${apiErr}`;
+          break;
+        }
+
+        const resp = r?.data?.response || {};
+        const orders = resp.order_list || [];
+        for (const o of orders) {
+          if (!seen.has(o.order_sn)) { seen.add(o.order_sn); out.push({ sn: o.order_sn }); }
+        }
+        cursor = resp.more ? (resp.next_cursor || '') : '';
       } while (cursor);
     }
   }
-  return out;
+  return { sns: out, erro: primeiroErro };
 }
 
 // ── Busca real na API (ML + Shopee), via proxy — API key nunca chega ao browser do cliente ──
@@ -295,7 +305,8 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
         const shopId = conta.param_to_use?.shopId || conta.external_id;
         const tsFrom = Math.floor(new Date(`${dataFrom}T00:00:00`).getTime()/1000);
         const tsTo   = Math.floor(new Date(`${dataTo}T23:59:59`).getTime()/1000);
-        const sns = await _portalShopeeSns(shopId, tsFrom, tsTo);
+        const { sns, erro: shopeeErro } = await _portalShopeeSns(shopId, tsFrom, tsTo);
+        if (shopeeErro) resumoContas.push({ mp:'Shopee', qtd: 0, erro: shopeeErro });
 
         const uniq = [], detMap = {};
         for (let i=0; i<sns.length; i+=50) {
