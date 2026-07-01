@@ -134,21 +134,34 @@ async function _portalMlOrders(meliId, dataFrom, dataTo) {
   return all;
 }
 
-// Shopee: lista SNs paginado via proxy
+// Shopee: lista SNs paginado via proxy — espelha MarketplaceAPI.shopeeListOrderSns
+// A API exige order_status e tem limite de 15 dias por chamada
 async function _portalShopeeSns(shopId, tsFrom, tsTo) {
-  const all = [];
-  let cursor = '';
-  do {
-    try {
-      const r = await _portalMcCall('shopee_list_orders', { shopId, time_range_field:'create_time', time_from:tsFrom, time_to:tsTo, page_size:50, cursor });
-      const resp = r.data?.response || r.data || {};
-      const orders = resp.order_list || resp.orders || [];
-      all.push(...orders.map(o => ({ sn: o.order_sn || o })));
-      cursor = resp.next_cursor || '';
-      if (!resp.more || !cursor) break;
-    } catch(e) { break; }
-  } while (true);
-  return all;
+  const STATUSES = ['COMPLETED','READY_TO_SHIP','PROCESSED','SHIPPED','INVOICE_PENDING','CANCELLED','IN_CANCEL','TO_RETURN'];
+  const CHUNK = 14 * 24 * 3600; // 14 dias em segundos
+  const out = [];
+  const seen = new Set();
+
+  for (let cFrom = tsFrom; cFrom < tsTo; cFrom += CHUNK) {
+    const cTo = Math.min(cFrom + CHUNK - 1, tsTo);
+    for (const st of STATUSES) {
+      let cursor = '';
+      do {
+        try {
+          const params = { shopId, time_range_field:'create_time', time_from:cFrom, time_to:cTo, page_size:100, order_status:st };
+          if (cursor) params.cursor = cursor;
+          const r = await _portalMcCall('shopee_list_orders', params);
+          const resp = r.data?.response || {};
+          const orders = resp.order_list || [];
+          for (const o of orders) {
+            if (!seen.has(o.order_sn)) { seen.add(o.order_sn); out.push({ sn: o.order_sn }); }
+          }
+          cursor = resp.more ? (resp.next_cursor || '') : '';
+        } catch(e) { break; }
+      } while (cursor);
+    }
+  }
+  return out;
 }
 
 // ── Busca real na API (ML + Shopee), via proxy — API key nunca chega ao browser do cliente ──
