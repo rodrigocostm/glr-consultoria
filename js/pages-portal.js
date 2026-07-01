@@ -253,7 +253,14 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
     const contasResp = await _portalMcCall('list_accounts', {});
     const ids = (cfg.contaIds||[]).map(String);
     const todasContas = contasResp.data?.accounts || contasResp.data || [];
+    if (!Array.isArray(todasContas) || todasContas.length === 0) {
+      throw new Error(`Nenhuma conta retornada pela API (list_accounts). Resp: ${JSON.stringify(contasResp).slice(0,200)}`);
+    }
     const contas = todasContas.filter(c => ids.includes(String(c.external_id)));
+    if (contas.length === 0) {
+      const idsDisp = todasContas.map(c=>c.external_id).join(', ');
+      throw new Error(`Contas do portal [${ids.join(', ')}] não encontradas na API. Disponíveis: [${idsDisp}]`);
+    }
 
     const novosPedidos = [];
     const resumoContas = [];
