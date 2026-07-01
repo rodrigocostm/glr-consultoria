@@ -541,15 +541,7 @@ window._initPortalCliente = async function(cfg) {
   window._portalConfig = cfg;
   _configurarSidebarCliente(cfg);
   if (typeof Router !== 'undefined') Router.navigate('portal-dashboard');
-
-  // Mostra loading enquanto busca dados pela primeira vez
-  if (!_portalCache()) {
-    _portalMostrarLoading('Carregando seus dados...');
-    const f = _portalFiltroData();
-    await _portalBuscarVendas(f.de, f.ate, false);
-    _portalOcultarLoading();
-    if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
-  }
+  // O fetch inicial é feito pela rota portal-dashboard quando detecta ausência de cache
 
   // Auto-refresh: incremental a cada minuto, full refresh às 3h
   _iniciarAutoRefreshPortal();
