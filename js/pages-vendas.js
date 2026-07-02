@@ -415,6 +415,7 @@ Router.register('vendas', async (params, el) => {
         const semVenda = itemIds.filter(id => !idsVendidosShopee.has(String(id)));
         if (status) status.textContent = `Checando visitas (Shopee): ${conta.nickname||conta.external_id} (${semVenda.length} anúncios sem venda)...`;
 
+        const comVisita = []; // { item_id, visitas } — vira achado depois de buscar nome/preço/estoque
         for (let i=0; i<semVenda.length; i+=50) {
           const lote = semVenda.slice(i,i+50);
           try {
@@ -422,15 +423,38 @@ Router.register('vendas', async (params, el) => {
             const lista = re?.data?.response?.item_list || re?.data?.item_list || [];
             for (const it of lista) {
               const visitas = parseInt(it.views) || 0;
-              if (visitas > 0 && !(parseInt(it.sale) > 0)) {
-                achados.push({
-                  id: it.item_id, nome: it.item_name || `Item ${it.item_id}`, preco: 0, estoque: 0,
-                  visitas, conta: conta.nickname || conta.external_id, mp: 'Shopee',
-                  link: `https://shopee.com.br/product/${conta.external_id}/${it.item_id}`,
-                });
-              }
+              if (visitas > 0 && !(parseInt(it.sale) > 0)) comVisita.push({ item_id: it.item_id, visitas });
             }
           } catch(e) {}
+        }
+
+        // shopee_get_extra_info não traz nome/preço/estoque — busca os detalhes
+        // reais só de quem sobrou (bem menos itens que o catálogo inteiro)
+        if (status) status.textContent = `Buscando detalhes dos produtos (Shopee): ${conta.nickname||conta.external_id}...`;
+        for (let i=0; i<comVisita.length; i+=50) {
+          const lote = comVisita.slice(i,i+50);
+          try {
+            const rd = await MarketplaceAPI.call('shopee_get_items_batch', { shopId: conta.external_id, item_id_list: lote.map(o=>o.item_id) });
+            const detalhes = rd?.data?.response?.item_list || rd?.data?.item_list || [];
+            const detMap = {};
+            detalhes.forEach(d => { detMap[d.item_id] = d; });
+            for (const o of lote) {
+              const d = detMap[o.item_id] || {};
+              achados.push({
+                id: o.item_id, nome: d.item_name || `Item ${o.item_id}`,
+                preco: d.price_min ?? d.price_max ?? 0, estoque: d.total_stock ?? 0,
+                visitas: o.visitas, conta: conta.nickname || conta.external_id, mp: 'Shopee',
+                link: `https://shopee.com.br/product/${conta.external_id}/${o.item_id}`,
+              });
+            }
+          } catch(e) {
+            // Falhou o detalhe — ainda mostra a oportunidade, só sem nome/preço/estoque
+            lote.forEach(o => achados.push({
+              id: o.item_id, nome: `Item ${o.item_id}`, preco: 0, estoque: 0,
+              visitas: o.visitas, conta: conta.nickname || conta.external_id, mp: 'Shopee',
+              link: `https://shopee.com.br/product/${conta.external_id}/${o.item_id}`,
+            }));
+          }
         }
       }
 
