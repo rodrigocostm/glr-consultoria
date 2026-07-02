@@ -855,11 +855,15 @@ function _configurarSidebarCliente(cfg) {
 }
 
 // ── Kpi card helper ───────────────────────────────────────────
+// Cor só nos rótulos que carregam um sinal real (lucro/margem/cancelamento/roas) —
+// o resto fica neutro, sem cada card vindo de uma cor diferente sem motivo
 function _pKpi(label, valor, sub, cor='#6366f1') {
+  const semantico = /lucro|margem|cancelamento|roas/i.test(label);
+  const corLabel = semantico ? cor : 'var(--text-secondary)';
   return `
-    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
-      <div style="font-size:11px;font-weight:700;color:${cor};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">${label}</div>
-      <div style="font-size:24px;font-weight:700;color:var(--text-primary);">${valor}</div>
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
+      <div style="font-size:11px;font-weight:600;color:${corLabel};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">${label}</div>
+      <div style="font-size:20px;font-weight:700;color:var(--text-primary);">${valor}</div>
       ${sub ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${sub}</div>` : ''}
     </div>`;
 }

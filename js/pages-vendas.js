@@ -687,10 +687,14 @@ Router.register('vendas', async (params, el) => {
     });
   }
 
+  // Cor só nos cards que realmente carregam um sinal (lucro/margem) — o resto
+  // fica neutro, sem o efeito "arco-íris" de um card colorido diferente pra cada métrica
   function kpiCard(label, val, sub, cor) {
+    const semantico = /lucro|margem/i.test(label);
+    const corValor = semantico ? cor : 'var(--text-primary)';
     return `<div class="kpi-card">
       <div class="kpi-label">${label}</div>
-      <div class="kpi-value" style="color:${cor};font-size:18px;">${val}</div>
+      <div class="kpi-value" style="color:${corValor};font-size:18px;">${val}</div>
       ${sub?`<div class="kpi-sub">${sub}</div>`:''}
     </div>`;
   }
