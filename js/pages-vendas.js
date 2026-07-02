@@ -20,12 +20,31 @@ Router.register('vendas', async (params, el) => {
   let contas    = [];  // todas as contas da API
   let filtroPeriodo = 'custom'; // padrão: só ontem
   let filtroPlat    = 'todas';
-  let filtroEmpresa = 'todas';
-  let filtroConta   = 'todas';
+  let filtroEmpresas = new Set(); // vazio = todas
+  let filtroContasSel = new Set(); // vazio = todas
   let customFrom    = fmtDate(ontem); // ontem
   let customTo      = fmtDate(ontem); // ontem
   let expandido     = null;
   let abaAtiva      = 'dashboard'; // 'dashboard' | 'pedidos'
+
+  // Converte o preset de período selecionado em { dataFrom, dataTo } — usado tanto
+  // na carga inicial quanto em toda busca disparada pelo filtro de data
+  function _periodoParaDatas() {
+    const y = hoje.getFullYear(), m = hoje.getMonth();
+    switch (filtroPeriodo) {
+      case 'hoje':  return { dataFrom: fmtDate(hoje),  dataTo: fmtDate(hoje) };
+      case 'ontem': return { dataFrom: fmtDate(ontem), dataTo: fmtDate(ontem) };
+      case 'mes':          return { dataFrom: fmtDate(new Date(y, m, 1)), dataTo: fmtDate(hoje) };
+      case 'mes-passado':  return { dataFrom: fmtDate(new Date(y, m-1, 1)), dataTo: fmtDate(new Date(y, m, 0)) };
+      case 'ano':          return { dataFrom: fmtDate(new Date(y, 0, 1)), dataTo: fmtDate(hoje) };
+      case 'custom': return { dataFrom: customFrom, dataTo: customTo };
+      default: {
+        const dias = parseInt(filtroPeriodo) || 30;
+        const d = new Date(ontem); d.setDate(ontem.getDate() - dias + 1);
+        return { dataFrom: fmtDate(d), dataTo: fmtDate(ontem) };
+      }
+    }
+  }
 
   const salvarCustos  = () => localStorage.setItem(STORAGE_CUSTOS, JSON.stringify(custos));
   const salvarLinhas  = () => localStorage.setItem(STORAGE_LINHAS, JSON.stringify(linhasExt));
@@ -123,28 +142,101 @@ Router.register('vendas', async (params, el) => {
     return pedidos.filter(p => {
       if (isCanceladoVendas(p)) return false; // cancelados nunca entram nos totais
       if (filtroPlat !== 'todas' && p.plataforma !== filtroPlat) return false;
-      if (filtroConta !== 'todas' && p.contaId !== filtroConta) return false;
+      if (filtroContasSel.size > 0 && !filtroContasSel.has(p.contaId)) return false;
       return true;
     });
   }
 
-  const contaTag    = c => c.tags?.[0]?.name || 'Sem tag';
-  const contaNome   = c => c.label || c.nickname || c.external_id;
+  // Normaliza a tag da conta pro nome real da empresa: "EAP - Mercado Livre" e
+  // "EAP - SHOPEE" viram só "EAP" — sem isso cada tag virava uma "empresa" diferente
+  const empresaNome = c => (c.tags?.[0]?.name || 'Sem tag').split(' - ')[0].trim();
+  const contaNome    = c => c.label || c.nickname || c.external_id;
+  const contaEmpresas = c => (c.tags?.length ? c.tags.map(t=>t.name?.split(' - ')[0].trim()) : ['Sem tag']);
 
   function renderFiltroEmpresaConta() {
-    const selEmp  = document.getElementById('sel-empresa');
-    const selCont = document.getElementById('sel-conta');
-    if (!selEmp || !selCont) return;
+    const wrapEmp  = document.getElementById('filtro-empresa');
+    const wrapCont = document.getElementById('filtro-conta');
+    if (!wrapEmp || !wrapCont) return;
 
-    const empresas = [...new Set(contas.map(contaTag))].sort();
-    selEmp.innerHTML = `<option value="todas">Todas empresas</option>` +
-      empresas.map(e => `<option value="${e}">${e}</option>`).join('');
-    selEmp.value = filtroEmpresa;
+    const empresas = [...new Set(contas.flatMap(contaEmpresas))].sort();
+    const contasFiltradas = filtroEmpresas.size === 0
+      ? contas
+      : contas.filter(c => contaEmpresas(c).some(e => filtroEmpresas.has(e)));
 
-    const contasFiltradas = filtroEmpresa === 'todas' ? contas : contas.filter(c => contaTag(c) === filtroEmpresa);
-    selCont.innerHTML = `<option value="todas">Todas contas</option>` +
-      contasFiltradas.map(c => `<option value="${c.external_id}">${contaNome(c)}</option>`).join('');
-    selCont.value = filtroConta;
+    _renderCheckboxDropdown(wrapEmp, {
+      label: 'Empresa', icon: '🏢',
+      itens: empresas.map(e => ({ valor: e, label: e })),
+      selecionados: filtroEmpresas,
+      onChange: (novoSet) => {
+        filtroEmpresas = novoSet;
+        // Remove da seleção de contas qualquer conta que não pertence mais à empresa filtrada
+        if (filtroEmpresas.size > 0) {
+          const validas = new Set(contas.filter(c => contaEmpresas(c).some(e=>filtroEmpresas.has(e))).map(c=>c.external_id));
+          filtroContasSel = new Set([...filtroContasSel].filter(id => validas.has(id)));
+        }
+        renderFiltroEmpresaConta();
+        renderLista();
+      },
+    });
+
+    _renderCheckboxDropdown(wrapCont, {
+      label: 'Conta', icon: '🏬',
+      itens: contasFiltradas.map(c => ({ valor: c.external_id, label: contaNome(c) })),
+      selecionados: filtroContasSel,
+      onChange: (novoSet) => { filtroContasSel = novoSet; renderFiltroEmpresaConta(); renderLista(); },
+    });
+  }
+
+  // ── Dropdown de checkboxes reutilizável (empresa/conta) ────────
+  // itens: [{valor,label}], selecionados: Set, onChange(novoSet)
+  function _renderCheckboxDropdown(container, { label, icon, itens, selecionados, onChange }) {
+    const uid = container.id;
+    const qtdSel = selecionados.size;
+    const textoBotao = qtdSel === 0 ? `Todas ${label.toLowerCase()}s` : qtdSel === 1 ? itens.find(i=>selecionados.has(i.valor))?.label || `1 selecionada` : `${qtdSel} selecionadas`;
+    container.innerHTML = `
+      <div style="position:relative;">
+        <button type="button" class="form-input dcb-toggle" style="width:170px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:6px;cursor:pointer;">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${icon} ${textoBotao}</span>
+          <span style="font-size:10px;opacity:0.6;">▾</span>
+        </button>
+        <div class="dcb-panel" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:220px;max-height:280px;overflow-y:auto;padding:6px;">
+          ${itens.length === 0 ? `<div style="padding:8px;font-size:12px;color:var(--text-muted);">Nenhuma opção</div>` : itens.map(i => `
+            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--text-primary);" onmouseover="this.style.background='var(--bg-card-hover)'" onmouseout="this.style.background='transparent'">
+              <input type="checkbox" value="${i.valor}" ${selecionados.has(i.valor)?'checked':''} style="width:14px;height:14px;accent-color:#6366f1;">
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.label}</span>
+            </label>`).join('')}
+          ${itens.length > 0 ? `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;display:flex;gap:6px;">
+            <button type="button" class="dcb-limpar" style="flex:1;font-size:11px;padding:5px;background:var(--bg-card-hover);border:none;border-radius:5px;color:var(--text-secondary);cursor:pointer;">Limpar</button>
+          </div>` : ''}
+        </div>
+      </div>`;
+
+    const btn   = container.querySelector('.dcb-toggle');
+    const panel = container.querySelector('.dcb-panel');
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      document.querySelectorAll('.dcb-panel').forEach(p => { if (p !== panel) p.style.display = 'none'; });
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    panel.addEventListener('click', ev => ev.stopPropagation());
+    container.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const novo = new Set(selecionados);
+        if (cb.checked) novo.add(cb.value); else novo.delete(cb.value);
+        onChange(novo);
+      });
+    });
+    const btnLimpar = container.querySelector('.dcb-limpar');
+    if (btnLimpar) btnLimpar.addEventListener('click', () => onChange(new Set()));
+  }
+
+  // Fecha qualquer dropdown de checkbox aberto ao clicar fora — registra só uma vez
+  // (esse handler roda a cada navegação pra página, sem a guarda duplicaria o listener)
+  if (!window._dcbGlobalCloseListener) {
+    window._dcbGlobalCloseListener = true;
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.dcb-panel').forEach(p => p.style.display = 'none');
+    });
   }
 
   // ── Trocar aba ───────────────────────────────────────────────
@@ -946,22 +1038,15 @@ Router.register('vendas', async (params, el) => {
       const r = await MarketplaceAPI.call('list_accounts');
       contas  = r.data?.accounts||[];
       renderFiltroEmpresaConta();
-      let dataFrom, dataTo;
-      if (filtroPeriodo==='custom') { dataFrom=customFrom; dataTo=customTo; }
-      else {
-        const dias=parseInt(filtroPeriodo)||30;
-        dataTo=fmtDate(ontem);
-        const d=new Date(ontem); d.setDate(ontem.getDate()-dias+1);
-        dataFrom=fmtDate(d);
-      }
+      const { dataFrom, dataTo } = _periodoParaDatas();
 
       pedidos = [];
 
       // Respeita filtro de conta/empresa selecionado — só busca o que está no filtro
-      const contasParaBuscar = filtroConta !== 'todas'
-        ? contas.filter(c => c.external_id === filtroConta)
-        : filtroEmpresa !== 'todas'
-          ? contas.filter(c => (c.tags?.[0]?.name || 'Sem tag') === filtroEmpresa)
+      const contasParaBuscar = filtroContasSel.size > 0
+        ? contas.filter(c => filtroContasSel.has(c.external_id))
+        : filtroEmpresas.size > 0
+          ? contas.filter(c => contaEmpresas(c).some(e => filtroEmpresas.has(e)))
           : contas;
 
       for (const conta of contasParaBuscar) {
@@ -1310,11 +1395,14 @@ Router.register('vendas', async (params, el) => {
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <select id="sel-periodo" class="form-input" style="width:155px;">
+          <option value="hoje">Hoje</option>
+          <option value="ontem">Ontem</option>
           <option value="7">Últimos 7 dias</option>
-          <option value="14">Últimos 14 dias</option>
+          <option value="15">Últimos 15 dias</option>
           <option value="30">Últimos 30 dias</option>
-          <option value="60">Últimos 60 dias</option>
-          <option value="90">Últimos 90 dias</option>
+          <option value="mes">Esse mês</option>
+          <option value="mes-passado">Mês passado</option>
+          <option value="ano">Esse ano</option>
           <option value="custom" selected>📅 Personalizado</option>
         </select>
         <div id="custom-range" style="display:flex;align-items:center;gap:6px;">
@@ -1322,12 +1410,8 @@ Router.register('vendas', async (params, el) => {
           <span style="color:var(--text-secondary);">até</span>
           <input type="date" id="inp-date-to" class="form-input" value="${customTo}" style="width:140px;padding:7px 10px;">
         </div>
-        <select id="sel-empresa" class="form-input" style="width:145px;">
-          <option value="todas">Todas empresas</option>
-        </select>
-        <select id="sel-conta" class="form-input" style="width:145px;">
-          <option value="todas">Todas contas</option>
-        </select>
+        <div id="filtro-empresa"></div>
+        <div id="filtro-conta"></div>
         <select id="sel-plat" class="form-input" style="width:150px;">
           <option value="todas">Todas plataformas</option>
           <option value="Mercado Livre">🟡 Mercado Livre</option>
@@ -1402,14 +1486,10 @@ Router.register('vendas', async (params, el) => {
   document.getElementById('sel-periodo').addEventListener('change', e => {
     filtroPeriodo=e.target.value;
     document.getElementById('custom-range').style.display=filtroPeriodo==='custom'?'flex':'none';
+    // Presets têm data pronta na hora — busca já dispara, sem precisar clicar em "Atualizar".
+    // Só "Personalizado" espera o usuário preencher as datas e clicar no botão.
+    if (filtroPeriodo !== 'custom') buscarPedidos();
   });
-  document.getElementById('sel-empresa').addEventListener('change', e => {
-    filtroEmpresa = e.target.value;
-    filtroConta   = 'todas';
-    renderFiltroEmpresaConta();
-    renderLista();
-  });
-  document.getElementById('sel-conta').addEventListener('change', e => { filtroConta=e.target.value; renderLista(); });
   document.getElementById('sel-plat').addEventListener('change', e => { filtroPlat=e.target.value; renderLista(); });
   document.getElementById('inp-date-from').addEventListener('change', e => { customFrom=e.target.value; });
   document.getElementById('inp-date-to').addEventListener('change',   e => { customTo=e.target.value; });
@@ -1428,14 +1508,7 @@ Router.register('vendas', async (params, el) => {
       renderFiltroEmpresaConta();
     } catch(e) { console.warn('[Vendas] Falha ao carregar contas:', e.message); }
 
-    let dataFrom, dataTo;
-    if (filtroPeriodo === 'custom') { dataFrom = customFrom; dataTo = customTo; }
-    else {
-      const dias = parseInt(filtroPeriodo) || 30;
-      dataTo = fmtDate(ontem);
-      const d = new Date(ontem); d.setDate(ontem.getDate() - dias + 1);
-      dataFrom = fmtDate(d);
-    }
+    const { dataFrom, dataTo } = _periodoParaDatas();
     const at = carregarCache(dataFrom, dataTo);
     if (at) {
       custos = JSON.parse(localStorage.getItem(STORAGE_CUSTOS)||'{}');
