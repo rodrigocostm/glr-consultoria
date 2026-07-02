@@ -142,56 +142,72 @@ Router.register('integracoes', (params, el) => {
     }
   };
 
-  window.recarregarContas = async () => {
+  // Renderiza a lista de contas + o select de vínculo a partir de um array já
+  // carregado (do cache sincronizado ou de uma busca nova) — sem chamada de API
+  function renderContasNaTela(contas) {
     const el = document.getElementById('lista-contas');
     const sel = document.getElementById('sel-conta-vinc');
+    if (!el || !sel) return;
+
+    if (!contas.length) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Nenhuma conta encontrada. Verifique a API key.</div>';
+      return;
+    }
+
+    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">
+      ${contas.map(c => {
+        const tags = contaTagsStr(c);
+        const nick = nicknames[c.external_id] || '';
+        return `
+        <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:22px;margin-top:2px;">${platIcon[c.marketplace] || '🏪'}</span>
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${platNome[c.marketplace] || c.marketplace}</div>
+            <div style="font-size:11px;color:var(--text-muted);">ID: ${c.external_id}</div>
+            ${tags ? `<div style="font-size:10px;color:#818cf8;margin-top:2px;font-weight:600;">${tags}</div>` : ''}
+            <input type="text" value="${nick}" placeholder="Apelido (opcional)"
+              onchange="salvarNickname('${c.external_id}', this.value)"
+              style="margin-top:5px;width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--text-primary);outline:none;">
+            <div style="font-size:10px;margin-top:4px;">
+              <span style="background:${c.connected ? '#10b98120' : '#ef444420'};color:${c.connected ? '#10b981' : '#ef4444'};padding:1px 6px;border-radius:99px;">
+                ${c.connected ? '● Conectado' : '○ Desconectado'}
+              </span>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+    // Atualiza select de vínculo — mostra tag + apelido
+    sel.innerHTML = '<option value="">Selecione uma conta...</option>' +
+      contas.map(c => {
+        const tags = contaTagsStr(c);
+        const nick = nicknames[c.external_id];
+        const label = nick || tags || c.nickname || c.external_id;
+        return `<option value='${JSON.stringify(c).replace(/'/g,"&apos;")}'>${platIcon[c.marketplace]||'🏪'} ${platNome[c.marketplace]||c.marketplace} ${c.external_id} — ${label}</option>`;
+      }).join('');
+  }
+
+  window.recarregarContas = async () => {
+    const el = document.getElementById('lista-contas');
     el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">⏳ Carregando contas...</div>';
     try {
       const contas = await MarketplaceAPI.listAccounts();
       localStorage.setItem('glr_mc_contas', JSON.stringify(contas));
-
-      if (!contas.length) {
-        el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Nenhuma conta encontrada. Verifique a API key.</div>';
-        return;
-      }
-
-      el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">
-        ${contas.map(c => {
-          const tags = contaTagsStr(c);
-          const nick = nicknames[c.external_id] || '';
-          return `
-          <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;align-items:flex-start;gap:10px;">
-            <span style="font-size:22px;margin-top:2px;">${platIcon[c.marketplace] || '🏪'}</span>
-            <div style="min-width:0;flex:1;">
-              <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${platNome[c.marketplace] || c.marketplace}</div>
-              <div style="font-size:11px;color:var(--text-muted);">ID: ${c.external_id}</div>
-              ${tags ? `<div style="font-size:10px;color:#818cf8;margin-top:2px;font-weight:600;">${tags}</div>` : ''}
-              <input type="text" value="${nick}" placeholder="Apelido (opcional)"
-                onchange="salvarNickname('${c.external_id}', this.value)"
-                style="margin-top:5px;width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--text-primary);outline:none;">
-              <div style="font-size:10px;margin-top:4px;">
-                <span style="background:${c.connected ? '#10b98120' : '#ef444420'};color:${c.connected ? '#10b981' : '#ef4444'};padding:1px 6px;border-radius:99px;">
-                  ${c.connected ? '● Conectado' : '○ Desconectado'}
-                </span>
-              </div>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>`;
-
-      // Atualiza select de vínculo — mostra tag + apelido
-      sel.innerHTML = '<option value="">Selecione uma conta...</option>' +
-        contas.map(c => {
-          const tags = contaTagsStr(c);
-          const nick = nicknames[c.external_id];
-          const label = nick || tags || c.nickname || c.external_id;
-          return `<option value='${JSON.stringify(c).replace(/'/g,"&apos;")}'>${platIcon[c.marketplace]||'🏪'} ${platNome[c.marketplace]||c.marketplace} ${c.external_id} — ${label}</option>`;
-        }).join('');
-
+      renderContasNaTela(contas);
     } catch(e) {
       el.innerHTML = `<div style="color:#ef4444;font-size:13px;">✗ Erro: ${e.message}</div>`;
     }
   };
+
+  // Ao abrir a página: mostra o cache já sincronizado (sem chamada de API) —
+  // "Recarregar" continua disponível pra buscar dado fresco quando quiser
+  if (apiKey) {
+    try {
+      const contasCache = JSON.parse(localStorage.getItem('glr_mc_contas')||'[]');
+      if (contasCache.length) renderContasNaTela(contasCache);
+    } catch(e) {}
+  }
 
   window.vincularConta = () => {
     const clienteId = document.getElementById('sel-cliente-vinc').value;

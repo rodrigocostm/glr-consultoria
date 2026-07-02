@@ -20,6 +20,9 @@ const GLR_KEYS = [
   'glr_aliquotas',      // % de imposto padrão por conta
   'glr_vendas_linhas',  // linhas extras de custo/desconto lançadas no admin
   'glr_mc_apikey',      // API Key do Marketplace Connect — precisa funcionar em qualquer PC do admin
+  'glr_vendas_cache',   // pedidos já buscados na página Vendas — evita rebuscar em outro PC
+  'glr_fin_cache',      // pedidos + ADS já buscados no Financeiro — evita rebuscar em outro PC
+  'glr_mc_contas',      // lista de contas conectadas do Marketplace Connect
 ];
 
 // ── Intercepta localStorage.setItem para sincronizar com Supabase ──
