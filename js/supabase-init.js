@@ -16,7 +16,9 @@ const GLR_KEYS = [
   'glr_clientes', 'glr_gestores', 'glr_tarefas', 'glr_acoes',
   'glr_alertas', 'glr_oportunidades', 'glr_projecoes', 'glr_dre',
   'glr_mc_vinculos', 'glr_mc_nicknames', 'glr_portal_configs',
-  'glr_vendas_custos', // custo de produto lançado no admin — precisa chegar no portal do cliente
+  'glr_vendas_custos',  // custo de produto lançado no admin — precisa chegar no portal do cliente
+  'glr_aliquotas',      // % de imposto padrão por conta
+  'glr_vendas_linhas',  // linhas extras de custo/desconto lançadas no admin
 ];
 
 // ── Intercepta localStorage.setItem para sincronizar com Supabase ──

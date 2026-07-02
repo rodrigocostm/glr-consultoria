@@ -28,18 +28,29 @@ function _portalFinCache() {
   try { return JSON.parse(localStorage.getItem('glr_fin_cache')||'null'); } catch(e) { return null; }
 }
 
-// Busca os custos de produto lançados no admin (página Vendas) direto do Supabase —
+// Busca custo/imposto/linhas extras lançados no admin (página Vendas) direto do Supabase —
 // o portal do cliente não roda o sync geral do admin (isolamento de segurança), então
-// precisa puxar essa chave especificamente pra ver o custo já descontado no dashboard.
+// precisa puxar essas chaves especificamente pra calcular o mesmo lucro que o admin vê.
 async function _portalSincronizarCustos() {
   try {
-    const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave','glr_vendas_custos').single();
-    if (!error && data?.dados) localStorage.setItem('glr_vendas_custos', JSON.stringify(data.dados));
+    const { data, error } = await _sb.from('glr_storage')
+      .select('chave, dados')
+      .in('chave', ['glr_vendas_custos', 'glr_aliquotas', 'glr_vendas_linhas']);
+    if (error || !data) return;
+    data.forEach(row => { if (row.dados != null) localStorage.setItem(row.chave, JSON.stringify(row.dados)); });
   } catch(e) {}
 }
 
 function _portalCustos() {
   try { return JSON.parse(localStorage.getItem('glr_vendas_custos')||'{}'); } catch(e) { return {}; }
+}
+
+function _portalAliquotas() {
+  try { return JSON.parse(localStorage.getItem('glr_aliquotas')||'{}'); } catch(e) { return {}; }
+}
+
+function _portalLinhasExtras() {
+  try { return JSON.parse(localStorage.getItem('glr_vendas_linhas')||'[]'); } catch(e) { return []; }
 }
 
 // ── Conta selecionada (filtro por conta individual) ──────────
@@ -824,13 +835,14 @@ Router.register('portal-dashboard', (params, el) => {
   }
   if (!temLiquido) liquido = fat; // fallback se ainda não processado no financeiro
 
-  // Custo de produto (preenchido na página Vendas) → lucro bruto
-  let custoTotal = 0, temCusto = false;
+  // Custo de produto + imposto (mesma fórmula do admin) → lucro bruto
+  let lucroBruto = 0, custoTotal = 0, temCusto = false;
   for (const p of ativos) {
-    const c = custos[p.id];
-    if (c?.custo) { custoTotal += (parseFloat(c.custo)||0) * (parseFloat(p.qtd)||1); temCusto = true; }
+    const l = _portalCalcLucro(p, custos);
+    lucroBruto += l.lucro;
+    custoTotal += l.custo;
+    if (l.custo > 0) temCusto = true;
   }
-  const lucroBruto = liquido - custoTotal;
   const margem = fat > 0 ? (lucroBruto/fat*100) : 0;
 
   // ADS — investimento no período + margem pós-ADS
@@ -953,15 +965,33 @@ Router.register('portal-dashboard', (params, el) => {
 const _PORTAL_PLAT_COR = { 'Shopee':'#f97316', 'Mercado Livre':'#fbbf24' };
 let _portalVendasExpandido = null;
 
+// Replica exatamente a lógica de calcLucro do admin (pages-vendas.js) para o
+// portal chegar no mesmo número: imposto por escrow > manual por pedido > alíquota da conta
 function _portalCalcLucro(p, custos) {
-  const c = custos[p.id] || {};
-  const custo    = parseFloat(c.custo) || 0;
-  const receita  = parseFloat(p.valor) || 0;
-  const liquido  = p.taxas?.liquido != null ? parseFloat(p.taxas.liquido) : null;
-  const base     = liquido != null ? liquido : receita;
-  const lucro    = base - custo;
-  const margem   = receita > 0 ? (lucro/receita*100) : 0;
-  return { receita, liquido, custo, lucro, margem };
+  const receita = parseFloat(p.valor) || 0;
+  const tx      = p.taxas || {};
+  const liquido = tx.liquido != null ? parseFloat(tx.liquido) : null;
+  const c       = custos[p.id] || {};
+  const custo   = parseFloat(c.custo)  || 0;
+  const outros  = parseFloat(c.outros) || 0;
+
+  const aliquotas = _portalAliquotas();
+  const impAPIRaw = tx.imposto != null ? parseFloat(tx.imposto) : null;
+  const impManual = parseFloat(c.imposto) || 0;
+  const impAliq   = parseFloat(aliquotas[p.contaId] || 0);
+  const impPct    = impManual || impAliq;
+  const impDeEscrow = (impAPIRaw != null && impAPIRaw > 0);
+  const impVal    = impDeEscrow ? impAPIRaw : (receita * impPct / 100);
+
+  let extra = 0;
+  for (const l of _portalLinhasExtras())
+    extra += l.tipo==='pct' ? receita*(parseFloat(l.valor)||0)/100 : (parseFloat(l.valor)||0);
+
+  const base = liquido != null ? liquido : receita;
+  const impSubtrair = impDeEscrow ? 0 : impVal; // se veio do escrow já está deduzido do líquido
+  const lucro  = base - custo - impSubtrair - outros - extra;
+  const margem = receita > 0 ? (lucro/receita*100) : 0;
+  return { receita, liquido, custo, impVal, impPct, impDeEscrow, outros, extra, lucro, margem };
 }
 
 Router.register('portal-vendas', (params, el) => {
@@ -1084,6 +1114,9 @@ function _renderPortalVendaDetalhe(p, l) {
     tx.voucher>0     ? { label:'🎟️ Voucher',         v: tx.voucher,     cor:'#16a34a', sinal:'+' } : null,
     l.liquido!=null  ? { label:'💳 Líquido (após taxas)', v:l.liquido, cor:'#8b5cf6', sinal:'=', bold:true } : null,
     { label:'📦 Custo do Produto', v:-l.custo, cor:'#dc2626', sinal:'-' },
+    l.impVal>0 ? { label:`🧾 Imposto${l.impDeEscrow?' (escrow)':l.impPct?` (${l.impPct}%)`:''}`, v:-l.impVal, cor:'#fbbf24', sinal:'-' } : null,
+    l.outros>0 ? { label:'➕ Outros custos', v:-l.outros, cor:'#dc2626', sinal:'-' } : null,
+    l.extra   ? { label:'➕ Linhas extras', v:-l.extra, cor: l.extra>0?'#dc2626':'#16a34a', sinal: l.extra>0?'-':'+' } : null,
     { label:'✅ Lucro Bruto', v:l.lucro, cor:_pCorMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
   ].filter(Boolean);
 
