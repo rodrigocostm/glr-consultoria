@@ -169,13 +169,16 @@ Router.register('vendas', async (params, el) => {
       selecionados: filtroEmpresas,
       onChange: (novoSet) => {
         filtroEmpresas = novoSet;
-        // Remove da seleção de contas qualquer conta que não pertence mais à empresa filtrada
         if (filtroEmpresas.size > 0) {
-          const validas = new Set(contas.filter(c => contaEmpresas(c).some(e=>filtroEmpresas.has(e))).map(c=>c.external_id));
-          filtroContasSel = new Set([...filtroContasSel].filter(id => validas.has(id)));
+          const validas = contas.filter(c => contaEmpresas(c).some(e=>filtroEmpresas.has(e))).map(c=>c.external_id);
+          // Marcar uma empresa já seleciona as contas dela — sem isso o usuário
+          // teria que marcar empresa E conta pra busca sair do lugar
+          filtroContasSel = new Set(validas);
+        } else {
+          filtroContasSel = new Set();
         }
         renderFiltroEmpresaConta();
-        renderLista();
+        buscarPedidos();
       },
     });
 
@@ -183,7 +186,7 @@ Router.register('vendas', async (params, el) => {
       label: 'Conta', icon: '🏬',
       itens: contasFiltradas.map(c => ({ valor: c.external_id, label: contaNome(c) })),
       selecionados: filtroContasSel,
-      onChange: (novoSet) => { filtroContasSel = novoSet; renderFiltroEmpresaConta(); renderLista(); },
+      onChange: (novoSet) => { filtroContasSel = novoSet; renderFiltroEmpresaConta(); buscarPedidos(); },
     });
   }
 
@@ -1031,6 +1034,15 @@ Router.register('vendas', async (params, el) => {
     const statusEl = document.getElementById('vendas-status');
     const btnEl    = document.getElementById('btn-buscar');
     if (!apiKey) { if(statusEl) statusEl.textContent='⚠️ Configure a API Key nas Integrações.'; return; }
+    // Trava: não busca nada até o usuário escolher pelo menos uma conta.
+    // Buscar "todas as contas" de uma vez empilha chamada em cima de chamada
+    // e já causou bug de dados — melhor forçar a escolha explícita.
+    if (filtroContasSel.size === 0) {
+      if (statusEl) statusEl.innerHTML = '⚠️ Selecione ao menos uma <strong>conta</strong> no filtro acima para buscar os pedidos.';
+      pedidos = [];
+      renderLista();
+      return;
+    }
     if (btnEl)    { btnEl.disabled=true; btnEl.textContent='⏳ Buscando...'; }
     if (statusEl) statusEl.textContent='Conectando...';
 
@@ -1043,11 +1055,7 @@ Router.register('vendas', async (params, el) => {
       pedidos = [];
 
       // Respeita filtro de conta/empresa selecionado — só busca o que está no filtro
-      const contasParaBuscar = filtroContasSel.size > 0
-        ? contas.filter(c => filtroContasSel.has(c.external_id))
-        : filtroEmpresas.size > 0
-          ? contas.filter(c => contaEmpresas(c).some(e => filtroEmpresas.has(e)))
-          : contas;
+      const contasParaBuscar = contas.filter(c => filtroContasSel.has(c.external_id));
 
       for (const conta of contasParaBuscar) {
         // ── Mercado Livre ──
@@ -1510,14 +1518,18 @@ Router.register('vendas', async (params, el) => {
 
     const { dataFrom, dataTo } = _periodoParaDatas();
     const at = carregarCache(dataFrom, dataTo);
+    const statusEl = document.getElementById('vendas-status');
     if (at) {
+      // Cache é local, não chama a API — pode mostrar direto
       custos = JSON.parse(localStorage.getItem(STORAGE_CUSTOS)||'{}');
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
-      const statusEl = document.getElementById('vendas-status');
       if (statusEl) statusEl.innerHTML = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;">📦 cache ${fmtAgo(at)}</span>`;
       renderLista();
     } else {
-      buscarPedidos();
+      // Sem cache: não busca nada sozinho — espera o usuário escolher a conta,
+      // evitando disparar chamada em cima de chamada pra todas as contas de uma vez
+      if (statusEl) statusEl.innerHTML = '⚠️ Selecione ao menos uma <strong>conta</strong> no filtro acima para buscar os pedidos.';
+      renderLista();
     }
   })();
 });
