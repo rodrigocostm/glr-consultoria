@@ -298,7 +298,7 @@ Router.register('vendas', async (params, el) => {
   // ── Trocar aba ───────────────────────────────────────────────
   function setAba(aba) {
     abaAtiva = aba;
-    ['dashboard','pedidos'].forEach(a => {
+    ['dashboard','pedidos','oportunidades'].forEach(a => {
       const btn = document.getElementById(`tab-${a}`);
       const sec = document.getElementById(`sec-${a}`);
       if (btn) btn.style.cssText = a===aba
@@ -308,6 +308,198 @@ Router.register('vendas', async (params, el) => {
     });
     if (aba==='dashboard') renderDashboard();
     if (aba==='pedidos')   renderPedidos();
+    if (aba==='oportunidades') renderOportunidades();
+  }
+
+  // Executa promessas com concorrência limitada — evita disparar centenas de
+  // chamadas simultâneas (visitas por item, uma chamada por produto)
+  async function _mapLimit(items, limit, fn) {
+    const results = new Array(items.length);
+    let idx = 0;
+    async function worker() {
+      while (idx < items.length) {
+        const i = idx++;
+        try { results[i] = await fn(items[i], i); } catch(e) { results[i] = undefined; }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+    return results;
+  }
+
+  // ── Oportunidade de Produtos: itens ATIVOS com visitas no período mas
+  // ZERO vendas — sinaliza produto com tráfego que não está convertendo ──
+  let oportunidades = null; // null = nunca buscado; [] = buscado, nada encontrado
+  let buscandoOportunidades = false;
+
+  async function buscarOportunidades() {
+    if (buscandoOportunidades) return;
+    if (filtroContasSel.size === 0 && filtroEmpresas.size === 0) {
+      alert('Selecione ao menos uma conta ou empresa no filtro antes de buscar oportunidades.');
+      return;
+    }
+    const contasAlvo = filtroContasSel.size > 0
+      ? contas.filter(c => filtroContasSel.has(c.external_id))
+      : contas.filter(c => contaEmpresas(c).some(e => filtroEmpresas.has(e)));
+    const contasML     = contasAlvo.filter(c => ['meli','ml','mercadolivre'].includes((c.marketplace||'').toLowerCase()));
+    const contasShopee = contasAlvo.filter(c => (c.marketplace||'').toLowerCase() === 'shopee');
+    if (!contasML.length && !contasShopee.length) { alert('Nenhuma conta ML ou Shopee selecionada no filtro.'); return; }
+
+    buscandoOportunidades = true;
+    const btn = document.getElementById('btn-buscar-oport');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando...'; }
+    const status = document.getElementById('oport-status');
+
+    try {
+      const { dataFrom, dataTo } = _periodoParaDatas();
+      const achados = [];
+
+      // ── Mercado Livre: visitas escopadas ao período selecionado ──
+      const idsVendidosML = new Set(
+        pedidos.filter(p => contasML.some(c=>c.external_id===p.contaId))
+          .flatMap(p => (p.itens||[]).map(i=>i.itemId)).filter(Boolean)
+      );
+      for (const conta of contasML) {
+        if (status) status.textContent = `Listando anúncios ativos: ${conta.nickname||conta.external_id}...`;
+        let itensConta = [];
+        let offset = 0;
+        while (true) {
+          let r;
+          try { r = await MarketplaceAPI.call('list_items', { contaId: conta.external_id, status: 'active', limit: 100, offset }); }
+          catch(e) { break; }
+          const lote = r?.results || r?.data?.results || r?.data || [];
+          if (!Array.isArray(lote) || !lote.length) break;
+          itensConta = itensConta.concat(lote);
+          if (lote.length < 100) break;
+          offset += 100;
+        }
+        // Só checa visita de quem NÃO vendeu no período — reduz drasticamente as chamadas
+        const semVenda = itensConta.filter(i => !idsVendidosML.has(String(i.id)));
+        if (status) status.textContent = `Checando visitas: ${conta.nickname||conta.external_id} (${semVenda.length} anúncios sem venda)...`;
+
+        await _mapLimit(semVenda, 6, async item => {
+          try {
+            const rv = await MarketplaceAPI.call('ml_visits_item', { item_id: String(item.id), date_from: dataFrom, date_to: dataTo });
+            const visitas = rv?.data?.total_visits ?? rv?.total_visits ?? (Array.isArray(rv?.data?.results) ? rv.data.results.reduce((s,d)=>s+(d.total||0),0) : 0) ?? 0;
+            if (visitas > 0) {
+              achados.push({
+                id: item.id, nome: item.title || item.nome, preco: item.price ?? item.preco ?? 0,
+                estoque: item.available_quantity ?? item.estoque ?? 0, visitas,
+                conta: conta.nickname || conta.external_id, mp: 'ML',
+                link: `https://produto.mercadolivre.com.br/${String(item.id).replace('MLB','MLB-')}`,
+              });
+            }
+          } catch(e) {}
+        });
+      }
+
+      // ── Shopee: shopee_get_extra_info retorna "views" acumulado (sem filtro de
+      // data) — cruza com quem não vendeu no período pra aproximar a mesma ideia ──
+      const idsVendidosShopee = new Set(
+        pedidos.filter(p => contasShopee.some(c=>c.external_id===p.contaId))
+          .flatMap(p => (p.itens||[]).map(i=>i.itemId)).filter(Boolean)
+      );
+      for (const conta of contasShopee) {
+        if (status) status.textContent = `Listando anúncios ativos (Shopee): ${conta.nickname||conta.external_id}...`;
+        let itemIds = [];
+        let offset = 0;
+        while (true) {
+          let r;
+          try { r = await MarketplaceAPI.call('shopee_list_items', { shopId: conta.external_id, item_status: 'NORMAL', offset, page_size: 100 }); }
+          catch(e) { break; }
+          const lista = r?.data?.response?.item || r?.data?.item || [];
+          if (!Array.isArray(lista) || !lista.length) break;
+          itemIds = itemIds.concat(lista.map(i => i.item_id));
+          if (lista.length < 100) break;
+          offset += 100;
+        }
+        const semVenda = itemIds.filter(id => !idsVendidosShopee.has(String(id)));
+        if (status) status.textContent = `Checando visitas (Shopee): ${conta.nickname||conta.external_id} (${semVenda.length} anúncios sem venda)...`;
+
+        for (let i=0; i<semVenda.length; i+=50) {
+          const lote = semVenda.slice(i,i+50);
+          try {
+            const re = await MarketplaceAPI.call('shopee_get_extra_info', { shopId: conta.external_id, item_id_list: lote });
+            const lista = re?.data?.response?.item_list || re?.data?.item_list || [];
+            for (const it of lista) {
+              const visitas = parseInt(it.views) || 0;
+              if (visitas > 0 && !(parseInt(it.sale) > 0)) {
+                achados.push({
+                  id: it.item_id, nome: it.item_name || `Item ${it.item_id}`, preco: 0, estoque: 0,
+                  visitas, conta: conta.nickname || conta.external_id, mp: 'Shopee',
+                  link: `https://shopee.com.br/product/${conta.external_id}/${it.item_id}`,
+                });
+              }
+            }
+          } catch(e) {}
+        }
+      }
+
+      achados.sort((a,b) => b.visitas - a.visitas);
+      oportunidades = achados;
+      if (status) status.textContent = '';
+    } catch(e) {
+      if (status) status.textContent = `⚠️ Erro: ${e.message}`;
+    } finally {
+      buscandoOportunidades = false;
+      if (btn) { btn.disabled = false; btn.textContent = '🔍 Buscar oportunidades'; }
+      renderOportunidades();
+    }
+  }
+  window.buscarOportunidades = buscarOportunidades;
+
+  function renderOportunidades() {
+    const sec = document.getElementById('sec-oportunidades');
+    if (!sec) return;
+
+    if (oportunidades === null) {
+      sec.innerHTML = `
+        <div class="card" style="padding:40px;text-align:center;">
+          <div style="font-size:32px;margin-bottom:12px;">🎯</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Oportunidade de Produtos</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;max-width:480px;margin-left:auto;margin-right:auto;">
+            Encontra anúncios ativos que tiveram visitas mas ainda não venderam —
+            produtos com tráfego que não está convertendo, com potencial pra alavancar (preço, imagem, anúncio patrocinado).
+            No <strong>Mercado Livre</strong> as visitas são do período filtrado; na <strong>Shopee</strong> a API só retorna
+            visitas acumuladas (sem filtro de data), então o número ali é o total desde sempre.
+          </div>
+          <button id="btn-buscar-oport" class="btn-primary" onclick="buscarOportunidades()" style="padding:10px 20px;">🔍 Buscar oportunidades</button>
+          <div id="oport-status" style="font-size:12px;color:var(--text-muted);margin-top:12px;"></div>
+        </div>`;
+      return;
+    }
+
+    const linhas = oportunidades.map(o => `
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:10px 12px;color:var(--text-primary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(o.nome||'').replace(/"/g,'&quot;')}">${o.mp==='Shopee'?'🟠':'🟡'} ${o.nome||'—'}</td>
+        <td style="padding:10px 12px;color:var(--text-secondary);">${o.conta}</td>
+        <td style="padding:10px 12px;text-align:right;font-weight:700;color:#f59e0b;">${o.visitas.toLocaleString('pt-BR')}${o.mp==='Shopee'?' <span style="font-size:9px;color:var(--text-muted);">(total)</span>':''}</td>
+        <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${o.preco ? R$(o.preco) : '—'}</td>
+        <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${o.estoque || '—'}</td>
+        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:#6366f1;font-size:12px;">Ver anúncio ↗</a>` : ''}</td>
+      </tr>`).join('');
+
+    sec.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período</div>
+        <button id="btn-buscar-oport" class="btn" onclick="buscarOportunidades()" style="padding:7px 14px;font-size:12px;">🔄 Buscar de novo</button>
+      </div>
+      ${oportunidades.length === 0 ? `
+        <div class="card" style="padding:32px;text-align:center;color:var(--text-muted);">Nenhuma oportunidade encontrada — todos os anúncios com visita já converteram, ou nenhum teve visita no período.</div>
+      ` : `
+        <div class="card" style="padding:0;overflow:hidden;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="background:var(--bg-card-hover);">
+              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Produto</th>
+              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Conta</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Visitas</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Preço</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Estoque</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;"></th>
+            </tr></thead>
+            <tbody>${linhas}</tbody>
+          </table>
+        </div>
+      `}`;
   }
 
   // ── Dashboard ────────────────────────────────────────────────
@@ -1478,12 +1670,16 @@ Router.register('vendas', async (params, el) => {
     <div style="display:flex;gap:8px;margin-bottom:20px;">
       <button id="tab-dashboard" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:#6366f1;color:var(--text-primary);">📊 Dashboard</button>
       <button id="tab-pedidos"   style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">📋 Pedidos</button>
+      <button id="tab-oportunidades" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">🎯 Oportunidades</button>
     </div>
 
     <!-- Aba Dashboard -->
     <div id="sec-dashboard">
       <div style="text-align:center;padding:48px;color:var(--text-muted);">Carregando dashboard...</div>
     </div>
+
+    <!-- Aba Oportunidades -->
+    <div id="sec-oportunidades" style="display:none;"></div>
 
     <!-- Aba Pedidos -->
     <div id="sec-pedidos" style="display:none;">
@@ -1549,6 +1745,7 @@ Router.register('vendas', async (params, el) => {
   document.getElementById('btn-buscar').addEventListener('click', buscarPedidos);
   document.getElementById('tab-dashboard').addEventListener('click', () => setAba('dashboard'));
   document.getElementById('tab-pedidos').addEventListener('click',   () => setAba('pedidos'));
+  document.getElementById('tab-oportunidades').addEventListener('click', () => setAba('oportunidades'));
 
   renderLinhasExtras();
 
