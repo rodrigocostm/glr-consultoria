@@ -327,6 +327,42 @@ Router.register('vendas', async (params, el) => {
     return results;
   }
 
+  // list_items retorna só uma lista de IDs (string) — nunca objetos com
+  // título/preço, mesmo passando status:'active'. Paginação simples.
+  async function _mlListarIdsAtivos(contaId) {
+    let ids = [];
+    let offset = 0;
+    while (true) {
+      let r;
+      try { r = await MarketplaceAPI.call('list_items', { contaId, status: 'active', limit: 100, offset }); }
+      catch(e) { break; }
+      const lote = r?.results || r?.data?.results || [];
+      if (!Array.isArray(lote) || !lote.length) break;
+      ids = ids.concat(lote);
+      if (lote.length < 100) break;
+      offset += 100;
+    }
+    return ids;
+  }
+
+  // Busca título/preço/estoque em lote (get_items aceita múltiplos ids por
+  // chamada) — usado só pros itens que sobraram depois de filtrar visita/venda
+  async function _mlDetalhesItens(contaId, ids) {
+    const detalhes = {};
+    for (let i=0; i<ids.length; i+=20) {
+      const lote = ids.slice(i,i+20);
+      try {
+        const r = await MarketplaceAPI.call('get_items', { contaId, ids: lote });
+        const arr = Array.isArray(r?.data) ? r.data : (Array.isArray(r) ? r : []);
+        arr.forEach(entry => {
+          const b = entry.body || entry;
+          if (b?.id) detalhes[b.id] = b;
+        });
+      } catch(e) {}
+    }
+    return detalhes;
+  }
+
   // ── Oportunidade de Produtos: itens ATIVOS com visitas no período mas
   // ZERO vendas — sinaliza produto com tráfego que não está convertendo ──
   let oportunidades = null; // null = nunca buscado; [] = buscado, nada encontrado
@@ -357,42 +393,39 @@ Router.register('vendas', async (params, el) => {
       const achados = [];
 
       // ── Mercado Livre: visitas escopadas ao período selecionado ──
+      // list_items só retorna uma lista de IDs (string) — nome/preço vêm de
+      // get_items, buscado só pros itens que sobram depois do filtro de visita
       const idsVendidosML = new Set(
         pedidos.filter(p => contasML.some(c=>c.external_id===p.contaId))
           .flatMap(p => (p.itens||[]).map(i=>i.itemId)).filter(Boolean)
       );
       for (const conta of contasML) {
         if (status) status.textContent = `Listando anúncios ativos: ${conta.nickname||conta.external_id}...`;
-        let itensConta = [];
-        let offset = 0;
-        while (true) {
-          let r;
-          try { r = await MarketplaceAPI.call('list_items', { contaId: conta.external_id, status: 'active', limit: 100, offset }); }
-          catch(e) { break; }
-          const lote = r?.results || r?.data?.results || r?.data || [];
-          if (!Array.isArray(lote) || !lote.length) break;
-          itensConta = itensConta.concat(lote);
-          if (lote.length < 100) break;
-          offset += 100;
-        }
+        const itemIds = await _mlListarIdsAtivos(conta.external_id);
         // Só checa visita de quem NÃO vendeu no período — reduz drasticamente as chamadas
-        const semVenda = itensConta.filter(i => !idsVendidosML.has(String(i.id)));
+        const semVenda = itemIds.filter(id => !idsVendidosML.has(String(id)));
         if (status) status.textContent = `Checando visitas: ${conta.nickname||conta.external_id} (${semVenda.length} anúncios sem venda)...`;
 
-        await _mapLimit(semVenda, 6, async item => {
+        const comVisita = [];
+        await _mapLimit(semVenda, 6, async itemId => {
           try {
-            const rv = await MarketplaceAPI.call('ml_visits_item', { item_id: String(item.id), date_from: dataFrom, date_to: dataTo });
+            const rv = await MarketplaceAPI.call('ml_visits_item', { item_id: String(itemId), date_from: dataFrom, date_to: dataTo });
             const visitas = rv?.data?.total_visits ?? rv?.total_visits ?? (Array.isArray(rv?.data?.results) ? rv.data.results.reduce((s,d)=>s+(d.total||0),0) : 0) ?? 0;
-            if (visitas > 0) {
-              achados.push({
-                id: item.id, nome: item.title || item.nome, preco: item.price ?? item.preco ?? 0,
-                estoque: item.available_quantity ?? item.estoque ?? 0, visitas,
-                conta: conta.nickname || conta.external_id, mp: 'ML',
-                link: `https://produto.mercadolivre.com.br/${String(item.id).replace('MLB','MLB-')}`,
-              });
-            }
+            if (visitas > 0) comVisita.push({ item_id: itemId, visitas });
           } catch(e) {}
         });
+
+        if (status) status.textContent = `Buscando nome/preço (ML): ${conta.nickname||conta.external_id}...`;
+        const detalhes = await _mlDetalhesItens(conta.external_id, comVisita.map(o=>o.item_id));
+        for (const o of comVisita) {
+          const d = detalhes[o.item_id] || {};
+          achados.push({
+            id: o.item_id, nome: d.title || `Item ${o.item_id}`, preco: d.price ?? 0,
+            estoque: d.available_quantity ?? 0, visitas: o.visitas,
+            conta: conta.nickname || conta.external_id, mp: 'ML',
+            link: `https://produto.mercadolivre.com.br/${String(o.item_id).replace('MLB','MLB-')}`,
+          });
+        }
       }
 
       // ── Shopee: shopee_get_extra_info retorna "views" acumulado (sem filtro de
@@ -501,43 +534,34 @@ Router.register('vendas', async (params, el) => {
       // ── Mercado Livre: um item por vez (não existe lista em lote) ──
       for (const conta of contasML) {
         if (status) status.textContent = `Listando anúncios ativos: ${conta.nickname||conta.external_id}...`;
-        let itensConta = [];
-        let offset = 0;
-        while (true) {
-          let r;
-          try { r = await MarketplaceAPI.call('list_items', { contaId: conta.external_id, status: 'active', limit: 100, offset }); }
-          catch(e) { break; }
-          const lote = r?.results || r?.data?.results || r?.data || [];
-          if (!Array.isArray(lote) || !lote.length) break;
-          itensConta = itensConta.concat(lote);
-          if (lote.length < 100) break;
-          offset += 100;
-        }
-        if (status) status.textContent = `Checando ADS: ${conta.nickname||conta.external_id} (${itensConta.length} anúncios)...`;
+        const itemIds = await _mlListarIdsAtivos(conta.external_id);
+        if (status) status.textContent = `Checando ADS: ${conta.nickname||conta.external_id} (${itemIds.length} anúncios)...`;
         const meliId = conta.param_to_use?.meliUserId || conta.external_id;
-        await _mapLimit(itensConta, 6, async item => {
+
+        const foraDeAdsIds = [];
+        await _mapLimit(itemIds, 6, async itemId => {
           try {
-            const ra = await MarketplaceAPI.call('ml_ads_get_ad', { meliUserId: meliId, itemId: String(item.id) });
+            const ra = await MarketplaceAPI.call('ml_ads_get_ad', { meliUserId: meliId, itemId: String(itemId) });
             const ad = ra?.data || ra;
             const emAds = ad?.status === 'active' && parseInt(ad?.campaign_id) > 0;
-            if (!emAds) {
-              achados.push({
-                id: item.id, nome: item.title || item.nome, preco: item.price ?? item.preco ?? 0,
-                estoque: item.available_quantity ?? item.estoque ?? 0,
-                conta: conta.nickname || conta.external_id, mp: 'ML',
-                link: `https://produto.mercadolivre.com.br/${String(item.id).replace('MLB','MLB-')}`,
-              });
-            }
+            if (!emAds) foraDeAdsIds.push(itemId);
           } catch(e) {
             // Sem anúncio de ads criado pra esse item = também está fora do ADS
-            achados.push({
-              id: item.id, nome: item.title || item.nome, preco: item.price ?? item.preco ?? 0,
-              estoque: item.available_quantity ?? item.estoque ?? 0,
-              conta: conta.nickname || conta.external_id, mp: 'ML',
-              link: `https://produto.mercadolivre.com.br/${String(item.id).replace('MLB','MLB-')}`,
-            });
+            foraDeAdsIds.push(itemId);
           }
         });
+
+        if (status) status.textContent = `Buscando nome/preço (ML): ${conta.nickname||conta.external_id}...`;
+        const detalhes = await _mlDetalhesItens(conta.external_id, foraDeAdsIds);
+        for (const itemId of foraDeAdsIds) {
+          const d = detalhes[itemId] || {};
+          achados.push({
+            id: itemId, nome: d.title || `Item ${itemId}`, preco: d.price ?? 0,
+            estoque: d.available_quantity ?? 0,
+            conta: conta.nickname || conta.external_id, mp: 'ML',
+            link: `https://produto.mercadolivre.com.br/${String(itemId).replace('MLB','MLB-')}`,
+          });
+        }
       }
 
       // ── Shopee: shopee_ads_recommended_items já retorna quem está fora ──
