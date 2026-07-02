@@ -147,11 +147,23 @@ Router.register('vendas', async (params, el) => {
     });
   }
 
-  // Normaliza a tag da conta pro nome real da empresa: "EAP - Mercado Livre" e
-  // "EAP - SHOPEE" viram só "EAP" — sem isso cada tag virava uma "empresa" diferente
-  const empresaNome = c => (c.tags?.[0]?.name || 'Sem tag').split(' - ')[0].trim();
-  const contaNome    = c => c.label || c.nickname || c.external_id;
-  const contaEmpresas = c => (c.tags?.length ? c.tags.map(t=>t.name?.split(' - ')[0].trim()) : ['Sem tag']);
+  const contaNome = c => c.label || c.nickname || c.external_id;
+
+  // Empresa = cliente real vinculado à conta em Integrações (glr_mc_vinculos), não a
+  // tag crua da conta na API — a tag muitas vezes nem bate com o cliente de fato
+  // (ex: conta 1036862626 tem tag "EAP - Mercado Livre" mas está vinculada à Mega Facil).
+  function contaEmpresas(c) {
+    const vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}');
+    const clientes = JSON.parse(localStorage.getItem('glr_clientes')||'[]');
+    const nomes = [];
+    for (const [clienteId, contasVinc] of Object.entries(vinc)) {
+      if ((contasVinc||[]).some(v => String(v.external_id) === String(c.external_id))) {
+        const cli = clientes.find(cl => String(cl.id) === String(clienteId));
+        if (cli?.nome) nomes.push(cli.nome);
+      }
+    }
+    return nomes.length ? nomes : ['Sem vínculo'];
+  }
 
   function renderFiltroEmpresaConta() {
     const wrapEmp  = document.getElementById('filtro-empresa');
