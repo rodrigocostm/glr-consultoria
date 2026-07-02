@@ -53,12 +53,15 @@ function _portalLinhasExtras() {
   try { return JSON.parse(localStorage.getItem('glr_vendas_linhas')||'[]'); } catch(e) { return []; }
 }
 
-// ── Conta selecionada (filtro por conta individual) ──────────
-function _portalContaSelecionada() {
-  try { return localStorage.getItem('glr_portal_conta_sel') || 'todas'; } catch { return 'todas'; }
+// ── Contas selecionadas (filtro multi-select) — Set vazio = todas ──
+function _portalContasSelecionadas() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('glr_portal_contas_sel')||'[]');
+    return new Set(Array.isArray(raw) ? raw.map(String) : []);
+  } catch { return new Set(); }
 }
-window._portalSelecionarConta = function(contaId) {
-  localStorage.setItem('glr_portal_conta_sel', contaId);
+window._portalSetContasSelecionadas = function(novoSet) {
+  localStorage.setItem('glr_portal_contas_sel', JSON.stringify([...novoSet]));
   if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
 };
 
@@ -88,6 +91,26 @@ function _portalRangeCoberto(de, ate) {
   return cache.dataFrom <= de && cache.dataTo >= ate;
 }
 
+const _portalAddDia = iso => { const [y,m,d] = iso.split('-').map(Number); return new Date(Date.UTC(y,m-1,d+1)).toISOString().slice(0,10); };
+const _portalSubDia = iso => { const [y,m,d] = iso.split('-').map(Number); return new Date(Date.UTC(y,m-1,d-1)).toISOString().slice(0,10); };
+
+// Retorna só os pedaços de [de,ate] que NÃO estão cobertos pelo cache — evita
+// re-buscar meses já baixados só porque o usuário pediu uma data fora do range
+function _portalSegmentosFaltantes(de, ate) {
+  const cache = _portalCache();
+  if (!cache?.pedidos || cache.erro || !cache.dataFrom || !cache.dataTo) return [{ de, ate }];
+  const segs = [];
+  if (de < cache.dataFrom) {
+    const antesAte = _portalSubDia(cache.dataFrom);
+    if (de <= antesAte) segs.push({ de, ate: antesAte });
+  }
+  if (ate > cache.dataTo) {
+    const depoisDe = _portalAddDia(cache.dataTo);
+    if (depoisDe <= ate) segs.push({ de: depoisDe, ate });
+  }
+  return segs;
+}
+
 window._portalAplicarFiltro = async function(de, ate, forcar = false) {
   localStorage.setItem('glr_portal_filtro_data', JSON.stringify({ de, ate }));
   if (!forcar && _portalRangeCoberto(de, ate)) {
@@ -95,12 +118,12 @@ window._portalAplicarFiltro = async function(de, ate, forcar = false) {
     if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
     return;
   }
-  // Busca a UNIÃO do que já está em cache + o novo período pedido, para não
-  // perder cobertura já buscada nem contar ADS em duplicidade
-  const cache = _portalCache();
-  const fetchDe  = cache?.dataFrom && !cache.erro ? (cache.dataFrom < de  ? cache.dataFrom : de ) : de;
-  const fetchAte = cache?.dataTo   && !cache.erro ? (cache.dataTo   > ate ? cache.dataTo   : ate) : ate;
-  await _portalBuscarVendas(fetchDe, fetchAte, true); // incremental: mescla pedidos por id, sem duplicar
+  // Busca só o que falta (antes e/ou depois do que já está em cache) — nunca
+  // refaz a busca de um período que já tínhamos só porque a data pedida é mais ampla
+  const segmentos = forcar ? [{ de, ate }] : _portalSegmentosFaltantes(de, ate);
+  for (const seg of segmentos) {
+    await _portalBuscarVendas(seg.de, seg.ate, true); // incremental: mescla pedidos por id, sem duplicar
+  }
   if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
 };
 
@@ -122,29 +145,36 @@ window._portalFiltroRapido = function(dias) {
 function _portalFiltroBar(pageAtual) {
   const f = _portalFiltroData();
   const cache = _portalCache();
-  const contaSel = _portalContaSelecionada();
+  const contasSel = _portalContasSelecionadas();
 
-  // Seletor de contas — só aparece se há mais de uma conta
+  // Seletor de contas (checkbox multi-select) — só aparece se há mais de uma conta
   const contas = cache?.contasInfo || [];
-  const btnSel = (id, label, mp) => {
-    const ativo = contaSel === id;
-    const ico = mp?.includes('shopee') ? '🟠' : '🟡';
-    return `<button onclick="window._portalSelecionarConta('${id}')"
-      style="font-size:11px;border-radius:99px;padding:5px 12px;cursor:pointer;border:1px solid ${ativo ? 'var(--primary)' : 'var(--border)'};
-             background:${ativo ? 'var(--primary)' : 'var(--bg-base)'};color:${ativo ? '#fff' : 'var(--text-secondary)'};">
-      ${id === 'todas' ? '📊' : ico} ${label}
-    </button>`;
-  };
+  const qtdSel = contasSel.size;
+  const contaEscolhida = qtdSel === 1 ? contas.find(c=>contasSel.has(c.id))?.nome : null;
+  const textoBotaoConta = qtdSel === 0 ? 'Todas as contas' : contaEscolhida || `${qtdSel} contas selecionadas`;
+  const seletorContas = contas.length > 1 ? `
+    <div style="position:relative;">
+      <button type="button" onclick="event.stopPropagation();const p=this.nextElementSibling;document.querySelectorAll('.pf-conta-panel').forEach(x=>{if(x!==p)x.style.display='none'});p.style.display=p.style.display==='none'?'block':'none';"
+        style="font-size:11px;border-radius:8px;padding:7px 12px;cursor:pointer;border:1px solid var(--border);background:var(--bg-base);color:var(--text-primary);display:flex;align-items:center;gap:6px;">
+        🏬 ${textoBotaoConta} <span style="font-size:9px;opacity:0.6;">▾</span>
+      </button>
+      <div class="pf-conta-panel" onclick="event.stopPropagation()" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:200px;padding:6px;">
+        ${contas.map(c => `
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--text-primary);">
+            <input type="checkbox" value="${c.id}" ${contasSel.has(c.id)?'checked':''}
+              onchange="const s=_portalContasSelecionadas(); this.checked?s.add('${c.id}'):s.delete('${c.id}'); window._portalSetContasSelecionadas(s);"
+              style="width:14px;height:14px;accent-color:#6366f1;">
+            ${c.marketplace?.includes('shopee')?'🟠':'🟡'} ${c.nome}
+          </label>`).join('')}
+        <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;">
+          <button type="button" onclick="window._portalSetContasSelecionadas(new Set())" style="width:100%;font-size:11px;padding:5px;background:var(--bg-card-hover);border:none;border-radius:5px;color:var(--text-secondary);cursor:pointer;">Limpar (todas)</button>
+        </div>
+      </div>
+    </div>` : '';
   const erroShopee = (cache?.resumoContas||[]).find(r => r.erro)?.erro;
   const avisoErro = erroShopee
     ? `<div style="width:100%;margin-top:8px;padding:8px 12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;font-size:11px;color:#ef4444;">⚠️ Shopee: ${erroShopee}</div>`
     : '';
-  const seletorContas = contas.length > 1 ? `
-    <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border);margin-top:4px;">
-      <span style="font-size:11px;font-weight:600;color:var(--text-secondary);align-self:center;">Conta:</span>
-      ${btnSel('todas','Todas','')}
-      ${contas.map(c => btnSel(c.id, c.nome, c.marketplace)).join('')}
-    </div>${avisoErro}` : avisoErro;
 
   const diagML = window._diagMlP0 || '';
   const diagTotal = window._diagMlTotal || '';
@@ -171,8 +201,17 @@ function _portalFiltroBar(pageAtual) {
         <button onclick="window._portalFiltroRapido('tudo')" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">Tudo</button>
       </div>
       ${seletorContas}
+      ${avisoErro}
       ${diagBanner}
     </div>`;
+}
+
+// Fecha o dropdown de contas ao clicar fora — registra só uma vez
+if (!window._portalContaPanelCloseListener) {
+  window._portalContaPanelCloseListener = true;
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.pf-conta-panel').forEach(p => p.style.display = 'none');
+  });
 }
 
 window._portalAplicarFiltroUI = function() {
@@ -529,13 +568,19 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
     }
 
     pedidosFinal.sort((a,b) => (b.dataTs||0)-(a.dataTs||0));
-    // dataFrom/dataTo recebidos aqui já são a união (cache atual + novo período),
-    // e adsTotal foi recalculado do zero para essa união — não acumula, evita duplicidade
+    // dataFrom/dataTo/adsTotal recebidos aqui cobrem só o segmento buscado nesta chamada
+    // (não necessariamente a união inteira). Só soma o ads quando o segmento REALMENTE
+    // estende a cobertura (evita duplicar quando é só um refresh de um dia já coberto,
+    // como o incremental de "hoje" do auto-refresh)
+    const temCacheValido = incremental && cacheAtual?.dataFrom && cacheAtual?.dataTo && !cacheAtual.erro;
+    const estendeCobertura = temCacheValido && (dataFrom < cacheAtual.dataFrom || dataTo > cacheAtual.dataTo);
     const payload = {
       pedidos: pedidosFinal,
-      adsTotal,
-      dataFrom,
-      dataTo,
+      adsTotal: estendeCobertura ? (parseFloat(cacheAtual.adsTotal)||0) + adsTotal
+              : temCacheValido    ? cacheAtual.adsTotal
+              : adsTotal,
+      dataFrom: temCacheValido && cacheAtual.dataFrom < dataFrom ? cacheAtual.dataFrom : dataFrom,
+      dataTo:   temCacheValido && cacheAtual.dataTo   > dataTo   ? cacheAtual.dataTo   : dataTo,
       resumoContas,
       contasInfo,
       at: Date.now(),
@@ -619,13 +664,13 @@ function _portalPedidos() {
   const cache = _portalCache();
   if (!cache?.pedidos) return [];
   const ids = (cfg.contaIds||[]).map(String);
-  const contaSel = _portalContaSelecionada();
+  const contasSel = _portalContasSelecionadas();
   const f = _portalFiltroData();
   const deTs  = f.de  ? new Date(`${f.de}T00:00:00`).getTime()  : -Infinity;
   const ateTs = f.ate ? new Date(`${f.ate}T23:59:59`).getTime() : Infinity;
   return cache.pedidos.filter(p =>
     ids.includes(String(p.contaId)) &&
-    (contaSel === 'todas' || String(p.contaId) === contaSel) &&
+    (contasSel.size === 0 || contasSel.has(String(p.contaId))) &&
     (!p.dataTs || (p.dataTs >= deTs && p.dataTs <= ateTs))
   );
 }
