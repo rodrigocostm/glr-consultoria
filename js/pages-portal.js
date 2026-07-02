@@ -127,18 +127,30 @@ window._portalAplicarFiltro = async function(de, ate, forcar = false) {
   if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
 };
 
-window._portalFiltroRapido = function(dias) {
+// Mesmos presets da página Vendas do admin — consistência entre as duas telas
+function _portalPeriodoParaDatas(preset) {
+  const pad = n => String(n).padStart(2,'0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   const hoje = new Date();
-  const ate = hoje.toISOString().slice(0,10);
-  let de;
-  if (dias === 'mes') {
-    de = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0,10);
-  } else if (dias === 'tudo') {
-    de = '2020-01-01';
-  } else {
-    const d = new Date(hoje); d.setDate(d.getDate()-(dias-1));
-    de = d.toISOString().slice(0,10);
+  const ontem = new Date(hoje); ontem.setDate(hoje.getDate()-1);
+  const y = hoje.getFullYear(), m = hoje.getMonth();
+  switch (preset) {
+    case 'hoje':  return { de: fmt(hoje),  ate: fmt(hoje) };
+    case 'ontem': return { de: fmt(ontem), ate: fmt(ontem) };
+    case 'mes':          return { de: fmt(new Date(y, m, 1)), ate: fmt(hoje) };
+    case 'mes-passado':  return { de: fmt(new Date(y, m-1, 1)), ate: fmt(new Date(y, m, 0)) };
+    case 'ano':          return { de: fmt(new Date(y, 0, 1)), ate: fmt(hoje) };
+    case 'tudo': return { de: '2020-01-01', ate: fmt(hoje) };
+    default: {
+      const dias = parseInt(preset) || 30;
+      const d = new Date(hoje); d.setDate(d.getDate()-(dias-1));
+      return { de: fmt(d), ate: fmt(hoje) };
+    }
   }
+}
+
+window._portalFiltroRapido = function(preset) {
+  const { de, ate } = _portalPeriodoParaDatas(preset);
   window._portalAplicarFiltro(de, ate);
 };
 
@@ -193,13 +205,20 @@ function _portalFiltroBar(pageAtual) {
       <input type="date" id="pf-ate" value="${f.ate}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
       <button id="pf-btn-aplicar" onclick="window._portalAplicarFiltroUI()"
         style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:600;cursor:pointer;">Aplicar</button>
+      <select onchange="window._portalFiltroRapido(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
+        <option value="" disabled selected>Período rápido...</option>
+        <option value="hoje">Hoje</option>
+        <option value="ontem">Ontem</option>
+        <option value="7">Últimos 7 dias</option>
+        <option value="15">Últimos 15 dias</option>
+        <option value="30">Últimos 30 dias</option>
+        <option value="mes">Esse mês</option>
+        <option value="mes-passado">Mês passado</option>
+        <option value="ano">Esse ano</option>
+        <option value="tudo">Tudo</option>
+      </select>
       ${status}
-      <div style="display:flex;gap:6px;margin-left:auto;flex-wrap:wrap;">
-        <button onclick="window._portalFiltroRapido(7)" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">7 dias</button>
-        <button onclick="window._portalFiltroRapido(30)" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">30 dias</button>
-        <button onclick="window._portalFiltroRapido('mes')" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">Mês atual</button>
-        <button onclick="window._portalFiltroRapido('tudo')" style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:5px 12px;cursor:pointer;color:var(--text-secondary);">Tudo</button>
-      </div>
+      <div style="margin-left:auto;"></div>
       ${seletorContas}
       ${avisoErro}
       ${diagBanner}
