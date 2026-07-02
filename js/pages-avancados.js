@@ -903,6 +903,8 @@ Router.register('projecao', (params, el) => {
 
       const totalContas = contasVinc.length;
       let idx = 0;
+      const adsPorConta = {}; // { external_id: valor investido no período }
+      const toShopeeDate = iso => iso.split('-').reverse().join('-');
 
       for (const conta of contasVinc) {
         idx++;
@@ -920,6 +922,18 @@ Router.register('projecao', (params, el) => {
                 valor: parseFloat(o.total_amount)||0, status: o.status||'', qtd: (o.order_items||[]).length||1, taxas:{},
               });
             }
+            // ADS Mercado Livre — investimento real da conta no período
+            try {
+              let adsTotal = 0, off = 0;
+              while (true) {
+                const ra = await MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: primeiroDia, date_to: dataTo, limit: 50, offset: off });
+                const res = ra.data?.results || [];
+                adsTotal += res.reduce((s,c) => s + (parseFloat(c.metrics?.cost)||0), 0);
+                if (res.length < 50) break;
+                off += 50;
+              }
+              adsPorConta[conta.external_id] = adsTotal;
+            } catch(e) { console.warn('[Proj] ADS ML erro:', e.message); }
           } else if (mkt === 'shopee') {
             const shopId = conta.param_to_use?.shopId || conta.external_id;
             const snsList = await MarketplaceAPI.shopeeListOrderSns(shopId, Math.floor(tsFrom/1000), Math.floor(tsTo/1000));
@@ -943,6 +957,12 @@ Router.register('projecao', (params, el) => {
                 }
               } catch(e) { console.warn('[Proj] Shopee batch erro:', e.message); }
             }
+            // ADS Shopee — investimento real da conta no período
+            try {
+              const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(primeiroDia), end_date: toShopeeDate(dataTo) });
+              const dias = r?.data?.response || [];
+              adsPorConta[conta.external_id] = Array.isArray(dias) ? dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0) : 0;
+            } catch(e) { console.warn('[Proj] ADS Shopee erro:', e.message); }
           }
         } catch(e) {
           console.warn(`[Proj] Erro conta ${label}:`, e.message);
@@ -984,9 +1004,11 @@ Router.register('projecao', (params, el) => {
           nome, contaId: c.external_id, marketplace: c.marketplace,
           fatBase:'', adsBase:'', vendasBase:'', maio:'', abril:'', marco:'',
           _platNome: nomePlat,
+          _adsAuto: adsPorConta[c.external_id] || 0,
         });
       });
 
+      salvar(); // persiste dataBase/dias/ads buscados — importante pro refresh automático das 5h
       renderTabela();
     } catch(e) {
       if (!silencioso) alert('Erro ao buscar dados: '+e.message);
@@ -1077,11 +1099,13 @@ Router.register('projecao', (params, el) => {
 
     // ── Valores efetivos (manual salvo OU API) — usados em totais e linhas ──
     // p.contaId presente → filtra por conta específica; ausente → filtra por plataforma (legado)
+    // ADS vem de p._adsAuto (buscado por conta em buscarDadosProjecao), não do
+    // cache genérico do Financeiro — que não é por conta nem pelo período certo
     const efetivos = plats.map(p => {
       const cd = cacheParaPlat(cache, contasCliente, p._platNome || p.nome, p.contaId);
       return {
         fat:    p.fatBase    || (cd ? cd.fat.toFixed(2)    : ''),
-        ads:    p.adsBase    || (cd ? cd.ads.toFixed(2)    : ''),
+        ads:    p.adsBase    || (p._adsAuto != null ? p._adsAuto.toFixed(2) : ''),
         vendas: p.vendasBase || (cd ? String(cd.vendas)    : ''),
       };
     });
@@ -1113,7 +1137,7 @@ Router.register('projecao', (params, el) => {
       const vendasBaseEfetivo = efetivos[i].vendas;
       const cd = cacheParaPlat(cache, contasCliente, p.nome, p.contaId);
       const autoFat = !p.fatBase && cd;
-      const autoAds = !p.adsBase && cd;
+      const autoAds = !p.adsBase && p._adsAuto != null;
       // Ícone de plataforma para linhas por conta
       const platIcon = { shopee:'🟠', mercadolivre:'🟡', ml:'🟡', meli:'🟡', bling:'🔵' };
       const mktIcon = p.marketplace ? (platIcon[(p.marketplace||'').toLowerCase()] || '⚫') : '';
