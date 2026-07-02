@@ -804,6 +804,13 @@ Router.register('projecao', (params, el) => {
   const _ontem = new Date(_hoje); _ontem.setDate(_hoje.getDate() - 1);
   const _mesesNomesProj = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const _mesLabel = `${_mesesNomesProj[_hoje.getMonth()]} ${_hoje.getFullYear()}`;
+  // Dias no mês de uma data ISO (YYYY-MM-DD) — usado pra dias decorridos/dias no mês
+  // sempre seguirem a Data Base, a menos que o usuário edite os campos manualmente
+  function _diasNoMesDe(dataIso) {
+    const [y, m] = (dataIso || '').split('-').map(Number);
+    if (!y || !m) return new Date(_hoje.getFullYear(), _hoje.getMonth() + 1, 0).getDate();
+    return new Date(y, m, 0).getDate();
+  }
   const _diasNoMes = new Date(_hoje.getFullYear(), _hoje.getMonth() + 1, 0).getDate();
 
   if (!projecaoAtiva) {
@@ -812,17 +819,20 @@ Router.register('projecao', (params, el) => {
       chave:          clienteIdAtivo ? String(clienteIdAtivo) : 'sem_cliente',
       nomeCliente:    clienteObj?.nome || '',
       mes:            _mesLabel,
+      dataBase:       `${_ontem.getFullYear()}-${String(_ontem.getMonth()+1).padStart(2,'0')}-${String(_ontem.getDate()).padStart(2,'0')}`,
       diasNoMes:      _diasNoMes,
       diasDecorridos: _ontem.getDate(),
       obs: '',
-      plataformas: [
-        { nome: 'Shopee',        fatBase: '', adsBase: '', maio: '', abril: '', marco: '' },
-        { nome: 'Mercado Livre', fatBase: '', adsBase: '', maio: '', abril: '', marco: '' },
-      ]
+      plataformas: []
     };
-  } else {
-    // diasDecorridos: mantém o valor salvo manualmente — não sobrescreve
-    projecaoAtiva.diasNoMes = _diasNoMes;
+  } else if (!projecaoAtiva._diasEditadosManualmente) {
+    // Segue a Data Base salva (não a data de hoje) — evita trocar o mês errado
+    // quando a projeção é de um mês anterior e o usuário só está consultando
+    projecaoAtiva.diasNoMes = _diasNoMesDe(projecaoAtiva.dataBase);
+    if (projecaoAtiva.dataBase) {
+      const [,,d] = projecaoAtiva.dataBase.split('-').map(Number);
+      projecaoAtiva.diasDecorridos = d;
+    }
   }
 
   function salvar() {
@@ -861,14 +871,14 @@ Router.register('projecao', (params, el) => {
   }
 
   // ── Busca simplificada de ordens para contas vinculadas (GMV apenas, sem escrow) ──
-  async function buscarDadosProjecao() {
+  async function buscarDadosProjecao(silencioso = false) {
     const cidAtivo = parseInt(document.getElementById('sel-cliente')?.value) || clienteIdAtivo;
     let vinculos = {};
     try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
     const contasVinc = vinculos[String(cidAtivo)] || [];
-    if (!contasVinc.length) { alert('Nenhuma conta vinculada. Use 🔗 Vincular conta primeiro.'); return; }
+    if (!contasVinc.length) { if (!silencioso) alert('Nenhuma conta vinculada. Use 🔗 Vincular conta primeiro.'); return; }
     const apiKey = localStorage.getItem('glr_mc_apikey')||'';
-    if (!apiKey) { alert('Configure a API Key nas Integrações.'); return; }
+    if (!apiKey) { if (!silencioso) alert('Configure a API Key nas Integrações.'); return; }
 
     const btn = document.getElementById('btn-buscar-proj');
     if (btn) { btn.disabled=true; btn.textContent='⏳ Buscando...'; }
@@ -942,14 +952,19 @@ Router.register('projecao', (params, el) => {
       // Salva cache mesclado
       localStorage.setItem('glr_fin_cache', JSON.stringify({ ...(cacheExist||{}), ver:25, mesKey, pedidos }));
 
-      // Atualiza data base para hoje (dia da busca)
+      // Atualiza data base para hoje (dia da busca) — busca é sempre automática,
+      // então também destrava um eventual override manual de dias anterior
       const hojeIso = `${ano}-${pad(mes)}-${pad(hoje.getDate())}`;
+      projecaoAtiva._diasEditadosManualmente = false;
       projecaoAtiva.dataBase = hojeIso;
       projecaoAtiva.diasDecorridos = hoje.getDate();
+      projecaoAtiva.diasNoMes = _diasNoMesDe(hojeIso);
       const inpDb = document.getElementById('inp-data-base');
       if (inpDb) inpDb.value = hojeIso;
       const inpDd = document.getElementById('inp-dias-dec');
       if (inpDd) inpDd.value = hoje.getDate();
+      const inpDm = document.getElementById('inp-dias-mes');
+      if (inpDm) inpDm.value = projecaoAtiva.diasNoMes;
 
       // Cria/atualiza uma linha por conta vinculada (identifica pelo contaId)
       const platMap = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
@@ -974,7 +989,8 @@ Router.register('projecao', (params, el) => {
 
       renderTabela();
     } catch(e) {
-      alert('Erro ao buscar dados: '+e.message);
+      if (!silencioso) alert('Erro ao buscar dados: '+e.message);
+      else console.warn('[Projeção] Erro na busca automática:', e.message);
     } finally {
       if (btn) { btn.disabled=false; btn.textContent='🔄 Buscar dados'; }
     }
@@ -999,16 +1015,14 @@ Router.register('projecao', (params, el) => {
     return nome;
   }
 
-  // contaId: quando fornecido, filtra só essa conta; caso contrário usa contasCliente (modo legado por plataforma)
+  // Só preenche dados de uma linha vinculada a uma conta específica (contaId).
+  // Sem contaId não busca/soma nada — evita contar a mesma conta duas vezes
+  // (uma vez na linha por conta, outra vez agregada "por plataforma")
   function cacheParaPlat(cache, contasCliente, platNome, contaId) {
-    if (!cache) return null;
+    if (!cache || !contaId) return null;
     const platFiltro = normalizaPlat(platNome);
     const isReemb = st => { const s=(st||'').toLowerCase(); return s.includes('cancel')||s.includes('refund')||s.includes('devol')||s==='invalid'||s.includes('return'); };
-    const peds = (cache.pedidos||[]).filter(p => {
-      if (isReemb(p.status)) return false;
-      if (contaId) return String(p.contaId) === String(contaId) && p.plataforma === platFiltro;
-      return contasCliente.map(String).includes(String(p.contaId)) && p.plataforma === platFiltro;
-    });
+    const peds = (cache.pedidos||[]).filter(p => !isReemb(p.status) && String(p.contaId) === String(contaId) && p.plataforma === platFiltro);
     const fat = peds.reduce((s,p) => s+(parseFloat(p.valor)||0), 0);
     const qtd = peds.reduce((s,p) => s+(parseInt(p.qtd)||1), 0);
     // ADS por conta ainda não está no cache; usa por plataforma como fallback
@@ -1030,6 +1044,17 @@ Router.register('projecao', (params, el) => {
     const contasVinc = vinculos[String(cidAtivo)] || vinculos[cidAtivo] || [];
     const contasCliente = contasVinc.map(c => c.external_id);
     const temCache = !!cache;
+
+    // Limpa linhas órfãs do template antigo ("Shopee"/"Mercado Livre" genéricas,
+    // sem conta vinculada e sem nada digitado nelas) — evitam duplicar o total
+    // junto com as linhas por conta. Não mexe em linhas manuais reais do usuário.
+    if (contasVinc.length > 0) {
+      const antes = projecaoAtiva.plataformas.length;
+      projecaoAtiva.plataformas = projecaoAtiva.plataformas.filter(p =>
+        p.contaId || !['Shopee','Mercado Livre'].includes(p.nome) || p.fatBase || p.adsBase || p.vendasBase
+      );
+      if (projecaoAtiva.plataformas.length !== antes) salvar();
+    }
 
     // Diagnóstico inline — mostra estado do auto-fill no rodapé da tabela
     const pad2 = n => String(n).padStart(2,'0');
@@ -1406,6 +1431,9 @@ Router.register('projecao', (params, el) => {
   };
 
   window.updateDias = () => {
+    // Edição direta dos campos "trava" o auto-cálculo pela Data Base até o
+    // usuário mudar a Data Base de novo (aí volta a seguir automaticamente)
+    projecaoAtiva._diasEditadosManualmente = true;
     projecaoAtiva.diasDecorridos = parseInt(document.getElementById('inp-dias-dec').value) || projecaoAtiva.diasDecorridos;
     projecaoAtiva.diasNoMes = parseInt(document.getElementById('inp-dias-mes').value) || projecaoAtiva.diasNoMes;
     salvar(); // auto-save ao alterar dias
@@ -1415,13 +1443,20 @@ Router.register('projecao', (params, el) => {
 
   window.updateDataBase = (dataStr) => {
     if (!dataStr) return;
+    // Mudar a Data Base é a fonte da verdade pra dias decorridos/dias no mês —
+    // sempre recalcula os dois e destrava um eventual override manual anterior
+    projecaoAtiva._diasEditadosManualmente = false;
     projecaoAtiva.dataBase = dataStr;
     const d = new Date(dataStr + 'T12:00:00');
     const dia = d.getDate();
     projecaoAtiva.diasDecorridos = dia;
+    projecaoAtiva.diasNoMes = _diasNoMesDe(dataStr);
     document.getElementById('inp-dias-dec').value = dia;
+    const inpDm = document.getElementById('inp-dias-mes');
+    if (inpDm) inpDm.value = projecaoAtiva.diasNoMes;
     const thdb = document.getElementById('th-data-base');
     if (thdb) thdb.textContent = d.toLocaleDateString('pt-BR');
+    salvar();
     renderTabela();
     atualizarGrafico();
   };
@@ -1784,6 +1819,20 @@ Router.register('projecao', (params, el) => {
 
   renderTabela();
   setTimeout(atualizarGrafico, 50);
+
+  // ── Auto-refresh diário às 5h — fora disso só atualiza manualmente (botão) ──
+  // Checa a cada 10 min se são 5h e se ainda não rodou hoje; evita popup de erro
+  // (modo silencioso) e não busca nada se não houver conta vinculada.
+  if (window._projAutoRefreshTimer) clearInterval(window._projAutoRefreshTimer);
+  window._projAutoRefreshTimer = setInterval(() => {
+    const agora = new Date();
+    const hojeStr = `${agora.getFullYear()}-${String(agora.getMonth()+1).padStart(2,'0')}-${String(agora.getDate()).padStart(2,'0')}`;
+    const ultimoAuto = localStorage.getItem('glr_proj_ultimo_auto');
+    if (agora.getHours() === 5 && ultimoAuto !== hojeStr) {
+      localStorage.setItem('glr_proj_ultimo_auto', hojeStr);
+      buscarDadosProjecao(true);
+    }
+  }, 10 * 60 * 1000);
 });
 
 // ---- Relatórios ----
