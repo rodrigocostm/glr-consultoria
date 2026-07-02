@@ -28,6 +28,16 @@ function _portalFinCache() {
   try { return JSON.parse(localStorage.getItem('glr_fin_cache')||'null'); } catch(e) { return null; }
 }
 
+// Busca os custos de produto lançados no admin (página Vendas) direto do Supabase —
+// o portal do cliente não roda o sync geral do admin (isolamento de segurança), então
+// precisa puxar essa chave especificamente pra ver o custo já descontado no dashboard.
+async function _portalSincronizarCustos() {
+  try {
+    const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave','glr_vendas_custos').single();
+    if (!error && data?.dados) localStorage.setItem('glr_vendas_custos', JSON.stringify(data.dados));
+  } catch(e) {}
+}
+
 function _portalCustos() {
   try { return JSON.parse(localStorage.getItem('glr_vendas_custos')||'{}'); } catch(e) { return {}; }
 }
@@ -654,6 +664,9 @@ window._initPortalCliente = async function(cfg) {
   window._portalConfig = cfg;
   _configurarSidebarCliente(cfg);
 
+  // Custos lançados no admin — busca antes do render pra já mostrar o lucro descontado
+  await _portalSincronizarCustos();
+
   // Busca inicial: await bloqueante garante que os dados chegam antes do render
   if (!_portalCache()) {
     const f = _portalFiltroData();
@@ -695,6 +708,8 @@ function _iniciarAutoRefreshPortal() {
   _portalAutoRefreshTimer = setInterval(async () => {
     const cfg = window._portalConfig;
     if (!cfg) return;
+
+    await _portalSincronizarCustos(); // pega custos lançados no admin desde a última checagem
 
     const agora = new Date();
     const hora = agora.getHours();
