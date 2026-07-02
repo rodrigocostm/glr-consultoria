@@ -142,17 +142,44 @@ window._portalAplicarFiltroUI = function() {
 };
 
 // Chama o proxy serverless /api/mcp — API key fica no servidor, nunca no browser do cliente
-async function _portalMcCall(action, params = {}) {
-  const resp = await fetch('/api/mcp', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, params }),
-  });
-  if (!resp.ok) {
-    const err = await resp.json().catch(()=>({}));
-    throw new Error(err.error || `HTTP ${resp.status}`);
+// Timeout garante que uma chamada travada não trava a busca inteira para sempre
+async function _portalMcCall(action, params = {}, timeoutMs = 20000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch('/api/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, params }),
+      signal: ctrl.signal,
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(()=>({}));
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+    return await resp.json();
+  } catch(e) {
+    if (e.name === 'AbortError') throw new Error(`Timeout (${timeoutMs}ms) em ${action}`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  return resp.json();
+}
+
+// Executa promessas com concorrência limitada — evita disparar centenas de
+// requisições simultâneas (183 pedidos × 3 chamadas = ~550 fetches travava tudo)
+async function _portalMapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      try { results[i] = await fn(items[i], i); } catch(e) { results[i] = undefined; }
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(workers);
+  return results;
 }
 
 // ML paginado via proxy — lógica idêntica ao MarketplaceAPI.mlOrders do admin
@@ -319,23 +346,24 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
 
         const itemIdsUnicos = [...new Set(mlPedidos.flatMap(p=>p.itens.map(i=>i.itemId)).filter(Boolean))];
         const thumbMap = {}, collectionsMap = {}, freteMap = {};
+        const CONCURRENCY = 8;
 
-        await Promise.allSettled([
-          ...itemIdsUnicos.map(async itemId => {
+        await Promise.all([
+          _portalMapLimit(itemIdsUnicos, CONCURRENCY, async itemId => {
             try {
               const r = await _portalMcCall('get_item', { itemId, meliUserId: meliId });
               const thumb = r.data?.thumbnail || r.data?.pictures?.[0]?.secure_url || r.data?.pictures?.[0]?.url || '';
               if (thumb) thumbMap[itemId] = thumb;
             } catch(e) {}
           }),
-          ...mlPedidos.filter(p=>p.paymentId).map(async p => {
+          _portalMapLimit(mlPedidos.filter(p=>p.paymentId), CONCURRENCY, async p => {
             try {
               const r = await _portalMcCall('raw', { method:'GET', path:`/collections/${p.paymentId}`, meliUserId: meliId });
               const net = parseFloat(r.data?.net_received_amount);
               if (!isNaN(net)) collectionsMap[p.paymentId] = net;
             } catch(e) {}
           }),
-          ...mlPedidos.filter(p=>p.shippingId).map(async p => {
+          _portalMapLimit(mlPedidos.filter(p=>p.shippingId), CONCURRENCY, async p => {
             try {
               const r = await _portalMcCall('raw', { method:'GET', path:`/shipments/${p.shippingId}`, meliUserId: meliId });
               const s = r.data || {};
