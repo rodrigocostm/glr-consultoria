@@ -552,40 +552,8 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
       }
     }
 
-    // ── ADS: busca investimento para o período ──
-    let adsTotal = 0;
-    const toShopeeDate = iso => iso.split('-').reverse().join('-');
-    const addDaysIso = (iso, n) => { const [y,m,d] = iso.split('-').map(Number); return new Date(Date.UTC(y,m-1,d+n)).toISOString().slice(0,10); };
-
-    for (const conta of contas) {
-      try {
-        if (!conta.marketplace?.toLowerCase().includes('shopee')) {
-          const meliId = conta.param_to_use?.meliUserId || conta.external_id;
-          let custo = 0, off = 0;
-          while (true) {
-            const ra = await _portalMcCall('ml_ads_campaigns', { meliUserId: meliId, date_from: dataFrom, date_to: dataTo, limit: 50, offset: off });
-            const res = ra.data?.results || [];
-            custo += res.reduce((s,c) => s + (parseFloat(c.metrics?.cost)||0), 0);
-            if (res.length < 50) break;
-            off += 50;
-          }
-          adsTotal += custo;
-        }
-        if (conta.marketplace?.toLowerCase().includes('shopee')) {
-          const shopId = conta.param_to_use?.shopId || conta.external_id;
-          let cur = dataFrom;
-          while (cur <= dataTo) {
-            const chunkEnd = addDaysIso(cur, 29) > dataTo ? dataTo : addDaysIso(cur, 29);
-            try {
-              const r = await _portalMcCall('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(cur), end_date: toShopeeDate(chunkEnd) });
-              const dias = r?.data?.response || [];
-              if (Array.isArray(dias)) adsTotal += dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0);
-            } catch(e) {}
-            cur = addDaysIso(chunkEnd, 1);
-          }
-        }
-      } catch(e) {}
-    }
+    // ADS não é mais buscado/acumulado aqui — é calculado sob demanda, sempre
+    // escopado ao período do filtro atual, em _portalAdsInvestimentoPeriodo()
 
     // Merge incremental ou substituição completa
     let pedidosFinal;
@@ -601,17 +569,11 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
     }
 
     pedidosFinal.sort((a,b) => (b.dataTs||0)-(a.dataTs||0));
-    // dataFrom/dataTo/adsTotal recebidos aqui cobrem só o segmento buscado nesta chamada
-    // (não necessariamente a união inteira). Só soma o ads quando o segmento REALMENTE
-    // estende a cobertura (evita duplicar quando é só um refresh de um dia já coberto,
-    // como o incremental de "hoje" do auto-refresh)
+    // dataFrom/dataTo recebidos aqui cobrem só o segmento buscado nesta chamada
+    // (não necessariamente a união inteira) — expande a cobertura salva
     const temCacheValido = incremental && cacheAtual?.dataFrom && cacheAtual?.dataTo && !cacheAtual.erro;
-    const estendeCobertura = temCacheValido && (dataFrom < cacheAtual.dataFrom || dataTo > cacheAtual.dataTo);
     const payload = {
       pedidos: pedidosFinal,
-      adsTotal: estendeCobertura ? (parseFloat(cacheAtual.adsTotal)||0) + adsTotal
-              : temCacheValido    ? cacheAtual.adsTotal
-              : adsTotal,
       dataFrom: temCacheValido && cacheAtual.dataFrom < dataFrom ? cacheAtual.dataFrom : dataFrom,
       dataTo:   temCacheValido && cacheAtual.dataTo   > dataTo   ? cacheAtual.dataTo   : dataTo,
       resumoContas,
@@ -742,10 +704,77 @@ function _portalItens(pedidos) {
   return out;
 }
 
-// Retorna investimento em ADS do cache do portal (buscado junto com as vendas)
-function _portalAdsInvestimento(contaIds) {
-  const cache = _portalCache();
-  return parseFloat(cache?.adsTotal) || 0;
+// Investimento em ADS sempre escopado ao período do filtro atual — busca sob
+// demanda (com cache pequeno por período) em vez de usar um total acumulado
+// da vida inteira do cache principal, que ficava muito maior que o filtro pedia.
+function _portalAdsCacheKey(de, ate) {
+  const cfg = window._portalConfig;
+  if (!cfg) return null;
+  const contasSel = [..._portalContasSelecionadas()].sort().join(',') || 'todas';
+  return `glr_portal_ads_${cfg.id || cfg.email}_${de}_${ate}_${contasSel}`;
+}
+
+function _portalAdsInvestimentoPeriodo(de, ate) {
+  const key = _portalAdsCacheKey(de, ate);
+  if (!key) return 0;
+  let cache;
+  try { cache = JSON.parse(localStorage.getItem(key)||'null'); } catch(e) { cache = null; }
+  if (cache && cache.at) return parseFloat(cache.valor) || 0;
+
+  // Sem cache pra esse período/conta — dispara a busca em segundo plano e
+  // re-renderiza quando terminar (não bloqueia o render atual)
+  if (window._portalAdsBuscando === key) return 0;
+  window._portalAdsBuscando = key;
+  _portalBuscarAdsPeriodo(de, ate).then(valor => {
+    try { localStorage.setItem(key, JSON.stringify({ valor, at: Date.now() })); } catch(e) {}
+    window._portalAdsBuscando = null;
+    const hash = window.location.hash.replace('#','');
+    if (hash.startsWith('portal-') && typeof Router !== 'undefined' && Router.resolve) Router.resolve();
+  }).catch(() => { window._portalAdsBuscando = null; });
+  return 0;
+}
+
+async function _portalBuscarAdsPeriodo(de, ate) {
+  const cfg = window._portalConfig;
+  if (!cfg) return 0;
+  try {
+    const contasResp = await _portalMcCall('list_accounts', {});
+    const ids = (cfg.contaIds||[]).map(String);
+    const contasSel = _portalContasSelecionadas();
+    const todasContas = contasResp.data?.accounts || contasResp.data || [];
+    const contas = todasContas.filter(c => ids.includes(String(c.external_id)) && (contasSel.size===0 || contasSel.has(String(c.external_id))));
+    const toShopeeDate = iso => iso.split('-').reverse().join('-');
+    const addDaysIso = (iso, n) => { const [y,m,d] = iso.split('-').map(Number); return new Date(Date.UTC(y,m-1,d+n)).toISOString().slice(0,10); };
+    let total = 0;
+    for (const conta of contas) {
+      try {
+        if (!conta.marketplace?.toLowerCase().includes('shopee')) {
+          const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+          let off = 0;
+          while (true) {
+            const ra = await _portalMcCall('ml_ads_campaigns', { meliUserId: meliId, date_from: de, date_to: ate, limit: 50, offset: off });
+            const res = ra.data?.results || [];
+            total += res.reduce((s,c) => s + (parseFloat(c.metrics?.cost)||0), 0);
+            if (res.length < 50) break;
+            off += 50;
+          }
+        } else {
+          const shopId = conta.param_to_use?.shopId || conta.external_id;
+          let cur = de;
+          while (cur <= ate) {
+            const chunkEnd = addDaysIso(cur, 29) > ate ? ate : addDaysIso(cur, 29);
+            try {
+              const r = await _portalMcCall('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(cur), end_date: toShopeeDate(chunkEnd) });
+              const dias = r?.data?.response || [];
+              if (Array.isArray(dias)) total += dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0);
+            } catch(e) {}
+            cur = addDaysIso(chunkEnd, 1);
+          }
+        }
+      } catch(e) {}
+    }
+    return total;
+  } catch(e) { return 0; }
 }
 
 // ── Inicializar portal cliente ────────────────────────────────
@@ -858,7 +887,7 @@ function _configurarSidebarCliente(cfg) {
 // Cor só nos rótulos que carregam um sinal real (lucro/margem/cancelamento/roas) —
 // o resto fica neutro, sem cada card vindo de uma cor diferente sem motivo
 function _pKpi(label, valor, sub, cor='#6366f1') {
-  const semantico = /lucro|margem|cancelamento|roas/i.test(label);
+  const semantico = /lucro|margem|cancelamento|roas|tacos/i.test(label);
   const corLabel = semantico ? cor : 'var(--text-secondary)';
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
@@ -927,9 +956,10 @@ Router.register('portal-dashboard', (params, el) => {
   }
   const margem = fat > 0 ? (lucroBruto/fat*100) : 0;
 
-  // ADS — investimento no período + margem pós-ADS
-  const adsInvestimento = _portalAdsInvestimento(cfg.contaIds);
-  const roas = adsInvestimento > 0 ? fat/adsInvestimento : 0;
+  // ADS — investimento no período (buscado sob demanda, sempre no range do filtro
+  // atual — não usa mais um total acumulado da vida inteira do cache) + margem pós-ADS
+  const adsInvestimento = _portalAdsInvestimentoPeriodo(filtro.de, filtro.ate);
+  const tacos = fat > 0 ? (adsInvestimento/fat*100) : 0;
   const lucroPosAds = lucroBruto - adsInvestimento;
   const margemPosAds = fat > 0 ? (lucroPosAds/fat*100) : 0;
 
@@ -982,17 +1012,16 @@ Router.register('portal-dashboard', (params, el) => {
       <!-- KPIs ADS -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:16px;">
         ${_pKpi('📢 Investimento em ADS', _pR$(adsInvestimento), 'no período selecionado', '#9333ea')}
-        ${_pKpi('🎯 ROAS', adsInvestimento>0?_pN(roas,2)+'x':'—', 'receita / investido em ADS', roas>=3?'#16a34a':roas>0?'#d97706':'#6366f1')}
+        ${_pKpi('🎯 TACoS', adsInvestimento>0?_pN(tacos,1)+'%':'—', 'investido em ADS / faturamento', tacos>0&&tacos<=10?'#16a34a':tacos<=20?'#d97706':'#dc2626')}
         ${_pKpi('📉 Lucro Pós-ADS', _pR$(lucroPosAds), 'lucro bruto − investimento ADS', lucroPosAds>=0?'#16a34a':'#dc2626')}
         ${_pKpi('🧮 Margem Pós-ADS', _pN(margemPosAds,1)+'%', 'considerando o gasto com anúncios', _pCorMargem(margemPosAds))}
       </div>
 
       <!-- KPIs secundários -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px;">
-        ${_pKpi('🛒 Número de Vendas', _pN(qtd), `cancelados: ${_pN(cancelados)}`, '#6366f1')}
+        ${_pKpi('🛒 Número de Vendas', _pN(qtd), '', '#6366f1')}
         ${_pKpi('📦 Unidades Vendidas', _pN(unidades), 'itens despachados', '#8b5cf6')}
         ${_pKpi('🎫 Ticket Médio', _pR$(ticket), 'por pedido', '#0ea5e9')}
-        ${_pKpi('❌ Cancelamentos', _pN(txCancel,1)+'%', `${_pN(cancelados)} pedidos`, txCancel>10?'#dc2626':'#d97706')}
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
