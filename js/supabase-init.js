@@ -45,6 +45,15 @@ async function sincronizarDoSupabase() {
     data.forEach(row => _localSetItem(row.chave, JSON.stringify(row.dados)));
     console.log(`[Supabase] ${data.length} coleções sincronizadas.`);
   }
+  // Chaves que já existiam localmente mas nunca foram salvas desde que entraram no
+  // GLR_KEYS (ex: dado antigo cadastrado antes do sync existir) — empurra pro Supabase
+  // uma única vez, re-chamando o setItem interceptado.
+  const chavesNoServidor = new Set((data||[]).map(r => r.chave));
+  GLR_KEYS.forEach(key => {
+    if (chavesNoServidor.has(key)) return;
+    const local = localStorage.getItem(key);
+    if (local != null) localStorage.setItem(key, local); // dispara o interceptor, empurra pro Supabase
+  });
 }
 
 // ── Real-time: atualiza quando outro usuário salvar algo ──
