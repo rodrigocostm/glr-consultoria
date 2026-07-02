@@ -46,6 +46,47 @@ Router.register('vendas', async (params, el) => {
     }
   }
 
+  // Investimento em ADS (ML + Shopee) para as contas/período filtrados no momento —
+  // roda depois do primeiro render pra não travar a tela (mesma lógica do portal)
+  async function _buscarAdsTotalVendas(dataFrom, dataTo) {
+    const contasParaBuscar = filtroContasSel.size > 0
+      ? contas.filter(c => filtroContasSel.has(c.external_id))
+      : filtroEmpresas.size > 0
+        ? contas.filter(c => contaEmpresas(c).some(e => filtroEmpresas.has(e)))
+        : contas;
+    const toShopeeDate = iso => iso.split('-').reverse().join('-');
+    const addDaysIso = (iso, n) => { const [y,m,d] = iso.split('-').map(Number); return new Date(Date.UTC(y,m-1,d+n)).toISOString().slice(0,10); };
+    let total = 0;
+    for (const conta of contasParaBuscar) {
+      try {
+        if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
+          const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+          let off = 0;
+          while (true) {
+            const ra = await MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: dataFrom, date_to: dataTo, limit: 50, offset: off });
+            const res = ra.data?.results || [];
+            total += res.reduce((s,c) => s + (parseFloat(c.metrics?.cost)||0), 0);
+            if (res.length < 50) break;
+            off += 50;
+          }
+        } else if (conta.marketplace === 'shopee') {
+          const shopId = conta.param_to_use?.shopId || conta.external_id;
+          let cur = dataFrom;
+          while (cur <= dataTo) {
+            const chunkEnd = addDaysIso(cur, 29) > dataTo ? dataTo : addDaysIso(cur, 29);
+            try {
+              const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(cur), end_date: toShopeeDate(chunkEnd) });
+              const dias = r?.data?.response || [];
+              if (Array.isArray(dias)) total += dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0);
+            } catch(e) {}
+            cur = addDaysIso(chunkEnd, 1);
+          }
+        }
+      } catch(e) {}
+    }
+    return total;
+  }
+
   const salvarCustos  = () => localStorage.setItem(STORAGE_CUSTOS, JSON.stringify(custos));
   const salvarLinhas  = () => localStorage.setItem(STORAGE_LINHAS, JSON.stringify(linhasExt));
 
@@ -332,11 +373,9 @@ Router.register('vendas', async (params, el) => {
     const area = vals => `${svgPath(vals)} L${xOf(n-1).toFixed(1)},${(H-PAD).toFixed(1)} L${xOf(0).toFixed(1)},${(H-PAD).toFixed(1)} Z`;
     const labStep = Math.max(1, Math.ceil((singleDay?dias:chartDias).length/7));
 
-    // ── Calcular ADS dinamicamente baseado no filtro ──
-    // Para agora, vou usar 0 se não conseguir puxar da API
-    // Mas vamos calcular baseado no período filtrado
+    // ADS busca em segundo plano (não trava o primeiro render) — atualiza os
+    // cards quando terminar, ver bloco após sec.innerHTML mais abaixo
     let totalAds = 0;
-    // TODO: Puxar da API de ADS conforme o período selecionado
 
     sec.innerHTML = `
     <!-- KPI Cards -->
@@ -590,20 +629,29 @@ Router.register('vendas', async (params, el) => {
       </div>`;
     })()}`;
 
-    // ── Preencher ADS e Lucro pós-ADS ──
+    // ADS: mostra "Buscando..." e preenche quando a busca real terminar
     const adEl = sec.querySelector('#dashboard-ads');
+    const adPctEl = sec.querySelector('#dashboard-ads-pct');
     const lpEl = sec.querySelector('#dashboard-lucro-ads');
     const lpPctEl = sec.querySelector('#dashboard-lucro-ads-pct');
-    if (adEl) adEl.textContent = totalAds > 0 ? R$(totalAds) : 'Sem dados';
-    if (lpEl) {
-      const lucroPosAds = t.lucro - totalAds;
-      lpEl.textContent = R$(lucroPosAds);
-      lpEl.style.color = lucroPosAds >= 0 ? '#22c55e' : '#ef4444';
-      if (lpPctEl) {
-        const pctAds = t.fat > 0 ? (lucroPosAds/t.fat)*100 : 0;
-        lpPctEl.textContent = `Margem: ${pctAds.toFixed(1).replace('.',',')}%`;
+    if (adEl) adEl.textContent = '⏳...';
+    if (adPctEl) adPctEl.textContent = 'buscando...';
+
+    const { dataFrom: adsDe, dataTo: adsAte } = _periodoParaDatas();
+    _buscarAdsTotalVendas(adsDe, adsAte).then(total => {
+      totalAds = total;
+      if (adEl)    adEl.textContent = R$(totalAds);
+      if (adPctEl) adPctEl.textContent = `${(t.fat>0?(totalAds/t.fat)*100:0).toFixed(1)}% do faturamento`;
+      if (lpEl) {
+        const lucroPosAds = t.lucro - totalAds;
+        lpEl.textContent = R$(lucroPosAds);
+        lpEl.style.color = lucroPosAds >= 0 ? '#22c55e' : '#ef4444';
+        if (lpPctEl) lpPctEl.textContent = `Margem: ${(t.fat>0?(lucroPosAds/t.fat)*100:0).toFixed(1).replace('.',',')}%`;
       }
-    }
+    }).catch(() => {
+      if (adEl) adEl.textContent = 'Erro';
+      if (adPctEl) adPctEl.textContent = 'falha ao buscar ADS';
+    });
 
     // Bind custo-por-produto inputs
     sec.querySelectorAll('.inp-custo-prod').forEach(inp => {
@@ -637,25 +685,6 @@ Router.register('vendas', async (params, el) => {
       console.error('Erro ao renderizar marketplace:', e);
       renderMarketplaceComparison(); // Tentar novamente sem await
     });
-
-    // Atualizar ADS e Lucro pós-ADS
-    const adsEl = sec.querySelector('#dashboard-ads');
-    const adsPctEl = sec.querySelector('#dashboard-ads-pct');
-    const lucroAdsEl = sec.querySelector('#dashboard-lucro-ads');
-    const lucroAdsPctEl = sec.querySelector('#dashboard-lucro-ads-pct');
-
-    if (adsEl && adsPctEl) {
-      const adsPct = t.fat > 0 ? (totalAds / t.fat) * 100 : 0;
-      adsEl.textContent = R$(totalAds);
-      adsPctEl.textContent = `${adsPct.toFixed(1)}% do faturamento`;
-    }
-    if (lucroAdsEl && lucroAdsPctEl) {
-      const lucroPosAds = t.lucro - totalAds;
-      lucroAdsEl.textContent = R$(lucroPosAds);
-      lucroAdsEl.style.color = lucroPosAds >= 0 ? '#22c55e' : '#ef4444';
-      const pctAds = t.fat > 0 ? (lucroPosAds/t.fat)*100 : 0;
-      lucroAdsPctEl.textContent = `Margem: ${pctAds.toFixed(1)}%`;
-    }
   }
 
   function kpiCard(label, val, sub, cor) {
