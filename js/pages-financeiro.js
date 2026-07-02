@@ -713,7 +713,7 @@ Router.register('financeiro', async (params, el) => {
         contasParaBuscar = contas.filter(c => c.external_id === contaSel);
         contasFiltroIds  = [contaSel];
       } else if (empresaSel !== 'todas') {
-        contasParaBuscar = contas.filter(c => nomeEmpresaDaTag(c.tags?.[0]?.name || '') === empresaSel);
+        contasParaBuscar = contas.filter(c => nomeEmpresaDaConta(c) === empresaSel);
         contasFiltroIds  = contasParaBuscar.map(c => c.external_id);
       } else {
         contasParaBuscar = contas;
@@ -1194,9 +1194,23 @@ Router.register('financeiro', async (params, el) => {
   }
 
   // Extrai nome da empresa a partir de uma tag — pega tudo antes de " - " ou ": " ou ":"
-  function nomeEmpresaDaTag(tag) {
-    if (!tag || tag === 'Sem tag') return tag;
-    // Remove sufixo de plataforma e número: "EAP - Mercado Livre: 2" → "EAP", "LTB: 1" → "LTB"
+  // Empresa = cliente real vinculado à conta em Integrações (glr_mc_vinculos), não a
+  // tag crua da API — a tag muitas vezes não bate com o cliente de fato (ex: conta
+  // com tag "EAP - Mercado Livre" pode estar vinculada à Mega Facil de verdade)
+  function nomeEmpresaDaConta(c) {
+    try {
+      const vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}');
+      const clientes = JSON.parse(localStorage.getItem('glr_clientes')||'[]');
+      for (const [clienteId, contasVinc] of Object.entries(vinc)) {
+        if ((contasVinc||[]).some(v => String(v.external_id) === String(c.external_id))) {
+          const cli = clientes.find(cl => String(cl.id) === String(clienteId));
+          if (cli?.nome) return cli.nome;
+        }
+      }
+    } catch(e) {}
+    // Fallback: sem vínculo cadastrado, usa a tag crua (melhor que nada)
+    const tag = c.tags?.[0]?.name || '';
+    if (!tag || tag === 'Sem tag') return tag || 'Sem vínculo';
     return tag.replace(/\s*[-:]\s*(Mercado Livre|Shopee|ML|SHOPEE|MELI).*$/i, '').replace(/\s*:\s*\d+\s*$/, '').trim();
   }
 
@@ -1213,7 +1227,7 @@ Router.register('financeiro', async (params, el) => {
     const sel = document.getElementById('fin-sel-empresa');
     if (!sel) return;
     // Extrair nome de empresa único de cada tag — agrupa "EAP - ML" e "EAP - SHOPEE" em "EAP"
-    const emps = new Set(contas.map(c => nomeEmpresaDaTag(c.tags?.[0]?.name || '')).filter(Boolean));
+    const emps = new Set(contas.map(c => nomeEmpresaDaConta(c)).filter(Boolean));
     empresas = ['Todas', ...Array.from(emps).sort()];
 
     let html = empresas.map(e => `<option value="${e === 'Todas' ? 'todas' : e}">${e}</option>`).join('');
@@ -1230,7 +1244,7 @@ Router.register('financeiro', async (params, el) => {
     // Filtrar contas por empresa selecionada (usando nome de empresa extraído da tag)
     let contasFiltradas = contas;
     if (empresaSel !== 'todas') {
-      contasFiltradas = contas.filter(c => nomeEmpresaDaTag(c.tags?.[0]?.name || '') === empresaSel);
+      contasFiltradas = contas.filter(c => nomeEmpresaDaConta(c) === empresaSel);
     }
 
     let html = `<option value="todas">Todas</option>`;
