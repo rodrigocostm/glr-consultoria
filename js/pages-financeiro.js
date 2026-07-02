@@ -644,6 +644,14 @@ Router.register('financeiro', async (params, el) => {
     const apiKey   = localStorage.getItem('glr_mc_apikey')||'';
     if (!apiKey) { if(statusEl) statusEl.textContent='⚠️ Configure a API Key nas Integrações.'; return; }
     if (buscando) { if(statusEl) statusEl.textContent='⏳ Aguarde a busca atual terminar...'; return; }
+    // Trava: sem conta/empresa nem reprocessamento específico selecionado, não busca
+    // "todas as contas" de uma vez — isso empilhava chamada em cima de chamada.
+    if (!forceReprocess && !contaReprocess && contaSel === 'todas' && empresaSel === 'todas') {
+      if (statusEl) statusEl.innerHTML = '⚠️ Selecione uma <strong>conta</strong> ou <strong>empresa</strong> no filtro para buscar os dados.';
+      pedidos = [];
+      renderConteudo();
+      return;
+    }
 
     // Verificar cache se não for reprocessamento
     console.log('[BUSCAR] Checando cache | !forceReprocess:', !forceReprocess, '| cache existe:', !!carregarCache());
@@ -1437,8 +1445,13 @@ Router.register('financeiro', async (params, el) => {
   </style>`;
 
   document.getElementById('fin-chk-reemb').addEventListener('change', e=>{ incluirReemb=e.target.checked; renderConteudo(); });
-  document.getElementById('fin-sel-empresa').addEventListener('change', e=>{ empresaSel=e.target.value; renderFiltroContas(); renderConteudo(); });
-  document.getElementById('fin-sel-conta').addEventListener('change', e=>{ contaSel=e.target.value; renderConteudo(); });
+  document.getElementById('fin-sel-empresa').addEventListener('change', e=>{
+    empresaSel=e.target.value; renderFiltroContas();
+    // Selecionar uma empresa já dispara a busca — sem isso a trava em buscar()
+    // ficaria esperando pra sempre (usuário teria que clicar em Atualizar também)
+    buscar();
+  });
+  document.getElementById('fin-sel-conta').addEventListener('change', e=>{ contaSel=e.target.value; buscar(); });
   document.getElementById('fin-sel-mes').addEventListener('change', e=>{
     mesSel = e.target.value;
     localStorage.setItem('glr_fin_mes', mesSel);
@@ -1467,13 +1480,16 @@ Router.register('financeiro', async (params, el) => {
     console.error('[Contas] Erro:', e.message);
   });
 
-  // Início: cache ou busca
+  // Início: só carrega cache local (sem chamada de API). Sem cache, espera o
+  // usuário escolher mês + conta/empresa antes de buscar — evita empilhar
+  // chamadas pra todas as contas de uma vez só de abrir a página.
   const at = carregarCache();
+  const s = document.getElementById('fin-status');
   if (at) {
-    const s = document.getElementById('fin-status');
     if (s) s.textContent = `${pedidos.length} pedidos (cache)`;
     renderConteudo();
   } else {
-    buscar();
+    if (s) s.innerHTML = '⚠️ Selecione uma <strong>conta</strong> ou <strong>empresa</strong> no filtro para buscar os dados.';
+    renderConteudo();
   }
 });
