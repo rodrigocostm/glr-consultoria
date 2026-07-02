@@ -884,11 +884,14 @@ Router.register('projecao', (params, el) => {
     if (btn) { btn.disabled=true; btn.textContent='⏳ Buscando...'; }
 
     try {
+      // Sempre até ONTEM — hoje ainda não fechou o dia, incluir puxaria dado
+      // parcial e distorceria a projeção (base incompleta ÷ dias decorridos)
       const hoje = new Date();
+      const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
       const pad  = n => String(n).padStart(2,'0');
-      const ano = hoje.getFullYear(), mes = hoje.getMonth()+1;
+      const ano = ontem.getFullYear(), mes = ontem.getMonth()+1;
       const primeiroDia = `${ano}-${pad(mes)}-01`;
-      const dataTo = `${ano}-${pad(mes)}-${pad(hoje.getDate())}`;
+      const dataTo = `${ano}-${pad(mes)}-${pad(ontem.getDate())}`;
       const tsFrom = new Date(`${primeiroDia}T00:00:00`).getTime();
       const tsTo   = new Date(`${dataTo}T23:59:59`).getTime();
       const mesKey = `${ano}-${pad(mes)}`;
@@ -972,17 +975,17 @@ Router.register('projecao', (params, el) => {
       // Salva cache mesclado
       localStorage.setItem('glr_fin_cache', JSON.stringify({ ...(cacheExist||{}), ver:25, mesKey, pedidos }));
 
-      // Atualiza data base para hoje (dia da busca) — busca é sempre automática,
-      // então também destrava um eventual override manual de dias anterior
-      const hojeIso = `${ano}-${pad(mes)}-${pad(hoje.getDate())}`;
+      // Atualiza data base para ONTEM (último dia fechado) — busca é sempre
+      // automática, então também destrava um eventual override manual de dias
+      const ontemIso = dataTo; // já calculado acima como ano-mes-dia de ontem
       projecaoAtiva._diasEditadosManualmente = false;
-      projecaoAtiva.dataBase = hojeIso;
-      projecaoAtiva.diasDecorridos = hoje.getDate();
-      projecaoAtiva.diasNoMes = _diasNoMesDe(hojeIso);
+      projecaoAtiva.dataBase = ontemIso;
+      projecaoAtiva.diasDecorridos = ontem.getDate();
+      projecaoAtiva.diasNoMes = _diasNoMesDe(ontemIso);
       const inpDb = document.getElementById('inp-data-base');
-      if (inpDb) inpDb.value = hojeIso;
+      if (inpDb) inpDb.value = ontemIso;
       const inpDd = document.getElementById('inp-dias-dec');
-      if (inpDd) inpDd.value = hoje.getDate();
+      if (inpDd) inpDd.value = ontem.getDate();
       const inpDm = document.getElementById('inp-dias-mes');
       if (inpDm) inpDm.value = projecaoAtiva.diasNoMes;
 
