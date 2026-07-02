@@ -325,6 +325,7 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
 
     const novosPedidos = [];
     const resumoContas = [];
+    const pendenciasTaxasML = []; // { mlPedidos, meliId } — enriquecidas em segundo plano depois do render
     const contasInfo = contas.map(c => {
       const mp = (c.marketplace||'').toLowerCase();
       const nomeBase = mp.includes('shopee') ? 'Shopee' : 'Mercado Livre';
@@ -364,34 +365,19 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
         });
 
         const itemIdsUnicos = [...new Set(mlPedidos.flatMap(p=>p.itens.map(i=>i.itemId)).filter(Boolean))];
-        const thumbMap = {}, collectionsMap = {}, freteMap = {};
+        const thumbMap = {};
         const CONCURRENCY = 8;
 
-        await Promise.all([
-          _portalMapLimit(itemIdsUnicos, CONCURRENCY, async itemId => {
-            try {
-              const r = await _portalMcCall('get_item', { itemId, meliUserId: meliId });
-              const thumb = r.data?.thumbnail || r.data?.pictures?.[0]?.secure_url || r.data?.pictures?.[0]?.url || '';
-              if (thumb) thumbMap[itemId] = thumb;
-            } catch(e) {}
-          }),
-          _portalMapLimit(mlPedidos.filter(p=>p.paymentId), CONCURRENCY, async p => {
-            try {
-              const r = await _portalMcCall('raw', { method:'GET', path:`/collections/${p.paymentId}`, meliUserId: meliId });
-              const net = parseFloat(r.data?.net_received_amount);
-              if (!isNaN(net)) collectionsMap[p.paymentId] = net;
-            } catch(e) {}
-          }),
-          _portalMapLimit(mlPedidos.filter(p=>p.shippingId), CONCURRENCY, async p => {
-            try {
-              const r = await _portalMcCall('raw', { method:'GET', path:`/shipments/${p.shippingId}`, meliUserId: meliId });
-              const s = r.data || {};
-              const listCost = parseFloat(s.shipping_option?.list_cost);
-              const baseCost = parseFloat(s.base_cost);
-              freteMap[p.shippingId] = !isNaN(listCost) ? listCost : (!isNaN(baseCost) ? baseCost : 0);
-            } catch(e) {}
-          }),
-        ]);
+        // Bloqueante: só as imagens dos produtos (poucas dezenas de chamadas) —
+        // essencial pra UI não ficar sem foto. Líquido/frete (183+183 chamadas)
+        // vão pro background depois do render, senão a busca demora minutos.
+        await _portalMapLimit(itemIdsUnicos, CONCURRENCY, async itemId => {
+          try {
+            const r = await _portalMcCall('get_item', { itemId, meliUserId: meliId });
+            const thumb = r.data?.thumbnail || r.data?.pictures?.[0]?.secure_url || r.data?.pictures?.[0]?.url || '';
+            if (thumb) thumbMap[itemId] = thumb;
+          } catch(e) {}
+        });
 
         for (const p of mlPedidos) {
           const firstItemId = p.itens[0]?.itemId;
@@ -399,12 +385,12 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
             p.imagem = thumbMap[firstItemId];
             p.itens.forEach(i => { i.imagem = thumbMap[i.itemId] || ''; });
           }
-          if (p.paymentId && collectionsMap[p.paymentId] != null) p.taxas.liquido = collectionsMap[p.paymentId];
-          else if (p.taxas.comissao > 0) p.taxas.liquido = p.valor - p.taxas.comissao;
-          if (p.shippingId && freteMap[p.shippingId] != null) p.taxas.frete = freteMap[p.shippingId];
+          // Estimativa até o valor preciso chegar via enriquecimento em background
+          if (p.taxas.comissao > 0) p.taxas.liquido = p.valor - p.taxas.comissao;
         }
         novosPedidos.push(...mlPedidos);
         resumoContas.push({ mp:'Mercado Livre', qtd: mlPedidos.length });
+        pendenciasTaxasML.push({ mlPedidos, meliId, concorrencia: CONCURRENCY });
       }
 
       // ── Shopee ──
@@ -552,6 +538,9 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
         window._diagCacheSaved = `ERRO quota: ${qe2.message}`;
       }
     }
+    // Dispara em segundo plano — não trava o retorno da função nem o render.
+    // Quando terminar, atualiza o cache com valores precisos e re-renderiza.
+    pendenciasTaxasML.forEach(job => _portalEnriquecerTaxasML(job.mlPedidos, job.meliId, job.concorrencia, cacheKey));
   } catch(e) {
     console.warn('[Portal] Erro ao buscar vendas:', e.message);
     window._diagCacheSaved = `ERRO fetch: ${e.message}`;
@@ -562,6 +551,45 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
       }
     } catch(_) {}
   }
+}
+
+// Busca líquido (collections) e frete (shipments) por pedido ML SEM travar a UI —
+// roda depois que o dashboard já está de pé com a estimativa (valor - comissão).
+// Ao terminar, grava os valores precisos no cache e re-renderiza se ainda estiver no portal.
+async function _portalEnriquecerTaxasML(mlPedidos, meliId, concorrencia, cacheKey) {
+  const collectionsMap = {}, freteMap = {};
+  await Promise.all([
+    _portalMapLimit(mlPedidos.filter(p=>p.paymentId), concorrencia, async p => {
+      try {
+        const r = await _portalMcCall('raw', { method:'GET', path:`/collections/${p.paymentId}`, meliUserId: meliId });
+        const net = parseFloat(r.data?.net_received_amount);
+        if (!isNaN(net)) collectionsMap[p.paymentId] = net;
+      } catch(e) {}
+    }),
+    _portalMapLimit(mlPedidos.filter(p=>p.shippingId), concorrencia, async p => {
+      try {
+        const r = await _portalMcCall('raw', { method:'GET', path:`/shipments/${p.shippingId}`, meliUserId: meliId });
+        const s = r.data || {};
+        const listCost = parseFloat(s.shipping_option?.list_cost);
+        const baseCost = parseFloat(s.base_cost);
+        freteMap[p.shippingId] = !isNaN(listCost) ? listCost : (!isNaN(baseCost) ? baseCost : 0);
+      } catch(e) {}
+    }),
+  ]);
+
+  let cache;
+  try { cache = JSON.parse(localStorage.getItem(cacheKey)||'null'); } catch(e) { return; }
+  if (!cache?.pedidos) return;
+  let mudou = false;
+  cache.pedidos.forEach(p => {
+    if (p.paymentId && collectionsMap[p.paymentId] != null) { p.taxas.liquido = collectionsMap[p.paymentId]; mudou = true; }
+    if (p.shippingId && freteMap[p.shippingId] != null) { p.taxas.frete = freteMap[p.shippingId]; mudou = true; }
+  });
+  if (!mudou) return;
+  try { localStorage.setItem(cacheKey, JSON.stringify(cache)); } catch(e) { return; }
+  // Re-renderiza se o cliente ainda estiver numa página do portal
+  const hash = window.location.hash.replace('#','');
+  if (hash.startsWith('portal-') && typeof Router !== 'undefined' && Router.resolve) Router.resolve();
 }
 
 function _portalPedidos() {
