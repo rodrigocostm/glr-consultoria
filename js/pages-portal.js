@@ -149,7 +149,17 @@ function _portalPeriodoParaDatas(preset) {
   }
 }
 
+function _portalPresetSelecionado() {
+  try { return localStorage.getItem('glr_portal_filtro_preset') || '30'; } catch { return '30'; }
+}
+
 window._portalFiltroRapido = function(preset) {
+  localStorage.setItem('glr_portal_filtro_preset', preset);
+  if (preset === 'custom') {
+    // Só revela os campos de data — não aplica nada até o usuário clicar em "Aplicar"
+    if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
+    return;
+  }
   const { de, ate } = _portalPeriodoParaDatas(preset);
   window._portalAplicarFiltro(de, ate);
 };
@@ -157,6 +167,7 @@ window._portalFiltroRapido = function(preset) {
 function _portalFiltroBar(pageAtual) {
   const f = _portalFiltroData();
   const cache = _portalCache();
+  const presetSel = _portalPresetSelecionado();
   const contasSel = _portalContasSelecionadas();
 
   // Seletor de contas (checkbox multi-select) — só aparece se há mais de uma conta
@@ -197,26 +208,29 @@ function _portalFiltroBar(pageAtual) {
   const diagLines = [diagTotal&&`[TOTAL] ${diagTotal}`, diagCache&&`[CACHE] ${diagCache}`, diagML&&`[ML P0] ${diagML}`].filter(Boolean).join('<br>');
   const diagBanner = diagLines ? `<div style="width:100%;margin-top:8px;padding:6px 10px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.3);border-radius:6px;font-size:10px;color:#a5b4fc;word-break:break-all;">${diagLines}</div>` : '';
 
+  const mostrarDatas = presetSel === 'custom';
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">📅 Período:</span>
-      <input type="date" id="pf-de" value="${f.de}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
-      <span style="color:var(--text-secondary);font-size:12px;">até</span>
-      <input type="date" id="pf-ate" value="${f.ate}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
-      <button id="pf-btn-aplicar" onclick="window._portalAplicarFiltroUI()"
-        style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:600;cursor:pointer;">Aplicar</button>
       <select onchange="window._portalFiltroRapido(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
-        <option value="" disabled selected>Período rápido...</option>
-        <option value="hoje">Hoje</option>
-        <option value="ontem">Ontem</option>
-        <option value="7">Últimos 7 dias</option>
-        <option value="15">Últimos 15 dias</option>
-        <option value="30">Últimos 30 dias</option>
-        <option value="mes">Esse mês</option>
-        <option value="mes-passado">Mês passado</option>
-        <option value="ano">Esse ano</option>
-        <option value="tudo">Tudo</option>
+        <option value="hoje" ${presetSel==='hoje'?'selected':''}>Hoje</option>
+        <option value="ontem" ${presetSel==='ontem'?'selected':''}>Ontem</option>
+        <option value="7" ${presetSel==='7'?'selected':''}>Últimos 7 dias</option>
+        <option value="15" ${presetSel==='15'?'selected':''}>Últimos 15 dias</option>
+        <option value="30" ${presetSel==='30'?'selected':''}>Últimos 30 dias</option>
+        <option value="mes" ${presetSel==='mes'?'selected':''}>Esse mês</option>
+        <option value="mes-passado" ${presetSel==='mes-passado'?'selected':''}>Mês passado</option>
+        <option value="ano" ${presetSel==='ano'?'selected':''}>Esse ano</option>
+        <option value="tudo" ${presetSel==='tudo'?'selected':''}>Tudo</option>
+        <option value="custom" ${presetSel==='custom'?'selected':''}>📅 Personalizado</option>
       </select>
+      <div style="display:${mostrarDatas?'flex':'none'};align-items:center;gap:6px;">
+        <input type="date" id="pf-de" value="${f.de}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
+        <span style="color:var(--text-secondary);font-size:12px;">até</span>
+        <input type="date" id="pf-ate" value="${f.ate}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
+        <button id="pf-btn-aplicar" onclick="window._portalAplicarFiltroUI()"
+          style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:600;cursor:pointer;">Aplicar</button>
+      </div>
       ${status}
       <div style="margin-left:auto;"></div>
       ${seletorContas}
