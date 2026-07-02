@@ -298,7 +298,7 @@ Router.register('vendas', async (params, el) => {
   // ── Trocar aba ───────────────────────────────────────────────
   function setAba(aba) {
     abaAtiva = aba;
-    ['dashboard','pedidos','oportunidades'].forEach(a => {
+    ['dashboard','pedidos','oportunidades','semanal'].forEach(a => {
       const btn = document.getElementById(`tab-${a}`);
       const sec = document.getElementById(`sec-${a}`);
       if (btn) btn.style.cssText = a===aba
@@ -309,6 +309,7 @@ Router.register('vendas', async (params, el) => {
     if (aba==='dashboard') renderDashboard();
     if (aba==='pedidos')   renderPedidos();
     if (aba==='oportunidades') renderOportunidades();
+    if (aba==='semanal')   renderComparativoSemanal();
   }
 
   // Executa promessas com concorrência limitada — evita disparar centenas de
@@ -571,6 +572,92 @@ Router.register('vendas', async (params, el) => {
     }
   }
   window.buscarForaDoAds = buscarForaDoAds;
+
+  // ── Comparativo Semanal: quebra o período filtrado em blocos de 7 dias e
+  // mostra quantidade vendida por produto em cada semana — usa os pedidos já
+  // buscados (sem chamada de API nova). Obs identifica, pra cada posição do
+  // ranking, quando um produto diferente passou a ocupá-la de uma semana pra outra.
+  function renderComparativoSemanal() {
+    const sec = document.getElementById('sec-semanal');
+    if (!sec) return;
+
+    const lista = pedidosFiltrados();
+    if (!lista.length) {
+      sec.innerHTML = `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted);">Nenhum pedido no período filtrado. Ajuste o filtro de data ou busque dados na aba Dashboard.</div>`;
+      return;
+    }
+
+    const { dataFrom, dataTo } = _periodoParaDatas();
+    const inicio = new Date(`${dataFrom}T00:00:00`);
+    const fim    = new Date(`${dataTo}T23:59:59`);
+    const totalDias = Math.max(1, Math.ceil((fim - inicio) / 86400000) + 1);
+    const nSemanas = Math.min(6, Math.max(1, Math.ceil(totalDias / 7)));
+
+    const semanaDoTs = ts => {
+      const dias = Math.floor((ts - inicio.getTime()) / 86400000);
+      return Math.min(nSemanas - 1, Math.max(0, Math.floor(dias / 7)));
+    };
+
+    // Agrega quantidade por produto e por semana
+    const prodMap = {};
+    for (const p of lista) {
+      const sem = semanaDoTs(p.dataTs || 0);
+      const itens = (p.itens && p.itens.length) ? p.itens : [{ nome: p.produto, qtd: p.qtd || 1 }];
+      for (const it of itens) {
+        const nome = it.nome || '—';
+        if (!prodMap[nome]) prodMap[nome] = { nome, semanas: Array(nSemanas).fill(0), total: 0 };
+        const qtd = parseInt(it.qtd) || 1;
+        prodMap[nome].semanas[sem] += qtd;
+        prodMap[nome].total += qtd;
+      }
+    }
+
+    const produtos = Object.values(prodMap).sort((a,b) => b.total - a.total);
+
+    // Ranking independente por semana (quem vendeu mais NAQUELA semana)
+    const rankPorSemana = []; // rankPorSemana[sem] = [nomeProduto na posição 0, 1, 2...]
+    for (let s = 0; s < nSemanas; s++) {
+      rankPorSemana.push(
+        [...produtos].filter(p => p.semanas[s] > 0).sort((a,b) => b.semanas[s]-a.semanas[s]).map(p => p.nome)
+      );
+    }
+
+    // Obs por linha: se a posição geral desse produto foi ocupada por outro
+    // produto numa semana específica, sinaliza quem "assumiu" aquela posição
+    function obsDoProduto(nome, posicao) {
+      const notas = [];
+      for (let s = 1; s < nSemanas; s++) {
+        const ocupanteAtual  = rankPorSemana[s][posicao];
+        const ocupanteAntes  = rankPorSemana[s-1][posicao];
+        if (ocupanteAtual && ocupanteAtual !== nome && ocupanteAtual !== ocupanteAntes) {
+          notas.push(`semana ${s+1} subiu o ${ocupanteAtual}`);
+        }
+      }
+      return notas.join(' · ');
+    }
+
+    const linhas = produtos.map((p, i) => `
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:10px 12px;color:var(--text-primary);font-weight:600;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(p.nome||'').replace(/"/g,'&quot;')}">${p.nome}</td>
+        ${p.semanas.map(q => `<td style="padding:10px 12px;text-align:center;color:var(--text-secondary);">${q || '—'}</td>`).join('')}
+        <td style="padding:10px 12px;color:var(--text-muted);font-size:11px;font-style:italic;max-width:260px;">${obsDoProduto(p.nome, i)}</td>
+      </tr>`).join('');
+
+    sec.innerHTML = `
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+        ${produtos.length} produtos · ${dataFrom} a ${dataTo} · dividido em ${nSemanas} semana${nSemanas!==1?'s':''} de 7 dias
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr style="background:var(--bg-card-hover);">
+            <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Produto</th>
+            ${Array.from({length:nSemanas}, (_,i)=>`<th style="padding:10px 12px;text-align:center;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">${i+1}ª Semana</th>`).join('')}
+            <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Obs</th>
+          </tr></thead>
+          <tbody>${linhas}</tbody>
+        </table>
+      </div>`;
+  }
 
   function renderOportunidades() {
     const sec = document.getElementById('sec-oportunidades');
@@ -1852,6 +1939,7 @@ Router.register('vendas', async (params, el) => {
       <button id="tab-dashboard" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:#6366f1;color:var(--text-primary);">📊 Dashboard</button>
       <button id="tab-pedidos"   style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">📋 Pedidos</button>
       <button id="tab-oportunidades" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">🎯 Oportunidades</button>
+      <button id="tab-semanal" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">📅 Comparativo Semanal</button>
     </div>
 
     <!-- Aba Dashboard -->
@@ -1861,6 +1949,9 @@ Router.register('vendas', async (params, el) => {
 
     <!-- Aba Oportunidades -->
     <div id="sec-oportunidades" style="display:none;"></div>
+
+    <!-- Aba Comparativo Semanal -->
+    <div id="sec-semanal" style="display:none;"></div>
 
     <!-- Aba Pedidos -->
     <div id="sec-pedidos" style="display:none;">
@@ -1927,6 +2018,7 @@ Router.register('vendas', async (params, el) => {
   document.getElementById('tab-dashboard').addEventListener('click', () => setAba('dashboard'));
   document.getElementById('tab-pedidos').addEventListener('click',   () => setAba('pedidos'));
   document.getElementById('tab-oportunidades').addEventListener('click', () => setAba('oportunidades'));
+  document.getElementById('tab-semanal').addEventListener('click', () => setAba('semanal'));
 
   renderLinhasExtras();
 
