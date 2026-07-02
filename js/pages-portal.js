@@ -58,9 +58,28 @@ function _portalFiltroData() {
   return _portalFiltroDefault();
 }
 
-window._portalAplicarFiltro = async function(de, ate) {
+// Verifica se o período pedido já está totalmente coberto pelo cache atual —
+// se estiver, não precisa chamar a API de novo, só filtrar localmente (instantâneo)
+function _portalRangeCoberto(de, ate) {
+  const cache = _portalCache();
+  if (!cache?.pedidos || cache.erro) return false;
+  if (!cache.dataFrom || !cache.dataTo) return false;
+  return cache.dataFrom <= de && cache.dataTo >= ate;
+}
+
+window._portalAplicarFiltro = async function(de, ate, forcar = false) {
   localStorage.setItem('glr_portal_filtro_data', JSON.stringify({ de, ate }));
-  await _portalBuscarVendas(de, ate);
+  if (!forcar && _portalRangeCoberto(de, ate)) {
+    // Já temos esses dados em cache — filtra na hora, sem chamar a API
+    if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
+    return;
+  }
+  // Busca a UNIÃO do que já está em cache + o novo período pedido, para não
+  // perder cobertura já buscada nem contar ADS em duplicidade
+  const cache = _portalCache();
+  const fetchDe  = cache?.dataFrom && !cache.erro ? (cache.dataFrom < de  ? cache.dataFrom : de ) : de;
+  const fetchAte = cache?.dataTo   && !cache.erro ? (cache.dataTo   > ate ? cache.dataTo   : ate) : ate;
+  await _portalBuscarVendas(fetchDe, fetchAte, true); // incremental: mescla pedidos por id, sem duplicar
   if (typeof Router !== 'undefined' && Router.resolve) Router.resolve();
 };
 
@@ -503,10 +522,12 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
     }
 
     pedidosFinal.sort((a,b) => (b.dataTs||0)-(a.dataTs||0));
+    // dataFrom/dataTo recebidos aqui já são a união (cache atual + novo período),
+    // e adsTotal foi recalculado do zero para essa união — não acumula, evita duplicidade
     const payload = {
       pedidos: pedidosFinal,
-      adsTotal: incremental ? ((cacheAtual?.adsTotal || 0) + adsTotal) : adsTotal,
-      dataFrom: incremental ? (cacheAtual?.dataFrom || dataFrom) : dataFrom,
+      adsTotal,
+      dataFrom,
       dataTo,
       resumoContas,
       contasInfo,
