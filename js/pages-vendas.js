@@ -330,6 +330,8 @@ Router.register('vendas', async (params, el) => {
   // ZERO vendas — sinaliza produto com tráfego que não está convertendo ──
   let oportunidades = null; // null = nunca buscado; [] = buscado, nada encontrado
   let buscandoOportunidades = false;
+  let foraDoAds = null; // produtos ativos sem nenhuma campanha de ADS
+  let buscandoForaDoAds = false;
 
   async function buscarOportunidades() {
     if (buscandoOportunidades) return;
@@ -471,6 +473,105 @@ Router.register('vendas', async (params, el) => {
   }
   window.buscarOportunidades = buscarOportunidades;
 
+  // ── Produtos ativos SEM nenhuma campanha de ADS — potencial de tráfego
+  // pago que nunca foi testado. ML: checa item a item (ml_ads_get_ad, sem
+  // endpoint em lote). Shopee: shopee_ads_recommended_items já vem pronto ──
+  async function buscarForaDoAds() {
+    if (buscandoForaDoAds) return;
+    if (filtroContasSel.size === 0 && filtroEmpresas.size === 0) {
+      alert('Selecione ao menos uma conta ou empresa no filtro antes de buscar.');
+      return;
+    }
+    const contasAlvo = filtroContasSel.size > 0
+      ? contas.filter(c => filtroContasSel.has(c.external_id))
+      : contas.filter(c => contaEmpresas(c).some(e => filtroEmpresas.has(e)));
+    const contasML     = contasAlvo.filter(c => ['meli','ml','mercadolivre'].includes((c.marketplace||'').toLowerCase()));
+    const contasShopee = contasAlvo.filter(c => (c.marketplace||'').toLowerCase() === 'shopee');
+    if (!contasML.length && !contasShopee.length) { alert('Nenhuma conta ML ou Shopee selecionada no filtro.'); return; }
+
+    buscandoForaDoAds = true;
+    const btn = document.getElementById('btn-buscar-fora-ads');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando...'; }
+    const status = document.getElementById('fora-ads-status');
+
+    try {
+      const achados = [];
+
+      // ── Mercado Livre: um item por vez (não existe lista em lote) ──
+      for (const conta of contasML) {
+        if (status) status.textContent = `Listando anúncios ativos: ${conta.nickname||conta.external_id}...`;
+        let itensConta = [];
+        let offset = 0;
+        while (true) {
+          let r;
+          try { r = await MarketplaceAPI.call('list_items', { contaId: conta.external_id, status: 'active', limit: 100, offset }); }
+          catch(e) { break; }
+          const lote = r?.results || r?.data?.results || r?.data || [];
+          if (!Array.isArray(lote) || !lote.length) break;
+          itensConta = itensConta.concat(lote);
+          if (lote.length < 100) break;
+          offset += 100;
+        }
+        if (status) status.textContent = `Checando ADS: ${conta.nickname||conta.external_id} (${itensConta.length} anúncios)...`;
+        const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+        await _mapLimit(itensConta, 6, async item => {
+          try {
+            const ra = await MarketplaceAPI.call('ml_ads_get_ad', { meliUserId: meliId, itemId: String(item.id) });
+            const ad = ra?.data || ra;
+            const emAds = ad?.status === 'active' && parseInt(ad?.campaign_id) > 0;
+            if (!emAds) {
+              achados.push({
+                id: item.id, nome: item.title || item.nome, preco: item.price ?? item.preco ?? 0,
+                estoque: item.available_quantity ?? item.estoque ?? 0,
+                conta: conta.nickname || conta.external_id, mp: 'ML',
+                link: `https://produto.mercadolivre.com.br/${String(item.id).replace('MLB','MLB-')}`,
+              });
+            }
+          } catch(e) {
+            // Sem anúncio de ads criado pra esse item = também está fora do ADS
+            achados.push({
+              id: item.id, nome: item.title || item.nome, preco: item.price ?? item.preco ?? 0,
+              estoque: item.available_quantity ?? item.estoque ?? 0,
+              conta: conta.nickname || conta.external_id, mp: 'ML',
+              link: `https://produto.mercadolivre.com.br/${String(item.id).replace('MLB','MLB-')}`,
+            });
+          }
+        });
+      }
+
+      // ── Shopee: shopee_ads_recommended_items já retorna quem está fora ──
+      for (const conta of contasShopee) {
+        if (status) status.textContent = `Checando ADS (Shopee): ${conta.nickname||conta.external_id}...`;
+        try {
+          const rr = await MarketplaceAPI.call('shopee_ads_recommended_items', { shopId: conta.external_id });
+          const lista = rr?.data?.response || rr?.data || [];
+          const foraDeAds = (Array.isArray(lista) ? lista : []).filter(it => {
+            const tipos = it.ongoing_ad_type_list || it.ongoing_ad_types || [];
+            return !tipos.length || tipos.includes('no_ongoing_promotion');
+          });
+          for (const it of foraDeAds) {
+            achados.push({
+              id: it.item_id, nome: it.item_name || `Item ${it.item_id}`,
+              preco: it.price ?? 0, estoque: it.stock ?? 0,
+              conta: conta.nickname || conta.external_id, mp: 'Shopee',
+              link: `https://shopee.com.br/product/${conta.external_id}/${it.item_id}`,
+            });
+          }
+        } catch(e) {}
+      }
+
+      foraDoAds = achados;
+      if (status) status.textContent = '';
+    } catch(e) {
+      if (status) status.textContent = `⚠️ Erro: ${e.message}`;
+    } finally {
+      buscandoForaDoAds = false;
+      if (btn) { btn.disabled = false; btn.textContent = '🚫 Buscar produtos fora do ADS'; }
+      renderOportunidades();
+    }
+  }
+  window.buscarForaDoAds = buscarForaDoAds;
+
   function renderOportunidades() {
     const sec = document.getElementById('sec-oportunidades');
     if (!sec) return;
@@ -488,7 +589,11 @@ Router.register('vendas', async (params, el) => {
           </div>
           <button id="btn-buscar-oport" class="btn-primary" onclick="buscarOportunidades()" style="padding:10px 20px;">🔍 Buscar oportunidades</button>
           <div id="oport-status" style="font-size:12px;color:var(--text-muted);margin-top:12px;"></div>
-        </div>`;
+        </div>
+        ${renderForaDoAdsHTML()}
+      `;
+      const btnFora0 = document.getElementById('btn-buscar-fora-ads');
+      if (btnFora0) btnFora0.onclick = buscarForaDoAds;
       return;
     }
 
@@ -516,6 +621,58 @@ Router.register('vendas', async (params, el) => {
               <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Produto</th>
               <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Conta</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Visitas</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Preço</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Estoque</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;"></th>
+            </tr></thead>
+            <tbody>${linhas}</tbody>
+          </table>
+        </div>
+      `}
+      ${renderForaDoAdsHTML()}
+    `;
+
+    // O botão de "fora do ADS" só é (re)vinculado depois do innerHTML acima existir
+    const btnFora = document.getElementById('btn-buscar-fora-ads');
+    if (btnFora) btnFora.onclick = buscarForaDoAds;
+  }
+
+  function renderForaDoAdsHTML() {
+    if (foraDoAds === null) {
+      return `
+        <div class="card" style="padding:32px;text-align:center;margin-top:20px;">
+          <div style="font-size:28px;margin-bottom:10px;">🚫</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Produtos Fora do ADS</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;max-width:480px;margin-left:auto;margin-right:auto;">
+            Anúncios ativos que nunca receberam investimento em anúncio patrocinado — candidatos a testar tráfego pago.
+          </div>
+          <button id="btn-buscar-fora-ads" class="btn-primary" style="padding:10px 20px;">🚫 Buscar produtos fora do ADS</button>
+          <div id="fora-ads-status" style="font-size:12px;color:var(--text-muted);margin-top:12px;"></div>
+        </div>`;
+    }
+
+    const linhas = foraDoAds.map(o => `
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:10px 12px;color:var(--text-primary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(o.nome||'').replace(/"/g,'&quot;')}">${o.mp==='Shopee'?'🟠':'🟡'} ${o.nome||'—'}</td>
+        <td style="padding:10px 12px;color:var(--text-secondary);">${o.conta}</td>
+        <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${o.preco ? R$(o.preco) : '—'}</td>
+        <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${o.estoque || '—'}</td>
+        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:#6366f1;font-size:12px;">Ver anúncio ↗</a>` : ''}</td>
+      </tr>`).join('');
+
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary);">🚫 ${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS</div>
+        <button id="btn-buscar-fora-ads" class="btn" style="padding:7px 14px;font-size:12px;">🔄 Buscar de novo</button>
+      </div>
+      ${foraDoAds.length === 0 ? `
+        <div class="card" style="padding:32px;text-align:center;color:var(--text-muted);">Todos os anúncios ativos já têm alguma campanha de ADS.</div>
+      ` : `
+        <div class="card" style="padding:0;overflow:hidden;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="background:var(--bg-card-hover);">
+              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Produto</th>
+              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Conta</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Preço</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Estoque</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;"></th>
