@@ -329,12 +329,14 @@ Router.register('vendas', async (params, el) => {
 
   // list_items retorna só uma lista de IDs (string) — nunca objetos com
   // título/preço, mesmo passando status:'active'. Paginação simples.
-  async function _mlListarIdsAtivos(contaId) {
+  // IMPORTANTE: o parâmetro é meliUserId — contaId é ignorado silenciosamente
+  // pela API e sempre retorna a conta ML padrão, misturando dados de contas erradas
+  async function _mlListarIdsAtivos(meliUserId) {
     let ids = [];
     let offset = 0;
     while (true) {
       let r;
-      try { r = await MarketplaceAPI.call('list_items', { contaId, status: 'active', limit: 100, offset }); }
+      try { r = await MarketplaceAPI.call('list_items', { meliUserId, status: 'active', limit: 100, offset }); }
       catch(e) { break; }
       const lote = r?.results || r?.data?.results || [];
       if (!Array.isArray(lote) || !lote.length) break;
@@ -346,13 +348,14 @@ Router.register('vendas', async (params, el) => {
   }
 
   // Busca título/preço/estoque em lote (get_items aceita múltiplos ids por
-  // chamada) — usado só pros itens que sobraram depois de filtrar visita/venda
-  async function _mlDetalhesItens(contaId, ids) {
+  // chamada) — usado só pros itens que sobraram depois de filtrar visita/venda.
+  // Precisa de meliUserId — com contaId a API retorna 403 pra cada item
+  async function _mlDetalhesItens(meliUserId, ids) {
     const detalhes = {};
     for (let i=0; i<ids.length; i+=20) {
       const lote = ids.slice(i,i+20);
       try {
-        const r = await MarketplaceAPI.call('get_items', { contaId, ids: lote });
+        const r = await MarketplaceAPI.call('get_items', { meliUserId, ids: lote });
         const arr = Array.isArray(r?.data) ? r.data : (Array.isArray(r) ? r : []);
         arr.forEach(entry => {
           const b = entry.body || entry;
@@ -401,7 +404,8 @@ Router.register('vendas', async (params, el) => {
       );
       for (const conta of contasML) {
         if (status) status.textContent = `Listando anúncios ativos: ${conta.nickname||conta.external_id}...`;
-        const itemIds = await _mlListarIdsAtivos(conta.external_id);
+        const meliIdListagem = conta.param_to_use?.meliUserId || conta.external_id;
+        const itemIds = await _mlListarIdsAtivos(meliIdListagem);
         // Só checa visita de quem NÃO vendeu no período — reduz drasticamente as chamadas
         const semVenda = itemIds.filter(id => !idsVendidosML.has(String(id)));
         if (status) status.textContent = `Checando visitas: ${conta.nickname||conta.external_id} (${semVenda.length} anúncios sem venda)...`;
@@ -416,7 +420,7 @@ Router.register('vendas', async (params, el) => {
         });
 
         if (status) status.textContent = `Buscando nome/preço (ML): ${conta.nickname||conta.external_id}...`;
-        const detalhes = await _mlDetalhesItens(conta.external_id, comVisita.map(o=>o.item_id));
+        const detalhes = await _mlDetalhesItens(meliIdListagem, comVisita.map(o=>o.item_id));
         for (const o of comVisita) {
           const d = detalhes[o.item_id] || {};
           achados.push({
@@ -534,9 +538,9 @@ Router.register('vendas', async (params, el) => {
       // ── Mercado Livre: um item por vez (não existe lista em lote) ──
       for (const conta of contasML) {
         if (status) status.textContent = `Listando anúncios ativos: ${conta.nickname||conta.external_id}...`;
-        const itemIds = await _mlListarIdsAtivos(conta.external_id);
-        if (status) status.textContent = `Checando ADS: ${conta.nickname||conta.external_id} (${itemIds.length} anúncios)...`;
         const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+        const itemIds = await _mlListarIdsAtivos(meliId);
+        if (status) status.textContent = `Checando ADS: ${conta.nickname||conta.external_id} (${itemIds.length} anúncios)...`;
 
         const foraDeAdsIds = [];
         await _mapLimit(itemIds, 6, async itemId => {
@@ -552,7 +556,7 @@ Router.register('vendas', async (params, el) => {
         });
 
         if (status) status.textContent = `Buscando nome/preço (ML): ${conta.nickname||conta.external_id}...`;
-        const detalhes = await _mlDetalhesItens(conta.external_id, foraDeAdsIds);
+        const detalhes = await _mlDetalhesItens(meliId, foraDeAdsIds);
         for (const itemId of foraDeAdsIds) {
           const d = detalhes[itemId] || {};
           achados.push({
@@ -564,7 +568,8 @@ Router.register('vendas', async (params, el) => {
         }
       }
 
-      // ── Shopee: shopee_ads_recommended_items já retorna quem está fora ──
+      // ── Shopee: shopee_ads_recommended_items diz quem está fora, mas não traz
+      // nome/preço/estoque — busca via shopee_get_items_batch depois de filtrar ──
       for (const conta of contasShopee) {
         if (status) status.textContent = `Checando ADS (Shopee): ${conta.nickname||conta.external_id}...`;
         try {
@@ -574,13 +579,31 @@ Router.register('vendas', async (params, el) => {
             const tipos = it.ongoing_ad_type_list || it.ongoing_ad_types || [];
             return !tipos.length || tipos.includes('no_ongoing_promotion');
           });
-          for (const it of foraDeAds) {
-            achados.push({
-              id: it.item_id, nome: it.item_name || `Item ${it.item_id}`,
-              preco: it.price ?? 0, estoque: it.stock ?? 0,
-              conta: conta.nickname || conta.external_id, mp: 'Shopee',
-              link: `https://shopee.com.br/product/${conta.external_id}/${it.item_id}`,
-            });
+
+          if (status) status.textContent = `Buscando nome/preço (Shopee): ${conta.nickname||conta.external_id}...`;
+          for (let i=0; i<foraDeAds.length; i+=50) {
+            const lote = foraDeAds.slice(i,i+50);
+            try {
+              const rd = await MarketplaceAPI.call('shopee_get_items_batch', { shopId: conta.external_id, item_id_list: lote.map(it=>it.item_id) });
+              const detalhes = rd?.data?.response?.item_list || rd?.data?.item_list || [];
+              const detMap = {};
+              detalhes.forEach(d => { detMap[d.item_id] = d; });
+              for (const it of lote) {
+                const d = detMap[it.item_id] || {};
+                achados.push({
+                  id: it.item_id, nome: d.item_name || `Item ${it.item_id}`,
+                  preco: d.price_min ?? d.price_max ?? 0, estoque: d.total_stock ?? 0,
+                  conta: conta.nickname || conta.external_id, mp: 'Shopee',
+                  link: `https://shopee.com.br/product/${conta.external_id}/${it.item_id}`,
+                });
+              }
+            } catch(e) {
+              lote.forEach(it => achados.push({
+                id: it.item_id, nome: `Item ${it.item_id}`, preco: 0, estoque: 0,
+                conta: conta.nickname || conta.external_id, mp: 'Shopee',
+                link: `https://shopee.com.br/product/${conta.external_id}/${it.item_id}`,
+              }));
+            }
           }
         } catch(e) {}
       }

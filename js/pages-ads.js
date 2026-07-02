@@ -1256,21 +1256,40 @@ window._adsCarregarEstoque = async function(forcar = false) {
       }
     } else {
       // ML: tenta low_stock primeiro, depois lista geral
+      // IMPORTANTE: precisa de meliUserId — contaId é ignorado silenciosamente
+      // pela API e sempre retorna a conta ML padrão, misturando dados de outra conta
+      const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
       const seen = new Set();
       try {
-        const ls = await MarketplaceAPI.call('low_stock_items', { contaId, limit: 50 });
+        const ls = await MarketplaceAPI.call('low_stock_items', { meliUserId: meliId, limit: 50 });
         (ls?.results || ls?.data || []).forEach(i => {
           seen.add(String(i.id));
           produtos.push({ id: i.id, nome: i.title, estoque: i.available_quantity ?? 0, preco: i.price ?? 0 });
         });
       } catch {}
       try {
-        const all = await MarketplaceAPI.call('list_items', { contaId, status: 'active', limit: 100 });
-        (all?.results || all?.data || []).forEach(i => {
-          if (!seen.has(String(i.id))) {
-            produtos.push({ id: i.id, nome: i.title, estoque: i.available_quantity ?? 0, preco: i.price ?? 0 });
-          }
-        });
+        const idsAtivos = [];
+        let offset = 0;
+        while (true) {
+          const all = await MarketplaceAPI.call('list_items', { meliUserId: meliId, status: 'active', limit: 100, offset });
+          const lote = all?.results || all?.data?.results || [];
+          if (!Array.isArray(lote) || !lote.length) break;
+          idsAtivos.push(...lote);
+          if (lote.length < 100) break;
+          offset += 100;
+        }
+        const faltam = idsAtivos.filter(id => !seen.has(String(id)));
+        for (let i = 0; i < faltam.length; i += 20) {
+          const lote = faltam.slice(i, i+20);
+          try {
+            const det = await MarketplaceAPI.call('get_items', { meliUserId: meliId, ids: lote });
+            const arr = Array.isArray(det?.data) ? det.data : (Array.isArray(det) ? det : []);
+            arr.forEach(entry => {
+              const b = entry.body || entry;
+              if (b?.id) produtos.push({ id: b.id, nome: b.title, estoque: b.available_quantity ?? 0, preco: b.price ?? 0 });
+            });
+          } catch {}
+        }
       } catch {}
     }
 
@@ -1376,12 +1395,12 @@ window._adsBuscarRanking = async function() {
       _renderRankingResultado(keyword, items.length, posicoes);
 
     } else {
+      // list_items só retorna lista de IDs (string) — precisa de meliUserId,
+      // contaId é ignorado silenciosamente e mistura dados de outra conta
+      const meliIdBusca = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
       try {
-        const mine = await MarketplaceAPI.call('list_items', { contaId, status: 'active', limit: 200 });
-        (mine?.results || mine?.data || []).forEach(i => {
-          meusIds.add(String(i.id));
-          meusNomes[String(i.id)] = i.title;
-        });
+        const mine = await MarketplaceAPI.call('list_items', { meliUserId: meliIdBusca, status: 'active', limit: 200 });
+        (mine?.results || mine?.data?.results || []).forEach(id => meusIds.add(String(id)));
       } catch {}
 
       const result = await MarketplaceAPI.call('search', { q: keyword, marketplace: 'ml', contaId, limit: 50 });
