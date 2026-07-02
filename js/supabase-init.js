@@ -19,6 +19,7 @@ const GLR_KEYS = [
   'glr_vendas_custos',  // custo de produto lançado no admin — precisa chegar no portal do cliente
   'glr_aliquotas',      // % de imposto padrão por conta
   'glr_vendas_linhas',  // linhas extras de custo/desconto lançadas no admin
+  'glr_mc_apikey',      // API Key do Marketplace Connect — precisa funcionar em qualquer PC do admin
 ];
 
 // ── Intercepta localStorage.setItem para sincronizar com Supabase ──
