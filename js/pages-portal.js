@@ -342,9 +342,12 @@ async function _portalShopeeSns(shopId, tsFrom, tsTo) {
       do {
         const params = { shopId: sid, time_range_field:'create_time', time_from:cFrom, time_to:cTo, page_size:100, order_status:st };
         if (cursor) params.cursor = cursor;
-        let r;
-        try { r = await _portalMcCall('shopee_list_orders', params); }
-        catch(e) { if (!primeiroErro) primeiroErro = e.message; break; }
+        let r = null, ultimoErro = null;
+        for (let t = 0; t < 2; t++) {
+          try { r = await _portalMcCall('shopee_list_orders', params); break; }
+          catch(e) { ultimoErro = e; if (t < 1) await new Promise(res=>setTimeout(res, 1000)); }
+        }
+        if (!r) { if (!primeiroErro) primeiroErro = ultimoErro?.message || 'erro desconhecido'; break; }
         if (!primeiraResposta) primeiraResposta = JSON.stringify(r).slice(0,300);
         const apiErr = r?.error || r?.message || r?.error_msg;
         if (apiErr && !r?.data?.response?.order_list) {
