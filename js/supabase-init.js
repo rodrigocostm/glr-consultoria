@@ -29,21 +29,26 @@ const _localSetItem = localStorage.setItem.bind(localStorage);
 localStorage.setItem = function(key, value) {
   _localSetItem(key, value); // salva local normalmente
   if (GLR_KEYS.includes(key)) {
-    try {
-      const dados = JSON.parse(value);
-      _sb.from('glr_storage')
-        .upsert({ chave: key, dados, atualizado_em: new Date().toISOString() }, { onConflict: 'chave' })
-        .then(({ error }) => { if (error) console.warn('[Supabase] Erro sync:', error.message); });
-    } catch(e) {}
+    // Nem todo valor salvo é JSON (ex: glr_mc_apikey é uma string simples,
+    // não "aspas-envolvida") — se JSON.parse falhar, sobe o valor cru mesmo
+    let dados;
+    try { dados = JSON.parse(value); } catch(e) { dados = value; }
+    _sb.from('glr_storage')
+      .upsert({ chave: key, dados, atualizado_em: new Date().toISOString() }, { onConflict: 'chave' })
+      .then(({ error }) => { if (error) console.warn('[Supabase] Erro sync:', error.message); });
   }
 };
+
+// Converte o valor vindo do Supabase de volta pro formato que o localStorage
+// espera: string simples fica como está, objeto/array vira JSON.stringify
+const _paraLocalStorage = dados => typeof dados === 'string' ? dados : JSON.stringify(dados);
 
 // ── Carrega todos os dados do Supabase para o localStorage local ──
 async function sincronizarDoSupabase() {
   const { data, error } = await _sb.from('glr_storage').select('chave, dados');
   if (error) { console.warn('[Supabase] Erro ao carregar:', error.message); return; }
   if (data?.length) {
-    data.forEach(row => _localSetItem(row.chave, JSON.stringify(row.dados)));
+    data.forEach(row => _localSetItem(row.chave, _paraLocalStorage(row.dados)));
     console.log(`[Supabase] ${data.length} coleções sincronizadas.`);
   }
   // Chaves que já existiam localmente mas nunca foram salvas desde que entraram no
@@ -61,8 +66,8 @@ async function sincronizarDoSupabase() {
 function ativarRealtime() {
   _sb.channel('glr_changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'glr_storage' }, payload => {
-      if (payload.new?.chave && payload.new?.dados) {
-        _localSetItem(payload.new.chave, JSON.stringify(payload.new.dados));
+      if (payload.new?.chave && payload.new?.dados != null) {
+        _localSetItem(payload.new.chave, _paraLocalStorage(payload.new.dados));
         if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();
         // Mostra notificação discreta
         mostrarNotifSync(payload.new.chave);
