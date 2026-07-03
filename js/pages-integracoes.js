@@ -4,7 +4,7 @@
 
 Router.register('integracoes', (params, el) => {
   const apiKey   = localStorage.getItem('glr_mc_apikey') || '';
-  const vinc     = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); // { clienteId: [conta, ...] }
+  let vinc       = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); // { clienteId: [conta, ...] }
   let aliquotas  = JSON.parse(localStorage.getItem('glr_aliquotas') || '{}'); // { [extId]: pct }
   const salvarAliquota = (extId, val) => {
     aliquotas[extId] = val;
@@ -144,13 +144,19 @@ Router.register('integracoes', (params, el) => {
 
   // Renderiza a lista de contas + o select de vínculo a partir de um array já
   // carregado (do cache sincronizado ou de uma busca nova) — sem chamada de API
-  function renderContasNaTela(contas) {
+  function renderContasNaTela(contasTodas) {
     const el = document.getElementById('lista-contas');
     const sel = document.getElementById('sel-conta-vinc');
     if (!el || !sel) return;
 
+    // Contas já vinculadas a algum cliente não aparecem aqui em cima — já
+    // estão visíveis nos cards de cliente logo abaixo, deixava confuso duplicado
+    const idsVinculados = new Set(Object.values(vinc).flat().map(c => String(c.external_id)));
+    const contas = contasTodas.filter(c => !idsVinculados.has(String(c.external_id)));
+
     if (!contas.length) {
-      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Nenhuma conta encontrada. Verifique a API key.</div>';
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Todas as contas já estão vinculadas a algum cliente — veja abaixo.</div>';
+      sel.innerHTML = '<option value="">Nenhuma conta disponível</option>';
       return;
     }
 
@@ -227,10 +233,21 @@ Router.register('integracoes', (params, el) => {
     vinc[clienteId].push(conta);
     localStorage.setItem('glr_mc_vinculos', JSON.stringify(vinc));
 
-    // Re-renderiza lista
+    // Re-renderiza lista de vínculos e tira a conta de "Contas Conectadas"
     document.getElementById('card-clientes-vinculados').innerHTML = renderClientesVinculados(vinc, mesesNomes, hoje);
+    _reRenderContasConectadas();
     alert(`✓ ${conta.nickname} vinculada com sucesso!`);
   };
+
+  // Re-lê glr_mc_vinculos e glr_mc_contas do localStorage e atualiza "Contas
+  // Conectadas" — usado depois de vincular/desvincular pra não precisar recarregar
+  function _reRenderContasConectadas() {
+    try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) {}
+    try {
+      const contasCache = JSON.parse(localStorage.getItem('glr_mc_contas')||'[]');
+      renderContasNaTela(contasCache);
+    } catch(e) {}
+  }
 
   window.salvarAliquota = (extId, val) => {
     aliquotas[extId] = val;
@@ -238,14 +255,15 @@ Router.register('integracoes', (params, el) => {
   };
 
   window.desvincularConta = (clienteId, externalId) => {
-    let vinc = {};
-    try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) {}
-    if (vinc[clienteId]) {
-      vinc[clienteId] = vinc[clienteId].filter(v => v.external_id !== externalId);
-      if (!vinc[clienteId].length) delete vinc[clienteId];
+    let vincLocal = {};
+    try { vincLocal = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) {}
+    if (vincLocal[clienteId]) {
+      vincLocal[clienteId] = vincLocal[clienteId].filter(v => v.external_id !== externalId);
+      if (!vincLocal[clienteId].length) delete vincLocal[clienteId];
     }
-    localStorage.setItem('glr_mc_vinculos', JSON.stringify(vinc));
-    document.getElementById('card-clientes-vinculados').innerHTML = renderClientesVinculados(vinc, mesesNomes, hoje);
+    localStorage.setItem('glr_mc_vinculos', JSON.stringify(vincLocal));
+    document.getElementById('card-clientes-vinculados').innerHTML = renderClientesVinculados(vincLocal, mesesNomes, hoje);
+    _reRenderContasConectadas(); // conta desvinculada volta a aparecer em "Contas Conectadas"
   };
 
   window.importarDados = async (clienteId, mes, ano) => {
