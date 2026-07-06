@@ -266,7 +266,7 @@ Router.register('financeiro', async (params, el) => {
   }
 
   const linha    = (lbl,v)       => `<div class="fin-row"><span>${lbl}:</span><strong>${R$(v)}</strong></div>`;
-  const sublinha = (lbl,v,sinal) => `<div class="fin-sub"><span>${lbl}:</span><em>${sinal==='+'?'+ ':'− '}${R$(Math.abs(v))}</em></div>`;
+  const sublinha = (lbl,v,sinal) => `<div class="fin-sub"><span>${lbl}:</span><em style="color:${sinal==='+'?'var(--green)':'var(--red)'};">${sinal==='+'?'+ ':'− '}${R$(Math.abs(v))}</em></div>`;
   const subfinal = v             => `<div class="fin-sub fin-final"><span>Valor Final:</span><em>${R$(v)}</em></div>`;
 
   function renderConteudo() {
@@ -938,6 +938,12 @@ Router.register('financeiro', async (params, el) => {
                 'original_price','original_shopee_discount','pix_discount','estimated_shipping_fee',
                 'remaining_voucher','net_commission_fee_info_list','net_service_fee_info_list',
                 'tenure_info_list','items','seller_voucher_code','buyer_payment_method','instalment_plan',
+                // Campos que DUPLICAM outro campo já contado acima — confirmado com dados reais via API
+                // (mesmo valor, centavo a centavo, em 25/25 pedidos testados): contá-los de novo inflava
+                // artificialmente o "Ajuste não identificado pela API" (bug que gerava resíduo de ~R$35 mil/mês).
+                'final_shipping_fee',        // = -buyer_paid_shipping_fee (já usado no cálculo de "frete")
+                'order_seller_discount',     // = seller_discount (mesmo valor, campo espelhado)
+                'credit_card_transaction_fee', // = buyer_transaction_fee (mesmo valor, campo espelhado)
               ]);
               // Varre TODOS os outros campos numéricos do retorno, incluindo objetos aninhados — nada fica sem nome
               const detalhes = {};
