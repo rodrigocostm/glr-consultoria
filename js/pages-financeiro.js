@@ -51,6 +51,7 @@ Router.register('financeiro', async (params, el) => {
     bundle_deal_indemnify: 'Indenização de combo/kit',
     drc_deduction: 'Dedução DRC',
     pix_discount: 'Ajuste por pagamento via PIX',
+    campaign_fee: 'Rebate de ação comercial',
   };
   function _shopeeFeeLabel(key) {
     if (SHOPEE_FEE_LABELS[key]) return SHOPEE_FEE_LABELS[key];
