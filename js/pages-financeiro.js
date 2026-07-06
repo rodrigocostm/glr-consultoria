@@ -228,10 +228,11 @@ Router.register('financeiro', async (params, el) => {
       }
     }
     // Residual: diferença não explicada pelas taxas conhecidas (deve bater com soma de detalhesOutros)
-    // Nota: voucher e rebate são informativos (não reduzem o escrow do vendedor), por isso não entram aqui.
+    // Nota: voucher, rebate e moedas são informativos (não reduzem o escrow do vendedor,
+    // confirmado com pedido real via API), por isso não entram aqui.
     for (const nome in plats) {
       const a = plats[nome];
-      const conhecidas = a.frete + a.comissao + a.taxaServico + a.taxaCartao - a.taxaMoedas;
+      const conhecidas = a.frete + a.comissao + a.taxaServico + a.taxaCartao;
       a.outras = Math.max(0, (a.fat - a.liquido) - conhecidas);
     }
 
@@ -344,7 +345,6 @@ Router.register('financeiro', async (params, el) => {
           if (a.taxaServico > 0.01) rows.push(sublinha('Taxa de serviço', a.taxaServico));
           if (a.frete > 0.01)       rows.push(sublinha('Frete descontado (vendedor)', a.frete));
           if (a.taxaCartao > 0.01)  rows.push(sublinha('Taxa de cartão de crédito', a.taxaCartao));
-          if (a.taxaMoedas > 0.01)  rows.push(sublinha('Moedas Shopee (cobertas pela Shopee)', a.taxaMoedas, '+'));
 
           // Detalhamento campo-a-campo de TODAS as demais taxas/créditos do escrow — nenhuma fica sem nome
           const detEntries = Object.entries(a.detalhesOutros||{}).filter(([,v]) => Math.abs(v) > 0.01);
@@ -353,17 +353,21 @@ Router.register('financeiro', async (params, el) => {
             rows.push(sublinha(_shopeeFeeLabel(k), Math.abs(v), v >= 0 ? '+' : '−'));
           }
 
-          // Ajuste residual: só aparece se sobrar algo não identificado pelos campos acima
+          // Ajuste residual: só aparece se sobrar algo não identificado pelos campos acima.
+          // "Moedas Shopee" (coins) NÃO entra aqui — testado com pedido real e confirmado que
+          // não afeta escrow_amount; incluir na conta criava um resíduo artificial (bug corrigido).
           const somaDetalhes = detEntries.reduce((s,[,v]) => s + v, 0);
-          const residualSh = totalTaxasSh - a.comissao - a.taxaServico - a.frete - a.taxaCartao + a.taxaMoedas - somaDetalhes;
+          const residualSh = totalTaxasSh - a.comissao - a.taxaServico - a.frete - a.taxaCartao - somaDetalhes;
           if (Math.abs(residualSh) > 1) rows.push(sublinha('Ajuste não identificado pela API', Math.abs(residualSh), residualSh >= 0 ? '−' : '+'));
 
-          // Voucher e Rebate são informativos: a Shopee absorve esses valores e eles NÃO reduzem seu repasse.
-          // Mostrados separados, fora da soma de deduções, só para transparência.
-          if (a.voucher > 0.01 || a.rebate > 0.01) {
+          // Voucher, Rebate e Moedas são informativos: a Shopee absorve esses valores e eles
+          // NÃO reduzem seu repasse (confirmado com pedido real via API). Mostrados separados,
+          // fora da soma de deduções, só para transparência.
+          if (a.voucher > 0.01 || a.rebate > 0.01 || a.taxaMoedas > 0.01) {
             rows.push(`<div class="fin-sub" style="opacity:.65;font-style:italic;"><span>ℹ️ Informativo (não afeta seu repasse):</span><em></em></div>`);
-            if (a.voucher > 0.01) rows.push(sublinha('Voucher Shopee (custeado pela Shopee)', a.voucher, '+'));
-            if (a.rebate > 0.01)  rows.push(sublinha('Rebate de comissão (já embutido nas taxas acima)', a.rebate, '+'));
+            if (a.voucher > 0.01)    rows.push(sublinha('Voucher Shopee (custeado pela Shopee)', a.voucher, '+'));
+            if (a.rebate > 0.01)     rows.push(sublinha('Rebate de comissão (já embutido nas taxas acima)', a.rebate, '+'));
+            if (a.taxaMoedas > 0.01) rows.push(sublinha('Moedas Shopee (cobertas pela Shopee)', a.taxaMoedas, '+'));
           }
           if (totalTaxasSh < 1) rows.push(sublinha('Taxas disponíveis após entrega dos pedidos', 0));
         } else {
@@ -406,16 +410,16 @@ Router.register('financeiro', async (params, el) => {
                 ${a.taxaServico > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">⚙️ Taxa de Serviço:</span><strong style="color:var(--red);">- ${R$(a.taxaServico)}</strong></div>` : ''}
                 ${a.frete > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🚚 Frete Descontado:</span><strong style="color:var(--red);">- ${R$(a.frete)}</strong></div>` : ''}
                 ${a.taxaCartao > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">💳 Taxa Cartão de Crédito:</span><strong style="color:var(--red);">- ${R$(a.taxaCartao)}</strong></div>` : ''}
-                ${a.taxaMoedas > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🪙 Moedas Shopee:</span><strong style="color:var(--green);">+ ${R$(a.taxaMoedas)}</strong></div>` : ''}
                 ${Object.entries(a.detalhesOutros||{}).filter(([,v])=>Math.abs(v)>0.01).sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).map(([k,v]) =>
                   `<div class="fin-row"><span style="padding-left:12px;">🔸 ${_shopeeFeeLabel(k)}:</span><strong style="color:${v>=0?'var(--green)':'var(--red)'};">${v>=0?'+':'-'} ${R$(Math.abs(v))}</strong></div>`
                 ).join('')}
               </div>
-              ${(a.voucher > 0.01 || a.rebate > 0.01) ? `
+              ${(a.voucher > 0.01 || a.rebate > 0.01 || a.taxaMoedas > 0.01) ? `
               <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(99,102,241,0.2);opacity:.65;">
                 <div style="font-size:10px;font-style:italic;margin-bottom:4px;">ℹ️ Informativo (não afeta seu repasse):</div>
                 ${a.voucher > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🎟️ Voucher Shopee (custeado pela Shopee):</span><strong>+ ${R$(a.voucher)}</strong></div>` : ''}
                 ${a.rebate > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🔄 Rebate de comissão (já embutido acima):</span><strong>+ ${R$(a.rebate)}</strong></div>` : ''}
+                ${a.taxaMoedas > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🪙 Moedas Shopee (cobertas pela Shopee):</span><strong>+ ${R$(a.taxaMoedas)}</strong></div>` : ''}
               </div>` : ''}
 
               <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(99,102,241,0.2);">
