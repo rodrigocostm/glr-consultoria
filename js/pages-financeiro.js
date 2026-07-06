@@ -50,6 +50,7 @@ Router.register('financeiro', async (params, el) => {
     seller_voucher_amount: 'Valor do voucher do vendedor',
     bundle_deal_indemnify: 'Indenização de combo/kit',
     drc_deduction: 'Dedução DRC',
+    pix_discount: 'Ajuste por pagamento via PIX',
   };
   function _shopeeFeeLabel(key) {
     if (SHOPEE_FEE_LABELS[key]) return SHOPEE_FEE_LABELS[key];
@@ -935,7 +936,10 @@ Router.register('financeiro', async (params, el) => {
                 // Campos informativos/duplicados que não representam dedução real (confirmado via API real)
                 'buyer_total_amount','cost_of_goods_sold','original_cost_of_goods_sold',
                 'order_discounted_price','order_original_price','order_selling_price',
-                'original_price','original_shopee_discount','pix_discount','estimated_shipping_fee',
+                'original_price','original_shopee_discount','estimated_shipping_fee',
+                // 'pix_discount' foi REMOVIDO daqui de propósito: planilha real da Shopee (Order.all)
+                // mostrou R$12 mil/mês em "Ajuste por pagamento via PIX" — estava sendo ignorado por
+                // engano (tratado como informativo sem confirmação), inflando o resíduo não identificado.
                 'remaining_voucher','net_commission_fee_info_list','net_service_fee_info_list',
                 'tenure_info_list','items','seller_voucher_code','buyer_payment_method','instalment_plan',
                 // Campos que DUPLICAM outro campo já contado acima — confirmado com dados reais via API
