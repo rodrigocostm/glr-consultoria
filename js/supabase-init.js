@@ -23,6 +23,10 @@ const GLR_KEYS = [
   'glr_vendas_cache',   // pedidos já buscados na página Vendas — evita rebuscar em outro PC
   'glr_fin_cache',      // pedidos + ADS já buscados no Financeiro — evita rebuscar em outro PC
   'glr_mc_contas',      // lista de contas conectadas do Marketplace Connect
+  'glr_analytics_dados', // painel executivo Analytics — meta/projeção/ADS por cliente (cache do mês)
+  'glr_analytics_queda', // produtos em queda detectados pelo Analytics
+  'glr_plano_acao',      // plano de ação (Analytics) — editorial, não vem de API
+  'glr_checklist_diario', // checklist diário (Analytics) — editorial, não vem de API
 ];
 
 // ── Intercepta localStorage.setItem para sincronizar com Supabase ──

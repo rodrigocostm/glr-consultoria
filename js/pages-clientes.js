@@ -218,6 +218,16 @@ function setupClienteHandlers() {
             <option value="risco" ${c?.status==='risco'?'selected':''}>Em Risco</option>
           </select>
         </div>
+        <div class="form-group">
+          <label class="form-label">🎯 Meta Mensal (R$)</label>
+          <input class="form-input" id="c-meta-mensal" type="number" step="0.01" min="0"
+            placeholder="Ex: 100000.00" value="${c?.metaMensal || ''}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">📢 ADS Ideal (% do faturamento)</label>
+          <input class="form-input" id="c-ads-ideal" type="number" step="0.1" min="0" max="100"
+            placeholder="Ex: 4 (padrão)" value="${c?.adsIdeal != null ? (c.adsIdeal*100) : ''}">
+        </div>
       </div>
 
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
@@ -248,6 +258,8 @@ function setupClienteHandlers() {
       gestorId,
       valorPorVenda: parseFloat(document.getElementById('c-valor-venda').value) || 0,
       status:       document.getElementById('c-status').value,
+      metaMensal:   parseFloat(document.getElementById('c-meta-mensal').value) || 0,
+      adsIdeal:     document.getElementById('c-ads-ideal').value !== '' ? parseFloat(document.getElementById('c-ads-ideal').value)/100 : 0.04,
       // Preserva dados existentes ou inicia zerado
       faturamento:  existente?.faturamento  || 0,
       crescimento:  existente?.crescimento  || 0,
