@@ -99,13 +99,23 @@ Router.register('analytics', async (params, el) => {
     const diasDecorridos = fmtQtdeDias();
     const toShopeeDate = iso => iso.split('-').reverse().join('-');
 
+    // Meses anteriores completos (M1, M2) — só faturamento, pra tendência e diagnóstico.
+    // Reaproveita a mesma chamada de pedidos, sem custo extra de ADS.
+    function mesCompletoOffset(offset) {
+      const d = new Date(ano, mesN-1-offset, 1);
+      const y = d.getFullYear(), m = d.getMonth()+1;
+      const diasMes = new Date(y, m, 0).getDate();
+      return { from: `${y}-${pad(m)}-01`, to: `${y}-${pad(m)}-${pad(diasMes)}`, label: `${['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][d.getMonth()]}/${y}` };
+    }
+    const m1 = mesCompletoOffset(1), m2 = mesCompletoOffset(2);
+
     const clientes = GLR.clientes.slice();
     const resultados = [];
     let doneN = 0;
 
     await _mapLimit(clientes, 3, async (c) => {
       const contasVinc = vinculos[String(c.id)] || [];
-      let fatBase = 0, adsBase = 0;
+      let fatBase = 0, adsBase = 0, fatM1 = 0, fatM2 = 0;
       const canais = new Set();
 
       await _mapLimit(contasVinc, 3, async (conta) => {
@@ -116,6 +126,9 @@ Router.register('analytics', async (params, el) => {
             const meliId = conta.param_to_use?.meliUserId || conta.external_id;
             const orders = await MarketplaceAPI.mlOrders(meliId, primeiroDia, dataTo);
             fatBase += orders.reduce((s,o)=> ['cancelled','invalid'].includes((o.status||'').toLowerCase()) ? s : s+(parseFloat(o.total_amount)||0), 0);
+            const somaFat = os => os.reduce((s,o)=> ['cancelled','invalid'].includes((o.status||'').toLowerCase()) ? s : s+(parseFloat(o.total_amount)||0), 0);
+            try { fatM1 += somaFat(await MarketplaceAPI.mlOrders(meliId, m1.from, m1.to)); } catch(e) {}
+            try { fatM2 += somaFat(await MarketplaceAPI.mlOrders(meliId, m2.from, m2.to)); } catch(e) {}
             try {
               let adsTotal = 0, off = 0;
               while (true) {
@@ -130,23 +143,30 @@ Router.register('analytics', async (params, el) => {
           } else if (mkt === 'shopee') {
             canais.add('Shopee');
             const shopId = conta.param_to_use?.shopId || conta.external_id;
-            const snsList = await MarketplaceAPI.shopeeListOrderSns(shopId, Math.floor(tsFrom/1000), Math.floor(tsTo/1000));
-            for (let i=0; i<snsList.length; i+=50) {
-              const lote = snsList.slice(i,i+50).map(o=>o.sn);
-              try {
-                const rd = await MarketplaceAPI.call('shopee_get_order_detail',{shopId, order_sn_list:lote});
-                const orderList = rd.data?.response?.order_list || rd.data?.order_list || [];
-                for (const ord of orderList) {
-                  const items = ord.item_list || ord.items || [];
-                  const subtotal = items.reduce((s,it) => {
-                    const p = parseFloat(it.model_discounted_price)||parseFloat(it.item_price)||0;
-                    const q = parseInt(it.model_quantity_purchased)||parseInt(it.quantity)||1;
-                    return s + p*q;
-                  }, 0);
-                  fatBase += subtotal > 0 ? subtotal : (parseFloat(ord.total_amount)||0);
-                }
-              } catch(e) {}
+            async function subtotalShopeePeriodo(tsF, tsT) {
+              let total = 0;
+              const sns = await MarketplaceAPI.shopeeListOrderSns(shopId, tsF, tsT);
+              for (let i=0; i<sns.length; i+=50) {
+                const lote = sns.slice(i,i+50).map(o=>o.sn);
+                try {
+                  const rd = await MarketplaceAPI.call('shopee_get_order_detail',{shopId, order_sn_list:lote});
+                  const orderList = rd.data?.response?.order_list || rd.data?.order_list || [];
+                  for (const ord of orderList) {
+                    const items = ord.item_list || ord.items || [];
+                    const subtotal = items.reduce((s,it) => {
+                      const p = parseFloat(it.model_discounted_price)||parseFloat(it.item_price)||0;
+                      const q = parseInt(it.model_quantity_purchased)||parseInt(it.quantity)||1;
+                      return s + p*q;
+                    }, 0);
+                    total += subtotal > 0 ? subtotal : (parseFloat(ord.total_amount)||0);
+                  }
+                } catch(e) {}
+              }
+              return total;
             }
+            fatBase += await subtotalShopeePeriodo(Math.floor(tsFrom/1000), Math.floor(tsTo/1000));
+            try { fatM1 += await subtotalShopeePeriodo(Math.floor(new Date(`${m1.from}T00:00:00`).getTime()/1000), Math.floor(new Date(`${m1.to}T23:59:59`).getTime()/1000)); } catch(e) {}
+            try { fatM2 += await subtotalShopeePeriodo(Math.floor(new Date(`${m2.from}T00:00:00`).getTime()/1000), Math.floor(new Date(`${m2.to}T23:59:59`).getTime()/1000)); } catch(e) {}
             try {
               const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(primeiroDia), end_date: toShopeeDate(dataTo) });
               const dias = r?.data?.response || [];
@@ -163,10 +183,12 @@ Router.register('analytics', async (params, el) => {
       const pctMeta = meta>0 ? (fatProj/meta)*100 : null;
       const pctAdsAtual = fatBase>0 ? (adsBase/fatBase) : 0;
       const gapAds = (pctAdsAtual - adsIdeal) * 100; // pontos percentuais
+      const compMesAnt = fatM1>0 ? ((fatProj-fatM1)/fatM1)*100 : null;
 
       resultados.push({
         clienteId: c.id, nome: c.nome, canal: [...canais].join(' + ') || '—',
         meta, projecao: fatProj, adsProj, pctMeta, pctAdsAtual, adsIdeal, gapAds,
+        fatM1, fatM2, compMesAnt, labelM1: m1.label, labelM2: m2.label,
         temConta: contasVinc.length>0,
       });
 
@@ -355,6 +377,33 @@ Router.register('analytics', async (params, el) => {
     return checklistTodos[checklistDataRef];
   }
 
+  // ── Diagnóstico narrativo automático — gerado a partir dos números
+  // já buscados via API (sem texto manual) ──
+  function diagnostico(d) {
+    const linhas = [];
+    if (!d.temConta) { linhas.push('Nenhuma conta vinculada — conecte em Integrações para o Analytics acompanhar esta conta.'); return linhas; }
+    if (!d.meta || d.meta <= 0) { linhas.push('Sem meta cadastrada — defina em Carteira de Clientes para calcular %Meta e status.'); }
+    else if (d.pctMeta >= LIMITE_SAUDAVEL) linhas.push(`Batendo a meta (${d.pctMeta.toFixed(0)}% projetado).`);
+    else if (d.pctMeta >= LIMITE_ATENCAO)  linhas.push(`Perto da meta, mas ainda abaixo (${d.pctMeta.toFixed(0)}% projetado) — atenção no restante do mês.`);
+    else linhas.push(`Abaixo da meta (${d.pctMeta.toFixed(0)}% projetado) — risco de não bater o mês.`);
+
+    if (d.compMesAnt != null) {
+      if (d.compMesAnt >= 10) linhas.push(`Crescendo ${d.compMesAnt.toFixed(0)}% vs ${d.labelM1}.`);
+      else if (d.compMesAnt <= -10) linhas.push(`Queda de ${Math.abs(d.compMesAnt).toFixed(0)}% vs ${d.labelM1} — investigar causa.`);
+      else linhas.push(`Estável vs ${d.labelM1} (${d.compMesAnt>=0?'+':''}${d.compMesAnt.toFixed(0)}%).`);
+    }
+
+    if (d.pctAdsAtual > 0) {
+      if (d.gapAds > 3) linhas.push(`ADS acima do ideal em ${d.gapAds.toFixed(1)} p.p. — revisar eficiência das campanhas.`);
+      else if (d.gapAds < -3) linhas.push(`ADS bem abaixo do ideal (${(d.pctAdsAtual*100).toFixed(1)}%) — possível subinvestimento.`);
+    }
+
+    const quedasCliente = produtosQueda.filter(p => p.clienteId === d.clienteId);
+    if (quedasCliente.length) linhas.push(`${quedasCliente.length} produto${quedasCliente.length>1?'s':''} em queda identificado${quedasCliente.length>1?'s':''} (aba Produtos em Queda).`);
+
+    return linhas;
+  }
+
   // ── Renders ──────────────────────────────────────────────────
 
   function renderExecutivo() {
@@ -403,6 +452,41 @@ Router.register('analytics', async (params, el) => {
       </div>
     </div>
 
+    ${(() => {
+      const comMetaOrdenado = comMeta.slice().sort((a,b)=>(b.pctMeta??-999)-(a.pctMeta??-999));
+      const melhor = comMetaOrdenado[0];
+      const pior = comMetaOrdenado[comMetaOrdenado.length-1];
+      const criticas = dadosClientes.filter(d => statusDe(d.pctMeta).label==='Crítico');
+      const saudaveis = dadosClientes.filter(d => statusDe(d.pctMeta).label==='Saudável');
+      return `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px;">
+        <div class="card">
+          <div class="section-title mb-10" style="font-size:13px;">🔴 Contas Críticas (${criticas.length})</div>
+          ${criticas.length ? criticas.map(d=>`<div style="padding:6px 0;font-size:13px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${d.clienteId}})">${d.nome} <span style="float:right;color:#ef4444;font-weight:700;">${d.pctMeta!=null?d.pctMeta.toFixed(0)+'%':'—'}</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:12px;">Nenhuma 🎉</div>'}
+        </div>
+        <div class="card">
+          <div class="section-title mb-10" style="font-size:13px;">🟢 Contas Saudáveis (${saudaveis.length})</div>
+          ${saudaveis.length ? saudaveis.map(d=>`<div style="padding:6px 0;font-size:13px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${d.clienteId}})">${d.nome} <span style="float:right;color:#10b981;font-weight:700;">${d.pctMeta!=null?d.pctMeta.toFixed(0)+'%':'—'}</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:12px;">Nenhuma ainda</div>'}
+        </div>
+        <div class="card">
+          <div class="section-title mb-10" style="font-size:13px;">🏆 Ranking Rápido</div>
+          <div style="padding:8px 0;font-size:13px;">Melhor: <strong style="color:#10b981;cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${melhor?.clienteId||0}})">${melhor ? `${melhor.nome} (${melhor.pctMeta.toFixed(0)}%)` : '—'}</strong></div>
+          <div style="padding:8px 0;font-size:13px;border-top:1px solid var(--border);">Pior: <strong style="color:#ef4444;cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${pior?.clienteId||0}})">${pior && pior!==melhor ? `${pior.nome} (${pior.pctMeta.toFixed(0)}%)` : '—'}</strong></div>
+        </div>
+      </div>`;
+    })()}
+
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:24px;">
+      <div class="card">
+        <div class="section-title mb-10" style="font-size:13px;">📊 Meta vs Projeção (todas as contas)</div>
+        <div style="height:260px;"><canvas id="analytics-chart-meta"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="section-title mb-10" style="font-size:13px;">🚦 Distribuição por Status</div>
+        <div style="height:260px;"><canvas id="analytics-chart-status"></canvas></div>
+      </div>
+    </div>
+
     <div class="card" style="padding:0;overflow:hidden;">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;">🚦 Semáforo por Conta</div>
       <div style="overflow-x:auto;">
@@ -414,6 +498,7 @@ Router.register('analytics', async (params, el) => {
             <th style="padding:10px 8px;text-align:right;">Meta</th>
             <th style="padding:10px 8px;text-align:right;">Projeção</th>
             <th style="padding:10px 8px;text-align:center;">% Meta</th>
+            <th style="padding:10px 8px;text-align:right;">Tendência</th>
             <th style="padding:10px 8px;text-align:right;">ADS Atual</th>
             <th style="padding:10px 8px;text-align:right;">ADS Ideal</th>
             <th style="padding:10px 8px;text-align:right;">GAP ADS</th>
@@ -433,6 +518,7 @@ Router.register('analytics', async (params, el) => {
               <td style="padding:9px 8px;text-align:center;">
                 ${d.pctMeta!=null?`<span style="background:${st.bg};color:${st.cor};font-weight:700;padding:3px 8px;border-radius:99px;font-size:11px;">${d.pctMeta.toFixed(1)}%</span>`:'<span style="color:var(--text-muted);">—</span>'}
               </td>
+              <td style="padding:9px 8px;text-align:right;font-weight:600;color:${d.compMesAnt==null?'var(--text-muted)':d.compMesAnt>=0?'#10b981':'#ef4444'};">${d.compMesAnt!=null?(d.compMesAnt>=0?'▲ +':'▼ ')+d.compMesAnt.toFixed(1)+'%':'—'}</td>
               <td style="padding:9px 8px;text-align:right;">${(d.pctAdsAtual*100).toFixed(1)}%</td>
               <td style="padding:9px 8px;text-align:right;color:var(--text-muted);">${(d.adsIdeal*100).toFixed(1)}%</td>
               <td style="padding:9px 8px;text-align:right;color:${d.gapAds<=0?'#10b981':'#ef4444'};font-weight:600;">${d.gapAds>=0?'+':''}${d.gapAds.toFixed(1)} p.p.</td>
@@ -443,11 +529,22 @@ Router.register('analytics', async (params, el) => {
       </table>
       </div>
     </div>
-    <div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 4px;font-size:11px;color:var(--text-muted);">
+    <div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 4px;font-size:11px;color:var(--text-muted);margin-bottom:20px;">
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#10b981;border-radius:3px;"></span> Saudável (≥${LIMITE_SAUDAVEL}% da meta)</span>
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#f59e0b;border-radius:3px;"></span> Atenção (${LIMITE_ATENCAO}–${LIMITE_SAUDAVEL}%)</span>
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#ef4444;border-radius:3px;"></span> Crítico (&lt;${LIMITE_ATENCAO}%)</span>
       <span style="margin-left:auto;">🎯 Configure Meta e ADS Ideal em Carteira de Clientes → editar cliente</span>
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;">🔍 Diagnóstico Automático por Conta</div>
+      ${dadosClientes.slice().sort((a,b)=>(a.pctMeta??999)-(b.pctMeta??999)).map(d => `
+        <div style="padding:12px 18px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${d.clienteId}})">
+          <div style="font-weight:700;font-size:13px;margin-bottom:4px;color:${statusDe(d.pctMeta).cor};">${d.nome}</div>
+          <ul style="margin:0;padding-left:18px;font-size:12px;color:var(--text-secondary);">
+            ${diagnostico(d).map(l=>`<li>${l}</li>`).join('')}
+          </ul>
+        </div>`).join('')}
     </div>`;
   }
 
@@ -592,6 +689,39 @@ Router.register('analytics', async (params, el) => {
     ['executivo','queda','plano','checklist'].forEach(id => {
       document.getElementById(`analytics-tab-${id}`)?.addEventListener('click', () => { abaAtiva = id; render(); });
     });
+
+    if (abaAtiva === 'executivo' && dadosClientes.length) {
+      setTimeout(() => {
+        const ctxMeta = document.getElementById('analytics-chart-meta');
+        if (ctxMeta) {
+          const ord = dadosClientes.slice().sort((a,b)=>(a.pctMeta??999)-(b.pctMeta??999));
+          new Chart(ctxMeta, {
+            type: 'bar',
+            data: {
+              labels: ord.map(d=>d.nome),
+              datasets: [
+                { label: 'Meta', data: ord.map(d=>d.meta), backgroundColor: 'rgba(245,158,11,0.5)', borderRadius: 4 },
+                { label: 'Projeção', data: ord.map(d=>d.projecao), backgroundColor: 'rgba(99,102,241,0.7)', borderRadius: 4 },
+              ]
+            },
+            options: { ...chartDefaults(), plugins: { legend: { display: true, labels: { color: '#9192a8', font: { size: 11 }, boxWidth: 12 } }, tooltip: tooltipStyle() } }
+          });
+        }
+        const ctxStatus = document.getElementById('analytics-chart-status');
+        if (ctxStatus) {
+          const cont = { Saudável:0, Atenção:0, Crítico:0, 'Sem meta':0 };
+          dadosClientes.forEach(d => { const l = statusDe(d.pctMeta).label; cont[l==='Sem meta'?'Sem meta':l] = (cont[l==='Sem meta'?'Sem meta':l]||0)+1; });
+          new Chart(ctxStatus, {
+            type: 'doughnut',
+            data: {
+              labels: Object.keys(cont),
+              datasets: [{ data: Object.values(cont), backgroundColor: ['#10b981','#f59e0b','#ef4444','#64748b'] }]
+            },
+            options: { responsive:true, maintainAspectRatio:false, plugins: { legend: { position:'bottom', labels: { color: '#9192a8', font: { size: 11 }, boxWidth: 12 } }, tooltip: tooltipStyle() } }
+          });
+        }
+      }, 50);
+    }
   }
 
   window._analyticsBuscarExec  = () => buscarDadosExecutivo();
