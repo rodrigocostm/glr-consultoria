@@ -760,10 +760,36 @@ tbody td:first-child { color: var(--text-primary); font-weight: 500; }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .kanban { grid-template-columns: 1fr; }
   .search-box { display: none; }
+
+  /* Header mais compacto — evita quebrar/estourar em telas estreitas */
+  #header { padding: 0 14px; gap: 8px; }
+  .header-title { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .header-actions { gap: 6px; }
+  .icon-btn { width: 32px; height: 32px; }
+
+  #page-content { padding: 14px; }
+
+  /* Tabelas: a maioria das páginas já envolve <table> num wrapper com
+     overflow-x:auto, mas nem todas — isso garante rolagem horizontal
+     em qualquer tabela que sobrar, sem precisar editar cada página */
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Modais mais enxutos em telas pequenas */
+  .modal { padding: 18px; }
+  .modal-title { font-size: 16px; }
+}
+@media (max-width: 640px) {
+  /* A maioria dos grids do app usa grid-template-columns inline (não classes) —
+     isso força qualquer grid de 2+ colunas a empilhar em 1 coluna no celular,
+     cobrindo o app inteiro sem precisar editar cada página individualmente. */
+  [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
 }
 @media (max-width: 600px) {
   #page-content { padding: 16px; }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 420px) {
+  .kpi-grid { grid-template-columns: 1fr; }
 }
 
 /* ---- Modal ---- */
