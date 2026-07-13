@@ -204,6 +204,9 @@
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
           <span class="notif-dot"></span>
         </button>
+        <button class="icon-btn" id="push-toggle" onclick="_handlePushToggle()" title="Notificações de vendas (push)">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        </button>
         <button class="icon-btn" onclick="Router.navigate('tarefas')" title="Tarefas">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         </button>
@@ -228,6 +231,7 @@
 <!-- Scripts -->
 <script src="js/data.js"></script>
 <script src="js/supabase-init.js?v=8"></script>
+<script src="js/push-notifications.js?v=1"></script>
 <script>
   // ── Tema claro/escuro ────────────────────────────────────────
   function aplicarTema(tema) {
@@ -243,6 +247,25 @@
     aplicarTema(novo);
   }
   aplicarTema(localStorage.getItem('glr_tema') || 'dark');
+
+  // ── Notificações push de vendas ──────────────────────────────
+  function _atualizarIconePush() {
+    const btn = document.getElementById('push-toggle');
+    if (!btn) return;
+    const ativo = typeof PushNotif !== 'undefined' && PushNotif.ativo();
+    btn.style.color = ativo ? 'var(--green)' : '';
+    btn.style.borderColor = ativo ? 'var(--green)' : '';
+    btn.title = ativo ? 'Notificações de vendas ativas (clique pra desativar)' : 'Ativar notificações de vendas (push)';
+  }
+  async function _handlePushToggle() {
+    if (typeof PushNotif === 'undefined') return;
+    const btn = document.getElementById('push-toggle');
+    if (btn) btn.disabled = true;
+    await PushNotif.toggle();
+    if (btn) btn.disabled = false;
+    _atualizarIconePush();
+  }
+  setTimeout(_atualizarIconePush, 300);
 
   // ── Carrega todos os dados persistidos do localStorage ──────────
   function carregarDadosSalvos() {

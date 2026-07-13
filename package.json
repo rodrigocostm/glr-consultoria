@@ -1,5 +1,8 @@
 {
   "name": "glr-consultoria",
   "version": "1.0.0",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
 }
