@@ -119,6 +119,21 @@ body {
   transition: transform 0.3s ease;
 }
 
+/* Fundo escuro atrás do menu mobile — toca em qualquer lugar fora
+   do menu pra fechar (o botão de 3 riscos fica escondido atrás do
+   próprio menu quando ele abre, então precisa de outro jeito de fechar) */
+#sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 99;
+}
+#sidebar.open ~ #sidebar-backdrop,
+#sidebar.open + #sidebar-backdrop {
+  display: block;
+}
+
 .sidebar-logo {
   display: flex;
   align-items: center;
