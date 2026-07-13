@@ -27,6 +27,18 @@ Router.register('vendas', async (params, el) => {
   let expandido     = null;
   let abaAtiva      = 'dashboard'; // 'dashboard' | 'pedidos'
 
+  // Adota o período do último cache salvo (se existir) ANTES de montar a tela —
+  // assim a página já abre mostrando o último dado buscado, sem precisar clicar
+  // em Atualizar (o padrão "ontem" só é usado se nunca buscou nada ainda).
+  try {
+    const rawCache = localStorage.getItem(STORAGE_PEDIDOS);
+    if (rawCache) {
+      const cc = JSON.parse(rawCache);
+      if (cc.dataFrom && cc.dataTo) { customFrom = cc.dataFrom; customTo = cc.dataTo; }
+      if (Array.isArray(cc.contasSel)) cc.contasSel.forEach(id => filtroContasSel.add(id));
+    }
+  } catch(e) {}
+
   // Converte o preset de período selecionado em { dataFrom, dataTo } — usado tanto
   // na carga inicial quanto em toda busca disparada pelo filtro de data
   function _periodoParaDatas() {
@@ -92,7 +104,7 @@ Router.register('vendas', async (params, el) => {
 
   function salvarCache(dataFrom, dataTo) {
     try {
-      localStorage.setItem(STORAGE_PEDIDOS, JSON.stringify({ pedidos, dataFrom, dataTo, at: Date.now() }));
+      localStorage.setItem(STORAGE_PEDIDOS, JSON.stringify({ pedidos, dataFrom, dataTo, contasSel: [...filtroContasSel], at: Date.now() }));
     } catch(e) { console.warn('Cache pedidos: erro ao salvar', e); }
   }
 
@@ -368,10 +380,23 @@ Router.register('vendas', async (params, el) => {
 
   // ── Oportunidade de Produtos: itens ATIVOS com visitas no período mas
   // ZERO vendas — sinaliza produto com tráfego que não está convertendo ──
+  const STORAGE_OPORT    = 'glr_vendas_oportunidades';
+  const STORAGE_FORA_ADS = 'glr_vendas_fora_ads';
   let oportunidades = null; // null = nunca buscado; [] = buscado, nada encontrado
   let buscandoOportunidades = false;
   let foraDoAds = null; // produtos ativos sem nenhuma campanha de ADS
   let buscandoForaDoAds = false;
+  let oportAtualizadoEm = null, foraAdsAtualizadoEm = null;
+  // Carrega o último resultado salvo — evita ter que clicar em Buscar de novo
+  // toda vez que a página é reaberta (não faz nenhuma chamada de API aqui).
+  try {
+    const co = JSON.parse(localStorage.getItem(STORAGE_OPORT)||'null');
+    if (co) { oportunidades = co.oportunidades; oportAtualizadoEm = co.at; }
+  } catch(e) {}
+  try {
+    const cf = JSON.parse(localStorage.getItem(STORAGE_FORA_ADS)||'null');
+    if (cf) { foraDoAds = cf.foraDoAds; foraAdsAtualizadoEm = cf.at; }
+  } catch(e) {}
 
   async function buscarOportunidades() {
     if (buscandoOportunidades) return;
@@ -500,7 +525,9 @@ Router.register('vendas', async (params, el) => {
 
       achados.sort((a,b) => b.visitas - a.visitas);
       oportunidades = achados;
+      oportAtualizadoEm = Date.now();
       if (status) status.textContent = '';
+      try { localStorage.setItem(STORAGE_OPORT, JSON.stringify({ oportunidades, at: oportAtualizadoEm })); } catch(e) {}
     } catch(e) {
       if (status) status.textContent = `⚠️ Erro: ${e.message}`;
     } finally {
@@ -609,7 +636,9 @@ Router.register('vendas', async (params, el) => {
       }
 
       foraDoAds = achados;
+      foraAdsAtualizadoEm = Date.now();
       if (status) status.textContent = '';
+      try { localStorage.setItem(STORAGE_FORA_ADS, JSON.stringify({ foraDoAds, at: foraAdsAtualizadoEm })); } catch(e) {}
     } catch(e) {
       if (status) status.textContent = `⚠️ Erro: ${e.message}`;
     } finally {
@@ -743,7 +772,7 @@ Router.register('vendas', async (params, el) => {
 
     sec.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período</div>
+        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período ${oportAtualizadoEm?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(oportAtualizadoEm)}</span>`:''}</div>
         <button id="btn-buscar-oport" class="btn" onclick="buscarOportunidades()" style="padding:7px 14px;font-size:12px;">🔄 Buscar de novo</button>
       </div>
       ${oportunidades.length === 0 ? `
@@ -796,7 +825,7 @@ Router.register('vendas', async (params, el) => {
 
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 16px;">
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary);">🚫 ${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary);">🚫 ${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS ${foraAdsAtualizadoEm?`<span style="font-size:11px;font-weight:400;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(foraAdsAtualizadoEm)}</span>`:''}</div>
         <button id="btn-buscar-fora-ads" class="btn" style="padding:7px 14px;font-size:12px;">🔄 Buscar de novo</button>
       </div>
       ${foraDoAds.length === 0 ? `

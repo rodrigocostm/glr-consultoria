@@ -385,8 +385,25 @@ async function carregarContas() {
       const idx = parseInt(e.target.value);
       contaAtual = isNaN(idx) ? null : contasSel[idx];
       dadosADS = null;
-      if (contaAtual) buscarDados(false);
+      if (contaAtual) {
+        try { localStorage.setItem('glr_ads_ultima_conta', contaAtual.external_id); } catch(e2) {}
+        buscarDados(false);
+      }
     });
+
+    // Reabre automaticamente na última conta vista — evita ter que reselecionar
+    // toda vez que a página é aberta de novo (usa o cache de 15min se ainda valer).
+    try {
+      const ultimaId = localStorage.getItem('glr_ads_ultima_conta');
+      if (ultimaId) {
+        const idx = contasSel.findIndex(c => String(c.external_id) === String(ultimaId));
+        if (idx >= 0) {
+          sel.value = String(idx);
+          contaAtual = contasSel[idx];
+          buscarDados(false);
+        }
+      }
+    } catch(e2) {}
   } catch(e) {
     console.warn('[ADS] Erro ao carregar contas:', e.message);
   }

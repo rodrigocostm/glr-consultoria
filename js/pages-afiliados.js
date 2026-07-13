@@ -36,6 +36,7 @@ Router.register('afiliados', async (params, el) => {
   let plataforma = params?.plat || 'shopee';
   let _dadosCache = {};
   let _carregando = false;
+  let _atualizadoEm = {}; // { shopee: ts, ml: ts }
 
   // ── Período (mês atual)
   const hoje = new Date();
@@ -43,6 +44,26 @@ Router.register('afiliados', async (params, el) => {
   const anoMes = `${hoje.getFullYear()}-${pad(hoje.getMonth()+1)}`;
   const dataInicio = `${anoMes}-01`;
   const dataFim    = `${hoje.getFullYear()}-${pad(hoje.getMonth()+1)}-${pad(hoje.getDate())}`;
+
+  const STORAGE_AFIL = 'glr_afiliados_cache';
+  const afilCacheKey = () => `${clienteSelecionado}_${anoMes}`;
+  function carregarCacheAfil() {
+    try {
+      const todos = JSON.parse(localStorage.getItem(STORAGE_AFIL)||'{}');
+      const c = todos[afilCacheKey()];
+      if (c) { _dadosCache = c.dados || {}; _atualizadoEm = c.at || {}; }
+    } catch(e) {}
+  }
+  function salvarCacheAfil() {
+    try {
+      const todos = JSON.parse(localStorage.getItem(STORAGE_AFIL)||'{}');
+      todos[afilCacheKey()] = { dados: _dadosCache, at: _atualizadoEm };
+      localStorage.setItem(STORAGE_AFIL, JSON.stringify(todos));
+    } catch(e) {}
+  }
+  // Já carrega o que tiver salvo pra esse cliente+mês, antes do primeiro render —
+  // evita ter que clicar em Buscar dados toda vez que a página é reaberta.
+  carregarCacheAfil();
 
   function contasDoCliente(cidId, mkt) {
     return (vinculos[String(cidId)] || []).filter(c => {
@@ -69,7 +90,7 @@ Router.register('afiliados', async (params, el) => {
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
         <div>
           <h2 style="font-size:20px;font-weight:800;margin:0;">🔗 Central de Afiliados</h2>
-          <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${dataInicio} → ${dataFim}</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${dataInicio} → ${dataFim} ${_atualizadoEm[plataforma]?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${Math.floor((Date.now()-_atualizadoEm[plataforma])/60000)<60?'há '+Math.max(1,Math.floor((Date.now()-_atualizadoEm[plataforma])/60000))+' min':'há '+Math.floor((Date.now()-_atualizadoEm[plataforma])/3600000)+'h'}</span>`:''}</div>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <select id="sel-cliente-afil" class="form-control" style="min-width:160px;" onchange="window._afilClienteChange(this.value)">
@@ -103,6 +124,8 @@ Router.register('afiliados', async (params, el) => {
     window._afilClienteChange = (id) => {
       clienteSelecionado = parseInt(id);
       _dadosCache = {};
+      _atualizadoEm = {};
+      carregarCacheAfil();
       renderShell();
     };
     window._afilPlat = (p) => {
@@ -218,6 +241,8 @@ Router.register('afiliados', async (params, el) => {
         }
 
         _dadosCache['shopee'] = { plat: 'shopee', resultados };
+        _atualizadoEm['shopee'] = Date.now();
+        salvarCacheAfil();
         renderDados(_dadosCache['shopee']);
 
       } else if (plataforma === 'ml') {
@@ -251,6 +276,8 @@ Router.register('afiliados', async (params, el) => {
         }
 
         _dadosCache['ml'] = { plat: 'ml', resultados };
+        _atualizadoEm['ml'] = Date.now();
+        salvarCacheAfil();
         renderDados(_dadosCache['ml']);
       }
     } catch(e) {
