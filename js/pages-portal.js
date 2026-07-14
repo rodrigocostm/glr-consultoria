@@ -82,12 +82,24 @@ function _portalFiltroData() {
   return _portalFiltroDefault();
 }
 
+// Ontem em ISO (YYYY-MM-DD) — usado pra nunca confiar cegamente no cache
+// pros últimos dias, mesmo que a data salva alegue já cobrir esse período.
+function _portalOntemIso() {
+  const pad = n => String(n).padStart(2,'0');
+  const hoje = new Date();
+  const ontem = new Date(hoje); ontem.setDate(hoje.getDate()-1);
+  return `${ontem.getFullYear()}-${pad(ontem.getMonth()+1)}-${pad(ontem.getDate())}`;
+}
+
 // Verifica se o período pedido já está totalmente coberto pelo cache atual —
-// se estiver, não precisa chamar a API de novo, só filtrar localmente (instantâneo)
+// se estiver, não precisa chamar a API de novo, só filtrar localmente (instantâneo).
+// Ontem/hoje NUNCA são considerados cobertos só pela data salva — sempre reconfere
+// na API, pra vendas recentes não sumirem por qualquer atraso/edge case no merge.
 function _portalRangeCoberto(de, ate) {
   const cache = _portalCache();
   if (!cache?.pedidos || cache.erro) return false;
   if (!cache.dataFrom || !cache.dataTo) return false;
+  if (ate >= _portalOntemIso()) return false;
   return cache.dataFrom <= de && cache.dataTo >= ate;
 }
 
@@ -107,6 +119,14 @@ function _portalSegmentosFaltantes(de, ate) {
   if (ate > cache.dataTo) {
     const depoisDe = _portalAddDia(cache.dataTo);
     if (depoisDe <= ate) segs.push({ de: depoisDe, ate });
+  }
+  // Ontem/hoje: sempre reconfere na API, mesmo que o cache alegue já cobrir —
+  // evita venda recente sumir por edge case no merge incremental.
+  const ontemIso = _portalOntemIso();
+  if (ate >= ontemIso) {
+    const inicioRecente = de > ontemIso ? de : ontemIso;
+    const jaCoberto = segs.some(s => s.de <= inicioRecente && s.ate >= ate);
+    if (!jaCoberto) segs.push({ de: inicioRecente, ate });
   }
   return segs;
 }
