@@ -199,14 +199,9 @@ function _portalFiltroBar(pageAtual) {
     ? `<div style="width:100%;margin-top:8px;padding:8px 12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;font-size:11px;color:#ef4444;">⚠️ Shopee: ${erroShopee}</div>`
     : '';
 
-  const diagML = window._diagMlP0 || '';
-  const diagTotal = window._diagMlTotal || '';
-  const diagCache = window._diagCacheSaved || '';
   const status = cache?.at
     ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} | ${cache.pedidos?.length||0} pedidos no cache</span>`
     : `<span style="font-size:11px;color:#d97706;">⚠️ Clique em Aplicar para buscar os dados</span>`;
-  const diagLines = [diagTotal&&`[TOTAL] ${diagTotal}`, diagCache&&`[CACHE] ${diagCache}`, diagML&&`[ML P0] ${diagML}`].filter(Boolean).join('<br>');
-  const diagBanner = diagLines ? `<div style="width:100%;margin-top:8px;padding:6px 10px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.3);border-radius:6px;font-size:10px;color:#a5b4fc;word-break:break-all;">${diagLines}</div>` : '';
 
   const mostrarDatas = presetSel === 'custom';
   return `
@@ -235,7 +230,6 @@ function _portalFiltroBar(pageAtual) {
       <div style="margin-left:auto;"></div>
       ${seletorContas}
       ${avisoErro}
-      ${diagBanner}
     </div>`;
 }
 
@@ -392,8 +386,9 @@ async function _portalShopeeSns(shopId, tsFrom, tsTo) {
     } catch(e) {}
   }
 
-  const erroFinal = primeiroErro || (out.length === 0 ? `0 pedidos Shopee (shopId=${sid}). Resp: ${primeiraResposta||'sem resposta'}` : null);
-  return { sns: out, erro: erroFinal };
+  // Zero pedidos é uma resposta válida da API (a loja pode simplesmente não ter
+  // vendido nada no período) — só reporta como erro se a chamada realmente falhou.
+  return { sns: out, erro: primeiroErro };
 }
 
 // ── Busca real na API (ML + Shopee), via proxy — API key nunca chega ao browser do cliente ──
