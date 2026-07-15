@@ -311,7 +311,7 @@ async function _portalMapLimit(items, limit, fn) {
 // ML paginado via proxy — lógica idêntica ao MarketplaceAPI.mlOrders do admin
 async function _portalMlOrders(meliId, dataFrom, dataTo) {
   const PAGE = 50;
-  let offset = 0, all = [], pagingTotal = null;
+  let offset = 0, all = [], pagingTotal = null, completo = true;
   do {
     let r = null;
     for (let t = 0; t < 3; t++) {
@@ -320,7 +320,7 @@ async function _portalMlOrders(meliId, dataFrom, dataTo) {
         break;
       } catch(e) { if (t >= 2) break; await new Promise(res=>setTimeout(res, 1500*(t+1))); }
     }
-    if (!r) break;
+    if (!r) { completo = false; break; } // 3 tentativas falharam — busca ficou incompleta, não pode marcar range como coberto
     const results = r.data?.results || [];
     const paging  = r.data?.paging  || {};
     if (offset === 0) {
@@ -333,7 +333,7 @@ async function _portalMlOrders(meliId, dataFrom, dataTo) {
     offset += PAGE;
   } while (true);
   window._diagMlTotal = `total=${all.length} pedidos ML | paging.total=${pagingTotal??'?'}`;
-  return all;
+  return { orders: all, completo };
 }
 
 // Shopee: lista SNs paginado via proxy
@@ -437,6 +437,10 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
     const novosPedidos = [];
     const resumoContas = [];
     const pendenciasTaxasML = []; // { mlPedidos, meliId } — enriquecidas em segundo plano depois do render
+    // Se qualquer lote de pedidos falhar de vez (mesmo após retry), a busca fica
+    // incompleta — não pode marcar o período como "totalmente coberto" no cache,
+    // senão os pedidos perdidos nunca mais são tentados de novo.
+    let fetchIncompleto = false;
     const contasInfo = contas.map(c => {
       const mp = (c.marketplace||'').toLowerCase();
       const nomeBase = mp.includes('shopee') ? 'Shopee' : 'Mercado Livre';
@@ -452,7 +456,8 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
       // ── Mercado Livre ──
       if (!mpLower.includes('shopee')) {
         const meliId = conta.param_to_use?.meliUserId || conta.external_id;
-        const orders = await _portalMlOrders(meliId, dataFrom, dataTo);
+        const { orders, completo: mlCompleto } = await _portalMlOrders(meliId, dataFrom, dataTo);
+        if (!mlCompleto) fetchIncompleto = true;
 
         const mlPedidos = orders.map(o => {
           const itens = (o.order_items||o.items||[]).map(i => ({
@@ -513,29 +518,34 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
         if (shopeeErro) resumoContas.push({ mp:'Shopee', qtd: 0, erro: shopeeErro });
 
         const uniq = [], detMap = {};
+        let loteFalhou = false; // se algum lote de detalhes falhar de vez, marca a busca como incompleta
         for (let i=0; i<sns.length; i+=50) {
           const lote = sns.slice(i,i+50).map(o=>o.sn);
-          try {
-            const rd = await _portalMcCall('shopee_get_order_detail', { shopId, order_sn_list: lote });
-            const lista = rd.data?.response?.order_list || [];
-            for (const ord of lista) {
-              const itens = (ord.item_list||[]).map(it => ({
-                nome: it.item_name||'—', qtd: it.model_quantity_purchased||1,
-                preco: parseFloat(it.model_discounted_price)||0, imagem: it.image_info?.image_url||'',
-              }));
-              detMap[ord.order_sn] = { itens, imagem: itens[0]?.imagem||'', produto: itens.length>1?`${itens[0].nome} (+${itens.length-1})`:(itens[0]?.nome||'—') };
-              const dt = ord.create_time ? new Date(ord.create_time*1000) : null;
-              const totalPedido = parseFloat(ord.total_amount)||0;
-              const subtotal = itens.reduce((s,it)=>s+it.preco*it.qtd,0);
-              uniq.push({
-                id: ord.order_sn, plataforma:'Shopee', contaId: conta.external_id,
-                data: dt ? dt.toLocaleDateString('pt-BR') : '—', dataTs: (ord.create_time||0)*1000,
-                produto:'…', imagem:'', qtd: itens.reduce((s,it)=>s+it.qtd,0)||1,
-                valor: subtotal>0 ? subtotal : totalPedido, status: ord.order_status||'', itens:[], taxas:{},
-              });
-            }
-          } catch(e) {}
+          let rd = null;
+          for (let t = 0; t < 3; t++) {
+            try { rd = await _portalMcCall('shopee_get_order_detail', { shopId, order_sn_list: lote }); break; }
+            catch(e) { if (t < 2) await new Promise(res=>setTimeout(res, 1000*(t+1))); }
+          }
+          if (!rd) { loteFalhou = true; continue; } // 3 tentativas falharam — não perde o lote em silêncio, sinaliza incompleto
+          const lista = rd.data?.response?.order_list || [];
+          for (const ord of lista) {
+            const itens = (ord.item_list||[]).map(it => ({
+              nome: it.item_name||'—', qtd: it.model_quantity_purchased||1,
+              preco: parseFloat(it.model_discounted_price)||0, imagem: it.image_info?.image_url||'',
+            }));
+            detMap[ord.order_sn] = { itens, imagem: itens[0]?.imagem||'', produto: itens.length>1?`${itens[0].nome} (+${itens.length-1})`:(itens[0]?.nome||'—') };
+            const dt = ord.create_time ? new Date(ord.create_time*1000) : null;
+            const totalPedido = parseFloat(ord.total_amount)||0;
+            const subtotal = itens.reduce((s,it)=>s+it.preco*it.qtd,0);
+            uniq.push({
+              id: ord.order_sn, plataforma:'Shopee', contaId: conta.external_id,
+              data: dt ? dt.toLocaleDateString('pt-BR') : '—', dataTs: (ord.create_time||0)*1000,
+              produto:'…', imagem:'', qtd: itens.reduce((s,it)=>s+it.qtd,0)||1,
+              valor: subtotal>0 ? subtotal : totalPedido, status: ord.order_status||'', itens:[], taxas:{},
+            });
+          }
         }
+        if (loteFalhou) fetchIncompleto = true;
 
         const escrowMap = {};
         const parseEscrow = oi => {
@@ -590,10 +600,18 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
     // dataFrom/dataTo recebidos aqui cobrem só o segmento buscado nesta chamada
     // (não necessariamente a união inteira) — expande a cobertura salva
     const temCacheValido = incremental && cacheAtual?.dataFrom && cacheAtual?.dataTo && !cacheAtual.erro;
+    // Se algum lote falhou de vez (fetchIncompleto), NÃO marca este segmento como
+    // coberto — senão os pedidos que se perderam no lote com falha nunca mais
+    // seriam re-buscados (ficariam faltando pra sempre, mesmo já tendo os outros
+    // pedidos mesclados no cache). Volta a cobertura pro que já era confiável antes.
+    const dataFromFinal = fetchIncompleto ? (temCacheValido ? cacheAtual.dataFrom : null)
+      : (temCacheValido && cacheAtual.dataFrom < dataFrom ? cacheAtual.dataFrom : dataFrom);
+    const dataToFinal = fetchIncompleto ? (temCacheValido ? cacheAtual.dataTo : null)
+      : (temCacheValido && cacheAtual.dataTo > dataTo ? cacheAtual.dataTo : dataTo);
     const payload = {
       pedidos: pedidosFinal,
-      dataFrom: temCacheValido && cacheAtual.dataFrom < dataFrom ? cacheAtual.dataFrom : dataFrom,
-      dataTo:   temCacheValido && cacheAtual.dataTo   > dataTo   ? cacheAtual.dataTo   : dataTo,
+      dataFrom: dataFromFinal,
+      dataTo:   dataToFinal,
       resumoContas,
       contasInfo,
       at: Date.now(),
