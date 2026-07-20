@@ -170,6 +170,7 @@ Router.register('diagnostico', async (params, el) => {
     </div>`;
 
     document.getElementById('btn-testar-api')?.addEventListener('click', testarApi);
+    document.getElementById('btn-atualizar-tudo')?.addEventListener('click', atualizarTudo);
   }
 
   async function testarApi() {
@@ -188,8 +189,6 @@ Router.register('diagnostico', async (params, el) => {
       render('erro');
     }
   }
-
-  document.getElementById('btn-atualizar-tudo')?.addEventListener('click', atualizarTudo);
 
   // ── Atualizar tudo: navega por cada página automática e dispara a busca real
   // dela (clicando no botão de verdade ou chamando a função exposta), uma de
