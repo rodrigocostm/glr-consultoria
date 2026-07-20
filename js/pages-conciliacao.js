@@ -58,7 +58,12 @@ Router.register('conciliacao', async (params, el) => {
     'remaining_voucher','net_commission_fee_info_list','net_service_fee_info_list',
     'tenure_info_list','items','seller_voucher_code','buyer_payment_method','instalment_plan',
     'final_shipping_fee','order_seller_discount','credit_card_transaction_fee',
+    // Confirmado com pedidos reais desta conta: estes 3 campos não afetam o escrow_amount
+    // (já embutidos no preço com desconto/comissão calculada em cima, ou absorvidos pela Shopee) —
+    // somar causava resíduo "não identificado" em praticamente todo pedido. Mostrados só como informação.
+    'seller_discount', 'voucher_from_seller', 'pix_discount',
   ]);
+  const SHOPEE_INFORMATIVOS = new Set(['seller_discount', 'voucher_from_seller', 'pix_discount']);
   function _shopeeVarrer(oi) {
     const detalhes = {};
     const rec = (obj, prefixo) => {
@@ -214,7 +219,8 @@ Router.register('conciliacao', async (params, el) => {
           if (!sn || !oi.escrow_amount) continue;
           const n = v => parseFloat(v)||0;
           const bruto = subtotalMap[sn] ?? (n(oi.order_original_price) || (n(oi.escrow_amount)+n(oi.commission_fee)+n(oi.service_fee)));
-          const freteVendedor = Math.max(0, n(oi.actual_shipping_fee)-n(oi.buyer_paid_shipping_fee)-n(oi.shopee_shipping_rebate));
+          const freteVendedor = Math.max(0, n(oi.actual_shipping_fee)-n(oi.buyer_paid_shipping_fee)-n(oi.shopee_shipping_rebate))
+            + n(oi.shipping_seller_protection_fee_amount);
           const comissao = n(oi.commission_fee), taxaServico = n(oi.service_fee), taxaCartao = n(oi.credit_card_promotion);
           const detalhes = _shopeeVarrer(oi);
           const detEntries = Object.entries(detalhes).filter(([,v]) => Math.abs(v) > 0.01);
@@ -224,13 +230,16 @@ Router.register('conciliacao', async (params, el) => {
           const liquidoReal = n(oi.escrow_amount);
           const diff = liquidoReal - liquidoEsperado;
           const releaseTs = oi.escrow_release_time;
+          const informativos = Object.entries(oi)
+            .filter(([k,v]) => SHOPEE_INFORMATIVOS.has(k) && Math.abs(parseFloat(v)||0) > 0.01)
+            .map(([k,v]) => ({ nome: `${_shopeeFeeLabel(k)} (informativo, não afeta o repasse)`, valor: 0, exibirValor: parseFloat(v)||0 }));
           const breakdown = [
             { nome: 'Comissão', valor: comissao },
             { nome: 'Taxa de serviço', valor: taxaServico },
             { nome: 'Frete descontado', valor: freteVendedor },
             { nome: 'Taxa de cartão', valor: taxaCartao },
             ...detEntries.map(([k,v]) => ({ nome: _shopeeFeeLabel(k), valor: v })), // mesmo sinal bruto do escrow: positivo=custo(-), negativo=crédito(+)
-          ].filter(x => Math.abs(x.valor) > 0.01);
+          ].filter(x => Math.abs(x.valor) > 0.01).concat(informativos);
           resultado.push({
             id: sn, plataforma: 'Shopee', contaId: conta.external_id,
             data: dataMap[sn] || '—', dataTs: releaseTs ? releaseTs*1000 : 0,
@@ -362,7 +371,7 @@ Router.register('conciliacao', async (params, el) => {
                 <td style="padding:9px 8px;text-align:right;">${R$(p.bruto)}</td>
                 <td style="padding:9px 8px;text-align:right;color:#ef4444;">
                   - ${R$(p.taxasEsperadas)}
-                  ${p.breakdown?.length ? `<div style="font-size:9.5px;color:var(--text-muted);font-weight:400;text-align:right;margin-top:2px;">${p.breakdown.map(b=>`${b.nome}: ${b.valor>=0?'-':'+'}${R$(Math.abs(b.valor))}`).join('<br>')}</div>` : ''}
+                  ${p.breakdown?.length ? `<div style="font-size:9.5px;color:var(--text-muted);font-weight:400;text-align:right;margin-top:2px;">${p.breakdown.map(b=>`${b.nome}: ${b.exibirValor!=null?R$(Math.abs(b.exibirValor)):(b.valor>=0?'-':'+')+R$(Math.abs(b.valor))}`).join('<br>')}</div>` : ''}
                 </td>
                 <td style="padding:9px 8px;text-align:right;">${R$(p.liquidoEsperado)}</td>
                 <td style="padding:9px 8px;text-align:right;font-weight:600;">${p.liquidoReal!=null?R$(p.liquidoReal):'—'}</td>
