@@ -12,6 +12,67 @@ Router.register('conciliacao', async (params, el) => {
   const fmtDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   const R$      = v => 'R$ '+(parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 
+  // Mesmo tradutor/varredor de campos usado no Financeiro (já testado e corrigido
+  // lá) — garante que nenhuma taxa Shopee fique sem nome quando a conta não bater.
+  const SHOPEE_FEE_LABELS = {
+    buyer_total_amount: 'Total pago pelo comprador', original_price: 'Preço original do produto',
+    seller_discount: 'Desconto concedido pelo vendedor', voucher_from_seller: 'Voucher do vendedor',
+    seller_voucher_code: 'Voucher do vendedor (código)', shopee_voucher_code: 'Voucher Shopee (código)',
+    seller_return_refund_fee: 'Taxa de devolução/reembolso', original_shipping_fee: 'Frete original',
+    estimated_shipping_fee: 'Frete estimado', shipping_fee_discount_from_3pl: 'Desconto de frete (transportadora)',
+    buyer_transaction_fee: 'Taxa de transação do comprador', cross_border_tax: 'Imposto cross-border',
+    payment_promotion: 'Promoção de pagamento', final_shipping_fee: 'Frete final cobrado',
+    final_product_protection: 'Proteção de produto', delivery_seller_protection_fee_premium_amount: 'Prêmio de proteção de entrega',
+    final_escrow_product_gst: 'GST do produto (escrow)', order_ams_commission_fee: 'Comissão AMS (anúncios de afiliados)',
+    drc_adjustable_refund: 'Ajuste de reembolso DRC', final_product_vat_tax: 'Imposto VAT do produto',
+    order_seller_discount_refund: 'Reembolso de desconto do vendedor', seller_shipping_discount: 'Desconto de frete do vendedor',
+    escrow_tax: 'Imposto sobre o escrow', prorated_coins_value_offset_shipping_fee: 'Moedas usadas para abater frete',
+    non_chargeable_coins: 'Moedas não cobráveis', chargeable_coins: 'Moedas cobráveis',
+    bundle_deal_seller_absorbed: 'Combo/kit absorvido pelo vendedor', buyer_paid_extra_fee: 'Taxa extra paga pelo comprador',
+    seller_capped_commission_fee: 'Comissão com teto (capped)', seller_lost_compensation: 'Compensação por perda/extravio',
+    order_refund_amount: 'Valor reembolsado do pedido', reverse_shipping_fee: 'Frete reverso (devolução)',
+    insurance_premium: 'Prêmio de seguro', final_shopee_subsidy: 'Subsídio Shopee',
+    seller_voucher_amount: 'Valor do voucher do vendedor', bundle_deal_indemnify: 'Indenização de combo/kit',
+    drc_deduction: 'Dedução DRC', pix_discount: 'Ajuste por pagamento via PIX', campaign_fee: 'Rebate de ação comercial',
+  };
+  function _shopeeFeeLabel(key) {
+    if (SHOPEE_FEE_LABELS[key]) return SHOPEE_FEE_LABELS[key];
+    return key.split('.').map(p => SHOPEE_FEE_LABELS[p] || p.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase())).join(' — ');
+  }
+  const SHOPEE_FEE_SKIP = new Set([
+    'order_chargeable_weight','final_height','final_width','final_length',
+    'buyer_payment_method','order_sn','escrow_release_time','order_income_struct',
+    'is_paid_by_credit_card','shopee_voucher_code','seller_voucher_code',
+    'reverse_shipping_fee_confirmed','tax_payment_method',
+  ]);
+  const SHOPEE_USED_KEYS = new Set([
+    'actual_shipping_fee','buyer_paid_shipping_fee','shopee_shipping_rebate',
+    'net_commission_fee','commission_fee','net_service_fee','service_fee',
+    'seller_product_rebate','shopee_discount','escrow_amount','escrow_amount_after_adjustment',
+    'seller_transaction_fee','buyer_tax_amount','seller_coin_cash_back',
+    'shipping_seller_protection_fee_amount','voucher_from_shopee',
+    'credit_card_promotion_fee','credit_card_promotion','coins','shopee_coins_cash_back',
+    'buyer_total_amount','cost_of_goods_sold','original_cost_of_goods_sold',
+    'order_discounted_price','order_original_price','order_selling_price',
+    'original_price','original_shopee_discount','estimated_shipping_fee',
+    'remaining_voucher','net_commission_fee_info_list','net_service_fee_info_list',
+    'tenure_info_list','items','seller_voucher_code','buyer_payment_method','instalment_plan',
+    'final_shipping_fee','order_seller_discount','credit_card_transaction_fee',
+  ]);
+  function _shopeeVarrer(oi) {
+    const detalhes = {};
+    const rec = (obj, prefixo) => {
+      for (const [k, v] of Object.entries(obj||{})) {
+        if (SHOPEE_USED_KEYS.has(k) || SHOPEE_FEE_SKIP.has(k)) continue;
+        if (v && typeof v === 'object' && !Array.isArray(v)) { rec(v, prefixo ? `${prefixo}.${k}` : k); continue; }
+        const num = typeof v === 'number' ? v : (typeof v === 'string' ? parseFloat(v) : NaN);
+        if (!isNaN(num) && Math.abs(num) > 0.001) detalhes[prefixo ? `${prefixo}.${k}` : k] = num;
+      }
+    };
+    rec(oi, '');
+    return detalhes;
+  }
+
   let filtroPeriodo = 'mes'; // 'mes' | 'mes-passado' | '7' | '15' | '30' | 'custom'
   let customFrom = fmtDate(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
   let customTo   = fmtDate(ontem);
@@ -101,6 +162,7 @@ Router.register('conciliacao', async (params, el) => {
         data: o.date_created ? new Date(o.date_created).toLocaleDateString('pt-BR') : '—',
         dataTs: new Date(o.date_created||0).getTime(),
         bruto, taxasEsperadas: comissao, liquidoEsperado,
+        breakdown: [{ nome: 'Comissão', valor: comissao }],
         liquidoReal, diff, bate: diff!=null ? Math.abs(diff)<1 : null,
         dataRepasse: dataRepasse ? new Date(dataRepasse).toLocaleDateString('pt-BR') : null,
         statusPagamentoRaw: statusPag,
@@ -118,6 +180,28 @@ Router.register('conciliacao', async (params, el) => {
     const snsList = await MarketplaceAPI.shopeeListOrderSns(shopId, tsFrom, tsTo);
     const completed = snsList; // já filtra por status relevante dentro do helper
 
+    // Bruto = subtotal dos itens (mesma convenção já validada no Financeiro/Vendas) —
+    // NÃO usa buyer_total_amount do escrow, que inclui frete pago pelo comprador e
+    // faria a conta "não bater" mesmo com todas as taxas certas.
+    const subtotalMap = {}, dataMap = {};
+    for (let i=0; i<completed.length; i+=50) {
+      const lote = completed.slice(i,i+50).map(o=>o.sn);
+      try {
+        const rd = await MarketplaceAPI.call('shopee_get_order_detail', { shopId, order_sn_list: lote });
+        const lista = rd.data?.response?.order_list || rd.data?.order_list || [];
+        for (const ord of lista) {
+          const itens = ord.item_list || ord.items || [];
+          const subtotal = itens.reduce((s,it) => {
+            const preco = parseFloat(it.model_discounted_price) || parseFloat(it.item_price) || 0;
+            const qtd   = parseInt(it.model_quantity_purchased)  || parseInt(it.quantity)    || 1;
+            return s + preco*qtd;
+          }, 0);
+          subtotalMap[ord.order_sn] = subtotal > 0 ? subtotal : (parseFloat(ord.total_amount)||0);
+          dataMap[ord.order_sn] = ord.create_time ? new Date(ord.create_time*1000).toLocaleDateString('pt-BR') : '—';
+        }
+      } catch(e) {}
+    }
+
     const resultado = [];
     for (let i=0; i<completed.length; i+=50) {
       const lote = completed.slice(i,i+50).map(o=>o.sn);
@@ -129,18 +213,28 @@ Router.register('conciliacao', async (params, el) => {
           const oi = item.escrow_detail?.order_income || item.order_income || {};
           if (!sn || !oi.escrow_amount) continue;
           const n = v => parseFloat(v)||0;
-          const bruto = n(oi.buyer_total_amount) || n(oi.order_original_price) || (n(oi.escrow_amount)+n(oi.commission_fee)+n(oi.service_fee));
+          const bruto = subtotalMap[sn] ?? (n(oi.order_original_price) || (n(oi.escrow_amount)+n(oi.commission_fee)+n(oi.service_fee)));
           const freteVendedor = Math.max(0, n(oi.actual_shipping_fee)-n(oi.buyer_paid_shipping_fee)-n(oi.shopee_shipping_rebate));
           const comissao = n(oi.commission_fee), taxaServico = n(oi.service_fee), taxaCartao = n(oi.credit_card_promotion);
-          const taxasEsperadas = comissao + taxaServico + freteVendedor + taxaCartao;
+          const detalhes = _shopeeVarrer(oi);
+          const detEntries = Object.entries(detalhes).filter(([,v]) => Math.abs(v) > 0.01);
+          const somaDetalhes = detEntries.reduce((s,[,v]) => s+v, 0);
+          const taxasEsperadas = comissao + taxaServico + freteVendedor + taxaCartao - somaDetalhes;
           const liquidoEsperado = bruto - taxasEsperadas;
           const liquidoReal = n(oi.escrow_amount);
           const diff = liquidoReal - liquidoEsperado;
           const releaseTs = oi.escrow_release_time;
+          const breakdown = [
+            { nome: 'Comissão', valor: comissao },
+            { nome: 'Taxa de serviço', valor: taxaServico },
+            { nome: 'Frete descontado', valor: freteVendedor },
+            { nome: 'Taxa de cartão', valor: taxaCartao },
+            ...detEntries.map(([k,v]) => ({ nome: _shopeeFeeLabel(k), valor: -v })), // detEntries são créditos (reduzem a taxa) — inverte o sinal pra exibir como "a favor"
+          ].filter(x => Math.abs(x.valor) > 0.01);
           resultado.push({
             id: sn, plataforma: 'Shopee', contaId: conta.external_id,
-            data: '—', dataTs: releaseTs ? releaseTs*1000 : 0,
-            bruto, taxasEsperadas, liquidoEsperado,
+            data: dataMap[sn] || '—', dataTs: releaseTs ? releaseTs*1000 : 0,
+            bruto, taxasEsperadas, liquidoEsperado, breakdown,
             liquidoReal, diff, bate: Math.abs(diff) < 1,
             dataRepasse: releaseTs ? new Date(releaseTs*1000).toLocaleDateString('pt-BR') : null,
             statusPagamentoRaw: releaseTs && releaseTs*1000 <= Date.now() ? 'released' : (releaseTs ? 'scheduled' : null),
@@ -266,10 +360,16 @@ Router.register('conciliacao', async (params, el) => {
               <tr style="background:${i%2===0?'var(--bg-card)':'var(--bg-surface)'};">
                 <td style="padding:9px 12px;font-weight:600;">${p.id}<div style="font-size:10px;color:var(--text-muted);">${p.data}</div></td>
                 <td style="padding:9px 8px;text-align:right;">${R$(p.bruto)}</td>
-                <td style="padding:9px 8px;text-align:right;color:#ef4444;">- ${R$(p.taxasEsperadas)}</td>
+                <td style="padding:9px 8px;text-align:right;color:#ef4444;">
+                  - ${R$(p.taxasEsperadas)}
+                  ${p.breakdown?.length ? `<div style="font-size:9.5px;color:var(--text-muted);font-weight:400;text-align:right;margin-top:2px;">${p.breakdown.map(b=>`${b.nome}: ${b.valor>=0?'-':'+'}${R$(Math.abs(b.valor))}`).join('<br>')}</div>` : ''}
+                </td>
                 <td style="padding:9px 8px;text-align:right;">${R$(p.liquidoEsperado)}</td>
                 <td style="padding:9px 8px;text-align:right;font-weight:600;">${p.liquidoReal!=null?R$(p.liquidoReal):'—'}</td>
-                <td style="padding:9px 8px;text-align:right;color:${p.diff==null?'var(--text-muted)':Math.abs(p.diff)<1?'#10b981':'#ef4444'};">${p.diff!=null?R$(p.diff):'—'}</td>
+                <td style="padding:9px 8px;text-align:right;color:${p.diff==null?'var(--text-muted)':Math.abs(p.diff)<1?'#10b981':'#ef4444'};">
+                  ${p.diff!=null?R$(p.diff):'—'}
+                  ${p.diff!=null && Math.abs(p.diff)>=1 ? `<div style="font-size:9.5px;color:#ef4444;font-weight:400;">não identificado</div>` : ''}
+                </td>
                 <td style="padding:9px 8px;text-align:center;">${p.bate==null?'<span style="color:var(--text-muted);">—</span>':p.bate?'<span style="color:#10b981;">✅</span>':'<span style="color:#ef4444;">⚠️</span>'}</td>
                 <td style="padding:9px 8px;color:${st.cor};">${st.label}</td>
               </tr>`;
