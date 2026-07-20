@@ -119,28 +119,29 @@ function mostrarVendas() {
     overflow-y:auto;font-family:'Inter',sans-serif;color:#f1f1f8;
   `;
 
-  const funcionalidades = [
-    { ico: '📊', titulo: 'Dashboard Executivo', desc: 'Visão consolidada da carteira, metas, crescimento e risco de cada cliente em um só lugar.' },
-    { ico: '💰', titulo: 'Financeiro & DRE automático', desc: 'DRE calculado direto das taxas reais do Mercado Livre e Shopee, sem planilha manual.' },
-    { ico: '📢', titulo: 'Central de ADS', desc: 'Acompanhe investimento, ROAS e TACoS das campanhas em todas as contas conectadas.' },
-    { ico: '✅', titulo: 'Conciliação Financeira', desc: 'Confere pedido a pedido se a taxa calculada bate com o que a API realmente descontou, e quando o dinheiro cai na carteira.' },
-    { ico: '🛒', titulo: 'Vendas & Oportunidades', desc: 'Pedidos, produtos parados e oportunidades de ADS identificados automaticamente.' },
-    { ico: '🔐', titulo: 'Portal do Cliente', desc: 'Cada cliente acompanha as próprias vendas e resultados com login e dados isolados.' },
+  const servicos = [
+    { ico: '🏪', titulo: 'Abertura e configuração de contas', desc: 'Cuidamos de toda a abertura e configuração das suas contas nos marketplaces.' },
+    { ico: '📦', titulo: 'Cadastro e otimização de produtos', desc: 'Anúncios cadastrados e otimizados pra vender mais dentro de cada plataforma.' },
+    { ico: '🖥️', titulo: 'Sistema de gestão de produtos (ERP)', desc: 'ERP disponibilizado pra organizar estoque, catálogo e operação do dia a dia.' },
+    { ico: '📊', titulo: 'Sistema de acompanhamento de vendas', desc: 'O GLR Central: dashboard, financeiro, ADS, conciliação e portal do cliente em tempo real.' },
+    { ico: '🎥', titulo: 'Orientação contínua', desc: 'Vídeos e conteúdos estratégicos pra aumentar suas vendas de forma consistente.' },
+    { ico: '🤝', titulo: 'Suporte e acompanhamento', desc: 'Acompanhamento próximo da operação pra garantir o desenvolvimento do negócio.' },
+    { ico: '📅', titulo: '2 reuniões mensais', desc: 'Reuniões de análise de resultados e definição de estratégias, todo mês.' },
   ];
 
-  const planos = [
-    { nome: 'Starter', preco: 'R$ 497/mês', desc: 'Para quem está começando a organizar a operação.',
-      itens: ['Até 2 contas conectadas', 'Dashboard e Vendas', 'Financeiro básico', 'Suporte por WhatsApp'], destaque: false },
-    { nome: 'Pro', preco: 'R$ 997/mês', desc: 'Operação em crescimento, com múltiplos canais.',
-      itens: ['Até 6 contas conectadas', 'DRE automático completo', 'Central de ADS', 'Conciliação Financeira', 'Portal do Cliente'], destaque: true },
-    { nome: 'Enterprise', preco: 'Sob consulta', desc: 'Operações grandes ou com necessidades específicas.',
-      itens: ['Contas ilimitadas', 'Tudo do plano Pro', 'Gestor dedicado', 'Relatórios personalizados'], destaque: false },
+  const sistemaModulos = [
+    { ico: '📊', titulo: 'Dashboard Executivo', desc: 'Visão consolidada da carteira, metas, crescimento e risco.' },
+    { ico: '💰', titulo: 'Financeiro & DRE automático', desc: 'DRE calculado direto das taxas reais do Mercado Livre e Shopee.' },
+    { ico: '📢', titulo: 'Central de ADS', desc: 'Investimento, ROAS e TACoS das campanhas em todas as contas.' },
+    { ico: '✅', titulo: 'Conciliação Financeira', desc: 'Confere se a taxa calculada bate com o que a API descontou de fato.' },
+    { ico: '🛒', titulo: 'Vendas & Oportunidades', desc: 'Pedidos, produtos parados e oportunidades de ADS.' },
+    { ico: '🔐', titulo: 'Portal do Cliente', desc: 'Você acompanha suas próprias vendas e resultados com login próprio.' },
   ];
 
   const depoimentos = [
     { nome: 'Cliente GLR', empresa: 'Loja de Eletrônicos', texto: '“Antes eu perdia horas conferindo planilha de taxa do Mercado Livre. Hoje é tudo automático e ainda vejo onde estou perdendo dinheiro.”' },
-    { nome: 'Cliente GLR', empresa: 'Loja de Moda', texto: '“O Portal do Cliente me deixou acompanhar as vendas em tempo real sem precisar ficar pedindo relatório pra equipe.”' },
-    { nome: 'Cliente GLR', empresa: 'Loja de Casa & Decoração', texto: '“A Conciliação Financeira encontrou diferenças que a gente nem sabia que existiam entre o esperado e o que caía na carteira.”' },
+    { nome: 'Cliente GLR', empresa: 'Loja de Moda', texto: '“O acompanhamento da GLR e o portal do sistema me deixaram acompanhar as vendas sem precisar ficar pedindo relatório pra ninguém.”' },
+    { nome: 'Cliente GLR', empresa: 'Loja de Casa & Decoração', texto: '“A consultoria estruturou minha operação do zero: abertura de conta, cadastro de produto e agora acompanhamos tudo juntos nas reuniões mensais.”' },
   ];
 
   overlay.innerHTML = `
@@ -160,32 +161,32 @@ function mostrarVendas() {
 
     <div style="max-width:780px;margin:0 auto;padding:24px 24px 64px;text-align:center;">
       <div style="display:inline-block;padding:6px 14px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);border-radius:99px;font-size:12px;font-weight:600;color:#818cf8;margin-bottom:20px;">
-        Gestão de Marketplaces
+        Consultoria em Marketplaces
       </div>
       <h1 style="font-size:38px;font-weight:800;line-height:1.15;margin:0 0 16px;letter-spacing:-0.5px;">
-        Centro de Operações para quem vende no<br>Mercado Livre e Shopee
+        Estruturamos e gerenciamos sua operação no<br>Mercado Livre e Shopee
       </h1>
       <p style="font-size:16px;color:#9192a8;line-height:1.6;margin:0 0 32px;">
-        Financeiro automático, conciliação de taxas, gestão de ADS e portal do cliente —
-        tudo em um só painel, sem planilha.
+        Da abertura de conta ao cadastro de produtos, passando por ERP, orientação estratégica
+        e reuniões mensais — com um sistema próprio pra acompanhar tudo em tempo real.
       </p>
       <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-        <a href="${waLink('Olá! Quero saber mais sobre o GLR Consultoria.')}" target="_blank" rel="noopener"
-          style="padding:14px 26px;background:#16161f;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#f1f1f8;font-size:14px;font-weight:700;text-decoration:none;">
+        <a href="${waLink('Olá! Quero saber mais sobre a consultoria da GLR.')}" target="_blank" rel="noopener"
+          style="padding:14px 26px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:10px;color:white;font-size:14px;font-weight:700;text-decoration:none;">
           💬 Falar no WhatsApp
         </a>
         <button onclick="window.mostrarLogin()"
-          style="padding:14px 26px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:10px;color:white;font-size:14px;font-weight:700;cursor:pointer;">
-          Entrar no sistema
+          style="padding:14px 26px;background:#16161f;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#f1f1f8;font-size:14px;font-weight:700;cursor:pointer;">
+          Já sou cliente — Entrar
         </button>
       </div>
     </div>
 
     <div style="max-width:1080px;margin:0 auto;padding:0 24px 64px;">
-      <h2 style="text-align:center;font-size:24px;font-weight:800;margin:0 0 8px;">Tudo que sua operação precisa</h2>
-      <p style="text-align:center;font-size:14px;color:#5a5b72;margin:0 0 36px;">Módulos pensados pra quem vive marketplace no dia a dia.</p>
+      <h2 style="text-align:center;font-size:24px;font-weight:800;margin:0 0 8px;">O que a consultoria oferece</h2>
+      <p style="text-align:center;font-size:14px;color:#5a5b72;margin:0 0 36px;">Tudo incluso na parceria, do início da operação ao acompanhamento contínuo.</p>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
-        ${funcionalidades.map(f => `
+        ${servicos.map(f => `
           <div style="background:#16161f;border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:24px;">
             <div style="font-size:26px;margin-bottom:12px;">${f.ico}</div>
             <div style="font-size:15px;font-weight:700;margin-bottom:6px;">${f.titulo}</div>
@@ -196,25 +197,36 @@ function mostrarVendas() {
     </div>
 
     <div style="max-width:1080px;margin:0 auto;padding:0 24px 64px;">
-      <h2 style="text-align:center;font-size:24px;font-weight:800;margin:0 0 8px;">Planos</h2>
-      <p style="text-align:center;font-size:14px;color:#5a5b72;margin:0 0 36px;">Valores de referência — fale com a gente pra encontrar o plano ideal.</p>
+      <h2 style="text-align:center;font-size:24px;font-weight:800;margin:0 0 8px;">O sistema que acompanha sua operação</h2>
+      <p style="text-align:center;font-size:14px;color:#5a5b72;margin:0 0 36px;">Um dos serviços inclusos: o GLR Central, pra você e sua equipe acompanharem os resultados juntos.</p>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
-        ${planos.map(p => `
-          <div style="background:${p.destaque?'#1c1c2e':'#16161f'};border:1px solid ${p.destaque?'#6366f1':'rgba(255,255,255,0.07)'};border-radius:16px;padding:28px 24px;position:relative;">
-            ${p.destaque ? `<div style="position:absolute;top:-11px;left:24px;background:#6366f1;color:white;font-size:11px;font-weight:700;padding:4px 12px;border-radius:99px;">MAIS POPULAR</div>` : ''}
-            <div style="font-size:15px;font-weight:700;margin-bottom:4px;">${p.nome}</div>
-            <div style="font-size:26px;font-weight:800;margin-bottom:4px;">${p.preco}</div>
-            <div style="font-size:12px;color:#5a5b72;margin-bottom:20px;">${p.desc}</div>
-            <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:24px;">
-              ${p.itens.map(i => `<div style="font-size:13px;color:#c7c8d8;display:flex;align-items:flex-start;gap:8px;"><span style="color:#10b981;">✓</span>${i}</div>`).join('')}
-            </div>
-            <a href="${waLink('Olá! Tenho interesse no plano ' + p.nome + ' do GLR Consultoria.')}" target="_blank" rel="noopener"
-              style="display:block;text-align:center;padding:11px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;
-                     ${p.destaque ? 'background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;' : 'background:transparent;border:1px solid rgba(255,255,255,0.15);color:#f1f1f8;'}">
-              Falar com um consultor
-            </a>
+        ${sistemaModulos.map(f => `
+          <div style="background:#16161f;border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:24px;">
+            <div style="font-size:26px;margin-bottom:12px;">${f.ico}</div>
+            <div style="font-size:15px;font-weight:700;margin-bottom:6px;">${f.titulo}</div>
+            <div style="font-size:13px;color:#9192a8;line-height:1.5;">${f.desc}</div>
           </div>
         `).join('')}
+      </div>
+    </div>
+
+    <div style="max-width:640px;margin:0 auto;padding:0 24px 64px;">
+      <h2 style="text-align:center;font-size:24px;font-weight:800;margin:0 0 8px;">Investimento</h2>
+      <p style="text-align:center;font-size:14px;color:#5a5b72;margin:0 0 36px;">Um modelo que acompanha o crescimento da sua operação.</p>
+      <div style="background:#1c1c2e;border:1px solid #6366f1;border-radius:16px;padding:32px 28px;text-align:center;">
+        <div style="font-size:32px;font-weight:800;margin-bottom:4px;">R$ 1.500<span style="font-size:16px;font-weight:600;color:#9192a8;">/mês</span></div>
+        <div style="font-size:13px;color:#9192a8;margin-bottom:20px;">mensalidade fixa</div>
+        <div style="height:1px;background:rgba(255,255,255,0.08);margin:0 0 20px;"></div>
+        <p style="font-size:13px;color:#c7c8d8;line-height:1.6;margin:0 0 24px;">
+          Quando R$ 3,00 por venda ultrapassar o valor da mensalidade fixa, a cobrança passa a ser
+          <strong style="color:#f1f1f8;">R$ 3,00 por venda realizada</strong>, substituindo o valor fixo mensal —
+          o investimento cresce junto com o seu faturamento.
+        </p>
+        <a href="${waLink('Olá! Quero saber mais sobre o investimento na consultoria da GLR.')}" target="_blank" rel="noopener"
+          style="display:block;padding:13px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:700;
+                 background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;">
+          Falar com um consultor
+        </a>
       </div>
     </div>
 
