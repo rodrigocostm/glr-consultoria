@@ -219,7 +219,7 @@ Router.register('conciliacao', async (params, el) => {
           const detalhes = _shopeeVarrer(oi);
           const detEntries = Object.entries(detalhes).filter(([,v]) => Math.abs(v) > 0.01);
           const somaDetalhes = detEntries.reduce((s,[,v]) => s+v, 0);
-          const taxasEsperadas = comissao + taxaServico + freteVendedor + taxaCartao - somaDetalhes;
+          const taxasEsperadas = comissao + taxaServico + freteVendedor + taxaCartao + somaDetalhes;
           const liquidoEsperado = bruto - taxasEsperadas;
           const liquidoReal = n(oi.escrow_amount);
           const diff = liquidoReal - liquidoEsperado;
@@ -229,7 +229,7 @@ Router.register('conciliacao', async (params, el) => {
             { nome: 'Taxa de serviço', valor: taxaServico },
             { nome: 'Frete descontado', valor: freteVendedor },
             { nome: 'Taxa de cartão', valor: taxaCartao },
-            ...detEntries.map(([k,v]) => ({ nome: _shopeeFeeLabel(k), valor: -v })), // detEntries são créditos (reduzem a taxa) — inverte o sinal pra exibir como "a favor"
+            ...detEntries.map(([k,v]) => ({ nome: _shopeeFeeLabel(k), valor: v })), // mesmo sinal bruto do escrow: positivo=custo(-), negativo=crédito(+)
           ].filter(x => Math.abs(x.valor) > 0.01);
           resultado.push({
             id: sn, plataforma: 'Shopee', contaId: conta.external_id,
