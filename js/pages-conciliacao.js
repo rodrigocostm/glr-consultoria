@@ -86,7 +86,7 @@ Router.register('conciliacao', async (params, el) => {
       let liquidoReal = null, dataRepasse = null, statusPag = null;
       if (paymentId) {
         try {
-          const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/collections/${paymentId}` });
+          const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/collections/${paymentId}`, meliUserId: meliId });
           const d = r.data || {};
           liquidoReal = parseFloat(d.net_received_amount ?? d.collection?.net_received_amount ?? d.transaction?.net_received_amount);
           dataRepasse = d.money_release_date || d.date_released || d.collection?.money_release_date || null;
