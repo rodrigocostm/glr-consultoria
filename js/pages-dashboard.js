@@ -1,5 +1,5 @@
 // ============================================================
-// GLR Consultoria — Dashboard Executivo + Dashboard Diretoria
+// GLR Consultoria — Dashboard (Executivo + Diretoria unificados)
 // ============================================================
 
 // ---- Helpers visuais ----
@@ -24,116 +24,39 @@ function scoreColor(s) {
   return '#ef4444';
 }
 
-// ── Helpers de dados API ──────────────────────────────────────────────────────
-
-function _dashCache() {
-  try { return JSON.parse(localStorage.getItem('glr_fin_cache') || 'null'); } catch(e) { return null; }
-}
-function _dashVinculos() {
-  try { return JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) { return {}; }
-}
-function _dashProjecoes() {
-  try { return JSON.parse(localStorage.getItem('glr_projecoes') || '[]'); } catch(e) { return []; }
+// ---- Dashboard (Executivo + Diretoria fundidos numa página só) ----
+// Fonte de dados: glr_analytics_dados (cache do Painel Executivo do Analytics,
+// que já tem busca real via API com botão "Atualizar dados" funcional) — não
+// depende mais do cache do Financeiro, que ficava velho e deixava o dashboard
+// parecendo vazio.
+function _dashAnalyticsCache() {
+  try { return JSON.parse(localStorage.getItem('glr_analytics_dados') || 'null'); } catch(e) { return null; }
 }
 
-const _isCancelDash = st => { const s=(st||'').toLowerCase(); return s.includes('cancel')||s.includes('refund')||s.includes('devol')||s==='invalid'||s.includes('return'); };
-
-// Faturamento atual do mês (cache API) para um cliente
-function _fatAtualCliente(clienteId, cache, vinculos) {
-  if (!cache) return null;
-  const contaIds = (vinculos[String(clienteId)] || []).map(c => String(c.external_id));
-  if (!contaIds.length) return null;
-  const total = (cache.pedidos || [])
-    .filter(p => contaIds.includes(String(p.contaId)) && !_isCancelDash(p.status))
-    .reduce((s, p) => s + (parseFloat(p.valor) || 0), 0);
-  return total;
+function _dashStatusDe(compMesAnt, pctMeta) {
+  if (compMesAnt == null && pctMeta == null) return 'ativo';
+  if (pctMeta != null && pctMeta < 80) return 'risco';
+  if (compMesAnt != null && compMesAnt <= -10) return 'queda';
+  if (compMesAnt != null && compMesAnt >= 10) return 'crescimento';
+  return 'ativo';
 }
 
-// Faturamento mês anterior (campo 'maio' nas projeções salvas)
-function _fatAnteriorCliente(clienteId, projecoes) {
-  const proj = projecoes.find(p => parseInt(p.chave) === clienteId);
-  if (!proj) return null;
-  return (proj.plataformas || []).reduce((s, p) => s + (parseFloat(p.maio) || 0), 0) || null;
-}
-
-// Retorna array de clientes enriquecidos com dados reais da API
+// Junta o cache do Analytics com o cadastro de clientes (gestor, valorPorVenda etc.)
 function computarClientesAPI() {
-  const cache    = _dashCache();
-  const vinculos = _dashVinculos();
-  const projecoes = _dashProjecoes();
+  const cache = _dashAnalyticsCache();
+  const porCliente = {};
+  (cache?.dados || []).forEach(d => { porCliente[d.clienteId] = d; });
 
   return GLR.clientes.map(c => {
-    const fatAPI      = _fatAtualCliente(c.id, cache, vinculos);
-    const fatAnterior = _fatAnteriorCliente(c.id, projecoes);
-    const fat = fatAPI !== null ? fatAPI : (c.faturamento || 0);
-
-    const crescPct = (fatAnterior > 0 && fatAPI !== null)
-      ? parseFloat(((fatAPI - fatAnterior) / fatAnterior * 100).toFixed(1))
-      : (c.crescimento || 0);
-
-    let status = c.status || 'ativo';
-    if (fatAnterior > 0 && fatAPI !== null) {
-      if (crescPct > 5)       status = 'crescimento';
-      else if (crescPct < -20) status = 'risco';
-      else if (crescPct < -5)  status = 'queda';
-      else                     status = 'ativo';
-    }
-
-    return { ...c, faturamento: fat, crescimento: crescPct, status, _fatAnterior: fatAnterior, _temAPI: fatAPI !== null };
+    const d = porCliente[c.id];
+    const temAPI = !!d?.temConta;
+    const faturamento = d ? d.projecao : (c.faturamento || 0);
+    const crescimento = d?.compMesAnt != null ? parseFloat(d.compMesAnt.toFixed(1)) : (c.crescimento || 0);
+    const status = d ? _dashStatusDe(d.compMesAnt, d.pctMeta) : (c.status || 'ativo');
+    return { ...c, faturamento, crescimento, status, _temAPI: temAPI, _pctMeta: d?.pctMeta ?? null, _meta: d?.meta ?? 0 };
   });
 }
 
-// Histórico mensal da carteira (gráfico) a partir de projeções + cache atual
-function computarHistoricoAPI() {
-  const mesesNomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-                      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const hoje = new Date();
-  const cache    = _dashCache();
-  const vinculos = _dashVinculos();
-  const projecoes = _dashProjecoes();
-
-  // Totais históricos das projeções (marco, abril, maio = últimos 3 meses relativos)
-  const camposMeses = [
-    { campo: 'marco', offset: 3 },
-    { campo: 'abril', offset: 2 },
-    { campo: 'maio',  offset: 1 },
-  ];
-
-  const resultado = [];
-
-  camposMeses.forEach(({ campo, offset }) => {
-    const d = new Date(hoje.getFullYear(), hoje.getMonth() - offset, 1);
-    const nomeMes = mesesNomes[d.getMonth()] + ' ' + d.getFullYear();
-    const total = projecoes.reduce((s, proj) =>
-      s + (proj.plataformas || []).reduce((ss, p) => ss + (parseFloat(p[campo]) || 0), 0), 0);
-    if (total > 0) resultado.push({ mes: nomeMes, total });
-  });
-
-  // Mês atual do cache
-  if (cache) {
-    const nomeMesAtual = mesesNomes[hoje.getMonth()] + ' ' + hoje.getFullYear();
-    const totalAtual = GLR.clientes.reduce((s, c) => {
-      const fatAPI = _fatAtualCliente(c.id, cache, vinculos);
-      return s + (fatAPI || 0);
-    }, 0);
-    if (totalAtual > 0) resultado.push({ mes: nomeMesAtual + ' (parcial)', total: totalAtual });
-  }
-
-  // Se sem dados da API, usa histórico manual (legado)
-  if (!resultado.length) {
-    GLR.clientes.forEach(c => {
-      (c.historico || []).forEach(h => {
-        const fat = parseFloat(h.faturamento) || 0;
-        if (fat > 0 && h.mes) GLR.evolucaoCarteira.push({ mes: h.mes, total: fat });
-      });
-    });
-    return null; // sinaliza para usar lógica antiga
-  }
-
-  return resultado;
-}
-
-// ---- Dashboard Executivo ----
 Router.register('dashboard', (params, el) => {
   if (!GLR.clientes.length) {
     el.innerHTML = `<div class="page">
@@ -146,30 +69,33 @@ Router.register('dashboard', (params, el) => {
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
             Cadastrar primeiro cliente
           </button>
-          <button class="btn btn-secondary" onclick="Router.navigate('projecao')">📊 Inserir projeção</button>
+          <button class="btn btn-secondary" onclick="Router.navigate('analytics')">📊 Ir pro Analytics</button>
         </div>
       </div>
     </div>`;
     return;
   }
 
-  // Apenas clientes com contas vinculadas na API
-  const clientes  = computarClientesAPI().filter(c => c._temAPI);
+  const analyticsCache = _dashAnalyticsCache();
+  const clientesTodos  = computarClientesAPI();
+  const clientes       = clientesTodos.filter(c => c._temAPI); // só quem tem conta vinculada e dado real
 
   const ativos      = clientes.filter(c => c.status === 'ativo').length;
   const crescimento = clientes.filter(c => c.status === 'crescimento').length;
   const queda       = clientes.filter(c => c.status === 'queda').length;
   const risco       = clientes.filter(c => c.status === 'risco').length;
   const tarefasPendentes = GLR.tarefas.filter(t => t.status === 'pendente' || t.status === 'atrasada').length;
-  const reunioesSemana   = GLR.eventos.filter(e => e.tipo === 'reuniao').length;
+  const tasksConc    = GLR.tarefas.filter(t => t.status === 'concluida').length;
+  const tasksAtras   = GLR.tarefas.filter(t => t.status === 'atrasada').length;
+  const reunioesSemana = GLR.eventos.filter(e => e.tipo === 'reuniao').length;
 
   const faturamentoTotal = clientes.reduce((s, c) => s + (c.faturamento || 0), 0);
-  const crescimentoMedio = clientes.length
-    ? (clientes.reduce((s, c) => s + (c.crescimento || 0), 0) / clientes.length).toFixed(1)
-    : '0.0';
+  const metaTotal = clientes.reduce((s, c) => s + (c._meta || 0), 0);
+  const crescMedioAPI = clientes.length
+    ? (clientes.reduce((s, c) => s + (c.crescimento || 0), 0) / clientes.length)
+    : null;
 
-  // Receita GLR = soma de (vendas projetadas × valor por venda) de cada cliente
-  // Usa os dados das projeções salvas
+  // Receita GLR = soma de (vendas projetadas × valor por venda) — vem da Projeção de Crescimento
   let receitaGLR = 0;
   try {
     const projs = JSON.parse(localStorage.getItem('glr_projecoes') || '[]');
@@ -186,26 +112,51 @@ Router.register('dashboard', (params, el) => {
     });
   } catch(e) {}
 
-  const comAPI = clientes.filter(c => c._temAPI).length;
-  const semAPI = clientes.length - comAPI;
-  const crescMedioAPI = comAPI > 0
-    ? (clientes.filter(c=>c._temAPI).reduce((s,c)=>s+(c.crescimento||0),0) / comAPI)
-    : null;
-  const fatSubtitulo = comAPI > 0
-    ? `${delta(parseFloat(crescMedioAPI.toFixed(1)))} vs mês ant.`
-    : (semAPI > 0 ? 'vincule contas para ver dados reais' : '');
+  const comAPI = clientes.length;
+  const semAPI = clientesTodos.length - comAPI;
+
+  // Gestores com dados reais
+  const gestoresComDados = GLR.gestores.map(g => {
+    const clientesDoGestor = clientes.filter(c => c.gestor === g.nome);
+    const crescMedioG = clientesDoGestor.length
+      ? (clientesDoGestor.reduce((s,c)=>s+(c.crescimento||0),0)/clientesDoGestor.length) : 0;
+    const tarefasG  = GLR.tarefas.filter(t=>t.responsavel===g.nome&&(t.status==='pendente'||t.status==='atrasada')).length;
+    const fatG      = clientesDoGestor.reduce((s,c)=>s+(c.faturamento||0),0);
+    const avatar    = g.nome.split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase();
+    return { ...g, avatar, qtdClientes: clientesDoGestor.length, crescMedio: crescMedioG, tarefasPend: tarefasG, fat: fatG };
+  }).filter(g => g.qtdClientes > 0 || GLR.gestores.length <= 5);
+
+  const clientesAtencao = clientes.filter(c=>c.status==='risco'||c.status==='queda')
+    .sort((a,b)=>(a.crescimento||0)-(b.crescimento||0));
+
+  const concentracao = [...clientes].sort((a,b)=>(b.faturamento||0)-(a.faturamento||0)).slice(0,8);
+
+  const atualizadoTxt = analyticsCache?.atualizadoEm
+    ? `Atualizado em ${new Date(analyticsCache.atualizadoEm).toLocaleString('pt-BR')}`
+    : 'Nenhum dado do Analytics ainda — clique em Atualizar dados';
 
   el.innerHTML = `<div class="page">
+    <div style="margin-bottom:20px;padding:16px 20px;background:linear-gradient(135deg,rgba(99,102,241,0.15),rgba(139,92,246,0.1));border:1px solid rgba(99,102,241,0.2);border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-size:24px;">📊</span>
+        <div>
+          <div style="font-size:16px;font-weight:700;">Dashboard — Visão Geral da Carteira</div>
+          <div style="font-size:12px;color:var(--text-secondary);" id="dash-status-txt">${atualizadoTxt}</div>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-dash-atualizar" style="padding:8px 16px;">🔄 Atualizar dados</button>
+    </div>
+
     <!-- KPIs -->
     <div class="kpi-grid">
-      ${kpiCard('Clientes Ativos', clientes.length, `${comAPI} com dados API`, comAPI > 0, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
-      ${kpiCard('Em Crescimento', crescimento, `${clientes.length ? Math.round(crescimento/clientes.length*100) : 0}% da carteira`, true, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
-      ${kpiCard('Em Queda', queda, `${clientes.length ? Math.round(queda/clientes.length*100) : 0}% da carteira`, queda === 0, 'rgba(249,115,22,0.12)', '📉', '#f97316')}
-      ${kpiCard('Em Risco', risco, risco === 0 ? 'carteira saudável' : 'atenção imediata', risco === 0, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
-      ${kpiCard('Tarefas Pendentes', tarefasPendentes, `${GLR.tarefas.filter(t=>t.status==='atrasada').length} atrasadas`, tarefasPendentes === 0, 'rgba(245,158,11,0.12)', '✅', '#f59e0b')}
-      ${kpiCard('Reuniões na Semana', reunioesSemana, 'próximos 7 dias', true, 'rgba(6,182,212,0.12)', '📅', '#06b6d4')}
+      ${kpiCard('Clientes na Carteira', clientesTodos.length, `${comAPI} com dados reais`, comAPI > 0, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
+      ${kpiCard('Meta Total', metaTotal>0?GLR.formatCurrency(metaTotal):'—', 'soma das metas', metaTotal>0, 'rgba(245,158,11,0.12)', '🎯', '#f59e0b')}
+      ${kpiCard('Fat. Carteira', GLR.formatCurrency(faturamentoTotal), crescMedioAPI!=null?`${crescMedioAPI>=0?'+':''}${crescMedioAPI.toFixed(1)}% vs mês ant.`:(semAPI>0?'vincule contas p/ ver dados reais':''), true, 'rgba(99,102,241,0.12)', '🏆', '#6366f1', comAPI>0)}
       ${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', 'vendas × valor por venda', receitaGLR > 0, 'rgba(16,185,129,0.15)', '💰', '#10b981')}
-      ${kpiCard('Fat. Carteira', GLR.formatCurrency(faturamentoTotal), fatSubtitulo, true, 'rgba(99,102,241,0.12)', '🏆', '#6366f1', comAPI > 0)}
+      ${kpiCard('Em Crescimento', crescimento, `${clientes.length ? Math.round(crescimento/clientes.length*100) : 0}% da carteira`, true, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
+      ${kpiCard('Em Risco / Queda', risco+queda, `${risco} em risco · ${queda} em queda`, (risco+queda)===0, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
+      ${kpiCard('Tarefas Pendentes', tarefasPendentes, `${tasksAtras} atrasadas`, tarefasPendentes === 0, 'rgba(245,158,11,0.12)', '✅', '#f59e0b')}
+      ${kpiCard('Reuniões na Semana', reunioesSemana, 'próximos 7 dias', true, 'rgba(6,182,212,0.12)', '📅', '#06b6d4')}
     </div>
 
     <!-- Gráficos principais -->
@@ -214,9 +165,8 @@ Router.register('dashboard', (params, el) => {
         <div class="section-header">
           <div>
             <div class="section-title">Evolução da Carteira</div>
-            <div class="section-subtitle">Faturamento total — últimos meses${comAPI > 0 ? ' · dados API' : ' · histórico manual'}</div>
+            <div class="section-subtitle">Faturamento total — últimos meses · dados API</div>
           </div>
-          ${crescMedioAPI !== null ? `<span class="badge ${crescMedioAPI >= 0 ? 'status-crescimento' : 'status-queda'}">${crescMedioAPI >= 0 ? '+' : ''}${crescMedioAPI.toFixed(1)}% vs ant.</span>` : ''}
         </div>
         <div class="chart-wrapper">
           <canvas id="chart-evolucao"></canvas>
@@ -249,7 +199,7 @@ Router.register('dashboard', (params, el) => {
       </div>
     </div>
 
-    <!-- Ranking + Alertas -->
+    <!-- Ranking + Gestores -->
     <div class="grid-2 mb-24">
       <div class="card">
         <div class="section-header">
@@ -257,13 +207,13 @@ Router.register('dashboard', (params, el) => {
           <button class="btn btn-ghost btn-sm" onclick="Router.navigate('clientes')">Ver todos</button>
         </div>
         ${clientes.length === 0
-          ? `<div style="color:var(--text-muted);font-size:13px;padding:16px 0;text-align:center;">Nenhum cliente cadastrado</div>`
+          ? `<div style="color:var(--text-muted);font-size:13px;padding:16px 0;text-align:center;">Nenhum cliente com dados ainda</div>`
           : [...clientes].sort((a,b) => (b.crescimento||0) - (a.crescimento||0)).slice(0,6).map((c, i) => `
           <div class="ranking-item" onclick="Router.navigate('cliente-perfil', {id: ${c.id}})" style="cursor:pointer;">
             <span class="ranking-num">#${i+1}</span>
             <div style="flex:1;">
               <div class="ranking-name">${c.nome}</div>
-              <div style="font-size:11px;color:var(--text-muted);">${c.gestor || ''} · ${c.plano || ''}</div>
+              <div style="font-size:11px;color:var(--text-muted);">${c.gestor || ''}</div>
             </div>
             <div style="text-align:right;">
               <div class="ranking-val ${(c.crescimento||0) >= 0 ? 'text-green' : 'text-red'}">${(c.crescimento||0) >= 0 ? '+' : ''}${c.crescimento||0}%</div>
@@ -272,6 +222,54 @@ Router.register('dashboard', (params, el) => {
             <span class="badge ${GLR.statusColor[c.status]}" style="margin-left:8px;">${GLR.statusLabel[c.status]}</span>
           </div>
         `).join('')}
+      </div>
+
+      <div class="card">
+        <div class="section-header">
+          <div class="section-title">👨‍💼 Performance dos Gestores</div>
+        </div>
+        ${gestoresComDados.length===0
+          ? `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">Nenhum gestor cadastrado</div>`
+          : gestoresComDados.map(g=>`
+          <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--border);">
+            <div style="width:40px;height:40px;border-radius:50%;background:${g.cor||'#6366f1'}22;border:2px solid ${g.cor||'#6366f1'}44;
+                        display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:${g.cor||'#6366f1'};flex-shrink:0;">${g.avatar}</div>
+            <div style="flex:1;">
+              <div style="font-size:14px;font-weight:600;">${g.nome}</div>
+              <div style="font-size:12px;color:var(--text-muted);">${g.cargo||''} · ${g.qtdClientes} cliente${g.qtdClientes!==1?'s':''} · ${g.tarefasPend} tarefa${g.tarefasPend!==1?'s':''} pendente${g.tarefasPend!==1?'s':''}</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="ranking-val ${g.crescMedio>=0?'text-green':'text-red'}">${g.crescMedio>=0?'+':''}${g.crescMedio.toFixed(1)}%</div>
+              <div style="font-size:11px;color:var(--text-muted);">${GLR.formatCurrency(g.fat)}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <!-- Clientes em atenção + Alertas -->
+    <div class="grid-2 mb-24">
+      <div class="card">
+        <div class="section-header">
+          <div class="section-title">🚨 Clientes em Risco ou Queda</div>
+        </div>
+        ${clientesAtencao.length===0
+          ? `<div style="padding:32px;text-align:center;">
+               <div style="font-size:32px;margin-bottom:8px;">✅</div>
+               <div style="font-size:14px;font-weight:600;color:var(--green);">Nenhum cliente em risco</div>
+               <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Carteira saudável</div>
+             </div>`
+          : clientesAtencao.map(c=>`
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;"
+               onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
+            <div style="flex:1;">
+              <div style="font-size:14px;font-weight:600;">${c.nome}</div>
+              <div style="font-size:12px;color:var(--text-muted);">Gestor: ${c.gestor||'—'} · ${GLR.formatCurrency(c.faturamento||0)}</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="ranking-val text-red">${c.crescimento||0}%</div>
+              <span class="badge ${GLR.statusColor[c.status]}">${GLR.statusLabel[c.status]}</span>
+            </div>
+          </div>`).join('')}
       </div>
 
       <div class="card">
@@ -303,8 +301,20 @@ Router.register('dashboard', (params, el) => {
       </div>
     </div>
 
+    <!-- Concentração de receita -->
+    ${concentracao.some(c=>c.faturamento>0) ? `
+    <div class="card mb-24">
+      <div class="section-header">
+        <div class="section-title">💼 Concentração de Faturamento</div>
+        <div class="section-subtitle">Participação de cada cliente</div>
+      </div>
+      <div class="chart-wrapper">
+        <canvas id="chart-concentracao"></canvas>
+      </div>
+    </div>` : ''}
+
     <!-- Tarefas urgentes + Próximos eventos -->
-    <div class="grid-2">
+    <div class="grid-2 mb-24">
       <div class="card">
         <div class="section-header">
           <div class="section-title">⚡ Tarefas Urgentes</div>
@@ -344,63 +354,54 @@ Router.register('dashboard', (params, el) => {
         }).join('')}
       </div>
     </div>
+
+    <!-- Carteira completa -->
+    <div class="card">
+      <div class="section-header">
+        <div class="section-title">📋 Carteira Completa</div>
+        <button class="btn btn-ghost btn-sm" onclick="Router.navigate('clientes')">Gerenciar</button>
+      </div>
+      <table class="table" style="font-size:13px;">
+        <thead><tr>
+          <th>Cliente</th><th>Gestor</th><th>Status</th>
+          <th style="text-align:right;">Faturamento</th>
+          <th style="text-align:right;">Crescimento</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+        ${[...clientesTodos].sort((a,b)=>(b.faturamento||0)-(a.faturamento||0)).map(c=>`
+          <tr style="cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
+            <td style="font-weight:600;">${c.nome}</td>
+            <td style="color:var(--text-muted);">${c.gestor||'—'}</td>
+            <td><span class="badge ${GLR.statusColor[c.status]}">${GLR.statusLabel[c.status]}</span></td>
+            <td style="text-align:right;">${c._temAPI ? GLR.formatCurrency(c.faturamento||0) : '<span style="color:var(--text-muted);">sem dados</span>'}</td>
+            <td style="text-align:right;color:${(c.crescimento||0)>=0?'var(--green)':'var(--red)'};">${c._temAPI ? `${(c.crescimento||0)>=0?'+':''}${c.crescimento||0}%` : '—'}</td>
+            <td style="text-align:right;"><button class="btn btn-ghost btn-sm">Ver perfil →</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
   </div>`;
 
-  // ── Constrói evolucaoCarteira prioritariamente da API ──
-  (function() {
-    const historicoAPI = computarHistoricoAPI();
-    let ordenado;
-
-    if (historicoAPI) {
-      // Dados da API disponíveis — usa direto
-      ordenado = historicoAPI;
-    } else {
-      // Fallback: histórico manual + DRE
-      const mesesNomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-                          'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-      const mapa = {};
-      clientes.forEach(c => {
-        (c.historico || []).forEach(h => {
-          const fat = parseFloat(h.faturamento) || 0;
-          if (fat > 0 && h.mes) mapa[h.mes] = (mapa[h.mes] || 0) + fat;
-        });
-      });
-      let dres = [];
-      try { dres = JSON.parse(localStorage.getItem('glr_dre') || '[]'); } catch(e) {}
-      dres.forEach(d => {
-        const fat = parseFloat(d.valores?.faturamento) || 0;
-        if (fat <= 0) return;
-        const nomeMes = mesesNomes[parseInt(d.mes)] + ' ' + d.ano;
-        mapa['_dre_' + nomeMes] = (mapa['_dre_' + nomeMes] || 0) + fat;
-      });
-      const merged = {};
-      Object.keys(mapa).forEach(k => {
-        if (k.startsWith('_dre_')) { merged[k.replace('_dre_','')] = mapa[k]; }
-        else { if (!merged[k]) merged[k] = mapa[k]; }
-      });
-      ordenado = Object.entries(merged)
-        .map(([mes, total]) => {
-          const partes = mes.split(' ');
-          const idxMes = mesesNomes.indexOf(partes[0]);
-          const ano = parseInt(partes[1]) || 2025;
-          return { mes, total, ordem: ano * 12 + idxMes };
-        })
-        .filter(d => d.ordem >= 0)
-        .sort((a,b) => a.ordem - b.ordem)
-        .slice(-12);
-    }
-
-    GLR.evolucaoCarteira = ordenado;
-  })();
+  document.getElementById('btn-dash-atualizar')?.addEventListener('click', _dashAtualizarTudo);
 
   // Charts
   setTimeout(() => {
-    // Evolução carteira
     const ctx1 = document.getElementById('chart-evolucao');
     if (ctx1) {
-      const evolucao = GLR.evolucaoCarteira;
+      // 3 pontos reais vindos do Analytics: 2 meses anteriores + mês atual (projeção)
+      const d0 = analyticsCache?.dados || [];
+      const somaCampo = campo => d0.reduce((s,d)=>s+(parseFloat(d[campo])||0),0);
+      const labelM1 = d0.find(d=>d.labelM1)?.labelM1 || 'Mês ant.';
+      const labelM2 = d0.find(d=>d.labelM2)?.labelM2 || 'Mês retrasado';
+      const evolucao = [
+        { mes: labelM2, total: somaCampo('fatM2') },
+        { mes: labelM1, total: somaCampo('fatM1') },
+        { mes: 'Atual (projeção)', total: somaCampo('projecao') },
+      ].filter(d => d.total > 0);
+
       if (evolucao.length === 0) {
-        ctx1.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">Nenhum histórico de faturamento encontrado.<br>Insira dados no histórico dos clientes ou lance o DRE.</div>';
+        ctx1.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">Sem histórico ainda.<br>Clique em "Atualizar dados" pra buscar via API.</div>';
       } else {
         new Chart(ctx1, {
           type: 'line',
@@ -433,7 +434,6 @@ Router.register('dashboard', (params, el) => {
       }
     }
 
-    // Donut status
     const ctx2 = document.getElementById('chart-status');
     if (ctx2) {
       new Chart(ctx2, {
@@ -455,190 +455,15 @@ Router.register('dashboard', (params, el) => {
         }
       });
     }
-  }, 50);
-});
 
-// ---- Dashboard da Diretoria ----
-Router.register('diretoria', (params, el) => {
-  // Apenas clientes com contas vinculadas na API
-  const clientes  = computarClientesAPI().filter(c => c._temAPI);
-  const gestores  = GLR.gestores;
-  const tarefas   = GLR.tarefas;
-
-  if (!clientes.length) {
-    el.innerHTML = `<div class="page"><div style="text-align:center;padding:80px 24px;">
-      <div style="font-size:48px;margin-bottom:16px;">👑</div>
-      <div style="font-size:20px;font-weight:700;margin-bottom:8px;">Dashboard da Diretoria</div>
-      <div style="font-size:14px;color:var(--text-muted);margin-bottom:24px;">Nenhum dado cadastrado ainda. Cadastre clientes para visualizar os indicadores.</div>
-      <button class="btn btn-primary" onclick="Router.navigate('clientes')">Cadastrar clientes</button>
-    </div></div>`;
-    return;
-  }
-
-  // KPIs reais
-  const total       = clientes.length;
-  const emCrescimento = clientes.filter(c=>c.status==='crescimento').length;
-  const emRisco     = clientes.filter(c=>c.status==='risco').length;
-  const emQueda     = clientes.filter(c=>c.status==='queda').length;
-  const fatTotal    = clientes.reduce((s,c)=>s+(c.faturamento||0),0);
-  const crescMedio  = total ? (clientes.reduce((s,c)=>s+(c.crescimento||0),0)/total) : 0;
-  const tasksPend   = tarefas.filter(t=>t.status==='pendente'||t.status==='em_andamento').length;
-  const tasksConc   = tarefas.filter(t=>t.status==='concluida').length;
-  const tasksAtras  = tarefas.filter(t=>t.status==='atrasada').length;
-
-  // Receita GLR real
-  let receitaGLR = 0;
-  try {
-    const projs = JSON.parse(localStorage.getItem('glr_projecoes')||'[]');
-    clientes.forEach(c => {
-      const proj = projs.find(p=>parseInt(p.chave)===c.id);
-      if (!proj||!c.valorPorVenda) return;
-      const dd = proj.diasDecorridos||2, dm = proj.diasNoMes||30;
-      const vendas = proj.plataformas?.reduce((s,p)=>{
-        const b=parseFloat(p.vendasBase)||0;
-        return s+(b&&dd?(b/dd)*dm:0);
-      },0)||0;
-      receitaGLR += Math.round(vendas)*parseFloat(c.valorPorVenda);
-    });
-  } catch(e){}
-
-  // Performance por gestor (dados reais)
-  const gestoresComDados = gestores.map(g => {
-    const clientesDoGestor = clientes.filter(c => c.gestor === g.nome);
-    const crescMedioG = clientesDoGestor.length
-      ? (clientesDoGestor.reduce((s,c)=>s+(c.crescimento||0),0)/clientesDoGestor.length) : 0;
-    const tarefasG  = tarefas.filter(t=>t.responsavel===g.nome&&(t.status==='pendente'||t.status==='atrasada')).length;
-    const fatG      = clientesDoGestor.reduce((s,c)=>s+(c.faturamento||0),0);
-    const avatar    = g.nome.split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase();
-    return { ...g, avatar, qtdClientes: clientesDoGestor.length, crescMedio: crescMedioG, tarefasPend: tarefasG, fat: fatG };
-  }).filter(g=>g.qtdClientes>0||gestores.length<=5);
-
-  // Clientes em atenção
-  const clientesAtencao = clientes.filter(c=>c.status==='risco'||c.status==='queda')
-    .sort((a,b)=>(a.crescimento||0)-(b.crescimento||0));
-
-  // Concentração faturamento (top 8)
-  const sorted = [...clientes].sort((a,b)=>(b.faturamento||0)-(a.faturamento||0)).slice(0,8);
-
-  el.innerHTML = `<div class="page">
-    <div style="margin-bottom:20px;padding:16px 20px;background:linear-gradient(135deg,rgba(99,102,241,0.15),rgba(139,92,246,0.1));border:1px solid rgba(99,102,241,0.2);border-radius:var(--radius);display:flex;align-items:center;gap:12px;">
-      <span style="font-size:24px;">👑</span>
-      <div>
-        <div style="font-size:16px;font-weight:700;">Diretoria GLR — Visão Estratégica</div>
-        <div style="font-size:13px;color:var(--text-secondary);">Dados em tempo real · ${total} clientes na carteira</div>
-      </div>
-    </div>
-
-    <!-- KPIs -->
-    <div class="kpi-grid">
-      ${kpiCard('Total de Clientes', total, `${emCrescimento} em crescimento`, true, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
-      ${kpiCard('Faturamento da Carteira', GLR.formatCurrency(fatTotal), crescMedio !== 0 ? `${crescMedio >= 0 ? '+' : ''}${crescMedio.toFixed(1)}% vs mês ant.` : 'mês atual', crescMedio >= 0, 'rgba(16,185,129,0.12)', '🏆', '#10b981')}
-      ${kpiCard('Receita GLR', receitaGLR>0?GLR.formatCurrency(receitaGLR):'—', 'vendas × valor por venda', true, 'rgba(16,185,129,0.15)', '💰', '#10b981')}
-      ${kpiCard('Crescimento Médio', `${crescMedio>=0?'+':''}${crescMedio.toFixed(1)}%`, 'média da carteira', crescMedio>=0, 'rgba(99,102,241,0.12)', '📈', '#6366f1')}
-      ${kpiCard('Em Crescimento', emCrescimento, `${Math.round(emCrescimento/total*100)}% da carteira`, true, 'rgba(16,185,129,0.12)', '🚀', '#10b981')}
-      ${kpiCard('Em Risco / Queda', emRisco+emQueda, `${emRisco} em risco · ${emQueda} em queda`, false, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
-      ${kpiCard('Tarefas Pendentes', tasksPend, `${tasksAtras} atrasadas`, tasksAtras===0, 'rgba(245,158,11,0.12)', '✅', '#f59e0b')}
-      ${kpiCard('Tarefas Concluídas', tasksConc, 'total concluídas', true, 'rgba(16,185,129,0.12)', '☑️', '#10b981')}
-    </div>
-
-    <!-- Gestores + Clientes atenção -->
-    <div class="grid-2 mb-24">
-      <div class="card">
-        <div class="section-header">
-          <div class="section-title">👨‍💼 Performance dos Gestores</div>
-        </div>
-        ${gestoresComDados.length===0
-          ? `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">Nenhum gestor cadastrado</div>`
-          : gestoresComDados.map(g=>`
-          <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--border);">
-            <div style="width:40px;height:40px;border-radius:50%;background:${g.cor||'#6366f1'}22;border:2px solid ${g.cor||'#6366f1'}44;
-                        display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:${g.cor||'#6366f1'};flex-shrink:0;">${g.avatar}</div>
-            <div style="flex:1;">
-              <div style="font-size:14px;font-weight:600;">${g.nome}</div>
-              <div style="font-size:12px;color:var(--text-muted);">${g.cargo||''} · ${g.qtdClientes} cliente${g.qtdClientes!==1?'s':''} · ${g.tarefasPend} tarefa${g.tarefasPend!==1?'s':''} pendente${g.tarefasPend!==1?'s':''}</div>
-            </div>
-            <div style="text-align:right;">
-              <div class="ranking-val ${g.crescMedio>=0?'text-green':'text-red'}">${g.crescMedio>=0?'+':''}${g.crescMedio.toFixed(1)}%</div>
-              <div style="font-size:11px;color:var(--text-muted);">${GLR.formatCurrency(g.fat)}</div>
-            </div>
-          </div>`).join('')}
-      </div>
-
-      <div class="card">
-        <div class="section-header">
-          <div class="section-title">🚨 Clientes em Risco ou Queda</div>
-        </div>
-        ${clientesAtencao.length===0
-          ? `<div style="padding:32px;text-align:center;">
-               <div style="font-size:32px;margin-bottom:8px;">✅</div>
-               <div style="font-size:14px;font-weight:600;color:var(--green);">Nenhum cliente em risco</div>
-               <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Carteira saudável</div>
-             </div>`
-          : clientesAtencao.map(c=>`
-          <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;"
-               onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
-            <div style="flex:1;">
-              <div style="font-size:14px;font-weight:600;">${c.nome}</div>
-              <div style="font-size:12px;color:var(--text-muted);">Gestor: ${c.gestor||'—'} · ${GLR.formatCurrency(c.faturamento||0)}</div>
-            </div>
-            <div style="text-align:right;">
-              <div class="ranking-val text-red">${c.crescimento||0}%</div>
-              <span class="badge ${GLR.statusColor[c.status]}">${GLR.statusLabel[c.status]}</span>
-            </div>
-          </div>`).join('')}
-      </div>
-    </div>
-
-    <!-- Concentração de receita -->
-    ${sorted.some(c=>c.faturamento>0) ? `
-    <div class="card mb-24">
-      <div class="section-header">
-        <div class="section-title">💼 Concentração de Faturamento</div>
-        <div class="section-subtitle">Participação de cada cliente</div>
-      </div>
-      <div class="chart-wrapper">
-        <canvas id="chart-concentracao"></canvas>
-      </div>
-    </div>` : ''}
-
-    <!-- Ranking completo -->
-    <div class="card">
-      <div class="section-header">
-        <div class="section-title">📋 Carteira Completa</div>
-        <button class="btn btn-ghost btn-sm" onclick="Router.navigate('clientes')">Gerenciar</button>
-      </div>
-      <table class="table" style="font-size:13px;">
-        <thead><tr>
-          <th>Cliente</th><th>Gestor</th><th>Status</th>
-          <th style="text-align:right;">Faturamento</th>
-          <th style="text-align:right;">Crescimento</th>
-          <th></th>
-        </tr></thead>
-        <tbody>
-        ${[...clientes].sort((a,b)=>(b.faturamento||0)-(a.faturamento||0)).map(c=>`
-          <tr style="cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
-            <td style="font-weight:600;">${c.nome}</td>
-            <td style="color:var(--text-muted);">${c.gestor||'—'}</td>
-            <td><span class="badge ${GLR.statusColor[c.status]}">${GLR.statusLabel[c.status]}</span></td>
-            <td style="text-align:right;">${GLR.formatCurrency(c.faturamento||0)}</td>
-            <td style="text-align:right;color:${(c.crescimento||0)>=0?'var(--green)':'var(--red)'};">${(c.crescimento||0)>=0?'+':''}${c.crescimento||0}%</td>
-            <td style="text-align:right;"><button class="btn btn-ghost btn-sm">Ver perfil →</button></td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>
-  </div>`;
-
-  // Gráfico concentração (só se tiver dados)
-  setTimeout(() => {
-    const ctx = document.getElementById('chart-concentracao');
-    if (ctx && sorted.some(c=>c.faturamento>0)) {
-      new Chart(ctx, {
+    const ctx3 = document.getElementById('chart-concentracao');
+    if (ctx3 && concentracao.some(c=>c.faturamento>0)) {
+      new Chart(ctx3, {
         type: 'bar',
         data: {
-          labels: sorted.map(c=>c.nome.split(' ').slice(0,2).join(' ')),
+          labels: concentracao.map(c=>c.nome.split(' ').slice(0,2).join(' ')),
           datasets: [{
-            data: sorted.map(c=>c.faturamento||0),
+            data: concentracao.map(c=>c.faturamento||0),
             backgroundColor: ['#6366f1','#8b5cf6','#06b6d4','#10b981','#f59e0b','#f97316','#ef4444','#ec4899'],
             borderRadius: 4,
           }]
@@ -648,6 +473,33 @@ Router.register('diretoria', (params, el) => {
     }
   }, 50);
 });
+
+// Rota antiga "diretoria" agora só redireciona pro dashboard unificado —
+// evita quebrar qualquer link/atalho salvo de antes da fusão das duas páginas.
+Router.register('diretoria', () => Router.navigate('dashboard'));
+
+// Botão "Atualizar dados": navega pro Analytics, dispara a busca real (mesma
+// função que o botão de lá usa) e volta pro Dashboard já com dado fresco.
+async function _dashAtualizarTudo() {
+  if (window._dashAtualizando) return;
+  window._dashAtualizando = true;
+  const btn = document.getElementById('btn-dash-atualizar');
+  const status = document.getElementById('dash-status-txt');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando...'; }
+  if (status) status.textContent = 'Buscando dados reais via API (pode levar um tempo)...';
+  try {
+    Router.navigate('analytics');
+    await new Promise(r => setTimeout(r, 500));
+    if (typeof window._analyticsBuscarExec === 'function') {
+      await window._analyticsBuscarExec();
+    }
+  } catch(e) {
+    console.warn('[Dashboard] erro ao atualizar:', e.message);
+  }
+  window._dashAtualizando = false;
+  Router.navigate('dashboard');
+}
+
 
 // ---- Shared KPI card builder ----
 function kpiCard(label, value, sub, positive, iconBg, icon, iconColor, rawHtml = false) {
