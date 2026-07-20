@@ -103,9 +103,160 @@ function mostrarNotifSync(chave) {
   setTimeout(() => notif.remove(), 3000);
 }
 
+// ── Página de Vendas (institucional, aparece antes do login) ──
+const WHATSAPP_NUMERO = '5517992117263';
+
+function mostrarVendas() {
+  document.getElementById('glr-login-overlay')?.remove();
+  document.getElementById('glr-vendas-overlay')?.remove();
+
+  const waLink = msg => `https://wa.me/${WHATSAPP_NUMERO}?text=${encodeURIComponent(msg)}`;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'glr-vendas-overlay';
+  overlay.style.cssText = `
+    position:fixed;inset:0;background:#0d0d14;z-index:9999;
+    overflow-y:auto;font-family:'Inter',sans-serif;color:#f1f1f8;
+  `;
+
+  const funcionalidades = [
+    { ico: '📊', titulo: 'Dashboard Executivo', desc: 'Visão consolidada da carteira, metas, crescimento e risco de cada cliente em um só lugar.' },
+    { ico: '💰', titulo: 'Financeiro & DRE automático', desc: 'DRE calculado direto das taxas reais do Mercado Livre e Shopee, sem planilha manual.' },
+    { ico: '📢', titulo: 'Central de ADS', desc: 'Acompanhe investimento, ROAS e TACoS das campanhas em todas as contas conectadas.' },
+    { ico: '✅', titulo: 'Conciliação Financeira', desc: 'Confere pedido a pedido se a taxa calculada bate com o que a API realmente descontou, e quando o dinheiro cai na carteira.' },
+    { ico: '🛒', titulo: 'Vendas & Oportunidades', desc: 'Pedidos, produtos parados e oportunidades de ADS identificados automaticamente.' },
+    { ico: '🔐', titulo: 'Portal do Cliente', desc: 'Cada cliente acompanha as próprias vendas e resultados com login e dados isolados.' },
+  ];
+
+  const planos = [
+    { nome: 'Starter', preco: 'R$ 497/mês', desc: 'Para quem está começando a organizar a operação.',
+      itens: ['Até 2 contas conectadas', 'Dashboard e Vendas', 'Financeiro básico', 'Suporte por WhatsApp'], destaque: false },
+    { nome: 'Pro', preco: 'R$ 997/mês', desc: 'Operação em crescimento, com múltiplos canais.',
+      itens: ['Até 6 contas conectadas', 'DRE automático completo', 'Central de ADS', 'Conciliação Financeira', 'Portal do Cliente'], destaque: true },
+    { nome: 'Enterprise', preco: 'Sob consulta', desc: 'Operações grandes ou com necessidades específicas.',
+      itens: ['Contas ilimitadas', 'Tudo do plano Pro', 'Gestor dedicado', 'Relatórios personalizados'], destaque: false },
+  ];
+
+  const depoimentos = [
+    { nome: 'Cliente GLR', empresa: 'Loja de Eletrônicos', texto: '“Antes eu perdia horas conferindo planilha de taxa do Mercado Livre. Hoje é tudo automático e ainda vejo onde estou perdendo dinheiro.”' },
+    { nome: 'Cliente GLR', empresa: 'Loja de Moda', texto: '“O Portal do Cliente me deixou acompanhar as vendas em tempo real sem precisar ficar pedindo relatório pra equipe.”' },
+    { nome: 'Cliente GLR', empresa: 'Loja de Casa & Decoração', texto: '“A Conciliação Financeira encontrou diferenças que a gente nem sabia que existiam entre o esperado e o que caía na carteira.”' },
+  ];
+
+  overlay.innerHTML = `
+    <div style="max-width:1080px;margin:0 auto;padding:24px 24px 0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0 32px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <img src="logo.png" alt="GLR" style="width:36px;height:36px;object-fit:contain;mix-blend-mode:screen;"
+               onerror="this.style.display='none'">
+          <strong style="font-size:16px;font-weight:800;">GLR Consultoria</strong>
+        </div>
+        <button onclick="window.mostrarLogin()"
+          style="padding:9px 20px;background:transparent;border:1px solid rgba(255,255,255,0.15);border-radius:99px;color:#f1f1f8;font-size:13px;font-weight:600;cursor:pointer;">
+          Entrar
+        </button>
+      </div>
+    </div>
+
+    <div style="max-width:780px;margin:0 auto;padding:24px 24px 64px;text-align:center;">
+      <div style="display:inline-block;padding:6px 14px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);border-radius:99px;font-size:12px;font-weight:600;color:#818cf8;margin-bottom:20px;">
+        Gestão de Marketplaces
+      </div>
+      <h1 style="font-size:38px;font-weight:800;line-height:1.15;margin:0 0 16px;letter-spacing:-0.5px;">
+        Centro de Operações para quem vende no<br>Mercado Livre e Shopee
+      </h1>
+      <p style="font-size:16px;color:#9192a8;line-height:1.6;margin:0 0 32px;">
+        Financeiro automático, conciliação de taxas, gestão de ADS e portal do cliente —
+        tudo em um só painel, sem planilha.
+      </p>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+        <a href="${waLink('Olá! Quero saber mais sobre o GLR Consultoria.')}" target="_blank" rel="noopener"
+          style="padding:14px 26px;background:#16161f;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#f1f1f8;font-size:14px;font-weight:700;text-decoration:none;">
+          💬 Falar no WhatsApp
+        </a>
+        <button onclick="window.mostrarLogin()"
+          style="padding:14px 26px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:10px;color:white;font-size:14px;font-weight:700;cursor:pointer;">
+          Entrar no sistema
+        </button>
+      </div>
+    </div>
+
+    <div style="max-width:1080px;margin:0 auto;padding:0 24px 64px;">
+      <h2 style="text-align:center;font-size:24px;font-weight:800;margin:0 0 8px;">Tudo que sua operação precisa</h2>
+      <p style="text-align:center;font-size:14px;color:#5a5b72;margin:0 0 36px;">Módulos pensados pra quem vive marketplace no dia a dia.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+        ${funcionalidades.map(f => `
+          <div style="background:#16161f;border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:24px;">
+            <div style="font-size:26px;margin-bottom:12px;">${f.ico}</div>
+            <div style="font-size:15px;font-weight:700;margin-bottom:6px;">${f.titulo}</div>
+            <div style="font-size:13px;color:#9192a8;line-height:1.5;">${f.desc}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div style="max-width:1080px;margin:0 auto;padding:0 24px 64px;">
+      <h2 style="text-align:center;font-size:24px;font-weight:800;margin:0 0 8px;">Planos</h2>
+      <p style="text-align:center;font-size:14px;color:#5a5b72;margin:0 0 36px;">Valores de referência — fale com a gente pra encontrar o plano ideal.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+        ${planos.map(p => `
+          <div style="background:${p.destaque?'#1c1c2e':'#16161f'};border:1px solid ${p.destaque?'#6366f1':'rgba(255,255,255,0.07)'};border-radius:16px;padding:28px 24px;position:relative;">
+            ${p.destaque ? `<div style="position:absolute;top:-11px;left:24px;background:#6366f1;color:white;font-size:11px;font-weight:700;padding:4px 12px;border-radius:99px;">MAIS POPULAR</div>` : ''}
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px;">${p.nome}</div>
+            <div style="font-size:26px;font-weight:800;margin-bottom:4px;">${p.preco}</div>
+            <div style="font-size:12px;color:#5a5b72;margin-bottom:20px;">${p.desc}</div>
+            <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:24px;">
+              ${p.itens.map(i => `<div style="font-size:13px;color:#c7c8d8;display:flex;align-items:flex-start;gap:8px;"><span style="color:#10b981;">✓</span>${i}</div>`).join('')}
+            </div>
+            <a href="${waLink('Olá! Tenho interesse no plano ' + p.nome + ' do GLR Consultoria.')}" target="_blank" rel="noopener"
+              style="display:block;text-align:center;padding:11px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;
+                     ${p.destaque ? 'background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;' : 'background:transparent;border:1px solid rgba(255,255,255,0.15);color:#f1f1f8;'}">
+              Falar com um consultor
+            </a>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div style="max-width:1080px;margin:0 auto;padding:0 24px 64px;">
+      <h2 style="text-align:center;font-size:24px;font-weight:800;margin:0 0 36px;">Quem usa, recomenda</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+        ${depoimentos.map(d => `
+          <div style="background:#16161f;border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:22px;">
+            <div style="font-size:13px;color:#c7c8d8;line-height:1.6;margin-bottom:16px;">${d.texto}</div>
+            <div style="font-size:13px;font-weight:700;">${d.nome}</div>
+            <div style="font-size:12px;color:#5a5b72;">${d.empresa}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div style="background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(139,92,246,0.08));border-top:1px solid rgba(255,255,255,0.06);padding:56px 24px;text-align:center;">
+      <h2 style="font-size:24px;font-weight:800;margin:0 0 12px;">Pronto para organizar sua operação?</h2>
+      <p style="font-size:14px;color:#9192a8;margin:0 0 24px;">Fale com a gente e veja o sistema funcionando na prática.</p>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+        <a href="${waLink('Olá! Quero saber mais sobre o GLR Consultoria.')}" target="_blank" rel="noopener"
+          style="padding:14px 26px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:10px;color:white;font-size:14px;font-weight:700;text-decoration:none;">
+          💬 Falar no WhatsApp
+        </a>
+        <button onclick="window.mostrarLogin()"
+          style="padding:14px 26px;background:transparent;border:1px solid rgba(255,255,255,0.15);border-radius:10px;color:#f1f1f8;font-size:14px;font-weight:700;cursor:pointer;">
+          Já sou cliente — Entrar
+        </button>
+      </div>
+    </div>
+
+    <div style="text-align:center;padding:24px;font-size:12px;color:#3a3b50;">
+      GLR Consultoria © 2026
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
 // ── Tela de Login ─────────────────────────────────────────────
 function mostrarLogin(erroMsg) {
   document.getElementById('glr-login-overlay')?.remove();
+  document.getElementById('glr-vendas-overlay')?.remove();
 
   const overlay = document.createElement('div');
   overlay.id = 'glr-login-overlay';
@@ -116,7 +267,12 @@ function mostrarLogin(erroMsg) {
   `;
   overlay.innerHTML = `
     <div style="background:#16161f;border:1px solid rgba(255,255,255,0.07);border-radius:20px;
-                padding:44px 40px;width:100%;max-width:420px;box-shadow:0 32px 80px rgba(0,0,0,0.6);">
+                padding:44px 40px;width:100%;max-width:420px;box-shadow:0 32px 80px rgba(0,0,0,0.6);position:relative;">
+
+      <button onclick="window.mostrarVendas()" title="Voltar"
+        style="position:absolute;top:20px;left:20px;background:none;border:none;color:#5a5b72;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:4px;">
+        ← Voltar
+      </button>
 
       <div style="text-align:center;margin-bottom:36px;">
         <div style="width:80px;height:80px;margin:0 auto 16px;overflow:hidden;">
@@ -263,7 +419,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (!session) {
       _ocultarLoadingInicial();
-      mostrarLogin();
+      mostrarVendas();
       return;
     }
 
