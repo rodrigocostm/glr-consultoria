@@ -1766,6 +1766,10 @@ Router.register('vendas', async (params, el) => {
             ...mlPedidos.filter(p=>p.paymentId).map(async p => {
               try {
                 const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/collections/${p.paymentId}` });
+                if (!window._diagColLogged) {
+                  window._diagColLogged = true;
+                  console.log('[DIAG collections]', p.id, JSON.stringify(r.data));
+                }
                 const net = parseFloat(r.data?.net_received_amount);
                 if (!isNaN(net)) collectionsMap[p.paymentId] = net;
               } catch(e) {}
@@ -1775,6 +1779,10 @@ Router.register('vendas', async (params, el) => {
               try {
                 const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/shipments/${p.shippingId}` });
                 const s = r.data || {};
+                if (!window._diagShipLogged) {
+                  window._diagShipLogged = true;
+                  console.log('[DIAG shipments]', p.id, JSON.stringify(s));
+                }
                 const listCost = parseFloat(s.shipping_option?.list_cost);
                 const baseCost = parseFloat(s.base_cost);
                 freteMap[p.shippingId] = !isNaN(listCost) ? listCost : (!isNaN(baseCost) ? baseCost : 0);
