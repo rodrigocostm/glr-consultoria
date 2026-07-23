@@ -106,6 +106,19 @@ Router.register('vendas', async (params, el) => {
   const salvarCatalogoCusto = () => localStorage.setItem(STORAGE_CATALOGO, JSON.stringify(catalogoCusto));
   const salvarLinhas  = () => localStorage.setItem(STORAGE_LINHAS, JSON.stringify(linhasExt));
 
+  // Preenche o catálogo por produto a partir de custos já lançados pedido-a-pedido
+  // (migração automática — roda toda vez que pedidos carregam, sem sobrescrever o que já tem no catálogo).
+  function _backfillCatalogoCusto() {
+    let mudou = false;
+    for (const p of pedidos) {
+      const key = produtoKey(p);
+      if (!key || catalogoCusto[key] > 0) continue;
+      const cv = parseFloat(custos[p.id]?.custo) || 0;
+      if (cv > 0) { catalogoCusto[key] = cv; mudou = true; }
+    }
+    if (mudou) salvarCatalogoCusto();
+  }
+
   function salvarCache(dataFrom, dataTo) {
     try {
       localStorage.setItem(STORAGE_PEDIDOS, JSON.stringify({ pedidos, dataFrom, dataTo, contasSel: [...filtroContasSel], at: Date.now() }));
@@ -1864,6 +1877,7 @@ Router.register('vendas', async (params, el) => {
 
       pedidos.sort((a,b)=>b.dataTs-a.dataTs);
       salvarCache(dataFrom, dataTo);
+      _backfillCatalogoCusto();
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
       if (statusEl) statusEl.innerHTML=`${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 7px;border-radius:8px;">💾 salvo</span>`;
       renderLista();
@@ -2139,6 +2153,7 @@ Router.register('vendas', async (params, el) => {
       // Cache é local, não chama a API — pode mostrar direto
       custos = JSON.parse(localStorage.getItem(STORAGE_CUSTOS)||'{}');
       catalogoCusto = JSON.parse(localStorage.getItem(STORAGE_CATALOGO)||'{}');
+      _backfillCatalogoCusto();
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
       if (statusEl) statusEl.innerHTML = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;">📦 cache ${fmtAgo(at)}</span>`;
       renderLista();
