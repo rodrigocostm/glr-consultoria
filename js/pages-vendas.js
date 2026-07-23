@@ -119,6 +119,31 @@ Router.register('vendas', async (params, el) => {
     if (mudou) salvarCatalogoCusto();
   }
 
+  // Painel de diagnóstico temporário — mostra o retorno cru da API na própria tela
+  // (pra achar o nome certo de um campo sem precisar abrir o console do navegador).
+  // Remover depois que o frete do ML estiver batendo certinho.
+  function _diagMostrar(grupo, pedidoId, obj) {
+    let box = document.getElementById('diag-api-box');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'diag-api-box';
+      box.style.cssText = 'position:fixed;bottom:12px;right:12px;width:520px;max-height:70vh;overflow-y:auto;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;z-index:99999;font-family:monospace;font-size:11px;color:#e5e7eb;box-shadow:0 10px 40px rgba(0,0,0,.5);';
+      box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <strong style="color:#a5b4fc;">🔍 Diagnóstico API (temporário)</strong>
+        <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:14px;">✕</button>
+      </div><div id="diag-api-conteudo"></div>`;
+      document.body.appendChild(box);
+    }
+    const cont = document.getElementById('diag-api-conteudo');
+    const chave = `${grupo}-${pedidoId}`;
+    if (cont.dataset[chave]) return; // já mostrou esse — evita poluir com repetição
+    cont.dataset[chave] = '1';
+    const bloco = document.createElement('div');
+    bloco.style.cssText = 'margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #2a2a3a;';
+    bloco.innerHTML = `<div style="color:#fbbf24;margin-bottom:4px;">[${grupo}] pedido ${pedidoId}</div><pre style="white-space:pre-wrap;word-break:break-all;margin:0;">${JSON.stringify(obj,null,2).replace(/</g,'&lt;')}</pre>`;
+    cont.appendChild(bloco);
+  }
+
   function salvarCache(dataFrom, dataTo) {
     try {
       localStorage.setItem(STORAGE_PEDIDOS, JSON.stringify({ pedidos, dataFrom, dataTo, contasSel: [...filtroContasSel], at: Date.now() }));
@@ -1753,6 +1778,13 @@ Router.register('vendas', async (params, el) => {
           const collectionsMap = {}; // paymentId → net_received_amount
           const freteMap = {};       // shippingId → list_cost
 
+          const semShippingId = mlPedidos.filter(p=>!p.shippingId).length;
+          _diagMostrar('resumo', 'contagem', {
+            totalPedidosML: mlPedidos.length,
+            comShippingId: mlPedidos.length - semShippingId,
+            semShippingId,
+          });
+
           await Promise.allSettled([
             // Thumbnails por item único
             ...itemIdsUnicos.map(async itemId => {
@@ -1766,27 +1798,21 @@ Router.register('vendas', async (params, el) => {
             ...mlPedidos.filter(p=>p.paymentId).map(async p => {
               try {
                 const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/collections/${p.paymentId}` });
-                if (!window._diagColLogged) {
-                  window._diagColLogged = true;
-                  console.log('[DIAG collections]', p.id, JSON.stringify(r.data));
-                }
+                _diagMostrar('collections', p.id, r.data);
                 const net = parseFloat(r.data?.net_received_amount);
                 if (!isNaN(net)) collectionsMap[p.paymentId] = net;
-              } catch(e) {}
+              } catch(e) { _diagMostrar('collections', p.id, { ERRO: e.message }); }
             }),
             // Frete vendedor via /shipments/{shippingId}
             ...mlPedidos.filter(p=>p.shippingId).map(async p => {
               try {
                 const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/shipments/${p.shippingId}` });
                 const s = r.data || {};
-                if (!window._diagShipLogged) {
-                  window._diagShipLogged = true;
-                  console.log('[DIAG shipments]', p.id, JSON.stringify(s));
-                }
+                _diagMostrar('shipments', p.id, s);
                 const listCost = parseFloat(s.shipping_option?.list_cost);
                 const baseCost = parseFloat(s.base_cost);
                 freteMap[p.shippingId] = !isNaN(listCost) ? listCost : (!isNaN(baseCost) ? baseCost : 0);
-              } catch(e) {}
+              } catch(e) { _diagMostrar('shipments', p.id, { ERRO: e.message }); }
             }),
           ]);
 
