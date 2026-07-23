@@ -265,7 +265,7 @@ Router.register('vendas', async (params, el) => {
           filtroContasSel = new Set();
         }
         renderFiltroEmpresaConta();
-        buscarPedidos();
+        _buscarPedidosDebounced();
       },
     });
 
@@ -273,9 +273,26 @@ Router.register('vendas', async (params, el) => {
       label: 'Conta', icon: '🏬',
       itens: contasFiltradas.map(c => ({ valor: c.external_id, label: contaNome(c) })),
       selecionados: filtroContasSel,
-      onChange: (novoSet) => { filtroContasSel = novoSet; renderFiltroEmpresaConta(); buscarPedidos(); },
+      onChange: (novoSet) => { filtroContasSel = novoSet; renderFiltroEmpresaConta(); _buscarPedidosDebounced(); },
     });
   }
+
+  // Marcar várias contas/empresas dispara um "change" por clique — sem isso, cada
+  // checkbox marcado disparava uma busca na hora, encavalando requisições enquanto
+  // o usuário ainda estava selecionando. Só busca de fato depois de uma pausa,
+  // ou imediatamente se o dropdown fechar (clique fora / escolha do usuário).
+  let _buscarPedidosTimer = null;
+  function _buscarPedidosDebounced() {
+    clearTimeout(_buscarPedidosTimer);
+    const statusEl = document.getElementById('vendas-status');
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--text-muted);">⏳ Aguardando seleção de contas...</span>`;
+    _buscarPedidosTimer = setTimeout(() => { _buscarPedidosTimer = null; buscarPedidos(); }, 700);
+  }
+  // Fechar o dropdown (clique fora) já sinaliza que o usuário terminou de escolher —
+  // dispara a busca na hora em vez de esperar o debounce todo.
+  window._vendasFlushBusca = () => {
+    if (_buscarPedidosTimer) { clearTimeout(_buscarPedidosTimer); _buscarPedidosTimer = null; buscarPedidos(); }
+  };
 
   // ── Dropdown de checkboxes reutilizável (empresa/conta) ────────
   // itens: [{valor,label}], selecionados: Set, onChange(novoSet)
@@ -325,7 +342,9 @@ Router.register('vendas', async (params, el) => {
   if (!window._dcbGlobalCloseListener) {
     window._dcbGlobalCloseListener = true;
     document.addEventListener('click', () => {
+      const tinhaAberto = [...document.querySelectorAll('.dcb-panel')].some(p => p.style.display !== 'none');
       document.querySelectorAll('.dcb-panel').forEach(p => p.style.display = 'none');
+      if (tinhaAberto && typeof window._vendasFlushBusca === 'function') window._vendasFlushBusca();
     });
   }
 
