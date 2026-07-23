@@ -1808,10 +1808,10 @@ Router.register('vendas', async (params, el) => {
                 if (!isNaN(net)) collectionsMap[p.paymentId] = net;
               } catch(e) { _diagMostrar('collections', p.id, { ERRO: e.message }); }
             }),
-            // Frete vendedor via /shipments/{shippingId}
+            // Frete vendedor via get_shipment (ação própria — "raw" em /shipments/{id} não é suportado, sempre falhava)
             _mapLimit(mlPedidos.filter(p=>p.shippingId), 15, async p => {
               try {
-                const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/shipments/${p.shippingId}` });
+                const r = await MarketplaceAPI.call('get_shipment', { shipment_id: p.shippingId });
                 const s = r.data || {};
                 _diagMostrar('shipments', p.id, s);
                 const listCost = parseFloat(s.shipping_option?.list_cost);
