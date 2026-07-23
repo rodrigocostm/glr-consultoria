@@ -165,10 +165,11 @@ Router.register('vendas', async (params, el) => {
 
     // Base de lucro
     const base  = liquido != null ? liquido : receita;
-    // Se tem liquido do escrow: taxas de marketplace já deduzidas.
-    // Mas o imposto do vendedor (alíquota/manual) NÃO está no escrow → sempre subtrair impVal exceto quando veio do escrow_tax
-    const impSubtrair = impDeEscrow ? 0 : impVal; // se veio do escrow já está no liquido
-    const lucro = base - custo - impSubtrair - outros - extra;
+    // O campo "imposto" da API (seller_transaction_fee + buyer_tax_amount + seller_coin_cash_back)
+    // NÃO é deduzido do escrow_amount pela Shopee — confirmado comparando com o Financeiro (pages-financeiro.js),
+    // que sempre subtrai esse valor sem essa exceção. Pular a subtração aqui inflava lucro e margem
+    // sempre que esses campos vinham preenchidos da API (bug corrigido).
+    const lucro = base - custo - impVal - outros - extra;
 
     const margem = receita > 0 ? (lucro/receita)*100 : 0;
     return { receita, liquido, custo, impVal, impPct, outros, extra, lucro, margem,
