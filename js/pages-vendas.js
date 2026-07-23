@@ -136,8 +136,9 @@ Router.register('vendas', async (params, el) => {
     }
     const cont = document.getElementById('diag-api-conteudo');
     const chave = `${grupo}-${pedidoId}`;
-    if (cont.dataset[chave]) return; // já mostrou esse — evita poluir com repetição
-    cont.dataset[chave] = '1';
+    if (!window._diagVistos) window._diagVistos = {};
+    if (window._diagVistos[chave]) return; // já mostrou esse — evita poluir com repetição
+    window._diagVistos[chave] = true;
     const bloco = document.createElement('div');
     bloco.style.cssText = 'margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #2a2a3a;';
     bloco.innerHTML = `<div style="color:#fbbf24;margin-bottom:4px;">[${grupo}] pedido ${pedidoId}</div><pre style="white-space:pre-wrap;word-break:break-all;margin:0;">${JSON.stringify(obj,null,2).replace(/</g,'&lt;')}</pre>`;
