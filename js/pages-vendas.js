@@ -1786,9 +1786,13 @@ Router.register('vendas', async (params, el) => {
             semShippingId,
           });
 
+          // IMPORTANTE: disparar centenas/milhares de chamadas de uma vez (sem limite de
+          // concorrência) faz o navegador derrubar a maioria com "Failed to fetch" — era
+          // por isso que frete e, em pedidos com volume alto, até o líquido vinham vazios.
+          // _mapLimit garante um número controlado de chamadas simultâneas.
           await Promise.allSettled([
             // Thumbnails por item único
-            ...itemIdsUnicos.map(async itemId => {
+            _mapLimit(itemIdsUnicos, 15, async itemId => {
               try {
                 const r = await MarketplaceAPI.call('get_item', { itemId });
                 const thumb = r.data?.thumbnail || r.data?.pictures?.[0]?.secure_url || '';
@@ -1796,7 +1800,7 @@ Router.register('vendas', async (params, el) => {
               } catch(e) {}
             }),
             // Liquido real via /collections/{paymentId}
-            ...mlPedidos.filter(p=>p.paymentId).map(async p => {
+            _mapLimit(mlPedidos.filter(p=>p.paymentId), 15, async p => {
               try {
                 const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/collections/${p.paymentId}` });
                 _diagMostrar('collections', p.id, r.data);
@@ -1805,7 +1809,7 @@ Router.register('vendas', async (params, el) => {
               } catch(e) { _diagMostrar('collections', p.id, { ERRO: e.message }); }
             }),
             // Frete vendedor via /shipments/{shippingId}
-            ...mlPedidos.filter(p=>p.shippingId).map(async p => {
+            _mapLimit(mlPedidos.filter(p=>p.shippingId), 15, async p => {
               try {
                 const r = await MarketplaceAPI.call('raw', { method:'GET', path:`/shipments/${p.shippingId}` });
                 const s = r.data || {};
