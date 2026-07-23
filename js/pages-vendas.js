@@ -185,7 +185,13 @@ Router.register('vendas', async (params, el) => {
       extra += l.tipo==='pct' ? receita*(parseFloat(l.valor)||0)/100 : (parseFloat(l.valor)||0);
 
     // Base de lucro
-    const base  = liquido != null ? liquido : receita;
+    // ML: o frete (custo do shipment, via /shipments) já era buscado mas nunca entrava
+    // na conta do lucro — ficava só exibido, sem efeito real. Passa a ser descontado do
+    // net_received_amount aqui. Shopee NÃO entra nessa dedução: lá o frete já está
+    // embutido dentro do escrow_amount (liquido), descontar de novo duplicaria o custo.
+    const isML     = p.plataforma === 'Mercado Livre';
+    const freteML  = isML ? (parseFloat(tx.frete) || 0) : 0;
+    const base  = (liquido != null ? liquido : receita) - freteML;
     // O campo "imposto" da API (seller_transaction_fee + buyer_tax_amount + seller_coin_cash_back)
     // NÃO é deduzido do escrow_amount pela Shopee — confirmado comparando com o Financeiro (pages-financeiro.js),
     // que sempre subtrai esse valor sem essa exceção. Pular a subtração aqui inflava lucro e margem
@@ -193,7 +199,10 @@ Router.register('vendas', async (params, el) => {
     const lucro = base - custo - impVal - outros - extra;
 
     const margem = receita > 0 ? (lucro/receita)*100 : 0;
-    return { receita, liquido, custo, impVal, impPct, outros, extra, lucro, margem,
+    // liquidoExibido: pra ML já vem com o frete descontado (bate com o que vira base do lucro).
+    // Pra Shopee continua sendo o escrow_amount puro (frete já embutido nele).
+    const liquidoExibido = liquido != null ? (isML ? liquido - freteML : liquido) : null;
+    return { receita, liquido: liquidoExibido, liquidoBruto: liquido, custo, impVal, impPct, outros, extra, lucro, margem,
              comissao: tx.comissao||0, taxaServico: tx.taxaServico||0,
              frete: tx.frete||0, voucher: tx.voucher||0 };
   }
@@ -1580,16 +1589,16 @@ Router.register('vendas', async (params, el) => {
         ? Math.max(0, (l.receita - l.liquido) - totalConhecido)
         : 0;
       linhasBreakdown = [
-        { label:'💰 Total do Pedido (comprador)',   v: l.receita,        cor:'#60a5fa', sinal:'+' },
-        comissaoML>0 ? { label:'🏦 Comissão ML',    v: -comissaoML,      cor:'#f87171', sinal:'-' } : null,
-        freteML>0    ? { label:'🚚 Frete (vendedor)',v: -freteML,         cor:'#f97316', sinal:'-' } : null,
-        outrasML>0.01? { label:'➕ Outras taxas ML', v: -outrasML,        cor:'#f87171', sinal:'-' } : null,
-        l.liquido!=null? { label:'💳 Líquido ML (net_received)', v: l.liquido, cor:'#a78bfa', sinal:'=', bold:true } : null,
-        { label:'📦 Custo do Produto',               v: -l.custo,         cor:'#f87171', sinal:'-' },
-        l.impVal>0 ? { label:`🧾 Imposto (${l.impPct}%)`,  v: -l.impVal,  cor:'#fbbf24', sinal:'-' } : null,
-        l.outros>0 ? { label:'➕ Outros Custos',     v: -l.outros,        cor:'#f97316', sinal:'-' } : null,
-        l.extra>0  ? { label:'🔗 Linhas Extras',    v: -l.extra,         cor:'#a78bfa', sinal:'-' } : null,
-        { label:'✅ Lucro Bruto',                    v: l.lucro,          cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
+        { label:'🛒 Total do Pedido',                 v: l.receita,        cor:'#60a5fa', sinal:'+' },
+        freteML>0    ? { label:'🚚 Valor do Frete (pago pelo vendedor)', v: -freteML,   cor:'#f97316', sinal:'-' } : null,
+        comissaoML>0 ? { label:'🏦 Comissão',          v: -comissaoML,      cor:'#f87171', sinal:'-' } : null,
+        outrasML>0.01? { label:'➕ Outras taxas ML',   v: -outrasML,        cor:'#f87171', sinal:'-' } : null,
+        l.liquido!=null? { label:'🏦 Líquido do Marketplace', v: l.liquido, cor:'#a78bfa', sinal:'=', bold:true } : null,
+        { label:'📦 Custo do Produto',                 v: -l.custo,         cor:'#f87171', sinal:'-' },
+        l.impVal>0 ? { label:`🧾 Imposto (${l.impPct}%)`,    v: -l.impVal,  cor:'#fbbf24', sinal:'-' } : null,
+        l.outros>0 ? { label:'➕ Custos Extras',       v: -l.outros,        cor:'#f97316', sinal:'-' } : null,
+        l.extra>0  ? { label:'🔗 Linhas Extras',      v: -l.extra,         cor:'#a78bfa', sinal:'-' } : null,
+        { label:'✅ Lucro do Pedido',                  v: l.lucro,          cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
       ].filter(Boolean);
     } else if (hasEscrow) {
       // Shopee: breakdown completo via escrow
