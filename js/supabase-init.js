@@ -17,6 +17,7 @@ const GLR_KEYS = [
   'glr_alertas', 'glr_oportunidades', 'glr_projecoes', 'glr_dre',
   'glr_mc_vinculos', 'glr_mc_nicknames', 'glr_portal_configs',
   'glr_vendas_custos',  // custo de produto lançado no admin — precisa chegar no portal do cliente
+  'glr_vendas_custo_catalogo', // custo unitário fixo por produto (SKU/itemId) — aplica a pedidos antigos e novos
   'glr_aliquotas',      // % de imposto padrão por conta
   'glr_vendas_linhas',  // linhas extras de custo/desconto lançadas no admin
   'glr_mc_apikey',      // API Key do Marketplace Connect — precisa funcionar em qualquer PC do admin

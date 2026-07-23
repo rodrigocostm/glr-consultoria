@@ -35,7 +35,7 @@ async function _portalSincronizarCustos() {
   try {
     const { data, error } = await _sb.from('glr_storage')
       .select('chave, dados')
-      .in('chave', ['glr_vendas_custos', 'glr_aliquotas', 'glr_vendas_linhas']);
+      .in('chave', ['glr_vendas_custos', 'glr_vendas_custo_catalogo', 'glr_aliquotas', 'glr_vendas_linhas']);
     if (error || !data) return;
     data.forEach(row => { if (row.dados != null) localStorage.setItem(row.chave, JSON.stringify(row.dados)); });
   } catch(e) {}

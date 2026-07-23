@@ -3,7 +3,8 @@
 // ============================================================
 
 Router.register('vendas', async (params, el) => {
-  const STORAGE_CUSTOS  = 'glr_vendas_custos';
+  const STORAGE_CUSTOS   = 'glr_vendas_custos';
+  const STORAGE_CATALOGO = 'glr_vendas_custo_catalogo'; // { [produtoKey]: custoUnitario } — aplica a pedidos antigos E novos do mesmo produto
   const STORAGE_LINHAS  = 'glr_vendas_linhas';
   const STORAGE_PEDIDOS = 'glr_vendas_cache'; // { pedidos, dataFrom, dataTo, at }
   const pad     = n => String(n).padStart(2,'0');
@@ -13,7 +14,9 @@ Router.register('vendas', async (params, el) => {
   const R$      = v  => 'R$ '+(parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const pct     = v  => (parseFloat(v)||0).toFixed(1)+'%';
 
-  let custos     = JSON.parse(localStorage.getItem(STORAGE_CUSTOS)||'{}');
+  let custos       = JSON.parse(localStorage.getItem(STORAGE_CUSTOS)||'{}');
+  let catalogoCusto= JSON.parse(localStorage.getItem(STORAGE_CATALOGO)||'{}'); // custo unitário fixo por produto — não precisa reaplicar a cada pedido novo
+  const produtoKey = p => p.itens?.[0]?.itemId || p.produto || '';
   let linhasExt  = JSON.parse(localStorage.getItem(STORAGE_LINHAS)||'[]');
   const aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas')||'{}'); // { [extId]: pct }
   let pedidos   = [];  // { id, plataforma, data, dataTs, produto, imagem, qtd, valor, status, itens[], taxas{} }
@@ -100,6 +103,7 @@ Router.register('vendas', async (params, el) => {
   }
 
   const salvarCustos  = () => localStorage.setItem(STORAGE_CUSTOS, JSON.stringify(custos));
+  const salvarCatalogoCusto = () => localStorage.setItem(STORAGE_CATALOGO, JSON.stringify(catalogoCusto));
   const salvarLinhas  = () => localStorage.setItem(STORAGE_LINHAS, JSON.stringify(linhasExt));
 
   function salvarCache(dataFrom, dataTo) {
@@ -144,7 +148,11 @@ Router.register('vendas', async (params, el) => {
     const tx       = p.taxas || {};
     const liquido  = tx.liquido != null ? parseFloat(tx.liquido) : null;
     const c        = custos[p.id] || {};
-    const custo    = parseFloat(c.custo)  || 0;
+    // Custo: 1) valor lançado manualmente nesse pedido específico, 2) catálogo por produto
+    // (aplica automaticamente em qualquer pedido do mesmo produto, sem precisar relançar).
+    const custoPedido  = parseFloat(c.custo) || 0;
+    const custoCatalogo= parseFloat(catalogoCusto[produtoKey(p)]) || 0;
+    const custo    = custoPedido || custoCatalogo;
     const outros   = parseFloat(c.outros) || 0;
     // Imposto: 1) valor da API (escrow), 2) manual por pedido (%), 3) alíquota da conta
     const impAPIRaw= tx.imposto != null ? parseFloat(tx.imposto) : null;
@@ -877,10 +885,10 @@ Router.register('vendas', async (params, el) => {
     // ── Top 15 produtos ── inclui ids de pedidos para poder salvar custo
     const prodMap = {};
     for (const p of lista) {
-      const key = p.itens?.[0]?.itemId || p.produto;
+      const key = produtoKey(p);
       if (!prodMap[key]) prodMap[key] = {
         nome: p.produto, imagem: p.imagem,
-        sku: p.itens?.[0]?.sku || '',
+        sku: p.itens?.[0]?.sku || '', key,
         fat:0, liq:0, lucro:0, qtd:0, n:0, ids:[]
       };
       const l = calcLucro(p);
@@ -1054,8 +1062,10 @@ Router.register('vendas', async (params, el) => {
             ${top15.map((p,i)=>{
               const margem = p.fat>0 ? p.lucro/p.fat*100 : 0;
               const represent = t.fat>0 ? p.fat/t.fat*100 : 0;
-              const custoAtual = custos[p.ids[0]]?.custo || '';
-              const prodKey = encodeURIComponent(JSON.stringify(p.ids));
+              const custosDoGrupo = p.ids.map(id => parseFloat(custos[id]?.custo) || 0);
+              const todosIguais = custosDoGrupo.every(v => v === custosDoGrupo[0]);
+              const custoAtual = todosIguais ? (custosDoGrupo[0] || catalogoCusto[p.key] || '') : '';
+              const custoMisto = !todosIguais && custosDoGrupo.some(v => v > 0);
               return `<tr style="border-bottom:1px solid var(--border);${i%2!==0?'background:var(--bg-card-hover);':''}">
                 <td style="padding:10px 16px;">
                   <div style="display:flex;align-items:center;gap:8px;">
@@ -1079,12 +1089,13 @@ Router.register('vendas', async (params, el) => {
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 90).length)()}</td>
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 120).length)()}</td>
                 <td style="padding:8px 12px;text-align:right;border-left:1px solid var(--border);">
-                  <input type="number" min="0" step="0.01" placeholder="0,00"
+                  <input type="number" min="0" step="0.01" placeholder="${custoMisto ? 'vários' : '0,00'}"
                     value="${custoAtual}"
                     data-ids="${p.ids.join(',')}"
+                    data-key="${encodeURIComponent(p.key)}"
                     class="inp-custo-prod"
-                    style="width:90px;background:var(--bg-input);border:1px solid rgba(245,158,11,0.4);border-radius:6px;padding:5px 8px;color:#f59e0b;font-size:12px;text-align:right;"
-                    title="Custo unitário — aplica a todos os ${p.n} pedidos deste produto">
+                    style="width:90px;background:var(--bg-input);border:1px solid ${custoMisto?'rgba(96,165,250,0.5)':'rgba(245,158,11,0.4)'};border-radius:6px;padding:5px 8px;color:${custoMisto?'#60a5fa':'#f59e0b'};font-size:12px;text-align:right;"
+                    title="${custoMisto ? 'Os pedidos deste produto têm custos diferentes entre si — digite um valor pra sobrescrever todos com o mesmo custo' : 'Custo unitário — aplica a todos os '+p.n+' pedidos deste produto'}">
                 </td>
                 <td style="padding:10px 12px;text-align:right;color:#8b5cf6;">${p.liq>0?R$(p.liq):'—'}</td>
                 <td style="padding:10px 12px;text-align:right;color:${corMargem(margem)};font-weight:600;">${R$(p.lucro)}</td>
@@ -1100,20 +1111,20 @@ Router.register('vendas', async (params, el) => {
 
     <!-- Produtos Sem Custo -->
     ${(() => {
-      // Agrupa pedidos filtrados por nome de produto
+      // Agrupa pedidos filtrados por produto (mesma chave do catálogo — itemId, com fallback pro nome)
       const lista = pedidosFiltrados();
       const grupos = {};
       for (const p of lista) {
         if (isCanceladoVendas(p)) continue;
-        const nome = p.produto || '(sem nome)';
-        if (!grupos[nome]) grupos[nome] = { nome, ids: [], fat: 0, qtd: 0, imagem: p.imagem || '' };
-        grupos[nome].ids.push(p.id);
-        grupos[nome].fat += parseFloat(p.valor) || 0;
-        grupos[nome].qtd += p.qtd || 1;
+        const key = produtoKey(p);
+        if (!grupos[key]) grupos[key] = { key, nome: p.produto || '(sem nome)', ids: [], fat: 0, qtd: 0, imagem: p.imagem || '' };
+        grupos[key].ids.push(p.id);
+        grupos[key].fat += parseFloat(p.valor) || 0;
+        grupos[key].qtd += p.qtd || 1;
       }
-      // Filtra apenas os que NÃO têm custo em nenhum dos pedidos
+      // Filtra apenas os que NÃO têm custo (nem por pedido, nem já no catálogo do produto)
       const semCusto = Object.values(grupos).filter(g =>
-        g.ids.every(id => !(custos[id]?.custo > 0))
+        !(parseFloat(catalogoCusto[g.key]) > 0) && g.ids.every(id => !(custos[id]?.custo > 0))
       ).sort((a,b) => b.fat - a.fat);
 
       if (!semCusto.length) return `<div class="card" style="padding:16px 20px;display:flex;align-items:center;gap:10px;border:1px solid rgba(34,197,94,0.3);background:rgba(34,197,94,0.05);">
@@ -1155,6 +1166,7 @@ Router.register('vendas', async (params, el) => {
                 <td style="padding:8px 12px;text-align:right;border-left:1px solid var(--border);">
                   <input type="number" min="0" step="0.01" placeholder="0,00"
                     data-ids="${g.ids.join(',')}"
+                    data-key="${encodeURIComponent(g.key)}"
                     class="inp-custo-prod inp-sem-custo"
                     style="width:100px;background:var(--bg-input);border:1px solid rgba(245,158,11,0.5);border-radius:6px;padding:5px 8px;color:#f59e0b;font-size:12px;text-align:right;"
                     title="Aplica a ${g.ids.length} pedido${g.ids.length!==1?'s':''} deste produto">
@@ -1200,6 +1212,14 @@ Router.register('vendas', async (params, el) => {
           custos[id].custo = val;
         });
         salvarCustos();
+        // Grava no catálogo por produto — assim pedidos NOVOS desse mesmo produto
+        // já nascem com custo aplicado, sem precisar relançar a cada atualização.
+        const key = inp.dataset.key ? decodeURIComponent(inp.dataset.key) : '';
+        if (key) {
+          if (val > 0) catalogoCusto[key] = val;
+          else delete catalogoCusto[key];
+          salvarCatalogoCusto();
+        }
         const isSemCusto = inp.classList.contains('inp-sem-custo');
         if (isSemCusto && val > 0) {
           // Remove a linha da tabela "sem custo" e re-renderiza o dashboard para atualizar contagem
@@ -1888,6 +1908,7 @@ Router.register('vendas', async (params, el) => {
   window.confirmarLimpezaManuais = () => {
     // Contar o que existe antes de limpar
     const nCustos   = Object.keys(JSON.parse(localStorage.getItem('glr_vendas_custos')||'{}')).length;
+    const nCatalogo = Object.keys(JSON.parse(localStorage.getItem('glr_vendas_custo_catalogo')||'{}')).length;
     const nLinhas   = (JSON.parse(localStorage.getItem('glr_vendas_linhas')||'[]')).length;
     const temFin    = !!localStorage.getItem('glr_fin_manual');
     const temDre    = !!localStorage.getItem('glr_dre');
@@ -1907,6 +1928,7 @@ Router.register('vendas', async (params, el) => {
         <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Os seguintes dados serão removidos permanentemente:</div>
         <div style="background:var(--bg-base);border-radius:8px;padding:14px;margin-bottom:20px;font-size:13px;display:flex;flex-direction:column;gap:8px;">
           <div style="display:flex;justify-content:space-between;"><span>📦 Custos de produto por pedido</span><strong style="color:${nCustos?'#ef4444':'#6b7280'};">${nCustos ? nCustos+' pedidos' : 'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>🏷️ Catálogo de custo por produto</span><strong style="color:${nCatalogo?'#ef4444':'#6b7280'};">${nCatalogo ? nCatalogo+' produtos' : 'vazio'}</strong></div>
           <div style="display:flex;justify-content:space-between;"><span>➕ Linhas extras de custo</span><strong style="color:${nLinhas?'#ef4444':'#6b7280'};">${nLinhas ? nLinhas+' linhas' : 'vazio'}</strong></div>
           <div style="display:flex;justify-content:space-between;"><span>💰 Dados manuais do Financeiro</span><strong style="color:${temFin?'#ef4444':'#6b7280'};">${temFin?'sim':'vazio'}</strong></div>
           <div style="display:flex;justify-content:space-between;"><span>📊 Entradas manuais do DRE</span><strong style="color:${temDre?'#ef4444':'#6b7280'};">${temDre?'sim':'vazio'}</strong></div>
@@ -1926,6 +1948,7 @@ Router.register('vendas', async (params, el) => {
     document.getElementById('btn-confirmar-limpeza').onclick = () => {
       // Limpar dados manuais
       localStorage.removeItem('glr_vendas_custos');
+      localStorage.removeItem('glr_vendas_custo_catalogo');
       localStorage.removeItem('glr_vendas_linhas');
       localStorage.removeItem('glr_fin_manual');
       localStorage.removeItem('glr_dre');
@@ -1945,7 +1968,8 @@ Router.register('vendas', async (params, el) => {
       } catch(e) {}
 
       // Recarregar estado local
-      custos    = {};
+      custos       = {};
+      catalogoCusto= {};
       linhasExt = [];
       overlay.remove();
 
@@ -2114,6 +2138,7 @@ Router.register('vendas', async (params, el) => {
     if (at) {
       // Cache é local, não chama a API — pode mostrar direto
       custos = JSON.parse(localStorage.getItem(STORAGE_CUSTOS)||'{}');
+      catalogoCusto = JSON.parse(localStorage.getItem(STORAGE_CATALOGO)||'{}');
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
       if (statusEl) statusEl.innerHTML = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;">📦 cache ${fmtAgo(at)}</span>`;
       renderLista();
