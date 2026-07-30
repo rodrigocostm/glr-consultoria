@@ -111,10 +111,12 @@ async function _dashBuscarVendasPorDia() {
   const tsTo   = Math.floor(new Date(`${dataTo}T23:59:59`).getTime()/1000);
 
   const porDia = {}; // 'DD/MM' -> { pedidos, comissao }
-  const addPedido = (dataStr, comissao) => {
+  // Comissão da GLR é por UNIDADE vendida (valorPorVenda × quantidade), não um valor
+  // fixo por pedido — um pedido com 3 unidades do mesmo produto conta 3x, não 1x.
+  const addPedido = (dataStr, unidades, valorPorVenda) => {
     if (!porDia[dataStr]) porDia[dataStr] = { pedidos: 0, comissao: 0 };
     porDia[dataStr].pedidos += 1;
-    porDia[dataStr].comissao += comissao;
+    porDia[dataStr].comissao += unidades * valorPorVenda;
   };
 
   const clientesComConta = GLR.clientes.filter(c => (vinculos[String(c.id)]||[]).length > 0);
@@ -133,7 +135,8 @@ async function _dashBuscarVendasPorDia() {
             if (['cancelled','invalid'].includes((o.status||'').toLowerCase())) continue;
             const d = new Date(o.date_created||0);
             if (isNaN(d)) continue;
-            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, valorPorVenda);
+            const unidades = (o.order_items||[]).reduce((s,i) => s + (parseInt(i.quantity)||1), 0) || 1;
+            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda);
           }
         } else if (mkt === 'shopee') {
           const shopId = conta.param_to_use?.shopId || conta.external_id;
@@ -146,7 +149,9 @@ async function _dashBuscarVendasPorDia() {
               for (const ord of lista) {
                 if (!ord.create_time) continue;
                 const d = new Date(ord.create_time*1000);
-                addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, valorPorVenda);
+                const itens = ord.item_list || ord.items || [];
+                const unidades = itens.reduce((s,it) => s + (parseInt(it.model_quantity_purchased)||parseInt(it.quantity)||1), 0) || 1;
+                addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda);
               }
             } catch(e) {}
           }
