@@ -5,7 +5,11 @@
 // nada é lido de planilha.
 // ============================================================
 
-Router.register('analytics', async (params, el) => {
+// Registrado como 'analytics-conteudo' (não 'analytics') — essa página agora vive
+// dentro do Dashboard unificado, como a aba "Análises da Carteira". A rota
+// 'analytics' virou um redirecionamento (ver pages-dashboard.js), mantido só
+// pra não quebrar links/atalhos antigos.
+Router.register('analytics-conteudo', async (params, el) => {
   const R$  = v => 'R$ '+(parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const pad = n => String(n).padStart(2,'0');
   const hoje  = new Date();

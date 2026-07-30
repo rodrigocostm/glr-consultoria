@@ -57,6 +57,133 @@ function computarClientesAPI() {
   });
 }
 
+// Executa promessas com concorrência limitada (mesmo padrão usado em Vendas/Analytics)
+async function _mapLimit(items, limit, fn) {
+  const ret = new Array(items.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      try { ret[i] = await fn(items[i], i); } catch(e) { ret[i] = undefined; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return ret;
+}
+
+// ── Vendas por dia + Comissão GLR por dia ──────────────────────────────────
+// Soma pedidos de TODAS as contas vinculadas a TODOS os clientes, dia a dia,
+// no mês corrente. Comissão GLR usa o mesmo campo "valorPorVenda" (R$ por
+// venda) já cadastrado em Carteira de Clientes — não existe ainda um modelo
+// de mensalidade fixa salvo por cliente, só esse valor por venda.
+const STORAGE_VENDAS_DIA = 'glr_dashboard_vendas_dia';
+
+function _dashVendasDiaCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem(STORAGE_VENDAS_DIA) || 'null');
+    const mesKey = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+    return (c && c.mesKey === mesKey) ? c : null;
+  } catch(e) { return null; }
+}
+
+function _dashVendasDiaTxt() {
+  const c = _dashVendasDiaCache();
+  return c?.atualizadoEm ? `Atualizado em ${new Date(c.atualizadoEm).toLocaleString('pt-BR')}` : 'Nenhum dado ainda — clique em Atualizar';
+}
+
+async function _dashBuscarVendasPorDia() {
+  if (window._dashBuscandoVendasDia) return;
+  window._dashBuscandoVendasDia = true;
+  const btn = document.getElementById('btn-dash-vendas-dia');
+  const status = document.getElementById('dash-vd-status');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando...'; }
+
+  let vinculos = {};
+  try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) {}
+
+  const hoje = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const ano = hoje.getFullYear(), mesN = hoje.getMonth()+1;
+  const primeiroDia = `${ano}-${pad(mesN)}-01`;
+  const ontem = new Date(hoje); ontem.setDate(hoje.getDate()-1);
+  const dataTo = `${ontem.getFullYear()}-${pad(ontem.getMonth()+1)}-${pad(ontem.getDate())}`;
+  const tsFrom = Math.floor(new Date(`${primeiroDia}T00:00:00`).getTime()/1000);
+  const tsTo   = Math.floor(new Date(`${dataTo}T23:59:59`).getTime()/1000);
+
+  const porDia = {}; // 'DD/MM' -> { pedidos, comissao }
+  const addPedido = (dataStr, comissao) => {
+    if (!porDia[dataStr]) porDia[dataStr] = { pedidos: 0, comissao: 0 };
+    porDia[dataStr].pedidos += 1;
+    porDia[dataStr].comissao += comissao;
+  };
+
+  const clientesComConta = GLR.clientes.filter(c => (vinculos[String(c.id)]||[]).length > 0);
+  let doneN = 0;
+
+  await _mapLimit(clientesComConta, 3, async (c) => {
+    const valorPorVenda = parseFloat(c.valorPorVenda) || 0;
+    const contas = vinculos[String(c.id)] || [];
+    await _mapLimit(contas, 3, async (conta) => {
+      const mkt = (conta.marketplace||'').toLowerCase();
+      try {
+        if (['meli','ml','mercadolivre'].includes(mkt)) {
+          const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+          const orders = await MarketplaceAPI.mlOrders(meliId, primeiroDia, dataTo);
+          for (const o of orders) {
+            if (['cancelled','invalid'].includes((o.status||'').toLowerCase())) continue;
+            const d = new Date(o.date_created||0);
+            if (isNaN(d)) continue;
+            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, valorPorVenda);
+          }
+        } else if (mkt === 'shopee') {
+          const shopId = conta.param_to_use?.shopId || conta.external_id;
+          const sns = await MarketplaceAPI.shopeeListOrderSns(shopId, tsFrom, tsTo);
+          for (let i=0; i<sns.length; i+=50) {
+            const lote = sns.slice(i,i+50).map(o=>o.sn);
+            try {
+              const rd = await MarketplaceAPI.call('shopee_get_order_detail', { shopId, order_sn_list: lote });
+              const lista = rd.data?.response?.order_list || rd.data?.order_list || [];
+              for (const ord of lista) {
+                if (!ord.create_time) continue;
+                const d = new Date(ord.create_time*1000);
+                addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, valorPorVenda);
+              }
+            } catch(e) {}
+          }
+        }
+      } catch(e) { console.warn('[Dashboard] vendas/dia erro conta', conta.nickname, e.message); }
+    });
+    doneN++;
+    if (status) status.textContent = `⏳ Buscando... ${doneN}/${clientesComConta.length} clientes`;
+  });
+
+  const dias = Object.keys(porDia).sort((a,b) => {
+    const [da,ma] = a.split('/').map(Number), [db,mb] = b.split('/').map(Number);
+    return new Date(ano, ma-1, da) - new Date(ano, mb-1, db);
+  });
+
+  const atualizadoEm = Date.now();
+  const mesKey = `${ano}-${pad(mesN)}`;
+  localStorage.setItem(STORAGE_VENDAS_DIA, JSON.stringify({
+    mesKey, atualizadoEm,
+    dias: dias.map(d => ({ data: d, pedidos: porDia[d].pedidos, comissao: porDia[d].comissao })),
+  }));
+
+  window._dashBuscandoVendasDia = false;
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 Atualizar'; }
+  Router.resolve();
+}
+
+// Aba ativa do Dashboard unificado (Visão Geral | Análises da Carteira, que é
+// o antigo Analytics inteiro — Painel Executivo, Produtos em Queda, Plano de
+// Ação e Checklist Diário, todos dentro dessa segunda aba).
+let _dashAbaAtiva = 'geral';
+
+function _dashTabBtn(id, label) {
+  const ativo = _dashAbaAtiva === id;
+  return `<button id="dash-tab-${id}" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:${ativo?'700':'600'};font-size:13px;background:${ativo?'#6366f1':'var(--bg-card-hover)'};color:${ativo?'var(--text-primary)':'var(--text-secondary)'};">${label}</button>`;
+}
+
 Router.register('dashboard', (params, el) => {
   if (!GLR.clientes.length) {
     el.innerHTML = `<div class="page">
@@ -73,6 +200,22 @@ Router.register('dashboard', (params, el) => {
         </div>
       </div>
     </div>`;
+    return;
+  }
+
+  el.innerHTML = `<div class="page">
+    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+      ${_dashTabBtn('geral','📊 Visão Geral')}
+      ${_dashTabBtn('analises','🚦 Análises da Carteira')}
+    </div>
+    <div id="dash-aba-conteudo"></div>
+  </div>`;
+  document.getElementById('dash-tab-geral')?.addEventListener('click', () => { _dashAbaAtiva = 'geral'; Router.resolve(); });
+  document.getElementById('dash-tab-analises')?.addEventListener('click', () => { _dashAbaAtiva = 'analises'; Router.resolve(); });
+
+  const contAba = document.getElementById('dash-aba-conteudo');
+  if (_dashAbaAtiva === 'analises') {
+    Router.routes['analytics-conteudo'](params, contAba);
     return;
   }
 
@@ -135,7 +278,7 @@ Router.register('dashboard', (params, el) => {
     ? `Atualizado em ${new Date(analyticsCache.atualizadoEm).toLocaleString('pt-BR')}`
     : 'Nenhum dado do Analytics ainda — clique em Atualizar dados';
 
-  el.innerHTML = `<div class="page">
+  contAba.innerHTML = `
     <div style="margin-bottom:20px;padding:16px 20px;background:linear-gradient(135deg,rgba(99,102,241,0.15),rgba(139,92,246,0.1));border:1px solid rgba(99,102,241,0.2);border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:12px;">
         <span style="font-size:24px;">📊</span>
@@ -157,6 +300,20 @@ Router.register('dashboard', (params, el) => {
       ${kpiCard('Em Risco / Queda', risco+queda, `${risco} em risco · ${queda} em queda`, (risco+queda)===0, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
       ${kpiCard('Tarefas Pendentes', tarefasPendentes, `${tasksAtras} atrasadas`, tarefasPendentes === 0, 'rgba(245,158,11,0.12)', '✅', '#f59e0b')}
       ${kpiCard('Reuniões na Semana', reunioesSemana, 'próximos 7 dias', true, 'rgba(6,182,212,0.12)', '📅', '#06b6d4')}
+    </div>
+
+    <!-- Vendas por dia + Comissão GLR por dia -->
+    <div class="card mb-24">
+      <div class="section-header">
+        <div>
+          <div class="section-title">🛒 Vendas por Dia & Comissão GLR</div>
+          <div class="section-subtitle" id="dash-vd-status">${_dashVendasDiaTxt()}</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="btn-dash-vendas-dia">🔄 Atualizar</button>
+      </div>
+      <div class="chart-wrapper">
+        <canvas id="chart-vendas-dia"></canvas>
+      </div>
     </div>
 
     <!-- Gráficos principais -->
@@ -380,13 +537,49 @@ Router.register('dashboard', (params, el) => {
           </tr>`).join('')}
         </tbody>
       </table>
-    </div>
-  </div>`;
+    </div>`;
 
   document.getElementById('btn-dash-atualizar')?.addEventListener('click', _dashAtualizarTudo);
+  document.getElementById('btn-dash-vendas-dia')?.addEventListener('click', _dashBuscarVendasPorDia);
 
   // Charts
   setTimeout(() => {
+    const ctxVD = document.getElementById('chart-vendas-dia');
+    if (ctxVD) {
+      const vd = _dashVendasDiaCache();
+      const dias = vd?.dias || [];
+      if (!dias.length) {
+        ctxVD.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">Sem dados ainda.<br>Clique em "Atualizar" pra somar as vendas de todos os clientes, dia a dia.</div>';
+      } else {
+        new Chart(ctxVD, {
+          data: {
+            labels: dias.map(d => d.data),
+            datasets: [
+              { type: 'bar', label: 'Nº de vendas', data: dias.map(d => d.pedidos), backgroundColor: 'rgba(99,102,241,0.55)', borderRadius: 4, yAxisID: 'y' },
+              { type: 'line', label: 'Comissão GLR (R$)', data: dias.map(d => d.comissao), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 2, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#10b981', yAxisID: 'y1' },
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { display: true, labels: { color: '#9192a8', font: { size: 11 }, boxWidth: 12 } },
+              tooltip: {
+                ...tooltipStyle(),
+                callbacks: {
+                  label: ctx => ctx.dataset.yAxisID === 'y1' ? ` R$ ${ctx.raw.toLocaleString('pt-BR',{minimumFractionDigits:2})}` : ` ${ctx.raw} venda${ctx.raw!==1?'s':''}`
+                }
+              }
+            },
+            scales: {
+              x: { grid: { color: 'rgba(255,255,255,0.04)', drawBorder:false }, ticks: { color:'#5a5b72', font:{size:11} } },
+              y:  { position:'left',  grid: { color: 'rgba(255,255,255,0.04)', drawBorder:false }, ticks: { color:'#5a5b72', font:{size:11}, precision:0 }, title:{display:true,text:'Nº de vendas',color:'#5a5b72',font:{size:10}} },
+              y1: { position:'right', grid: { drawOnChartArea:false }, ticks: { color:'#5a5b72', font:{size:11}, callback: v => 'R$ '+v }, title:{display:true,text:'Comissão GLR',color:'#5a5b72',font:{size:10}} },
+            }
+          }
+        });
+      }
+    }
+
     const ctx1 = document.getElementById('chart-evolucao');
     if (ctx1) {
       // 3 pontos reais vindos do Analytics: 2 meses anteriores + mês atual (projeção)
@@ -474,12 +667,16 @@ Router.register('dashboard', (params, el) => {
   }, 50);
 });
 
-// Rota antiga "diretoria" agora só redireciona pro dashboard unificado —
-// evita quebrar qualquer link/atalho salvo de antes da fusão das duas páginas.
+// Rotas antigas "diretoria" e "analytics" agora só redirecionam pro dashboard
+// unificado — evita quebrar qualquer link/atalho salvo de antes da fusão das
+// páginas. O conteúdo real do Analytics vive em 'analytics-conteudo'
+// (js/pages-analytics.js), renderizado dentro da aba "Análises da Carteira".
 Router.register('diretoria', () => Router.navigate('dashboard'));
+Router.register('analytics', () => Router.navigate('dashboard'));
 
-// Botão "Atualizar dados": navega pro Analytics, dispara a busca real (mesma
-// função que o botão de lá usa) e volta pro Dashboard já com dado fresco.
+// Botão "Atualizar dados": muda pra aba Análises da Carteira (monta o
+// analytics-conteudo, que é quem expõe window._analyticsBuscarExec), dispara
+// a busca real e volta pra aba Visão Geral já com dado fresco.
 async function _dashAtualizarTudo() {
   if (window._dashAtualizando) return;
   window._dashAtualizando = true;
@@ -488,7 +685,8 @@ async function _dashAtualizarTudo() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando...'; }
   if (status) status.textContent = 'Buscando dados reais via API (pode levar um tempo)...';
   try {
-    Router.navigate('analytics');
+    _dashAbaAtiva = 'analises';
+    Router.resolve();
     await new Promise(r => setTimeout(r, 500));
     if (typeof window._analyticsBuscarExec === 'function') {
       await window._analyticsBuscarExec();
@@ -497,7 +695,8 @@ async function _dashAtualizarTudo() {
     console.warn('[Dashboard] erro ao atualizar:', e.message);
   }
   window._dashAtualizando = false;
-  Router.navigate('dashboard');
+  _dashAbaAtiva = 'geral';
+  Router.resolve();
 }
 
 

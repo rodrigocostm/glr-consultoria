@@ -199,8 +199,11 @@ Router.register('diagnostico', async (params, el) => {
     { nome: '🎯 Vendas — Oportunidades', rota: 'vendas',     modo: 'fn',    fnGlobal: 'buscarOportunidades', cacheKey: 'glr_vendas_oportunidades' },
     { nome: '🚫 Vendas — Fora do ADS',   rota: 'vendas',     modo: 'fn',    fnGlobal: 'buscarForaDoAds', cacheKey: 'glr_vendas_fora_ads' },
     { nome: '💰 Financeiro',             rota: 'financeiro', modo: 'click', btnId: 'fin-btn-atualizar', cacheKey: 'glr_fin_cache' },
-    { nome: '📊 Analytics — Painel Executivo', rota: 'analytics', modo: 'fn', fnGlobal: '_analyticsBuscarExec', cacheKey: 'glr_analytics_dados' },
-    { nome: '📉 Analytics — Produtos em Queda', rota: 'analytics', modo: 'fn', fnGlobal: '_analyticsBuscarQueda', cacheKey: 'glr_analytics_queda' },
+    // Analytics agora vive dentro do Dashboard (aba "Análises da Carteira") — precisa
+    // trocar pra essa aba (abaClick) depois de navegar, senão window._analyticsBuscarExec
+    // nunca chega a ser definido (só existe depois que a aba monta o analytics-conteudo).
+    { nome: '📊 Analytics — Painel Executivo', rota: 'dashboard', abaClick: 'dash-tab-analises', modo: 'fn', fnGlobal: '_analyticsBuscarExec', cacheKey: 'glr_analytics_dados' },
+    { nome: '📉 Analytics — Produtos em Queda', rota: 'dashboard', abaClick: 'dash-tab-analises', modo: 'fn', fnGlobal: '_analyticsBuscarQueda', cacheKey: 'glr_analytics_queda' },
     { nome: '📈 Projeção de Crescimento', rota: 'projecao',  modo: 'fn',    fnGlobal: 'buscarDadosProjecao', semCache: true },
   ];
 
@@ -251,6 +254,10 @@ Router.register('diagnostico', async (params, el) => {
           Router.navigate(et.rota);
           rotaAtual = et.rota;
           await new Promise(r => setTimeout(r, 600)); // espera a página montar
+          if (et.abaClick) {
+            document.getElementById(et.abaClick)?.click();
+            await new Promise(r => setTimeout(r, 600)); // espera a aba montar
+          }
         }
         const antes = et.semCache ? null : _lerCacheAt(et.cacheKey);
 
