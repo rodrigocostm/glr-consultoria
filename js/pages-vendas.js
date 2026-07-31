@@ -1957,7 +1957,10 @@ Router.register('vendas', async (params, el) => {
             });
             const d = r.data;
             ordersRaw = Array.isArray(d?.Orders) ? d.Orders : Array.isArray(d?.orders) ? d.orders : Array.isArray(d) ? d : [];
-          } catch(e) { console.warn('[Amazon] erro amazon_list_orders', e.message); }
+          } catch(e) {
+            console.warn('[Amazon] erro amazon_list_orders', e.message);
+            _diagMostrar('amazon_orders', conta.external_id, { ERRO: e.message });
+          }
 
           // Diagnóstico visível — confirma os nomes de campo reais do primeiro pedido
           if (ordersRaw.length) _diagMostrar('amazon_orders', conta.external_id, ordersRaw[0]);
