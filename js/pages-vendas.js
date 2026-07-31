@@ -1948,6 +1948,9 @@ Router.register('vendas', async (params, el) => {
         // igual ao fallback já usado quando não há dados de taxa de nenhuma API).
         if (conta.marketplace === 'amazon') {
           const amazonAccountId = conta.param_to_use?.amazon_account_id || conta.external_id;
+          // Diagnóstico: mostra o objeto INTEIRO da conta (como veio de list_accounts) —
+          // pode ter um campo de marketplace/região escondido que describe_action não listou.
+          _diagMostrar('amazon_conta_bruta', conta.external_id, conta);
           if (statusEl) statusEl.textContent = 'Amazon: listando pedidos...';
           let ordersRaw = [];
           try {
