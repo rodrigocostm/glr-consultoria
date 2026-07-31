@@ -170,7 +170,7 @@ Router.register('vendas', async (params, el) => {
     if (diff < 86400)return `há ${Math.floor(diff/3600)}h`;
     return `há ${Math.floor(diff/86400)} dias`;
   }
-  const platCor = { 'Mercado Livre':'#f59e0b', 'Shopee':'#f97316' };
+  const platCor = { 'Mercado Livre':'#f59e0b', 'Shopee':'#f97316', 'Amazon':'#94a3b8' };
 
   function corMargem(m) {
     if (m>=20) return '#34d399';
@@ -1513,7 +1513,7 @@ Router.register('vendas', async (params, el) => {
     const cor = platCor[p.plataforma]||'#9ca3af';
     const img = p.imagem
       ? `<img src="${p.imagem}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">`
-      : `<div style="width:44px;height:44px;background:var(--border);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;">${p.plataforma==='Shopee'?'🟠':'🟡'}</div>`;
+      : `<div style="width:44px;height:44px;background:var(--border);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;">${p.plataforma==='Shopee'?'🟠':p.plataforma==='Amazon'?'⚫':'🟡'}</div>`;
 
     const isCancelled = ['cancelled','in_cancel','cancelled_unpaid'].includes((p.status||'').toLowerCase());
     const taxasAuto = p.taxas != null; // tem dados automáticos da API
@@ -1940,6 +1940,82 @@ Router.register('vendas', async (params, el) => {
             pedidos.push(o);
           }
         }
+
+        // ── Amazon ── (amazon_list_orders + amazon_get_order_items via Marketplace Connect)
+        // Taxas/comissão (amazon_list_financial_events) ainda NÃO são aplicadas ao lucro —
+        // a estrutura de resposta da Amazon pra isso é aninhada e ainda não foi confirmada.
+        // Por enquanto pedidos entram com taxas:null (lucro = receita bruta − custo − imposto,
+        // igual ao fallback já usado quando não há dados de taxa de nenhuma API).
+        if (conta.marketplace === 'amazon') {
+          const amazonAccountId = conta.param_to_use?.amazon_account_id || conta.external_id;
+          if (statusEl) statusEl.textContent = 'Amazon: listando pedidos...';
+          let ordersRaw = [];
+          try {
+            const r = await MarketplaceAPI.call('amazon_list_orders', {
+              amazon_account_id: amazonAccountId,
+              created_after: `${dataFrom}T00:00:00Z`,
+            });
+            const d = r.data;
+            ordersRaw = Array.isArray(d?.Orders) ? d.Orders : Array.isArray(d?.orders) ? d.orders : Array.isArray(d) ? d : [];
+          } catch(e) { console.warn('[Amazon] erro amazon_list_orders', e.message); }
+
+          // Diagnóstico visível — confirma os nomes de campo reais do primeiro pedido
+          if (ordersRaw.length) _diagMostrar('amazon_orders', conta.external_id, ordersRaw[0]);
+
+          const limiteDe = new Date(`${dataFrom}T00:00:00`).getTime();
+          const limiteAte = new Date(`${dataTo}T23:59:59`).getTime();
+          const amazonPedidos = [];
+          for (const o of ordersRaw) {
+            const orderId = o.AmazonOrderId || o.amazon_order_id || o.order_id;
+            if (!orderId) continue;
+            const status = String(o.OrderStatus || o.order_status || '');
+            if (['Canceled','Cancelled'].includes(status)) continue;
+            const dataCriacao = o.PurchaseDate || o.purchase_date || o.created_at;
+            const dt = dataCriacao ? new Date(dataCriacao) : null;
+            if (dt && !isNaN(dt) && (dt.getTime() < limiteDe || dt.getTime() > limiteAte)) continue;
+            const total = parseFloat(o.OrderTotal?.Amount ?? o.order_total?.amount ?? o.order_total) || 0;
+            amazonPedidos.push({
+              id: orderId, plataforma: 'Amazon', contaId: conta.external_id,
+              data: (dt && !isNaN(dt)) ? dt.toLocaleDateString('pt-BR') : '—',
+              dataTs: (dt && !isNaN(dt)) ? dt.getTime() : 0,
+              produto: '…', imagem: '', qtd: 1,
+              valor: total, status, itens: [], taxas: null,
+            });
+          }
+
+          if (statusEl) statusEl.textContent = `Amazon: itens (${amazonPedidos.length} pedidos)...`;
+          let diagItemFeito = false;
+          await _mapLimit(amazonPedidos, 5, async p => {
+            try {
+              const ri = await MarketplaceAPI.call('amazon_get_order_items', { amazon_account_id: amazonAccountId, order_id: p.id });
+              const d = ri.data;
+              const itensRaw = Array.isArray(d?.OrderItems) ? d.OrderItems : Array.isArray(d?.order_items) ? d.order_items : Array.isArray(d) ? d : [];
+              if (!diagItemFeito && itensRaw.length) { diagItemFeito = true; _diagMostrar('amazon_order_items', p.id, itensRaw); }
+              const itens = itensRaw.map(it => ({
+                nome:  it.Title || it.title || it.SellerSKU || it.seller_sku || '—',
+                qtd:   parseInt(it.QuantityOrdered ?? it.quantity_ordered) || 1,
+                preco: parseFloat(it.ItemPrice?.Amount ?? it.item_price?.amount) || 0,
+                imagem: '', sku: it.SellerSKU || it.seller_sku || '',
+              }));
+              p.itens = itens;
+              p.produto = itens.length > 1 ? `${itens[0]?.nome} (+${itens.length-1})` : (itens[0]?.nome || p.id);
+              p.qtd = itens.reduce((s,i)=>s+i.qtd, 0) || 1;
+            } catch(e) { console.warn('[Amazon] erro amazon_get_order_items', p.id, e.message); }
+          });
+
+          // Diagnóstico dos eventos financeiros (taxas/comissão) — ainda não aplicado ao
+          // cálculo, só exibido pra confirmarmos o formato antes de implementar de vez.
+          try {
+            const rf = await MarketplaceAPI.call('amazon_list_financial_events', {
+              amazon_account_id: amazonAccountId,
+              posted_after: `${dataFrom}T00:00:00Z`,
+              posted_before: `${dataTo}T23:59:59Z`,
+            });
+            _diagMostrar('amazon_financial_events', conta.external_id, rf.data);
+          } catch(e) { _diagMostrar('amazon_financial_events', conta.external_id, { ERRO: e.message }); }
+
+          pedidos.push(...amazonPedidos);
+        }
       }
 
       pedidos.sort((a,b)=>b.dataTs-a.dataTs);
@@ -2111,6 +2187,7 @@ Router.register('vendas', async (params, el) => {
           <option value="todas">Todas plataformas</option>
           <option value="Mercado Livre">🟡 Mercado Livre</option>
           <option value="Shopee">🟠 Shopee</option>
+          <option value="Amazon">⚫ Amazon</option>
         </select>
         <button id="btn-buscar" class="btn-primary" style="padding:8px 16px;">🔄 Atualizar</button>
       </div>
