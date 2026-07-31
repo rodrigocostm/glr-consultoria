@@ -162,9 +162,29 @@ Router.register('integracoes', (params, el) => {
         <div style="background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;font-family:monospace;font-size:12px;color:#e5e7eb;">
           <div style="color:#a5b4fc;font-weight:700;margin-bottom:8px;">🔍 Ações Amazon encontradas no catálogo (${amazonActions.length})</div>
           ${amazonActions.length
-            ? `<ul style="margin:0;padding-left:18px;">${amazonActions.map(n=>`<li>${n}</li>`).join('')}</ul>`
+            ? `<ul style="margin:0;padding-left:18px;">${amazonActions.map(n=>`<li>${n}</li>`).join('')}</ul><div style="margin-top:10px;color:#fbbf24;">⏳ Consultando parâmetros de amazon_list_orders, amazon_get_order_items e amazon_list_financial_events...</div>`
             : `<div style="color:#f87171;">Nenhuma ação com "amazon" no nome foi encontrada. Total de ações no catálogo: ${nomes.length}.<br>Isso confirma que a API do Marketplace Connect ainda não tem suporte real pra Amazon — precisa confirmar com o suporte deles (Tiops) antes de eu implementar qualquer busca de pedido.</div>`}
         </div>`;
+
+      if (!amazonActions.length) return;
+
+      // describe_action pra cada ação-chave — evita chutar nome de parâmetro
+      // (foi exatamente isso que causou o "Failed to fetch" do frete do ML).
+      const chave = ['amazon_list_orders', 'amazon_get_order_items', 'amazon_list_financial_events'].filter(a => amazonActions.includes(a));
+      const detalhes = {};
+      for (const acao of chave) {
+        try {
+          const rd = await MarketplaceAPI.call('describe_action', { action_name: acao });
+          detalhes[acao] = rd.data || rd;
+        } catch(e) { detalhes[acao] = { ERRO: e.message }; }
+      }
+
+      const bloco = document.getElementById('amazon-diag-params') || document.createElement('div');
+      bloco.id = 'amazon-diag-params';
+      bloco.style.cssText = 'margin-top:10px;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;font-family:monospace;font-size:11px;color:#e5e7eb;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;';
+      bloco.innerHTML = `<div style="color:#a5b4fc;font-weight:700;margin-bottom:8px;font-family:Inter,sans-serif;font-size:12px;">📋 Parâmetros das ações-chave</div>` +
+        chave.map(a => `<div style="margin-bottom:10px;"><div style="color:#fbbf24;">${a}</div>${JSON.stringify(detalhes[a], null, 2)}</div>`).join('');
+      box.appendChild(bloco);
     } catch(e) {
       box.innerHTML = `<div style="color:#ef4444;font-size:12px;">Erro ao consultar catálogo: ${e.message}</div>`;
     }
