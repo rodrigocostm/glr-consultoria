@@ -14,8 +14,8 @@ Router.register('integracoes', (params, el) => {
                       'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const hoje     = new Date();
 
-  const platIcon = { mercadolivre:'🟡', ml:'🟡', meli:'🟡', shopee:'🟠', bling:'🔵' };
-  const platNome = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling ERP' };
+  const platIcon = { mercadolivre:'🟡', ml:'🟡', meli:'🟡', shopee:'🟠', bling:'🔵', amazon:'⚫' };
+  const platNome = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling ERP', amazon:'Amazon' };
 
   // Apelidos customizados por external_id (editável no sistema)
   let nicknames = {};
@@ -52,9 +52,11 @@ Router.register('integracoes', (params, el) => {
           style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:8px 12px;cursor:pointer;font-size:12px;white-space:nowrap;">👁 Mostrar</button>
         <button class="btn btn-primary" onclick="salvarApiKey()">Salvar</button>
         <button class="btn btn-secondary" onclick="testarApiKey()">Testar conexão</button>
+        <button class="btn btn-secondary" onclick="descobrirAcoesAmazon()">🔍 Descobrir ações Amazon</button>
         <span id="status-apikey" style="font-size:13px;"></span>
       </div>
       <div id="credits-info" style="margin-top:10px;font-size:12px;color:var(--text-muted);"></div>
+      <div id="amazon-diag" style="margin-top:12px;"></div>
     </div>
 
     <!-- Contas disponíveis -->
@@ -139,6 +141,32 @@ Router.register('integracoes', (params, el) => {
     } catch(e) {
       st.style.color = '#ef4444';
       st.textContent = `✗ Erro: ${e.message}`;
+    }
+  };
+
+  // Descobre os nomes reais das ações Amazon disponíveis no catálogo da API —
+  // a documentação pública não lista nenhuma ação Amazon concreta (só cita o
+  // nome de passagem), então em vez de chutar nomes de ação e tomar "Failed to
+  // fetch" de novo, pergunta direto pro catálogo (list_actions) quais existem.
+  window.descobrirAcoesAmazon = async () => {
+    const box = document.getElementById('amazon-diag');
+    box.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">⏳ Consultando catálogo de ações...</div>`;
+    try {
+      const r = await MarketplaceAPI.call('list_actions', {});
+      const lista = r.data?.actions || r.data?.results || r.data || [];
+      const nomes = (Array.isArray(lista) ? lista : Object.keys(lista))
+        .map(a => typeof a === 'string' ? a : (a.name || a.action || JSON.stringify(a)));
+      const amazonActions = nomes.filter(n => /amazon/i.test(n));
+
+      box.innerHTML = `
+        <div style="background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;font-family:monospace;font-size:12px;color:#e5e7eb;">
+          <div style="color:#a5b4fc;font-weight:700;margin-bottom:8px;">🔍 Ações Amazon encontradas no catálogo (${amazonActions.length})</div>
+          ${amazonActions.length
+            ? `<ul style="margin:0;padding-left:18px;">${amazonActions.map(n=>`<li>${n}</li>`).join('')}</ul>`
+            : `<div style="color:#f87171;">Nenhuma ação com "amazon" no nome foi encontrada. Total de ações no catálogo: ${nomes.length}.<br>Isso confirma que a API do Marketplace Connect ainda não tem suporte real pra Amazon — precisa confirmar com o suporte deles (Tiops) antes de eu implementar qualquer busca de pedido.</div>`}
+        </div>`;
+    } catch(e) {
+      box.innerHTML = `<div style="color:#ef4444;font-size:12px;">Erro ao consultar catálogo: ${e.message}</div>`;
     }
   };
 
