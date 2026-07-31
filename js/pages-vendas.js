@@ -1956,14 +1956,19 @@ Router.register('vendas', async (params, el) => {
               created_after: `${dataFrom}T00:00:00Z`,
             });
             const d = r.data;
-            ordersRaw = Array.isArray(d?.Orders) ? d.Orders : Array.isArray(d?.orders) ? d.orders : Array.isArray(d) ? d : [];
+            // A SP-API da Amazon embrulha tudo em "payload" — confere esse formato primeiro
+            ordersRaw = Array.isArray(d?.payload?.Orders) ? d.payload.Orders
+                      : Array.isArray(d?.Orders)          ? d.Orders
+                      : Array.isArray(d?.orders)           ? d.orders
+                      : Array.isArray(d)                   ? d
+                      : [];
+            // Diagnóstico sempre visível (mesmo com 0 pedidos) — mostra a resposta crua
+            // inteira quando não achou nenhum pedido, pra bater o formato real de uma vez.
+            _diagMostrar('amazon_orders', conta.external_id, ordersRaw.length ? ordersRaw[0] : { AVISO: '0 pedidos após parsing — resposta crua completa abaixo', RESPOSTA_CRUA: d });
           } catch(e) {
             console.warn('[Amazon] erro amazon_list_orders', e.message);
             _diagMostrar('amazon_orders', conta.external_id, { ERRO: e.message });
           }
-
-          // Diagnóstico visível — confirma os nomes de campo reais do primeiro pedido
-          if (ordersRaw.length) _diagMostrar('amazon_orders', conta.external_id, ordersRaw[0]);
 
           const limiteDe = new Date(`${dataFrom}T00:00:00`).getTime();
           const limiteAte = new Date(`${dataTo}T23:59:59`).getTime();
@@ -1992,8 +1997,12 @@ Router.register('vendas', async (params, el) => {
             try {
               const ri = await MarketplaceAPI.call('amazon_get_order_items', { amazon_account_id: amazonAccountId, order_id: p.id });
               const d = ri.data;
-              const itensRaw = Array.isArray(d?.OrderItems) ? d.OrderItems : Array.isArray(d?.order_items) ? d.order_items : Array.isArray(d) ? d : [];
-              if (!diagItemFeito && itensRaw.length) { diagItemFeito = true; _diagMostrar('amazon_order_items', p.id, itensRaw); }
+              const itensRaw = Array.isArray(d?.payload?.OrderItems) ? d.payload.OrderItems
+                              : Array.isArray(d?.OrderItems)          ? d.OrderItems
+                              : Array.isArray(d?.order_items)         ? d.order_items
+                              : Array.isArray(d)                      ? d
+                              : [];
+              if (!diagItemFeito) { diagItemFeito = true; _diagMostrar('amazon_order_items', p.id, itensRaw.length ? itensRaw : { AVISO: '0 itens após parsing', RESPOSTA_CRUA: d }); }
               const itens = itensRaw.map(it => ({
                 nome:  it.Title || it.title || it.SellerSKU || it.seller_sku || '—',
                 qtd:   parseInt(it.QuantityOrdered ?? it.quantity_ordered) || 1,
