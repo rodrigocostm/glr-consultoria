@@ -1005,9 +1005,8 @@ Router.register('projecao', (params, el) => {
               adsPorConta[conta.external_id] = adsTotal;
             } catch(e) { console.warn('[Proj] ADS ML erro:', e.message); }
             // Faturamento dos 3 meses fechados anteriores — preenche Maio/Abril/Março sozinho
-            fatM1PorConta[conta.external_id] = await fatMesFechadoML(meliId, m1);
-            fatM2PorConta[conta.external_id] = await fatMesFechadoML(meliId, m2);
-            fatM3PorConta[conta.external_id] = await fatMesFechadoML(meliId, m3);
+            [fatM1PorConta[conta.external_id], fatM2PorConta[conta.external_id], fatM3PorConta[conta.external_id]] =
+              await Promise.all([fatMesFechadoML(meliId, m1), fatMesFechadoML(meliId, m2), fatMesFechadoML(meliId, m3)]);
           } else if (mkt === 'shopee') {
             const shopId = conta.param_to_use?.shopId || conta.external_id;
             const snsList = await MarketplaceAPI.shopeeListOrderSns(shopId, Math.floor(tsFrom/1000), Math.floor(tsTo/1000));
@@ -1053,9 +1052,8 @@ Router.register('projecao', (params, el) => {
               adsPorConta[conta.external_id] = Array.isArray(dias) ? dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0) : 0;
             } catch(e) { console.warn('[Proj] ADS Shopee erro:', e.message); }
             // Faturamento dos 3 meses fechados anteriores — preenche Maio/Abril/Março sozinho
-            fatM1PorConta[conta.external_id] = await fatMesFechadoShopee(shopId, m1);
-            fatM2PorConta[conta.external_id] = await fatMesFechadoShopee(shopId, m2);
-            fatM3PorConta[conta.external_id] = await fatMesFechadoShopee(shopId, m3);
+            [fatM1PorConta[conta.external_id], fatM2PorConta[conta.external_id], fatM3PorConta[conta.external_id]] =
+              await Promise.all([fatMesFechadoShopee(shopId, m1), fatMesFechadoShopee(shopId, m2), fatMesFechadoShopee(shopId, m3)]);
           }
         } catch(e) {
           console.warn(`[Proj] Erro conta ${label}:`, e.message);
