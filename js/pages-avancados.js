@@ -904,10 +904,52 @@ Router.register('projecao', (params, el) => {
       // Remove ordens antigas das contas que vamos re-buscar
       pedidos = pedidos.filter(p => !contaIds.includes(p.contaId));
 
+      // Meses anteriores fechados (M1/M2/M3) — mesmo padrão já usado no Analytics
+      // (buscarDadosExecutivo). Preenche os campos Maio/Abril/Março automaticamente
+      // em vez de precisar digitar na mão pra ter comparação com o mês atual.
+      function mesFechadoOffset(offset) {
+        const d = new Date(ano, mes-1-offset, 1);
+        const y = d.getFullYear(), m = d.getMonth()+1;
+        const diasMes = new Date(y, m, 0).getDate();
+        return { from: `${y}-${pad(m)}-01`, to: `${y}-${pad(m)}-${pad(diasMes)}`, tsFrom: Math.floor(new Date(`${y}-${pad(m)}-01T00:00:00`).getTime()/1000), tsTo: Math.floor(new Date(`${y}-${pad(m)}-${pad(diasMes)}T23:59:59`).getTime()/1000) };
+      }
+      const m1 = mesFechadoOffset(1), m2 = mesFechadoOffset(2), m3 = mesFechadoOffset(3);
+
       const totalContas = contasVinc.length;
       let idx = 0;
       const adsPorConta = {}; // { external_id: valor investido no período }
+      const fatM1PorConta = {}, fatM2PorConta = {}, fatM3PorConta = {}; // faturamento dos 3 meses fechados anteriores
       const toShopeeDate = iso => iso.split('-').reverse().join('-');
+
+      async function fatMesFechadoML(meliId, periodo) {
+        try {
+          const orders = await MarketplaceAPI.mlOrders(meliId, periodo.from, periodo.to);
+          return orders.reduce((s,o) => ['cancelled','invalid'].includes((o.status||'').toLowerCase()) ? s : s+(parseFloat(o.total_amount)||0), 0);
+        } catch(e) { return 0; }
+      }
+      async function fatMesFechadoShopee(shopId, periodo) {
+        let total = 0;
+        try {
+          const sns = await MarketplaceAPI.shopeeListOrderSns(shopId, periodo.tsFrom, periodo.tsTo);
+          for (let i=0; i<sns.length; i+=50) {
+            const lote = sns.slice(i,i+50).map(o=>o.sn);
+            try {
+              const rd = await MarketplaceAPI.call('shopee_get_order_detail', { shopId, order_sn_list: lote });
+              const lista = rd.data?.response?.order_list || rd.data?.order_list || [];
+              for (const ord of lista) {
+                const itens = ord.item_list || ord.items || [];
+                const subtotal = itens.reduce((s,it) => {
+                  const p = parseFloat(it.model_discounted_price)||parseFloat(it.item_price)||0;
+                  const q = parseInt(it.model_quantity_purchased)||parseInt(it.quantity)||1;
+                  return s + p*q;
+                }, 0);
+                total += subtotal > 0 ? subtotal : (parseFloat(ord.total_amount)||0);
+              }
+            } catch(e) {}
+          }
+        } catch(e) {}
+        return total;
+      }
 
       for (const conta of contasVinc) {
         idx++;
@@ -937,6 +979,10 @@ Router.register('projecao', (params, el) => {
               }
               adsPorConta[conta.external_id] = adsTotal;
             } catch(e) { console.warn('[Proj] ADS ML erro:', e.message); }
+            // Faturamento dos 3 meses fechados anteriores — preenche Maio/Abril/Março sozinho
+            fatM1PorConta[conta.external_id] = await fatMesFechadoML(meliId, m1);
+            fatM2PorConta[conta.external_id] = await fatMesFechadoML(meliId, m2);
+            fatM3PorConta[conta.external_id] = await fatMesFechadoML(meliId, m3);
           } else if (mkt === 'shopee') {
             const shopId = conta.param_to_use?.shopId || conta.external_id;
             const snsList = await MarketplaceAPI.shopeeListOrderSns(shopId, Math.floor(tsFrom/1000), Math.floor(tsTo/1000));
@@ -966,6 +1012,10 @@ Router.register('projecao', (params, el) => {
               const dias = r?.data?.response || [];
               adsPorConta[conta.external_id] = Array.isArray(dias) ? dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0) : 0;
             } catch(e) { console.warn('[Proj] ADS Shopee erro:', e.message); }
+            // Faturamento dos 3 meses fechados anteriores — preenche Maio/Abril/Março sozinho
+            fatM1PorConta[conta.external_id] = await fatMesFechadoShopee(shopId, m1);
+            fatM2PorConta[conta.external_id] = await fatMesFechadoShopee(shopId, m2);
+            fatM3PorConta[conta.external_id] = await fatMesFechadoShopee(shopId, m3);
           }
         } catch(e) {
           console.warn(`[Proj] Erro conta ${label}:`, e.message);
@@ -1005,7 +1055,10 @@ Router.register('projecao', (params, el) => {
         const nome = nicks[c.external_id] || tag || c.nickname || c.external_id;
         projecaoAtiva.plataformas.push({
           nome, contaId: c.external_id, marketplace: c.marketplace,
-          fatBase:'', adsBase:'', vendasBase:'', maio:'', abril:'', marco:'',
+          fatBase:'', adsBase:'', vendasBase:'',
+          maio:  fatM1PorConta[c.external_id] > 0 ? fatM1PorConta[c.external_id].toFixed(2) : '',
+          abril: fatM2PorConta[c.external_id] > 0 ? fatM2PorConta[c.external_id].toFixed(2) : '',
+          marco: fatM3PorConta[c.external_id] > 0 ? fatM3PorConta[c.external_id].toFixed(2) : '',
           _platNome: nomePlat,
           _adsAuto: adsPorConta[c.external_id] || 0,
         });
@@ -1352,9 +1405,9 @@ Router.register('projecao', (params, el) => {
               <th style="padding:12px 14px;color:#fcd34d;font-weight:800;white-space:nowrap;text-align:right;background:rgba(245,158,11,0.25);min-width:120px;">Projeção ADS<br><span style="font-weight:400;font-size:10px;color:rgba(255,255,255,0.7);" class="mes-label">${projecaoAtiva.mes}</span></th>
               <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:center;min-width:80px;">% ADS<br>s/ Fat.</th>
               <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:center;min-width:100px;">Evolução<br>vs Mês Ant.</th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. Maio</th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. Abril</th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. Março</th>
+              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. Maio<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
+              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. Abril<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
+              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. Março<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
               <th style="padding:12px 14px;width:36px;"></th>
             </tr>
           </thead>
