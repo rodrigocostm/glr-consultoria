@@ -871,6 +871,27 @@ Router.register('projecao', (params, el) => {
   }
 
   // ── Busca simplificada de ordens para contas vinculadas (GMV apenas, sem escrow) ──
+  // Painel de diagnóstico temporário — mesmo padrão já usado em Vendas pra achar
+  // bug de campo/duplicação sem precisar abrir o console do navegador.
+  function _diagMostrarAv(grupo, chaveId, obj) {
+    let box = document.getElementById('diag-api-box');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'diag-api-box';
+      box.style.cssText = 'position:fixed;bottom:12px;right:12px;width:520px;max-height:70vh;overflow-y:auto;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;z-index:99999;font-family:monospace;font-size:11px;color:#e5e7eb;box-shadow:0 10px 40px rgba(0,0,0,.5);';
+      box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <strong style="color:#a5b4fc;">🔍 Diagnóstico Projeção (temporário)</strong>
+        <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:14px;">✕</button>
+      </div><div id="diag-api-conteudo"></div>`;
+      document.body.appendChild(box);
+    }
+    const cont = document.getElementById('diag-api-conteudo');
+    const bloco = document.createElement('div');
+    bloco.style.cssText = 'margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #2a2a3a;';
+    bloco.innerHTML = `<div style="color:#fbbf24;margin-bottom:4px;">[${grupo}] ${chaveId}</div><pre style="white-space:pre-wrap;word-break:break-all;margin:0;">${JSON.stringify(obj,null,2).replace(/</g,'&lt;')}</pre>`;
+    cont.appendChild(bloco);
+  }
+
   async function buscarDadosProjecao(silencioso = false) {
     const cidAtivo = parseInt(document.getElementById('sel-cliente')?.value) || clienteIdAtivo;
     let vinculos = {};
@@ -879,6 +900,10 @@ Router.register('projecao', (params, el) => {
     if (!contasVinc.length) { if (!silencioso) alert('Nenhuma conta vinculada. Use 🔗 Vincular conta primeiro.'); return; }
     const apiKey = localStorage.getItem('glr_mc_apikey')||'';
     if (!apiKey) { if (!silencioso) alert('Configure a API Key nas Integrações.'); return; }
+
+    // Diagnóstico: lista as contas vinculadas tal como estão salvas — se o mesmo
+    // external_id aparecer mais de uma vez, os pedidos dela são contados em dobro/triplo.
+    _diagMostrarAv('contas_vinculadas', `cliente ${cidAtivo}`, contasVinc.map(c => ({ external_id: c.external_id, marketplace: c.marketplace, nickname: c.nickname })));
 
     const btn = document.getElementById('btn-buscar-proj');
     if (btn) { btn.disabled=true; btn.textContent='⏳ Buscando...'; }
@@ -986,11 +1011,26 @@ Router.register('projecao', (params, el) => {
           } else if (mkt === 'shopee') {
             const shopId = conta.param_to_use?.shopId || conta.external_id;
             const snsList = await MarketplaceAPI.shopeeListOrderSns(shopId, Math.floor(tsFrom/1000), Math.floor(tsTo/1000));
+            // Diagnóstico: quantos order_sn vieram, e se tem sn duplicado na lista
+            const snsUnicos = new Set(snsList.map(o=>o.sn));
+            _diagMostrarAv('shopee_sns_periodo', `conta ${conta.external_id}`, {
+              periodo: `${primeiroDia} a ${dataTo}`, totalRetornado: snsList.length, totalUnico: snsUnicos.size,
+              statusPorSn: snsList.slice(0,20).map(o=>`${o.sn}:${o.status}`),
+            });
+            let diagPedidoFeito = false;
             for (let i=0; i<snsList.length; i+=50) {
               const lote = snsList.slice(i,i+50).map(o=>o.sn);
               try {
                 const rd = await MarketplaceAPI.call('shopee_get_order_detail',{shopId, order_sn_list:lote});
                 const orderList = rd.data?.response?.order_list || rd.data?.order_list || [];
+                if (!diagPedidoFeito && orderList.length) {
+                  diagPedidoFeito = true;
+                  _diagMostrarAv('shopee_pedidos_valor', `conta ${conta.external_id}`, orderList.map(ord => ({
+                    sn: ord.order_sn, status: ord.order_status,
+                    total_amount: ord.total_amount,
+                    itens: (ord.item_list||ord.items||[]).map(it => ({ nome: it.item_name||it.model_name, preco: it.model_discounted_price||it.item_price, qtd: it.model_quantity_purchased||it.quantity })),
+                  })));
+                }
                 for (const ord of orderList) {
                   const items = ord.item_list || ord.items || [];
                   const subtotal = items.reduce((s,it) => {
