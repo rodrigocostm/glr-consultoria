@@ -871,6 +871,18 @@ Router.register('projecao', (params, el) => {
   }
 
   // ── Busca simplificada de ordens para contas vinculadas (GMV apenas, sem escrow) ──
+  // Executa promessas com concorrência limitada — mesmo padrão usado em Vendas/Analytics
+  async function _mapLimitAv(items, limit, fn) {
+    let idx = 0;
+    async function worker() {
+      while (idx < items.length) {
+        const i = idx++;
+        try { await fn(items[i], i); } catch(e) {}
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  }
+
   // Painel de diagnóstico temporário — mesmo padrão já usado em Vendas pra achar
   // bug de campo/duplicação sem precisar abrir o console do navegador.
   function _diagMostrarAv(grupo, chaveId, obj) {
@@ -1004,9 +1016,6 @@ Router.register('projecao', (params, el) => {
               }
               adsPorConta[conta.external_id] = adsTotal;
             } catch(e) { console.warn('[Proj] ADS ML erro:', e.message); }
-            // Faturamento dos 3 meses fechados anteriores — preenche Maio/Abril/Março sozinho
-            [fatM1PorConta[conta.external_id], fatM2PorConta[conta.external_id], fatM3PorConta[conta.external_id]] =
-              await Promise.all([fatMesFechadoML(meliId, m1), fatMesFechadoML(meliId, m2), fatMesFechadoML(meliId, m3)]);
           } else if (mkt === 'shopee') {
             const shopId = conta.param_to_use?.shopId || conta.external_id;
             const snsList = await MarketplaceAPI.shopeeListOrderSns(shopId, Math.floor(tsFrom/1000), Math.floor(tsTo/1000));
@@ -1051,14 +1060,30 @@ Router.register('projecao', (params, el) => {
               const dias = r?.data?.response || [];
               adsPorConta[conta.external_id] = Array.isArray(dias) ? dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0) : 0;
             } catch(e) { console.warn('[Proj] ADS Shopee erro:', e.message); }
-            // Faturamento dos 3 meses fechados anteriores — preenche Maio/Abril/Março sozinho
-            [fatM1PorConta[conta.external_id], fatM2PorConta[conta.external_id], fatM3PorConta[conta.external_id]] =
-              await Promise.all([fatMesFechadoShopee(shopId, m1), fatMesFechadoShopee(shopId, m2), fatMesFechadoShopee(shopId, m3)]);
           }
         } catch(e) {
           console.warn(`[Proj] Erro conta ${label}:`, e.message);
         }
       }
+
+      // Faturamento dos 3 meses fechados anteriores (Maio/Abril/Março) — roda pra
+      // TODAS as contas em paralelo (limite 3 por vez) em vez de uma conta de cada vez
+      // dentro do loop principal, que estava deixando a busca bem mais lenta.
+      if (btn) btn.textContent = '⏳ Buscando meses anteriores...';
+      await _mapLimitAv(contasVinc, 3, async conta => {
+        const mkt = (conta.marketplace||'').toLowerCase();
+        try {
+          if (['meli','ml','mercadolivre'].includes(mkt)) {
+            const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+            [fatM1PorConta[conta.external_id], fatM2PorConta[conta.external_id], fatM3PorConta[conta.external_id]] =
+              await Promise.all([fatMesFechadoML(meliId, m1), fatMesFechadoML(meliId, m2), fatMesFechadoML(meliId, m3)]);
+          } else if (mkt === 'shopee') {
+            const shopId = conta.param_to_use?.shopId || conta.external_id;
+            [fatM1PorConta[conta.external_id], fatM2PorConta[conta.external_id], fatM3PorConta[conta.external_id]] =
+              await Promise.all([fatMesFechadoShopee(shopId, m1), fatMesFechadoShopee(shopId, m2), fatMesFechadoShopee(shopId, m3)]);
+          }
+        } catch(e) { console.warn('[Proj] meses anteriores erro:', e.message); }
+      });
 
       // Salva cache mesclado
       localStorage.setItem('glr_fin_cache', JSON.stringify({ ...(cacheExist||{}), ver:25, mesKey, pedidos }));
