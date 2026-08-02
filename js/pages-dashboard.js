@@ -148,6 +148,10 @@ async function _dashBuscarVendasPorDia() {
               const lista = rd.data?.response?.order_list || rd.data?.order_list || [];
               for (const ord of lista) {
                 if (!ord.create_time) continue;
+                // Blindagem: descarta pedido fora do período pedido — status tipo
+                // READY_TO_SHIP não é confiável no filtro de data da API em contas
+                // com volume alto (confirmado com pedido real).
+                if (ord.create_time < tsFrom || ord.create_time > tsTo) continue;
                 const d = new Date(ord.create_time*1000);
                 const itens = ord.item_list || ord.items || [];
                 const unidades = itens.reduce((s,it) => s + (parseInt(it.model_quantity_purchased)||parseInt(it.quantity)||1), 0) || 1;

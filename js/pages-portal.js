@@ -529,6 +529,10 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
           if (!rd) { loteFalhou = true; continue; } // 3 tentativas falharam — não perde o lote em silêncio, sinaliza incompleto
           const lista = rd.data?.response?.order_list || [];
           for (const ord of lista) {
+            // Blindagem: descarta pedido fora do período pedido (create_time real) —
+            // status tipo READY_TO_SHIP não é confiável no filtro de data da API
+            // em contas com volume alto (confirmado com pedido real).
+            if (ord.create_time && (ord.create_time < tsFrom || ord.create_time > tsTo)) continue;
             const itens = (ord.item_list||[]).map(it => ({
               nome: it.item_name||'—', qtd: it.model_quantity_purchased||1,
               preco: parseFloat(it.model_discounted_price)||0, imagem: it.image_info?.image_url||'',

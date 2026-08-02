@@ -156,6 +156,11 @@ Router.register('analytics-conteudo', async (params, el) => {
                   const rd = await MarketplaceAPI.call('shopee_get_order_detail',{shopId, order_sn_list:lote});
                   const orderList = rd.data?.response?.order_list || rd.data?.order_list || [];
                   for (const ord of orderList) {
+                    // Blindagem: status tipo READY_TO_SHIP é fila (fica até despachar), não
+                    // evento datado — a API pode devolver pedido fora do período pedido
+                    // quando o resultado precisa paginar (contas com volume alto,
+                    // confirmado com pedido real). Confere o create_time de verdade.
+                    if (ord.create_time && (ord.create_time < tsF || ord.create_time > tsT)) continue;
                     const items = ord.item_list || ord.items || [];
                     const subtotal = items.reduce((s,it) => {
                       const p = parseFloat(it.model_discounted_price)||parseFloat(it.item_price)||0;
@@ -260,6 +265,9 @@ Router.register('analytics-conteudo', async (params, el) => {
           const rd = await MarketplaceAPI.call('shopee_get_order_detail',{shopId, order_sn_list:lote});
           const orderList = rd.data?.response?.order_list || rd.data?.order_list || [];
           for (const ord of orderList) {
+            // Blindagem: descarta pedido fora do período pedido (create_time real) —
+            // status tipo READY_TO_SHIP não é confiável no filtro de data da API.
+            if (ord.create_time && (ord.create_time < tsFrom || ord.create_time > tsTo)) continue;
             const items = ord.item_list || ord.items || [];
             for (const it of items) {
               const nome = it.item_name || it.model_name || '—';

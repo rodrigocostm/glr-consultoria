@@ -1859,6 +1859,10 @@ Router.register('vendas', async (params, el) => {
               const rd=await MarketplaceAPI.call('shopee_get_order_detail',{shopId,order_sn_list:lote});
               const lista=rd.data?.response?.order_list||[];
               for (const ord of lista) {
+                // Blindagem: descarta pedido fora do período pedido (create_time real) —
+                // status tipo READY_TO_SHIP não é confiável no filtro de data da API
+                // em contas com volume alto (confirmado com pedido real).
+                if (ord.create_time && (ord.create_time < tsFromSh || ord.create_time > tsToSh)) continue;
                 const itens=(ord.item_list||[]).map(it=>({
                   nome: it.item_name||'—', qtd: it.model_quantity_purchased||1,
                   preco: parseFloat(it.model_discounted_price)||0, imagem: it.image_info?.image_url||'',
