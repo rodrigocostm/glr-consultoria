@@ -247,22 +247,13 @@ Router.register('dashboard', (params, el) => {
     ? (clientes.reduce((s, c) => s + (c.crescimento || 0), 0) / clientes.length)
     : null;
 
-  // Receita GLR = soma de (vendas projetadas × valor por venda) — vem da Projeção de Crescimento
-  let receitaGLR = 0;
-  try {
-    const projs = JSON.parse(localStorage.getItem('glr_projecoes') || '[]');
-    clientes.forEach(c => {
-      const proj = projs.find(p => parseInt(p.chave) === c.id);
-      if (!proj || !c.valorPorVenda) return;
-      const dd = proj.diasDecorridos || 2;
-      const dm = proj.diasNoMes     || 30;
-      const vendas = proj.plataformas?.reduce((s, p) => {
-        const base = parseFloat(p.vendasBase) || 0;
-        return s + (base && dd ? (base / dd) * dm : 0);
-      }, 0) || 0;
-      receitaGLR += Math.round(vendas) * parseFloat(c.valorPorVenda);
-    });
-  } catch(e) {}
+  // Receita GLR = soma real da comissão dia a dia (gráfico "Vendas por Dia &
+  // Comissão GLR" logo abaixo) — trocado da fonte antiga (Projeção de Crescimento),
+  // que dependia de cada cliente ter sido buscado manualmente lá e ficava vazia
+  // ("—") na maioria das vezes. Esse valor é real (mês até o último dia buscado),
+  // não projetado.
+  const vendasDiaCache = _dashVendasDiaCache();
+  const receitaGLR = (vendasDiaCache?.dias || []).reduce((s, d) => s + (parseFloat(d.comissao) || 0), 0);
 
   const comAPI = clientes.length;
   const semAPI = clientesTodos.length - comAPI;
@@ -304,7 +295,7 @@ Router.register('dashboard', (params, el) => {
       ${kpiCard('Clientes na Carteira', clientesTodos.length, `${comAPI} com dados reais`, comAPI > 0, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
       ${kpiCard('Meta Total', metaTotal>0?GLR.formatCurrency(metaTotal):'—', 'soma das metas', metaTotal>0, 'rgba(245,158,11,0.12)', '🎯', '#f59e0b')}
       ${kpiCard('Fat. Carteira', GLR.formatCurrency(faturamentoTotal), crescMedioAPI!=null?`${crescMedioAPI>=0?'+':''}${crescMedioAPI.toFixed(1)}% vs mês ant.`:(semAPI>0?'vincule contas p/ ver dados reais':''), true, 'rgba(99,102,241,0.12)', '🏆', '#6366f1', comAPI>0)}
-      ${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', 'vendas × valor por venda', receitaGLR > 0, 'rgba(16,185,129,0.15)', '💰', '#10b981')}
+      ${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', receitaGLR > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', receitaGLR > 0, 'rgba(16,185,129,0.15)', '💰', '#10b981')}
       ${kpiCard('Em Crescimento', crescimento, `${clientes.length ? Math.round(crescimento/clientes.length*100) : 0}% da carteira`, true, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
       ${kpiCard('Em Risco / Queda', risco+queda, `${risco} em risco · ${queda} em queda`, (risco+queda)===0, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
       ${kpiCard('Tarefas Pendentes', tarefasPendentes, `${tasksAtras} atrasadas`, tarefasPendentes === 0, 'rgba(245,158,11,0.12)', '✅', '#f59e0b')}
