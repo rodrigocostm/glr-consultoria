@@ -183,15 +183,9 @@ async function _dashBuscarVendasPorDia() {
   Router.resolve();
 }
 
-// Aba ativa do Dashboard unificado (Visão Geral | Análises da Carteira, que é
-// o antigo Analytics inteiro — Painel Executivo, Produtos em Queda, Plano de
-// Ação e Checklist Diário, todos dentro dessa segunda aba).
-let _dashAbaAtiva = 'geral';
-
-function _dashTabBtn(id, label) {
-  const ativo = _dashAbaAtiva === id;
-  return `<button id="dash-tab-${id}" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:${ativo?'700':'600'};font-size:13px;background:${ativo?'#6366f1':'var(--bg-card-hover)'};color:${ativo?'var(--text-primary)':'var(--text-secondary)'};">${label}</button>`;
-}
+// Dashboard unificado: Visão Geral e Análises da Carteira (antigo Analytics —
+// Painel Executivo, Produtos em Queda, Plano de Ação, Checklist Diário) ficam
+// empilhados na mesma página, uma rolagem só.
 
 Router.register('dashboard', (params, el) => {
   if (!GLR.clientes.length) {
@@ -212,21 +206,20 @@ Router.register('dashboard', (params, el) => {
     return;
   }
 
+  // Página única — Visão Geral e Análises da Carteira ficam empilhadas na mesma
+  // rolagem, não mais em abas separadas.
   el.innerHTML = `<div class="page">
-    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
-      ${_dashTabBtn('geral','📊 Visão Geral')}
-      ${_dashTabBtn('analises','🚦 Análises da Carteira')}
-    </div>
     <div id="dash-aba-conteudo"></div>
+    <div style="margin:40px 0 20px;padding-top:20px;border-top:1px solid var(--border);">
+      <div class="section-title" style="font-size:18px;">🚦 Análises da Carteira</div>
+      <div class="section-subtitle">Painel Executivo, Produtos em Queda, Plano de Ação e Checklist Diário</div>
+    </div>
+    <div id="dash-analises-conteudo"></div>
   </div>`;
-  document.getElementById('dash-tab-geral')?.addEventListener('click', () => { _dashAbaAtiva = 'geral'; Router.resolve(); });
-  document.getElementById('dash-tab-analises')?.addEventListener('click', () => { _dashAbaAtiva = 'analises'; Router.resolve(); });
 
   const contAba = document.getElementById('dash-aba-conteudo');
-  if (_dashAbaAtiva === 'analises') {
-    Router.routes['analytics-conteudo'](params, contAba);
-    return;
-  }
+  const contAnalises = document.getElementById('dash-analises-conteudo');
+  Router.routes['analytics-conteudo'](params, contAnalises);
 
   const analyticsCache = _dashAnalyticsCache();
   const clientesTodos  = computarClientesAPI();
@@ -674,9 +667,9 @@ Router.register('dashboard', (params, el) => {
 Router.register('diretoria', () => Router.navigate('dashboard'));
 Router.register('analytics', () => Router.navigate('dashboard'));
 
-// Botão "Atualizar dados": muda pra aba Análises da Carteira (monta o
-// analytics-conteudo, que é quem expõe window._analyticsBuscarExec), dispara
-// a busca real e volta pra aba Visão Geral já com dado fresco.
+// Botão "Atualizar dados": dispara a busca real do Painel Executivo (a página
+// já vem toda montada, window._analyticsBuscarExec já existe desde o load) e
+// depois a busca de Vendas por Dia & Comissão GLR — sem precisar trocar de aba.
 async function _dashAtualizarTudo() {
   if (window._dashAtualizando) return;
   window._dashAtualizando = true;
@@ -685,9 +678,6 @@ async function _dashAtualizarTudo() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando...'; }
   if (status) status.textContent = 'Buscando dados reais via API (pode levar um tempo)...';
   try {
-    _dashAbaAtiva = 'analises';
-    Router.resolve();
-    await new Promise(r => setTimeout(r, 500));
     if (typeof window._analyticsBuscarExec === 'function') {
       await window._analyticsBuscarExec();
     }
@@ -695,7 +685,6 @@ async function _dashAtualizarTudo() {
     console.warn('[Dashboard] erro ao atualizar:', e.message);
   }
   window._dashAtualizando = false;
-  _dashAbaAtiva = 'geral';
   Router.resolve();
 
   // Vendas por Dia & Comissão GLR — atualiza junto, sem precisar clicar no
