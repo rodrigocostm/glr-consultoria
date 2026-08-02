@@ -904,7 +904,7 @@ Router.register('projecao', (params, el) => {
     cont.appendChild(bloco);
   }
 
-  async function buscarDadosProjecao(silencioso = false) {
+  async function buscarDadosProjecao(silencioso = false, forcarMesesAnteriores = false) {
     const cidAtivo = parseInt(document.getElementById('sel-cliente')?.value) || clienteIdAtivo;
     let vinculos = {};
     try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
@@ -912,6 +912,16 @@ Router.register('projecao', (params, el) => {
     if (!contasVinc.length) { if (!silencioso) alert('Nenhuma conta vinculada. Use 🔗 Vincular conta primeiro.'); return; }
     const apiKey = localStorage.getItem('glr_mc_apikey')||'';
     if (!apiKey) { if (!silencioso) alert('Configure a API Key nas Integrações.'); return; }
+
+    // Meses fechados (Maio/Abril/Março) não mudam mais depois de fechados — guarda o
+    // que já foi buscado antes por conta, pra não buscar de novo toda atualização.
+    // "Forçar" (botão à parte) ignora esse cache e busca tudo de novo mesmo assim.
+    const mesesJaSalvos = {};
+    (projecaoAtiva.plataformas||[]).forEach(p => {
+      if (p.contaId && (p.maio || p.abril || p.marco)) {
+        mesesJaSalvos[p.contaId] = { maio: p.maio, abril: p.abril, marco: p.marco };
+      }
+    });
 
     // Diagnóstico: lista as contas vinculadas tal como estão salvas — se o mesmo
     // external_id aparecer mais de uma vez, os pedidos dela são contados em dobro/triplo.
@@ -1069,8 +1079,12 @@ Router.register('projecao', (params, el) => {
       // Faturamento dos 3 meses fechados anteriores (Maio/Abril/Março) — roda pra
       // TODAS as contas em paralelo (limite 3 por vez) em vez de uma conta de cada vez
       // dentro do loop principal, que estava deixando a busca bem mais lenta.
-      if (btn) btn.textContent = '⏳ Buscando meses anteriores...';
-      await _mapLimitAv(contasVinc, 3, async conta => {
+      // Contas que já têm esses meses salvos não buscam de novo (a menos que "forçar").
+      const contasParaBuscarMeses = forcarMesesAnteriores
+        ? contasVinc
+        : contasVinc.filter(c => !mesesJaSalvos[c.external_id]);
+      if (btn) btn.textContent = `⏳ Buscando meses anteriores (${contasParaBuscarMeses.length}/${contasVinc.length} contas)...`;
+      await _mapLimitAv(contasParaBuscarMeses, 3, async conta => {
         const mkt = (conta.marketplace||'').toLowerCase();
         try {
           if (['meli','ml','mercadolivre'].includes(mkt)) {
@@ -1116,12 +1130,16 @@ Router.register('projecao', (params, el) => {
         const nomePlat = platMap[mktKey] || c.marketplace || 'Outro';
         const tag = c.tags?.[0]?.name || '';
         const nome = nicks[c.external_id] || tag || c.nickname || c.external_id;
+        // Se pulou a busca desse mês fechado (já tinha valor salvo), reaproveita o
+        // que já existia em vez de zerar.
+        const salvoAntes = mesesJaSalvos[c.external_id];
+        const buscouDeNovo = fatM1PorConta[c.external_id] != null;
         projecaoAtiva.plataformas.push({
           nome, contaId: c.external_id, marketplace: c.marketplace,
           fatBase:'', adsBase:'', vendasBase:'',
-          maio:  fatM1PorConta[c.external_id] > 0 ? fatM1PorConta[c.external_id].toFixed(2) : '',
-          abril: fatM2PorConta[c.external_id] > 0 ? fatM2PorConta[c.external_id].toFixed(2) : '',
-          marco: fatM3PorConta[c.external_id] > 0 ? fatM3PorConta[c.external_id].toFixed(2) : '',
+          maio:  buscouDeNovo ? (fatM1PorConta[c.external_id] > 0 ? fatM1PorConta[c.external_id].toFixed(2) : '') : (salvoAntes?.maio  || ''),
+          abril: buscouDeNovo ? (fatM2PorConta[c.external_id] > 0 ? fatM2PorConta[c.external_id].toFixed(2) : '') : (salvoAntes?.abril || ''),
+          marco: buscouDeNovo ? (fatM3PorConta[c.external_id] > 0 ? fatM3PorConta[c.external_id].toFixed(2) : '') : (salvoAntes?.marco || ''),
           _platNome: nomePlat,
           _adsAuto: adsPorConta[c.external_id] || 0,
         });
@@ -1415,7 +1433,8 @@ Router.register('projecao', (params, el) => {
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           Ocultar GLR
         </button>
-        <button id="btn-buscar-proj" class="btn btn-sm" style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);color:#4ade80;" onclick="buscarDadosProjecao()" title="Busca ordens das contas vinculadas e atualiza os dados">🔄 Buscar dados</button>
+        <button id="btn-buscar-proj" class="btn btn-sm" style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);color:#4ade80;" onclick="buscarDadosProjecao()" title="Busca o mês atual sempre; meses fechados (Maio/Abril/Março) só na primeira vez">🔄 Buscar dados</button>
+        <button id="btn-forcar-meses-proj" class="btn btn-sm" style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;" onclick="buscarDadosProjecao(false, true)" title="Ignora o que já está salvo e busca os meses fechados (Maio/Abril/Março) de novo, na força">↺ Forçar meses anteriores</button>
         <button class="btn btn-secondary btn-sm" onclick="adicionarPlat()">+ Plataforma</button>
         <button class="btn btn-sm" style="background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);color:#f87171;" onclick="limparDadosManuais()" title="Apaga fatBase, adsBase, vendasBase e histórico inseridos à mão — mantém só dados da API">🗑️ Limpar manuais</button>
         <button class="btn btn-primary btn-sm" onclick="salvarProjecao(this)">💾 Salvar</button>
