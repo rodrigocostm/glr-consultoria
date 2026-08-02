@@ -697,6 +697,13 @@ async function _dashAtualizarTudo() {
   window._dashAtualizando = false;
   _dashAbaAtiva = 'geral';
   Router.resolve();
+
+  // Vendas por Dia & Comissão GLR — atualiza junto, sem precisar clicar no
+  // botão próprio do gráfico toda vez. Re-busca o elemento de status porque o
+  // Router.resolve() acima recriou o DOM (a referência antiga ficou obsoleta).
+  const status2 = document.getElementById('dash-status-txt');
+  if (status2) status2.textContent = 'Buscando vendas por dia da carteira...';
+  await _dashBuscarVendasPorDia();
 }
 
 
