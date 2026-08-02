@@ -984,6 +984,10 @@ Router.register('projecao', (params, el) => {
               const rd = await MarketplaceAPI.call('shopee_get_order_detail', { shopId, order_sn_list: lote });
               const lista = rd.data?.response?.order_list || rd.data?.order_list || [];
               for (const ord of lista) {
+                // Mesma blindagem do período atual: confere o create_time real e descarta
+                // pedido fora do mês pedido (status tipo READY_TO_SHIP não respeita o
+                // filtro de data da API em contas com volume alto).
+                if (ord.create_time && (ord.create_time < periodo.tsFrom || ord.create_time > periodo.tsTo)) continue;
                 const itens = ord.item_list || ord.items || [];
                 const subtotal = itens.reduce((s,it) => {
                   const p = parseFloat(it.model_discounted_price)||parseFloat(it.item_price)||0;
@@ -1028,6 +1032,7 @@ Router.register('projecao', (params, el) => {
             } catch(e) { console.warn('[Proj] ADS ML erro:', e.message); }
           } else if (mkt === 'shopee') {
             const shopId = conta.param_to_use?.shopId || conta.external_id;
+            let forasDoPeriodo = 0;
             const snsList = await MarketplaceAPI.shopeeListOrderSns(shopId, Math.floor(tsFrom/1000), Math.floor(tsTo/1000));
             // Diagnóstico: quantos order_sn vieram, e se tem sn duplicado na lista
             const snsUnicos = new Set(snsList.map(o=>o.sn));
@@ -1050,6 +1055,14 @@ Router.register('projecao', (params, el) => {
                   })));
                 }
                 for (const ord of orderList) {
+                  // Blindagem: status tipo READY_TO_SHIP é uma fila (fica até despachar),
+                  // não um evento datado — se o filtro de data da API falhar pra esse
+                  // status (visto em contas com volume alto), confere o create_time real
+                  // do próprio pedido e descarta quem está fora do período pedido.
+                  if (ord.create_time) {
+                    const criadoEm = ord.create_time * 1000;
+                    if (criadoEm < tsFrom || criadoEm > tsTo) { forasDoPeriodo++; continue; }
+                  }
                   const items = ord.item_list || ord.items || [];
                   const subtotal = items.reduce((s,it) => {
                     const p = parseFloat(it.model_discounted_price)||parseFloat(it.item_price)||0;
@@ -1063,6 +1076,10 @@ Router.register('projecao', (params, el) => {
                   });
                 }
               } catch(e) { console.warn('[Proj] Shopee batch erro:', e.message); }
+            }
+            if (forasDoPeriodo > 0) {
+              _diagMostrarAv('shopee_filtrados_fora_periodo', `conta ${conta.external_id}`,
+                { descartados: forasDoPeriodo, motivo: 'create_time real fora do período pedido — provável bug de filtro de data na API pra status tipo READY_TO_SHIP' });
             }
             // ADS Shopee — investimento real da conta no período
             try {
