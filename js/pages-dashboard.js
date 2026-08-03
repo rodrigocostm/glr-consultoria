@@ -110,13 +110,14 @@ async function _dashBuscarVendasPorDia() {
   const tsFrom = Math.floor(new Date(`${primeiroDia}T00:00:00`).getTime()/1000);
   const tsTo   = Math.floor(new Date(`${dataTo}T23:59:59`).getTime()/1000);
 
-  const porDia = {}; // 'DD/MM' -> { pedidos, comissao }
+  const porDia = {}; // 'DD/MM' -> { pedidos, comissao, faturamento }
   // Comissão da GLR é por UNIDADE vendida (valorPorVenda × quantidade), não um valor
   // fixo por pedido — um pedido com 3 unidades do mesmo produto conta 3x, não 1x.
-  const addPedido = (dataStr, unidades, valorPorVenda) => {
-    if (!porDia[dataStr]) porDia[dataStr] = { pedidos: 0, comissao: 0 };
+  const addPedido = (dataStr, unidades, valorPorVenda, valorPedido) => {
+    if (!porDia[dataStr]) porDia[dataStr] = { pedidos: 0, comissao: 0, faturamento: 0 };
     porDia[dataStr].pedidos += 1;
     porDia[dataStr].comissao += unidades * valorPorVenda;
+    porDia[dataStr].faturamento += valorPedido || 0;
   };
 
   const clientesComConta = GLR.clientes.filter(c => (vinculos[String(c.id)]||[]).length > 0);
@@ -136,7 +137,8 @@ async function _dashBuscarVendasPorDia() {
             const d = new Date(o.date_created||0);
             if (isNaN(d)) continue;
             const unidades = (o.order_items||[]).reduce((s,i) => s + (parseInt(i.quantity)||1), 0) || 1;
-            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda);
+            const valorPedido = parseFloat(o.total_amount) || 0;
+            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda, valorPedido);
           }
         } else if (mkt === 'shopee') {
           const shopId = conta.param_to_use?.shopId || conta.external_id;
@@ -155,7 +157,13 @@ async function _dashBuscarVendasPorDia() {
                 const d = new Date(ord.create_time*1000);
                 const itens = ord.item_list || ord.items || [];
                 const unidades = itens.reduce((s,it) => s + (parseInt(it.model_quantity_purchased)||parseInt(it.quantity)||1), 0) || 1;
-                addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda);
+                const subtotal = itens.reduce((s,it) => {
+                  const p = parseFloat(it.model_discounted_price)||parseFloat(it.item_price)||0;
+                  const q = parseInt(it.model_quantity_purchased)||parseInt(it.quantity)||1;
+                  return s + p*q;
+                }, 0);
+                const valorPedido = subtotal > 0 ? subtotal : (parseFloat(ord.total_amount)||0);
+                addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda, valorPedido);
               }
             } catch(e) {}
           }
@@ -175,7 +183,7 @@ async function _dashBuscarVendasPorDia() {
   const mesKey = `${ano}-${pad(mesN)}`;
   localStorage.setItem(STORAGE_VENDAS_DIA, JSON.stringify({
     mesKey, atualizadoEm,
-    dias: dias.map(d => ({ data: d, pedidos: porDia[d].pedidos, comissao: porDia[d].comissao })),
+    dias: dias.map(d => ({ data: d, pedidos: porDia[d].pedidos, comissao: porDia[d].comissao, faturamento: porDia[d].faturamento })),
   }));
 
   window._dashBuscandoVendasDia = false;
@@ -247,6 +255,8 @@ Router.register('dashboard', (params, el) => {
   // não projetado.
   const vendasDiaCache = _dashVendasDiaCache();
   const receitaGLR = (vendasDiaCache?.dias || []).reduce((s, d) => s + (parseFloat(d.comissao) || 0), 0);
+  const faturamentoAtual = (vendasDiaCache?.dias || []).reduce((s, d) => s + (parseFloat(d.faturamento) || 0), 0);
+  const qtdPedidosAtual  = (vendasDiaCache?.dias || []).reduce((s, d) => s + (parseInt(d.pedidos) || 0), 0);
 
   const comAPI = clientes.length;
   const semAPI = clientesTodos.length - comAPI;
@@ -287,8 +297,10 @@ Router.register('dashboard', (params, el) => {
     <div class="kpi-grid">
       ${kpiCard('Clientes na Carteira', clientesTodos.length, `${comAPI} com dados reais`, comAPI > 0, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
       ${kpiCard('Meta Total', metaTotal>0?GLR.formatCurrency(metaTotal):'—', 'soma das metas', metaTotal>0, 'rgba(245,158,11,0.12)', '🎯', '#f59e0b')}
-      ${kpiCard('Fat. Carteira', GLR.formatCurrency(faturamentoTotal), crescMedioAPI!=null?`${crescMedioAPI>=0?'+':''}${crescMedioAPI.toFixed(1)}% vs mês ant.`:(semAPI>0?'vincule contas p/ ver dados reais':''), true, 'rgba(99,102,241,0.12)', '🏆', '#6366f1', comAPI>0)}
+      ${kpiCard('Faturamento Atual', faturamentoAtual > 0 ? GLR.formatCurrency(faturamentoAtual) : '—', faturamentoAtual > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', faturamentoAtual > 0, 'rgba(99,102,241,0.15)', '💵', '#6366f1')}
+      ${kpiCard('Projeção de Faturamento', GLR.formatCurrency(faturamentoTotal), crescMedioAPI!=null?`${crescMedioAPI>=0?'+':''}${crescMedioAPI.toFixed(1)}% vs mês ant.`:(semAPI>0?'vincule contas p/ ver dados reais':''), true, 'rgba(99,102,241,0.12)', '🏆', '#6366f1', comAPI>0)}
       ${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', receitaGLR > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', receitaGLR > 0, 'rgba(16,185,129,0.15)', '💰', '#10b981')}
+      ${kpiCard('Quantidade de Pedidos', qtdPedidosAtual > 0 ? qtdPedidosAtual.toLocaleString('pt-BR') : '—', qtdPedidosAtual > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', qtdPedidosAtual > 0, 'rgba(6,182,212,0.15)', '📦', '#06b6d4')}
       ${kpiCard('Em Crescimento', crescimento, `${clientes.length ? Math.round(crescimento/clientes.length*100) : 0}% da carteira`, true, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
       ${kpiCard('Em Risco / Queda', risco+queda, `${risco} em risco · ${queda} em queda`, (risco+queda)===0, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
       ${kpiCard('Tarefas Pendentes', tarefasPendentes, `${tasksAtras} atrasadas`, tarefasPendentes === 0, 'rgba(245,158,11,0.12)', '✅', '#f59e0b')}
