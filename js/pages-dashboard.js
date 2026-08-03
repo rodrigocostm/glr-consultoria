@@ -111,13 +111,21 @@ async function _dashBuscarVendasPorDia() {
   const tsTo   = Math.floor(new Date(`${dataTo}T23:59:59`).getTime()/1000);
 
   const porDia = {}; // 'DD/MM' -> { pedidos, comissao, faturamento }
+  const porCanal = {}; // 'Mercado Livre'/'Shopee'/'Amazon'/... -> { pedidos, comissao, faturamento }
+  const NOME_CANAL = { meli:'Mercado Livre', ml:'Mercado Livre', mercadolivre:'Mercado Livre', shopee:'Shopee', amazon:'Amazon' };
   // Comissão da GLR é por UNIDADE vendida (valorPorVenda × quantidade), não um valor
   // fixo por pedido — um pedido com 3 unidades do mesmo produto conta 3x, não 1x.
-  const addPedido = (dataStr, unidades, valorPorVenda, valorPedido) => {
+  const addPedido = (dataStr, unidades, valorPorVenda, valorPedido, mkt) => {
     if (!porDia[dataStr]) porDia[dataStr] = { pedidos: 0, comissao: 0, faturamento: 0 };
     porDia[dataStr].pedidos += 1;
     porDia[dataStr].comissao += unidades * valorPorVenda;
     porDia[dataStr].faturamento += valorPedido || 0;
+
+    const canal = NOME_CANAL[mkt] || mkt || 'Outro';
+    if (!porCanal[canal]) porCanal[canal] = { pedidos: 0, comissao: 0, faturamento: 0 };
+    porCanal[canal].pedidos += 1;
+    porCanal[canal].comissao += unidades * valorPorVenda;
+    porCanal[canal].faturamento += valorPedido || 0;
   };
 
   const clientesComConta = GLR.clientes.filter(c => (vinculos[String(c.id)]||[]).length > 0);
@@ -138,7 +146,7 @@ async function _dashBuscarVendasPorDia() {
             if (isNaN(d)) continue;
             const unidades = (o.order_items||[]).reduce((s,i) => s + (parseInt(i.quantity)||1), 0) || 1;
             const valorPedido = parseFloat(o.total_amount) || 0;
-            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda, valorPedido);
+            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda, valorPedido, mkt);
           }
         } else if (mkt === 'shopee') {
           const shopId = conta.param_to_use?.shopId || conta.external_id;
@@ -163,7 +171,7 @@ async function _dashBuscarVendasPorDia() {
                   return s + p*q;
                 }, 0);
                 const valorPedido = subtotal > 0 ? subtotal : (parseFloat(ord.total_amount)||0);
-                addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda, valorPedido);
+                addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda, valorPedido, mkt);
               }
             } catch(e) {}
           }
@@ -184,6 +192,7 @@ async function _dashBuscarVendasPorDia() {
   localStorage.setItem(STORAGE_VENDAS_DIA, JSON.stringify({
     mesKey, atualizadoEm,
     dias: dias.map(d => ({ data: d, pedidos: porDia[d].pedidos, comissao: porDia[d].comissao, faturamento: porDia[d].faturamento })),
+    canais: Object.keys(porCanal).map(nome => ({ nome, pedidos: porCanal[nome].pedidos, comissao: porCanal[nome].comissao, faturamento: porCanal[nome].faturamento })),
   }));
 
   window._dashBuscandoVendasDia = false;
@@ -318,6 +327,22 @@ Router.register('dashboard', (params, el) => {
       </div>
       <div class="chart-wrapper">
         <canvas id="chart-vendas-dia"></canvas>
+      </div>
+    </div>
+
+    <!-- Concentração por canal -->
+    <div class="card mb-24">
+      <div class="section-header">
+        <div>
+          <div class="section-title">📊 Faturamento & Comissão GLR por Canal</div>
+          <div class="section-subtitle">Concentração — Mercado Livre, Shopee, Amazon etc. · mesmo período do gráfico acima</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;max-width:260px;">
+          <canvas id="chart-canal"></canvas>
+        </div>
+        <div style="flex:2;min-width:260px;" id="dash-canal-legenda"></div>
       </div>
     </div>
 
@@ -582,6 +607,62 @@ Router.register('dashboard', (params, el) => {
             }
           }
         });
+      }
+    }
+
+    const ctxCanal = document.getElementById('chart-canal');
+    const legendaCanal = document.getElementById('dash-canal-legenda');
+    if (ctxCanal && legendaCanal) {
+      const vd = _dashVendasDiaCache();
+      const canais = (vd?.canais || []).filter(c => c.faturamento > 0).sort((a,b) => b.faturamento - a.faturamento);
+      if (!canais.length) {
+        ctxCanal.parentElement.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">Sem dados ainda.<br>Clique em "Atualizar" no gráfico "Vendas por Dia" acima.</div>';
+      } else {
+        const coresCanal = { 'Mercado Livre':'#fbbf24', 'Shopee':'#f97316', 'Amazon':'#94a3b8' };
+        const paletaExtra = ['#6366f1','#8b5cf6','#06b6d4','#10b981','#ec4899'];
+        const corDe = (nome, i) => coresCanal[nome] || paletaExtra[i % paletaExtra.length];
+        new Chart(ctxCanal, {
+          type: 'doughnut',
+          data: {
+            labels: canais.map(c => c.nome),
+            datasets: [{
+              data: canais.map(c => c.faturamento),
+              backgroundColor: canais.map((c,i) => corDe(c.nome, i)),
+              borderWidth: 0, hoverOffset: 4,
+            }]
+          },
+          options: {
+            cutout: '68%', responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                ...tooltipStyle(),
+                callbacks: {
+                  label: ctx => {
+                    const c = canais[ctx.dataIndex];
+                    return [
+                      ` Faturamento: R$ ${c.faturamento.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,
+                      ` Comissão GLR: R$ ${c.comissao.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,
+                      ` ${c.pedidos} pedido${c.pedidos!==1?'s':''}`,
+                    ];
+                  }
+                }
+              }
+            }
+          }
+        });
+        const totalFat = canais.reduce((s,c)=>s+c.faturamento,0);
+        legendaCanal.innerHTML = canais.map((c,i) => {
+          const pct = totalFat>0 ? (c.faturamento/totalFat*100) : 0;
+          return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+            <div style="width:10px;height:10px;border-radius:50%;background:${corDe(c.nome,i)};flex-shrink:0;"></div>
+            <div style="flex:1;font-size:13px;font-weight:600;">${c.nome}</div>
+            <div style="text-align:right;">
+              <div style="font-size:13px;font-weight:700;">${GLR.formatCurrency(c.faturamento)}</div>
+              <div style="font-size:11px;color:var(--text-muted);">${pct.toFixed(1)}% · comissão ${GLR.formatCurrency(c.comissao)}</div>
+            </div>
+          </div>`;
+        }).join('');
       }
     }
 
