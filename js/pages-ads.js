@@ -73,6 +73,153 @@ function salvarCache(dados) {
   } catch {}
 }
 
+// ─── Vendas Totais (orgânico + ads) ────────────────────────────
+// A Central de ADS, por padrão, só enxerga a receita ATRIBUÍDA aos
+// anúncios (o que o próprio marketplace credita a uma campanha) — isso
+// não é o faturamento total da conta, e mostrar só isso confunde quem
+// olha o painel achando que é a receita da loja inteira. Essa busca traz
+// o total real de vendas (ads + orgânico) do mesmo período, pra dar
+// contexto ao ROAS/ACoS e mostrar quanto do faturamento veio de fato do
+// investimento em ADS.
+async function buscarVendasTotaisPeriodo(primeiroDia, ultimoDia) {
+  if (!contaAtual) return { total: 0, pedidos: 0 };
+  const mp = contaAtual.marketplace;
+  try {
+    if (['mercadolivre', 'ml', 'meli'].includes(mp)) {
+      const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
+      const orders = await MarketplaceAPI.mlOrders(meliId, primeiroDia, ultimoDia);
+      let total = 0, pedidos = 0;
+      (orders || []).forEach(o => {
+        if (['cancelled', 'invalid'].includes((o.status || '').toLowerCase())) return;
+        total += parseFloat(o.total_amount) || 0;
+        pedidos++;
+      });
+      return { total, pedidos };
+    }
+    if (mp === 'shopee') {
+      const shopId = contaAtual.param_to_use?.shopId || contaAtual.external_id;
+      const tsFrom = Math.floor(new Date(`${primeiroDia}T00:00:00-03:00`).getTime() / 1000);
+      const tsTo   = Math.floor(new Date(`${ultimoDia}T23:59:59-03:00`).getTime() / 1000);
+      const sns = await MarketplaceAPI.shopeeListOrderSns(shopId, tsFrom, tsTo);
+      let total = 0, pedidos = 0;
+      for (let i = 0; i < sns.length; i += 50) {
+        const lote = sns.slice(i, i + 50).map(o => o.sn);
+        try {
+          const rd = await MarketplaceAPI.call('shopee_get_order_detail', { shopId, order_sn_list: lote });
+          const lista = rd.data?.response?.order_list || rd.data?.order_list || [];
+          for (const ord of lista) {
+            if (!ord.create_time) continue;
+            // Blindagem: descarta pedido fora do período pedido (create_time real) —
+            // status tipo READY_TO_SHIP não é confiável no filtro de data da API
+            // em contas com volume alto (confirmado nesta sessão).
+            if (ord.create_time < tsFrom || ord.create_time > tsTo) continue;
+            const itens = ord.item_list || ord.items || [];
+            const subtotal = itens.reduce((s, it) => {
+              const p = parseFloat(it.model_discounted_price) || parseFloat(it.item_price) || 0;
+              const q = parseInt(it.model_quantity_purchased) || parseInt(it.quantity) || 1;
+              return s + p * q;
+            }, 0);
+            total += subtotal > 0 ? subtotal : (parseFloat(ord.total_amount) || 0);
+            pedidos++;
+          }
+        } catch(e) {}
+      }
+      return { total, pedidos };
+    }
+  } catch(e) {
+    console.warn('[ADS] vendas totais falhou:', e.message);
+  }
+  return { total: 0, pedidos: 0 };
+}
+
+// ─── Comparativo semanal por campanha/produto ──────────────────
+// Compara os últimos 7 dias com os 7 dias anteriores, por campanha
+// (nesta operação cada campanha manual/de item ~= 1 produto anunciado),
+// pra mostrar impressão/clique/pedidos lado a lado e explicar SE uma
+// queda de vendas via Ads é por perda de visibilidade, de clique ou de
+// conversão — sem precisar adivinhar.
+function _isoDate(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+async function buscarComparativoSemanal() {
+  if (!contaAtual) return null;
+  const mp = contaAtual.marketplace;
+
+  const hoje = new Date();
+  const ontem = new Date(hoje); ontem.setDate(ontem.getDate() - 1);
+  const fimAtual = new Date(ontem);
+  const inicioAtual = new Date(ontem); inicioAtual.setDate(inicioAtual.getDate() - 6);
+  const fimAnterior = new Date(inicioAtual); fimAnterior.setDate(fimAnterior.getDate() - 1);
+  const inicioAnterior = new Date(fimAnterior); inicioAnterior.setDate(inicioAnterior.getDate() - 6);
+
+  const janelas = {
+    atualLabel:    `${_isoDate(inicioAtual).slice(5)} a ${_isoDate(fimAtual).slice(5)}`,
+    anteriorLabel: `${_isoDate(inicioAnterior).slice(5)} a ${_isoDate(fimAnterior).slice(5)}`,
+  };
+
+  try {
+    if (['mercadolivre', 'ml', 'meli'].includes(mp)) {
+      const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
+      const [rAtual, rAnterior] = await Promise.all([
+        MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: _isoDate(inicioAtual), date_to: _isoDate(fimAtual) }),
+        MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: _isoDate(inicioAnterior), date_to: _isoDate(fimAnterior) }),
+      ]);
+      const toMapa = raw => {
+        const camps = raw?.data?.results || raw?.results || (Array.isArray(raw?.data) ? raw.data : []);
+        const m = {};
+        camps.forEach(c => {
+          const met = c.metrics || {};
+          m[c.id] = {
+            nome: c.name || `Campanha ${c.id}`,
+            impressoes: parseInt(met.prints) || 0,
+            cliques:    parseInt(met.clicks) || 0,
+            pedidos:    parseInt(met.units_quantity) || 0,
+          };
+        });
+        return m;
+      };
+      return { janelas, mapaAtual: toMapa(rAtual), mapaAnterior: toMapa(rAnterior) };
+    }
+
+    if (mp === 'shopee') {
+      const shopId = contaAtual.param_to_use?.shopId || contaAtual.external_id;
+      const toShopeeDate = iso => iso.split('-').reverse().join('-');
+      const campResp = await MarketplaceAPI.call('shopee_ads_campaigns', { shopId, state_filter: 'ongoing' });
+      const campList = campResp?.data?.response?.campaign_list || campResp?.data?.campaign_list || campResp?.campaign_list || [];
+      const mapaAtual = {}, mapaAnterior = {};
+      if (!campList.length) return { janelas, mapaAtual, mapaAnterior };
+
+      const LOTE = 20;
+      for (let i = 0; i < campList.length; i += LOTE) {
+        const ids = campList.slice(i, i + LOTE).map(c => c.campaign_id || c.id);
+        const [pAtual, pAnterior] = await Promise.all([
+          MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, campaign_id_list: ids, start_date: toShopeeDate(_isoDate(inicioAtual)), end_date: toShopeeDate(_isoDate(fimAtual)) }),
+          MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, campaign_id_list: ids, start_date: toShopeeDate(_isoDate(inicioAnterior)), end_date: toShopeeDate(_isoDate(fimAnterior)) }),
+        ]);
+        const soma = (raw, mapa) => {
+          const lista = raw?.data?.response?.campaign_list || [];
+          lista.forEach(c => {
+            const dias = c.metrics_list || [];
+            mapa[c.campaign_id] = {
+              nome: c.ad_name || `#${c.campaign_id}`,
+              impressoes: dias.reduce((s, d) => s + (parseInt(d.impression) || 0), 0),
+              cliques:    dias.reduce((s, d) => s + (parseInt(d.clicks) || 0), 0),
+              pedidos:    dias.reduce((s, d) => s + (parseInt(d.broad_order) || 0), 0),
+            };
+          });
+        };
+        soma(pAtual, mapaAtual);
+        soma(pAnterior, mapaAnterior);
+      }
+      return { janelas, mapaAtual, mapaAnterior };
+    }
+  } catch(e) {
+    console.warn('[ADS] comparativo semanal falhou:', e.message);
+  }
+  return null;
+}
+
 // ─── Busca de dados ───────────────────────────────────────────
 async function buscarDados(forcar = false) {
   if (!contaAtual) return;
@@ -280,6 +427,15 @@ async function buscarDados(forcar = false) {
       }
     }
 
+    // Vendas totais (orgânico + ads) e comparativo semanal por produto —
+    // buscados em paralelo pra não somar latência extra ao que já rodou acima.
+    const [vendasTotaisResp, comparativoResp] = await Promise.allSettled([
+      buscarVendasTotaisPeriodo(primeiroDia, ultimoDia),
+      buscarComparativoSemanal(),
+    ]);
+    resultado.vendasTotais = vendasTotaisResp.status === 'fulfilled' ? vendasTotaisResp.value : { total: 0, pedidos: 0 };
+    resultado.comparativo  = comparativoResp.status  === 'fulfilled' ? comparativoResp.value  : null;
+
     dadosADS = resultado;
     salvarCache(resultado);
     renderConteudo();
@@ -454,6 +610,11 @@ function renderConteudo() {
   const acos    = rec > 0 ? (inv / rec) * 100 : 0;
   const cpa     = ped > 0 ? inv / ped : 0;
 
+  const vendasTotais    = d.vendasTotais?.total   || 0;
+  const pedidosTotais   = d.vendasTotais?.pedidos || 0;
+  const vendasOrganicas = Math.max(vendasTotais - rec, 0);
+  const pctViaAds       = vendasTotais > 0 ? (rec / vendasTotais) * 100 : 0;
+
   // Mostra erros de API diretamente na tela
   const erros = d._erros || [];
   const blocoErros = erros.length > 0 ? `
@@ -464,10 +625,33 @@ function renderConteudo() {
   ` : '';
 
   body.innerHTML = blocoErros + `
+    <!-- Vendas totais (orgânico + ads) — contexto pra Receita ADS não ser lida como faturamento total -->
+    <div style="background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(139,92,246,0.06));border:1px solid rgba(99,102,241,0.2);border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+      <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">💵 Vendas do período — Ads vs Orgânico (${pedidosTotais} pedido${pedidosTotais!==1?'s':''} no total)</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;">
+        <div>
+          <div style="font-size:11px;color:var(--text-secondary);">Vendas Totais (todos os canais)</div>
+          <div style="font-size:20px;font-weight:800;color:var(--text-primary);">${fmt(vendasTotais)}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-secondary);">Vendas Orgânicas (sem Ads)</div>
+          <div style="font-size:20px;font-weight:800;color:#6366f1;">${fmt(vendasOrganicas)}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-secondary);">Receita atribuída a Ads</div>
+          <div style="font-size:20px;font-weight:800;color:#16a34a;">${fmt(rec)}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-secondary);">% das vendas via Ads</div>
+          <div style="font-size:20px;font-weight:800;color:var(--text-primary);">${fmtN(pctViaAds, 1)}%</div>
+        </div>
+      </div>
+    </div>
+
     <!-- KPIs principais -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px;">
       ${kpiCard('💰 Investimento', fmt(inv), '', '#f0f9ff', '#0ea5e9')}
-      ${kpiCard('📈 Receita ADS', fmt(rec), '', '#f0fdf4', '#16a34a')}
+      ${kpiCard('📈 Receita ADS', fmt(rec), 'atribuída pelo marketplace, não é o total', '#f0fdf4', '#16a34a')}
       ${kpiCard('🎯 ROAS', fmtN(roas, 2) + 'x', roas >= 3 ? '✅ Bom' : roas >= 1.5 ? '⚠️ Regular' : '❌ Baixo', roas >= 3 ? '#f0fdf4' : roas >= 1.5 ? '#fffbeb' : '#fef2f2', roas >= 3 ? '#16a34a' : roas >= 1.5 ? '#d97706' : '#dc2626')}
       ${kpiCard('📊 ACoS', fmtN(acos, 1) + '%', acos <= 30 ? '✅ Bom' : acos <= 50 ? '⚠️ Regular' : '❌ Alto', acos <= 30 ? '#f0fdf4' : acos <= 50 ? '#fffbeb' : '#fef2f2', acos <= 30 ? '#16a34a' : acos <= 50 ? '#d97706' : '#dc2626')}
       ${kpiCard('🖱️ Cliques', fmtN(cli), '', '#faf5ff', '#9333ea')}
@@ -504,6 +688,9 @@ function renderConteudo() {
 
     <!-- Tendências período -->
     ${renderTendencias(d)}
+
+    <!-- Produtos em crescimento/queda (comparativo semanal de Ads) -->
+    ${renderComparativoProdutos(d.comparativo)}
 
     <!-- Sugestões de otimização -->
     ${renderOtimizacoes(d)}
@@ -715,6 +902,84 @@ function renderModalOrcamento() {
             style="flex:1;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Salvar Meta</button>
         </div>
         <p id="ads-modal-roas-msg" style="font-size:12px;text-align:center;margin:10px 0 0;"></p>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Produtos em crescimento/queda (comparativo semanal de Ads) ────
+function _tendenciaAds(pedidosAtual, pedidosAnterior, impAtual, impAnterior) {
+  if (pedidosAnterior === 0 && pedidosAtual === 0) {
+    if (impAnterior > 0 && impAtual === 0) return { label: 'Sumiu (sem impressão)', cor: '#ef4444' };
+    return null;
+  }
+  if (pedidosAnterior === 0 && pedidosAtual > 0) return { label: 'Novo / Decolando', cor: '#16a34a' };
+  if (pedidosAtual === 0 && pedidosAnterior > 0) return { label: 'Zerou', cor: '#ef4444' };
+  const variacao = ((pedidosAtual - pedidosAnterior) / pedidosAnterior) * 100;
+  if (variacao <= -40) return { label: 'Queda forte', cor: '#ef4444' };
+  if (variacao <= -15) return { label: 'Em queda', cor: '#f59e0b' };
+  if (variacao >= 40)  return { label: 'Crescendo forte', cor: '#16a34a' };
+  if (variacao >= 15)  return { label: 'Em crescimento', cor: '#22c55e' };
+  return null; // estável — não polui a lista
+}
+
+function renderComparativoProdutos(comp) {
+  if (!comp) return '';
+
+  const ids = new Set([...Object.keys(comp.mapaAtual || {}), ...Object.keys(comp.mapaAnterior || {})]);
+  const linhas = [];
+  ids.forEach(id => {
+    const a = comp.mapaAtual[id]    || { nome: '', impressoes: 0, cliques: 0, pedidos: 0 };
+    const b = comp.mapaAnterior[id] || { nome: '', impressoes: 0, cliques: 0, pedidos: 0 };
+    const nome = a.nome || b.nome || `#${id}`;
+    if (a.impressoes === 0 && b.impressoes === 0 && a.pedidos === 0 && b.pedidos === 0) return;
+    const tendencia = _tendenciaAds(a.pedidos, b.pedidos, a.impressoes, b.impressoes);
+    if (!tendencia) return;
+    linhas.push({ nome, a, b, tendencia });
+  });
+
+  if (!linhas.length) {
+    return `
+      <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">📦 Produtos em Crescimento &amp; Queda (Ads)</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin:0;">Sem variação relevante detectada nos últimos 7 dias vs 7 dias anteriores.</p>
+      </div>
+    `;
+  }
+
+  linhas.sort((x, y) => (y.a.pedidos - y.b.pedidos) - (x.a.pedidos - x.b.pedidos));
+
+  const pct = (atual, ant) => ant > 0 ? (((atual - ant) / ant) * 100) : (atual > 0 ? 100 : 0);
+  const cel = (atual, p) => `<div>${fmtN(atual)}</div><div style="font-size:11px;color:${p >= 0 ? '#16a34a' : '#dc2626'};font-weight:600;">${p >= 0 ? '▲' : '▼'} ${fmtN(Math.abs(p), 0)}%</div>`;
+
+  const linhaHtml = l => `
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:10px 12px;font-size:12.5px;font-weight:600;color:var(--text-primary);">${l.nome}</td>
+      <td style="padding:10px 12px;text-align:center;">${cel(l.a.impressoes, pct(l.a.impressoes, l.b.impressoes))}</td>
+      <td style="padding:10px 12px;text-align:center;">${cel(l.a.cliques, pct(l.a.cliques, l.b.cliques))}</td>
+      <td style="padding:10px 12px;text-align:center;">${cel(l.a.pedidos, pct(l.a.pedidos, l.b.pedidos))}</td>
+      <td style="padding:10px 12px;text-align:center;"><span style="background:${l.tendencia.cor}22;color:${l.tendencia.cor};padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;">${l.tendencia.label}</span></td>
+    </tr>
+  `;
+
+  return `
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
+      <h3 style="font-size:14px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">📦 Produtos em Crescimento &amp; Queda (Ads)</h3>
+      <p style="font-size:12px;color:var(--text-secondary);margin:0 0 4px;">Últimos 7 dias (${comp.janelas.atualLabel}) vs 7 dias anteriores (${comp.janelas.anteriorLabel}) — por campanha/produto anunciado</p>
+      <p style="font-size:11px;color:var(--text-secondary);margin:0 0 14px;">💡 Se impressão e clique caem junto com os pedidos, o problema é no Ads (verba, lance, relevância). Se impressão/clique se mantêm mas os pedidos via Ads caem, compare com <strong>Análises → Produtos em Queda</strong> pra ver se é o produto todo (orgânico incluso) que está caindo, ou só a parte de Ads.</p>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:640px;">
+          <thead>
+            <tr style="background:#1a2744;color:white;">
+              <th style="padding:8px 12px;text-align:left;">Campanha / Produto</th>
+              <th style="padding:8px 12px;">Impressões</th>
+              <th style="padding:8px 12px;">Cliques</th>
+              <th style="padding:8px 12px;">Pedidos (Ads)</th>
+              <th style="padding:8px 12px;">Tendência</th>
+            </tr>
+          </thead>
+          <tbody>${linhas.map(linhaHtml).join('')}</tbody>
+        </table>
       </div>
     </div>
   `;
