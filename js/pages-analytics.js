@@ -59,7 +59,12 @@ Router.register('analytics-conteudo', async (params, el) => {
   } catch(e) {}
   try {
     const cacheQ = JSON.parse(localStorage.getItem(STORAGE_QUEDA)||'null');
-    if (cacheQ) { produtosQueda = cacheQ.produtos || []; atualizadoQuedaEm = cacheQ.atualizadoEm; }
+    const produtosCache = cacheQ?.produtos || [];
+    // Formato antigo (antes da reformulação por semana) não tem "semanas" — ignora
+    // esse cache velho em vez de deixar renderQueda() quebrar tentando usar um
+    // campo que não existe.
+    const formatoValido = produtosCache.every(p => Array.isArray(p.semanas));
+    if (cacheQ && formatoValido) { produtosQueda = produtosCache; atualizadoQuedaEm = cacheQ.atualizadoEm; }
   } catch(e) {}
 
   async function _mapLimit(items, limit, fn) {
