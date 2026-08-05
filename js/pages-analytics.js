@@ -43,6 +43,8 @@ Router.register('analytics-conteudo', async (params, el) => {
   let carregandoQueda = false;
   let atualizadoExecEm = null;
   let atualizadoQuedaEm = null;
+  let filtroClienteQueda = 'todos';    // id do cliente ou 'todos'
+  let filtroPlataformaQueda = 'todas'; // 'todas' | 'Mercado Livre' | 'Shopee' | 'Amazon' | ...
 
   let planoAcao = [];
   try { planoAcao = JSON.parse(localStorage.getItem(STORAGE_PLANO)||'[]'); } catch(e) {}
@@ -215,8 +217,42 @@ Router.register('analytics-conteudo', async (params, el) => {
     render();
   }
 
-  // ── Produtos em Queda: compara faturamento por produto no período atual
-  // (mês corrente até ontem) vs mesmo intervalo de dias do mês anterior ──
+  // ── Produtos em Queda: quantidade vendida por produto em 4 semanas do mês
+  // corrente (01–07, 08–14, 15–21, 22–fim), pra ver a tendência semana a semana
+  // em vez de só comparar dois períodos. Busca tudo de uma vez (todos os
+  // clientes/contas); o filtro por Cliente/Plataforma acontece na exibição,
+  // sem precisar buscar de novo a cada troca de filtro. ──
+  function _semanasDoMes(ano, mesN) {
+    const ultimoDia = new Date(ano, mesN, 0).getDate();
+    return [
+      { de:1, ate:7,  label:'01–07'  },
+      { de:8, ate:14, label:'08–14'  },
+      { de:15,ate:21, label:'15–21'  },
+      { de:22,ate:ultimoDia, label:`22–${pad(ultimoDia)}` },
+    ];
+  }
+  function _semanaDoDia(dia, semanas) {
+    for (let i=0;i<semanas.length;i++) if (dia>=semanas[i].de && dia<=semanas[i].ate) return i;
+    return semanas.length-1;
+  }
+  // Classifica a tendência a partir das 4 semanas (unidades vendidas)
+  function _tendenciaDe(semanas) {
+    const pico = Math.max(...semanas);
+    const ultima = semanas[semanas.length-1];
+    const primeira = semanas[0];
+    if (pico === 0) return null; // nunca vendeu no mês — não é "queda"
+    if (ultima === 0 && semanas.slice(0,-1).some(v=>v>0)) return { label:'Zerou', cor:'#ef4444' };
+    // Queda contínua: cada semana <= anterior, com pelo menos uma queda real
+    const monotonicaQueda = semanas.every((v,i) => i===0 || v <= semanas[i-1]) && ultima < primeira;
+    if (monotonicaQueda && primeira > 0) return { label:'Queda contínua', cor:'#f97316' };
+    // Despencou: teve um pico bem maior que a última semana (queda abrupta ≥70% do pico)
+    if (pico > 0 && ultima <= pico*0.3 && pico >= 4) return { label:'Despencou', cor:'#ef4444' };
+    // Queda forte: última semana bem menor que a média das anteriores (≥40% abaixo)
+    const mediaAnteriores = semanas.slice(0,-1).reduce((s,v)=>s+v,0) / (semanas.length-1);
+    if (mediaAnteriores > 0 && ultima <= mediaAnteriores*0.6) return { label:'Queda forte', cor:'#f59e0b' };
+    return null; // sem queda relevante — não entra na lista
+  }
+
   async function buscarProdutosQueda() {
     if (carregandoQueda) return;
     carregandoQueda = true;
@@ -226,36 +262,34 @@ Router.register('analytics-conteudo', async (params, el) => {
     try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
 
     const ano = ontem.getFullYear(), mesN = ontem.getMonth()+1;
-    const diasDecorridos = fmtQtdeDias();
-    const atualFrom = `${ano}-${pad(mesN)}-01`;
-    const atualTo   = fmtDate(ontem);
-    const mesAntDate = new Date(ano, mesN-2, 1);
-    const anoAnt = mesAntDate.getFullYear(), mesAnt = mesAntDate.getMonth()+1;
-    const diasNoMesAnt = new Date(anoAnt, mesAnt, 0).getDate();
-    const diaFinalAnt = Math.min(diasDecorridos, diasNoMesAnt);
-    const antFrom = `${anoAnt}-${pad(mesAnt)}-01`;
-    const antTo   = `${anoAnt}-${pad(mesAnt)}-${pad(diaFinalAnt)}`;
+    const primeiroDia = `${ano}-${pad(mesN)}-01`;
+    const dataTo = fmtDate(ontem);
+    const semanas = _semanasDoMes(ano, mesN);
     const toShopeeTsIni = iso => Math.floor(new Date(`${iso}T00:00:00`).getTime()/1000);
     const toShopeeTsFim = iso => Math.floor(new Date(`${iso}T23:59:59`).getTime()/1000);
+    const tsFrom = toShopeeTsIni(primeiroDia), tsTo = toShopeeTsFim(dataTo);
 
-    async function itensPeriodoML(meliUserId, dFrom, dTo) {
-      const orders = await MarketplaceAPI.mlOrders(meliUserId, dFrom, dTo);
+    // key -> { nome, semanas:[0,0,0,0] }
+    async function unidadesPorSemanaML(meliUserId) {
       const mapa = {};
+      const orders = await MarketplaceAPI.mlOrders(meliUserId, primeiroDia, dataTo);
       for (const o of orders) {
         if (['cancelled','invalid'].includes((o.status||'').toLowerCase())) continue;
+        const dt = new Date(o.date_created||0);
+        if (isNaN(dt)) continue;
+        const sem = _semanaDoDia(dt.getDate(), semanas);
         for (const i of (o.order_items||[])) {
           const nome = i.item?.title || '—';
           const key = i.item?.id || nome;
-          const qtd = i.quantity||1;
-          const preco = parseFloat(i.unit_price)||0;
-          if (!mapa[key]) mapa[key] = { nome, valor:0 };
-          mapa[key].valor += preco*qtd;
+          const qtd = parseInt(i.quantity)||1;
+          if (!mapa[key]) mapa[key] = { nome, semanas:[0,0,0,0] };
+          mapa[key].semanas[sem] += qtd;
         }
       }
       return mapa;
     }
 
-    async function itensPeriodoShopee(shopId, tsFrom, tsTo) {
+    async function unidadesPorSemanaShopee(shopId) {
       const mapa = {};
       let snsList = [];
       try { snsList = await MarketplaceAPI.shopeeListOrderSns(shopId, tsFrom, tsTo); } catch(e) { return mapa; }
@@ -267,15 +301,16 @@ Router.register('analytics-conteudo', async (params, el) => {
           for (const ord of orderList) {
             // Blindagem: descarta pedido fora do período pedido (create_time real) —
             // status tipo READY_TO_SHIP não é confiável no filtro de data da API.
-            if (ord.create_time && (ord.create_time < tsFrom || ord.create_time > tsTo)) continue;
+            if (!ord.create_time || ord.create_time < tsFrom || ord.create_time > tsTo) continue;
+            const dt = new Date(ord.create_time*1000);
+            const sem = _semanaDoDia(dt.getDate(), semanas);
             const items = ord.item_list || ord.items || [];
             for (const it of items) {
               const nome = it.item_name || it.model_name || '—';
               const key = it.item_id || nome;
-              const preco = parseFloat(it.model_discounted_price)||parseFloat(it.item_price)||0;
               const qtd = parseInt(it.model_quantity_purchased)||parseInt(it.quantity)||1;
-              if (!mapa[key]) mapa[key] = { nome, valor:0 };
-              mapa[key].valor += preco*qtd;
+              if (!mapa[key]) mapa[key] = { nome, semanas:[0,0,0,0] };
+              mapa[key].semanas[sem] += qtd;
             }
           }
         } catch(e) {}
@@ -286,54 +321,42 @@ Router.register('analytics-conteudo', async (params, el) => {
     const clientesComConta = GLR.clientes.filter(c => (vinculos[String(c.id)]||[]).length>0);
     const resultado = [];
     let doneN = 0;
+    const NOME_CANAL = { meli:'Mercado Livre', ml:'Mercado Livre', mercadolivre:'Mercado Livre', shopee:'Shopee', amazon:'Amazon' };
 
     await _mapLimit(clientesComConta, 2, async (c) => {
       const contasVinc = vinculos[String(c.id)] || [];
-      const atualMapa = {};
-      const antMapa = {};
 
       await _mapLimit(contasVinc, 2, async (conta) => {
         const mkt = (conta.marketplace||'').toLowerCase();
+        const canal = NOME_CANAL[mkt] || conta.marketplace || 'Outro';
         try {
+          let mapa = null;
           if (['meli','ml','mercadolivre'].includes(mkt)) {
             const meliId = conta.param_to_use?.meliUserId || conta.external_id;
-            const [ma, mb] = await Promise.all([
-              itensPeriodoML(meliId, atualFrom, atualTo),
-              itensPeriodoML(meliId, antFrom, antTo),
-            ]);
-            for (const k in ma) { atualMapa[k] = atualMapa[k] || {nome:ma[k].nome, plataforma:'Mercado Livre', valor:0}; atualMapa[k].valor += ma[k].valor; }
-            for (const k in mb) { antMapa[k] = antMapa[k] || {nome:mb[k].nome, plataforma:'Mercado Livre', valor:0}; antMapa[k].valor += mb[k].valor; }
+            mapa = await unidadesPorSemanaML(meliId);
           } else if (mkt === 'shopee') {
             const shopId = conta.param_to_use?.shopId || conta.external_id;
-            const [ma, mb] = await Promise.all([
-              itensPeriodoShopee(shopId, toShopeeTsIni(atualFrom), toShopeeTsFim(atualTo)),
-              itensPeriodoShopee(shopId, toShopeeTsIni(antFrom), toShopeeTsFim(antTo)),
-            ]);
-            for (const k in ma) { atualMapa[k] = atualMapa[k] || {nome:ma[k].nome, plataforma:'Shopee', valor:0}; atualMapa[k].valor += ma[k].valor; }
-            for (const k in mb) { antMapa[k] = antMapa[k] || {nome:mb[k].nome, plataforma:'Shopee', valor:0}; antMapa[k].valor += mb[k].valor; }
+            mapa = await unidadesPorSemanaShopee(shopId);
+          }
+          if (!mapa) return;
+          for (const k in mapa) {
+            const tendencia = _tendenciaDe(mapa[k].semanas);
+            if (!tendencia) continue;
+            resultado.push({
+              clienteId: c.id, cliente: c.nome, plataforma: canal,
+              nome: mapa[k].nome, semanas: mapa[k].semanas, semanasLabels: semanas.map(s=>s.label),
+              tendencia,
+            });
           }
         } catch(e) { console.warn('[Analytics] queda erro conta', conta.nickname, e.message); }
       });
-
-      const quedas = [];
-      for (const k in antMapa) {
-        const anterior = antMapa[k].valor;
-        if (anterior < QUEDA_MIN_VALOR) continue;
-        const atual = atualMapa[k]?.valor || 0;
-        const pctQueda = ((atual - anterior)/anterior)*100;
-        if (pctQueda <= -QUEDA_MIN_PCT) {
-          quedas.push({ clienteId: c.id, cliente: c.nome, nome: antMapa[k].nome, plataforma: antMapa[k].plataforma, valorAtual: atual, valorAnterior: anterior, pctQueda });
-        }
-      }
-      quedas.sort((a,b)=>a.pctQueda-b.pctQueda);
-      resultado.push(...quedas.slice(0,15));
 
       doneN++;
       const statusEl = document.getElementById('analytics-status');
       if (statusEl) statusEl.textContent = `⏳ Analisando produtos... ${doneN}/${clientesComConta.length} clientes`;
     });
 
-    resultado.sort((a,b)=>a.pctQueda-b.pctQueda);
+    resultado.sort((a,b)=>b.semanas[0]+b.semanas[1]+b.semanas[2]+b.semanas[3]-(a.semanas[0]+a.semanas[1]+a.semanas[2]+a.semanas[3]));
     produtosQueda = resultado;
     atualizadoQuedaEm = Date.now();
     localStorage.setItem(STORAGE_QUEDA, JSON.stringify({ produtos: produtosQueda, atualizadoEm: atualizadoQuedaEm }));
@@ -564,37 +587,63 @@ Router.register('analytics-conteudo', async (params, el) => {
     if (!produtosQueda.length) {
       return `<div style="text-align:center;padding:60px;color:var(--text-muted);">
         <div style="font-size:32px;margin-bottom:12px;">📉</div>
-        ${carregandoQueda ? 'Analisando produtos...' : 'Nenhum dado carregado ainda. Clique em <strong>🔄 Atualizar dados</strong> para comparar este mês vs o mês anterior, produto a produto.'}
+        ${carregandoQueda ? 'Analisando produtos...' : 'Nenhum dado carregado ainda. Clique em <strong>🔄 Atualizar dados</strong> para ver a tendência semana a semana, produto a produto.'}
       </div>`;
     }
+
+    const clientesOpts = [...new Set(produtosQueda.map(p=>p.clienteId))]
+      .map(id => GLR.clientes.find(c=>c.id===id))
+      .filter(Boolean)
+      .sort((a,b)=>a.nome.localeCompare(b.nome));
+
+    const filtrados1 = filtroClienteQueda === 'todos'
+      ? produtosQueda
+      : produtosQueda.filter(p => String(p.clienteId) === String(filtroClienteQueda));
+
+    const plataformasOpts = [...new Set(filtrados1.map(p=>p.plataforma))].sort();
+
+    const filtrados = filtroPlataformaQueda === 'todas'
+      ? filtrados1
+      : filtrados1.filter(p => p.plataforma === filtroPlataformaQueda);
+
     return `
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
-      Compara faturamento por produto no período atual (mês corrente até ontem) vs os mesmos ${fmtQtdeDias()} dias do mês anterior.
-      Mostra apenas quedas ≥${QUEDA_MIN_PCT}% com faturamento anterior ≥ ${R$(QUEDA_MIN_VALOR)}.
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
+      <select id="qd-filtro-cliente" class="form-input" style="width:220px;" onchange="_analyticsFiltrarQuedaCliente(this.value)">
+        <option value="todos" ${filtroClienteQueda==='todos'?'selected':''}>Todos os clientes</option>
+        ${clientesOpts.map(c=>`<option value="${c.id}" ${String(filtroClienteQueda)===String(c.id)?'selected':''}>${c.nome}</option>`).join('')}
+      </select>
+      <select id="qd-filtro-plataforma" class="form-input" style="width:180px;" onchange="_analyticsFiltrarQuedaPlataforma(this.value)">
+        <option value="todas" ${filtroPlataformaQueda==='todas'?'selected':''}>Todas plataformas</option>
+        ${plataformasOpts.map(p=>`<option value="${p}" ${filtroPlataformaQueda===p?'selected':''}>${p}</option>`).join('')}
+      </select>
+      <div style="font-size:11px;color:var(--text-muted);">Quantidade vendida por semana no mês corrente · ${filtrados.length} produto${filtrados.length!==1?'s':''} em queda</div>
     </div>
     <div class="card" style="padding:0;overflow:hidden;">
       <div style="overflow-x:auto;">
-      <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:800px;">
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px;">
         <thead>
           <tr style="background:#1a2744;color:white;">
-            <th style="padding:10px 12px;text-align:left;">Conta</th>
+            <th style="padding:10px 12px;text-align:left;">Produto</th>
+            ${filtroClienteQueda==='todos' ? '<th style="padding:10px 8px;text-align:left;">Cliente</th>' : ''}
             <th style="padding:10px 8px;text-align:left;">Canal</th>
-            <th style="padding:10px 8px;text-align:left;">Produto</th>
-            <th style="padding:10px 8px;text-align:right;">Mês Anterior</th>
-            <th style="padding:10px 8px;text-align:right;">Atual</th>
-            <th style="padding:10px 8px;text-align:right;">Queda</th>
+            ${(filtrados[0]?.semanasLabels||['01–07','08–14','15–21','22–fim']).map(l=>`<th style="padding:10px 8px;text-align:center;">${l}</th>`).join('')}
+            <th style="padding:10px 8px;text-align:center;">Tendência</th>
           </tr>
         </thead>
         <tbody>
-          ${produtosQueda.map((p,i) => `
+          ${filtrados.length ? filtrados.map((p,i) => `
             <tr style="background:${i%2===0?'var(--bg-card)':'var(--bg-surface)'};cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${p.clienteId}})">
-              <td style="padding:9px 12px;font-weight:600;">${p.cliente}</td>
+              <td style="padding:9px 12px;font-weight:600;max-width:280px;">${p.nome}</td>
+              ${filtroClienteQueda==='todos' ? `<td style="padding:9px 8px;color:var(--text-secondary);">${p.cliente}</td>` : ''}
               <td style="padding:9px 8px;color:var(--text-secondary);">${p.plataforma}</td>
-              <td style="padding:9px 8px;">${p.nome}</td>
-              <td style="padding:9px 8px;text-align:right;color:var(--text-muted);">${R$(p.valorAnterior)}</td>
-              <td style="padding:9px 8px;text-align:right;">${R$(p.valorAtual)}</td>
-              <td style="padding:9px 8px;text-align:right;font-weight:700;color:#ef4444;">${p.pctQueda.toFixed(1)}%</td>
-            </tr>`).join('')}
+              ${p.semanas.map((v,idx)=>`<td style="padding:9px 8px;text-align:center;${idx===p.semanas.length-1?'font-weight:700;':''}">${v} un.</td>`).join('')}
+              <td style="padding:9px 8px;text-align:center;">
+                <span style="display:inline-flex;align-items:center;gap:5px;color:${p.tendencia.cor};font-weight:700;">
+                  <span style="width:8px;height:8px;border-radius:50%;background:${p.tendencia.cor};display:inline-block;"></span>
+                  ${p.tendencia.label}
+                </span>
+              </td>
+            </tr>`).join('') : `<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--text-muted);">Nenhum produto em queda pra esse filtro.</td></tr>`}
         </tbody>
       </table>
       </div>
@@ -738,6 +787,15 @@ Router.register('analytics-conteudo', async (params, el) => {
 
   window._analyticsBuscarExec  = () => buscarDadosExecutivo();
   window._analyticsBuscarQueda = () => buscarProdutosQueda();
+  window._analyticsFiltrarQuedaCliente = (valor) => {
+    filtroClienteQueda = valor;
+    filtroPlataformaQueda = 'todas'; // trocar de cliente reseta o filtro de plataforma (opções mudam)
+    render();
+  };
+  window._analyticsFiltrarQuedaPlataforma = (valor) => {
+    filtroPlataformaQueda = valor;
+    render();
+  };
 
   render();
 });
