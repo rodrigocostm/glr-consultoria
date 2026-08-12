@@ -246,9 +246,10 @@ Router.register('dashboard', (params, el) => {
   const crescimento = clientes.filter(c => c.status === 'crescimento').length;
   const queda       = clientes.filter(c => c.status === 'queda').length;
   const risco       = clientes.filter(c => c.status === 'risco').length;
-  const tarefasPendentes = GLR.tarefas.filter(t => t.status === 'pendente' || t.status === 'atrasada').length;
+  const tarefasPendentes = GLR.tarefas.filter(t => t.status !== 'concluida').length;
   const tasksConc    = GLR.tarefas.filter(t => t.status === 'concluida').length;
-  const tasksAtras   = GLR.tarefas.filter(t => t.status === 'atrasada').length;
+  const hojeIsoDash  = new Date().toISOString().slice(0,10);
+  const tasksAtras   = GLR.tarefas.filter(t => t.status !== 'concluida' && (t.status === 'atrasada' || (t.prazo && t.prazo < hojeIsoDash))).length;
   const reunioesSemana = GLR.eventos.filter(e => e.tipo === 'reuniao').length;
 
   const faturamentoTotal = clientes.reduce((s, c) => s + (c.faturamento || 0), 0);
@@ -275,7 +276,7 @@ Router.register('dashboard', (params, el) => {
     const clientesDoGestor = clientes.filter(c => c.gestor === g.nome);
     const crescMedioG = clientesDoGestor.length
       ? (clientesDoGestor.reduce((s,c)=>s+(c.crescimento||0),0)/clientesDoGestor.length) : 0;
-    const tarefasG  = GLR.tarefas.filter(t=>t.responsavel===g.nome&&(t.status==='pendente'||t.status==='atrasada')).length;
+    const tarefasG  = GLR.tarefas.filter(t=>t.responsavel===g.nome&&t.status!=='concluida').length;
     const fatG      = clientesDoGestor.reduce((s,c)=>s+(c.faturamento||0),0);
     const avatar    = g.nome.split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase();
     return { ...g, avatar, qtdClientes: clientesDoGestor.length, crescMedio: crescMedioG, tarefasPend: tarefasG, fat: fatG };
@@ -507,7 +508,7 @@ Router.register('dashboard', (params, el) => {
           <div class="section-title">⚡ Tarefas Urgentes</div>
           <button class="btn btn-ghost btn-sm" onclick="Router.navigate('tarefas')">Ver todas</button>
         </div>
-        ${GLR.tarefas.filter(t => t.status === 'atrasada' || t.prioridade === 'urgente').slice(0,5).map(t => `
+        ${GLR.tarefas.filter(t => t.status !== 'concluida' && (t.status === 'atrasada' || (t.prazo && t.prazo < hojeIsoDash) || t.prioridade === 'urgente')).slice(0,5).map(t => `
           <div class="task-card" onclick="Router.navigate('tarefas')">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
               <div class="task-title">${t.titulo}</div>
@@ -516,7 +517,7 @@ Router.register('dashboard', (params, el) => {
             <div class="task-meta">
               <span>👤 ${t.responsavel}</span>
               <span>📅 ${formatDate(t.prazo)}</span>
-              ${t.status === 'atrasada' ? '<span style="color:var(--red);font-weight:600;">ATRASADA</span>' : ''}
+              ${t.status === 'atrasada' || (t.prazo && t.prazo < hojeIsoDash) ? '<span style="color:var(--red);font-weight:600;">ATRASADA</span>' : ''}
             </div>
           </div>
         `).join('')}

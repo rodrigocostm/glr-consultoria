@@ -2,98 +2,242 @@
 // GLR Consultoria — Tarefas, Calendário, Timeline, Score GLR
 // ============================================================
 
+// ---- Persistência ----
+function salvarTarefas() {
+  localStorage.setItem('glr_tarefas', JSON.stringify(GLR.tarefas));
+}
+
+function hojeISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+const TAREFA_STATUS = {
+  pendente:     { label: 'Não iniciado', bg: 'var(--bg-card)',   cor: 'var(--text-secondary)' },
+  em_andamento: { label: 'Em andamento', bg: 'var(--orange-bg)', cor: 'var(--orange)' },
+  parado:       { label: 'Parado',       bg: 'var(--red-bg)',    cor: 'var(--red)' },
+  atrasada:     { label: 'Atrasada',     bg: 'var(--red-bg)',    cor: 'var(--red)' },
+  concluida:    { label: 'Concluída',    bg: 'var(--green-bg)',  cor: 'var(--green)' },
+};
+
+const TAREFA_PRIORIDADE = {
+  urgente: { label: 'Urgente', cor: 'var(--red)',    bg: 'var(--red-bg)' },
+  alta:    { label: 'Alta',    cor: 'var(--orange)', bg: 'var(--orange-bg)' },
+  media:   { label: 'Média',   cor: 'var(--yellow)', bg: 'var(--yellow-bg)' },
+  baixa:   { label: 'Baixa',   cor: 'var(--green)',  bg: 'var(--green-bg)' },
+};
+
 // ---- Gestão de Tarefas ----
 Router.register('tarefas', (params, el) => {
-  const hoje = '2026-06-04';
+  let filtroResp   = '';
+  let filtroStatus = '';
+  let semanaOffset = 0;
+  const hoje = hojeISO();
 
-  function classify(t) {
-    if (t.status === 'concluida') return 'concluidas';
-    if (t.status === 'atrasada' || t.prazo < hoje) return 'atrasadas';
-    if (t.prazo === hoje) return 'hoje';
-    return 'semana';
+  function semanaRange(offset) {
+    const d = new Date();
+    const dow = (d.getDay() + 6) % 7; // 0 = segunda
+    const seg = new Date(d); seg.setDate(d.getDate() - dow + offset * 7);
+    const dom = new Date(seg); dom.setDate(seg.getDate() + 6);
+    const iso = x => `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+    const fmtCurto = x => x.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '');
+    return { de: iso(seg), ate: iso(dom), label: `${fmtCurto(seg)} – ${fmtCurto(dom)}` };
   }
 
-  const categorias = {
-    hoje: { label: 'Hoje', color: '#6366f1', tasks: [] },
-    semana: { label: 'Esta Semana', color: '#06b6d4', tasks: [] },
-    atrasadas: { label: 'Atrasadas', color: '#ef4444', tasks: [] },
-    concluidas: { label: 'Concluídas', color: '#10b981', tasks: [] },
-  };
+  function tarefasFiltradas() {
+    return GLR.tarefas.filter(t => {
+      if (filtroResp   && t.responsavel !== filtroResp) return false;
+      if (filtroStatus && (t.status || 'pendente') !== filtroStatus) return false;
+      return true;
+    }).sort((a, b) => {
+      const ac = a.status === 'concluida', bc = b.status === 'concluida';
+      if (ac !== bc) return ac ? 1 : -1;
+      return (a.prazo || '9999-99-99').localeCompare(b.prazo || '9999-99-99');
+    });
+  }
 
-  GLR.tarefas.forEach(t => categorias[classify(t)].tasks.push(t));
+  function avatarCell(t) {
+    const g   = GLR.gestores.find(g => g.nome === t.responsavel);
+    const cor = g?.cor || '#6366f1';
+    return `
+      <select onchange="_tarefaSetCampo(${t.id},'responsavel',this.value)" title="${t.responsavel || 'Sem responsável'}"
+        style="width:30px;height:30px;border:none;border-radius:50%;text-align:center;text-align-last:center;background:${cor}22;color:${cor};font-weight:700;font-size:10px;cursor:pointer;appearance:none;-webkit-appearance:none;">
+        ${!t.responsavel ? `<option value="">—</option>` : ''}
+        ${GLR.gestores.map(g2 => `<option value="${g2.nome}" ${t.responsavel===g2.nome?'selected':''}>${g2.avatar || g2.nome}</option>`).join('')}
+      </select>`;
+  }
+
+  function renderLinha(t) {
+    const st  = TAREFA_STATUS[t.status] || TAREFA_STATUS.pendente;
+    const pr  = TAREFA_PRIORIDADE[t.prioridade] || TAREFA_PRIORIDADE.media;
+    const atrasada = t.status !== 'concluida' && t.prazo && t.prazo < hoje;
+    const concluida = t.status === 'concluida';
+    return `
+    <tr data-id="${t.id}">
+      <td style="width:34px;padding:8px 4px 8px 14px;">
+        <input type="checkbox" ${concluida ? 'checked' : ''} onchange="_tarefaToggleConcluida(${t.id}, this.checked)"
+          style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent);">
+      </td>
+      <td style="padding:8px 10px;min-width:220px;">
+        <input value="${(t.titulo || '').replace(/"/g,'&quot;')}" onblur="_tarefaSetCampo(${t.id},'titulo',this.value)"
+          style="width:100%;background:transparent;border:none;color:${concluida?'var(--text-muted)':'var(--text-primary)'};font-size:13px;font-weight:600;padding:4px 2px;${concluida?'text-decoration:line-through;':''}">
+        ${t.cliente && t.cliente !== 'Interno' ? `<div style="font-size:10.5px;color:var(--text-muted);margin:0 0 0 4px;">🏢 ${t.cliente}</div>` : ''}
+      </td>
+      <td style="padding:8px 6px;text-align:center;">${avatarCell(t)}</td>
+      <td style="padding:8px 6px;min-width:130px;">
+        <select onchange="_tarefaSetCampo(${t.id},'status',this.value)"
+          style="width:100%;text-align:center;text-align-last:center;border:none;border-radius:6px;padding:6px 4px;font-size:11.5px;font-weight:700;background:${st.bg};color:${st.cor};cursor:pointer;appearance:none;-webkit-appearance:none;">
+          ${Object.entries(TAREFA_STATUS).map(([k,v]) => `<option value="${k}" ${(t.status||'pendente')===k?'selected':''}>${v.label}</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:8px 10px;white-space:nowrap;">
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="color:${atrasada?'var(--red)':'var(--text-muted)'};font-size:12px;">${atrasada ? '⏰' : '📅'}</span>
+          <input type="date" value="${t.prazo || ''}" onchange="_tarefaSetCampo(${t.id},'prazo',this.value)"
+            style="background:transparent;border:none;color:${atrasada?'var(--red)':'var(--text-secondary)'};font-size:12px;font-weight:${atrasada?'700':'500'};cursor:pointer;">
+        </div>
+      </td>
+      <td style="padding:8px 6px;min-width:110px;">
+        <select onchange="_tarefaSetCampo(${t.id},'prioridade',this.value)"
+          style="width:100%;text-align:center;text-align-last:center;border:none;border-radius:6px;padding:6px 4px;font-size:11.5px;font-weight:700;background:${pr.bg};color:${pr.cor};cursor:pointer;appearance:none;-webkit-appearance:none;">
+          ${Object.entries(TAREFA_PRIORIDADE).map(([k,v]) => `<option value="${k}" ${t.prioridade===k?'selected':''}>${v.label}</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:8px 10px;min-width:160px;">
+        <input value="${(t.notas || '').replace(/"/g,'&quot;')}" placeholder="—" onblur="_tarefaSetCampo(${t.id},'notas',this.value)"
+          style="width:100%;background:transparent;border:none;color:var(--text-secondary);font-size:12.5px;padding:4px 2px;">
+      </td>
+      <td style="padding:8px 14px 8px 4px;width:28px;">
+        <button onclick="_tarefaExcluir(${t.id})" title="Excluir tarefa"
+          style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;opacity:.55;">✕</button>
+      </td>
+    </tr>`;
+  }
+
+  function renderSemanaBar() {
+    const range = semanaRange(semanaOffset);
+    const abertas = GLR.tarefas.filter(t => t.status !== 'concluida' && t.prazo >= range.de && t.prazo <= range.ate);
+    const contagem = {};
+    abertas.forEach(t => { const p = t.prioridade || 'media'; contagem[p] = (contagem[p] || 0) + 1; });
+    const total = abertas.length;
+    const ordem = ['urgente', 'alta', 'media', 'baixa'];
+    const segmentos = total
+      ? ordem.filter(k => contagem[k]).map(k => `<div title="${TAREFA_PRIORIDADE[k].label}: ${contagem[k]}" style="width:${(contagem[k]/total*100)}%;background:${TAREFA_PRIORIDADE[k].cor};height:100%;"></div>`).join('')
+      : '';
+
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:10px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;">📆 Prioridades da semana ${total ? `(${total} aberta${total!==1?'s':''})` : ''}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="_tarefaSemana(-1)" style="padding:4px 10px;">‹</button>
+          <span style="font-size:12.5px;font-weight:600;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:4px 14px;">${range.label}</span>
+          <button class="btn btn-ghost btn-sm" onclick="_tarefaSemana(1)" style="padding:4px 10px;">›</button>
+        </div>
+      </div>
+      <div style="display:flex;height:12px;border-radius:99px;overflow:hidden;background:var(--bg-base);border:1px solid var(--border);">
+        ${segmentos}
+      </div>
+      <div style="display:flex;gap:14px;margin-top:10px;flex-wrap:wrap;">
+        ${ordem.map(k => `<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary);">
+          <div style="width:8px;height:8px;border-radius:2px;background:${TAREFA_PRIORIDADE[k].cor};"></div>${TAREFA_PRIORIDADE[k].label} (${contagem[k]||0})
+        </div>`).join('')}
+      </div>`;
+  }
+
+  function renderTudo() {
+    const lista = tarefasFiltradas();
+    document.getElementById('tarefas-tbody').innerHTML = lista.map(renderLinha).join('') + `
+      <tr>
+        <td colspan="8" style="padding:10px 14px;">
+          <button onclick="_tarefaAdicionar()" style="background:none;border:none;color:var(--accent-light);font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;padding:6px 0;">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Adicionar tarefa
+          </button>
+        </td>
+      </tr>`;
+    document.getElementById('tarefas-semana-bar').innerHTML = renderSemanaBar();
+    document.getElementById('tarefas-stats').textContent =
+      `${GLR.tarefas.filter(t=>t.status!=='concluida').length} tarefas ativas · ${GLR.tarefas.filter(t=>t.status==='atrasada' || (t.status!=='concluida' && t.prazo && t.prazo<hoje)).length} atrasadas`;
+  }
 
   el.innerHTML = `<div class="page">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-      <div style="font-size:13px;color:var(--text-muted);">${GLR.tarefas.filter(t=>t.status!=='concluida').length} tarefas ativas · ${GLR.tarefas.filter(t=>t.status==='atrasada').length} atrasadas</div>
-      <button class="btn btn-primary" onclick="openModalNovaTarefa(null)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+      <div id="tarefas-stats" style="font-size:13px;color:var(--text-muted);"></div>
+      <button class="btn btn-primary" onclick="_tarefaAdicionar()">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
         Nova Tarefa
       </button>
     </div>
 
-    <div class="kanban">
-      ${Object.entries(categorias).map(([key, cat]) => `
-        <div class="kanban-col">
-          <div class="kanban-col-header">
-            <span class="kanban-col-title" style="color:${cat.color};">${cat.label}</span>
-            <span class="kanban-count">${cat.tasks.length}</span>
-          </div>
-          ${cat.tasks.length ? cat.tasks.map(t => `
-            <div class="task-card" onclick="openModalTarefa(${t.id})">
-              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:8px;">
-                <div class="task-title">${t.titulo}</div>
-                <span class="badge ${GLR.prioridadeColor[t.prioridade]}" style="flex-shrink:0;">${t.prioridade}</span>
-              </div>
-              ${t.cliente !== 'Interno' ? `<div style="font-size:11.5px;color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:4px;">
-                <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                ${t.cliente}
-              </div>` : ''}
-              <div class="task-meta">
-                <span>👤 ${t.responsavel}</span>
-                <span style="color:${t.status==='atrasada' ? 'var(--red)' : 'inherit'};">📅 ${formatDate(t.prazo)}</span>
-              </div>
-              <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
-                <span style="font-size:11px;padding:2px 7px;border-radius:99px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-muted);">${t.categoria}</span>
-                ${t.status === 'atrasada' ? '<span style="font-size:11px;color:var(--red);font-weight:700;margin-left:auto;">⚠ Atrasada</span>' : ''}
-              </div>
-            </div>
-          `).join('') : `<div style="text-align:center;padding:24px 12px;color:var(--text-muted);font-size:12px;">Nenhuma tarefa</div>`}
-        </div>
-      `).join('')}
+    <div class="card" style="padding:16px 20px;margin-bottom:16px;" id="tarefas-semana-bar"></div>
+
+    <div class="filters">
+      <select class="filter-select" id="tf-filter-resp" onchange="_tarefaFiltrar()">
+        <option value="">Todos os responsáveis</option>
+        ${GLR.gestores.map(g => `<option value="${g.nome}">${g.nome}</option>`).join('')}
+      </select>
+      <select class="filter-select" id="tf-filter-status" onchange="_tarefaFiltrar()">
+        <option value="">Todos os status</option>
+        ${Object.entries(TAREFA_STATUS).map(([k,v]) => `<option value="${k}">${v.label}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Tarefa</th>
+              <th style="text-align:center;">Responsável</th>
+              <th>Status</th>
+              <th>Prazo</th>
+              <th>Prioridade</th>
+              <th>Notas</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tarefas-tbody"></tbody>
+        </table>
+      </div>
     </div>
   </div>`;
 
-  window.openModalTarefa = (id) => {
+  window._tarefaSetCampo = (id, campo, valor) => {
     const t = GLR.tarefas.find(x => x.id === id);
     if (!t) return;
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `<div class="modal">
-      <div class="modal-header">
-        <div class="modal-title">Tarefa</div>
-        <button class="btn btn-ghost btn-sm" onclick="this.closest('.modal-overlay').remove()">✕</button>
-      </div>
-      <div style="margin-bottom:16px;">
-        <div style="font-size:17px;font-weight:700;margin-bottom:8px;">${t.titulo}</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <span class="badge ${GLR.prioridadeColor[t.prioridade]}">${t.prioridade}</span>
-          <span class="badge ${t.status === 'atrasada' ? 'status-risco' : t.status === 'concluida' ? 'status-crescimento' : 'status-ativo'}">${t.status}</span>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-        <div><div class="form-label">Cliente</div><div style="color:var(--text-primary);">${t.cliente}</div></div>
-        <div><div class="form-label">Responsável</div><div style="color:var(--text-primary);">${t.responsavel}</div></div>
-        <div><div class="form-label">Prazo</div><div style="color:var(--text-primary);">${formatDate(t.prazo)}</div></div>
-        <div><div class="form-label">Categoria</div><div style="color:var(--text-primary);">${t.categoria}</div></div>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;">
-        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Fechar</button>
-        <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove()">Marcar Concluída</button>
-      </div>
-    </div>`;
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    t[campo] = valor;
+    salvarTarefas();
+    renderTudo();
   };
+  window._tarefaToggleConcluida = (id, marcado) => {
+    window._tarefaSetCampo(id, 'status', marcado ? 'concluida' : 'pendente');
+  };
+  window._tarefaExcluir = (id) => {
+    if (!confirm('Excluir esta tarefa?')) return;
+    GLR.tarefas = GLR.tarefas.filter(x => x.id !== id);
+    salvarTarefas();
+    renderTudo();
+  };
+  window._tarefaAdicionar = () => {
+    GLR.tarefas.push({
+      id: GLR.nextId(GLR.tarefas),
+      titulo: 'Nova tarefa', cliente: 'Interno', clienteId: null,
+      responsavel: GLR.gestores[0]?.nome || '',
+      status: 'pendente', prioridade: 'media',
+      prazo: hoje, categoria: 'Interno', notas: '',
+    });
+    salvarTarefas();
+    renderTudo();
+  };
+  window._tarefaSemana = (delta) => { semanaOffset += delta; renderTudo(); };
+  window._tarefaFiltrar = () => {
+    filtroResp   = document.getElementById('tf-filter-resp').value;
+    filtroStatus = document.getElementById('tf-filter-status').value;
+    renderTudo();
+  };
+
+  renderTudo();
 });
 
 // ---- Calendário Operacional ----
@@ -499,32 +643,56 @@ function openModalNovaTarefa(clienteId) {
       <div class="modal-title">Nova Tarefa</div>
       <button class="btn btn-ghost btn-sm" onclick="this.closest('.modal-overlay').remove()">✕</button>
     </div>
-    <div class="form-group"><label class="form-label">Título</label><input class="form-input" placeholder="Descreva a tarefa..."></div>
+    <div class="form-group"><label class="form-label">Título *</label><input class="form-input" id="nt-titulo" placeholder="Descreva a tarefa..."></div>
     <div class="form-group"><label class="form-label">Cliente</label>
-      <select class="form-select">
+      <select class="form-select" id="nt-cliente">
         <option value="">Interno</option>
         ${GLR.clientes.map(c => `<option value="${c.id}" ${c.id === clienteId ? 'selected' : ''}>${c.nome}</option>`).join('')}
       </select>
     </div>
     <div class="grid-2" style="gap:12px;">
       <div class="form-group"><label class="form-label">Responsável</label>
-        <select class="form-select">${GLR.gestores.map(g=>`<option>${g.nome}</option>`).join('')}</select>
+        <select class="form-select" id="nt-responsavel">${GLR.gestores.map(g=>`<option>${g.nome}</option>`).join('')}</select>
       </div>
-      <div class="form-group"><label class="form-label">Prazo</label><input class="form-input" type="date" value="2026-06-10"></div>
+      <div class="form-group"><label class="form-label">Prazo</label><input class="form-input" id="nt-prazo" type="date" value="${hojeISO()}"></div>
     </div>
     <div class="grid-2" style="gap:12px;">
       <div class="form-group"><label class="form-label">Prioridade</label>
-        <select class="form-select"><option>urgente</option><option>alta</option><option selected>media</option><option>baixa</option></select>
+        <select class="form-select" id="nt-prioridade"><option value="urgente">urgente</option><option value="alta">alta</option><option value="media" selected>media</option><option value="baixa">baixa</option></select>
       </div>
       <div class="form-group"><label class="form-label">Categoria</label>
-        <select class="form-select"><option>Reunião</option><option>Análise</option><option>Campanha</option><option>Relatório</option><option>Estratégia</option><option>Onboarding</option></select>
+        <select class="form-select" id="nt-categoria"><option>Reunião</option><option>Análise</option><option>Campanha</option><option>Relatório</option><option>Estratégia</option><option>Onboarding</option></select>
       </div>
     </div>
+    <p id="nt-erro" style="color:var(--red);font-size:12px;margin:0 0 10px;display:none;">Preencha o título da tarefa.</p>
     <div style="display:flex;gap:10px;justify-content:flex-end;">
       <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
-      <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove()">Criar Tarefa</button>
+      <button class="btn btn-primary" onclick="_tarefaCriarDoModal()">Criar Tarefa</button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  setTimeout(() => document.getElementById('nt-titulo')?.focus(), 50);
 }
+
+window._tarefaCriarDoModal = () => {
+  const titulo = document.getElementById('nt-titulo').value.trim();
+  if (!titulo) { document.getElementById('nt-erro').style.display = 'block'; return; }
+  const clienteId = document.getElementById('nt-cliente').value;
+  const cliente = clienteId ? GLR.clientes.find(c => c.id === parseInt(clienteId)) : null;
+  GLR.tarefas.push({
+    id: GLR.nextId(GLR.tarefas),
+    titulo,
+    cliente: cliente ? cliente.nome : 'Interno',
+    clienteId: cliente ? cliente.id : null,
+    responsavel: document.getElementById('nt-responsavel').value,
+    prazo: document.getElementById('nt-prazo').value,
+    prioridade: document.getElementById('nt-prioridade').value,
+    categoria: document.getElementById('nt-categoria').value,
+    status: 'pendente',
+    notas: '',
+  });
+  salvarTarefas();
+  document.querySelector('.modal-overlay')?.remove();
+  Router.resolve();
+};

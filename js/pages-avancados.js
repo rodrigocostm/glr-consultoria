@@ -2417,8 +2417,9 @@ Router.register('ia', (params, el) => {
 
     // Tarefas atrasadas
     if (q.includes('tarefa') || q.includes('atrasad') || q.includes('pendente')) {
-      const atrasadas = ta.filter(t=>t.status==='atrasada');
-      const pendentes = ta.filter(t=>t.status==='pendente'||t.status==='em_andamento');
+      const hojeSt2 = new Date().toISOString().slice(0,10);
+      const atrasadas = ta.filter(t=>t.status!=='concluida' && (t.status==='atrasada' || (t.prazo && t.prazo<hojeSt2)));
+      const pendentes = ta.filter(t=>['pendente','em_andamento','parado'].includes(t.status||'pendente'));
       if (!ta.length) return `Nenhuma tarefa cadastrada ainda. Adicione tarefas em **Gestão de Tarefas**.`;
       let resp = `⏰ **Situação das Tarefas:**\n\n`;
       resp += `- Total: **${ta.length}** tarefas\n- Atrasadas: **${atrasadas.length}**\n- Pendentes: **${pendentes.length}**\n- Concluídas: **${ta.filter(t=>t.status==='concluida').length}**\n\n`;
@@ -2435,8 +2436,8 @@ Router.register('ia', (params, el) => {
       if (!ge.length) return `Nenhum gestor cadastrado ainda. Adicione gestores em **Gestores**.`;
       const dados = ge.map(g=>{
         const clientesG = cl.filter(c=>c.gestor===g.nome);
-        const tarefasG  = ta.filter(t=>t.responsavel===g.nome&&(t.status==='pendente'||t.status==='atrasada'));
-        const atrasG    = ta.filter(t=>t.responsavel===g.nome&&t.status==='atrasada');
+        const tarefasG  = ta.filter(t=>t.responsavel===g.nome&&t.status!=='concluida');
+        const atrasG    = ta.filter(t=>t.responsavel===g.nome&&t.status!=='concluida'&&t.prazo&&t.prazo<new Date().toISOString().slice(0,10));
         const crescG    = clientesG.length ? (clientesG.reduce((s,c)=>s+(c.crescimento||0),0)/clientesG.length) : 0;
         return { ...g, clientesG, tarefasG, atrasG, crescG };
       }).sort((a,b)=>b.tarefasG.length-a.tarefasG.length);
