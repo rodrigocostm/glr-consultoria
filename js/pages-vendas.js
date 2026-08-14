@@ -2051,6 +2051,17 @@ Router.register('vendas', async (params, el) => {
         if (conta.marketplace === 'magalu') {
           const magaluAccountId = conta.param_to_use?.magalu_account_id || conta.external_id;
           if (statusEl) statusEl.textContent = 'Magalu: listando pedidos...';
+
+          // Diagnóstico: chamada crua direta, sem passar pelo helper, pra ver
+          // exatamente o formato bruto que a API devolve (o helper pode estar
+          // procurando os pedidos no lugar errado do objeto de resposta).
+          try {
+            const rawTeste = await MarketplaceAPI.call('magalu_list_orders', { _limit: 5, _offset: 0, _sort: 'created_at:desc', magalu_account_id: magaluAccountId });
+            _diagMostrar('magalu_raw_teste', conta.external_id, rawTeste);
+          } catch(eRaw) {
+            _diagMostrar('magalu_raw_teste', conta.external_id, { ERRO: eRaw.message });
+          }
+
           let ordersRaw = [];
           try {
             ordersRaw = await MarketplaceAPI.magaluOrders(magaluAccountId, dataFrom, dataTo);
