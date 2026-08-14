@@ -199,6 +199,62 @@ const MarketplaceAPI = {
     return out;
   },
 
+  // Pedidos Magalu (magalu_list_orders). Não existe filtro de data confiável na
+  // API (testado: purchased_at.ge/.le e filter[purchased_at][ge] são ignorados ou
+  // dão erro) — pagina do mais recente pro mais antigo via _sort=created_at:desc
+  // e para assim que sai do período pedido, mesmo espírito da blindagem que já
+  // fazemos pra Shopee. dateFrom/dateTo em 'YYYY-MM-DD'. Valores monetários da API
+  // vêm em CENTAVOS (normalizer:100) — quem consome este retorno precisa dividir
+  // por 100.
+  async magaluOrders(accountId, dateFrom, dateTo) {
+    const PAGE = 50; // limite máximo da API
+    let offset = 0;
+    let allResults = [];
+    const tsFrom = new Date(`${dateFrom}T00:00:00Z`).getTime();
+    const tsTo   = new Date(`${dateTo}T23:59:59Z`).getTime();
+
+    do {
+      let r = null, tent = 0;
+      while (tent < 3) {
+        try {
+          const params = { _limit: PAGE, _offset: offset, _sort: 'created_at:desc' };
+          if (accountId) params.magalu_account_id = accountId;
+          r = await this.call('magalu_list_orders', params);
+          break;
+        } catch(e) {
+          tent++;
+          console.warn(`[Magalu] offset=${offset} falhou (tentativa ${tent}/3):`, e.message);
+          if (tent >= 3) break;
+          await new Promise(res=>setTimeout(res, 1500*tent));
+        }
+      }
+      if (!r) {
+        console.error(`[Magalu] offset=${offset} falhou 3x — usando ${allResults.length} pedidos parciais`);
+        break;
+      }
+      const results = r.results || r.data?.results || [];
+      if (!results.length) break;
+
+      let saiuDoPeriodo = false;
+      for (const o of results) {
+        // Para a paginação com base em created_at (mesmo campo do _sort — garante
+        // ordem monotônica). O filtro de inclusão usa purchased_at (data real da
+        // venda), caindo pra created_at quando não vier.
+        const criadoEm = new Date(o.created_at || 0).getTime();
+        if (criadoEm && criadoEm < tsFrom) { saiuDoPeriodo = true; break; }
+        const comprado = new Date(o.purchased_at || o.created_at || 0).getTime();
+        if (comprado >= tsFrom && comprado <= tsTo) allResults.push(o);
+      }
+
+      if (saiuDoPeriodo) break;
+      if (results.length < PAGE) break; // última página
+      offset += PAGE;
+    } while (true);
+
+    console.log(`[Magalu] ${dateFrom} → ${dateTo}: ${allResults.length} pedidos`);
+    return allResults;
+  },
+
   // Saldo de ADS Shopee
   async shopeeAdsBalance({ shopId }) {
     const r = await this.call('shopee_ads_balance', { shopId });

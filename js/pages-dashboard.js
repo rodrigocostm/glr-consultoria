@@ -112,7 +112,7 @@ async function _dashBuscarVendasPorDia() {
 
   const porDia = {}; // 'DD/MM' -> { pedidos, comissao, faturamento }
   const porCanal = {}; // 'Mercado Livre'/'Shopee'/'Amazon'/... -> { pedidos, comissao, faturamento }
-  const NOME_CANAL = { meli:'Mercado Livre', ml:'Mercado Livre', mercadolivre:'Mercado Livre', shopee:'Shopee', amazon:'Amazon' };
+  const NOME_CANAL = { meli:'Mercado Livre', ml:'Mercado Livre', mercadolivre:'Mercado Livre', shopee:'Shopee', amazon:'Amazon', magalu:'Magalu' };
   // Comissão da GLR é por UNIDADE vendida (valorPorVenda × quantidade), não um valor
   // fixo por pedido — um pedido com 3 unidades do mesmo produto conta 3x, não 1x.
   const addPedido = (dataStr, unidades, valorPorVenda, valorPedido, mkt) => {
@@ -174,6 +174,18 @@ async function _dashBuscarVendasPorDia() {
                 addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda, valorPedido, mkt);
               }
             } catch(e) {}
+          }
+        } else if (mkt === 'magalu') {
+          const magaluAccountId = conta.param_to_use?.magalu_account_id || conta.external_id;
+          const orders = await MarketplaceAPI.magaluOrders(magaluAccountId, primeiroDia, dataTo);
+          for (const o of orders) {
+            if (['canceled','cancelled'].includes((o.status||'').toLowerCase())) continue;
+            const d = new Date(o.purchased_at || o.created_at || 0);
+            if (isNaN(d)) continue;
+            const unidades = (o.deliveries||[]).reduce((s,dl) => s + (dl.items||[]).reduce((s2,it) => s2 + (parseInt(it.quantity)||1), 0), 0) || 1;
+            // Valores da API Magalu vêm em centavos (normalizer:100)
+            const valorPedido = (parseFloat(o.amounts?.total) || 0) / 100;
+            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda, valorPedido, mkt);
           }
         }
       } catch(e) { console.warn('[Dashboard] vendas/dia erro conta', conta.nickname, e.message); }
@@ -619,7 +631,7 @@ Router.register('dashboard', (params, el) => {
       if (!canais.length) {
         ctxCanal.parentElement.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">Sem dados ainda.<br>Clique em "Atualizar" no gráfico "Vendas por Dia" acima.</div>';
       } else {
-        const coresCanal = { 'Mercado Livre':'#fbbf24', 'Shopee':'#f97316', 'Amazon':'#94a3b8' };
+        const coresCanal = { 'Mercado Livre':'#fbbf24', 'Shopee':'#f97316', 'Amazon':'#94a3b8', 'Magalu':'#0086ff' };
         const paletaExtra = ['#6366f1','#8b5cf6','#06b6d4','#10b981','#ec4899'];
         const corDe = (nome, i) => coresCanal[nome] || paletaExtra[i % paletaExtra.length];
         new Chart(ctxCanal, {

@@ -170,7 +170,7 @@ Router.register('vendas', async (params, el) => {
     if (diff < 86400)return `há ${Math.floor(diff/3600)}h`;
     return `há ${Math.floor(diff/86400)} dias`;
   }
-  const platCor = { 'Mercado Livre':'#f59e0b', 'Shopee':'#f97316', 'Amazon':'#94a3b8' };
+  const platCor = { 'Mercado Livre':'#f59e0b', 'Shopee':'#f97316', 'Amazon':'#94a3b8', 'Magalu':'#0086ff' };
 
   function corMargem(m) {
     if (m>=20) return '#34d399';
@@ -2034,6 +2034,60 @@ Router.register('vendas', async (params, el) => {
           } catch(e) { _diagMostrar('amazon_financial_events', conta.external_id, { ERRO: e.message }); }
 
           pedidos.push(...amazonPedidos);
+        }
+
+        // ── Magalu ── (magalu_list_orders via Marketplace Connect)
+        // Sem filtro de data confiável na API — MarketplaceAPI.magaluOrders já pagina
+        // do mais recente pro mais antigo e blinda pelo período no cliente. Valores
+        // vêm em centavos (normalizer:100), por isso a divisão por 100 abaixo. Ao
+        // contrário da Amazon, a Magalu já devolve comissão/imposto/frete por pedido
+        // direto no objeto — não precisa de chamada extra pra taxas.
+        if (conta.marketplace === 'magalu') {
+          const magaluAccountId = conta.param_to_use?.magalu_account_id || conta.external_id;
+          if (statusEl) statusEl.textContent = 'Magalu: listando pedidos...';
+          let ordersRaw = [];
+          try {
+            ordersRaw = await MarketplaceAPI.magaluOrders(magaluAccountId, dataFrom, dataTo);
+          } catch(e) { console.warn('[Magalu] erro magalu_list_orders', e.message); }
+
+          const magaluPedidos = [];
+          for (const o of ordersRaw) {
+            if (['canceled','cancelled'].includes((o.status||'').toLowerCase())) continue;
+            const dt = o.purchased_at ? new Date(o.purchased_at) : (o.created_at ? new Date(o.created_at) : null);
+            const itens = [];
+            (o.deliveries||[]).forEach(dl => {
+              (dl.items||[]).forEach(it => {
+                itens.push({
+                  nome:   it.info?.name || '—',
+                  qtd:    parseInt(it.quantity) || 1,
+                  preco:  (parseFloat(it.unit_price?.value) || 0) / 100,
+                  imagem: it.info?.images?.[0]?.url || '',
+                  sku:    it.info?.sku || '',
+                });
+              });
+            });
+            const totalCentavos = parseFloat(o.amounts?.total) || 0;
+            magaluPedidos.push({
+              id: o.code || o.id, plataforma: 'Magalu', contaId: conta.external_id,
+              data:   (dt && !isNaN(dt)) ? dt.toLocaleDateString('pt-BR') : '—',
+              dataTs: (dt && !isNaN(dt)) ? dt.getTime() : 0,
+              produto: itens.length > 1 ? `${itens[0]?.nome} (+${itens.length-1})` : (itens[0]?.nome || o.code || '—'),
+              imagem: itens[0]?.imagem || '',
+              qtd: itens.reduce((s,i)=>s+i.qtd, 0) || 1,
+              valor: totalCentavos / 100,
+              status: o.status || '',
+              itens,
+              taxas: {
+                liquido:     null,
+                comissao:    (parseFloat(o.amounts?.commission?.total) || 0) / 100,
+                taxaServico: 0,
+                imposto:     (parseFloat(o.amounts?.tax?.total) || 0) / 100,
+                frete:       (parseFloat(o.amounts?.freight?.total) || 0) / 100,
+                voucher:     (parseFloat(o.amounts?.discount?.total) || 0) / 100,
+              },
+            });
+          }
+          pedidos.push(...magaluPedidos);
         }
       }
 

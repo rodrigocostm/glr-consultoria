@@ -14,8 +14,8 @@ Router.register('integracoes', (params, el) => {
                       'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const hoje     = new Date();
 
-  const platIcon = { mercadolivre:'🟡', ml:'🟡', meli:'🟡', shopee:'🟠', bling:'🔵', amazon:'⚫' };
-  const platNome = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling ERP', amazon:'Amazon' };
+  const platIcon = { mercadolivre:'🟡', ml:'🟡', meli:'🟡', shopee:'🟠', bling:'🔵', amazon:'⚫', magalu:'🔷' };
+  const platNome = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling ERP', amazon:'Amazon', magalu:'Magalu' };
 
   // Apelidos customizados por external_id (editável no sistema)
   let nicknames = {};
@@ -420,8 +420,8 @@ Router.register('integracoes', (params, el) => {
 // ── Render clientes vinculados ──────────────────────────────
 function renderClientesVinculados(vinc, mesesNomes, hoje) {
   const aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas') || '{}');
-  const platIcon = { mercadolivre:'🟡', ml:'🟡', meli:'🟡', shopee:'🟠', bling:'🔵' };
-  const platNome = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
+  const platIcon = { mercadolivre:'🟡', ml:'🟡', meli:'🟡', shopee:'🟠', bling:'🔵', amazon:'⚫', magalu:'🔷' };
+  const platNome = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling', amazon:'Amazon', magalu:'Magalu' };
   const ids = Object.keys(vinc);
   if (!ids.length) return `<div class="card" style="text-align:center;padding:32px;color:var(--text-muted);">
     <div style="font-size:36px;margin-bottom:10px;">🔗</div>
