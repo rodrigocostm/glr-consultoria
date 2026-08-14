@@ -1726,6 +1726,12 @@ Router.register('vendas', async (params, el) => {
       // Respeita filtro de conta/empresa selecionado — só busca o que está no filtro
       const contasParaBuscar = contas.filter(c => filtroContasSel.has(c.external_id));
 
+      _diagMostrar('contas_para_buscar', 'lista', {
+        filtroContasSel: [...filtroContasSel],
+        totalContasCarregadas: contas.length,
+        contasParaBuscar: contasParaBuscar.map(c => ({ marketplace: c.marketplace, external_id: c.external_id, param_to_use: c.param_to_use })),
+      });
+
       for (const conta of contasParaBuscar) {
         // ── Mercado Livre ──
         if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
@@ -2048,7 +2054,15 @@ Router.register('vendas', async (params, el) => {
           let ordersRaw = [];
           try {
             ordersRaw = await MarketplaceAPI.magaluOrders(magaluAccountId, dataFrom, dataTo);
-          } catch(e) { console.warn('[Magalu] erro magalu_list_orders', e.message); }
+            _diagMostrar('magalu_orders', conta.external_id, {
+              magaluAccountId, dataFrom, dataTo,
+              totalRetornado: ordersRaw.length,
+              primeiroPedido: ordersRaw[0] || null,
+            });
+          } catch(e) {
+            console.warn('[Magalu] erro magalu_list_orders', e.message);
+            _diagMostrar('magalu_orders', conta.external_id, { ERRO: e.message, magaluAccountId, dataFrom, dataTo });
+          }
 
           const magaluPedidos = [];
           for (const o of ordersRaw) {
