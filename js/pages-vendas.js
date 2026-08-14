@@ -1989,12 +1989,18 @@ Router.register('vendas', async (params, el) => {
           for (const o of ordersRaw) {
             const orderId = o.AmazonOrderId || o.amazon_order_id || o.order_id;
             if (!orderId) continue;
-            const status = String(o.OrderStatus || o.order_status || '');
+            // O wrapper do Marketplace Connect devolve um formato já achatado/simplificado
+            // (status, total, purchase_date direto na raiz) — bem diferente do formato bruto
+            // da SP-API (OrderStatus, OrderTotal.Amount, PurchaseDate) que o código assumia
+            // antes. Confirmado ao vivo via amazon_list_orders: {amazon_order_id, status,
+            // total, currency, purchase_date, fulfillment_channel}. Mantém os fallbacks
+            // antigos por segurança, caso o formato varie por conta/região.
+            const status = String(o.status || o.OrderStatus || o.order_status || '');
             if (['Canceled','Cancelled'].includes(status)) continue;
-            const dataCriacao = o.PurchaseDate || o.purchase_date || o.created_at;
+            const dataCriacao = o.purchase_date || o.PurchaseDate || o.created_at;
             const dt = dataCriacao ? new Date(dataCriacao) : null;
             if (dt && !isNaN(dt) && (dt.getTime() < limiteDe || dt.getTime() > limiteAte)) continue;
-            const total = parseFloat(o.OrderTotal?.Amount ?? o.order_total?.amount ?? o.order_total) || 0;
+            const total = parseFloat(o.total ?? o.OrderTotal?.Amount ?? o.order_total?.amount ?? o.order_total) || 0;
             amazonPedidos.push({
               id: orderId, plataforma: 'Amazon', contaId: conta.external_id,
               data: (dt && !isNaN(dt)) ? dt.toLocaleDateString('pt-BR') : '—',
@@ -2010,17 +2016,21 @@ Router.register('vendas', async (params, el) => {
             try {
               const ri = await MarketplaceAPI.call('amazon_get_order_items', { amazon_account_id: amazonAccountId, order_id: p.id });
               const d = ri.data;
-              const itensRaw = Array.isArray(d?.payload?.OrderItems) ? d.payload.OrderItems
+              // Mesmo achatamento do amazon_list_orders — confirmado ao vivo:
+              // {selling_partner_id, order_id, items:[{asin, seller_sku, title, quantity,
+              // price, currency}], total}. Mantém os fallbacks do formato bruto por segurança.
+              const itensRaw = Array.isArray(d?.items)               ? d.items
+                              : Array.isArray(d?.payload?.OrderItems) ? d.payload.OrderItems
                               : Array.isArray(d?.OrderItems)          ? d.OrderItems
                               : Array.isArray(d?.order_items)         ? d.order_items
                               : Array.isArray(d)                      ? d
                               : [];
               if (!diagItemFeito) { diagItemFeito = true; _diagMostrar('amazon_order_items', p.id, itensRaw.length ? itensRaw : { AVISO: '0 itens após parsing', RESPOSTA_CRUA: d }); }
               const itens = itensRaw.map(it => ({
-                nome:  it.Title || it.title || it.SellerSKU || it.seller_sku || '—',
-                qtd:   parseInt(it.QuantityOrdered ?? it.quantity_ordered) || 1,
-                preco: parseFloat(it.ItemPrice?.Amount ?? it.item_price?.amount) || 0,
-                imagem: '', sku: it.SellerSKU || it.seller_sku || '',
+                nome:  it.title || it.Title || it.seller_sku || it.SellerSKU || '—',
+                qtd:   parseInt(it.quantity ?? it.QuantityOrdered ?? it.quantity_ordered) || 1,
+                preco: parseFloat(it.price ?? it.ItemPrice?.Amount ?? it.item_price?.amount) || 0,
+                imagem: '', sku: it.seller_sku || it.SellerSKU || '',
               }));
               p.itens = itens;
               p.produto = itens.length > 1 ? `${itens[0]?.nome} (+${itens.length-1})` : (itens[0]?.nome || p.id);
