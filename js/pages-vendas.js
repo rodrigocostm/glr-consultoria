@@ -185,7 +185,15 @@ Router.register('vendas', async (params, el) => {
   function calcLucro(p) {
     const receita  = parseFloat(p.valor) || 0;
     const tx       = p.taxas || {};
-    const liquido  = tx.liquido != null ? parseFloat(tx.liquido) : null;
+    // A Magalu não devolve um "líquido" pronto (como o escrow_amount da Shopee) —
+    // vem comissão e frete separados, direto do pedido. Sem calcular um líquido a
+    // partir disso, a comissão só aparecia no detalhamento do pedido (informativo)
+    // sem nunca ser descontada de verdade do lucro/margem — por isso pedidos Magalu
+    // apareciam com margem de 100% mesmo com comissão real diferente de zero.
+    let liquido = tx.liquido != null ? parseFloat(tx.liquido) : null;
+    if (liquido == null && p.plataforma === 'Magalu' && (tx.comissao || tx.frete)) {
+      liquido = receita - (parseFloat(tx.comissao) || 0) - (parseFloat(tx.frete) || 0);
+    }
     const c        = custos[p.id] || {};
     // Custo: 1) valor lançado manualmente nesse pedido específico, 2) catálogo por produto
     // (aplica automaticamente em qualquer pedido do mesmo produto, sem precisar relançar).
