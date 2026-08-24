@@ -1964,20 +1964,41 @@ Router.register('vendas', async (params, el) => {
           if (statusEl) statusEl.textContent = 'Amazon: listando pedidos...';
           let ordersRaw = [];
           try {
-            const r = await MarketplaceAPI.call('amazon_list_orders', {
-              amazon_account_id: amazonAccountId,
-              created_after: `${dataFrom}T00:00:00Z`,
-            });
-            const d = r.data;
-            // A SP-API da Amazon embrulha tudo em "payload" — confere esse formato primeiro
-            ordersRaw = Array.isArray(d?.payload?.Orders) ? d.payload.Orders
-                      : Array.isArray(d?.Orders)          ? d.Orders
-                      : Array.isArray(d?.orders)           ? d.orders
-                      : Array.isArray(d)                   ? d
-                      : [];
+            // amazon_list_orders corta em 100 pedidos por chamada e IGNORA created_before
+            // (testado ao vivo: passar created_before não muda a resposta). A única forma
+            // de paginar de verdade é encadear created_after com a data do último pedido
+            // da página anterior +1s — confirmado que isso avança sem pular nem repetir
+            // pedidos. Páginas: até 30 chamadas (trava de segurança), para quando a página
+            // vier com menos de 100 (última página) ou já passar de dataTo.
+            let cursor = `${dataFrom}T00:00:00Z`;
+            const limiteAteMs = new Date(`${dataTo}T23:59:59Z`).getTime();
+            let paginas = 0;
+            while (paginas < 30) {
+              paginas++;
+              const r = await MarketplaceAPI.call('amazon_list_orders', {
+                amazon_account_id: amazonAccountId,
+                created_after: cursor,
+              });
+              const d = r.data;
+              // A SP-API da Amazon embrulha tudo em "payload" — confere esse formato primeiro
+              const pagina = Array.isArray(d?.orders)            ? d.orders
+                           : Array.isArray(d?.payload?.Orders)   ? d.payload.Orders
+                           : Array.isArray(d?.Orders)             ? d.Orders
+                           : Array.isArray(d)                     ? d
+                           : [];
+              if (!pagina.length) break;
+              ordersRaw.push(...pagina);
+              const ultimo = pagina[pagina.length - 1];
+              const ultimaData = ultimo.purchase_date || ultimo.PurchaseDate;
+              if (!ultimaData) break;
+              const proximoCursor = new Date(new Date(ultimaData).getTime() + 1000);
+              if (isNaN(proximoCursor) || proximoCursor.getTime() > limiteAteMs) break; // já passou do período pedido
+              if (pagina.length < 100) break; // última página (veio menos que o limite)
+              cursor = proximoCursor.toISOString();
+            }
             // Diagnóstico sempre visível (mesmo com 0 pedidos) — mostra a resposta crua
             // inteira quando não achou nenhum pedido, pra bater o formato real de uma vez.
-            _diagMostrar('amazon_orders', conta.external_id, ordersRaw.length ? ordersRaw[0] : { AVISO: '0 pedidos após parsing — resposta crua completa abaixo', RESPOSTA_CRUA: d });
+            _diagMostrar('amazon_orders', conta.external_id, ordersRaw.length ? { totalPaginas: paginas, totalPedidos: ordersRaw.length, primeiro: ordersRaw[0] } : { AVISO: '0 pedidos após parsing' });
           } catch(e) {
             console.warn('[Amazon] erro amazon_list_orders', e.message);
             _diagMostrar('amazon_orders', conta.external_id, { ERRO: e.message });
@@ -2012,31 +2033,47 @@ Router.register('vendas', async (params, el) => {
 
           if (statusEl) statusEl.textContent = `Amazon: itens (${amazonPedidos.length} pedidos)...`;
           let diagItemFeito = false;
-          await _mapLimit(amazonPedidos, 5, async p => {
-            try {
-              const ri = await MarketplaceAPI.call('amazon_get_order_items', { amazon_account_id: amazonAccountId, order_id: p.id });
-              const d = ri.data;
-              // Mesmo achatamento do amazon_list_orders — confirmado ao vivo:
-              // {selling_partner_id, order_id, items:[{asin, seller_sku, title, quantity,
-              // price, currency}], total}. Mantém os fallbacks do formato bruto por segurança.
-              const itensRaw = Array.isArray(d?.items)               ? d.items
-                              : Array.isArray(d?.payload?.OrderItems) ? d.payload.OrderItems
-                              : Array.isArray(d?.OrderItems)          ? d.OrderItems
-                              : Array.isArray(d?.order_items)         ? d.order_items
-                              : Array.isArray(d)                      ? d
-                              : [];
-              if (!diagItemFeito) { diagItemFeito = true; _diagMostrar('amazon_order_items', p.id, itensRaw.length ? itensRaw : { AVISO: '0 itens após parsing', RESPOSTA_CRUA: d }); }
-              const itens = itensRaw.map(it => ({
-                nome:  it.title || it.Title || it.seller_sku || it.SellerSKU || '—',
-                qtd:   parseInt(it.quantity ?? it.QuantityOrdered ?? it.quantity_ordered) || 1,
-                preco: parseFloat(it.price ?? it.ItemPrice?.Amount ?? it.item_price?.amount) || 0,
-                imagem: '', sku: it.seller_sku || it.SellerSKU || '',
-              }));
-              p.itens = itens;
-              p.produto = itens.length > 1 ? `${itens[0]?.nome} (+${itens.length-1})` : (itens[0]?.nome || p.id);
-              p.qtd = itens.reduce((s,i)=>s+i.qtd, 0) || 1;
-            } catch(e) { console.warn('[Amazon] erro amazon_get_order_items', p.id, e.message); }
+          let itensOk = 0, itensFalha = 0;
+          const errosItens = [];
+          // Concorrência baixa (3) + 1 retry: com muitos pedidos (paginação agora traz o
+          // total real, não só 100) a Amazon/Tiops passou a rejeitar parte das chamadas
+          // simultâneas de amazon_get_order_items — sem isso a maioria dos pedidos ficava
+          // com produto "…" e sem imagem, mesmo o parsing estando certo.
+          await _mapLimit(amazonPedidos, 3, async p => {
+            let ri = null, tent = 0;
+            while (tent < 2) {
+              try {
+                ri = await MarketplaceAPI.call('amazon_get_order_items', { amazon_account_id: amazonAccountId, order_id: p.id });
+                break;
+              } catch(e) {
+                tent++;
+                if (tent >= 2) { itensFalha++; errosItens.push({ id: p.id, erro: e.message }); console.warn('[Amazon] erro amazon_get_order_items', p.id, e.message); return; }
+                await new Promise(res => setTimeout(res, 800));
+              }
+            }
+            const d = ri.data;
+            // Mesmo achatamento do amazon_list_orders — confirmado ao vivo:
+            // {selling_partner_id, order_id, items:[{asin, seller_sku, title, quantity,
+            // price, currency}], total}. Mantém os fallbacks do formato bruto por segurança.
+            const itensRaw = Array.isArray(d?.items)               ? d.items
+                            : Array.isArray(d?.payload?.OrderItems) ? d.payload.OrderItems
+                            : Array.isArray(d?.OrderItems)          ? d.OrderItems
+                            : Array.isArray(d?.order_items)         ? d.order_items
+                            : Array.isArray(d)                      ? d
+                            : [];
+            if (!diagItemFeito) { diagItemFeito = true; _diagMostrar('amazon_order_items', p.id, itensRaw.length ? itensRaw : { AVISO: '0 itens após parsing', RESPOSTA_CRUA: d }); }
+            if (itensRaw.length) itensOk++; else itensFalha++;
+            const itens = itensRaw.map(it => ({
+              nome:  it.title || it.Title || it.seller_sku || it.SellerSKU || '—',
+              qtd:   parseInt(it.quantity ?? it.QuantityOrdered ?? it.quantity_ordered) || 1,
+              preco: parseFloat(it.price ?? it.ItemPrice?.Amount ?? it.item_price?.amount) || 0,
+              imagem: '', sku: it.seller_sku || it.SellerSKU || '',
+            }));
+            p.itens = itens;
+            p.produto = itens.length > 1 ? `${itens[0]?.nome} (+${itens.length-1})` : (itens[0]?.nome || p.id);
+            p.qtd = itens.reduce((s,i)=>s+i.qtd, 0) || 1;
           });
+          _diagMostrar('amazon_itens_resumo', conta.external_id, { itensOk, itensFalha, totalPedidos: amazonPedidos.length, primeirosErros: errosItens.slice(0,5) });
 
           // Diagnóstico dos eventos financeiros (taxas/comissão) — ainda não aplicado ao
           // cálculo, só exibido pra confirmarmos o formato antes de implementar de vez.
