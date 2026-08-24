@@ -1627,16 +1627,19 @@ Router.register('vendas', async (params, el) => {
         { label:'✅ Lucro do Pedido',                  v: l.lucro,          cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
       ].filter(Boolean);
     } else if (hasEscrow) {
-      // Shopee: breakdown completo via escrow
+      // Shopee e Magalu: breakdown completo via API (escrow na Shopee, direto no
+      // pedido na Magalu) — rótulos dinâmicos por plataforma, esse bloco não é
+      // exclusivo da Shopee (a Magalu também popula p.taxas com esse formato).
+      const nomePlat = p.plataforma || 'Marketplace';
       linhasBreakdown = [
         { label:'💰 Valor dos Produtos',           v: l.receita,            cor:'#60a5fa', sinal:'+' },
         (p.freteComprador||0)>0 ? { label:'🛒 Frete pago pelo comprador (não soma)', v: p.freteComprador, cor:'#6b7280', sinal:'·' } : null,
-        l.comissao>0   ? { label:'🏦 Comissão Shopee',            v: -l.comissao,          cor:'#f87171', sinal:'-' } : null,
+        l.comissao>0   ? { label:`🏦 Comissão ${nomePlat}`,        v: -l.comissao,          cor:'#f87171', sinal:'-' } : null,
         l.taxaServico>0? { label:'⚙️ Taxa de Serviço',             v: -l.taxaServico,       cor:'#f87171', sinal:'-' } : null,
         tx.frete>0     ? { label:'🚚 Frete (descontado)',           v: -Math.abs(tx.frete),  cor:'#f97316', sinal:'-' } : null,
-        tx.voucher>0   ? { label:'🎟️ Voucher (reembolso)',          v: tx.voucher,           cor:'#34d399', sinal:'+' } : null,
-        impDeEscrowDetalhe ? { label:'🧾 Imposto (escrow)',         v: -tx.imposto,          cor:'#fbbf24', sinal:'-' } : null,
-        l.liquido!=null? { label:'💳 Líquido Shopee (escrow)',       v: l.liquido,            cor:'#a78bfa', sinal:'=', bold:true } : null,
+        tx.voucher>0   ? { label:'🎟️ Voucher/Desconto (reembolso)', v: tx.voucher,           cor:'#34d399', sinal:'+' } : null,
+        impDeEscrowDetalhe ? { label:'🧾 Imposto (API)',            v: -tx.imposto,          cor:'#fbbf24', sinal:'-' } : null,
+        l.liquido!=null? { label:`💳 Líquido ${nomePlat} (API)`,     v: l.liquido,            cor:'#a78bfa', sinal:'=', bold:true } : null,
         { label:'📦 Custo do Produto',              v: -l.custo,             cor:'#f87171', sinal:'-' },
         !impDeEscrowDetalhe && l.impVal>0 ? { label:`🧾 Imposto (${l.impPct}%)`, v: -l.impVal, cor:'#fbbf24', sinal:'-' } : null,
         l.outros>0 ? { label:'➕ Outros Custos',    v: -l.outros,            cor:'#f97316', sinal:'-' } : null,
