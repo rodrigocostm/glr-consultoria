@@ -112,6 +112,7 @@ Router.register('relatorios', (params, el) => {
                         <span class="badge" style="background:${cor}20;color:${cor};">${a.categoria}</span>
                         ${c ? `<span style="font-size:12px;color:var(--text-muted);">${c.nome}</span>` : ''}
                         <span class="badge ${a.status === 'concluida' ? 'status-crescimento' : 'status-ativo'}" style="margin-left:auto;">${a.status === 'concluida' ? 'Concluída' : 'Em andamento'}</span>
+                        <button onclick="openModalNovaAcao(${a.clienteId ?? 'null'}, ${a.id})" title="Editar ação" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px;padding:2px 4px;">✏️</button>
                       </div>
                       <div style="font-size:13px;color:var(--text-primary);margin-top:4px;">${a.descricao}</div>
                     </div>

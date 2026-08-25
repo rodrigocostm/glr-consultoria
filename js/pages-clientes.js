@@ -687,63 +687,85 @@ function indicadorCard(label, value, colorClass, sub) {
   </div>`;
 }
 
-function openModalNovaAcao(clienteId) {
+// acaoId opcional: quando informado, abre em modo edição (pré-preenchido,
+// atualiza a ação existente em vez de criar uma nova, e mostra "Excluir").
+function openModalNovaAcao(clienteId, acaoId) {
+  const acaoExistente = acaoId != null ? GLR.acoes.find(a => a.id === acaoId) : null;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   const hojeIso = new Date().toISOString().split('T')[0];
+  const clienteIdInicial = acaoExistente ? acaoExistente.clienteId : clienteId;
   overlay.innerHTML = `<div class="modal">
     <div class="modal-header">
-      <div class="modal-title">Registrar Ação</div>
+      <div class="modal-title">${acaoExistente ? 'Editar Ação' : 'Registrar Ação'}</div>
       <button class="btn btn-ghost btn-sm" onclick="this.closest('.modal-overlay').remove()">✕</button>
     </div>
     <div class="grid-2" style="gap:12px;">
       <div class="form-group"><label class="form-label">Cliente</label>
         <select class="form-select" id="a-cliente">
           <option value="">Interno (sem cliente)</option>
-          ${GLR.clientes.map(cl => `<option value="${cl.id}" ${cl.id === clienteId ? 'selected' : ''}>${cl.nome}</option>`).join('')}
+          ${GLR.clientes.map(cl => `<option value="${cl.id}" ${cl.id === clienteIdInicial ? 'selected' : ''}>${cl.nome}</option>`).join('')}
         </select>
       </div>
       <div class="form-group"><label class="form-label">Data</label>
-        <input class="form-input" id="a-data" type="date" value="${hojeIso}">
+        <input class="form-input" id="a-data" type="date" value="${acaoExistente?.data || hojeIso}">
       </div>
     </div>
     <div class="form-group"><label class="form-label">Categoria</label>
-      <select class="form-select" id="a-cat"><option>Reunião</option><option>Campanha</option><option>Otimização</option><option>Precificação</option><option>Estratégia</option><option>Análise</option><option>Relatório</option><option>Onboarding</option></select>
+      <select class="form-select" id="a-cat">
+        ${['Reunião','Campanha','Otimização','Precificação','Estratégia','Análise','Relatório','Onboarding'].map(cat =>
+          `<option ${acaoExistente?.categoria === cat ? 'selected' : ''}>${cat}</option>`).join('')}
+      </select>
     </div>
     <div class="form-group"><label class="form-label">Descrição</label>
-      <textarea class="form-textarea" id="a-desc" placeholder="Descreva a ação executada..."></textarea>
+      <textarea class="form-textarea" id="a-desc" placeholder="Descreva a ação executada...">${acaoExistente?.descricao || ''}</textarea>
     </div>
     <div class="grid-2" style="gap:12px;">
       <div class="form-group"><label class="form-label">Responsável</label>
         <select class="form-select" id="a-resp">
-          ${GLR.gestores.map(g=>`<option>${g.nome}</option>`).join('')}
+          ${GLR.gestores.map(g => `<option ${acaoExistente?.responsavel === g.nome ? 'selected' : ''}>${g.nome}</option>`).join('')}
         </select>
       </div>
       <div class="form-group"><label class="form-label">Status</label>
-        <select class="form-select" id="a-status"><option value="concluida">Concluída</option><option value="em_andamento">Em andamento</option></select>
+        <select class="form-select" id="a-status">
+          <option value="concluida" ${acaoExistente?.status === 'concluida' ? 'selected' : ''}>Concluída</option>
+          <option value="em_andamento" ${acaoExistente?.status === 'em_andamento' ? 'selected' : ''}>Em andamento</option>
+        </select>
       </div>
     </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;">
-      <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
-      <button class="btn btn-primary" onclick="(function(){
-        const clienteSel = document.getElementById('a-cliente').value;
-        const cliente = clienteSel ? GLR.clientes.find(cl => cl.id === parseInt(clienteSel)) : null;
-        const data = document.getElementById('a-data').value;
-        const acao = {
-          id: GLR.nextId(GLR.acoes),
-          clienteId: cliente ? cliente.id : null,
-          data: data || new Date().toISOString().split('T')[0],
-          categoria: document.getElementById('a-cat').value,
-          descricao: document.getElementById('a-desc').value.trim(),
-          responsavel: document.getElementById('a-resp').value,
-          status: document.getElementById('a-status').value,
-        };
-        if(!acao.descricao){alert('Informe a descrição.');return;}
-        GLR.acoes.push(acao);
+    <div style="display:flex;gap:10px;justify-content:${acaoExistente ? 'space-between' : 'flex-end'};">
+      ${acaoExistente ? `<button class="btn btn-ghost" style="color:#ef4444;" onclick="(function(){
+        if(!confirm('Excluir esta ação?'))return;
+        GLR.acoes = GLR.acoes.filter(a => a.id !== ${acaoExistente.id});
         localStorage.setItem('glr_acoes',JSON.stringify(GLR.acoes));
-        this.closest('.modal-overlay').remove();
+        document.querySelector('.modal-overlay').remove();
         Router.resolve();
-      }).call(this)">Salvar Ação</button>
+      })()">🗑️ Excluir</button>` : ''}
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-primary" onclick="(function(){
+          const clienteSel = document.getElementById('a-cliente').value;
+          const cliente = clienteSel ? GLR.clientes.find(cl => cl.id === parseInt(clienteSel)) : null;
+          const data = document.getElementById('a-data').value;
+          const dados = {
+            clienteId: cliente ? cliente.id : null,
+            data: data || new Date().toISOString().split('T')[0],
+            categoria: document.getElementById('a-cat').value,
+            descricao: document.getElementById('a-desc').value.trim(),
+            responsavel: document.getElementById('a-resp').value,
+            status: document.getElementById('a-status').value,
+          };
+          if(!dados.descricao){alert('Informe a descrição.');return;}
+          ${acaoExistente
+            ? `const idx = GLR.acoes.findIndex(a => a.id === ${acaoExistente.id});
+               if (idx >= 0) GLR.acoes[idx] = { ...GLR.acoes[idx], ...dados };`
+            : `GLR.acoes.push({ id: GLR.nextId(GLR.acoes), ...dados });`
+          }
+          localStorage.setItem('glr_acoes',JSON.stringify(GLR.acoes));
+          this.closest('.modal-overlay').remove();
+          Router.resolve();
+        }).call(this)">${acaoExistente ? 'Salvar Alterações' : 'Salvar Ação'}</button>
+      </div>
     </div>
   </div>`;
   document.body.appendChild(overlay);
