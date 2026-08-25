@@ -10,18 +10,24 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0d0d14;
-    --surface: #16161f;
-    --card: #1c1c28;
-    --border: rgba(255,255,255,0.08);
-    --text: #f1f1f8;
-    --text-sec: #9192a8;
-    --text-muted: #5a5b72;
-    --accent: #6366f1;
-    --accent2: #8b5cf6;
-    --green: #10b981;
-    --red: #ef4444;
-    --yellow: #f59e0b;
+    --bg: #ffffff;
+    --bg-soft: #f7f8fc;
+    --bg-soft2: #f2f0ff;
+    --card: #ffffff;
+    --border: #eceef4;
+    --text: #12131c;
+    --text-sec: #565973;
+    --text-muted: #9296ab;
+    --accent: #4f46e5;
+    --accent2: #7c3aed;
+    --accent-soft: #eef0ff;
+    --green: #059669;
+    --green-soft: #ecfdf5;
+    --red: #dc2626;
+    --red-soft: #fef2f2;
+    --shadow-sm: 0 1px 2px rgba(16,24,40,0.04);
+    --shadow-md: 0 4px 16px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.05);
+    --shadow-lg: 0 12px 40px rgba(16,24,40,0.10), 0 2px 8px rgba(16,24,40,0.05);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
@@ -34,156 +40,196 @@
   }
   img { max-width: 100%; display: block; }
   a { color: inherit; text-decoration: none; }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  .wrap { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
   .eyebrow {
-    display: inline-block; padding: 6px 14px; background: rgba(99,102,241,0.12);
-    border: 1px solid rgba(99,102,241,0.3); border-radius: 99px; font-size: 12px;
-    font-weight: 600; color: #a5b4fc; margin-bottom: 18px;
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; background: var(--accent-soft);
+    border-radius: 99px; font-size: 12.5px; font-weight: 700; color: var(--accent); margin-bottom: 20px;
+    letter-spacing: .2px;
   }
-  h1, h2, h3 { font-weight: 800; letter-spacing: -0.5px; }
+  h1, h2, h3 { font-weight: 800; letter-spacing: -0.03em; color: var(--text); }
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    padding: 14px 26px; border-radius: 10px; font-size: 14.5px; font-weight: 700;
-    cursor: pointer; border: none; transition: transform .15s, opacity .15s;
+    padding: 15px 28px; border-radius: 12px; font-size: 15px; font-weight: 700;
+    cursor: pointer; border: none; transition: transform .18s, box-shadow .18s, background .18s;
   }
-  .btn:hover { transform: translateY(-1px); }
-  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
-  .btn-ghost { background: transparent; border: 1px solid rgba(255,255,255,0.15); color: var(--text); }
+  .btn:hover { transform: translateY(-2px); }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; box-shadow: 0 8px 24px rgba(79,70,229,0.28); }
+  .btn-primary:hover { box-shadow: 0 12px 32px rgba(79,70,229,0.36); }
+  .btn-ghost { background: #fff; border: 1.5px solid var(--border); color: var(--text); box-shadow: var(--shadow-sm); }
+  .btn-ghost:hover { border-color: #d8dae6; }
   .btn-block { width: 100%; }
-  .section { padding: 84px 0; }
-  .section-alt { background: var(--surface); }
-  .section-title { font-size: 32px; text-align: center; margin-bottom: 12px; }
-  .section-sub { font-size: 15px; color: var(--text-sec); text-align: center; max-width: 560px; margin: 0 auto 48px; }
+  .section { padding: 100px 0; }
+  .section-soft { background: var(--bg-soft); }
+  .section-title { font-size: 34px; text-align: center; margin-bottom: 14px; line-height: 1.2; }
+  .section-sub { font-size: 16px; color: var(--text-sec); text-align: center; max-width: 580px; margin: 0 auto 56px; }
   .placeholder-note {
-    font-size: 11px; color: var(--yellow); background: rgba(245,158,11,0.1);
-    border: 1px dashed rgba(245,158,11,0.4); border-radius: 6px; padding: 4px 10px;
-    display: inline-block; margin-top: 8px;
+    font-size: 11.5px; color: #b45309; background: #fffbeb;
+    border: 1px dashed #fde68a; border-radius: 8px; padding: 5px 12px;
+    display: inline-block; margin-top: 4px;
   }
 
   /* Header */
   header {
-    position: sticky; top: 0; z-index: 100; background: rgba(13,13,20,0.85);
-    backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100; background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(12px); border-bottom: 1px solid var(--border);
   }
-  header .wrap { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; }
-  .logo-row { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 15px; }
-  .logo-row img { width: 32px; height: 32px; object-fit: contain; mix-blend-mode: screen; }
-  nav.main-nav { display: flex; align-items: center; gap: 28px; }
-  nav.main-nav a { font-size: 13.5px; color: var(--text-sec); font-weight: 500; }
+  header .wrap { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; }
+  .logo-row { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 16px; }
+  .logo-row img { width: 30px; height: 30px; object-fit: contain; }
+  nav.main-nav { display: flex; align-items: center; gap: 32px; }
+  nav.main-nav a { font-size: 13.5px; color: var(--text-sec); font-weight: 600; transition: color .15s; }
   nav.main-nav a:hover { color: var(--text); }
-  .nav-cta { display: flex; align-items: center; gap: 10px; }
-  .nav-cta .btn { padding: 9px 18px; font-size: 13px; }
+  .nav-cta .btn { padding: 10px 20px; font-size: 13.5px; }
   @media (max-width: 860px) { nav.main-nav { display: none; } }
 
   /* Hero */
-  .hero { padding: 76px 0 60px; text-align: center; }
-  .hero h1 { font-size: 44px; line-height: 1.14; margin: 0 auto 18px; max-width: 780px; }
-  .hero h1 span { background: linear-gradient(135deg, #a5b4fc, #c4b5fd); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .hero p { font-size: 17px; color: var(--text-sec); max-width: 620px; margin: 0 auto 34px; }
-  .hero-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 40px; }
-  .hero-ctas .btn { padding: 15px 28px; font-size: 15px; }
-  .trust-row {
-    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; align-items: center;
+  .hero { position: relative; padding: 96px 0 72px; text-align: center; overflow: hidden; }
+  .hero-glow {
+    position: absolute; top: -180px; left: 50%; transform: translateX(-50%);
+    width: 900px; height: 560px; z-index: 0; pointer-events: none;
+    background: radial-gradient(circle at 30% 30%, rgba(79,70,229,0.16), transparent 60%),
+                radial-gradient(circle at 70% 40%, rgba(124,58,237,0.14), transparent 55%);
+    filter: blur(10px);
   }
+  .hero > .wrap { position: relative; z-index: 1; }
+  .hero h1 { font-size: 50px; line-height: 1.12; margin: 0 auto 20px; max-width: 800px; }
+  .hero h1 span { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p { font-size: 18px; color: var(--text-sec); max-width: 620px; margin: 0 auto 36px; }
+  .hero-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 44px; }
+  .trust-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center; }
   .trust-chip {
-    display: flex; align-items: center; gap: 7px; padding: 8px 16px; background: var(--card);
-    border: 1px solid var(--border); border-radius: 99px; font-size: 13px; font-weight: 600; color: var(--text-sec);
+    display: flex; align-items: center; gap: 7px; padding: 9px 18px; background: #fff;
+    border: 1px solid var(--border); border-radius: 99px; font-size: 13px; font-weight: 700; color: var(--text-sec);
+    box-shadow: var(--shadow-sm);
   }
 
   /* Dor */
-  .dor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 40px; }
+  .dor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-top: 44px; }
   .dor-item {
-    background: var(--card); border: 1px solid rgba(239,68,68,0.2); border-radius: 14px; padding: 20px;
-    display: flex; gap: 12px; align-items: flex-start;
+    background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 22px;
+    display: flex; gap: 14px; align-items: flex-start; box-shadow: var(--shadow-sm); transition: box-shadow .2s, transform .2s;
   }
-  .dor-item .ico { font-size: 20px; flex-shrink: 0; }
-  .dor-item p { font-size: 13.5px; color: var(--text-sec); }
+  .dor-item:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+  .dor-item .ico-badge { background: var(--red-soft); }
+  .dor-item p { font-size: 14px; color: var(--text-sec); line-height: 1.55; }
+
+  .ico-badge {
+    width: 46px; height: 46px; border-radius: 13px; background: var(--accent-soft);
+    display: flex; align-items: center; justify-content: center; font-size: 21px; flex-shrink: 0;
+  }
 
   /* Grid genérico de cards */
-  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(266px, 1fr)); gap: 18px; }
   .feat-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 26px;
-    transition: border-color .15s, transform .15s;
+    background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 28px;
+    transition: box-shadow .2s, transform .2s; box-shadow: var(--shadow-sm);
   }
-  .feat-card:hover { border-color: rgba(99,102,241,0.35); transform: translateY(-2px); }
-  .feat-card .ico { font-size: 28px; margin-bottom: 14px; }
-  .feat-card h3 { font-size: 15.5px; margin-bottom: 8px; }
-  .feat-card p { font-size: 13px; color: var(--text-sec); line-height: 1.6; }
+  .feat-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-3px); }
+  .feat-card .ico-badge { margin-bottom: 18px; }
+  .feat-card h3 { font-size: 16px; margin-bottom: 8px; }
+  .feat-card p { font-size: 13.5px; color: var(--text-sec); line-height: 1.6; }
 
   /* Pricing */
   .price-card {
-    max-width: 460px; margin: 0 auto; background: linear-gradient(180deg, #1c1c2e, #16161f);
-    border: 1.5px solid var(--accent); border-radius: 20px; padding: 40px 34px; text-align: center;
+    max-width: 470px; margin: 0 auto; background: #fff;
+    border: 1px solid var(--border); border-radius: 24px; padding: 44px 38px; text-align: center;
+    box-shadow: var(--shadow-lg); position: relative; overflow: hidden;
   }
-  .price-card .amount { font-size: 40px; font-weight: 800; }
-  .price-card .amount small { font-size: 15px; font-weight: 600; color: var(--text-sec); }
-  .price-card .caption { font-size: 12.5px; color: var(--text-sec); margin: 4px 0 22px; }
-  .price-card ul { list-style: none; text-align: left; margin: 22px 0; display: flex; flex-direction: column; gap: 11px; }
-  .price-card li { font-size: 13.5px; color: #d1d2e0; display: flex; gap: 9px; align-items: flex-start; }
-  .price-card li::before { content: "✓"; color: var(--green); font-weight: 800; flex-shrink: 0; }
-  .price-note { font-size: 13px; color: var(--text-sec); line-height: 1.6; background: rgba(99,102,241,0.08); border-radius: 10px; padding: 14px; margin-bottom: 22px; }
+  .price-card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 6px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+  }
+  .price-card .amount { font-size: 44px; font-weight: 900; letter-spacing: -0.02em; }
+  .price-card .amount small { font-size: 16px; font-weight: 600; color: var(--text-sec); }
+  .price-card .caption { font-size: 13px; color: var(--text-sec); margin: 4px 0 26px; font-weight: 600; }
+  .price-card ul { list-style: none; text-align: left; margin: 24px 0; display: flex; flex-direction: column; gap: 13px; }
+  .price-card li { font-size: 14px; color: var(--text); display: flex; gap: 10px; align-items: flex-start; font-weight: 500; }
+  .price-card li::before {
+    content: "✓"; color: var(--green); font-weight: 900; flex-shrink: 0; width: 20px; height: 20px;
+    background: var(--green-soft); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px;
+  }
+  .price-note { font-size: 13.5px; color: var(--text-sec); line-height: 1.65; background: var(--bg-soft); border-radius: 12px; padding: 16px; margin-bottom: 24px; }
 
   /* Comparação */
-  .compare-table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border-radius: 16px; border: 1px solid var(--border); }
-  .compare-table th, .compare-table td { padding: 16px 18px; font-size: 13px; text-align: left; border-bottom: 1px solid var(--border); }
-  .compare-table th { background: var(--surface); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); }
+  .compare-table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border-radius: 18px; border: 1px solid var(--border); box-shadow: var(--shadow-md); }
+  .compare-table th, .compare-table td { padding: 17px 18px; font-size: 13.5px; text-align: left; border-bottom: 1px solid var(--border); }
+  .compare-table th { background: var(--bg-soft); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); font-weight: 800; }
   .compare-table td:not(:first-child), .compare-table th:not(:first-child) { text-align: center; }
   .compare-table tbody tr:last-child td { border-bottom: none; }
-  .compare-table .col-glr { background: rgba(99,102,241,0.08); font-weight: 700; color: var(--text); }
-  .compare-table th.col-glr { background: rgba(99,102,241,0.18); color: #a5b4fc; }
-  .ok { color: var(--green); font-weight: 800; }
-  .no { color: var(--red); font-weight: 800; }
+  .compare-table td:first-child { font-weight: 600; color: var(--text); }
+  .compare-table .col-glr { background: var(--accent-soft); font-weight: 800; color: var(--accent); }
+  .compare-table th.col-glr { background: #e0e0fd; color: var(--accent); }
+  .ok { color: var(--green); font-weight: 900; }
+  .no { color: var(--text-muted); font-weight: 900; }
   .compare-scroll { overflow-x: auto; }
 
   /* Depoimentos */
-  .testi-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
-  .testi-card .quote { font-size: 13.5px; color: #d1d2e0; line-height: 1.65; margin-bottom: 16px; }
-  .testi-card .author { font-size: 13px; font-weight: 700; }
-  .testi-card .role { font-size: 11.5px; color: var(--text-muted); }
+  .testi-card { background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 26px; box-shadow: var(--shadow-sm); }
+  .testi-card .quote-mark { font-size: 32px; color: var(--accent-soft); font-weight: 900; line-height: 1; margin-bottom: 4px; }
+  .testi-card .quote { font-size: 14px; color: var(--text-sec); line-height: 1.65; margin-bottom: 18px; }
+  .testi-card .author { font-size: 13.5px; font-weight: 700; }
+  .testi-card .role { font-size: 12px; color: var(--text-muted); }
 
   /* FAQ */
-  .faq-item { border-bottom: 1px solid var(--border); }
+  .faq-item { background: #fff; border: 1px solid var(--border); border-radius: 14px; margin-bottom: 10px; overflow: hidden; }
   .faq-q {
-    padding: 20px 4px; display: flex; align-items: center; justify-content: space-between;
-    cursor: pointer; font-size: 14.5px; font-weight: 600;
+    padding: 20px 22px; display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; font-size: 15px; font-weight: 700;
   }
-  .faq-q .plus { font-size: 20px; color: var(--accent); transition: transform .2s; flex-shrink: 0; margin-left: 16px; }
+  .faq-q .plus {
+    font-size: 15px; color: var(--accent); transition: transform .2s; flex-shrink: 0; margin-left: 16px;
+    width: 28px; height: 28px; background: var(--accent-soft); border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  }
   .faq-item.open .faq-q .plus { transform: rotate(45deg); }
-  .faq-a { max-height: 0; overflow: hidden; transition: max-height .25s ease; font-size: 13.5px; color: var(--text-sec); line-height: 1.6; }
-  .faq-item.open .faq-a { max-height: 240px; padding-bottom: 20px; }
+  .faq-a { max-height: 0; overflow: hidden; transition: max-height .25s ease; font-size: 14px; color: var(--text-sec); line-height: 1.65; }
+  .faq-item.open .faq-a { max-height: 240px; }
+  .faq-a-inner { padding: 0 22px 20px; }
 
   /* Lead form */
   .lead-box {
-    max-width: 640px; margin: 0 auto; background: var(--card); border: 1px solid var(--border);
-    border-radius: 20px; padding: 40px;
+    max-width: 640px; margin: 0 auto; background: #fff; border: 1px solid var(--border);
+    border-radius: 24px; padding: 44px; box-shadow: var(--shadow-lg);
   }
   .lead-step { display: none; }
   .lead-step.active { display: block; }
-  .lead-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0 26px; }
+  .lead-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0 28px; }
   .lead-opt {
-    padding: 13px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
-    font-size: 13px; cursor: pointer; text-align: center; transition: border-color .15s, background .15s;
+    padding: 15px 16px; background: var(--bg-soft); border: 1.5px solid var(--border); border-radius: 12px;
+    font-size: 13.5px; font-weight: 600; cursor: pointer; text-align: center; transition: border-color .15s, background .15s;
   }
   .lead-opt:hover { border-color: var(--accent); }
-  .lead-opt.selected { border-color: var(--accent); background: rgba(99,102,241,0.12); font-weight: 700; }
-  .lead-progress { display: flex; gap: 6px; margin-bottom: 24px; }
-  .lead-progress div { height: 4px; flex: 1; border-radius: 99px; background: var(--border); }
-  .lead-progress div.done { background: var(--accent); }
+  .lead-opt.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 800; }
+  .lead-progress { display: flex; gap: 6px; margin-bottom: 28px; }
+  .lead-progress div { height: 5px; flex: 1; border-radius: 99px; background: var(--border); }
+  .lead-progress div.done { background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+
+  /* CTA final */
+  .cta-final {
+    background: linear-gradient(135deg, #4338ca, #7c3aed);
+    border-radius: 28px; padding: 64px 40px; text-align: center; margin: 0 24px;
+    box-shadow: 0 20px 60px rgba(79,70,229,0.28);
+  }
+  .cta-final h2 { color: #fff; }
+  .cta-final p { color: rgba(255,255,255,0.82); }
+  .cta-final .btn-primary { background: #fff; color: var(--accent); box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
 
   /* Footer */
-  footer { border-top: 1px solid var(--border); padding: 40px 0 28px; }
+  footer { padding: 48px 0 32px; }
   footer .wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; }
   .wa-float {
-    position: fixed; bottom: 22px; right: 22px; width: 56px; height: 56px; border-radius: 50%;
-    background: #25D366; display: flex; align-items: center; justify-content: center; font-size: 26px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 200;
+    position: fixed; bottom: 22px; right: 22px; width: 58px; height: 58px; border-radius: 50%;
+    background: #25D366; display: flex; align-items: center; justify-content: center; font-size: 27px;
+    box-shadow: 0 10px 28px rgba(37,211,102,0.4); z-index: 200;
   }
 
   @media (max-width: 640px) {
-    .hero h1 { font-size: 30px; }
-    .section-title { font-size: 24px; }
+    .hero h1 { font-size: 32px; }
+    .hero p { font-size: 15.5px; }
+    .section { padding: 64px 0; }
+    .section-title { font-size: 25px; }
     .lead-opts { grid-template-columns: 1fr; }
-    .price-card { padding: 28px 22px; }
+    .price-card { padding: 32px 24px; }
+    .cta-final { padding: 44px 26px; margin: 0 16px; }
   }
 </style>
 </head>
@@ -203,7 +249,6 @@
       <a href="#faq">Dúvidas</a>
     </nav>
     <div class="nav-cta">
-      <a href="index.html" class="btn btn-ghost">Já sou cliente</a>
       <a id="cta-header" href="#" target="_blank" rel="noopener" class="btn btn-primary">💬 Falar no WhatsApp</a>
     </div>
   </div>
@@ -211,8 +256,9 @@
 
 <!-- Hero -->
 <section class="hero">
+  <div class="hero-glow"></div>
   <div class="wrap">
-    <div class="eyebrow">Consultoria em Marketplaces</div>
+    <div class="eyebrow">✦ Consultoria em Marketplaces</div>
     <h1>Sua operação no Mercado Livre e Shopee, <span>gerenciada por um time</span> — não por você sozinho</h1>
     <p>Cuidamos de anúncios, ADS, catálogo, financeiro e estratégia da sua loja, com reuniões mensais de verdade e um sistema próprio pra você acompanhar cada resultado em tempo real.</p>
     <div class="hero-ctas">
@@ -229,17 +275,17 @@
 </section>
 
 <!-- Dor -->
-<section class="section section-alt">
+<section class="section section-soft">
   <div class="wrap">
-    <h2 class="section-title" style="max-width:680px;margin-left:auto;margin-right:auto;">Gerenciar marketplace sozinho custa caro — em tempo, em oportunidade e em dinheiro</h2>
+    <h2 class="section-title" style="max-width:700px;margin-left:auto;margin-right:auto;">Gerenciar marketplace sozinho custa caro — em tempo, em oportunidade e em dinheiro</h2>
     <p class="section-sub">São dezenas de decisões por semana. Sem alguém acompanhando de perto todo dia, o prejuízo é silencioso.</p>
     <div class="dor-grid">
-      <div class="dor-item"><div class="ico">📉</div><p>Verba de ADS queimando em anúncio mal configurado, sem ninguém revisando toda semana</p></div>
-      <div class="dor-item"><div class="ico">🧾</div><p>Taxa de marketplace que ninguém confere — e que raramente bate com o que devia</p></div>
-      <div class="dor-item"><div class="ico">📦</div><p>Catálogo desatualizado, com anúncio parado perdendo posição pra concorrência</p></div>
-      <div class="dor-item"><div class="ico">🕐</div><p>Você tentando tocar o operacional inteiro sozinho, sem tempo pra pensar em estratégia</p></div>
-      <div class="dor-item"><div class="ico">📊</div><p>Nenhuma visão financeira real — lucro líquido de verdade, não só faturamento bruto</p></div>
-      <div class="dor-item"><div class="ico">❓</div><p>Sem saber se está crescendo de verdade ou só girando o mesmo dinheiro</p></div>
+      <div class="dor-item"><div class="ico-badge">📉</div><p>Verba de ADS queimando em anúncio mal configurado, sem ninguém revisando toda semana</p></div>
+      <div class="dor-item"><div class="ico-badge">🧾</div><p>Taxa de marketplace que ninguém confere — e que raramente bate com o que devia</p></div>
+      <div class="dor-item"><div class="ico-badge">📦</div><p>Catálogo desatualizado, com anúncio parado perdendo posição pra concorrência</p></div>
+      <div class="dor-item"><div class="ico-badge">🕐</div><p>Você tentando tocar o operacional inteiro sozinho, sem tempo pra pensar em estratégia</p></div>
+      <div class="dor-item"><div class="ico-badge">📊</div><p>Nenhuma visão financeira real — lucro líquido de verdade, não só faturamento bruto</p></div>
+      <div class="dor-item"><div class="ico-badge">❓</div><p>Sem saber se está crescendo de verdade ou só girando o mesmo dinheiro</p></div>
     </div>
   </div>
 </section>
@@ -247,35 +293,33 @@
 <!-- Solução / Serviços -->
 <section class="section" id="solucao">
   <div class="wrap">
-    <div style="text-align:center;">
-      <div class="eyebrow">A Solução</div>
-    </div>
+    <div style="text-align:center;"><div class="eyebrow">A Solução</div></div>
     <h2 class="section-title">Um time completo cuidando da sua operação</h2>
     <p class="section-sub">Do primeiro anúncio ao acompanhamento mensal de resultado — tudo incluso na parceria.</p>
     <div class="card-grid">
-      <div class="feat-card"><div class="ico">🏪</div><h3>Abertura e configuração de contas</h3><p>Cuidamos de toda a abertura e configuração das suas contas nos marketplaces.</p></div>
-      <div class="feat-card"><div class="ico">📦</div><h3>Cadastro e otimização de produtos</h3><p>Anúncios cadastrados e otimizados pra vender mais dentro de cada plataforma.</p></div>
-      <div class="feat-card"><div class="ico">📢</div><h3>Gestão de ADS</h3><p>Campanhas acompanhadas e ajustadas continuamente pra não deixar verba queimando à toa.</p></div>
-      <div class="feat-card"><div class="ico">💰</div><h3>Financeiro e margem real</h3><p>DRE automático direto das taxas reais do marketplace — lucro líquido, não só faturamento.</p></div>
-      <div class="feat-card"><div class="ico">🖥️</div><h3>ERP de gestão</h3><p>Sistema disponibilizado pra organizar estoque, catálogo e operação do dia a dia.</p></div>
-      <div class="feat-card"><div class="ico">🎥</div><h3>Orientação contínua</h3><p>Conteúdo e direcionamento estratégico pra aumentar suas vendas de forma consistente.</p></div>
-      <div class="feat-card"><div class="ico">📅</div><h3>2 reuniões mensais</h3><p>Reuniões de análise de resultados e definição de estratégias, todo mês, com gente de verdade.</p></div>
+      <div class="feat-card"><div class="ico-badge">🏪</div><h3>Abertura e configuração de contas</h3><p>Cuidamos de toda a abertura e configuração das suas contas nos marketplaces.</p></div>
+      <div class="feat-card"><div class="ico-badge">📦</div><h3>Cadastro e otimização de produtos</h3><p>Anúncios cadastrados e otimizados pra vender mais dentro de cada plataforma.</p></div>
+      <div class="feat-card"><div class="ico-badge">📢</div><h3>Gestão de ADS</h3><p>Campanhas acompanhadas e ajustadas continuamente pra não deixar verba queimando à toa.</p></div>
+      <div class="feat-card"><div class="ico-badge">💰</div><h3>Financeiro e margem real</h3><p>DRE automático direto das taxas reais do marketplace — lucro líquido, não só faturamento.</p></div>
+      <div class="feat-card"><div class="ico-badge">🖥️</div><h3>ERP de gestão</h3><p>Sistema disponibilizado pra organizar estoque, catálogo e operação do dia a dia.</p></div>
+      <div class="feat-card"><div class="ico-badge">🎥</div><h3>Orientação contínua</h3><p>Conteúdo e direcionamento estratégico pra aumentar suas vendas de forma consistente.</p></div>
+      <div class="feat-card"><div class="ico-badge">📅</div><h3>2 reuniões mensais</h3><p>Reuniões de análise de resultados e definição de estratégias, todo mês, com gente de verdade.</p></div>
     </div>
   </div>
 </section>
 
 <!-- Sistema -->
-<section class="section section-alt" id="sistema">
+<section class="section section-soft" id="sistema">
   <div class="wrap">
     <h2 class="section-title">O sistema que acompanha sua operação</h2>
     <p class="section-sub">O GLR Central: um painel só, em tempo real, pra você e sua equipe acompanharem os resultados juntos.</p>
     <div class="card-grid">
-      <div class="feat-card"><div class="ico">📊</div><h3>Dashboard Executivo</h3><p>Visão consolidada da carteira, metas, crescimento e risco — tudo num só lugar.</p></div>
-      <div class="feat-card"><div class="ico">💰</div><h3>Financeiro & DRE automático</h3><p>DRE calculado direto das taxas reais do Mercado Livre e Shopee, sem planilha manual.</p></div>
-      <div class="feat-card"><div class="ico">📢</div><h3>Central de ADS</h3><p>Investimento, ROAS e desempenho das campanhas em todas as contas conectadas.</p></div>
-      <div class="feat-card"><div class="ico">✅</div><h3>Conciliação Financeira</h3><p>Confere se a taxa calculada bate com o que a API do marketplace descontou de fato.</p></div>
-      <div class="feat-card"><div class="ico">🛒</div><h3>Vendas & Oportunidades</h3><p>Pedidos, produtos parados e oportunidades de ADS identificados automaticamente.</p></div>
-      <div class="feat-card"><div class="ico">🔐</div><h3>Portal do Cliente</h3><p>Você acompanha suas próprias vendas e resultados com login próprio, quando quiser.</p></div>
+      <div class="feat-card"><div class="ico-badge">📊</div><h3>Dashboard Executivo</h3><p>Visão consolidada da carteira, metas, crescimento e risco — tudo num só lugar.</p></div>
+      <div class="feat-card"><div class="ico-badge">💰</div><h3>Financeiro & DRE automático</h3><p>DRE calculado direto das taxas reais do Mercado Livre e Shopee, sem planilha manual.</p></div>
+      <div class="feat-card"><div class="ico-badge">📢</div><h3>Central de ADS</h3><p>Investimento, ROAS e desempenho das campanhas em todas as contas conectadas.</p></div>
+      <div class="feat-card"><div class="ico-badge">✅</div><h3>Conciliação Financeira</h3><p>Confere se a taxa calculada bate com o que a API do marketplace descontou de fato.</p></div>
+      <div class="feat-card"><div class="ico-badge">🛒</div><h3>Vendas & Oportunidades</h3><p>Pedidos, produtos parados e oportunidades de ADS identificados automaticamente.</p></div>
+      <div class="feat-card"><div class="ico-badge">🔐</div><h3>Portal do Cliente</h3><p>Você acompanha suas próprias vendas e resultados com login próprio, quando quiser.</p></div>
     </div>
   </div>
 </section>
@@ -287,9 +331,9 @@
     <p class="section-sub">Um modelo que acompanha o crescimento da sua operação.</p>
     <div class="price-card">
       <div class="amount">R$ 1.500<small>/mês</small></div>
-      <div class="caption">mensalidade fixa</div>
+      <div class="caption">MENSALIDADE FIXA</div>
       <div class="price-note">
-        Quando <strong style="color:#f1f1f8;">R$ 3,00 por venda</strong> ultrapassar o valor da mensalidade fixa, a cobrança passa a ser por venda realizada, substituindo o valor fixo — o investimento cresce junto com o seu faturamento, nunca antes dele.
+        Quando <strong style="color:var(--text);">R$ 3,00 por venda</strong> ultrapassar o valor da mensalidade fixa, a cobrança passa a ser por venda realizada, substituindo o valor fixo — o investimento cresce junto com o seu faturamento, nunca antes dele.
       </div>
       <ul>
         <li>Abertura e gestão de contas em todos os marketplaces</li>
@@ -304,15 +348,15 @@
 </section>
 
 <!-- Diferenciais -->
-<section class="section section-alt" id="diferenciais">
+<section class="section section-soft" id="diferenciais">
   <div class="wrap">
     <h2 class="section-title">Por que a GLR?</h2>
     <p class="section-sub">Consultoria de verdade — não terceirização remota sem rosto.</p>
     <div class="card-grid">
-      <div class="feat-card"><div class="ico">🤝</div><h3>Acompanhamento humano</h3><p>Reuniões mensais reais, com gente que conhece sua conta — não um robô respondendo ticket.</p></div>
-      <div class="feat-card"><div class="ico">🖥️</div><h3>Sistema próprio</h3><p>O GLR Central foi construído internamente pra essa operação — não é uma ferramenta terceirizada genérica.</p></div>
-      <div class="feat-card"><div class="ico">📊</div><h3>Dado real, não estimado</h3><p>Financeiro calculado direto da API do marketplace, taxa por taxa — sem planilha aproximada.</p></div>
-      <div class="feat-card"><div class="ico">🎯</div><h3>Foco total em marketplace</h3><p>Não é uma agência genérica de marketing — é especializada em Mercado Livre, Shopee e Amazon.</p></div>
+      <div class="feat-card"><div class="ico-badge">🤝</div><h3>Acompanhamento humano</h3><p>Reuniões mensais reais, com gente que conhece sua conta — não um robô respondendo ticket.</p></div>
+      <div class="feat-card"><div class="ico-badge">🖥️</div><h3>Sistema próprio</h3><p>O GLR Central foi construído internamente pra essa operação — não é uma ferramenta terceirizada genérica.</p></div>
+      <div class="feat-card"><div class="ico-badge">📊</div><h3>Dado real, não estimado</h3><p>Financeiro calculado direto da API do marketplace, taxa por taxa — sem planilha aproximada.</p></div>
+      <div class="feat-card"><div class="ico-badge">🎯</div><h3>Foco total em marketplace</h3><p>Não é uma agência genérica de marketing — é especializada em Mercado Livre, Shopee e Amazon.</p></div>
     </div>
   </div>
 </section>
@@ -345,26 +389,29 @@
 </section>
 
 <!-- Depoimentos -->
-<section class="section section-alt">
+<section class="section section-soft">
   <div class="wrap">
     <h2 class="section-title">O que nossos clientes dizem</h2>
     <p class="section-sub">
-      Depoimentos reais de clientes GLR.
+      Depoimentos reais de clientes GLR.<br>
       <span class="placeholder-note">⚠️ Placeholder — substituir pelos depoimentos reais antes de publicar</span>
     </p>
     <div class="card-grid">
       <div class="testi-card">
-        <div class="quote">"[Espaço reservado para depoimento real de cliente — substituir antes de publicar a página.]"</div>
+        <div class="quote-mark">"</div>
+        <div class="quote">[Espaço reservado para depoimento real de cliente — substituir antes de publicar a página.]</div>
         <div class="author">Cliente GLR</div>
         <div class="role">Loja de Eletrônicos</div>
       </div>
       <div class="testi-card">
-        <div class="quote">"[Espaço reservado para depoimento real de cliente — substituir antes de publicar a página.]"</div>
+        <div class="quote-mark">"</div>
+        <div class="quote">[Espaço reservado para depoimento real de cliente — substituir antes de publicar a página.]</div>
         <div class="author">Cliente GLR</div>
         <div class="role">Loja de Moda</div>
       </div>
       <div class="testi-card">
-        <div class="quote">"[Espaço reservado para depoimento real de cliente — substituir antes de publicar a página.]"</div>
+        <div class="quote-mark">"</div>
+        <div class="quote">[Espaço reservado para depoimento real de cliente — substituir antes de publicar a página.]</div>
         <div class="author">Cliente GLR</div>
         <div class="role">Loja de Casa & Decoração</div>
       </div>
@@ -376,36 +423,36 @@
 <section class="section" id="faq">
   <div class="wrap" style="max-width:760px;">
     <h2 class="section-title">Dúvidas frequentes</h2>
-    <div id="faq-list">
+    <div id="faq-list" style="margin-top:44px;">
       <div class="faq-item open">
         <div class="faq-q">Para quem é a GLR Consultoria? <span class="plus">+</span></div>
-        <div class="faq-a">Pra quem já vende (ou quer começar a vender) no Mercado Livre, Shopee ou Amazon e não tem tempo — ou time — pra acompanhar a operação todo dia.</div>
+        <div class="faq-a"><div class="faq-a-inner">Pra quem já vende (ou quer começar a vender) no Mercado Livre, Shopee ou Amazon e não tem tempo — ou time — pra acompanhar a operação todo dia.</div></div>
       </div>
       <div class="faq-item">
         <div class="faq-q">Vocês cuidam da execução ou só dão o direcionamento? <span class="plus">+</span></div>
-        <div class="faq-a">Cuidamos da execução: cadastro de produto, gestão de ADS, acompanhamento financeiro. Você recebe direcionamento estratégico nas reuniões mensais, mas o operacional é feito pela equipe GLR.</div>
+        <div class="faq-a"><div class="faq-a-inner">Cuidamos da execução: cadastro de produto, gestão de ADS, acompanhamento financeiro. Você recebe direcionamento estratégico nas reuniões mensais, mas o operacional é feito pela equipe GLR.</div></div>
       </div>
       <div class="faq-item">
         <div class="faq-q">Preciso ter uma equipe grande? <span class="plus">+</span></div>
-        <div class="faq-a">Não. Muitos dos nossos clientes tocam o negócio sozinhos ou com uma equipe pequena — é exatamente esse o problema que resolvemos.</div>
+        <div class="faq-a"><div class="faq-a-inner">Não. Muitos dos nossos clientes tocam o negócio sozinhos ou com uma equipe pequena — é exatamente esse o problema que resolvemos.</div></div>
       </div>
       <div class="faq-item">
         <div class="faq-q">Preciso ter CNPJ? <span class="plus">+</span></div>
-        <div class="faq-a">Pra vender nos principais marketplaces, sim — CNPJ é exigido pela maioria das plataformas. Se você ainda não tem, podemos te orientar sobre os próximos passos.</div>
+        <div class="faq-a"><div class="faq-a-inner">Pra vender nos principais marketplaces, sim — CNPJ é exigido pela maioria das plataformas. Se você ainda não tem, podemos te orientar sobre os próximos passos.</div></div>
       </div>
       <div class="faq-item">
         <div class="faq-q">Quais marketplaces vocês gerenciam? <span class="plus">+</span></div>
-        <div class="faq-a">Mercado Livre, Shopee, Amazon e Magalu, com o sistema GLR Central acompanhando as quatro contas em tempo real.</div>
+        <div class="faq-a"><div class="faq-a-inner">Mercado Livre, Shopee, Amazon e Magalu, com o sistema GLR Central acompanhando as quatro contas em tempo real.</div></div>
       </div>
     </div>
-    <div style="text-align:center;margin-top:36px;">
+    <div style="text-align:center;margin-top:40px;">
       <a id="cta-faq" href="#" target="_blank" rel="noopener" class="btn btn-primary">💬 Falar com um especialista</a>
     </div>
   </div>
 </section>
 
-<!-- Lead form (leva pro WhatsApp já com contexto preenchido) -->
-<section class="section section-alt" id="contato">
+<!-- Lead form -->
+<section class="section section-soft" id="contato">
   <div class="wrap">
     <h2 class="section-title">Vamos escalar sua operação juntos</h2>
     <p class="section-sub">Responda 3 perguntas rápidas — a conversa com nosso time já começa direto no ponto.</p>
@@ -414,7 +461,7 @@
       <div class="lead-progress"><div id="lp-1" class="done"></div><div id="lp-2"></div><div id="lp-3"></div></div>
 
       <div class="lead-step active" data-step="1">
-        <h3 style="font-size:16px;margin-bottom:4px;">Em quais marketplaces você vende hoje?</h3>
+        <h3 style="font-size:17px;margin-bottom:4px;">Em quais marketplaces você vende hoje?</h3>
         <div class="lead-opts">
           <div class="lead-opt" data-field="marketplace" data-value="Mercado Livre">Mercado Livre</div>
           <div class="lead-opt" data-field="marketplace" data-value="Shopee">Shopee</div>
@@ -424,7 +471,7 @@
       </div>
 
       <div class="lead-step" data-step="2">
-        <h3 style="font-size:16px;margin-bottom:4px;">Qual seu faturamento mensal hoje?</h3>
+        <h3 style="font-size:17px;margin-bottom:4px;">Qual seu faturamento mensal hoje?</h3>
         <div class="lead-opts">
           <div class="lead-opt" data-field="faturamento" data-value="Até R$ 20 mil">Até R$ 20 mil</div>
           <div class="lead-opt" data-field="faturamento" data-value="R$ 20 mil a R$ 100 mil">R$ 20 mil a R$ 100 mil</div>
@@ -434,7 +481,7 @@
       </div>
 
       <div class="lead-step" data-step="3">
-        <h3 style="font-size:16px;margin-bottom:4px;">Qual sua maior dificuldade hoje?</h3>
+        <h3 style="font-size:17px;margin-bottom:4px;">Qual sua maior dificuldade hoje?</h3>
         <div class="lead-opts">
           <div class="lead-opt" data-field="dificuldade" data-value="ADS / Anúncios">ADS / Anúncios</div>
           <div class="lead-opt" data-field="dificuldade" data-value="Financeiro / Margem">Financeiro / Margem</div>
@@ -444,8 +491,17 @@
         <button id="lead-enviar" class="btn btn-primary btn-block" disabled>💬 Enviar e falar no WhatsApp</button>
       </div>
 
-      <p style="text-align:center;font-size:11.5px;color:var(--text-muted);margin-top:18px;">Sem compromisso · Resposta em até 24h úteis</p>
+      <p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:20px;">Sem compromisso · Resposta em até 24h úteis</p>
     </div>
+  </div>
+</section>
+
+<!-- CTA Final -->
+<section class="section" style="padding-top:0;">
+  <div class="cta-final">
+    <h2 style="font-size:28px;margin-bottom:12px;">Pronto para organizar sua operação?</h2>
+    <p style="font-size:15px;margin-bottom:28px;">Fale com a gente e veja o sistema funcionando na prática.</p>
+    <a id="cta-final" href="#" target="_blank" rel="noopener" class="btn btn-primary">💬 Falar no WhatsApp</a>
   </div>
 </section>
 
@@ -453,8 +509,8 @@
 <footer>
   <div class="wrap">
     <div class="logo-row"><img src="logo.png" alt="GLR" onerror="this.style.display='none'"> GLR Consultoria</div>
-    <div style="font-size:12.5px;color:var(--text-muted);">Consultoria em Marketplaces — Mercado Livre, Shopee, Amazon e Magalu</div>
-    <div style="font-size:11.5px;color:var(--text-muted);">GLR Consultoria © 2026</div>
+    <div style="font-size:13px;color:var(--text-muted);">Consultoria em Marketplaces — Mercado Livre, Shopee, Amazon e Magalu</div>
+    <div style="font-size:12px;color:var(--text-muted);">GLR Consultoria © 2026</div>
   </div>
 </footer>
 
@@ -463,7 +519,6 @@
 <script>
   const WHATSAPP_NUMERO = '5517992117263';
 
-  // Captura UTM da URL pra levar contexto de campanha pro WhatsApp
   const params = new URLSearchParams(window.location.search);
   const utmSource = params.get('utm_source');
   const utmCampaign = params.get('utm_campaign');
@@ -475,12 +530,11 @@
   const msgPadrao = 'Olá! Vim pela página da GLR Consultoria e quero saber mais.' +
     (utmSource ? ` (origem: ${utmSource}${utmCampaign ? ' / ' + utmCampaign : ''})` : '');
 
-  ['cta-header', 'cta-hero', 'cta-preco', 'cta-faq', 'wa-float'].forEach(id => {
+  ['cta-header', 'cta-hero', 'cta-preco', 'cta-faq', 'cta-final', 'wa-float'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.href = waLink(msgPadrao);
   });
 
-  // FAQ accordion
   document.querySelectorAll('.faq-item').forEach(item => {
     item.querySelector('.faq-q').addEventListener('click', () => {
       const isOpen = item.classList.contains('open');
@@ -489,7 +543,6 @@
     });
   });
 
-  // Lead form progressivo
   const respostas = {};
   let stepAtual = 1;
   function irParaStep(n) {
