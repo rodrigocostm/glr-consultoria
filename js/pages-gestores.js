@@ -519,10 +519,20 @@ Router.register('gestores', (params, el) => {
     const g     = GLR.gestores[idx];
     const msg   = document.getElementById('lg-msg');
     const btn   = document.getElementById('lg-btn-salvar');
-    const email = document.getElementById('lg-email')?.value?.trim();
+    // Remove espaços comuns e também caracteres invisíveis (zero-width space, NBSP,
+    // BOM) que às vezes vêm de copiar/colar e o GoTrue rejeita com uma mensagem
+    // genérica "invalid format" sem indicar o motivo real.
+    const emailBruto = document.getElementById('lg-email')?.value || '';
+    const email = emailBruto.trim().replace(/[​-‍﻿ ]/g, '');
     const senha = document.getElementById('lg-senha')?.value;
+    const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!email) { msg.textContent = '⚠️ Informe o e-mail.'; msg.style.color = '#dc2626'; return; }
+    if (!regexEmail.test(email)) {
+      msg.textContent = `⚠️ E-mail parece inválido: "${email}" (${email.length} caracteres). Apague o campo e digite de novo sem colar de outro lugar.`;
+      msg.style.color = '#dc2626';
+      return;
+    }
     if (!g.loginCriado && !senha) { msg.textContent = '⚠️ Informe a senha pra criar o login.'; msg.style.color = '#dc2626'; return; }
     if (senha && senha.length < 6) { msg.textContent = '⚠️ Senha deve ter no mínimo 6 caracteres.'; msg.style.color = '#dc2626'; return; }
 
