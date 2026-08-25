@@ -274,7 +274,9 @@ Router.register('gestores', (params, el) => {
               <div id="hdr-pct-${gid}" style="font-size:18px;font-weight:800;color:${totPct!==null?corTot.text:'rgba(255,255,255,0.4)'};">${totPct!==null?totPct.toFixed(0)+'%':'—'}</div>
             </div>
             ${totRecGLR>0?`<div style="text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;">RECEITA GLR</div><div style="font-size:14px;font-weight:700;color:#34d399;">${fmtR(totRecGLR)}</div></div>`:''}
-            <div style="display:flex;gap:6px;margin-left:8px;">
+            <div style="display:flex;align-items:center;gap:6px;margin-left:8px;">
+              ${g.loginCriado ? `<span title="Login criado em ${g.loginCriadoEm ? new Date(g.loginCriadoEm).toLocaleDateString('pt-BR') : ''}" style="font-size:10px;background:rgba(16,185,129,0.2);color:#34d399;padding:3px 8px;border-radius:99px;font-weight:700;">✅ Login criado</span>` : ''}
+              <button class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);" onclick="abrirModalLoginGestor(${GLR.gestores.indexOf(g)})">🔐 ${g.loginCriado ? 'Acesso' : 'Criar Login'}</button>
               <button class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);" onclick="editarGestor(${GLR.gestores.indexOf(g)})">✏️ Editar</button>
               <button class="btn btn-ghost btn-sm" style="color:#f87171;border:1px solid rgba(248,113,113,0.3);" onclick="removerGestor(${GLR.gestores.indexOf(g)})">🗑️</button>
             </div>
@@ -474,5 +476,92 @@ Router.register('gestores', (params, el) => {
     GLR.gestores.splice(idx,1);
     salvarGestores();
     Router.navigate('gestores');
+  };
+
+  // ── Login individual por gestor ───────────────────────────────
+  // Mesmo padrão já usado no Portal do Cliente (_sb.auth.signUp direto).
+  // IMPORTANTE: hoje o sistema só tem dois níveis — cliente do portal (email
+  // cadastrado em Portal Clientes) ou admin completo (qualquer outro login).
+  // Não existe um papel "gestor" com acesso restrito — criar login aqui dá ao
+  // gestor o MESMO acesso total que a conta admin atual tem. É só pra sair de
+  // uma senha única compartilhada pra logins individuais.
+  window.abrirModalLoginGestor = idx => {
+    const g = GLR.gestores[idx];
+    const overlay = document.createElement('div');
+    overlay.id = 'login-gestor-modal';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `<div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">🔐 Login de ${g.nome}</div>
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('.modal-overlay').remove()">✕</button>
+      </div>
+      <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:8px;padding:10px 12px;margin-bottom:18px;font-size:12px;color:var(--text-secondary);line-height:1.5;">
+        ⚠️ Esse login dá acesso <strong>completo</strong> ao sistema (igual ao acesso do admin) — hoje não existe um nível de permissão restrito só pra gestores.
+      </div>
+      <div class="form-group"><label class="form-label">E-mail de acesso</label>
+        <input class="form-input" id="lg-email" type="email" placeholder="nome@glr.com.br" value="${g.loginEmail || g.email || ''}">
+      </div>
+      <div class="form-group"><label class="form-label">Senha ${g.loginCriado ? '(deixe em branco pra não alterar)' : ''}</label>
+        <input class="form-input" id="lg-senha" type="password" placeholder="Mínimo 6 caracteres">
+      </div>
+      <div id="lg-msg" style="margin-bottom:12px;font-size:12px;text-align:center;"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-primary" id="lg-btn-salvar" onclick="_criarLoginGestor(${idx})">${g.loginCriado ? 'Atualizar' : 'Criar Login'}</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+    setTimeout(() => document.getElementById('lg-email')?.focus(), 50);
+  };
+
+  window._criarLoginGestor = async idx => {
+    const g     = GLR.gestores[idx];
+    const msg   = document.getElementById('lg-msg');
+    const btn   = document.getElementById('lg-btn-salvar');
+    const email = document.getElementById('lg-email')?.value?.trim();
+    const senha = document.getElementById('lg-senha')?.value;
+
+    if (!email) { msg.textContent = '⚠️ Informe o e-mail.'; msg.style.color = '#dc2626'; return; }
+    if (!g.loginCriado && !senha) { msg.textContent = '⚠️ Informe a senha pra criar o login.'; msg.style.color = '#dc2626'; return; }
+    if (senha && senha.length < 6) { msg.textContent = '⚠️ Senha deve ter no mínimo 6 caracteres.'; msg.style.color = '#dc2626'; return; }
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+    msg.textContent = 'Criando usuário...';
+    msg.style.color = 'var(--text-secondary)';
+
+    try {
+      if (senha) {
+        const { error } = await _sb.auth.signUp({ email, password: senha });
+        if (error && !error.message.includes('already registered')) {
+          msg.textContent = '❌ Erro ao criar usuário: ' + error.message;
+          msg.style.color = '#dc2626';
+          if (btn) { btn.disabled = false; btn.textContent = g.loginCriado ? 'Atualizar' : 'Criar Login'; }
+          return;
+        }
+        if (error?.message.includes('already registered')) {
+          msg.textContent = '⚠️ Esse e-mail já tem conta. Se a senha não for essa, peça pro gestor redefinir (link "Esqueci minha senha" pode ser adicionado depois, ou use o painel do Supabase).';
+          msg.style.color = '#d97706';
+        }
+      }
+
+      g.loginEmail   = email;
+      g.loginCriado  = true;
+      g.loginCriadoEm = g.loginCriadoEm || new Date().toISOString();
+      salvarGestores();
+
+      if (!msg.textContent.startsWith('⚠️')) {
+        msg.textContent = '✅ Login salvo com sucesso!';
+        msg.style.color = '#16a34a';
+      }
+      setTimeout(() => {
+        document.getElementById('login-gestor-modal')?.remove();
+        Router.navigate('gestores');
+      }, 1600);
+    } catch(e) {
+      msg.textContent = '❌ Erro: ' + e.message;
+      msg.style.color = '#dc2626';
+      if (btn) { btn.disabled = false; btn.textContent = g.loginCriado ? 'Atualizar' : 'Criar Login'; }
+    }
   };
 });
