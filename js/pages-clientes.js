@@ -688,13 +688,24 @@ function indicadorCard(label, value, colorClass, sub) {
 }
 
 function openModalNovaAcao(clienteId) {
-  const c = GLR.clientes.find(cl => cl.id === clienteId);
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
+  const hojeIso = new Date().toISOString().split('T')[0];
   overlay.innerHTML = `<div class="modal">
     <div class="modal-header">
-      <div class="modal-title">Registrar Ação${c ? ` — ${c.nome}` : ''}</div>
+      <div class="modal-title">Registrar Ação</div>
       <button class="btn btn-ghost btn-sm" onclick="this.closest('.modal-overlay').remove()">✕</button>
+    </div>
+    <div class="grid-2" style="gap:12px;">
+      <div class="form-group"><label class="form-label">Cliente</label>
+        <select class="form-select" id="a-cliente">
+          <option value="">Interno (sem cliente)</option>
+          ${GLR.clientes.map(cl => `<option value="${cl.id}" ${cl.id === clienteId ? 'selected' : ''}>${cl.nome}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Data</label>
+        <input class="form-input" id="a-data" type="date" value="${hojeIso}">
+      </div>
     </div>
     <div class="form-group"><label class="form-label">Categoria</label>
       <select class="form-select" id="a-cat"><option>Reunião</option><option>Campanha</option><option>Otimização</option><option>Precificação</option><option>Estratégia</option><option>Análise</option><option>Relatório</option><option>Onboarding</option></select>
@@ -715,10 +726,13 @@ function openModalNovaAcao(clienteId) {
     <div style="display:flex;gap:10px;justify-content:flex-end;">
       <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
       <button class="btn btn-primary" onclick="(function(){
+        const clienteSel = document.getElementById('a-cliente').value;
+        const cliente = clienteSel ? GLR.clientes.find(cl => cl.id === parseInt(clienteSel)) : null;
+        const data = document.getElementById('a-data').value;
         const acao = {
           id: GLR.nextId(GLR.acoes),
-          clienteId: ${clienteId},
-          data: new Date().toISOString().split('T')[0],
+          clienteId: cliente ? cliente.id : null,
+          data: data || new Date().toISOString().split('T')[0],
           categoria: document.getElementById('a-cat').value,
           descricao: document.getElementById('a-desc').value.trim(),
           responsavel: document.getElementById('a-resp').value,
@@ -728,10 +742,11 @@ function openModalNovaAcao(clienteId) {
         GLR.acoes.push(acao);
         localStorage.setItem('glr_acoes',JSON.stringify(GLR.acoes));
         this.closest('.modal-overlay').remove();
-        Router.navigate('cliente-perfil',{id:${clienteId}});
+        Router.resolve();
       }).call(this)">Salvar Ação</button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  setTimeout(() => document.getElementById('a-desc')?.focus(), 50);
 }
