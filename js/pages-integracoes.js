@@ -23,6 +23,7 @@ Router.register('integracoes', (params, el) => {
   const salvarNickname = (extId, val) => {
     nicknames[extId] = val;
     localStorage.setItem('glr_mc_nicknames', JSON.stringify(nicknames));
+    registrarLog('Apelido de conta alterado', `${extId} → "${val}"`);
   };
   window.salvarNickname = salvarNickname;
 
@@ -97,7 +98,47 @@ Router.register('integracoes', (params, el) => {
       ${renderClientesVinculados(vinc, mesesNomes, hoje)}
     </div>
 
+    <!-- Log de Alterações -->
+    <div class="card mb-16">
+      <div class="section-title mb-12">📋 Log de Alterações</div>
+      <div id="log-alteracoes-conteudo">${renderLogAlteracoes()}</div>
+    </div>
+
   </div>`;
+
+  // ── Log de Alterações ────────────────────────────────────
+  function fmtLogRelativo(iso) {
+    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (diff < 60)    return 'agora mesmo';
+    if (diff < 3600)  return `há ${Math.floor(diff / 60)} min`;
+    if (diff < 86400) return `há ${Math.floor(diff / 3600)}h`;
+    return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+  function renderLogAlteracoes() {
+    let logs = [];
+    try { logs = JSON.parse(localStorage.getItem('glr_logs') || '[]'); } catch(e) {}
+    if (!logs.length) {
+      return `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px;">Nenhuma alteração registrada ainda.</div>`;
+    }
+    return `<div style="max-height:420px;overflow-y:auto;">
+      ${logs.slice(0, 100).map(l => `
+        <div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:12.5px;flex-wrap:wrap;">
+          <div style="width:100px;flex-shrink:0;color:var(--text-muted);font-size:11px;">${fmtLogRelativo(l.data)}</div>
+          <div style="flex:1;min-width:180px;">
+            <span style="font-weight:600;color:var(--text-primary);">${l.acao}</span>
+            ${l.detalhes ? `<span style="color:var(--text-secondary);"> — ${l.detalhes}</span>` : ''}
+          </div>
+          <div style="flex-shrink:0;font-size:11px;color:#818cf8;">${l.usuario}</div>
+        </div>
+      `).join('')}
+    </div>`;
+  }
+  // Chamado por registrarLog() (definido globalmente em data.js) toda vez que
+  // uma alteração é registrada — atualiza a seção sem precisar recarregar a página.
+  window._logAtualizarTela = () => {
+    const c = document.getElementById('log-alteracoes-conteudo');
+    if (c) c.innerHTML = renderLogAlteracoes();
+  };
 
   // ── Funções ──────────────────────────────────────────────
 
@@ -113,6 +154,7 @@ Router.register('integracoes', (params, el) => {
     st.style.color = '#10b981';
     st.textContent = '✓ Chave salva';
     setTimeout(() => st.textContent = '', 2000);
+    registrarLog('API Key atualizada', 'Chave do Marketplace Connect alterada');
   };
 
   window.testarApiKey = async () => {
@@ -284,6 +326,8 @@ Router.register('integracoes', (params, el) => {
     // Re-renderiza lista de vínculos e tira a conta de "Contas Conectadas"
     document.getElementById('card-clientes-vinculados').innerHTML = renderClientesVinculados(vinc, mesesNomes, hoje);
     _reRenderContasConectadas();
+    const clienteNomeVinc = GLR.clientes.find(c => c.id === parseInt(clienteId))?.nome || clienteId;
+    registrarLog('Conta vinculada a cliente', `${nicknames[conta.external_id] || conta.nickname || conta.external_id} → ${clienteNomeVinc}`);
     alert(`✓ ${conta.nickname} vinculada com sucesso!`);
   };
 
@@ -300,6 +344,7 @@ Router.register('integracoes', (params, el) => {
   window.salvarAliquota = (extId, val) => {
     aliquotas[extId] = val;
     localStorage.setItem('glr_aliquotas', JSON.stringify(aliquotas));
+    registrarLog('Alíquota de imposto alterada', `${extId} → ${val}%`);
   };
 
   window.desvincularConta = (clienteId, externalId) => {
@@ -312,6 +357,8 @@ Router.register('integracoes', (params, el) => {
     localStorage.setItem('glr_mc_vinculos', JSON.stringify(vincLocal));
     document.getElementById('card-clientes-vinculados').innerHTML = renderClientesVinculados(vincLocal, mesesNomes, hoje);
     _reRenderContasConectadas(); // conta desvinculada volta a aparecer em "Contas Conectadas"
+    const clienteNomeDesv = GLR.clientes.find(c => c.id === parseInt(clienteId))?.nome || clienteId;
+    registrarLog('Conta desvinculada de cliente', `${nicknames[externalId] || externalId} × ${clienteNomeDesv}`);
   };
 
   window.importarDados = async (clienteId, mes, ano) => {
@@ -408,6 +455,7 @@ Router.register('integracoes', (params, el) => {
       btn.style.background = '#10b981';
       btn.disabled = false;
       setTimeout(() => { btn.textContent = '⬇ Importar dados'; btn.style.background = ''; }, 4000);
+      registrarLog('Dados importados', `${cliente?.nome || clienteId} — ${mesesNomes[mes]}/${ano} (${importados} conta${importados !== 1 ? 's' : ''})`);
 
     } catch(e) {
       res.innerHTML = `<div style="color:#ef4444;font-size:12px;margin-top:6px;">✗ ${e.message}</div>`;
@@ -468,7 +516,7 @@ function renderClientesVinculados(vinc, mesesNomes, hoje) {
                 <div style="font-size:10px;color:var(--text-muted);">ID: ${c.external_id}</div>
                 ${tags ? `<div style="font-size:10px;color:#818cf8;font-weight:600;margin-top:2px;">${tags}</div>` : ''}
                 <input type="text" value="${nick}" placeholder="Apelido (ex: GAMA SHOPEE)"
-                  onchange="(function(v){var n={};try{n=JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}')||{};}catch(e){}n['${c.external_id}']=v;localStorage.setItem('glr_mc_nicknames',JSON.stringify(n));})(this.value)"
+                  onchange="salvarNickname('${c.external_id}', this.value)"
                   style="margin-top:5px;width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--text-primary);outline:none;box-sizing:border-box;">
               </div>
               <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">

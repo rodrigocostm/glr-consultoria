@@ -68,3 +68,33 @@ GLR.eventoColor = {
 
 // ---- Próximo ID auto-incremento ----
 GLR.nextId = (arr) => arr.length ? Math.max(...arr.map(x => x.id)) + 1 : 1;
+
+// ---- Log de alterações (auditoria) ----
+// Registro genérico de "quem mudou o quê" — usado hoje pela tela de
+// Integrações (API key, vínculos, apelidos, alíquotas, importações), mas
+// fica em data.js pra qualquer outra página poder chamar registrarLog()
+// no futuro sem depender de pages-integracoes.js.
+GLR.logs = [];
+async function registrarLog(acao, detalhes) {
+  try {
+    let usuario = 'desconhecido';
+    try {
+      const { data } = await _sb.auth.getUser();
+      usuario = data?.user?.email || usuario;
+    } catch(e) {}
+    let logs = [];
+    try { logs = JSON.parse(localStorage.getItem('glr_logs') || '[]'); } catch(e) {}
+    logs.unshift({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      data: new Date().toISOString(),
+      usuario,
+      acao,
+      detalhes: detalhes || '',
+    });
+    if (logs.length > 500) logs = logs.slice(0, 500); // limite pra não crescer sem fim
+    GLR.logs = logs;
+    localStorage.setItem('glr_logs', JSON.stringify(logs));
+    if (typeof window._logAtualizarTela === 'function') window._logAtualizarTela();
+  } catch(e) { console.warn('[Log] erro ao registrar', e); }
+}
+window.registrarLog = registrarLog;

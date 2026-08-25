@@ -28,6 +28,7 @@ const GLR_KEYS = [
   'glr_analytics_queda', // produtos em queda detectados pelo Analytics
   'glr_plano_acao',      // plano de ação (Analytics) — editorial, não vem de API
   'glr_checklist_diario', // checklist diário (Analytics) — editorial, não vem de API
+  'glr_logs',            // log de alterações (auditoria) — quem mudou o quê
 ];
 
 // ── Intercepta localStorage.setItem para sincronizar com Supabase ──
