@@ -28,11 +28,14 @@ const MarketplaceAPI = {
 
     if (!res.ok) {
       let detail = '';
-      try { const j = await res.json(); detail = j.message || j.error || JSON.stringify(j); } catch(e) {}
+      // O erro real às vezes vem solto (j.message/j.error) e às vezes aninhado em
+      // j.data (ex: falta de crédito de IA) — sem checar os dois, a UI cai pro
+      // JSON inteiro em vez de mostrar só a frase que interessa.
+      try { const j = await res.json(); detail = j.message || j.error || j.data?.error || j.data?.message || JSON.stringify(j); } catch(e) {}
       throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
     }
     const json = await res.json();
-    if (json.status && json.status !== 200) throw new Error(json.message || 'Erro na API');
+    if (json.status && json.status !== 200) throw new Error(json.message || json.data?.error || 'Erro na API');
     return json;
   },
 

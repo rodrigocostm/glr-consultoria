@@ -114,6 +114,7 @@ Router.register('anuncios', (params, el) => {
     } finally {
       slot.gerando = false;
       render();
+      atualizarCreditos();
     }
   }
 
@@ -428,6 +429,8 @@ Router.register('anuncios', (params, el) => {
 
     ${!apiKey ? `<div class="card" style="border-color:var(--red);"><div style="color:var(--red);font-size:13px;">⚠️ Configure a API Key nas Integrações antes de usar esta página.</div></div>` : `
 
+    <div id="anun-creditos" style="margin-bottom:16px;"></div>
+
     <div class="card" style="margin-bottom:16px;">
       <div class="form-group"><label class="form-label">Loja (conta Mercado Livre)</label>
         <select class="form-select" id="anun-conta"><option value="">Carregando lojas...</option></select>
@@ -441,8 +444,28 @@ Router.register('anuncios', (params, el) => {
     `}
   </div>`;
 
+  async function atualizarCreditos() {
+    const box = document.getElementById('anun-creditos');
+    if (!box) return;
+    try {
+      const r = await MarketplaceAPI.call('ai_credits_status', {});
+      const creditos = r.data?.credits ?? r.credits ?? 0;
+      const semCredito = !(r.data?.can_generate ?? r.can_generate ?? creditos > 0);
+      box.innerHTML = `<div class="card" style="padding:10px 14px;${semCredito ? 'border-color:#f59e0b;' : ''}">
+        <div style="font-size:12.5px;color:${semCredito ? '#f59e0b' : 'var(--text-secondary)'};">
+          ${semCredito
+            ? `⚠️ <strong>Sem créditos de IA</strong> pra gerar fotos (saldo: ${creditos}). Cada geração custa créditos à parte do plano da API — compre mais em marketplaces.tiops.com.br antes de tentar gerar.`
+            : `🎨 Créditos de IA disponíveis: <strong>${creditos}</strong>`}
+        </div>
+      </div>`;
+    } catch (e) {
+      box.innerHTML = '';
+    }
+  }
+
   if (apiKey) {
     renderBody();
+    atualizarCreditos();
     carregarContas().then(() => {
       const sel = document.getElementById('anun-conta');
       if (!contas.length) {
