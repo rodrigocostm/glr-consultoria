@@ -28,10 +28,13 @@ Router.register('anuncios', (params, el) => {
   const slotPrincipal = { refUrl: '', prompt: '', gerando: false, geradas: [], escolhidaIdx: 0, publicado: false };
   const slotDetalhe   = { refUrl: '', prompt: '', gerando: false, geradas: [], escolhidaIdx: 0, publicado: false };
 
-  function resetItem() {
-    itemAtual = null; fotosAtuais = [];
+  function resetSlots() {
     slotPrincipal.refUrl = ''; slotPrincipal.prompt = ''; slotPrincipal.geradas = []; slotPrincipal.escolhidaIdx = 0; slotPrincipal.publicado = false;
     slotDetalhe.refUrl = '';   slotDetalhe.prompt = '';   slotDetalhe.geradas = [];   slotDetalhe.escolhidaIdx = 0;   slotDetalhe.publicado = false;
+  }
+  function resetItem() {
+    itemAtual = null; fotosAtuais = [];
+    resetSlots();
   }
 
   async function carregarContas() {
@@ -115,7 +118,7 @@ Router.register('anuncios', (params, el) => {
       const r = await MarketplaceAPI.call('get_item', { item_id: itemId, account_id: meliIdDaConta(contaSel) });
       itemAtual = r.data?.body || r.data || r;
       fotosAtuais = itemAtual.pictures || [];
-      resetItem();
+      resetSlots();
       slotPrincipal.refUrl = fotosAtuais[0]?.secure_url || fotosAtuais[0]?.url || '';
       slotDetalhe.refUrl   = fotosAtuais[1]?.secure_url || fotosAtuais[1]?.url || slotPrincipal.refUrl;
       // descrição vem de endpoint separado
