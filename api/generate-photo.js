@@ -67,10 +67,11 @@ module.exports = async function handler(req, res) {
       upForm.append('file', new Blob([imgBuffer], { type: 'image/png' }), `anuncio-${Date.now()}-${images.length}.png`);
       const upRes = await fetch('https://upload.tiops.com.br/', { method: 'POST', body: upForm });
       const upJson = await upRes.json().catch(() => ({}));
-      if (!upRes.ok || !upJson.url) {
-        return res.status(502).json({ error: 'Foto gerada, mas falhou ao publicar em URL pública: ' + (upJson.error || upRes.status) });
+      const publicUrl = upJson.data?.url || upJson.url;
+      if (!upRes.ok || !publicUrl) {
+        return res.status(502).json({ error: 'Foto gerada, mas falhou ao publicar em URL pública: ' + (upJson.error || upJson.data?.error || upRes.status) });
       }
-      images.push({ url: upJson.url });
+      images.push({ url: publicUrl });
     }
 
     return res.status(200).json({ images });
