@@ -43,6 +43,13 @@ Router.register('anuncios', (params, el) => {
     return c?.param_to_use?.meliUserId || c?.external_id;
   }
 
+  // O nickname/label que a API devolve é genérico ("Mercado Livre 123456") —
+  // o nome real da loja/cliente vem só na tag associada à conta.
+  function nomeDaConta(c) {
+    const tagNome = c?.tags?.find(t => t && typeof t === 'object' && t.name)?.name;
+    return tagNome || c?.label || c?.nickname || c?.external_id;
+  }
+
   // ── Extrai job_id e imagens geradas de forma tolerante ao formato de resposta ──
   function extrairGeracoes(resp) {
     const d = resp?.data || resp || {};
@@ -246,7 +253,7 @@ Router.register('anuncios', (params, el) => {
         sel.innerHTML = '<option value="">Nenhuma loja ML conectada</option>';
         return;
       }
-      sel.innerHTML = '<option value="">Selecione a loja...</option>' + contas.map((c, i) => `<option value="${i}">${c.label || c.nickname || c.external_id}</option>`).join('');
+      sel.innerHTML = '<option value="">Selecione a loja...</option>' + contas.map((c, i) => `<option value="${i}">${nomeDaConta(c)}</option>`).join('');
       sel.addEventListener('change', () => {
         contaSel = sel.value !== '' ? contas[sel.value] : null;
         if (btn) btn.disabled = !contaSel;
