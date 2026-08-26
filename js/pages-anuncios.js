@@ -77,61 +77,91 @@ Router.register('anuncios', (params, el) => {
   // serverless própria, chave guardada no ambiente da Vercel) e já devolve fotos
   // com URL pública. Publicar no marketplace continua indo pela Tiops — é o único
   // jeito de escrever no anúncio real.
-  function renderKitRefPicker() {
+  function processarArquivoKit(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      kit.refPreviewUrl = dataUrl;
+      kit.refBase64 = dataUrl.split(',')[1] || '';
+      renderKit();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Zona de referência: no modo criar é uma dropzone de upload; no modo editar é
+  // uma tira de miniaturas da galeria atual do anúncio pra escolher a referência.
+  function renderKitReferencia() {
     if (modo === 'editar') {
       return `
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Foto de referência (da galeria atual)</div>
-        <select class="form-select" style="font-size:12px;" onchange="_anunKitRef(this.value)">
+        <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">Foto de referência (galeria atual)</div>
+        <div style="display:flex;gap:8px;overflow-x:auto;padding:4px 2px 8px;">
           ${fotosAtuais.map((f, i) => {
             const u = f.secure_url || f.url;
-            return `<option value="${u}" ${u === kit.refUrl ? 'selected' : ''}>Foto ${i + 1}</option>`;
+            const sel = u === kit.refUrl;
+            return `<img src="${u}" onclick="_anunKitRef('${u}')"
+              style="width:66px;height:66px;object-fit:cover;border-radius:10px;cursor:pointer;flex-shrink:0;border:3px solid ${sel ? '#6366f1' : 'transparent'};opacity:${sel ? '1' : '.55'};transition:.15s;">`;
           }).join('')}
-        </select>`;
+        </div>`;
     }
     return `
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Envie a foto de referência do produto</div>
-      <input type="file" accept="image/*" onchange="_anunKitUpload(this)">`;
+      <div id="kit-dropzone" ondragover="event.preventDefault();this.style.borderColor='#6366f1';" ondragleave="this.style.borderColor='var(--border)';"
+           ondrop="event.preventDefault();this.style.borderColor='var(--border)';_anunKitDrop(event);"
+           onclick="document.getElementById('kit-file-input').click()"
+           style="border:2px dashed var(--border);border-radius:16px;min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:20px;background:var(--bg-soft,#f7f8fc);transition:border-color .15s;">
+        ${kit.refPreviewUrl
+          ? `<img src="${kit.refPreviewUrl}" style="max-width:100%;max-height:150px;border-radius:10px;object-fit:contain;">
+             <div style="font-size:11px;color:var(--text-muted);margin-top:10px;">Clique pra trocar a foto</div>`
+          : `<div style="width:44px;height:44px;border-radius:50%;background:rgba(99,102,241,0.1);display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:10px;">📤</div>
+             <div style="font-size:13px;font-weight:600;color:var(--text-primary);">Arraste ou clique pra enviar</div>
+             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Foto do produto original, em boa resolução</div>`}
+        <input type="file" id="kit-file-input" accept="image/*" style="display:none;" onchange="_anunKitUpload(this)">
+      </div>`;
   }
 
   function renderKit() {
     const box = document.getElementById('anun-kit');
     if (!box) return;
-    const refImg = modo === 'criar' ? kit.refPreviewUrl : kit.refUrl;
     const temRef = modo === 'criar' ? !!kit.refBase64 : !!kit.refUrl;
     box.innerHTML = `
-      <div class="card" style="margin-bottom:16px;">
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:12px;">🎨 Kit de Fotos com IA</div>
-        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;">
-          <div style="flex-shrink:0;">
-            ${refImg ? `<img src="${refImg}" style="width:78px;height:78px;object-fit:cover;border-radius:10px;border:1px solid var(--border);">` : `<div style="width:78px;height:78px;border-radius:10px;border:1px dashed var(--border);"></div>`}
-          </div>
-          <div style="flex:1;min-width:220px;">${renderKitRefPicker()}</div>
+      <div class="card" style="margin-bottom:16px;padding:26px;">
+        <div style="text-align:center;margin-bottom:22px;">
+          <div style="width:50px;height:50px;border-radius:14px;background:rgba(99,102,241,0.1);display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 10px;">🎨</div>
+          <div style="font-size:17px;font-weight:800;color:var(--text-primary);">Kit de Fotos com IA</div>
+          <div style="font-size:12.5px;color:var(--text-muted);margin-top:4px;max-width:440px;margin-left:auto;margin-right:auto;">Gere um kit de 9 fotos profissionais prontas pra anunciar, a partir de 1 foto de referência.</div>
         </div>
-        <div class="grid-2" style="gap:12px;">
-          <div class="form-group"><label class="form-label">Nome do Produto</label>
-            <input type="text" class="form-input" id="kit-nome" value="${(kit.nome || '').replace(/"/g, '&quot;')}" placeholder="Ex: Armário de Cozinha 2 Portas">
-          </div>
-          <div class="form-group"><label class="form-label">Primeira foto do kit</label>
-            <select class="form-select" id="kit-ambientada">
-              <option value="0" ${!kit.ambientada ? 'selected' : ''}>Isolada — fundo branco, foco 100% no produto</option>
-              <option value="1" ${kit.ambientada ? 'selected' : ''}>Ambientada — cenário real de uso</option>
-            </select>
+        <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:18px;">
+          <div style="flex:1;min-width:220px;">${renderKitReferencia()}</div>
+          <div style="flex:1.3;min-width:260px;display:flex;flex-direction:column;gap:14px;">
+            <div class="form-group" style="margin:0;"><label class="form-label">Nome do Produto</label>
+              <input type="text" class="form-input" id="kit-nome" value="${(kit.nome || '').replace(/"/g, '&quot;')}" placeholder="Ex: Armário de Cozinha 2 Portas">
+            </div>
+            <div class="form-group" style="margin:0;"><label class="form-label">Detalhes & instruções (opcional)</label>
+              <textarea class="form-textarea" id="kit-detalhes" rows="3" placeholder="Cor, material, diferenciais, estilo de foto desejado...">${kit.detalhes || ''}</textarea>
+            </div>
+            <label style="display:flex;align-items:center;gap:12px;cursor:pointer;padding:10px 14px;border:1px solid var(--border);border-radius:12px;">
+              <span style="position:relative;width:38px;height:21px;flex-shrink:0;" onclick="event.preventDefault();_anunKitAmbientadaToggle();">
+                <span style="position:absolute;inset:0;background:${kit.ambientada ? '#6366f1' : '#d5d7e3'};border-radius:999px;transition:.2s;"></span>
+                <span style="position:absolute;top:3px;left:${kit.ambientada ? '20px' : '3px'};width:15px;height:15px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.25);"></span>
+              </span>
+              <span onclick="_anunKitAmbientadaToggle()">
+                <div style="font-size:12.5px;font-weight:600;color:var(--text-primary);">Primeira foto ambientada</div>
+                <div style="font-size:11px;color:var(--text-muted);">${kit.ambientada ? 'Cenário real de uso' : 'Isolada, fundo branco, foco no produto'}</div>
+              </span>
+            </label>
           </div>
         </div>
-        <div class="form-group"><label class="form-label">Detalhes & instruções (opcional)</label>
-          <textarea class="form-textarea" id="kit-detalhes" rows="3" placeholder="Cor, material, diferenciais, estilo de foto desejado...">${kit.detalhes || ''}</textarea>
-        </div>
-        <button class="btn btn-primary" style="width:100%;" ${(!temRef || kit.gerando) ? 'disabled' : ''} onclick="_anunGerarKit()">
+        <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;border-radius:12px;" ${(!temRef || kit.gerando) ? 'disabled' : ''} onclick="_anunGerarKit()">
           ${kit.gerando ? '⏳ Gerando kit (pode levar até 1 minuto)...' : '🎨 Gerar Kit de Fotos (9 fotos)'}
         </button>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Cada kit gera até 9 fotos na OpenAI — custa mais do que uma foto avulsa. Use com moderação.</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center;">Cada kit gera até 9 fotos na OpenAI — custa mais do que uma foto avulsa. Use com moderação.</div>
         ${kit.erros.length ? `<div style="font-size:11px;color:var(--red);margin-top:8px;">${kit.erros.length} foto(s) do kit falharam: ${kit.erros.join(' · ')}</div>` : ''}
         ${kit.imagens.length ? `
-          <div style="font-size:12.5px;font-weight:600;color:var(--text-primary);margin:14px 0 8px;">Escolha as fotos que vão pro anúncio (${kit.selecionadas.length} selecionada${kit.selecionadas.length !== 1 ? 's' : ''}):</div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          <div style="font-size:12.5px;font-weight:600;color:var(--text-primary);margin:18px 0 10px;">Escolha as fotos que vão pro anúncio (${kit.selecionadas.length} selecionada${kit.selecionadas.length !== 1 ? 's' : ''}):</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
             ${kit.imagens.map((im, i) => `
               <img src="${im.url}" onclick="_anunKitToggle(${i})"
-                style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;border:3px solid ${kit.selecionadas.includes(i) ? '#6366f1' : 'transparent'};opacity:${kit.selecionadas.includes(i) ? '1' : '.55'};">
+                style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer;border:3px solid ${kit.selecionadas.includes(i) ? '#6366f1' : 'transparent'};opacity:${kit.selecionadas.includes(i) ? '1' : '.5'};transition:.15s;">
             `).join('')}
           </div>
         ` : ''}
@@ -143,7 +173,6 @@ Router.register('anuncios', (params, el) => {
     if (!temRef) { alert('Escolha ou envie a foto de referência antes de gerar.'); return; }
     kit.nome = document.getElementById('kit-nome')?.value || '';
     kit.detalhes = document.getElementById('kit-detalhes')?.value || '';
-    kit.ambientada = document.getElementById('kit-ambientada')?.value === '1';
     kit.gerando = true; kit.imagens = []; kit.selecionadas = []; kit.erros = [];
     renderKit();
     try {
@@ -174,19 +203,10 @@ Router.register('anuncios', (params, el) => {
     if (idx >= 0) kit.selecionadas.splice(idx, 1); else kit.selecionadas.push(i);
     renderKit();
   };
-  window._anunKitRef = (url) => { kit.refUrl = url; };
-  window._anunKitUpload = (input) => {
-    const file = input.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result || '');
-      kit.refPreviewUrl = dataUrl;
-      kit.refBase64 = dataUrl.split(',')[1] || '';
-      renderKit();
-    };
-    reader.readAsDataURL(file);
-  };
+  window._anunKitRef = (url) => { kit.refUrl = url; renderKit(); };
+  window._anunKitAmbientadaToggle = () => { kit.ambientada = !kit.ambientada; renderKit(); };
+  window._anunKitUpload = (input) => processarArquivoKit(input.files?.[0]);
+  window._anunKitDrop = (ev) => processarArquivoKit(ev.dataTransfer?.files?.[0]);
 
   // ── Modo editar ──────────────────────────────────────────────
   async function buscarAnuncios() {
