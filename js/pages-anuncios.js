@@ -64,21 +64,14 @@ Router.register('anuncios', (params, el) => {
     return tagNome || c?.label || c?.nickname || c?.external_id;
   }
 
-  // ── Extrai job_id e imagens geradas de forma tolerante ao formato de resposta ──
-  function extrairGeracoes(resp) {
-    const d = resp?.data || resp || {};
-    const jobId = d.job_id || d.id || resp?.job_id || null;
-    let imgs = d.images || d.variations || d.photos || d.results || [];
-    if (!Array.isArray(imgs)) imgs = [];
-    imgs = imgs.map(x => (typeof x === 'string' ? { url: x } : { url: x.url || x.secure_url || x.image_url || x.data || '' }));
-    if (!imgs.length && (d.url || d.image_url)) imgs = [{ url: d.url || d.image_url }];
-    return { jobId, imgs, raw: resp };
-  }
-
   function render() {
     if (modo === 'criar') renderCriarNovo(); else { renderResultados(); renderPainel(); }
   }
 
+  // Geração de foto NÃO passa pela Tiops — usa direto a API da OpenAI (gpt-image-1)
+  // via /api/generate-photo (function serverless própria, chave guardada no
+  // ambiente da Vercel). Publicar a foto no marketplace continua usando a Tiops,
+  // que é o único jeito de escrever no anúncio real.
   async function gerarFoto(slot, refInput) {
     const promptEl = document.getElementById(refInput + '-prompt');
     slot.prompt = promptEl?.value || '';
@@ -87,34 +80,28 @@ Router.register('anuncios', (params, el) => {
     slot.gerando = true; slot.geradas = []; slot.escolhidaIdx = 0;
     render();
     try {
-      const p = {
-        meliUserId: meliIdDaConta(contaSel),
-        marketplace: 'mercadolivre',
+      const body = {
         prompt: slot.prompt,
         photo_count: 3,
+        ad_title: modo === 'criar' ? (document.getElementById('novo-titulo')?.value || '') : itemAtual.title,
       };
-      if (modo === 'criar') {
-        p.image_base64 = slot.refBase64;
-        p.ad_title = document.getElementById('novo-titulo')?.value || '';
-      } else {
-        p.item_id = itemAtual.id;
-        p.image_url = slot.refUrl;
-        p.ad_title = itemAtual.title;
-      }
-      const r = await MarketplaceAPI.call('photo_generate', p);
-      const { jobId, imgs, raw } = extrairGeracoes(r);
-      slot.jobId = jobId;
-      slot.geradas = imgs;
-      slot._raw = raw;
-      if (!imgs.length) {
-        alert('A geração respondeu, mas não veio nenhuma imagem no formato esperado. Veja o aviso no painel (posso ajustar a leitura assim que você me mostrar o que apareceu).');
-      }
+      if (modo === 'criar') body.image_base64 = slot.refBase64;
+      else body.image_url = slot.refUrl;
+
+      const resp = await fetch('/api/generate-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await resp.json();
+      if (!resp.ok) throw new Error(json.error || 'Erro ao gerar foto.');
+      slot.geradas = (json.images || []).map(im => ({ url: im.url }));
+      if (!slot.geradas.length) alert('A IA respondeu sem nenhuma imagem.');
     } catch (e) {
       alert('Erro ao gerar foto: ' + (e.message || e));
     } finally {
       slot.gerando = false;
       render();
-      atualizarCreditos();
     }
   }
 
@@ -429,8 +416,6 @@ Router.register('anuncios', (params, el) => {
 
     ${!apiKey ? `<div class="card" style="border-color:var(--red);"><div style="color:var(--red);font-size:13px;">⚠️ Configure a API Key nas Integrações antes de usar esta página.</div></div>` : `
 
-    <div id="anun-creditos" style="margin-bottom:16px;"></div>
-
     <div class="card" style="margin-bottom:16px;">
       <div class="form-group"><label class="form-label">Loja (conta Mercado Livre)</label>
         <select class="form-select" id="anun-conta"><option value="">Carregando lojas...</option></select>
@@ -444,28 +429,8 @@ Router.register('anuncios', (params, el) => {
     `}
   </div>`;
 
-  async function atualizarCreditos() {
-    const box = document.getElementById('anun-creditos');
-    if (!box) return;
-    try {
-      const r = await MarketplaceAPI.call('ai_credits_status', {});
-      const creditos = r.data?.credits ?? r.credits ?? 0;
-      const semCredito = !(r.data?.can_generate ?? r.can_generate ?? creditos > 0);
-      box.innerHTML = `<div class="card" style="padding:10px 14px;${semCredito ? 'border-color:#f59e0b;' : ''}">
-        <div style="font-size:12.5px;color:${semCredito ? '#f59e0b' : 'var(--text-secondary)'};">
-          ${semCredito
-            ? `⚠️ <strong>Sem créditos de IA</strong> pra gerar fotos (saldo: ${creditos}). Cada geração custa créditos à parte do plano da API — compre mais em marketplaces.tiops.com.br antes de tentar gerar.`
-            : `🎨 Créditos de IA disponíveis: <strong>${creditos}</strong>`}
-        </div>
-      </div>`;
-    } catch (e) {
-      box.innerHTML = '';
-    }
-  }
-
   if (apiKey) {
     renderBody();
-    atualizarCreditos();
     carregarContas().then(() => {
       const sel = document.getElementById('anun-conta');
       if (!contas.length) {
@@ -548,17 +513,25 @@ Router.register('anuncios', (params, el) => {
       }
     } catch (e) { erros.push('Descrição: ' + (e.message || e)); }
     try {
-      if (publicaPrincipal) {
-        const escolhida = slotPrincipal.geradas[slotPrincipal.escolhidaIdx];
-        await MarketplaceAPI.call('photo_publish', { job_id: slotPrincipal.jobId, meliUserId, image_data: escolhida?.url });
+      if (publicaPrincipal || publicaDetalhe) {
+        // pictures do update_item SUBSTITUI a galeria inteira — monta a lista com as
+        // fotos atuais (por {id}, na ordem) e só troca as posições que foram geradas.
+        // A URL gerada já vem pública (subida pro host da Tiops dentro de
+        // /api/generate-photo), então entra direto em source, sem upload extra aqui.
+        const pics = fotosAtuais.map(f => ({ id: f.id }));
+        if (publicaPrincipal) {
+          const url = slotPrincipal.geradas[slotPrincipal.escolhidaIdx]?.url;
+          if (!url) throw new Error('Foto principal sem URL gerada.');
+          pics[0] = { source: url };
+        }
+        if (publicaDetalhe) {
+          const url = slotDetalhe.geradas[slotDetalhe.escolhidaIdx]?.url;
+          if (!url) throw new Error('Foto de detalhe sem URL gerada.');
+          if (pics.length > 1) pics[1] = { source: url }; else pics.push({ source: url });
+        }
+        await MarketplaceAPI.call('update_item', { item_id: itemAtual.id, meliUserId, pictures: pics });
       }
-    } catch (e) { erros.push('Foto principal: ' + (e.message || e)); }
-    try {
-      if (publicaDetalhe) {
-        const escolhida = slotDetalhe.geradas[slotDetalhe.escolhidaIdx];
-        await MarketplaceAPI.call('photo_publish', { job_id: slotDetalhe.jobId, meliUserId, image_data: escolhida?.url });
-      }
-    } catch (e) { erros.push('Foto de detalhe: ' + (e.message || e)); }
+    } catch (e) { erros.push('Fotos: ' + (e.message || e)); }
 
     if (erros.length) {
       alert('Publicado com erros:\n' + erros.join('\n'));
