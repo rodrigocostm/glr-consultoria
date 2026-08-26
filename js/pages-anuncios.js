@@ -1,6 +1,6 @@
 // ============================================================
 // GLR Consultoria — Central de Anúncios (analistas criam título,
-// descrição e fotos novas com IA, e publicam direto no Mercado Livre.
+// descrição e um kit de fotos com IA, e publicam direto no Mercado Livre.
 // Também dá pra criar um anúncio novo do zero, com foto de referência
 // enviada do computador.)
 // ============================================================
@@ -27,25 +27,29 @@ Router.register('anuncios', (params, el) => {
   let fotosAtuais = [];       // pictures do anúncio atual (modo editar)
   let resultadosBusca = [];
   let categoriasBusca = [];   // resultados de search_categories (modo criar)
-  const novo = { categoria: null, atributos: [], refBase64: '', refPreviewUrl: '' };
+  const novo = { categoria: null, atributos: [] };
 
-  // Cada slot: { refUrl, refBase64, prompt, gerando, geradas:[{url}], escolhidaIdx, jobId }
-  const slotPrincipal = { refUrl: '', refBase64: '', prompt: '', gerando: false, geradas: [], escolhidaIdx: 0, jobId: null };
-  const slotDetalhe   = { refUrl: '', refBase64: '', prompt: '', gerando: false, geradas: [], escolhidaIdx: 0, jobId: null };
+  // Kit de fotos com IA — compartilhado pelos dois modos. refUrl (editar, foto já
+  // existente) ou refBase64 (criar, upload do computador) alimenta a geração.
+  const kit = {
+    refUrl: '', refBase64: '', refPreviewUrl: '',
+    nome: '', detalhes: '', ambientada: false,
+    gerando: false, imagens: [], selecionadas: [], erros: [],
+  };
 
-  function resetSlots() {
-    [slotPrincipal, slotDetalhe].forEach(s => {
-      s.refUrl = ''; s.refBase64 = ''; s.prompt = ''; s.geradas = []; s.escolhidaIdx = 0; s.jobId = null; s._raw = null;
-    });
+  function resetKit() {
+    kit.refUrl = ''; kit.refBase64 = ''; kit.refPreviewUrl = '';
+    kit.nome = ''; kit.detalhes = ''; kit.ambientada = false;
+    kit.gerando = false; kit.imagens = []; kit.selecionadas = []; kit.erros = [];
   }
   function resetItem() {
     itemAtual = null; fotosAtuais = [];
-    resetSlots();
+    resetKit();
   }
   function resetNovo() {
-    novo.categoria = null; novo.atributos = []; novo.refBase64 = ''; novo.refPreviewUrl = '';
+    novo.categoria = null; novo.atributos = [];
     categoriasBusca = [];
-    resetSlots();
+    resetKit();
   }
 
   async function carregarContas() {
@@ -68,25 +72,84 @@ Router.register('anuncios', (params, el) => {
     if (modo === 'criar') renderCriarNovo(); else { renderResultados(); renderPainel(); }
   }
 
-  // Geração de foto NÃO passa pela Tiops — usa direto a API da OpenAI (gpt-image-1)
-  // via /api/generate-photo (function serverless própria, chave guardada no
-  // ambiente da Vercel). Publicar a foto no marketplace continua usando a Tiops,
-  // que é o único jeito de escrever no anúncio real.
-  async function gerarFoto(slot, refInput) {
-    const promptEl = document.getElementById(refInput + '-prompt');
-    slot.prompt = promptEl?.value || '';
-    const temRef = modo === 'criar' ? !!slot.refBase64 : !!slot.refUrl;
-    if (!temRef) { alert(modo === 'criar' ? 'Envie a foto de referência do produto antes de gerar.' : 'Escolha a foto de referência antes de gerar.'); return; }
-    slot.gerando = true; slot.geradas = []; slot.escolhidaIdx = 0;
-    render();
+  // ── Kit de fotos com IA (não passa pela Tiops) ──────────────────
+  // Usa direto a API da OpenAI (gpt-image-1) via /api/generate-photo (function
+  // serverless própria, chave guardada no ambiente da Vercel) e já devolve fotos
+  // com URL pública. Publicar no marketplace continua indo pela Tiops — é o único
+  // jeito de escrever no anúncio real.
+  function renderKitRefPicker() {
+    if (modo === 'editar') {
+      return `
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Foto de referência (da galeria atual)</div>
+        <select class="form-select" style="font-size:12px;" onchange="_anunKitRef(this.value)">
+          ${fotosAtuais.map((f, i) => {
+            const u = f.secure_url || f.url;
+            return `<option value="${u}" ${u === kit.refUrl ? 'selected' : ''}>Foto ${i + 1}</option>`;
+          }).join('')}
+        </select>`;
+    }
+    return `
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Envie a foto de referência do produto</div>
+      <input type="file" accept="image/*" onchange="_anunKitUpload(this)">`;
+  }
+
+  function renderKit() {
+    const box = document.getElementById('anun-kit');
+    if (!box) return;
+    const refImg = modo === 'criar' ? kit.refPreviewUrl : kit.refUrl;
+    const temRef = modo === 'criar' ? !!kit.refBase64 : !!kit.refUrl;
+    box.innerHTML = `
+      <div class="card" style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:12px;">🎨 Kit de Fotos com IA</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;">
+          <div style="flex-shrink:0;">
+            ${refImg ? `<img src="${refImg}" style="width:78px;height:78px;object-fit:cover;border-radius:10px;border:1px solid var(--border);">` : `<div style="width:78px;height:78px;border-radius:10px;border:1px dashed var(--border);"></div>`}
+          </div>
+          <div style="flex:1;min-width:220px;">${renderKitRefPicker()}</div>
+        </div>
+        <div class="grid-2" style="gap:12px;">
+          <div class="form-group"><label class="form-label">Nome do Produto</label>
+            <input type="text" class="form-input" id="kit-nome" value="${(kit.nome || '').replace(/"/g, '&quot;')}" placeholder="Ex: Armário de Cozinha 2 Portas">
+          </div>
+          <div class="form-group"><label class="form-label">Primeira foto do kit</label>
+            <select class="form-select" id="kit-ambientada">
+              <option value="0" ${!kit.ambientada ? 'selected' : ''}>Isolada — fundo branco, foco 100% no produto</option>
+              <option value="1" ${kit.ambientada ? 'selected' : ''}>Ambientada — cenário real de uso</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group"><label class="form-label">Detalhes & instruções (opcional)</label>
+          <textarea class="form-textarea" id="kit-detalhes" rows="3" placeholder="Cor, material, diferenciais, estilo de foto desejado...">${kit.detalhes || ''}</textarea>
+        </div>
+        <button class="btn btn-primary" style="width:100%;" ${(!temRef || kit.gerando) ? 'disabled' : ''} onclick="_anunGerarKit()">
+          ${kit.gerando ? '⏳ Gerando kit (pode levar até 1 minuto)...' : '🎨 Gerar Kit de Fotos (9 fotos)'}
+        </button>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Cada kit gera até 9 fotos na OpenAI — custa mais do que uma foto avulsa. Use com moderação.</div>
+        ${kit.erros.length ? `<div style="font-size:11px;color:var(--red);margin-top:8px;">${kit.erros.length} foto(s) do kit falharam: ${kit.erros.join(' · ')}</div>` : ''}
+        ${kit.imagens.length ? `
+          <div style="font-size:12.5px;font-weight:600;color:var(--text-primary);margin:14px 0 8px;">Escolha as fotos que vão pro anúncio (${kit.selecionadas.length} selecionada${kit.selecionadas.length !== 1 ? 's' : ''}):</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+            ${kit.imagens.map((im, i) => `
+              <img src="${im.url}" onclick="_anunKitToggle(${i})"
+                style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;border:3px solid ${kit.selecionadas.includes(i) ? '#6366f1' : 'transparent'};opacity:${kit.selecionadas.includes(i) ? '1' : '.55'};">
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>`;
+  }
+
+  window._anunGerarKit = async () => {
+    const temRef = modo === 'criar' ? !!kit.refBase64 : !!kit.refUrl;
+    if (!temRef) { alert('Escolha ou envie a foto de referência antes de gerar.'); return; }
+    kit.nome = document.getElementById('kit-nome')?.value || '';
+    kit.detalhes = document.getElementById('kit-detalhes')?.value || '';
+    kit.ambientada = document.getElementById('kit-ambientada')?.value === '1';
+    kit.gerando = true; kit.imagens = []; kit.selecionadas = []; kit.erros = [];
+    renderKit();
     try {
-      const body = {
-        prompt: slot.prompt,
-        photo_count: 3,
-        ad_title: modo === 'criar' ? (document.getElementById('novo-titulo')?.value || '') : itemAtual.title,
-      };
-      if (modo === 'criar') body.image_base64 = slot.refBase64;
-      else body.image_url = slot.refUrl;
+      const body = { product_name: kit.nome, details: kit.detalhes, ambientada: kit.ambientada };
+      if (modo === 'criar') body.image_base64 = kit.refBase64;
+      else body.image_url = kit.refUrl;
 
       const resp = await fetch('/api/generate-photo', {
         method: 'POST',
@@ -94,16 +157,36 @@ Router.register('anuncios', (params, el) => {
         body: JSON.stringify(body),
       });
       const json = await resp.json();
-      if (!resp.ok) throw new Error(json.error || 'Erro ao gerar foto.');
-      slot.geradas = (json.images || []).map(im => ({ url: im.url }));
-      if (!slot.geradas.length) alert('A IA respondeu sem nenhuma imagem.');
+      if (!resp.ok) throw new Error(json.error || 'Erro ao gerar kit.');
+      kit.imagens = json.images || [];
+      kit.selecionadas = kit.imagens.map((_, i) => i);
+      kit.erros = json.erros || [];
+      if (!kit.imagens.length) alert('Não consegui gerar nenhuma foto do kit.');
     } catch (e) {
-      alert('Erro ao gerar foto: ' + (e.message || e));
+      alert('Erro ao gerar kit: ' + (e.message || e));
     } finally {
-      slot.gerando = false;
-      render();
+      kit.gerando = false;
+      renderKit();
     }
-  }
+  };
+  window._anunKitToggle = (i) => {
+    const idx = kit.selecionadas.indexOf(i);
+    if (idx >= 0) kit.selecionadas.splice(idx, 1); else kit.selecionadas.push(i);
+    renderKit();
+  };
+  window._anunKitRef = (url) => { kit.refUrl = url; };
+  window._anunKitUpload = (input) => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      kit.refPreviewUrl = dataUrl;
+      kit.refBase64 = dataUrl.split(',')[1] || '';
+      renderKit();
+    };
+    reader.readAsDataURL(file);
+  };
 
   // ── Modo editar ──────────────────────────────────────────────
   async function buscarAnuncios() {
@@ -129,9 +212,9 @@ Router.register('anuncios', (params, el) => {
       const r = await MarketplaceAPI.call('get_item', { item_id: itemId, account_id: meliIdDaConta(contaSel) });
       itemAtual = r.data?.body || r.data || r;
       fotosAtuais = itemAtual.pictures || [];
-      resetSlots();
-      slotPrincipal.refUrl = fotosAtuais[0]?.secure_url || fotosAtuais[0]?.url || '';
-      slotDetalhe.refUrl   = fotosAtuais[1]?.secure_url || fotosAtuais[1]?.url || slotPrincipal.refUrl;
+      resetKit();
+      kit.refUrl = fotosAtuais[0]?.secure_url || fotosAtuais[0]?.url || '';
+      kit.nome = itemAtual.title || '';
       try {
         const rd = await MarketplaceAPI.call('get_description', { item_id: itemId, meliUserId: meliIdDaConta(contaSel) });
         itemAtual._descricaoAtual = rd.data?.plain_text || rd.data?.text || '';
@@ -141,46 +224,6 @@ Router.register('anuncios', (params, el) => {
     }
     renderResultados();
     renderPainel();
-  }
-
-  function gerasHtmlComum(slot, id) {
-    if (slot.geradas.length) {
-      return `
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-          ${slot.geradas.map((g, i) => `
-            <img src="${g.url}" onclick="_anunEscolher('${id}', ${i})"
-              style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid ${i === slot.escolhidaIdx ? '#6366f1' : 'transparent'};">
-          `).join('')}
-        </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">✅ Variação ${slot.escolhidaIdx + 1} selecionada.</div>`;
-    }
-    if (slot.gerando) return '';
-    if (slot._raw) return `<div style="font-size:11px;color:var(--red);margin-top:8px;">Sem imagens reconhecidas na resposta. <a href="javascript:void(0)" onclick="console.log(${JSON.stringify(JSON.stringify(slot._raw))})">ver no console</a></div>`;
-    return '';
-  }
-
-  function slotHtml(slot, id, titulo, opcoesRef) {
-    return `
-      <div class="card" style="flex:1;min-width:280px;">
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:10px;">${titulo}</div>
-        <div style="display:flex;gap:10px;margin-bottom:10px;">
-          <div style="flex-shrink:0;">
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Referência</div>
-            ${slot.refUrl ? `<img src="${slot.refUrl}" style="width:78px;height:78px;object-fit:cover;border-radius:10px;border:1px solid var(--border);">` : `<div style="width:78px;height:78px;border-radius:10px;border:1px dashed var(--border);"></div>`}
-          </div>
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Escolher foto atual como referência</div>
-            <select class="form-select" style="font-size:12px;" onchange="_anunSlotRef('${id}', this.value)">
-              ${opcoesRef.map((f, i) => `<option value="${f.secure_url || f.url}">Foto ${i + 1}${(f.secure_url || f.url) === slot.refUrl ? ' (atual)' : ''}</option>`).join('')}
-            </select>
-            <input type="text" class="form-input" id="${id}-prompt" placeholder="Prompt opcional (ex: fundo branco, iluminação de estúdio)" value="${slot.prompt}" style="font-size:12px;margin-top:6px;">
-          </div>
-        </div>
-        <button class="btn btn-secondary btn-sm" style="width:100%;" ${slot.gerando ? 'disabled' : ''} onclick="_anunGerar('${id}')">
-          ${slot.gerando ? '⏳ Gerando...' : '🎨 Gerar variação com IA'}
-        </button>
-        ${gerasHtmlComum(slot, id)}
-      </div>`;
   }
 
   function renderResultados() {
@@ -218,13 +261,10 @@ Router.register('anuncios', (params, el) => {
           <textarea class="form-textarea" id="anun-desc" rows="6">${itemAtual._descricaoAtual || ''}</textarea>
         </div>
       </div>
-      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
-        ${slotHtml(slotPrincipal, 'principal', '📷 Foto Principal (capa)', fotosAtuais)}
-        ${slotHtml(slotDetalhe, 'detalhe', '🔍 Foto de Detalhe', fotosAtuais)}
-      </div>
+      <div id="anun-kit"></div>
       <div class="card" style="background:var(--accent-soft, rgba(99,102,241,0.06));">
         <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:12px;">
-          ⚠️ Publicar altera o anúncio <strong>real</strong> no Mercado Livre. Confira título, descrição e fotos antes de confirmar.
+          ⚠️ Publicar altera o anúncio <strong>real</strong> no Mercado Livre. Se você selecionar fotos do kit, elas <strong>substituem toda a galeria</strong> atual do anúncio.
         </div>
         <div class="grid-2" style="gap:12px;margin-bottom:12px;">
           <div class="form-group"><label class="form-label">Responsável</label>
@@ -236,6 +276,7 @@ Router.register('anuncios', (params, el) => {
         <button class="btn btn-primary" style="width:100%;" onclick="_anunPublicar()">🚀 Publicar Alterações no Marketplace</button>
       </div>
     `;
+    renderKit();
   }
 
   // ── Modo criar do zero ───────────────────────────────────────
@@ -277,26 +318,6 @@ Router.register('anuncios', (params, el) => {
       alert('Erro ao buscar atributos obrigatórios da categoria: ' + (e.message || e));
     }
     renderCriarNovo();
-  }
-
-  function slotHtmlNovo(slot, id, titulo) {
-    return `
-      <div class="card" style="flex:1;min-width:280px;">
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:10px;">${titulo}</div>
-        <div style="display:flex;gap:10px;margin-bottom:10px;">
-          <div style="flex-shrink:0;">
-            ${novo.refPreviewUrl ? `<img src="${novo.refPreviewUrl}" style="width:78px;height:78px;object-fit:cover;border-radius:10px;border:1px solid var(--border);">` : `<div style="width:78px;height:78px;border-radius:10px;border:1px dashed var(--border);"></div>`}
-          </div>
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${novo.refPreviewUrl ? 'Usando a referência enviada acima' : 'Envie a foto de referência do produto acima primeiro'}</div>
-            <input type="text" class="form-input" id="${id}-prompt" placeholder="Prompt opcional (ex: fundo branco, iluminação de estúdio)" value="${slot.prompt}" style="font-size:12px;margin-top:6px;">
-          </div>
-        </div>
-        <button class="btn btn-secondary btn-sm" style="width:100%;" ${slot.gerando ? 'disabled' : ''} onclick="_anunGerar('${id}')">
-          ${slot.gerando ? '⏳ Gerando...' : '🎨 Gerar variação com IA'}
-        </button>
-        ${gerasHtmlComum(slot, id)}
-      </div>`;
   }
 
   function renderCriarNovo() {
@@ -353,17 +374,7 @@ Router.register('anuncios', (params, el) => {
         ` : '<div style="font-size:12px;color:var(--text-muted);margin-top:10px;">Carregando atributos obrigatórios da categoria...</div>'}
       </div>
 
-      <div class="card" style="margin-bottom:16px;">
-        <div class="form-group"><label class="form-label">Foto de referência do produto (envie do computador)</label>
-          <input type="file" accept="image/*" id="novo-ref-upload" onchange="_anunUploadRef(this)">
-          ${novo.refPreviewUrl ? `<img src="${novo.refPreviewUrl}" style="width:90px;height:90px;object-fit:cover;border-radius:10px;margin-top:8px;border:1px solid var(--border);">` : ''}
-        </div>
-      </div>
-
-      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
-        ${slotHtmlNovo(slotPrincipal, 'principal', '📷 Foto Principal (capa)')}
-        ${slotHtmlNovo(slotDetalhe, 'detalhe', '🔍 Foto de Detalhe')}
-      </div>
+      <div id="anun-kit"></div>
 
       <div class="card" style="background:var(--accent-soft, rgba(99,102,241,0.06));">
         <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:12px;">
@@ -378,6 +389,7 @@ Router.register('anuncios', (params, el) => {
       </div>
       ` : ''}
     `;
+    if (novo.categoria) renderKit();
   }
 
   // ── Layout / troca de modo ───────────────────────────────────
@@ -411,7 +423,7 @@ Router.register('anuncios', (params, el) => {
   el.innerHTML = `<div class="page">
     <div class="section-title mb-16">🎨 Central de Anúncios</div>
     <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;max-width:640px;">
-      Edite um anúncio existente ou crie um novo do zero — em ambos os casos dá pra gerar fotos novas com IA a partir de uma foto de referência.
+      Edite um anúncio existente ou crie um novo do zero — em ambos os casos dá pra gerar um kit de fotos com IA a partir de uma foto de referência.
     </div>
 
     ${!apiKey ? `<div class="card" style="border-color:var(--red);"><div style="color:var(--red);font-size:13px;">⚠️ Configure a API Key nas Integrações antes de usar esta página.</div></div>` : `
@@ -459,24 +471,6 @@ Router.register('anuncios', (params, el) => {
   window._anunSelecionar = selecionarItem;
   window._anunBuscarCategoria = buscarCategoria;
   window._anunSelecionarCategoria = selecionarCategoria;
-  window._anunGerar = (id) => gerarFoto(id === 'principal' ? slotPrincipal : slotDetalhe, id);
-  window._anunSlotRef = (id, url) => { (id === 'principal' ? slotPrincipal : slotDetalhe).refUrl = url; render(); };
-  window._anunEscolher = (id, idx) => { (id === 'principal' ? slotPrincipal : slotDetalhe).escolhidaIdx = idx; render(); };
-
-  window._anunUploadRef = (input) => {
-    const file = input.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result || '');
-      novo.refPreviewUrl = dataUrl;
-      novo.refBase64 = dataUrl.split(',')[1] || '';
-      slotPrincipal.refBase64 = novo.refBase64;
-      slotDetalhe.refBase64 = novo.refBase64;
-      renderCriarNovo();
-    };
-    reader.readAsDataURL(file);
-  };
 
   window._anunPublicar = async () => {
     if (!itemAtual) return;
@@ -485,20 +479,18 @@ Router.register('anuncios', (params, el) => {
     const responsavel = document.getElementById('anun-resp').value;
     const mudouTitulo = tituloNovo && tituloNovo !== itemAtual.title;
     const mudouDesc = descNova !== (itemAtual._descricaoAtual || '');
-    const publicaPrincipal = slotPrincipal.geradas.length > 0;
-    const publicaDetalhe = slotDetalhe.geradas.length > 0;
+    const fotosSelecionadas = kit.selecionadas.map(i => kit.imagens[i]).filter(Boolean);
 
-    if (!mudouTitulo && !mudouDesc && !publicaPrincipal && !publicaDetalhe) {
+    if (!mudouTitulo && !mudouDesc && !fotosSelecionadas.length) {
       alert('Nada foi alterado ainda.'); return;
     }
 
     const resumo = [
       mudouTitulo ? `• Título → "${tituloNovo}"` : null,
       mudouDesc ? '• Descrição atualizada' : null,
-      publicaPrincipal ? '• Foto principal atualizada' : null,
-      publicaDetalhe ? '• Foto de detalhe atualizada' : null,
+      fotosSelecionadas.length ? `• Galeria substituída por ${fotosSelecionadas.length} foto(s) do kit` : null,
     ].filter(Boolean).join('\n');
-    if (!confirm(`Confirma publicar estas alterações no anúncio ${itemAtual.id} (marketplace real)?\n\n${resumo}`)) return;
+    if (!confirm(`Confirma publicar estas alterações no anúncio ${itemAtual.id} (marketplace real)?\n\n${resumo}${fotosSelecionadas.length ? '\n\n⚠️ As fotos ATUAIS do anúncio serão todas substituídas pelas selecionadas.' : ''}`)) return;
 
     const meliUserId = meliIdDaConta(contaSel);
     const erros = [];
@@ -513,23 +505,11 @@ Router.register('anuncios', (params, el) => {
       }
     } catch (e) { erros.push('Descrição: ' + (e.message || e)); }
     try {
-      if (publicaPrincipal || publicaDetalhe) {
-        // pictures do update_item SUBSTITUI a galeria inteira — monta a lista com as
-        // fotos atuais (por {id}, na ordem) e só troca as posições que foram geradas.
-        // A URL gerada já vem pública (subida pro host da Tiops dentro de
-        // /api/generate-photo), então entra direto em source, sem upload extra aqui.
-        const pics = fotosAtuais.map(f => ({ id: f.id }));
-        if (publicaPrincipal) {
-          const url = slotPrincipal.geradas[slotPrincipal.escolhidaIdx]?.url;
-          if (!url) throw new Error('Foto principal sem URL gerada.');
-          pics[0] = { source: url };
-        }
-        if (publicaDetalhe) {
-          const url = slotDetalhe.geradas[slotDetalhe.escolhidaIdx]?.url;
-          if (!url) throw new Error('Foto de detalhe sem URL gerada.');
-          if (pics.length > 1) pics[1] = { source: url }; else pics.push({ source: url });
-        }
-        await MarketplaceAPI.call('update_item', { item_id: itemAtual.id, meliUserId, pictures: pics });
+      if (fotosSelecionadas.length) {
+        await MarketplaceAPI.call('update_item', {
+          item_id: itemAtual.id, meliUserId,
+          pictures: fotosSelecionadas.map(f => ({ source: f.url })),
+        });
       }
     } catch (e) { erros.push('Fotos: ' + (e.message || e)); }
 
@@ -583,13 +563,9 @@ Router.register('anuncios', (params, el) => {
       }
     });
 
-    const pics = [];
-    [slotPrincipal, slotDetalhe].forEach(slot => {
-      const g = slot.geradas[slot.escolhidaIdx];
-      if (g?.url) pics.push({ source: g.url });
-    });
+    const fotosSelecionadas = kit.selecionadas.map(i => kit.imagens[i]).filter(Boolean);
 
-    const resumo = `• Título: ${titulo}\n• Preço: R$ ${preco.toFixed(2)}\n• Estoque: ${estoque}\n• Categoria: ${novo.categoria.path_from_root ? novo.categoria.path_from_root.map(p => p.name).join(' › ') : (novo.categoria.name || novo.categoria.id)}\n• Fotos: ${pics.length ? pics.length + ' gerada(s) por IA' : (novo.refBase64 ? 'só a referência enviada (nenhuma variação de IA escolhida)' : 'nenhuma — o anúncio sobe sem foto')}`;
+    const resumo = `• Título: ${titulo}\n• Preço: R$ ${preco.toFixed(2)}\n• Estoque: ${estoque}\n• Categoria: ${novo.categoria.path_from_root ? novo.categoria.path_from_root.map(p => p.name).join(' › ') : (novo.categoria.name || novo.categoria.id)}\n• Fotos: ${fotosSelecionadas.length ? fotosSelecionadas.length + ' do kit gerado por IA' : (kit.refBase64 ? 'só a referência enviada (nenhuma do kit escolhida)' : 'nenhuma — o anúncio sobe sem foto')}`;
     if (!confirm(`Confirma CRIAR este anúncio novo no Mercado Livre (marketplace real)?\n\n${resumo}`)) return;
 
     try {
@@ -603,8 +579,8 @@ Router.register('anuncios', (params, el) => {
         description: descricao,
         attributes: attrs,
       };
-      if (pics.length) payload.pictures = pics;
-      else if (novo.refBase64) payload.images_base64 = [novo.refBase64];
+      if (fotosSelecionadas.length) payload.pictures = fotosSelecionadas.map(f => ({ source: f.url }));
+      else if (kit.refBase64) payload.images_base64 = [kit.refBase64];
       const r = await MarketplaceAPI.call('create_item', payload);
       const novoId = r.data?.id || r.data?.body?.id || r.id;
       alert('✅ Anúncio criado' + (novoId ? `: ${novoId}` : '') + '!');

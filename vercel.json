@@ -1,5 +1,8 @@
 {
   "crons": [
     { "path": "/api/push-cron", "schedule": "0 13 * * *" }
-  ]
+  ],
+  "functions": {
+    "api/generate-photo.js": { "maxDuration": 60 }
+  }
 }
