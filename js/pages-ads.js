@@ -1413,7 +1413,11 @@ window._adsSalvarRoas = async function() {
   }
   msg.textContent = 'Salvando...'; msg.style.color = 'var(--text-secondary)';
   try {
-    await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: _adsModalCampId, roas_target: novoValor });
+    // shopee_ads_edit_campaign é um passthrough genérico e aceitava roas_target
+    // sem erro, mas não aplicava de verdade na Shopee — o campo exige o fluxo
+    // específico (edit_manual_product_ads / change_roas_target) que só a ação
+    // dedicada shopee_ads_roi_target monta certo.
+    await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: _adsModalCampId, roas_target: novoValor });
     msg.textContent = `✅ Meta ROAS atualizada para ${novoValor}x!`; msg.style.color = '#16a34a';
     setTimeout(() => { document.getElementById('ads-modal-roas').style.display = 'none'; buscarDados(true); }, 1500);
   } catch(e) { msg.textContent = '❌ Erro: ' + e.message; msg.style.color = '#dc2626'; }
