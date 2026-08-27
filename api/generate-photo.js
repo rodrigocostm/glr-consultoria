@@ -1,4 +1,4 @@
-// Gera um kit de até 9 fotos de produto com IA (OpenAI gpt-image-1) a partir de
+// Gera um kit de 3 fotos de produto com IA (OpenAI gpt-image-1) a partir de
 // uma foto de referência — usado pela Central de Anúncios. Fica fora do
 // Marketplace Connect (Tiops) de propósito: a geração por lá consome um
 // crédito pago à parte, sem relação com o plano de API já contratado.
@@ -13,7 +13,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { image_base64, image_url, product_name, details, ambientada } = req.body || {};
+    const { image_base64, image_url, product_name, details } = req.body || {};
 
     let buffer;
     if (image_base64) {
@@ -36,21 +36,11 @@ module.exports = async function handler(req, res) {
       details ? `Detalhes do produto: ${details}.` : '',
     ].filter(Boolean).join(' ');
 
-    // Kit de 9 fotos com propósitos diferentes (não são 9 variações aleatórias do
-    // mesmo prompt — cada uma pede um ângulo/contexto específico pra formar um
-    // catálogo completo, como um fotógrafo de produto faria).
+    // Kit de 3 fotos com propósitos fixos e diferentes entre si.
     const variantes = [
-      ambientada
-        ? 'Foto ambientada: produto em um ambiente real e condizente com seu uso, boa composição, luz natural, estilo lifestyle de catálogo.'
-        : 'Produto centralizado, isolado, fundo branco puro (RGB 255,255,255), iluminação de estúdio — foto principal de capa.',
-      'Produto em ângulo de 3/4, fundo branco puro, iluminação de estúdio.',
-      'Produto de frente, fundo branco puro, iluminação de estúdio.',
-      'Produto de lado, fundo branco puro, iluminação de estúdio.',
-      'Produto visto de outro ângulo relevante pro tipo de produto (trás ou de cima), fundo branco puro.',
-      'Foto de detalhe/zoom em um acabamento, textura ou elemento de destaque do produto, fundo neutro.',
-      'Foto ambientada mostrando o produto em uso ou num cenário real, ângulo diferente de qualquer outra foto ambientada já pedida.',
-      'Foto de plano aberto mostrando a escala/proporção do produto dentro de um ambiente, pra dar noção de tamanho.',
-      'Foto de destaque de um diferencial específico do produto (funcionalidade, acabamento ou detalhe construtivo), fundo neutro.',
+      'Foto ambientada: produto em um ambiente real e condizente com seu uso, boa composição, luz natural, estilo lifestyle de catálogo — foto principal.',
+      'Foto de detalhe: zoom em um acabamento, textura ou elemento de destaque do produto, fundo neutro, mostrando qualidade e detalhes construtivos.',
+      'Foto em perspectiva diferente da primeira: produto fotografado em ângulo diagonal/rotacionado, mostrando profundidade e volume, fundo neutro.',
     ];
 
     async function gerarUma(promptExtra) {

@@ -33,13 +33,13 @@ Router.register('anuncios', (params, el) => {
   // existente) ou refBase64 (criar, upload do computador) alimenta a geração.
   const kit = {
     refUrl: '', refBase64: '', refPreviewUrl: '',
-    nome: '', detalhes: '', ambientada: false,
+    nome: '', detalhes: '',
     gerando: false, imagens: [], selecionadas: [], erros: [],
   };
 
   function resetKit() {
     kit.refUrl = ''; kit.refBase64 = ''; kit.refPreviewUrl = '';
-    kit.nome = ''; kit.detalhes = ''; kit.ambientada = false;
+    kit.nome = ''; kit.detalhes = '';
     kit.gerando = false; kit.imagens = []; kit.selecionadas = []; kit.erros = [];
   }
   function resetItem() {
@@ -128,7 +128,7 @@ Router.register('anuncios', (params, el) => {
         <div style="text-align:center;margin-bottom:22px;">
           <div style="width:50px;height:50px;border-radius:14px;background:rgba(99,102,241,0.1);display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 10px;">🎨</div>
           <div style="font-size:17px;font-weight:800;color:var(--text-primary);">Kit de Fotos com IA</div>
-          <div style="font-size:12.5px;color:var(--text-muted);margin-top:4px;max-width:440px;margin-left:auto;margin-right:auto;">Gere um kit de 9 fotos profissionais prontas pra anunciar, a partir de 1 foto de referência.</div>
+          <div style="font-size:12.5px;color:var(--text-muted);margin-top:4px;max-width:440px;margin-left:auto;margin-right:auto;">Gere um kit de 3 fotos profissionais prontas pra anunciar (ambientada, detalhe e perspectiva diagonal), a partir de 1 foto de referência.</div>
         </div>
         <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:18px;">
           <div style="flex:1;min-width:220px;">${renderKitReferencia()}</div>
@@ -139,22 +139,12 @@ Router.register('anuncios', (params, el) => {
             <div class="form-group" style="margin:0;"><label class="form-label">Detalhes & instruções (opcional)</label>
               <textarea class="form-textarea" id="kit-detalhes" rows="3" placeholder="Cor, material, diferenciais, estilo de foto desejado...">${kit.detalhes || ''}</textarea>
             </div>
-            <label style="display:flex;align-items:center;gap:12px;cursor:pointer;padding:10px 14px;border:1px solid var(--border);border-radius:12px;">
-              <span style="position:relative;width:38px;height:21px;flex-shrink:0;" onclick="event.preventDefault();_anunKitAmbientadaToggle();">
-                <span style="position:absolute;inset:0;background:${kit.ambientada ? '#6366f1' : '#d5d7e3'};border-radius:999px;transition:.2s;"></span>
-                <span style="position:absolute;top:3px;left:${kit.ambientada ? '20px' : '3px'};width:15px;height:15px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.25);"></span>
-              </span>
-              <span onclick="_anunKitAmbientadaToggle()">
-                <div style="font-size:12.5px;font-weight:600;color:var(--text-primary);">Primeira foto ambientada</div>
-                <div style="font-size:11px;color:var(--text-muted);">${kit.ambientada ? 'Cenário real de uso' : 'Isolada, fundo branco, foco no produto'}</div>
-              </span>
-            </label>
           </div>
         </div>
         <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;border-radius:12px;" ${(!temRef || kit.gerando) ? 'disabled' : ''} onclick="_anunGerarKit()">
-          ${kit.gerando ? '⏳ Gerando kit (pode levar até 1 minuto)...' : '🎨 Gerar Kit de Fotos (9 fotos)'}
+          ${kit.gerando ? '⏳ Gerando kit...' : '🎨 Gerar Kit de Fotos (3 fotos)'}
         </button>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center;">Cada kit gera até 9 fotos na OpenAI — custa mais do que uma foto avulsa. Use com moderação.</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center;">Kit fixo: 1 foto ambientada, 1 de detalhe e 1 de perspectiva diagonal.</div>
         ${kit.erros.length ? `<div style="font-size:11px;color:var(--red);margin-top:8px;">${kit.erros.length} foto(s) do kit falharam: ${kit.erros.join(' · ')}</div>` : ''}
         ${kit.imagens.length ? `
           <div style="font-size:12.5px;font-weight:600;color:var(--text-primary);margin:18px 0 10px;">Escolha as fotos que vão pro anúncio (${kit.selecionadas.length} selecionada${kit.selecionadas.length !== 1 ? 's' : ''}):</div>
@@ -176,7 +166,7 @@ Router.register('anuncios', (params, el) => {
     kit.gerando = true; kit.imagens = []; kit.selecionadas = []; kit.erros = [];
     renderKit();
     try {
-      const body = { product_name: kit.nome, details: kit.detalhes, ambientada: kit.ambientada };
+      const body = { product_name: kit.nome, details: kit.detalhes };
       if (modo === 'criar') body.image_base64 = kit.refBase64;
       else body.image_url = kit.refUrl;
 
@@ -204,7 +194,6 @@ Router.register('anuncios', (params, el) => {
     renderKit();
   };
   window._anunKitRef = (url) => { kit.refUrl = url; renderKit(); };
-  window._anunKitAmbientadaToggle = () => { kit.ambientada = !kit.ambientada; renderKit(); };
   window._anunKitUpload = (input) => processarArquivoKit(input.files?.[0]);
   window._anunKitDrop = (ev) => processarArquivoKit(ev.dataTransfer?.files?.[0]);
 
