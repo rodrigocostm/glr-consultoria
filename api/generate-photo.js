@@ -39,7 +39,7 @@ module.exports = async function handler(req, res) {
     // Kit de 3 fotos com propósitos fixos e diferentes entre si.
     const variantes = [
       'Foto ambientada: produto em um ambiente real e condizente com seu uso, boa composição, luz natural, estilo lifestyle de catálogo — foto principal.',
-      'Foto de detalhe: zoom em um acabamento, textura ou elemento de destaque do produto, fundo neutro, mostrando qualidade e detalhes construtivos.',
+      'Foto ambientada também: mesmo estilo de cenário real de uso da primeira foto (lifestyle, luz natural), mas com o enquadramento focado em outro detalhe ou funcionalidade do produto — não repita o mesmo ângulo nem o mesmo recorte da primeira foto.',
       'Foto em perspectiva diferente da primeira: produto fotografado em ângulo diagonal/rotacionado, mostrando profundidade e volume, fundo neutro.',
     ];
 
