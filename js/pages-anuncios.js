@@ -144,7 +144,7 @@ Router.register('anuncios', (params, el) => {
         <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;border-radius:12px;" ${(!temRef || kit.gerando) ? 'disabled' : ''} onclick="_anunGerarKit()">
           ${kit.gerando ? '⏳ Gerando kit...' : '🎨 Gerar Kit de Fotos (3 fotos)'}
         </button>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center;">Kit fixo: 1 ambientada premium, 1 de detalhe (zoom) e 1 de frente na mesma ambientação da primeira.</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center;">Kit em cascata: 1 ambientada premium, e a partir dela 1 close-up de detalhe e 1 de frente — todas no mesmo ambiente.</div>
         ${kit.erros.length ? `<div style="font-size:11px;color:var(--red);margin-top:8px;">${kit.erros.length} foto(s) do kit falharam: ${kit.erros.join(' · ')}</div>` : ''}
         ${kit.imagens.length ? `
           <div style="font-size:12.5px;font-weight:600;color:var(--text-primary);margin:18px 0 10px;">Escolha as fotos que vão pro anúncio (${kit.selecionadas.length} selecionada${kit.selecionadas.length !== 1 ? 's' : ''}):</div>

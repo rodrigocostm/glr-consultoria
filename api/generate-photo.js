@@ -91,13 +91,13 @@ module.exports = async function handler(req, res) {
       return publicUrl;
     }
 
-    const promptAmbientada = 'Foto ambientada em ambiente premium: produto inserido em um ambiente premium sofisticado (ex.: sala/ambiente moderno e elegante, materiais nobres, iluminação suave e clean, condizente com um produto de alto padrão), em uso, boa composição, estilo lifestyle de catálogo — foto principal.';
-    const promptDetalhe = 'Foto de detalhe: zoom em uma característica específica do produto (acabamento, textura, funcionalidade ou elemento de destaque), fundo neutro, mostrando qualidade e detalhes construtivos.';
+    const promptAmbientada = 'Foto ambientada em ambiente premium: produto inserido em um ambiente premium sofisticado (ex.: sala/ambiente moderno e elegante, materiais nobres, iluminação suave e clean, condizente com um produto de alto padrão), em uso, boa composição, câmera em plano aberto/meio plano, ângulo em 3/4 (nunca de frente reta), estilo lifestyle de catálogo — foto principal.';
 
     const images = [];
     const erros = [];
 
-    // 1) Gera a foto ambientada primeiro — ela vira a referência de cenário da foto 3.
+    // 1) Gera a foto ambientada primeiro — ela vira a referência de cenário das outras 2
+    // (efeito cascata: a 2ª e a 3ª partem da 1ª, não são geradas soltas).
     let fotoAmbientada = null;
     try {
       fotoAmbientada = await gerarImagem(promptAmbientada);
@@ -106,14 +106,18 @@ module.exports = async function handler(req, res) {
       erros.push('Ambientada: ' + (e.message || e));
     }
 
-    // 2) Detalhe (independente) e 3) frontal (usa a foto ambientada como referência
-    // extra de ambiente, se ela deu certo) rodam em paralelo.
+    // 2) Detalhe e 3) frontal, cada uma usando a foto ambientada (se deu certo) como
+    // referência extra — rodam em paralelo entre si, mas as duas dependem da 1ª.
+    const promptDetalhe = fotoAmbientada
+      ? `${base} Use a SEGUNDA imagem de referência fornecida (a foto ambientada) como cena base — NÃO é uma foto de estúdio isolada nem fundo infinito. Aproxime a câmera dentro dessa MESMA cena ambientada (mesmo ambiente, luz e enquadramento espacial) até um close-up mostrando de perto um acabamento, textura ou elemento de destaque específico do produto.`
+      : `${base} Foto de detalhe: zoom em uma característica específica do produto (acabamento, textura, funcionalidade ou elemento de destaque), mostrando qualidade e detalhes construtivos.`;
+
     const promptFrontal = fotoAmbientada
-      ? `${base} Use a SEGUNDA imagem de referência fornecida (a foto ambientada) como guia de cenário — mantenha exatamente o MESMO ambiente dela (mesma sala/fundo, mobiliário, parede, piso e iluminação), mudando só a pose do produto pra ficar de frente, enquadramento centralizado.`
-      : `${base} Foto do produto de frente, em um ambiente premium sofisticado condizente com um produto de alto padrão, enquadramento centralizado.`;
+      ? `${base} Use a SEGUNDA imagem de referência fornecida (a foto ambientada) como guia de cenário — mantenha exatamente o MESMO ambiente dela (mesma sala/fundo, mobiliário, parede, piso e iluminação). MUDE A CÂMERA: reposicione pra um plano frontal reto (0°), câmera direto de frente pro produto, na altura do produto, diferente do ângulo em 3/4 da primeira foto — essa foto precisa ficar visivelmente diferente da primeira em enquadramento e ângulo, mesmo estando no mesmo ambiente.`
+      : `${base} Foto do produto de frente, em um ambiente premium sofisticado condizente com um produto de alto padrão, enquadramento frontal reto e centralizado.`;
 
     const [rDetalhe, rFrontal] = await Promise.allSettled([
-      gerarImagem(promptDetalhe).then(publicarImagem),
+      gerarImagem(promptDetalhe, fotoAmbientada ? [fotoAmbientada] : []).then(publicarImagem),
       gerarImagem(promptFrontal, fotoAmbientada ? [fotoAmbientada] : []).then(publicarImagem),
     ]);
 
