@@ -793,6 +793,35 @@ function renderEficiencia(d) {
   `;
 }
 
+// Sugestão individual por campanha (pra aparecer na própria linha da tabela,
+// em vez de só no bloco agregado de "Sugestões de Otimização" lá embaixo).
+// Prioriza o sinal mais urgente — cada linha mostra só 1 selo, pra não poluir.
+function _sugestaoCampanha(c, roas, acos, ctr) {
+  if (c.gasto <= 0) return null; // sem investimento ainda, nada a sugerir
+
+  if (roas === 0) {
+    return { icon: '⚠️', texto: 'Sem vendas', cor: '#dc2626', bg: '#fef2f2' };
+  }
+  if (c.roasTarget != null) {
+    if (roas < c.roasTarget * 0.7) {
+      return { icon: '📉', texto: 'Abaixo da meta', cor: '#dc2626', bg: '#fef2f2' };
+    }
+    if (roas >= c.roasTarget * 1.5) {
+      return { icon: '🚀', texto: 'Aumentar orçamento', cor: '#16a34a', bg: '#f0fdf4' };
+    }
+  }
+  if (acos > 50) {
+    return { icon: '💸', texto: 'ACoS alto', cor: '#dc2626', bg: '#fef2f2' };
+  }
+  if (ctr > 0 && ctr < 0.5 && c.impressoes > 1000) {
+    return { icon: '🖼️', texto: 'Melhorar criativo', cor: '#d97706', bg: '#fffbeb' };
+  }
+  if (roas >= 3) {
+    return { icon: '✅', texto: 'Saudável', cor: '#16a34a', bg: '#f0fdf4' };
+  }
+  return null;
+}
+
 function renderTabelaCampanhas(campanhas) {
   if (!campanhas || campanhas.length === 0) {
     return `<div style="text-align:center;padding:32px;color:var(--text-secondary);font-size:13px;">Nenhuma campanha ativa encontrada neste período</div>`;
@@ -808,6 +837,7 @@ function renderTabelaCampanhas(campanhas) {
 
     const roasCor = roas >= 3 ? '#16a34a' : roas >= 1.5 ? '#d97706' : roas > 0 ? '#dc2626' : 'var(--text-muted,#94a3b8)';
     const acosCor = acos === 0 ? 'var(--text-muted,#94a3b8)' : acos <= 30 ? '#16a34a' : acos <= 50 ? '#d97706' : '#dc2626';
+    const sug = _sugestaoCampanha(c, roas, acos, ctr);
 
     // ROAS target (campanhas auto) — valor direto da Shopee, sem divisão
     const roasTarget = c.roasTarget != null ? fmtN(c.roasTarget, 0) + 'x' : '—';
@@ -825,7 +855,10 @@ function renderTabelaCampanhas(campanhas) {
 
     return `
       <tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:10px 12px;font-size:13px;font-weight:600;color:var(--text-primary);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.nome}">${c.nome}</td>
+        <td style="padding:10px 12px;max-width:220px;">
+          <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.nome}">${c.nome}</div>
+          ${sug ? `<span style="display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:${sug.bg};color:${sug.cor};white-space:nowrap;" title="${sug.texto}">${sug.icon} ${sug.texto}</span>` : ''}
+        </td>
         <td style="padding:10px 12px;">
           <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${c.bidding==='auto'?'#f0fdf4':'#eff6ff'};color:${c.bidding==='auto'?'#16a34a':'#2563eb'};font-weight:600;">${c.tipo}</span>
         </td>
