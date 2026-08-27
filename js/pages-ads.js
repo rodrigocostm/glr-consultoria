@@ -17,6 +17,8 @@ let _aiHistory   = [];
 let _aiCarregando = false;
 let _estoqueProdutos = [];
 let _rankingSnaps = {};
+let _adsAutoRefreshOn    = false; // opt-in — evita gastar chamada de API à toa em quem não pediu
+let _adsAutoRefreshTimer = null;
 
 // ─── Helpers ─────────────────────────────────────────────────
 const pad = n => String(n).padStart(2, '0');
@@ -563,6 +565,10 @@ function renderShell() {
         <button id="ads-btn-atualizar" onclick="window._adsAtualizar()" style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">
           🔄 Atualizar
         </button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none;">
+          <input type="checkbox" id="ads-auto-refresh" ${_adsAutoRefreshOn ? 'checked' : ''} onchange="window._adsToggleAutoRefresh(this.checked)">
+          Auto-atualizar (2 min)
+        </label>
       </div>
     </div>
 
@@ -586,6 +592,26 @@ function renderShell() {
     try { Object.keys(localStorage).filter(k => k.startsWith(ADS_CACHE_KEY)).forEach(k => localStorage.removeItem(k)); } catch {}
     buscarDados(true);
   };
+
+  window._adsToggleAutoRefresh = (ligado) => {
+    _adsAutoRefreshOn = ligado;
+    if (_adsAutoRefreshTimer) { clearInterval(_adsAutoRefreshTimer); _adsAutoRefreshTimer = null; }
+    if (!ligado) return;
+    _adsAutoRefreshTimer = setInterval(() => {
+      // O router não avisa quando a página muda — se o usuário saiu da Central de
+      // ADS, o próprio timer se desliga aqui em vez de continuar rodando escondido.
+      if (Router.currentPage !== 'ads') {
+        clearInterval(_adsAutoRefreshTimer);
+        _adsAutoRefreshTimer = null;
+        _adsAutoRefreshOn = false;
+        return;
+      }
+      if (contaAtual && !carregando) buscarDados(true);
+    }, 2 * 60 * 1000);
+  };
+
+  // Retoma o auto-refresh se o usuário já tinha ligado antes de sair e voltar pra página
+  if (_adsAutoRefreshOn) window._adsToggleAutoRefresh(true);
 }
 
 async function carregarContas() {
