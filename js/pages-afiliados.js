@@ -341,12 +341,21 @@ Router.register('afiliados', async (params, el) => {
             ${metricaAfil('Afiliadores', fmtNum(afiliados), '#06b6d4')}
             ${metricaAfil('Cliques', fmtNum(cliques), '#8b5cf6')}
             ${metricaAfil('Taxa Comissão', taxa.toFixed(2) + '%', '#f59e0b')}
-          </div>` : `
+          </div>` : (() => {
+            // Se algum endpoint AMS falhou com erro de autorização/módulo não conectado,
+            // mostra esse motivo específico em vez do aviso genérico — é a causa real na
+            // maioria dos casos, não falta de dados no período.
+            const erroAuth = r.debug?.find(d => !d.ok && /autoriz|módulo|module|not.*connect/i.test(d.erro || ''));
+            return `
           <div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px;">
-            Nenhum dado de afiliados encontrado para esta conta no período.<br>
-            <span style="font-size:12px;">Verifique se o programa AMS está ativo na conta Shopee.</span>
+            ${erroAuth
+              ? `<div style="color:#dc2626;font-weight:600;margin-bottom:6px;">⚠️ Módulo de Ads não autorizado na Shopee</div>
+                 <span style="font-size:12px;">${erroAuth.erro}</span>`
+              : `Nenhum dado de afiliados encontrado para esta conta no período.<br>
+                 <span style="font-size:12px;">Verifique se o programa AMS está ativo na conta Shopee.</span>`}
           </div>
-          ${r.debug?.length ? `<details style="margin-top:8px;font-size:11px;text-align:left;"><summary style="cursor:pointer;color:var(--text-muted);padding:8px;">🔍 Diagnóstico API</summary><div style="padding:8px 12px;background:var(--surface);border-radius:var(--radius-sm);margin-top:4px;">${r.debug.map(d=>`<div style="margin-bottom:6px;padding:6px;border-left:3px solid ${d.ok?'#10b981':'#ef4444'};"><div style="font-weight:600;color:${d.ok?'#10b981':'#ef4444'};">${d.ok?'✅':'❌'} ${d.action}</div><div style="color:var(--text-muted);font-family:monospace;font-size:10px;word-break:break-all;">${d.ok?JSON.stringify(d.raw).substring(0,300):d.erro}</div></div>`).join('')}</div></details>` : ''}`}
+          ${r.debug?.length ? `<details style="margin-top:8px;font-size:11px;text-align:left;"><summary style="cursor:pointer;color:var(--text-muted);padding:8px;">🔍 Diagnóstico API</summary><div style="padding:8px 12px;background:var(--surface);border-radius:var(--radius-sm);margin-top:4px;">${r.debug.map(d=>`<div style="margin-bottom:6px;padding:6px;border-left:3px solid ${d.ok?'#10b981':'#ef4444'};"><div style="font-weight:600;color:${d.ok?'#10b981':'#ef4444'};">${d.ok?'✅':'❌'} ${d.action}</div><div style="color:var(--text-muted);font-family:monospace;font-size:10px;word-break:break-all;">${d.ok?JSON.stringify(d.raw).substring(0,300):d.erro}</div></div>`).join('')}</div></details>` : ''}`;
+          })()}
 
           ${r.afilPerf?.length > 0 ? `
           <div style="margin-top:12px;">
