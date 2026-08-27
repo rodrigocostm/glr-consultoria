@@ -18,7 +18,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { image_base64, image_url, product_name, details, stage, ambientada_base64 } = req.body || {};
+    const { image_base64, image_url, product_name, details, stage, ambientada_base64, prompt } = req.body || {};
 
     function decodeDataUrl(raw, fallbackMime) {
       const s = String(raw);
@@ -80,8 +80,47 @@ module.exports = async function handler(req, res) {
       return { mimeType: inline.mimeType || 'image/png', data: inline.data };
     }
 
+    // Chamada "crua" — usa o prompt exatamente como veio, sem o prefixo `base`.
+    // O modo "Por Tipo Específico" do front já monta o prompt completo (produto,
+    // câmera, ângulo etc.) e deixa o analista revisar/editar antes de enviar —
+    // prefixar de novo aqui só duplicaria instrução e confundiria o modelo.
+    async function gerarImagemCrua(promptTexto, imagensExtra = []) {
+      const parts = [
+        { text: promptTexto },
+        { inlineData: refProduto },
+        ...imagensExtra.map(img => ({ inlineData: img })),
+      ];
+      const body = {
+        contents: [{ parts }],
+        generationConfig: { responseModalities: ['IMAGE'] },
+      };
+      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify(body),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error?.message || 'Erro na API do Gemini.');
+      const respParts = json.candidates?.[0]?.content?.parts || [];
+      const imgPart = respParts.find(p => p.inlineData || p.inline_data);
+      const inline = imgPart?.inlineData || imgPart?.inline_data;
+      if (!inline?.data) {
+        const motivo = json.candidates?.[0]?.finishReason || 'sem imagem na resposta';
+        throw new Error('Gemini não devolveu imagem (' + motivo + ').');
+      }
+      return { mimeType: inline.mimeType || 'image/png', data: inline.data };
+    }
+
     function comoDataUrl(img) {
       return `data:${img.mimeType};base64,${img.data}`;
+    }
+
+    if (stage === 'custom') {
+      if (!prompt || !String(prompt).trim()) {
+        return res.status(400).json({ error: 'Envie prompt.' });
+      }
+      const foto = await gerarImagemCrua(String(prompt).trim());
+      return res.status(200).json({ images: [{ url: comoDataUrl(foto) }] });
     }
 
     if (stage === 'detalhes') {
