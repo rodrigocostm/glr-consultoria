@@ -1,29 +1,36 @@
-// Gera um kit de 3 fotos de produto com IA (OpenAI gpt-image-1) a partir de
-// uma foto de referência — usado pela Central de Anúncios. Fica fora do
-// Marketplace Connect (Tiops) de propósito: a geração por lá consome um
-// crédito pago à parte, sem relação com o plano de API já contratado.
+// Gera um kit de 3 fotos de produto com IA (Google Gemini — gemini-2.5-flash-image,
+// "Nano Banana") a partir de uma foto de referência — usado pela Central de
+// Anúncios. Fica fora do Marketplace Connect (Tiops) de propósito: a geração
+// por lá consome um crédito pago à parte, sem relação com o plano de API já
+// contratado.
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: 'OPENAI_API_KEY não configurada no servidor.' });
+    return res.status(500).json({ error: 'GEMINI_API_KEY não configurada no servidor.' });
   }
 
   try {
     const { image_base64, image_url, product_name, details } = req.body || {};
 
     let buffer;
+    let mimeType = 'image/jpeg';
     if (image_base64) {
-      const clean = String(image_base64).includes(',') ? image_base64.split(',')[1] : image_base64;
+      const raw = String(image_base64);
+      const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+      if (match) mimeType = match[1];
+      const clean = raw.includes(',') ? raw.split(',')[1] : raw;
       buffer = Buffer.from(clean, 'base64');
     } else if (image_url) {
       const imgRes = await fetch(image_url);
       if (!imgRes.ok) {
         return res.status(400).json({ error: `Não consegui baixar a foto de referência (HTTP ${imgRes.status}).` });
       }
+      const ct = imgRes.headers.get('content-type');
+      if (ct && ct.startsWith('image/')) mimeType = ct;
       buffer = Buffer.from(await imgRes.arrayBuffer());
     } else {
       return res.status(400).json({ error: 'Envie image_base64 ou image_url.' });
@@ -43,30 +50,41 @@ module.exports = async function handler(req, res) {
       'Foto em perspectiva diferente da primeira: produto fotografado em ângulo diagonal/rotacionado, mostrando profundidade e volume, fundo neutro.',
     ];
 
-    async function gerarUma(promptExtra) {
-      const form = new FormData();
-      form.append('model', 'gpt-image-1');
-      form.append('image', new Blob([buffer], { type: 'image/png' }), 'referencia.png');
-      form.append('prompt', `${base} ${promptExtra}`);
-      form.append('n', '1');
-      form.append('size', '1024x1024');
+    const imageBase64 = buffer.toString('base64');
 
-      const r = await fetch('https://api.openai.com/v1/images/edits', {
+    async function gerarUma(promptExtra) {
+      const body = {
+        contents: [{
+          parts: [
+            { text: `${base} ${promptExtra}` },
+            { inlineData: { mimeType, data: imageBase64 } },
+          ],
+        }],
+        generationConfig: { responseModalities: ['IMAGE'] },
+      };
+
+      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        body: form,
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify(body),
       });
       const json = await r.json();
-      if (!r.ok) throw new Error(json.error?.message || 'Erro na API da OpenAI.');
-      const b64 = json.data?.[0]?.b64_json;
-      if (!b64) throw new Error('OpenAI não devolveu imagem.');
+      if (!r.ok) throw new Error(json.error?.message || 'Erro na API do Gemini.');
+
+      const parts = json.candidates?.[0]?.content?.parts || [];
+      const imgPart = parts.find(p => p.inlineData || p.inline_data);
+      const inline = imgPart?.inlineData || imgPart?.inline_data;
+      if (!inline?.data) {
+        const motivo = json.candidates?.[0]?.finishReason || 'sem imagem na resposta';
+        throw new Error('Gemini não devolveu imagem (' + motivo + ').');
+      }
 
       // O ML precisa buscar a foto por uma URL pública — a Tiops orienta explicitamente
       // a NUNCA mandar base64 de foto de verdade pros endpoints dela (fica cortada no
       // meio). Sobe cada imagem gerada pro host público deles aqui mesmo, no servidor.
-      const imgBuffer = Buffer.from(b64, 'base64');
+      const imgBuffer = Buffer.from(inline.data, 'base64');
       const upForm = new FormData();
-      upForm.append('file', new Blob([imgBuffer], { type: 'image/png' }), `anuncio-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
+      upForm.append('file', new Blob([imgBuffer], { type: inline.mimeType || 'image/png' }), `anuncio-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
       const upRes = await fetch('https://upload.tiops.com.br/', { method: 'POST', body: upForm });
       const upJson = await upRes.json().catch(() => ({}));
       const publicUrl = upJson.data?.url || upJson.url;
