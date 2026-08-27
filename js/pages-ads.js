@@ -192,7 +192,10 @@ async function buscarComparativoSemanal() {
 
       const LOTE = 20;
       for (let i = 0; i < campList.length; i += LOTE) {
-        const ids = campList.slice(i, i + LOTE).map(c => c.campaign_id || c.id);
+        // A Shopee espera campaign_id_list como STRING separada por vírgula — mandar
+        // o array direto (que vira JSON array no corpo da chamada) dá "Wrong
+        // parameters" e a chamada falha silenciosamente pro catch de quem chama.
+        const ids = campList.slice(i, i + LOTE).map(c => c.campaign_id || c.id).join(',');
         const [pAtual, pAnterior] = await Promise.all([
           MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, campaign_id_list: ids, start_date: toShopeeDate(_isoDate(inicioAtual)), end_date: toShopeeDate(_isoDate(fimAtual)) }),
           MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, campaign_id_list: ids, start_date: toShopeeDate(_isoDate(inicioAnterior)), end_date: toShopeeDate(_isoDate(fimAnterior)) }),
@@ -311,7 +314,8 @@ async function buscarDados(forcar = false) {
 
         // Busca settings e performance em paralelo, em lotes de 20
         for (let i = 0; i < campList.length; i += LOTE) {
-          const ids = campList.slice(i, i + LOTE).map(c => c.campaign_id || c.id);
+          // Idem: campaign_id_list precisa ser string separada por vírgula, não array.
+          const ids = campList.slice(i, i + LOTE).map(c => c.campaign_id || c.id).join(',');
           const [cfgRes, perfRes] = await Promise.allSettled([
             MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, campaign_id_list: ids }),
             MarketplaceAPI.call('shopee_ads_campaign_daily',    { shopId, campaign_id_list: ids, start_date: sdFrom, end_date: sdTo }),
