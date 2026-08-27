@@ -1159,16 +1159,16 @@ function renderTendencias(d) {
   const invDiff  = diff(inv7, invA);
   if (invDiff > 30 && roas7 < roasA * 0.8) alertas.push(`⚠️ Investimento subiu <strong>${fmtN(invDiff, 1)}%</strong> mas ROAS caiu — eficiência piorando`);
 
-  // Mini gráfico dia-a-dia com ROAS por dia (para ver tendência)
+  // Mini gráfico dia-a-dia com quantidade de pedidos por dia (para ver tendência)
   const diasRecentes = diario.slice(-14);
-  const roasPorDia = diasRecentes.map(d => d.gasto > 0 ? d.receita / d.gasto : 0);
-  const maxR = Math.max(...roasPorDia, 0.01);
-  const sparkline = roasPorDia.map((r, i) => {
-    const h = Math.max((r / maxR) * 60, 2);
-    const anterior = i > 0 ? roasPorDia[i - 1] : r;
-    const cor = r >= anterior ? '#16a34a' : '#dc2626';
+  const pedidosPorDia = diasRecentes.map(d => d.pedidos || 0);
+  const maxP = Math.max(...pedidosPorDia, 1);
+  const sparkline = pedidosPorDia.map((p, i) => {
+    const h = Math.max((p / maxP) * 60, 2);
+    const anterior = i > 0 ? pedidosPorDia[i - 1] : p;
+    const cor = p >= anterior ? '#16a34a' : '#dc2626';
     const data = diasRecentes[i]?.data?.slice(5) || '';
-    return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;" title="${data}: ROAS ${fmtN(r,2)}x">
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;" title="${data}: ${p} pedido${p !== 1 ? 's' : ''}">
       <div style="width:100%;background:${cor};border-radius:2px 2px 0 0;height:${h}px;opacity:.8;"></div>
     </div>`;
   }).join('');
@@ -1199,7 +1199,7 @@ function renderTendencias(d) {
 
       <!-- Sparkline ROAS 14 dias -->
       <div>
-        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:8px;">ROAS DIA A DIA — 🟢 subindo  🔴 caindo</div>
+        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:8px;">PEDIDOS DIA A DIA — 🟢 subindo  🔴 caindo</div>
         <div style="display:flex;align-items:flex-end;gap:3px;height:64px;padding:0 0 4px;">
           ${sparkline}
         </div>
