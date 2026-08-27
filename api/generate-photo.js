@@ -43,11 +43,14 @@ module.exports = async function handler(req, res) {
       details ? `Detalhes do produto: ${details}.` : '',
     ].filter(Boolean).join(' ');
 
-    // Kit de 3 fotos com propósitos fixos e diferentes entre si.
+    // Kit de 3 fotos com propósitos fixos. A 1ª e a 3ª precisam compartilhar o
+    // mesmo ambiente — como cada chamada é independente, a descrição do cenário
+    // é repetida literalmente nos dois prompts pra manter a composição consistente.
+    const ambientePremium = 'um ambiente premium sofisticado (ex.: sala/ambiente moderno e elegante, materiais nobres, iluminação suave e clean, condizente com um produto de alto padrão)';
     const variantes = [
-      'Foto ambientada: produto em um ambiente real e condizente com seu uso, boa composição, luz natural, estilo lifestyle de catálogo — foto principal.',
-      'Foto ambientada também: mesmo estilo de cenário real de uso da primeira foto (lifestyle, luz natural), mas com o enquadramento focado em outro detalhe ou funcionalidade do produto — não repita o mesmo ângulo nem o mesmo recorte da primeira foto.',
-      'Foto em perspectiva diferente da primeira: produto fotografado em ângulo diagonal/rotacionado, mostrando profundidade e volume, fundo neutro.',
+      `Foto ambientada em ambiente premium: produto inserido em ${ambientePremium}, em uso, boa composição, estilo lifestyle de catálogo — foto principal.`,
+      'Foto de detalhe: zoom em uma característica específica do produto (acabamento, textura, funcionalidade ou elemento de destaque), fundo neutro, mostrando qualidade e detalhes construtivos.',
+      `Foto do produto de frente, na MESMA ambientação premium da primeira foto — ${ambientePremium} — mas com o produto fotografado de frente, enquadramento centralizado.`,
     ];
 
     const imageBase64 = buffer.toString('base64');
