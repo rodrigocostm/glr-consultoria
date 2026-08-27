@@ -43,26 +43,19 @@ module.exports = async function handler(req, res) {
       details ? `Detalhes do produto: ${details}.` : '',
     ].filter(Boolean).join(' ');
 
-    // Kit de 3 fotos com propósitos fixos. A 1ª e a 3ª precisam compartilhar o
-    // mesmo ambiente — como cada chamada é independente, a descrição do cenário
-    // é repetida literalmente nos dois prompts pra manter a composição consistente.
-    const ambientePremium = 'um ambiente premium sofisticado (ex.: sala/ambiente moderno e elegante, materiais nobres, iluminação suave e clean, condizente com um produto de alto padrão)';
-    const variantes = [
-      `Foto ambientada em ambiente premium: produto inserido em ${ambientePremium}, em uso, boa composição, estilo lifestyle de catálogo — foto principal.`,
-      'Foto de detalhe: zoom em uma característica específica do produto (acabamento, textura, funcionalidade ou elemento de destaque), fundo neutro, mostrando qualidade e detalhes construtivos.',
-      `Foto do produto de frente, na MESMA ambientação premium da primeira foto — ${ambientePremium} — mas com o produto fotografado de frente, enquadramento centralizado.`,
-    ];
+    const refProduto = { mimeType, data: buffer.toString('base64') };
 
-    const imageBase64 = buffer.toString('base64');
-
-    async function gerarUma(promptExtra) {
+    // Chama o Gemini com a foto do produto + (opcionalmente) outras imagens de
+    // referência extra — usado pra passar a foto ambientada já gerada como guia
+    // de cenário na foto frontal, já que cada chamada não enxerga as outras.
+    async function gerarImagem(promptExtra, imagensExtra = []) {
+      const parts = [
+        { text: `${base} ${promptExtra}` },
+        { inlineData: refProduto },
+        ...imagensExtra.map(img => ({ inlineData: img })),
+      ];
       const body = {
-        contents: [{
-          parts: [
-            { text: `${base} ${promptExtra}` },
-            { inlineData: { mimeType, data: imageBase64 } },
-          ],
-        }],
+        contents: [{ parts }],
         generationConfig: { responseModalities: ['IMAGE'] },
       };
 
@@ -74,20 +67,23 @@ module.exports = async function handler(req, res) {
       const json = await r.json();
       if (!r.ok) throw new Error(json.error?.message || 'Erro na API do Gemini.');
 
-      const parts = json.candidates?.[0]?.content?.parts || [];
-      const imgPart = parts.find(p => p.inlineData || p.inline_data);
+      const respParts = json.candidates?.[0]?.content?.parts || [];
+      const imgPart = respParts.find(p => p.inlineData || p.inline_data);
       const inline = imgPart?.inlineData || imgPart?.inline_data;
       if (!inline?.data) {
         const motivo = json.candidates?.[0]?.finishReason || 'sem imagem na resposta';
         throw new Error('Gemini não devolveu imagem (' + motivo + ').');
       }
+      return { mimeType: inline.mimeType || 'image/png', data: inline.data };
+    }
 
-      // O ML precisa buscar a foto por uma URL pública — a Tiops orienta explicitamente
-      // a NUNCA mandar base64 de foto de verdade pros endpoints dela (fica cortada no
-      // meio). Sobe cada imagem gerada pro host público deles aqui mesmo, no servidor.
-      const imgBuffer = Buffer.from(inline.data, 'base64');
+    // O ML precisa buscar a foto por uma URL pública — a Tiops orienta explicitamente
+    // a NUNCA mandar base64 de foto de verdade pros endpoints dela (fica cortada no
+    // meio). Sobe cada imagem gerada pro host público deles aqui mesmo, no servidor.
+    async function publicarImagem(img) {
+      const imgBuffer = Buffer.from(img.data, 'base64');
       const upForm = new FormData();
-      upForm.append('file', new Blob([imgBuffer], { type: inline.mimeType || 'image/png' }), `anuncio-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
+      upForm.append('file', new Blob([imgBuffer], { type: img.mimeType }), `anuncio-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
       const upRes = await fetch('https://upload.tiops.com.br/', { method: 'POST', body: upForm });
       const upJson = await upRes.json().catch(() => ({}));
       const publicUrl = upJson.data?.url || upJson.url;
@@ -95,9 +91,37 @@ module.exports = async function handler(req, res) {
       return publicUrl;
     }
 
-    const resultados = await Promise.allSettled(variantes.map(v => gerarUma(v)));
-    const images = resultados.filter(r => r.status === 'fulfilled').map(r => ({ url: r.value }));
-    const erros = resultados.filter(r => r.status === 'rejected').map(r => r.reason?.message || String(r.reason));
+    const promptAmbientada = 'Foto ambientada em ambiente premium: produto inserido em um ambiente premium sofisticado (ex.: sala/ambiente moderno e elegante, materiais nobres, iluminação suave e clean, condizente com um produto de alto padrão), em uso, boa composição, estilo lifestyle de catálogo — foto principal.';
+    const promptDetalhe = 'Foto de detalhe: zoom em uma característica específica do produto (acabamento, textura, funcionalidade ou elemento de destaque), fundo neutro, mostrando qualidade e detalhes construtivos.';
+
+    const images = [];
+    const erros = [];
+
+    // 1) Gera a foto ambientada primeiro — ela vira a referência de cenário da foto 3.
+    let fotoAmbientada = null;
+    try {
+      fotoAmbientada = await gerarImagem(promptAmbientada);
+      images.push({ url: await publicarImagem(fotoAmbientada) });
+    } catch (e) {
+      erros.push('Ambientada: ' + (e.message || e));
+    }
+
+    // 2) Detalhe (independente) e 3) frontal (usa a foto ambientada como referência
+    // extra de ambiente, se ela deu certo) rodam em paralelo.
+    const promptFrontal = fotoAmbientada
+      ? `${base} Use a SEGUNDA imagem de referência fornecida (a foto ambientada) como guia de cenário — mantenha exatamente o MESMO ambiente dela (mesma sala/fundo, mobiliário, parede, piso e iluminação), mudando só a pose do produto pra ficar de frente, enquadramento centralizado.`
+      : `${base} Foto do produto de frente, em um ambiente premium sofisticado condizente com um produto de alto padrão, enquadramento centralizado.`;
+
+    const [rDetalhe, rFrontal] = await Promise.allSettled([
+      gerarImagem(promptDetalhe).then(publicarImagem),
+      gerarImagem(promptFrontal, fotoAmbientada ? [fotoAmbientada] : []).then(publicarImagem),
+    ]);
+
+    if (rDetalhe.status === 'fulfilled') images.push({ url: rDetalhe.value });
+    else erros.push('Detalhe: ' + (rDetalhe.reason?.message || rDetalhe.reason));
+
+    if (rFrontal.status === 'fulfilled') images.push({ url: rFrontal.value });
+    else erros.push('Frontal: ' + (rFrontal.reason?.message || rFrontal.reason));
 
     if (!images.length) {
       return res.status(502).json({ error: 'Nenhuma foto do kit foi gerada. ' + (erros[0] || '') });
