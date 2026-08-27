@@ -619,6 +619,10 @@ Router.register('anuncios', (params, el) => {
       const payload = {
         meliUserId: meliIdDaConta(contaSel),
         title: titulo,
+        // Algumas categorias (ex.: as elegíveis pra catálogo do ML, comuns em
+        // móveis) rejeitam a criação sem family_name — manda os dois pra cobrir
+        // tanto categoria comum quanto de catálogo.
+        family_name: titulo,
         price: preco,
         category_id: novo.categoria.id || novo.categoria.category_id,
         available_quantity: estoque,
