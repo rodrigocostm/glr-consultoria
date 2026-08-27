@@ -128,7 +128,7 @@ Router.register('anuncios', (params, el) => {
         <div style="text-align:center;margin-bottom:22px;">
           <div style="width:50px;height:50px;border-radius:14px;background:rgba(99,102,241,0.1);display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 10px;">🎨</div>
           <div style="font-size:17px;font-weight:800;color:var(--text-primary);">Kit de Fotos com IA</div>
-          <div style="font-size:12.5px;color:var(--text-muted);margin-top:4px;max-width:440px;margin-left:auto;margin-right:auto;">Gere um kit de 3 fotos profissionais prontas pra anunciar (ambientada premium, detalhe em zoom e frontal na mesma ambientação), a partir de 1 foto de referência.</div>
+          <div style="font-size:12.5px;color:var(--text-muted);margin-top:4px;max-width:440px;margin-left:auto;margin-right:auto;">Gere um kit de 3 fotos profissionais prontas pra anunciar (ambientada premium e 2 close-ups de detalhes diferentes, no mesmo ambiente), a partir de 1 foto de referência.</div>
         </div>
         <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:18px;">
           <div style="flex:1;min-width:220px;">${renderKitReferencia()}</div>
@@ -144,7 +144,7 @@ Router.register('anuncios', (params, el) => {
         <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;border-radius:12px;" ${(!temRef || kit.gerando) ? 'disabled' : ''} onclick="_anunGerarKit()">
           ${kit.gerando ? '⏳ Gerando kit...' : '🎨 Gerar Kit de Fotos (3 fotos)'}
         </button>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center;">Kit em cascata: 1 ambientada premium, e a partir dela 1 close-up de detalhe e 1 de frente — todas no mesmo ambiente.</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center;">Kit em cascata: 1 ambientada premium, e a partir dela 2 close-ups de detalhes diferentes — todas no mesmo ambiente.</div>
         ${kit.erros.length ? `<div style="font-size:11px;color:var(--red);margin-top:8px;">${kit.erros.length} foto(s) do kit falharam: ${kit.erros.join(' · ')}</div>` : ''}
         ${kit.imagens.length ? `
           <div style="font-size:12.5px;font-weight:600;color:var(--text-primary);margin:18px 0 10px;">Escolha as fotos que vão pro anúncio (${kit.selecionadas.length} selecionada${kit.selecionadas.length !== 1 ? 's' : ''}):</div>

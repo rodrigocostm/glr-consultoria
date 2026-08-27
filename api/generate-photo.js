@@ -106,26 +106,27 @@ module.exports = async function handler(req, res) {
       erros.push('Ambientada: ' + (e.message || e));
     }
 
-    // 2) Detalhe e 3) frontal, cada uma usando a foto ambientada (se deu certo) como
-    // referência extra — rodam em paralelo entre si, mas as duas dependem da 1ª.
-    const promptDetalhe = fotoAmbientada
+    // 2) e 3) são dois close-ups de detalhes DIFERENTES do produto, cada um usando a
+    // foto ambientada (se deu certo) como referência extra — rodam em paralelo entre
+    // si, mas as duas dependem da 1ª.
+    const promptDetalhe1 = fotoAmbientada
       ? `${base} Use a SEGUNDA imagem de referência fornecida (a foto ambientada) como cena base — NÃO é uma foto de estúdio isolada nem fundo infinito. Aproxime a câmera dentro dessa MESMA cena ambientada (mesmo ambiente, luz e enquadramento espacial) até um close-up mostrando de perto um acabamento, textura ou elemento de destaque específico do produto.`
       : `${base} Foto de detalhe: zoom em uma característica específica do produto (acabamento, textura, funcionalidade ou elemento de destaque), mostrando qualidade e detalhes construtivos.`;
 
-    const promptFrontal = fotoAmbientada
-      ? `${base} Use a SEGUNDA imagem de referência fornecida (a foto ambientada) como guia de cenário — mantenha exatamente o MESMO ambiente dela (mesma sala/fundo, mobiliário, parede, piso e iluminação). MUDE A CÂMERA: reposicione pra um plano frontal reto (0°), câmera direto de frente pro produto, na altura do produto, diferente do ângulo em 3/4 da primeira foto — essa foto precisa ficar visivelmente diferente da primeira em enquadramento e ângulo, mesmo estando no mesmo ambiente.`
-      : `${base} Foto do produto de frente, em um ambiente premium sofisticado condizente com um produto de alto padrão, enquadramento frontal reto e centralizado.`;
+    const promptDetalhe2 = fotoAmbientada
+      ? `${base} Use a SEGUNDA imagem de referência fornecida (a foto ambientada) como cena base — NÃO é uma foto de estúdio isolada nem fundo infinito. Aproxime a câmera dentro dessa MESMA cena ambientada (mesmo ambiente, luz e enquadramento espacial) até um close-up mostrando de perto OUTRO acabamento, textura, funcionalidade ou elemento de destaque do produto — precisa ser um detalhe DIFERENTE do que normalmente seria destacado primeiro, com ângulo de câmera diferente do outro close-up.`
+      : `${base} Foto de detalhe: zoom em outra característica específica do produto, diferente de um zoom óbvio de acabamento, mostrando outra funcionalidade ou elemento construtivo.`;
 
-    const [rDetalhe, rFrontal] = await Promise.allSettled([
-      gerarImagem(promptDetalhe, fotoAmbientada ? [fotoAmbientada] : []).then(publicarImagem),
-      gerarImagem(promptFrontal, fotoAmbientada ? [fotoAmbientada] : []).then(publicarImagem),
+    const [rDetalhe1, rDetalhe2] = await Promise.allSettled([
+      gerarImagem(promptDetalhe1, fotoAmbientada ? [fotoAmbientada] : []).then(publicarImagem),
+      gerarImagem(promptDetalhe2, fotoAmbientada ? [fotoAmbientada] : []).then(publicarImagem),
     ]);
 
-    if (rDetalhe.status === 'fulfilled') images.push({ url: rDetalhe.value });
-    else erros.push('Detalhe: ' + (rDetalhe.reason?.message || rDetalhe.reason));
+    if (rDetalhe1.status === 'fulfilled') images.push({ url: rDetalhe1.value });
+    else erros.push('Detalhe 1: ' + (rDetalhe1.reason?.message || rDetalhe1.reason));
 
-    if (rFrontal.status === 'fulfilled') images.push({ url: rFrontal.value });
-    else erros.push('Frontal: ' + (rFrontal.reason?.message || rFrontal.reason));
+    if (rDetalhe2.status === 'fulfilled') images.push({ url: rDetalhe2.value });
+    else erros.push('Detalhe 2: ' + (rDetalhe2.reason?.message || rDetalhe2.reason));
 
     if (!images.length) {
       return res.status(502).json({ error: 'Nenhuma foto do kit foi gerada. ' + (erros[0] || '') });
