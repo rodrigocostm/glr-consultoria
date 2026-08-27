@@ -223,6 +223,79 @@ async function buscarComparativoSemanal() {
   return null;
 }
 
+// ─── Tendência por campanha (ROAS nos últimos 7 / 15 / 30 dias) ────
+// Shopee tem métrica diária por campanha num único endpoint — busca 30 dias
+// de uma vez e agrupa em janelas no cliente. ML só devolve total do período
+// pedido (sem granularidade diária), então precisa de 3 chamadas separadas.
+async function buscarJanelasCampanhas(campIds) {
+  if (!contaAtual || !campIds.length) return {};
+  const mp = contaAtual.marketplace;
+  const hoje = new Date();
+
+  if (mp === 'shopee') {
+    const shopId = contaAtual.param_to_use?.shopId || contaAtual.external_id;
+    const toShopeeDate = iso => iso.split('-').reverse().join('-');
+    const inicio30 = new Date(hoje); inicio30.setDate(inicio30.getDate() - 29);
+    const map = {};
+    const LOTE = 20;
+    for (let i = 0; i < campIds.length; i += LOTE) {
+      const ids = campIds.slice(i, i + LOTE).join(',');
+      try {
+        const r = await MarketplaceAPI.call('shopee_ads_campaign_daily', {
+          shopId, campaign_id_list: ids,
+          start_date: toShopeeDate(_isoDate(inicio30)), end_date: toShopeeDate(_isoDate(hoje)),
+        });
+        const lista = r?.data?.response?.campaign_list || [];
+        lista.forEach(c => {
+          const dias = c.metrics_list || []; // do mais antigo pro mais recente
+          const ultimos = n => dias.slice(Math.max(0, dias.length - n));
+          const soma = arr => arr.reduce((acc, d) => {
+            acc.gasto   += parseFloat(d.expense)  || 0;
+            acc.receita += parseFloat(d.broad_gmv) || 0;
+            return acc;
+          }, { gasto: 0, receita: 0 });
+          const j7 = soma(ultimos(7)), j15 = soma(ultimos(15)), j30 = soma(ultimos(30));
+          map[c.campaign_id] = {
+            roas7:  j7.gasto  > 0 ? j7.receita  / j7.gasto  : 0,
+            roas15: j15.gasto > 0 ? j15.receita / j15.gasto : 0,
+            roas30: j30.gasto > 0 ? j30.receita / j30.gasto : 0,
+          };
+        });
+      } catch (e) {
+        console.warn('[ADS] janelas Shopee falharam pro lote:', e.message);
+      }
+    }
+    return map;
+  }
+
+  if (['mercadolivre', 'ml', 'meli'].includes(mp)) {
+    const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
+    const hojeIso = _isoDate(hoje);
+    const dataN = n => { const d = new Date(hoje); d.setDate(d.getDate() - (n - 1)); return _isoDate(d); };
+    const [r7, r15, r30] = await Promise.allSettled([
+      MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: dataN(7),  date_to: hojeIso }),
+      MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: dataN(15), date_to: hojeIso }),
+      MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: dataN(30), date_to: hojeIso }),
+    ]);
+    const map = {};
+    const aplicar = (resp, chave) => {
+      if (resp.status !== 'fulfilled') return;
+      const camps = resp.value?.data?.results || resp.value?.results || [];
+      camps.forEach(c => {
+        const m = c.metrics || {};
+        const gasto = parseFloat(m.cost) || 0;
+        const receita = parseFloat(m.total_amount) || 0;
+        if (!map[c.id]) map[c.id] = {};
+        map[c.id][`roas${chave}`] = gasto > 0 ? receita / gasto : 0;
+      });
+    };
+    aplicar(r7, 7); aplicar(r15, 15); aplicar(r30, 30);
+    return map;
+  }
+
+  return {};
+}
+
 // ─── Busca de dados ───────────────────────────────────────────
 async function buscarDados(forcar = false) {
   if (!contaAtual) return;
@@ -431,14 +504,17 @@ async function buscarDados(forcar = false) {
       }
     }
 
-    // Vendas totais (orgânico + ads) e comparativo semanal por produto —
-    // buscados em paralelo pra não somar latência extra ao que já rodou acima.
-    const [vendasTotaisResp, comparativoResp] = await Promise.allSettled([
+    // Vendas totais (orgânico + ads), comparativo semanal por produto e tendência
+    // de ROAS 7/15/30d por campanha — buscados em paralelo pra não somar latência
+    // extra ao que já rodou acima.
+    const [vendasTotaisResp, comparativoResp, janelasResp] = await Promise.allSettled([
       buscarVendasTotaisPeriodo(primeiroDia, ultimoDia),
       buscarComparativoSemanal(),
+      buscarJanelasCampanhas(resultado.campanhas.map(c => c.id)),
     ]);
     resultado.vendasTotais = vendasTotaisResp.status === 'fulfilled' ? vendasTotaisResp.value : { total: 0, pedidos: 0 };
     resultado.comparativo  = comparativoResp.status  === 'fulfilled' ? comparativoResp.value  : null;
+    resultado.janelas      = janelasResp.status      === 'fulfilled' ? janelasResp.value      : {};
 
     dadosADS = resultado;
     salvarCache(resultado);
@@ -687,7 +763,7 @@ function renderConteudo() {
           <span style="font-size:12px;color:var(--text-secondary);">Ordenado por investimento</span>
         </div>
       </div>
-      ${renderTabelaCampanhas(d.campanhas)}
+      ${renderTabelaCampanhas(d.campanhas, d.janelas)}
     </div>
 
     <!-- Tendências período -->
@@ -822,10 +898,11 @@ function _sugestaoCampanha(c, roas, acos, ctr) {
   return null;
 }
 
-function renderTabelaCampanhas(campanhas) {
+function renderTabelaCampanhas(campanhas, janelas) {
   if (!campanhas || campanhas.length === 0) {
     return `<div style="text-align:center;padding:32px;color:var(--text-secondary);font-size:13px;">Nenhuma campanha ativa encontrada neste período</div>`;
   }
+  janelas = janelas || {};
 
   const ordenadas = [...campanhas].sort((a, b) => b.gasto - a.gasto);
 
@@ -838,6 +915,19 @@ function renderTabelaCampanhas(campanhas) {
     const roasCor = roas >= 3 ? '#16a34a' : roas >= 1.5 ? '#d97706' : roas > 0 ? '#dc2626' : 'var(--text-muted,#94a3b8)';
     const acosCor = acos === 0 ? 'var(--text-muted,#94a3b8)' : acos <= 30 ? '#16a34a' : acos <= 50 ? '#d97706' : '#dc2626';
     const sug = _sugestaoCampanha(c, roas, acos, ctr);
+
+    // Tendência de ROAS nas 3 janelas — dá pra ver se a campanha está
+    // melhorando (7d acima do 30d) ou piorando (7d abaixo do 30d) com o tempo.
+    const j = janelas[c.id];
+    let tendenciaHtml = '';
+    if (j && (j.roas7 || j.roas15 || j.roas30)) {
+      const seta = j.roas7 > j.roas30 * 1.1 ? '↑' : j.roas7 < j.roas30 * 0.9 ? '↓' : '→';
+      const setaCor = seta === '↑' ? '#16a34a' : seta === '↓' ? '#dc2626' : 'var(--text-muted,#94a3b8)';
+      const v = x => x > 0 ? fmtN(x, 1) + 'x' : '—';
+      tendenciaHtml = `<div style="font-size:10px;color:var(--text-muted);margin-top:3px;white-space:nowrap;" title="ROAS por janela — 7 dias vs 15 dias vs 30 dias">
+        <span style="color:${setaCor};font-weight:700;">${seta}</span> 7d ${v(j.roas7)} · 15d ${v(j.roas15)} · 30d ${v(j.roas30)}
+      </div>`;
+    }
 
     // ROAS target (campanhas auto) — valor direto da Shopee, sem divisão
     const roasTarget = c.roasTarget != null ? fmtN(c.roasTarget, 0) + 'x' : '—';
@@ -858,6 +948,7 @@ function renderTabelaCampanhas(campanhas) {
         <td style="padding:10px 12px;max-width:220px;">
           <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.nome}">${c.nome}</div>
           ${sug ? `<span style="display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:${sug.bg};color:${sug.cor};white-space:nowrap;" title="${sug.texto}">${sug.icon} ${sug.texto}</span>` : ''}
+          ${tendenciaHtml}
         </td>
         <td style="padding:10px 12px;">
           <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${c.bidding==='auto'?'#f0fdf4':'#eff6ff'};color:${c.bidding==='auto'?'#16a34a':'#2563eb'};font-weight:600;">${c.tipo}</span>
