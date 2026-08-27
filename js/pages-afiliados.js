@@ -296,10 +296,13 @@ Router.register('afiliados', async (params, el) => {
     let totalComissao = 0, totalPedidos = 0, totalReceita = 0, totalAfiliados = 0;
 
     resultados.forEach(r => {
-      totalComissao  += parseFloat(r.perf.total_commission  || r.perf.commission_paid       || 0);
-      totalPedidos   += parseInt(r.perf.total_orders        || r.perf.orders                || 0);
-      totalReceita   += parseFloat(r.perf.total_gmv         || r.perf.revenue               || 0);
-      totalAfiliados += parseInt(r.perf.total_affiliators   || r.perf.affiliate_count       || 0);
+      // shopee_ams_shop_performance devolve sales/est_commission/orders/clicks — os nomes
+      // total_gmv/total_commission/total_affiliators nunca existiram na resposta real,
+      // por isso receita, comissão e afiliadores sempre saíam zerados mesmo com pedidos ok.
+      totalComissao  += parseFloat(r.perf.est_commission || r.perf.total_commission || r.perf.commission_paid || 0);
+      totalPedidos   += parseInt(r.perf.orders            || r.perf.total_orders     || 0);
+      totalReceita   += parseFloat(r.perf.sales           || r.perf.total_gmv        || r.perf.revenue || 0);
+      totalAfiliados += parseInt(r.perf.total_affiliators || r.perf.affiliate_count  || (r.afilPerf?.length || 0));
     });
 
     const roasAfil = totalComissao > 0 ? (totalReceita / totalComissao) : 0;
@@ -316,10 +319,10 @@ Router.register('afiliados', async (params, el) => {
 
       <!-- Por conta -->
       ${resultados.map(r => {
-        const comissao  = parseFloat(r.perf.total_commission || r.perf.commission_paid || 0);
-        const pedidos   = parseInt(r.perf.total_orders       || r.perf.orders          || 0);
-        const receita   = parseFloat(r.perf.total_gmv        || r.perf.revenue         || 0);
-        const afiliados = parseInt(r.perf.total_affiliators  || r.perf.affiliate_count || 0);
+        const comissao  = parseFloat(r.perf.est_commission || r.perf.total_commission || r.perf.commission_paid || 0);
+        const pedidos   = parseInt(r.perf.orders            || r.perf.total_orders     || 0);
+        const receita   = parseFloat(r.perf.sales           || r.perf.total_gmv        || r.perf.revenue || 0);
+        const afiliados = parseInt(r.perf.total_affiliators || r.perf.affiliate_count  || (r.afilPerf?.length || 0));
         const cliques   = parseInt(r.perf.total_clicks       || r.perf.clicks          || 0);
         const taxa      = comissao > 0 && receita > 0 ? (comissao / receita * 100) : 0;
         const temDados  = comissao > 0 || pedidos > 0 || receita > 0;
