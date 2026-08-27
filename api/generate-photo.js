@@ -1,8 +1,12 @@
-// Gera um kit de 3 fotos de produto com IA (Google Gemini — gemini-2.5-flash-image,
-// "Nano Banana") a partir de uma foto de referência — usado pela Central de
-// Anúncios. Fica fora do Marketplace Connect (Tiops) de propósito: a geração
-// por lá consome um crédito pago à parte, sem relação com o plano de API já
-// contratado.
+// Gera fotos de produto com IA (Google Gemini — gemini-2.5-flash-image,
+// "Nano Banana") a partir de uma foto de referência — usado pelo Gerador de
+// Fotos. Não depende do Marketplace Connect (Tiops): devolve a imagem
+// direto em base64, sem publicar em lugar nenhum — quem decide o que fazer
+// com a foto é o analista, baixando ou usando onde quiser.
+//
+// Gera em 2 estágios controlados pelo front (stage: 'ambientada' | 'detalhes')
+// pra economizar chamadas — o analista só paga pelos 2 close-ups de detalhe se
+// gostar da foto ambientada gerada primeiro.
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -14,24 +18,28 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { image_base64, image_url, product_name, details } = req.body || {};
+    const { image_base64, image_url, product_name, details, stage, ambientada_base64 } = req.body || {};
 
-    let buffer;
-    let mimeType = 'image/jpeg';
+    function decodeDataUrl(raw, fallbackMime) {
+      const s = String(raw);
+      const match = s.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+      const mimeType = match ? match[1] : fallbackMime;
+      const data = s.includes(',') ? s.split(',')[1] : s;
+      return { mimeType, data: Buffer.from(data, 'base64').toString('base64') };
+    }
+
+    let refProduto;
     if (image_base64) {
-      const raw = String(image_base64);
-      const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
-      if (match) mimeType = match[1];
-      const clean = raw.includes(',') ? raw.split(',')[1] : raw;
-      buffer = Buffer.from(clean, 'base64');
+      refProduto = decodeDataUrl(image_base64, 'image/jpeg');
     } else if (image_url) {
       const imgRes = await fetch(image_url);
       if (!imgRes.ok) {
         return res.status(400).json({ error: `Não consegui baixar a foto de referência (HTTP ${imgRes.status}).` });
       }
       const ct = imgRes.headers.get('content-type');
-      if (ct && ct.startsWith('image/')) mimeType = ct;
-      buffer = Buffer.from(await imgRes.arrayBuffer());
+      const mimeType = ct && ct.startsWith('image/') ? ct : 'image/jpeg';
+      const data = Buffer.from(await imgRes.arrayBuffer()).toString('base64');
+      refProduto = { mimeType, data };
     } else {
       return res.status(400).json({ error: 'Envie image_base64 ou image_url.' });
     }
@@ -43,11 +51,6 @@ module.exports = async function handler(req, res) {
       details ? `Detalhes do produto: ${details}.` : '',
     ].filter(Boolean).join(' ');
 
-    const refProduto = { mimeType, data: buffer.toString('base64') };
-
-    // Chama o Gemini com a foto do produto + (opcionalmente) outras imagens de
-    // referência extra — usado pra passar a foto ambientada já gerada como guia
-    // de cenário na foto frontal, já que cada chamada não enxerga as outras.
     async function gerarImagem(promptExtra, imagensExtra = []) {
       const parts = [
         { text: `${base} ${promptExtra}` },
@@ -77,61 +80,41 @@ module.exports = async function handler(req, res) {
       return { mimeType: inline.mimeType || 'image/png', data: inline.data };
     }
 
-    // O ML precisa buscar a foto por uma URL pública — a Tiops orienta explicitamente
-    // a NUNCA mandar base64 de foto de verdade pros endpoints dela (fica cortada no
-    // meio). Sobe cada imagem gerada pro host público deles aqui mesmo, no servidor.
-    async function publicarImagem(img) {
-      const imgBuffer = Buffer.from(img.data, 'base64');
-      const upForm = new FormData();
-      upForm.append('file', new Blob([imgBuffer], { type: img.mimeType }), `anuncio-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
-      const upRes = await fetch('https://upload.tiops.com.br/', { method: 'POST', body: upForm });
-      const upJson = await upRes.json().catch(() => ({}));
-      const publicUrl = upJson.data?.url || upJson.url;
-      if (!upRes.ok || !publicUrl) throw new Error('Falhou ao publicar imagem gerada em URL pública: ' + (upJson.error || upJson.data?.error || upRes.status));
-      return publicUrl;
+    function comoDataUrl(img) {
+      return `data:${img.mimeType};base64,${img.data}`;
     }
 
+    if (stage === 'detalhes') {
+      if (!ambientada_base64) {
+        return res.status(400).json({ error: 'Envie ambientada_base64 pra gerar os detalhes.' });
+      }
+      const fotoAmbientada = decodeDataUrl(ambientada_base64, 'image/png');
+
+      const promptDetalhe1 = `${base} Use a SEGUNDA imagem de referência fornecida (a foto ambientada) como cena base — NÃO é uma foto de estúdio isolada nem fundo infinito. Aproxime a câmera dentro dessa MESMA cena ambientada (mesmo ambiente, luz e enquadramento espacial) até um close-up mostrando de perto um acabamento, textura ou elemento de destaque específico do produto.`;
+      const promptDetalhe2 = `${base} Use a SEGUNDA imagem de referência fornecida (a foto ambientada) como cena base — NÃO é uma foto de estúdio isolada nem fundo infinito. Aproxime a câmera dentro dessa MESMA cena ambientada (mesmo ambiente, luz e enquadramento espacial) até um close-up mostrando de perto OUTRO acabamento, textura, funcionalidade ou elemento de destaque do produto — precisa ser um detalhe DIFERENTE do que normalmente seria destacado primeiro, com ângulo de câmera diferente do outro close-up.`;
+
+      const [r1, r2] = await Promise.allSettled([
+        gerarImagem(promptDetalhe1, [fotoAmbientada]),
+        gerarImagem(promptDetalhe2, [fotoAmbientada]),
+      ]);
+
+      const images = [];
+      const erros = [];
+      if (r1.status === 'fulfilled') images.push({ url: comoDataUrl(r1.value) });
+      else erros.push('Detalhe 1: ' + (r1.reason?.message || r1.reason));
+      if (r2.status === 'fulfilled') images.push({ url: comoDataUrl(r2.value) });
+      else erros.push('Detalhe 2: ' + (r2.reason?.message || r2.reason));
+
+      if (!images.length) {
+        return res.status(502).json({ error: 'Nenhuma foto de detalhe foi gerada. ' + (erros[0] || '') });
+      }
+      return res.status(200).json({ images, erros: erros.length ? erros : undefined });
+    }
+
+    // stage === 'ambientada' (padrão): gera só 1 foto, mais barato que o kit inteiro.
     const promptAmbientada = 'Foto ambientada em ambiente premium: produto inserido em um ambiente premium sofisticado (ex.: sala/ambiente moderno e elegante, materiais nobres, iluminação suave e clean, condizente com um produto de alto padrão), em uso, boa composição, câmera em plano aberto/meio plano, ângulo em 3/4 (nunca de frente reta), estilo lifestyle de catálogo — foto principal.';
-
-    const images = [];
-    const erros = [];
-
-    // 1) Gera a foto ambientada primeiro — ela vira a referência de cenário das outras 2
-    // (efeito cascata: a 2ª e a 3ª partem da 1ª, não são geradas soltas).
-    let fotoAmbientada = null;
-    try {
-      fotoAmbientada = await gerarImagem(promptAmbientada);
-      images.push({ url: await publicarImagem(fotoAmbientada) });
-    } catch (e) {
-      erros.push('Ambientada: ' + (e.message || e));
-    }
-
-    // 2) e 3) são dois close-ups de detalhes DIFERENTES do produto, cada um usando a
-    // foto ambientada (se deu certo) como referência extra — rodam em paralelo entre
-    // si, mas as duas dependem da 1ª.
-    const promptDetalhe1 = fotoAmbientada
-      ? `${base} Use a SEGUNDA imagem de referência fornecida (a foto ambientada) como cena base — NÃO é uma foto de estúdio isolada nem fundo infinito. Aproxime a câmera dentro dessa MESMA cena ambientada (mesmo ambiente, luz e enquadramento espacial) até um close-up mostrando de perto um acabamento, textura ou elemento de destaque específico do produto.`
-      : `${base} Foto de detalhe: zoom em uma característica específica do produto (acabamento, textura, funcionalidade ou elemento de destaque), mostrando qualidade e detalhes construtivos.`;
-
-    const promptDetalhe2 = fotoAmbientada
-      ? `${base} Use a SEGUNDA imagem de referência fornecida (a foto ambientada) como cena base — NÃO é uma foto de estúdio isolada nem fundo infinito. Aproxime a câmera dentro dessa MESMA cena ambientada (mesmo ambiente, luz e enquadramento espacial) até um close-up mostrando de perto OUTRO acabamento, textura, funcionalidade ou elemento de destaque do produto — precisa ser um detalhe DIFERENTE do que normalmente seria destacado primeiro, com ângulo de câmera diferente do outro close-up.`
-      : `${base} Foto de detalhe: zoom em outra característica específica do produto, diferente de um zoom óbvio de acabamento, mostrando outra funcionalidade ou elemento construtivo.`;
-
-    const [rDetalhe1, rDetalhe2] = await Promise.allSettled([
-      gerarImagem(promptDetalhe1, fotoAmbientada ? [fotoAmbientada] : []).then(publicarImagem),
-      gerarImagem(promptDetalhe2, fotoAmbientada ? [fotoAmbientada] : []).then(publicarImagem),
-    ]);
-
-    if (rDetalhe1.status === 'fulfilled') images.push({ url: rDetalhe1.value });
-    else erros.push('Detalhe 1: ' + (rDetalhe1.reason?.message || rDetalhe1.reason));
-
-    if (rDetalhe2.status === 'fulfilled') images.push({ url: rDetalhe2.value });
-    else erros.push('Detalhe 2: ' + (rDetalhe2.reason?.message || rDetalhe2.reason));
-
-    if (!images.length) {
-      return res.status(502).json({ error: 'Nenhuma foto do kit foi gerada. ' + (erros[0] || '') });
-    }
-    return res.status(200).json({ images, erros: erros.length ? erros : undefined });
+    const foto = await gerarImagem(promptAmbientada);
+    return res.status(200).json({ images: [{ url: comoDataUrl(foto) }] });
   } catch (e) {
     return res.status(500).json({ error: e.message || String(e) });
   }
