@@ -33,13 +33,13 @@ Router.register('anuncios', (params, el) => {
   // existente) ou refBase64 (criar, upload do computador) alimenta a geração.
   const kit = {
     refUrl: '', refBase64: '', refPreviewUrl: '',
-    nome: '', detalhes: '',
+    nome: '', detalhes: '', analisando: false,
     gerando: false, imagens: [], selecionadas: [], erros: [],
   };
 
   function resetKit() {
     kit.refUrl = ''; kit.refBase64 = ''; kit.refPreviewUrl = '';
-    kit.nome = ''; kit.detalhes = '';
+    kit.nome = ''; kit.detalhes = ''; kit.analisando = false;
     kit.gerando = false; kit.imagens = []; kit.selecionadas = []; kit.erros = [];
   }
   function resetItem() {
@@ -85,8 +85,37 @@ Router.register('anuncios', (params, el) => {
       kit.refPreviewUrl = dataUrl;
       kit.refBase64 = dataUrl.split(',')[1] || '';
       renderKit();
+      // Só faz sentido pedir pra IA "adivinhar" título/descrição quando o anúncio
+      // ainda não existe (modo criar) — no modo editar já tem os dados reais do ML.
+      if (modo === 'criar') analisarFotoESugerir(dataUrl);
     };
     reader.readAsDataURL(file);
+  }
+
+  async function analisarFotoESugerir(dataUrl) {
+    kit.analisando = true;
+    renderKit();
+    try {
+      const resp = await fetch('/api/analyze-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_base64: dataUrl }),
+      });
+      const json = await resp.json();
+      if (!resp.ok) throw new Error(json.error || 'Erro ao analisar a foto.');
+
+      const tituloEl = document.getElementById('novo-titulo');
+      const descEl = document.getElementById('novo-desc');
+      if (tituloEl && !tituloEl.value.trim() && json.titulo) tituloEl.value = json.titulo;
+      if (descEl && !descEl.value.trim() && json.descricao) descEl.value = json.descricao;
+      if (!kit.nome && json.titulo) kit.nome = json.titulo;
+    } catch (e) {
+      // Preenchimento automático é conveniência, não bloqueia o fluxo — só avisa.
+      console.warn('Sugestão de IA falhou:', e.message || e);
+    } finally {
+      kit.analisando = false;
+      renderKit();
+    }
   }
 
   // Zona de referência: no modo criar é uma dropzone de upload; no modo editar é
@@ -111,10 +140,10 @@ Router.register('anuncios', (params, el) => {
            style="border:2px dashed var(--border);border-radius:16px;min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:20px;background:var(--bg-soft,#f7f8fc);transition:border-color .15s;">
         ${kit.refPreviewUrl
           ? `<img src="${kit.refPreviewUrl}" style="max-width:100%;max-height:150px;border-radius:10px;object-fit:contain;">
-             <div style="font-size:11px;color:var(--text-muted);margin-top:10px;">Clique pra trocar a foto</div>`
+             <div style="font-size:11px;color:var(--text-muted);margin-top:10px;">${kit.analisando ? '✨ Analisando foto com IA — preenchendo título e descrição...' : 'Clique pra trocar a foto'}</div>`
           : `<div style="width:44px;height:44px;border-radius:50%;background:rgba(99,102,241,0.1);display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:10px;">📤</div>
              <div style="font-size:13px;font-weight:600;color:var(--text-primary);">Arraste ou clique pra enviar</div>
-             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Foto do produto original, em boa resolução</div>`}
+             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Foto do produto original, em boa resolução — a IA preenche título e descrição pra você.</div>`}
         <input type="file" id="kit-file-input" accept="image/*" style="display:none;" onchange="_anunKitUpload(this)">
       </div>`;
   }
