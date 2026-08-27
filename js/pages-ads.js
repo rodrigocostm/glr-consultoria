@@ -1342,10 +1342,21 @@ function renderOtimizacoes(d) {
 // ─── Ações de otimização ──────────────────────────────────────
 let _adsModalCampId = null;
 
+function _adsEhML() {
+  return ['mercadolivre', 'ml', 'meli'].includes(contaAtual?.marketplace);
+}
+
 window._adsPausar = async function(campaignId) {
   if (!confirm('Pausar esta campanha?')) return;
   try {
-    await MarketplaceAPI.call('shopee_ads_pause_campaign', { campaign_id: campaignId });
+    // Antes chamava sempre a ação da Shopee, mesmo com conta ML selecionada —
+    // a campanha nunca era pausada de verdade, só falhava/ignorava em silêncio.
+    if (_adsEhML()) {
+      const meliId = contaAtual?.param_to_use?.meliUserId || contaAtual?.external_id;
+      await MarketplaceAPI.call('ml_ads_update_campaign', { campaign_id: String(campaignId), meliUserId: meliId, status: 'paused' });
+    } else {
+      await MarketplaceAPI.call('shopee_ads_pause_campaign', { campaign_id: campaignId });
+    }
     alert('✅ Campanha pausada com sucesso!');
     buscarDados(true);
   } catch(e) {
@@ -1368,7 +1379,12 @@ window._adsSalvarOrcamento = async function() {
   if (isNaN(novoValor) || novoValor < 0) { msg.textContent = '⚠️ Valor inválido'; msg.style.color = '#dc2626'; return; }
   msg.textContent = 'Salvando...'; msg.style.color = 'var(--text-secondary)';
   try {
-    await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: _adsModalCampId, campaign_budget: novoValor });
+    if (_adsEhML()) {
+      const meliId = contaAtual?.param_to_use?.meliUserId || contaAtual?.external_id;
+      await MarketplaceAPI.call('ml_ads_update_campaign', { campaign_id: String(_adsModalCampId), meliUserId: meliId, budget: novoValor });
+    } else {
+      await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: _adsModalCampId, campaign_budget: novoValor });
+    }
     msg.textContent = '✅ Orçamento atualizado!'; msg.style.color = '#16a34a';
     setTimeout(() => { document.getElementById('ads-modal-orc').style.display = 'none'; buscarDados(true); }, 1200);
   } catch(e) { msg.textContent = '❌ Erro: ' + e.message; msg.style.color = '#dc2626'; }
@@ -1387,6 +1403,14 @@ window._adsSalvarRoas = async function() {
   const novoValor = parseInt(document.getElementById('ads-modal-roas-valor').value);
   const msg = document.getElementById('ads-modal-roas-msg');
   if (!novoValor || novoValor < 1) { msg.textContent = '⚠️ Informe um valor válido (ex: 45 para meta 4.5x)'; msg.style.color = '#dc2626'; return; }
+  if (_adsEhML()) {
+    // Ainda não temos uma ação confirmada pra alterar a meta ROAS de campanha ML
+    // por aqui — melhor avisar claramente do que chamar a ação da Shopee errada
+    // (que é o que acontecia antes: parecia salvar, mas não mudava nada no ML).
+    msg.textContent = '⚠️ Edição de meta ROAS pra Mercado Livre ainda não está disponível por aqui — ajuste direto no Ads Manager do ML.';
+    msg.style.color = '#dc2626';
+    return;
+  }
   msg.textContent = 'Salvando...'; msg.style.color = 'var(--text-secondary)';
   try {
     await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: _adsModalCampId, roas_target: novoValor });
