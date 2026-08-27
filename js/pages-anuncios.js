@@ -357,11 +357,19 @@ Router.register('anuncios', (params, el) => {
             <input type="number" class="form-input" id="novo-estoque" value="1">
           </div>
         </div>
-        <div class="form-group"><label class="form-label">Condição</label>
-          <select class="form-select" id="novo-condicao">
-            <option value="new">Novo</option>
-            <option value="used">Usado</option>
-          </select>
+        <div class="grid-2" style="gap:12px;">
+          <div class="form-group"><label class="form-label">Condição</label>
+            <select class="form-select" id="novo-condicao">
+              <option value="new">Novo</option>
+              <option value="used">Usado</option>
+            </select>
+          </div>
+          <div class="form-group"><label class="form-label">Tipo de anúncio</label>
+            <select class="form-select" id="novo-listing-type">
+              <option value="gold_special">Clássico</option>
+              <option value="gold_pro">Premium</option>
+            </select>
+          </div>
         </div>
         <div class="form-group"><label class="form-label">Descrição</label>
           <textarea class="form-textarea" id="novo-desc" rows="6"></textarea>
@@ -553,6 +561,7 @@ Router.register('anuncios', (params, el) => {
     const preco = parseFloat(document.getElementById('novo-preco')?.value);
     const estoque = parseInt(document.getElementById('novo-estoque')?.value, 10);
     const condicao = document.getElementById('novo-condicao')?.value;
+    const listingType = document.getElementById('novo-listing-type')?.value;
     const descricao = document.getElementById('novo-desc')?.value.trim();
     const responsavel = document.getElementById('anun-resp-novo')?.value;
 
@@ -585,6 +594,7 @@ Router.register('anuncios', (params, el) => {
         category_id: novo.categoria.id || novo.categoria.category_id,
         available_quantity: estoque,
         condition: condicao,
+        listing_type_id: listingType,
         description: descricao,
         attributes: attrs,
       };
