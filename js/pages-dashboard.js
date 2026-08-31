@@ -312,7 +312,13 @@ Router.register('dashboard', (params, el) => {
           <div style="font-size:12px;color:var(--text-secondary);" id="dash-status-txt">${atualizadoTxt}</div>
         </div>
       </div>
-      <button class="btn btn-primary" id="btn-dash-atualizar" style="padding:8px 16px;">🔄 Atualizar dados</button>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none;">
+          <input type="checkbox" id="dash-auto-refresh" ${window._dashAutoRefreshOn ? 'checked' : ''} onchange="window._dashToggleAutoRefresh(this.checked)">
+          Auto-atualizar (5 min)
+        </label>
+        <button class="btn btn-primary" id="btn-dash-atualizar" style="padding:8px 16px;">🔄 Atualizar dados</button>
+      </div>
     </div>
 
     <!-- KPIs -->
@@ -584,6 +590,34 @@ Router.register('dashboard', (params, el) => {
 
   document.getElementById('btn-dash-atualizar')?.addEventListener('click', _dashAtualizarTudo);
   document.getElementById('btn-dash-vendas-dia')?.addEventListener('click', _dashBuscarVendasPorDia);
+
+  window._dashToggleAutoRefresh = (ligado) => {
+    window._dashAutoRefreshOn = ligado;
+    if (window._dashAutoRefreshTimer) { clearInterval(window._dashAutoRefreshTimer); window._dashAutoRefreshTimer = null; }
+    if (!ligado) return;
+    window._dashAutoRefreshTimer = setInterval(async () => {
+      // O router não avisa mudança de rota — se saiu do Dashboard, o próprio
+      // timer se desliga aqui em vez de continuar rodando escondido.
+      if (Router.currentPage !== 'dashboard') {
+        clearInterval(window._dashAutoRefreshTimer);
+        window._dashAutoRefreshTimer = null;
+        window._dashAutoRefreshOn = false;
+        return;
+      }
+      if (window._dashAtualizando) return; // busca anterior ainda rodando — pula o ciclo, não empilha
+      window._dashAtualizando = true;
+      try {
+        // Incremental: só refaz quem já venceu o TTL de 5 min (ver buscarDadosExecutivo
+        // em pages-analytics.js) — por isso dá pra rodar automático sem recalcular a
+        // carteira inteira a cada ciclo.
+        if (typeof window._analyticsBuscarExec === 'function') await window._analyticsBuscarExec();
+      } catch(e) { console.warn('[Dashboard] auto-refresh falhou:', e.message); }
+      window._dashAtualizando = false;
+      if (Router.currentPage === 'dashboard') Router.resolve();
+    }, 5 * 60 * 1000);
+  };
+  // Retoma sozinho se o usuário já tinha ligado antes de sair e voltar pra página
+  if (window._dashAutoRefreshOn && !window._dashAutoRefreshTimer) window._dashToggleAutoRefresh(true);
 
   // Charts
   setTimeout(() => {

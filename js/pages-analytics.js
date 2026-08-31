@@ -93,10 +93,23 @@ Router.register('analytics-conteudo', async (params, el) => {
 
   // ── Painel Executivo: soma faturamento/ADS reais do mês (via API) por cliente,
   // projeta pelo ritmo linear (mesma fórmula da Projeção de Crescimento) ──
-  async function buscarDadosExecutivo() {
+  async function buscarDadosExecutivo(forcarTudo = false) {
     if (carregandoExec) return;
     carregandoExec = true;
     render();
+
+    // Cache incremental por cliente: só refaz a busca (pesada — pedidos + ADS por
+    // conta) de quem já venceu o TTL ou nunca foi buscado neste mês. Quem ainda
+    // está fresco é reaproveitado do cache sem chamar API nenhuma — é o que
+    // permite rodar isso automático a cada poucos minutos sem recalcular a
+    // carteira inteira toda vez (e sem nunca travar a tela: o que já tem em
+    // cache aparece na hora, o resto atualiza por trás).
+    const TTL_CLIENTE_MS = 5 * 60 * 1000;
+    const mesKeyAgora = `${hoje.getFullYear()}-${pad(hoje.getMonth()+1)}`;
+    const cacheAtual = (() => { try { return JSON.parse(localStorage.getItem(STORAGE_DADOS) || 'null'); } catch(e) { return null; } })();
+    const cacheDoMes = cacheAtual?.mesKey === mesKeyAgora ? cacheAtual : null;
+    const porIdCache = {};
+    (cacheDoMes?.dados || []).forEach(d => { porIdCache[d.clienteId] = d; });
 
     let vinculos = {};
     try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
@@ -120,7 +133,21 @@ Router.register('analytics-conteudo', async (params, el) => {
     }
     const m1 = mesCompletoOffset(1), m2 = mesCompletoOffset(2);
 
-    const clientes = GLR.clientes.slice();
+    const clientesTodos = GLR.clientes.slice();
+    const agora = Date.now();
+    const clientes = forcarTudo ? clientesTodos : clientesTodos.filter(c => {
+      const cached = porIdCache[c.id];
+      return !cached || !cached._atualizadoEm || (agora - cached._atualizadoEm) > TTL_CLIENTE_MS;
+    });
+
+    // Ninguém venceu o TTL — reaproveita tudo do cache, zero chamada de API.
+    if (!clientes.length && clientesTodos.length) {
+      dadosClientes = clientesTodos.map(c => porIdCache[c.id]).filter(Boolean);
+      carregandoExec = false;
+      render();
+      return;
+    }
+
     const resultados = [];
     let doneN = 0;
 
@@ -206,6 +233,7 @@ Router.register('analytics-conteudo', async (params, el) => {
         meta, projecao: fatProj, adsProj, pctMeta, pctAdsAtual, adsIdeal, gapAds,
         fatM1, fatM2, compMesAnt, labelM1: m1.label, labelM2: m2.label,
         temConta: contasVinc.length>0,
+        _atualizadoEm: Date.now(),
       });
 
       doneN++;
@@ -213,9 +241,14 @@ Router.register('analytics-conteudo', async (params, el) => {
       if (statusEl) statusEl.textContent = `⏳ Buscando dados reais via API... ${doneN}/${clientes.length} clientes`;
     });
 
-    dadosClientes = resultados;
+    // Junta quem acabou de ser buscado com quem foi reaproveitado do cache
+    // (clientes que ainda estavam dentro do TTL nesta rodada).
+    const mapaNovo = {};
+    resultados.forEach(r => { mapaNovo[r.clienteId] = r; });
+    dadosClientes = clientesTodos.map(c => mapaNovo[c.id] || porIdCache[c.id]).filter(Boolean);
+
     atualizadoExecEm = Date.now();
-    const mesKey = `${hoje.getFullYear()}-${pad(hoje.getMonth()+1)}`;
+    const mesKey = mesKeyAgora;
     localStorage.setItem(STORAGE_DADOS, JSON.stringify({ mesKey, dados: dadosClientes, atualizadoEm: atualizadoExecEm }));
 
     carregandoExec = false;
