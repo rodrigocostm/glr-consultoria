@@ -879,7 +879,10 @@ tbody td:first-child { color: var(--text-primary); font-weight: 500; }
    toda classe global (.card, .kpi-card, .btn...) já herda o novo
    visual aqui dentro sem precisar de nenhuma regra específica.
    ============================================================ */
-.dash-v2 {
+/* Só se aplica no tema ESCURO — no claro, quem manda é o bloco
+   "body.light .dash-v2" logo abaixo, com a mesma identidade adaptada.
+   Sem esse :not(.light), os cards ficavam pretos numa página branca. */
+body:not(.light) .dash-v2 {
   --bg-base: #0c0f14;
   --bg-surface: #12161d;
   --bg-card: #171c24;
@@ -901,6 +904,41 @@ tbody td:first-child { color: var(--text-primary); font-weight: 500; }
   --red: #c6493d;
   --red-bg: rgba(198,73,61,0.14);
 }
+body:not(.light) .dash-v2 .btn-primary {
+  color: #14110a;
+  font-weight: 700;
+}
+
+/* Tema CLARO — mesma identidade (grafite→creme, âmbar como ação principal,
+   verde-petróleo/terracota pra positivo/negativo), só que legível em fundo
+   claro. Fundo levemente creme em vez de branco puro, pra não virar "mais um
+   SaaS branco genérico". */
+body.light .dash-v2 {
+  --bg-base: #faf7f0;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f5f0e3;
+  --bg-input: #ffffff;
+  --border: rgba(28,24,14,0.10);
+  --border-active: rgba(184,134,11,0.4);
+
+  --text-primary: #1c1a14;
+  --text-secondary: #5c5646;
+  --text-muted: #928a74;
+
+  --accent: #b8860b;
+  --accent-light: #d4a017;
+  --accent-glow: rgba(184,134,11,0.12);
+
+  --green: #157a5f;
+  --green-bg: rgba(21,122,95,0.10);
+  --red: #a13c30;
+  --red-bg: rgba(161,60,48,0.10);
+}
+body.light .dash-v2 .btn-primary {
+  color: #fff;
+  font-weight: 700;
+}
 
 .dash-v2 .section-title,
 .dash-v2 .kpi-label {
@@ -911,11 +949,6 @@ tbody td:first-child { color: var(--text-primary); font-weight: 500; }
   font-family: 'IBM Plex Mono', 'Space Mono', monospace;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.3px;
-}
-
-.dash-v2 .btn-primary {
-  color: #14110a;
-  font-weight: 700;
 }
 
 /* Assinatura: quando um KPI muda de valor numa atualização (manual ou
