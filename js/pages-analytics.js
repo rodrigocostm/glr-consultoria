@@ -17,6 +17,19 @@ Router.register('analytics-conteudo', async (params, el) => {
   const fmtDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 
   const STORAGE_DADOS = 'glr_analytics_dados';
+  // Cache separado pra faturamento dos 2 meses FECHADOS (M1/M2) — usado só pra
+  // montar a comparação de tendência. Mês fechado não muda mais depois de
+  // encerrado, então não precisa refazer essa busca a cada ciclo de 5 min como
+  // o mês atual — 24h de validade é de sobra (a "chave" já invalida sozinha
+  // se o mês virar, então nem precisa esperar o TTL nesse caso).
+  const STORAGE_MESES_FECHADOS = 'glr_analytics_meses_fechados';
+  const TTL_MESES_FECHADOS_MS = 24 * 60 * 60 * 1000;
+  function _lerCacheMesesFechados() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_MESES_FECHADOS) || '{}'); } catch(e) { return {}; }
+  }
+  function _salvarCacheMesesFechados(obj) {
+    try { localStorage.setItem(STORAGE_MESES_FECHADOS, JSON.stringify(obj)); } catch(e) {}
+  }
   const STORAGE_QUEDA = 'glr_analytics_queda';
   const STORAGE_PLANO = 'glr_plano_acao';
   const STORAGE_CHECK = 'glr_checklist_diario';
@@ -150,11 +163,18 @@ Router.register('analytics-conteudo', async (params, el) => {
 
     const resultados = [];
     let doneN = 0;
+    const chaveMesesAgora = `${m1.from.slice(0,7)}_${m2.from.slice(0,7)}`;
+    const cacheMesesFechados = _lerCacheMesesFechados();
 
     await _mapLimit(clientes, 3, async (c) => {
       const contasVinc = vinculos[String(c.id)] || [];
       let fatBase = 0, adsBase = 0, fatM1 = 0, fatM2 = 0;
       const canais = new Set();
+
+      const entradaMeses = cacheMesesFechados[c.id];
+      const mesesFrescos = !!entradaMeses && entradaMeses.chave === chaveMesesAgora
+        && (Date.now() - entradaMeses.atualizadoEm) < TTL_MESES_FECHADOS_MS;
+      if (mesesFrescos) { fatM1 = entradaMeses.fatM1 || 0; fatM2 = entradaMeses.fatM2 || 0; }
 
       await _mapLimit(contasVinc, 3, async (conta) => {
         const mkt = (conta.marketplace||'').toLowerCase();
@@ -162,22 +182,32 @@ Router.register('analytics-conteudo', async (params, el) => {
           if (['meli','ml','mercadolivre'].includes(mkt)) {
             canais.add('Mercado Livre');
             const meliId = conta.param_to_use?.meliUserId || conta.external_id;
-            const orders = await MarketplaceAPI.mlOrders(meliId, primeiroDia, dataTo);
-            fatBase += orders.reduce((s,o)=> ['cancelled','invalid'].includes((o.status||'').toLowerCase()) ? s : s+(parseFloat(o.total_amount)||0), 0);
             const somaFat = os => os.reduce((s,o)=> ['cancelled','invalid'].includes((o.status||'').toLowerCase()) ? s : s+(parseFloat(o.total_amount)||0), 0);
-            try { fatM1 += somaFat(await MarketplaceAPI.mlOrders(meliId, m1.from, m1.to)); } catch(e) {}
-            try { fatM2 += somaFat(await MarketplaceAPI.mlOrders(meliId, m2.from, m2.to)); } catch(e) {}
-            try {
-              let adsTotal = 0, off = 0;
-              while (true) {
-                const ra = await MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: primeiroDia, date_to: dataTo, limit: 50, offset: off });
-                const res = ra.data?.results || [];
-                adsTotal += res.reduce((s,cc) => s + (parseFloat(cc.metrics?.cost)||0), 0);
-                if (res.length < 50) break;
-                off += 50;
-              }
-              adsBase += adsTotal;
-            } catch(e) {}
+
+            // As 3 janelas de data (mês atual, M1, M2) e a paginação de ADS são
+            // independentes entre si — rodar em paralelo em vez de uma esperar a
+            // outra corta o tempo por conta de ~4x pra ~1x.
+            const tarefas = [
+              MarketplaceAPI.mlOrders(meliId, primeiroDia, dataTo).then(os => { fatBase += somaFat(os); }).catch(()=>{}),
+              (async () => {
+                try {
+                  let adsTotal = 0, off = 0;
+                  while (true) {
+                    const ra = await MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: primeiroDia, date_to: dataTo, limit: 50, offset: off });
+                    const res = ra.data?.results || [];
+                    adsTotal += res.reduce((s,cc) => s + (parseFloat(cc.metrics?.cost)||0), 0);
+                    if (res.length < 50) break;
+                    off += 50;
+                  }
+                  adsBase += adsTotal;
+                } catch(e) {}
+              })(),
+            ];
+            if (!mesesFrescos) {
+              tarefas.push(MarketplaceAPI.mlOrders(meliId, m1.from, m1.to).then(os => { fatM1 += somaFat(os); }).catch(()=>{}));
+              tarefas.push(MarketplaceAPI.mlOrders(meliId, m2.from, m2.to).then(os => { fatM2 += somaFat(os); }).catch(()=>{}));
+            }
+            await Promise.all(tarefas);
           } else if (mkt === 'shopee') {
             canais.add('Shopee');
             const shopId = conta.param_to_use?.shopId || conta.external_id;
@@ -207,17 +237,28 @@ Router.register('analytics-conteudo', async (params, el) => {
               }
               return total;
             }
-            fatBase += await subtotalShopeePeriodo(Math.floor(tsFrom/1000), Math.floor(tsTo/1000));
-            try { fatM1 += await subtotalShopeePeriodo(Math.floor(new Date(`${m1.from}T00:00:00`).getTime()/1000), Math.floor(new Date(`${m1.to}T23:59:59`).getTime()/1000)); } catch(e) {}
-            try { fatM2 += await subtotalShopeePeriodo(Math.floor(new Date(`${m2.from}T00:00:00`).getTime()/1000), Math.floor(new Date(`${m2.to}T23:59:59`).getTime()/1000)); } catch(e) {}
-            try {
-              const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(primeiroDia), end_date: toShopeeDate(dataTo) });
-              const dias = r?.data?.response || [];
-              adsBase += Array.isArray(dias) ? dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0) : 0;
-            } catch(e) {}
+            const tarefasShopee = [
+              subtotalShopeePeriodo(Math.floor(tsFrom/1000), Math.floor(tsTo/1000)).then(v => { fatBase += v; }).catch(()=>{}),
+              (async () => {
+                try {
+                  const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(primeiroDia), end_date: toShopeeDate(dataTo) });
+                  const dias = r?.data?.response || [];
+                  adsBase += Array.isArray(dias) ? dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0) : 0;
+                } catch(e) {}
+              })(),
+            ];
+            if (!mesesFrescos) {
+              tarefasShopee.push(subtotalShopeePeriodo(Math.floor(new Date(`${m1.from}T00:00:00`).getTime()/1000), Math.floor(new Date(`${m1.to}T23:59:59`).getTime()/1000)).then(v => { fatM1 += v; }).catch(()=>{}));
+              tarefasShopee.push(subtotalShopeePeriodo(Math.floor(new Date(`${m2.from}T00:00:00`).getTime()/1000), Math.floor(new Date(`${m2.to}T23:59:59`).getTime()/1000)).then(v => { fatM2 += v; }).catch(()=>{}));
+            }
+            await Promise.all(tarefasShopee);
           }
         } catch(e) { console.warn('[Analytics] erro conta', conta.nickname, e.message); }
       });
+
+      if (!mesesFrescos) {
+        cacheMesesFechados[c.id] = { chave: chaveMesesAgora, fatM1, fatM2, atualizadoEm: Date.now() };
+      }
 
       const fatProj = diasDecorridos>0 ? (fatBase/diasDecorridos)*diasNoMes : 0;
       const adsProj = diasDecorridos>0 ? (adsBase/diasDecorridos)*diasNoMes : 0;
@@ -250,6 +291,7 @@ Router.register('analytics-conteudo', async (params, el) => {
     atualizadoExecEm = Date.now();
     const mesKey = mesKeyAgora;
     localStorage.setItem(STORAGE_DADOS, JSON.stringify({ mesKey, dados: dadosClientes, atualizadoEm: atualizadoExecEm }));
+    _salvarCacheMesesFechados(cacheMesesFechados);
 
     carregandoExec = false;
     render();
