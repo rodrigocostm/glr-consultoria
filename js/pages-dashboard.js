@@ -237,7 +237,7 @@ Router.register('dashboard', (params, el) => {
 
   // Página única — Visão Geral e Análises da Carteira ficam empilhadas na mesma
   // rolagem, não mais em abas separadas.
-  el.innerHTML = `<div class="page">
+  el.innerHTML = `<div class="page dash-v2">
     <div id="dash-aba-conteudo"></div>
     <div style="margin:40px 0 20px;padding-top:20px;border-top:1px solid var(--border);">
       <div class="section-title" style="font-size:18px;">🚦 Análises da Carteira</div>
@@ -325,10 +325,10 @@ Router.register('dashboard', (params, el) => {
     <div class="kpi-grid">
       ${kpiCard('Clientes na Carteira', clientesTodos.length, `${comAPI} com dados reais`, comAPI > 0, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
       ${kpiCard('Meta Total', metaTotal>0?GLR.formatCurrency(metaTotal):'—', 'soma das metas', metaTotal>0, 'rgba(245,158,11,0.12)', '🎯', '#f59e0b')}
-      ${kpiCard('Faturamento Atual', faturamentoAtual > 0 ? GLR.formatCurrency(faturamentoAtual) : '—', faturamentoAtual > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', faturamentoAtual > 0, 'rgba(99,102,241,0.15)', '💵', '#6366f1')}
+      <div class="kpi-flash" data-kpi="fatAtual" data-kpi-val="${faturamentoAtual}">${kpiCard('Faturamento Atual', faturamentoAtual > 0 ? GLR.formatCurrency(faturamentoAtual) : '—', faturamentoAtual > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', faturamentoAtual > 0, 'rgba(99,102,241,0.15)', '💵', '#6366f1')}</div>
       ${kpiCard('Projeção de Faturamento', GLR.formatCurrency(faturamentoTotal), crescMedioAPI!=null?`${crescMedioAPI>=0?'+':''}${crescMedioAPI.toFixed(1)}% vs mês ant.`:(semAPI>0?'vincule contas p/ ver dados reais':''), true, 'rgba(99,102,241,0.12)', '🏆', '#6366f1', comAPI>0)}
-      ${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', receitaGLR > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', receitaGLR > 0, 'rgba(16,185,129,0.15)', '💰', '#10b981')}
-      ${kpiCard('Quantidade de Pedidos', qtdPedidosAtual > 0 ? qtdPedidosAtual.toLocaleString('pt-BR') : '—', qtdPedidosAtual > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', qtdPedidosAtual > 0, 'rgba(6,182,212,0.15)', '📦', '#06b6d4')}
+      <div class="kpi-flash" data-kpi="receitaGLR" data-kpi-val="${receitaGLR}">${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', receitaGLR > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', receitaGLR > 0, 'rgba(16,185,129,0.15)', '💰', '#10b981')}</div>
+      <div class="kpi-flash" data-kpi="qtdPedidos" data-kpi-val="${qtdPedidosAtual}">${kpiCard('Quantidade de Pedidos', qtdPedidosAtual > 0 ? qtdPedidosAtual.toLocaleString('pt-BR') : '—', qtdPedidosAtual > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', qtdPedidosAtual > 0, 'rgba(6,182,212,0.15)', '📦', '#06b6d4')}</div>
       ${kpiCard('Em Crescimento', crescimento, `${clientes.length ? Math.round(crescimento/clientes.length*100) : 0}% da carteira`, true, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
       ${kpiCard('Em Risco / Queda', risco+queda, `${risco} em risco · ${queda} em queda`, (risco+queda)===0, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
       ${kpiCard('Tarefas Pendentes', tarefasPendentes, `${tasksAtras} atrasadas`, tarefasPendentes === 0, 'rgba(245,158,11,0.12)', '✅', '#f59e0b')}
@@ -588,6 +588,8 @@ Router.register('dashboard', (params, el) => {
       </table>
     </div>`;
 
+  _dashAplicarFlash();
+
   document.getElementById('btn-dash-atualizar')?.addEventListener('click', _dashAtualizarTudo);
   document.getElementById('btn-dash-vendas-dia')?.addEventListener('click', _dashBuscarVendasPorDia);
 
@@ -806,6 +808,28 @@ Router.register('dashboard', (params, el) => {
 // (js/pages-analytics.js), renderizado dentro da aba "Análises da Carteira".
 Router.register('diretoria', () => Router.navigate('dashboard'));
 Router.register('analytics', () => Router.navigate('dashboard'));
+
+// Assinatura visual do Dashboard v2: quando um KPI marcado com [data-kpi] muda
+// de valor entre uma renderização e a próxima (refresh manual ou automático),
+// o card pisca uma vez na cor da direção da mudança. window._dashPrevKpiVals
+// sobrevive ao Router.resolve() (que recria todo o DOM) porque fica em
+// `window`, não numa variável local do handler da rota.
+function _dashAplicarFlash() {
+  if (!window._dashPrevKpiVals) window._dashPrevKpiVals = {};
+  document.querySelectorAll('.dash-v2 .kpi-flash[data-kpi]').forEach(wrap => {
+    const id = wrap.dataset.kpi;
+    const val = parseFloat(wrap.dataset.kpiVal) || 0;
+    const prev = window._dashPrevKpiVals[id];
+    const card = wrap.querySelector('.kpi-card');
+    if (card && prev != null && val !== prev) {
+      card.classList.remove('kpi-flash-up', 'kpi-flash-down');
+      void card.offsetWidth; // força reflow pra poder reiniciar a animação
+      card.classList.add(val > prev ? 'kpi-flash-up' : 'kpi-flash-down');
+      setTimeout(() => card.classList.remove('kpi-flash-up', 'kpi-flash-down'), 1700);
+    }
+    window._dashPrevKpiVals[id] = val;
+  });
+}
 
 // Botão "Atualizar dados": dispara a busca real do Painel Executivo (a página
 // já vem toda montada, window._analyticsBuscarExec já existe desde o load) e

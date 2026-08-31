@@ -871,3 +871,72 @@ tbody td:first-child { color: var(--text-primary); font-weight: 500; }
 .gap-8 { gap: 8px; }
 .gap-12 { gap: 12px; }
 .gap-16 { gap: 16px; }
+
+/* ============================================================
+   Dashboard v2 — "central de instrumentos" — piloto de design
+   escopado só nesta página. Redefine as MESMAS variáveis usadas
+   em todo o sistema (--bg-*, --accent, --green, --red...), então
+   toda classe global (.card, .kpi-card, .btn...) já herda o novo
+   visual aqui dentro sem precisar de nenhuma regra específica.
+   ============================================================ */
+.dash-v2 {
+  --bg-base: #0c0f14;
+  --bg-surface: #12161d;
+  --bg-card: #171c24;
+  --bg-card-hover: #1d232c;
+  --bg-input: #171c24;
+  --border: rgba(232,230,222,0.08);
+  --border-active: rgba(245,200,66,0.45);
+
+  --text-primary: #e8e6de;
+  --text-secondary: #a2a7b0;
+  --text-muted: #6b7078;
+
+  --accent: #f5c842;
+  --accent-light: #f7d466;
+  --accent-glow: rgba(245,200,66,0.15);
+
+  --green: #1b8f72;
+  --green-bg: rgba(27,143,114,0.14);
+  --red: #c6493d;
+  --red-bg: rgba(198,73,61,0.14);
+}
+
+.dash-v2 .section-title,
+.dash-v2 .kpi-label {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+}
+
+.dash-v2 .kpi-value {
+  font-family: 'IBM Plex Mono', 'Space Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+}
+
+.dash-v2 .btn-primary {
+  color: #14110a;
+  font-weight: 700;
+}
+
+/* Assinatura: quando um KPI muda de valor numa atualização (manual ou
+   automática), o card pisca uma vez na direção da mudança — reforça
+   visualmente que o dado é vivo, não só decoração. */
+.dash-v2 .kpi-flash { display: contents; }
+
+.dash-v2 .kpi-flash-up {
+  animation: dashFlashUp 1.6s ease-out;
+}
+.dash-v2 .kpi-flash-down {
+  animation: dashFlashDown 1.6s ease-out;
+}
+@keyframes dashFlashUp {
+  0%   { background: rgba(27,143,114,0.28); border-color: var(--green); }
+  100% { background: var(--bg-card); border-color: var(--border); }
+}
+@keyframes dashFlashDown {
+  0%   { background: rgba(198,73,61,0.28); border-color: var(--red); }
+  100% { background: var(--bg-card); border-color: var(--border); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-v2 .kpi-flash-up, .dash-v2 .kpi-flash-down { animation: none; }
+}
