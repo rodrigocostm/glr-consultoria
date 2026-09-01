@@ -105,8 +105,12 @@ async function _dashBuscarVendasPorDia() {
   const pad = n => String(n).padStart(2,'0');
   const ano = hoje.getFullYear(), mesN = hoje.getMonth()+1;
   const primeiroDia = `${ano}-${pad(mesN)}-01`;
+  // No dia 1 do mês, "ontem" pertence ao mês ANTERIOR — usar ontem como dataTo
+  // nesse caso inverte o período (de 01/09 até 31/08) e a busca sai vazia/errada.
+  // Se ontem já saiu do mês atual, usa hoje mesmo (é o único dia válido até agora).
   const ontem = new Date(hoje); ontem.setDate(hoje.getDate()-1);
-  const dataTo = `${ontem.getFullYear()}-${pad(ontem.getMonth()+1)}-${pad(ontem.getDate())}`;
+  const dataToDate = ontem < new Date(`${primeiroDia}T00:00:00`) ? hoje : ontem;
+  const dataTo = `${dataToDate.getFullYear()}-${pad(dataToDate.getMonth()+1)}-${pad(dataToDate.getDate())}`;
   const tsFrom = Math.floor(new Date(`${primeiroDia}T00:00:00`).getTime()/1000);
   const tsTo   = Math.floor(new Date(`${dataTo}T23:59:59`).getTime()/1000);
 
