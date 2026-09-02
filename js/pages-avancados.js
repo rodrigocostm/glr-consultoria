@@ -1092,11 +1092,19 @@ Router.register('projecao', (params, el) => {
               _diagMostrarAv('shopee_filtrados_fora_periodo', `conta ${conta.external_id}`,
                 { descartados: forasDoPeriodo, motivo: 'create_time real fora do período pedido — provável bug de filtro de data na API pra status tipo READY_TO_SHIP' });
             }
-            // ADS Shopee — investimento real da conta no período
+            // ADS Shopee — investimento real da conta no período. Soma Product Ads
+            // (daily_performance) + GMV Max (campanha de loja separada, API própria —
+            // shopee_ads_daily_performance não inclui o gasto dela).
             try {
               const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(primeiroDia), end_date: toShopeeDate(dataTo) });
               const dias = r?.data?.response || [];
-              adsPorConta[conta.external_id] = Array.isArray(dias) ? dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0) : 0;
+              let adsTotalConta = Array.isArray(dias) ? dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0) : 0;
+              try {
+                const g = await MarketplaceAPI.call('shopee_ads_gms_performance', { shopId, start_date: toShopeeDate(primeiroDia), end_date: toShopeeDate(dataTo) });
+                const rep = g?.data?.response?.report || g?.response?.report;
+                if (rep && !g?.data?.error && !g?.error) adsTotalConta += parseFloat(rep.expense) || 0;
+              } catch(e) {}
+              adsPorConta[conta.external_id] = adsTotalConta;
             } catch(e) { console.warn('[Proj] ADS Shopee erro:', e.message); }
           }
         } catch(e) {

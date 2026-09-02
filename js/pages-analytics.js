@@ -245,6 +245,13 @@ Router.register('analytics-conteudo', async (params, el) => {
                   const dias = r?.data?.response || [];
                   adsBase += Array.isArray(dias) ? dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0) : 0;
                 } catch(e) {}
+                // GMV Max (campanha de loja separada do Product Ads, API própria —
+                // shopee_ads_daily_performance não inclui esse gasto).
+                try {
+                  const g = await MarketplaceAPI.call('shopee_ads_gms_performance', { shopId, start_date: toShopeeDate(primeiroDia), end_date: toShopeeDate(dataTo) });
+                  const rep = g?.data?.response?.report || g?.response?.report;
+                  if (rep && !g?.data?.error && !g?.error) adsBase += parseFloat(rep.expense) || 0;
+                } catch(e) {}
               })(),
             ];
             if (!mesesFrescos) {
