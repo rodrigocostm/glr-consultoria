@@ -334,11 +334,13 @@ async function buscarDados(forcar = false) {
       const sdFrom = toShopeeDate(primeiroDia);
       const sdTo   = toShopeeDate(ultimoDia);
 
-      // Busca paralela: diário + campanhas + saldo
-      const [perfResp, campResp, balResp] = await Promise.allSettled([
+      // Busca paralela: diário + campanhas + saldo + GMV Max (campanha automática de
+      // loja inteira, produto separado do Product Ads — não vem em shopee_ads_campaigns)
+      const [perfResp, campResp, balResp, gmvMaxResp] = await Promise.allSettled([
         MarketplaceAPI.shopeeAdsDailyPerformance({ shopId, start_date: sdFrom, end_date: sdTo }),
         MarketplaceAPI.shopeeAdsCampaigns({ shopId }),
         MarketplaceAPI.shopeeAdsBalance({ shopId }),
+        MarketplaceAPI.call('shopee_ads_gms_performance', { shopId, start_date: sdFrom, end_date: sdTo }),
       ]);
 
       // Diário
@@ -448,6 +450,33 @@ async function buscarDados(forcar = false) {
             receita:        perf.receita    || 0,
           };
         }).filter(c => c.ativa);
+      }
+
+      // GMV Max (loja) — campanha automática única por loja, API separada do Product
+      // Ads. Some resposta sem erro e com campaign_id = tem campanha ativa; entra como
+      // linha somente-leitura (pausar/orçamento/ROAS dessa campanha usam outro fluxo
+      // da Shopee, ainda não integrado aqui) e soma no resumo geral de investimento.
+      if (gmvMaxResp.status === 'fulfilled') {
+        const g = gmvMaxResp.value;
+        const rep = g?.data?.response?.report || g?.response?.report;
+        const gid = g?.data?.response?.campaign_id || g?.response?.campaign_id;
+        if (rep && gid && !g?.data?.error && !g?.error) {
+          const gasto      = parseFloat(rep.expense) || 0;
+          const cliques     = parseInt(rep.clicks) || 0;
+          const impressoes  = parseInt(rep.impression) || 0;
+          const pedidos     = parseInt(rep.broad_order) || 0;
+          const receita     = parseFloat(rep.broad_gmv) || 0;
+          resultado.campanhas.push({
+            id: gid, nome: 'GMV Max (Loja)', tipo: 'GMV Max', ativa: true,
+            orcamento: 0, orcamentoLabel: 'Automático', roasTarget: null, bidding: 'gmv_max',
+            gasto, cliques, impressoes, pedidos, receita,
+          });
+          resultado.resumo.investimento += gasto;
+          resultado.resumo.cliques      += cliques;
+          resultado.resumo.impressoes   += impressoes;
+          resultado.resumo.pedidos      += pedidos;
+          resultado.resumo.receita      += receita;
+        }
       }
 
       // Saldo
@@ -962,11 +991,15 @@ function renderTabelaCampanhas(campanhas, janelas) {
           style="background:#f0fdf4;color:#16a34a;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">🎯</button>`
       : '';
 
-    const btnPausar = `<button onclick="window._adsPausar(${c.id})" title="Pausar campanha"
+    // GMV Max usa um fluxo de edição próprio da Shopee (reference_id), ainda não
+    // integrado aqui — pausar/orçamento dessa linha ficam somente-leitura por ora.
+    const somenteLeitura = c.tipo === 'GMV Max';
+
+    const btnPausar = somenteLeitura ? '' : `<button onclick="window._adsPausar(${c.id})" title="Pausar campanha"
       style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">⏸</button>`;
 
     const nomeOrca = c.nome.replace(/'/g,'').slice(0,30);
-    const btnOrcamento = `<button onclick="window._adsEditarOrcamento(${c.id},'${nomeOrca}',${c.orcamento})" title="Editar orçamento"
+    const btnOrcamento = somenteLeitura ? '' : `<button onclick="window._adsEditarOrcamento(${c.id},'${nomeOrca}',${c.orcamento})" title="Editar orçamento"
       style="background:#eff6ff;color:#2563eb;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">✏️</button>`;
 
     return `
