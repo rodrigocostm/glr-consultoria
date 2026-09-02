@@ -812,6 +812,14 @@ Router.register('projecao', (params, el) => {
     return new Date(y, m, 0).getDate();
   }
   const _diasNoMes = new Date(_hoje.getFullYear(), _hoje.getMonth() + 1, 0).getDate();
+  // Labels dos 3 meses fechados anteriores (M1/M2/M3), calculados a partir de hoje —
+  // usados como fallback nos headers/CSV antes da 1ª busca (evita mostrar sempre
+  // "Maio/Abril/Março" fixo, que ficava errado assim que o mês virava).
+  function _labelMesOffset(offset) {
+    const d = new Date(_hoje.getFullYear(), _hoje.getMonth() - offset, 1);
+    return `${_mesesNomesProj[d.getMonth()]} ${d.getFullYear()}`;
+  }
+  const _labelM1Default = _labelMesOffset(1), _labelM2Default = _labelMesOffset(2), _labelM3Default = _labelMesOffset(3);
 
   if (!projecaoAtiva) {
     const clienteObj = GLR.clientes.find(c => c.id === clienteIdAtivo);
@@ -958,9 +966,12 @@ Router.register('projecao', (params, el) => {
         const d = new Date(ano, mes-1-offset, 1);
         const y = d.getFullYear(), m = d.getMonth()+1;
         const diasMes = new Date(y, m, 0).getDate();
-        return { from: `${y}-${pad(m)}-01`, to: `${y}-${pad(m)}-${pad(diasMes)}`, tsFrom: Math.floor(new Date(`${y}-${pad(m)}-01T00:00:00`).getTime()/1000), tsTo: Math.floor(new Date(`${y}-${pad(m)}-${pad(diasMes)}T23:59:59`).getTime()/1000) };
+        return { from: `${y}-${pad(m)}-01`, to: `${y}-${pad(m)}-${pad(diasMes)}`, tsFrom: Math.floor(new Date(`${y}-${pad(m)}-01T00:00:00`).getTime()/1000), tsTo: Math.floor(new Date(`${y}-${pad(m)}-${pad(diasMes)}T23:59:59`).getTime()/1000), label: `${_mesesNomesProj[d.getMonth()]} ${y}` };
       }
       const m1 = mesFechadoOffset(1), m2 = mesFechadoOffset(2), m3 = mesFechadoOffset(3);
+      // Guarda os labels reais (ex.: "Ago/2026") na projeção pra tabela/CSV/histórico
+      // pararem de mostrar sempre "Maio/Abril/Março" fixo mesmo quando o mês já virou.
+      projecaoAtiva.labelM1 = m1.label; projecaoAtiva.labelM2 = m2.label; projecaoAtiva.labelM3 = m3.label;
 
       const totalContas = contasVinc.length;
       let idx = 0;
@@ -1450,8 +1461,8 @@ Router.register('projecao', (params, el) => {
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           Ocultar GLR
         </button>
-        <button id="btn-buscar-proj" class="btn btn-sm" style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);color:#4ade80;" onclick="buscarDadosProjecao()" title="Busca o mês atual sempre; meses fechados (Maio/Abril/Março) só na primeira vez">🔄 Buscar dados</button>
-        <button id="btn-forcar-meses-proj" class="btn btn-sm" style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;" onclick="buscarDadosProjecao(false, true)" title="Ignora o que já está salvo e busca os meses fechados (Maio/Abril/Março) de novo, na força">↺ Forçar meses anteriores</button>
+        <button id="btn-buscar-proj" class="btn btn-sm" style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);color:#4ade80;" onclick="buscarDadosProjecao()" title="Busca o mês atual sempre; meses fechados (${projecaoAtiva.labelM1 || _labelM1Default}/${projecaoAtiva.labelM2 || _labelM2Default}/${projecaoAtiva.labelM3 || _labelM3Default}) só na primeira vez">🔄 Buscar dados</button>
+        <button id="btn-forcar-meses-proj" class="btn btn-sm" style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;" onclick="buscarDadosProjecao(false, true)" title="Ignora o que já está salvo e busca os meses fechados (${projecaoAtiva.labelM1 || _labelM1Default}/${projecaoAtiva.labelM2 || _labelM2Default}/${projecaoAtiva.labelM3 || _labelM3Default}) de novo, na força">↺ Forçar meses anteriores</button>
         <button class="btn btn-secondary btn-sm" onclick="adicionarPlat()">+ Plataforma</button>
         <button class="btn btn-sm" style="background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);color:#f87171;" onclick="limparDadosManuais()" title="Apaga fatBase, adsBase, vendasBase e histórico inseridos à mão — mantém só dados da API">🗑️ Limpar manuais</button>
         <button class="btn btn-primary btn-sm" onclick="salvarProjecao(this)">💾 Salvar</button>
@@ -1504,9 +1515,9 @@ Router.register('projecao', (params, el) => {
               <th style="padding:12px 14px;color:#fcd34d;font-weight:800;white-space:nowrap;text-align:right;background:rgba(245,158,11,0.25);min-width:120px;">Projeção ADS<br><span style="font-weight:400;font-size:10px;color:rgba(255,255,255,0.7);" class="mes-label">${projecaoAtiva.mes}</span></th>
               <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:center;min-width:80px;">% ADS<br>s/ Fat.</th>
               <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:center;min-width:100px;">Evolução<br>vs Mês Ant.</th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. Maio<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. Abril<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. Março<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
+              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. ${projecaoAtiva.labelM1 || _labelM1Default}<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
+              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. ${projecaoAtiva.labelM2 || _labelM2Default}<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
+              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. ${projecaoAtiva.labelM3 || _labelM3Default}<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
               <th style="padding:12px 14px;width:36px;"></th>
             </tr>
           </thead>
@@ -1706,9 +1717,12 @@ Router.register('projecao', (params, el) => {
         };
 
         upsertMes(mesLabel, fatProj, adsProj);
-        upsertMes('Maio',  fatMaio,  plats.reduce((s,p)=>s+(parseFloat(p.adsBase)||0),0));
-        upsertMes('Abril', fatAbril, 0);
-        upsertMes('Março', fatMarco, 0);
+        // Usa o label REAL do mês fechado (ex.: "Ago/2026"), não mais fixo em
+        // "Maio/Abril/Março" — antes isso sobrescrevia o histórico de Maio com dado
+        // de outro mês assim que o "mês fechado -1" deixava de ser Maio de fato.
+        upsertMes(projecaoAtiva.labelM1 || 'Maio',  fatMaio,  plats.reduce((s,p)=>s+(parseFloat(p.adsBase)||0),0));
+        upsertMes(projecaoAtiva.labelM2 || 'Abril', fatAbril, 0);
+        upsertMes(projecaoAtiva.labelM3 || 'Março', fatMarco, 0);
 
         cli.historico.sort((a,b) => {
           const ia = ordemMeses.findIndex(m => a.mes.startsWith(m));
@@ -1752,7 +1766,8 @@ Router.register('projecao', (params, el) => {
     const dm = projecaoAtiva.diasNoMes;
     const plats = projecaoAtiva.plataformas;
     const mesLabel = projecaoAtiva.mes || 'Projeção';
-    let csv = `Plataforma;Fat. Base;Projeção ${mesLabel};ADS Investido Base;Projeção ADS;% ADS s/ Fat.;Evolução Mês Ant.;Fat. Maio;Fat. Abril;Fat. Março\n`;
+    const lblM1 = projecaoAtiva.labelM1 || _labelM1Default, lblM2 = projecaoAtiva.labelM2 || _labelM2Default, lblM3 = projecaoAtiva.labelM3 || _labelM3Default;
+    let csv = `Plataforma;Fat. Base;Projeção ${mesLabel};ADS Investido Base;Projeção ADS;% ADS s/ Fat.;Evolução Mês Ant.;Fat. ${lblM1};Fat. ${lblM2};Fat. ${lblM3}\n`;
     plats.forEach(p => {
       const proj    = calcProjecao(p.fatBase, dd, dm);
       const adsProj = calcProjecao(p.adsBase, dd, dm);
