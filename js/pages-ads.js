@@ -336,11 +336,13 @@ async function buscarDados(forcar = false) {
 
       // Busca paralela: diário + campanhas + saldo + GMV Max (campanha automática de
       // loja inteira, produto separado do Product Ads — não vem em shopee_ads_campaigns)
-      const [perfResp, campResp, balResp, gmvMaxResp] = await Promise.allSettled([
+      // + itens dentro do GMV Max (breakdown por produto, igual o painel da Shopee)
+      const [perfResp, campResp, balResp, gmvMaxResp, gmvMaxItensResp] = await Promise.allSettled([
         MarketplaceAPI.shopeeAdsDailyPerformance({ shopId, start_date: sdFrom, end_date: sdTo }),
         MarketplaceAPI.shopeeAdsCampaigns({ shopId }),
         MarketplaceAPI.shopeeAdsBalance({ shopId }),
         MarketplaceAPI.call('shopee_ads_gms_performance', { shopId, start_date: sdFrom, end_date: sdTo }),
+        MarketplaceAPI.call('shopee_ads_gms_items', { shopId, start_date: sdFrom, end_date: sdTo }),
       ]);
 
       // Diário
@@ -466,10 +468,42 @@ async function buscarDados(forcar = false) {
           const impressoes  = parseInt(rep.impression) || 0;
           const pedidos     = parseInt(rep.broad_order) || 0;
           const receita     = parseFloat(rep.broad_gmv) || 0;
+
+          // Breakdown por produto (igual "Todos os produtos no anúncio GMV Max de
+          // loja" do painel da Shopee) — busca os nomes via shopee_get_items_batch
+          // porque shopee_ads_gms_items só devolve item_id.
+          let itensGmvMax = [];
+          if (gmvMaxItensResp.status === 'fulfilled') {
+            const gi = gmvMaxItensResp.value;
+            const lista = gi?.data?.response?.result_list || gi?.response?.result_list || [];
+            if (lista.length) {
+              let nomesPorId = {};
+              try {
+                const ids = lista.map(it => it.item_id);
+                const det = await MarketplaceAPI.call('shopee_get_items_batch', { shopId, item_id_list: ids });
+                (det?.data?.response?.item_list || det?.response?.item_list || []).forEach(i => {
+                  nomesPorId[i.item_id] = i.item_name;
+                });
+              } catch (e) {}
+              itensGmvMax = lista.map(it => {
+                const r = it.report || {};
+                return {
+                  id: it.item_id,
+                  nome: nomesPorId[it.item_id] || `Item ${it.item_id}`,
+                  gasto: parseFloat(r.expense) || 0,
+                  cliques: parseInt(r.clicks) || 0,
+                  impressoes: parseInt(r.impression) || 0,
+                  pedidos: parseInt(r.broad_order) || 0,
+                  receita: parseFloat(r.broad_gmv) || 0,
+                };
+              }).sort((a, b) => b.gasto - a.gasto);
+            }
+          }
+
           resultado.campanhas.push({
             id: gid, nome: 'GMV Max (Loja)', tipo: 'GMV Max', ativa: true,
             orcamento: 0, orcamentoLabel: 'Automático', roasTarget: null, bidding: 'gmv_max',
-            gasto, cliques, impressoes, pedidos, receita,
+            gasto, cliques, impressoes, pedidos, receita, itensGmvMax,
           });
           resultado.resumo.investimento += gasto;
           resultado.resumo.cliques      += cliques;
@@ -1002,12 +1036,56 @@ function renderTabelaCampanhas(campanhas, janelas) {
     const btnOrcamento = somenteLeitura ? '' : `<button onclick="window._adsEditarOrcamento(${c.id},'${nomeOrca}',${c.orcamento})" title="Editar orçamento"
       style="background:#eff6ff;color:#2563eb;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">✏️</button>`;
 
+    // GMV Max: link "N produtos" que expande/recolhe o breakdown por item — igual
+    // a lista que a Shopee mostra no próprio painel de GMV Max da Loja.
+    const temItens = c.itensGmvMax && c.itensGmvMax.length > 0;
+    const expandido = temItens && window._adsGmvMaxExpandido;
+    const linkItens = temItens
+      ? `<div style="margin-top:4px;"><button onclick="window._adsToggleGmvMaxItens()" style="background:none;border:none;padding:0;font-size:11px;color:#2563eb;font-weight:600;cursor:pointer;">${expandido ? '▾' : '▸'} ${c.itensGmvMax.length} produtos</button></div>`
+      : '';
+
+    let linhaItens = '';
+    if (expandido) {
+      const linhasItens = c.itensGmvMax.map(it => {
+        const itRoas = it.gasto > 0 && it.receita > 0 ? it.receita / it.gasto : 0;
+        return `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 10px;font-size:12px;color:var(--text-primary);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${it.nome}">${it.nome}</td>
+          <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmt(it.gasto)}</td>
+          <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmtN(it.cliques)}</td>
+          <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmtN(it.impressoes)}</td>
+          <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmtN(it.pedidos)}</td>
+          <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmt(it.receita)}</td>
+          <td style="padding:6px 10px;font-size:12px;text-align:right;color:${itRoas>=3?'#16a34a':itRoas>0?'#d97706':'var(--text-muted,#94a3b8)'};font-weight:600;">${itRoas > 0 ? fmtN(itRoas, 2) + 'x' : '—'}</td>
+        </tr>`;
+      }).join('');
+      linhaItens = `
+        <tr>
+          <td colspan="12" style="padding:0;background:var(--bg-base);">
+            <table style="width:100%;border-collapse:collapse;">
+              <thead>
+                <tr>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:left;text-transform:uppercase;">Produto</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">Investido</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">Cliques</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">Impressões</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">Pedidos</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">Vendas</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">ROAS</th>
+                </tr>
+              </thead>
+              <tbody>${linhasItens}</tbody>
+            </table>
+          </td>
+        </tr>`;
+    }
+
     return `
       <tr style="border-bottom:1px solid var(--border);">
         <td style="padding:10px 12px;max-width:220px;">
           <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.nome}">${c.nome}</div>
           ${sug ? `<span style="display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:${sug.bg};color:${sug.cor};white-space:nowrap;" title="${sug.texto}">${sug.icon} ${sug.texto}</span>` : ''}
           ${tendenciaHtml}
+          ${linkItens}
         </td>
         <td style="padding:10px 12px;">
           <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${c.bidding==='auto'?'#f0fdf4':'#eff6ff'};color:${c.bidding==='auto'?'#16a34a':'#2563eb'};font-weight:600;">${c.tipo}</span>
@@ -1023,6 +1101,7 @@ function renderTabelaCampanhas(campanhas, janelas) {
         <td style="padding:10px 12px;font-size:12px;text-align:right;color:var(--text-secondary);">${c.orcamentoLabel}</td>
         <td style="padding:10px 12px;text-align:right;white-space:nowrap;display:flex;gap:4px;justify-content:flex-end;">${btnRoas}${btnOrcamento}${btnPausar}</td>
       </tr>
+      ${linhaItens}
     `;
   }).join('');
 
@@ -1400,6 +1479,12 @@ function renderOtimizacoes(d) {
 
 // ─── Ações de otimização ──────────────────────────────────────
 let _adsModalCampId = null;
+
+window._adsGmvMaxExpandido = false;
+window._adsToggleGmvMaxItens = () => {
+  window._adsGmvMaxExpandido = !window._adsGmvMaxExpandido;
+  renderConteudo();
+};
 
 function _adsEhML() {
   return ['mercadolivre', 'ml', 'meli'].includes(contaAtual?.marketplace);
