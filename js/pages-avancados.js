@@ -17,12 +17,13 @@ Router.register('performance', (params, el) => {
   try { projecoes = JSON.parse(localStorage.getItem('glr_projecoes') || '[]'); } catch(e) {}
   try { dres      = JSON.parse(localStorage.getItem('glr_dre')       || '[]'); } catch(e) {}
 
-  // Lista de gestores — apenas os que têm pelo menos 1 cliente
-  const nomesGestores = [...new Set(GLR.clientes.map(c => c.gestor).filter(Boolean))];
-  const gestoresAtivos = nomesGestores.map(nome => {
-    const g = GLR.gestores.find(x => x.nome === nome);
-    return g || { nome };
-  });
+  // Lista de gestores — apenas os que têm pelo menos 1 cliente. Filtra por
+  // gestorId (é o que o formulário de editar cliente realmente grava; c.gestor
+  // de string não é gravado por lá, então derivar a lista a partir dele
+  // deixava essa página inteira "Nenhum gestor com clientes" após qualquer edição).
+  const gestoresAtivos = GLR.gestores.filter(g =>
+    GLR.clientes.some(c => c.gestorId === g.id || c.gestor === g.nome)
+  );
 
   // Função que calcula todos os dados de um cliente
   function dadosCliente(c) {
@@ -245,7 +246,7 @@ Router.register('performance', (params, el) => {
 
     <!-- Um bloco por gestor -->
     ${gestoresAtivos.map(g => {
-      const clientes = GLR.clientes.filter(c => c.gestor === g.nome);
+      const clientes = GLR.clientes.filter(c => c.gestorId === g.id || c.gestor === g.nome);
       const rows     = clientes.map(c => ({ c, d: dadosCliente(c) }));
 
       // Totais do gestor
@@ -2458,7 +2459,7 @@ Router.register('ia', (params, el) => {
     if (q.includes('gestor') || q.includes('pendência') || q.includes('pendencia') || q.includes('responsável')) {
       if (!ge.length) return `Nenhum gestor cadastrado ainda. Adicione gestores em **Gestores**.`;
       const dados = ge.map(g=>{
-        const clientesG = cl.filter(c=>c.gestor===g.nome);
+        const clientesG = cl.filter(c=>c.gestorId===g.id||c.gestor===g.nome);
         const tarefasG  = ta.filter(t=>t.responsavel===g.nome&&t.status!=='concluida');
         const atrasG    = ta.filter(t=>t.responsavel===g.nome&&t.status!=='concluida'&&t.prazo&&t.prazo<new Date().toISOString().slice(0,10));
         const crescG    = clientesG.length ? (clientesG.reduce((s,c)=>s+(c.crescimento||0),0)/clientesG.length) : 0;

@@ -287,9 +287,18 @@ Router.register('dashboard', (params, el) => {
   const comAPI = clientes.length;
   const semAPI = clientesTodos.length - comAPI;
 
-  // Gestores com dados reais
+  // Nome do gestor por id — usado nos lugares que exibem "Gestor: X", já que
+  // c.gestor (string) não é gravado pelo formulário de editar cliente (só
+  // c.gestorId); sem isso o nome aparecia em branco em todo cliente editado.
+  const gestorNomePorId = {};
+  GLR.gestores.forEach(g => { gestorNomePorId[g.id] = g.nome; });
+  const nomeGestorDe = c => c.gestor || gestorNomePorId[c.gestorId] || '—';
+
+  // Gestores com dados reais — filtra por gestorId (é o que o formulário de
+  // editar cliente realmente grava; c.gestor de string nunca é escrito por lá,
+  // então filtrar por nome deixava esse painel sempre zerado após qualquer edição).
   const gestoresComDados = GLR.gestores.map(g => {
-    const clientesDoGestor = clientes.filter(c => c.gestor === g.nome);
+    const clientesDoGestor = clientes.filter(c => c.gestorId === g.id);
     const crescMedioG = clientesDoGestor.length
       ? (clientesDoGestor.reduce((s,c)=>s+(c.crescimento||0),0)/clientesDoGestor.length) : 0;
     const tarefasG  = GLR.tarefas.filter(t=>t.responsavel===g.nome&&t.status!=='concluida').length;
@@ -423,7 +432,7 @@ Router.register('dashboard', (params, el) => {
             <span class="ranking-num">#${i+1}</span>
             <div style="flex:1;">
               <div class="ranking-name">${c.nome}</div>
-              <div style="font-size:11px;color:var(--text-muted);">${c.gestor || ''}</div>
+              <div style="font-size:11px;color:var(--text-muted);">${nomeGestorDe(c)}</div>
             </div>
             <div style="text-align:right;">
               <div class="ranking-val ${(c.crescimento||0) >= 0 ? 'text-green' : 'text-red'}">${(c.crescimento||0) >= 0 ? '+' : ''}${c.crescimento||0}%</div>
@@ -473,7 +482,7 @@ Router.register('dashboard', (params, el) => {
                onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
             <div style="flex:1;">
               <div style="font-size:14px;font-weight:600;">${c.nome}</div>
-              <div style="font-size:12px;color:var(--text-muted);">Gestor: ${c.gestor||'—'} · ${GLR.formatCurrency(c.faturamento||0)}</div>
+              <div style="font-size:12px;color:var(--text-muted);">Gestor: ${nomeGestorDe(c)} · ${GLR.formatCurrency(c.faturamento||0)}</div>
             </div>
             <div style="text-align:right;">
               <div class="ranking-val text-red">${c.crescimento||0}%</div>
@@ -582,7 +591,7 @@ Router.register('dashboard', (params, el) => {
         ${[...clientesTodos].sort((a,b)=>(b.faturamento||0)-(a.faturamento||0)).map(c=>`
           <tr style="cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
             <td style="font-weight:600;">${c.nome}</td>
-            <td style="color:var(--text-muted);">${c.gestor||'—'}</td>
+            <td style="color:var(--text-muted);">${nomeGestorDe(c)}</td>
             <td><span class="badge ${GLR.statusColor[c.status]}">${GLR.statusLabel[c.status]}</span></td>
             <td style="text-align:right;">${c._temAPI ? GLR.formatCurrency(c.faturamento||0) : '<span style="color:var(--text-muted);">sem dados</span>'}</td>
             <td style="text-align:right;color:${(c.crescimento||0)>=0?'var(--green)':'var(--red)'};">${c._temAPI ? `${(c.crescimento||0)>=0?'+':''}${c.crescimento||0}%` : '—'}</td>
