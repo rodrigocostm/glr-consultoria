@@ -7,224 +7,172 @@
 <meta name="description" content="Cuidamos de ADS, catálogo, financeiro e estratégia da sua loja no Mercado Livre, Shopee e Amazon — com um sistema próprio pra você acompanhar tudo em tempo real.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    /* Paleta — painel de operação: tinta escura + papel frio + latão como sinal de valor */
-    --ink: #0D1117;
-    --ink-2: #171D28;
-    --ink-line: rgba(255,255,255,0.10);
-    --paper: #F3F4F6;
-    --card: #ffffff;
-    --border: #E1E3E8;
-    --text: #12151C;
-    --text-sec: #565C6B;
-    --text-mute: #8A90A0;
-    --brass: #B8863C;
-    --brass-dark: #96702F;
-    --brass-soft: #F2E8D6;
-    --green: #2E7D5C;
-    --green-soft: #E7F2ED;
-    --red: #B23B2E;
-    --red-soft: #FBEAE7;
-    --shadow-sm: 0 1px 2px rgba(13,17,23,0.05);
-    --shadow-md: 0 8px 24px rgba(13,17,23,0.07);
+    --blue: #0B4FE0;
+    --blue-dark: #083BAA;
+    --blue-soft: #E8EFFD;
+    --ink: #0A0A0A;
+    --paper: #ffffff;
+    --paper-soft: #F4F6FB;
+    --text: #0A0A0A;
+    --text-sec: #52586B;
+    --text-mute: #8B90A0;
+    --border: #E5E8F0;
+    --green: #0E8A46;
+    --green-soft: #E7F6EC;
+    --red: #D93025;
+    --red-soft: #FBEAE8;
+    --shadow-sm: 0 1px 2px rgba(10,10,10,0.05);
+    --shadow-md: 0 8px 24px rgba(10,10,10,0.08);
+    --shadow-lg: 0 20px 50px rgba(10,10,10,0.14);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
   body {
-    font-family: 'IBM Plex Sans', sans-serif;
+    font-family: 'Poppins', sans-serif;
     background: var(--paper);
     color: var(--text);
-    line-height: 1.5;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
   }
   img { max-width: 100%; display: block; }
   a { color: inherit; text-decoration: none; }
   .wrap { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
-  .mono { font-family: 'IBM Plex Mono', monospace; }
 
-  .kicker {
-    display: inline-flex; align-items: center; gap: 8px; font-family: 'IBM Plex Mono', monospace;
-    font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
-    color: var(--brass-dark); margin-bottom: 18px;
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px; padding: 8px 18px; background: var(--blue-soft);
+    border-radius: 99px; font-size: 13px; font-weight: 700; color: var(--blue); margin-bottom: 22px;
   }
-  .kicker .idx { color: var(--text-mute); font-weight: 500; }
-  .hero .kicker, .cta-final .kicker { color: var(--brass); }
-  .hero .kicker .idx, .cta-final .kicker .idx { color: rgba(255,255,255,0.45); }
+  .hero .eyebrow { background: rgba(255,255,255,0.1); color: #fff; }
+  .decision-panel .eyebrow { background: rgba(255,255,255,0.1); color: #fff; }
+  .cta-final .eyebrow { background: rgba(255,255,255,0.1); color: #fff; }
 
   h1, h2, h3 { font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
-  .tag-word {
-    font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 0.72em;
-    background: var(--brass); color: var(--ink); padding: 3px 12px 5px; border-radius: 5px;
-    display: inline-block; letter-spacing: -0.01em; vertical-align: 2px;
-  }
+  .hl { color: var(--blue); }
+  .hero .hl { color: #6E9BFF; }
+  .decision-panel .hl, .cta-final .hl { color: #6E9BFF; }
 
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    padding: 15px 28px; border-radius: 8px; font-size: 15px; font-weight: 600;
+    padding: 16px 30px; border-radius: 12px; font-size: 15.5px; font-weight: 600;
     cursor: pointer; border: 1.5px solid transparent; transition: transform .15s, box-shadow .15s, background .15s, border-color .15s;
-    font-family: 'IBM Plex Sans', sans-serif;
+    font-family: 'Poppins', sans-serif;
   }
-  .btn:hover { transform: translateY(-1px); }
-  .btn-primary { background: var(--brass); color: var(--ink); box-shadow: 0 6px 18px rgba(184,134,60,0.30); }
-  .btn-primary:hover { background: var(--brass-dark); box-shadow: 0 10px 24px rgba(184,134,60,0.38); }
+  .btn:hover { transform: translateY(-2px); }
+  .btn-primary { background: var(--blue); color: #fff; box-shadow: 0 10px 28px rgba(11,79,224,0.32); }
+  .btn-primary:hover { background: var(--blue-dark); box-shadow: 0 14px 34px rgba(11,79,224,0.4); }
   .btn-ghost { background: transparent; border-color: var(--border); color: var(--text); }
   .btn-ghost:hover { border-color: var(--text-mute); }
-  .hero .btn-ghost, .cta-final .btn-ghost { border-color: rgba(255,255,255,0.28); color: #fff; }
-  .hero .btn-ghost:hover, .cta-final .btn-ghost:hover { border-color: rgba(255,255,255,0.5); }
+  .hero .btn-ghost, .decision-panel .btn-ghost, .cta-final .btn-ghost { border-color: rgba(255,255,255,0.3); color: #fff; }
+  .hero .btn-ghost:hover, .decision-panel .btn-ghost:hover, .cta-final .btn-ghost:hover { border-color: rgba(255,255,255,0.55); }
   .btn-block { width: 100%; }
-  .btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+  .btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
-  .section { padding: 104px 0; }
-  .section-dark { background: var(--ink); color: #fff; }
-  .section-title { font-size: 32px; margin-bottom: 14px; line-height: 1.2; }
+  .section { padding: 100px 0; }
+  .section-soft { background: var(--paper-soft); }
+  .section-title { font-size: 34px; line-height: 1.2; margin-bottom: 16px; }
   .section-title.center { text-align: center; }
-  .section-sub { font-size: 16px; color: var(--text-sec); max-width: 580px; margin: 0 0 52px; }
+  .section-sub { font-size: 16.5px; color: var(--text-sec); max-width: 600px; margin-bottom: 52px; }
   .section-sub.center { text-align: center; margin-left: auto; margin-right: auto; }
-  .section-dark .section-sub { color: rgba(255,255,255,0.62); }
+  .hero .section-sub, .decision-panel .section-sub, .cta-final p { color: rgba(255,255,255,0.72); }
   .placeholder-note {
-    font-size: 11.5px; color: var(--brass-dark); background: var(--brass-soft);
-    border: 1px dashed var(--brass); border-radius: 6px; padding: 5px 12px;
+    font-size: 11.5px; color: #92660B; background: #FFF6E0;
+    border: 1px dashed #E8B933; border-radius: 8px; padding: 6px 14px;
     display: inline-block; margin-top: 8px;
   }
 
   /* Header */
   header {
-    position: sticky; top: 0; z-index: 100; background: rgba(13,17,23,0.92);
-    backdrop-filter: blur(12px); border-bottom: 1px solid var(--ink-line);
+    position: sticky; top: 0; z-index: 100; background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
   }
   header .wrap { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; }
-  .logo-row { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; color: #fff; }
-  .logo-row img { width: 26px; height: 26px; object-fit: contain; }
-  .logo-row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brass); flex-shrink: 0; }
-  nav.main-nav { display: flex; align-items: center; gap: 30px; }
-  nav.main-nav a {
-    font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: rgba(255,255,255,0.6); font-weight: 500;
-    letter-spacing: .04em; text-transform: uppercase; transition: color .15s;
-  }
-  nav.main-nav a:hover { color: #fff; }
-  .nav-cta .btn { padding: 10px 18px; font-size: 13px; }
+  .logo-row { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 17px; }
+  .logo-row img { width: 28px; height: 28px; object-fit: contain; }
+  nav.main-nav { display: flex; align-items: center; gap: 32px; }
+  nav.main-nav a { font-size: 14.5px; color: var(--text-sec); font-weight: 600; transition: color .15s; }
+  nav.main-nav a:hover { color: var(--text); }
+  .nav-cta .btn { padding: 11px 22px; font-size: 14px; }
   @media (max-width: 860px) { nav.main-nav { display: none; } }
 
   /* Hero */
-  .hero { position: relative; background: var(--ink); color: #fff; padding: 84px 0 0; overflow: hidden; }
-  .hero-glow {
-    position: absolute; top: -220px; right: -140px; width: 640px; height: 640px; z-index: 0; pointer-events: none;
-    background: radial-gradient(circle, rgba(184,134,60,0.16), transparent 62%);
-  }
-  .hero > .wrap { position: relative; z-index: 1; }
-  .hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; padding-bottom: 76px; }
-  .hero h1 { font-size: 44px; line-height: 1.16; margin-bottom: 20px; color: #fff; }
-  .hero p { font-size: 16.5px; color: rgba(255,255,255,0.68); max-width: 480px; margin-bottom: 34px; }
-  .hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; }
-  @media (max-width: 900px) {
-    .hero-grid { grid-template-columns: 1fr; padding-bottom: 56px; }
-    .hero-mock { max-width: 440px; margin: 0 auto; }
+  .hero { background: var(--ink); color: #fff; padding: 88px 0 64px; text-align: center; }
+  .hero h1 { font-size: 46px; line-height: 1.16; margin: 0 auto 22px; max-width: 780px; color: #fff; }
+  .hero .section-sub { font-size: 17.5px; max-width: 600px; margin-left: auto; margin-right: auto; margin-bottom: 38px; }
+  .hero-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 52px; }
+
+  .proof-strip { display: flex; gap: 0; justify-content: center; flex-wrap: wrap; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 40px; }
+  .proof-item { padding: 0 40px; text-align: center; border-right: 1px solid rgba(255,255,255,0.12); }
+  .proof-item:last-child { border-right: none; }
+  .proof-num { font-size: 30px; font-weight: 800; color: #fff; }
+  .proof-label { font-size: 12.5px; color: rgba(255,255,255,0.55); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
+  @media (max-width: 700px) {
+    .proof-item { padding: 10px 20px; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.12); flex: 1 1 45%; }
   }
 
-  /* Mini painel do GLR Central — a peça de assinatura da página */
-  .hero-mock {
-    background: var(--ink-2); border: 1px solid var(--ink-line); border-radius: 14px;
-    padding: 22px 22px 18px; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
-  }
-  .mock-bar { display: flex; align-items: center; gap: 9px; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: .05em; color: rgba(255,255,255,0.55); margin-bottom: 20px; }
-  .mock-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(46,125,92,0.25); flex-shrink: 0; animation: pulse 2.2s ease-in-out infinite; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
-  .mock-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--ink-line); border-radius: 8px; overflow: hidden; margin-bottom: 18px; }
-  .mock-stat { background: var(--ink-2); padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
-  .mock-label { font-size: 11px; color: rgba(255,255,255,0.5); font-family: 'IBM Plex Mono', monospace; letter-spacing: .02em; }
-  .mock-value { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; }
-  .mock-value.up { color: #6FCBA3; }
-  .mock-delta { font-size: 10.5px; color: #6FCBA3; font-family: 'IBM Plex Mono', monospace; margin-left: 4px; }
-  .mock-spark { width: 100%; height: 46px; display: block; }
-  .mock-spark polyline { fill: none; stroke: var(--brass); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
-    stroke-dasharray: 320; stroke-dashoffset: 320; animation: draw 1.4s .3s ease-out forwards; }
-  @keyframes draw { to { stroke-dashoffset: 0; } }
-  @media (prefers-reduced-motion: reduce) {
-    .mock-dot { animation: none; }
-    .mock-spark polyline { animation: none; stroke-dashoffset: 0; }
-  }
-
-  /* Faixa de status — ticker mono logo abaixo do hero */
-  .status-strip { background: var(--ink-2); border-top: 1px solid var(--ink-line); padding: 16px 0; }
-  .status-strip .wrap { display: flex; gap: 28px; flex-wrap: wrap; justify-content: center; }
-  .status-item {
-    font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: rgba(255,255,255,0.6);
-    display: flex; align-items: center; gap: 8px; letter-spacing: .01em;
-  }
-  .status-item b { color: #fff; font-weight: 600; }
-
-  /* Dor — lista tipo log, não cards flutuantes */
-  .dor-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--card); }
+  /* Dor */
+  .dor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 44px; }
   .dor-item {
-    display: flex; gap: 16px; align-items: flex-start; padding: 22px 24px;
-    border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+    background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 24px;
+    display: flex; gap: 15px; align-items: flex-start; box-shadow: var(--shadow-sm); transition: box-shadow .2s, transform .2s;
   }
-  .dor-item:nth-child(2n) { border-right: none; }
-  .dor-item:nth-last-child(-n+2) { border-bottom: none; }
-  @media (max-width: 720px) {
-    .dor-list { grid-template-columns: 1fr; }
-    .dor-item { border-right: none !important; }
-    .dor-item:last-child { border-bottom: none; }
-  }
-  .dor-item .ico-badge { background: var(--red-soft); color: var(--red); }
-  .dor-item p { font-size: 14px; color: var(--text-sec); line-height: 1.55; padding-top: 2px; }
+  .dor-item:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+  .dor-item .ico-badge { background: var(--red-soft); }
+  .dor-item p { font-size: 14px; color: var(--text-sec); line-height: 1.55; padding-top: 3px; }
 
   .ico-badge {
-    width: 40px; height: 40px; border-radius: 8px; background: var(--brass-soft); color: var(--brass-dark);
-    display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;
-    border: 1px solid var(--border);
+    width: 44px; height: 44px; border-radius: 12px; background: var(--blue-soft);
+    display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;
   }
 
-  /* Grid genérico de cards */
-  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(266px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-  .feat-card { background: var(--card); padding: 28px; transition: background .15s; }
-  .feat-card:hover { background: #FBFAF7; }
-  .feat-card .ico-badge { margin-bottom: 16px; }
-  .feat-card h3 { font-size: 15.5px; margin-bottom: 8px; }
+  /* Cards */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(266px, 1fr)); gap: 18px; }
+  .feat-card {
+    background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 28px;
+    transition: box-shadow .2s, transform .2s; box-shadow: var(--shadow-sm);
+  }
+  .feat-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-3px); }
+  .feat-card .ico-badge { margin-bottom: 18px; }
+  .feat-card h3 { font-size: 16.5px; margin-bottom: 8px; }
   .feat-card p { font-size: 13.5px; color: var(--text-sec); line-height: 1.6; }
 
-  /* Decisão / CTA de investimento */
+  /* Decisão */
   .decision-panel {
-    background: var(--ink); color: #fff; border-radius: 14px; padding: 56px 48px; text-align: center;
+    background: var(--ink); border-radius: 24px; padding: 60px 48px; text-align: center; color: #fff;
   }
   .decision-panel .section-title { color: #fff; }
-  .decision-panel .section-sub { color: rgba(255,255,255,0.62); }
-  .decision-panel .kicker { justify-content: center; }
 
   /* Comparação */
-  .compare-table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border-radius: 10px; border: 1px solid var(--border); }
-  .compare-table th, .compare-table td { padding: 16px 18px; font-size: 13.5px; text-align: left; border-bottom: 1px solid var(--border); }
-  .compare-table th {
-    background: var(--ink); color: rgba(255,255,255,0.7); font-family: 'IBM Plex Mono', monospace;
-    font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600;
-  }
+  .compare-table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border-radius: 18px; border: 1px solid var(--border); box-shadow: var(--shadow-md); }
+  .compare-table th, .compare-table td { padding: 17px 18px; font-size: 13.5px; text-align: left; border-bottom: 1px solid var(--border); }
+  .compare-table th { background: var(--ink); color: rgba(255,255,255,0.75); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
   .compare-table td:not(:first-child), .compare-table th:not(:first-child) { text-align: center; }
   .compare-table tbody tr:last-child td { border-bottom: none; }
-  .compare-table td:first-child { font-weight: 500; color: var(--text); }
-  .compare-table .col-glr { background: var(--brass-soft); font-weight: 700; color: var(--brass-dark); }
-  .compare-table th.col-glr { background: var(--brass-dark); color: #fff; }
-  .ok { color: var(--green); font-weight: 700; }
-  .no { color: var(--text-mute); font-weight: 700; }
+  .compare-table td:first-child { font-weight: 600; color: var(--text); }
+  .compare-table .col-glr { background: var(--blue-soft); font-weight: 800; color: var(--blue); }
+  .compare-table th.col-glr { background: var(--blue); color: #fff; }
+  .ok { color: var(--green); font-weight: 900; }
+  .no { color: var(--text-mute); font-weight: 900; }
   .compare-scroll { overflow-x: auto; }
 
   /* Depoimentos */
-  .testi-card { background: var(--card); padding: 26px; }
-  .testi-card .quote-mark { font-family: 'IBM Plex Mono', monospace; font-size: 28px; color: var(--brass); font-weight: 700; line-height: 1; margin-bottom: 6px; }
+  .testi-card { background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 26px; box-shadow: var(--shadow-sm); }
+  .testi-card .quote-mark { font-size: 34px; color: var(--blue-soft); font-weight: 900; line-height: 1; margin-bottom: 4px; }
   .testi-card .quote { font-size: 14px; color: var(--text-sec); line-height: 1.65; margin-bottom: 18px; }
   .testi-card .author { font-size: 13.5px; font-weight: 700; }
-  .testi-card .role { font-size: 12px; color: var(--text-mute); font-family: 'IBM Plex Mono', monospace; }
+  .testi-card .role { font-size: 12px; color: var(--text-mute); }
 
   /* FAQ */
-  .faq-item { background: var(--card); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+  .faq-item { background: #fff; border: 1px solid var(--border); border-radius: 14px; margin-bottom: 10px; overflow: hidden; }
   .faq-q {
-    padding: 19px 22px; display: flex; align-items: center; justify-content: space-between;
-    cursor: pointer; font-size: 15px; font-weight: 600;
+    padding: 20px 22px; display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; font-size: 15px; font-weight: 700;
   }
   .faq-q .plus {
-    font-family: 'IBM Plex Mono', monospace; font-size: 15px; color: var(--brass-dark); transition: transform .2s; flex-shrink: 0; margin-left: 16px;
-    width: 26px; height: 26px; background: var(--brass-soft); border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    font-size: 15px; color: var(--blue); transition: transform .2s; flex-shrink: 0; margin-left: 16px;
+    width: 28px; height: 28px; background: var(--blue-soft); border-radius: 50%; display: flex; align-items: center; justify-content: center;
   }
   .faq-item.open .faq-q .plus { transform: rotate(45deg); }
   .faq-a { max-height: 0; overflow: hidden; transition: max-height .25s ease; font-size: 14px; color: var(--text-sec); line-height: 1.65; }
@@ -233,48 +181,48 @@
 
   /* Lead form */
   .lead-box {
-    max-width: 640px; margin: 0 auto; background: var(--card); border: 1px solid var(--border);
-    border-radius: 14px; padding: 44px; box-shadow: var(--shadow-md);
+    max-width: 640px; margin: 0 auto; background: #fff; border: 1px solid var(--border);
+    border-radius: 24px; padding: 44px; box-shadow: var(--shadow-lg);
   }
   .lead-step { display: none; }
   .lead-step.active { display: block; }
   .lead-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0 28px; }
   .lead-opt {
-    padding: 15px 16px; background: var(--paper); border: 1.5px solid var(--border); border-radius: 8px;
+    padding: 15px 16px; background: var(--paper-soft); border: 1.5px solid var(--border); border-radius: 12px;
     font-size: 13.5px; font-weight: 600; cursor: pointer; text-align: center; transition: border-color .15s, background .15s;
   }
-  .lead-opt:hover { border-color: var(--brass); }
-  .lead-opt.selected { border-color: var(--brass); background: var(--brass-soft); color: var(--brass-dark); font-weight: 700; }
+  .lead-opt:hover { border-color: var(--blue); }
+  .lead-opt.selected { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); font-weight: 800; }
   .lead-progress { display: flex; gap: 6px; margin-bottom: 28px; }
-  .lead-progress div { height: 4px; flex: 1; border-radius: 99px; background: var(--border); }
-  .lead-progress div.done { background: var(--brass); }
+  .lead-progress div { height: 5px; flex: 1; border-radius: 99px; background: var(--border); }
+  .lead-progress div.done { background: var(--blue); }
 
   /* CTA final */
   .cta-final {
-    background: var(--ink); border-radius: 14px; padding: 64px 40px; text-align: center; margin: 0 24px; color: #fff;
+    background: var(--blue); border-radius: 28px; padding: 64px 40px; text-align: center; margin: 0 24px;
+    box-shadow: 0 20px 60px rgba(11,79,224,0.3);
   }
   .cta-final h2 { color: #fff; }
-  .cta-final .hero-ctas { justify-content: center; margin-top: 28px; }
+  .cta-final .btn-primary { background: #fff; color: var(--blue); box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
+  .cta-final .btn-primary:hover { background: #F0F4FF; }
 
   /* Footer */
-  footer { padding: 48px 0 32px; background: var(--ink); color: rgba(255,255,255,0.5); }
+  footer { padding: 48px 0 32px; }
   footer .wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; }
-  footer .logo-row { color: #fff; }
-  footer .meta { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: .02em; }
   .wa-float {
-    position: fixed; bottom: 22px; right: 22px; width: 56px; height: 56px; border-radius: 50%;
-    background: #25D366; display: flex; align-items: center; justify-content: center; font-size: 26px;
+    position: fixed; bottom: 22px; right: 22px; width: 58px; height: 58px; border-radius: 50%;
+    background: #25D366; display: flex; align-items: center; justify-content: center; font-size: 27px;
     box-shadow: 0 10px 28px rgba(37,211,102,0.4); z-index: 200;
   }
 
   @media (max-width: 640px) {
     .hero h1 { font-size: 30px; }
-    .hero p { font-size: 15px; }
-    .section { padding: 60px 0; }
-    .section-title { font-size: 24px; }
+    .hero .section-sub { font-size: 15.5px; }
+    .section { padding: 64px 0; }
+    .section-title { font-size: 25px; }
     .lead-opts { grid-template-columns: 1fr; }
     .decision-panel { padding: 40px 24px; }
-    .cta-final { padding: 44px 24px; margin: 0 16px; }
+    .cta-final { padding: 44px 26px; margin: 0 16px; }
   }
 </style>
 </head>
@@ -284,7 +232,6 @@
 <header>
   <div class="wrap">
     <div class="logo-row">
-      <span class="dot"></span>
       <img src="logo.png" alt="GLR" onerror="this.style.display='none'">
       GLR Consultoria
     </div>
@@ -302,40 +249,18 @@
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-glow"></div>
   <div class="wrap">
-    <div class="hero-grid">
-      <div>
-        <div class="kicker">✦ Consultoria em Marketplaces</div>
-        <h1>Sua operação, gerenciada <span class="tag-word">por um time</span> — não por você sozinho</h1>
-        <p>Cuidamos de anúncios, ADS, catálogo, financeiro e estratégia da sua loja, com reuniões mensais de verdade e um sistema próprio pra você acompanhar cada resultado em tempo real.</p>
-        <div class="hero-ctas">
-          <a id="cta-hero" href="#" target="_blank" rel="noopener" class="btn btn-primary">Falar com um especialista</a>
-          <a href="#sistema" class="btn btn-ghost">Ver como funciona</a>
-        </div>
-      </div>
-      <div class="hero-mock">
-        <div class="mock-bar"><span class="mock-dot"></span> GLR CENTRAL — SINCRONIZADO AGORA</div>
-        <div class="mock-grid">
-          <div class="mock-stat"><span class="mock-label">FATURAMENTO</span><span class="mock-value">R$ 482.940</span></div>
-          <div class="mock-stat"><span class="mock-label">ROAS MÉDIO</span><span class="mock-value up">4,8x</span></div>
-          <div class="mock-stat"><span class="mock-label">ADS INVESTIDO</span><span class="mock-value">R$ 31.260</span></div>
-          <div class="mock-stat"><span class="mock-label">CONTAS ATIVAS</span><span class="mock-value">24</span></div>
-        </div>
-        <svg class="mock-spark" viewBox="0 0 240 56" preserveAspectRatio="none">
-          <polyline points="0,44 24,40 48,42 72,30 96,34 120,20 144,24 168,12 192,16 216,6 240,10" />
-        </svg>
-      </div>
+    <div class="eyebrow">✦ Consultoria em Marketplaces</div>
+    <h1>Enquanto você tenta cuidar da loja sozinho, <span class="hl">seus concorrentes já têm um time inteiro</span> cuidando da operação deles</h1>
+    <p class="section-sub">Cuidamos de anúncios, ADS, catálogo, financeiro e estratégia da sua loja, com reuniões mensais de verdade e um sistema próprio pra você acompanhar cada resultado em tempo real.</p>
+    <div class="hero-ctas">
+      <a id="cta-hero" href="#" target="_blank" rel="noopener" class="btn btn-primary">Falar com um especialista</a>
+      <a href="#sistema" class="btn btn-ghost">Ver como funciona</a>
     </div>
-  </div>
-  <div class="status-strip">
-    <div class="wrap">
-      <div class="status-item">🟡 <b>Mercado Livre</b></div>
-      <div class="status-item">🟠 <b>Shopee</b></div>
-      <div class="status-item">📦 <b>Amazon</b></div>
-      <div class="status-item">🔷 <b>Magalu</b></div>
-      <div class="status-item">TAXA CONFERIDA: <b>100%</b></div>
-      <div class="status-item">DRE: <b>AUTOMÁTICO</b></div>
+    <div class="proof-strip">
+      <div class="proof-item"><div class="proof-num">75+</div><div class="proof-label">Contas sob gestão</div></div>
+      <div class="proof-item"><div class="proof-num">6</div><div class="proof-label">Marketplaces atendidos</div></div>
+      <div class="proof-item"><div class="proof-num">100%</div><div class="proof-label">Taxa conferida via API</div></div>
     </div>
   </div>
 </section>
@@ -343,10 +268,9 @@
 <!-- Dor -->
 <section class="section">
   <div class="wrap">
-    <div class="kicker"><span class="idx">01 /</span> DIAGNÓSTICO</div>
-    <h2 class="section-title" style="max-width:640px;">Gerenciar marketplace sozinho custa caro — em tempo, em oportunidade e em dinheiro</h2>
+    <h2 class="section-title" style="max-width:700px;">Gerenciar marketplace sozinho custa caro — em tempo, em oportunidade e em dinheiro</h2>
     <p class="section-sub">São dezenas de decisões por semana. Sem alguém acompanhando de perto todo dia, o prejuízo é silencioso.</p>
-    <div class="dor-list">
+    <div class="dor-grid">
       <div class="dor-item"><div class="ico-badge">📉</div><p>Verba de ADS queimando em anúncio mal configurado, sem ninguém revisando toda semana</p></div>
       <div class="dor-item"><div class="ico-badge">🧾</div><p>Taxa de marketplace que ninguém confere — e que raramente bate com o que devia</p></div>
       <div class="dor-item"><div class="ico-badge">📦</div><p>Catálogo desatualizado, com anúncio parado perdendo posição pra concorrência</p></div>
@@ -358,10 +282,10 @@
 </section>
 
 <!-- Solução / Serviços -->
-<section class="section" id="solucao" style="background:var(--card);">
+<section class="section section-soft" id="solucao">
   <div class="wrap">
-    <div class="kicker"><span class="idx">02 /</span> A SOLUÇÃO</div>
-    <h2 class="section-title" style="max-width:600px;">Um time completo cuidando da sua operação</h2>
+    <div class="eyebrow">A Solução</div>
+    <h2 class="section-title">Um time completo cuidando da sua operação</h2>
     <p class="section-sub">Do primeiro anúncio ao acompanhamento mensal de resultado — tudo incluso na parceria.</p>
     <div class="card-grid">
       <div class="feat-card"><div class="ico-badge">🏪</div><h3>Abertura e configuração de contas</h3><p>Cuidamos de toda a abertura e configuração das suas contas nos marketplaces.</p></div>
@@ -378,8 +302,8 @@
 <!-- Sistema -->
 <section class="section" id="sistema">
   <div class="wrap">
-    <div class="kicker"><span class="idx">03 /</span> O SISTEMA</div>
-    <h2 class="section-title" style="max-width:600px;">O sistema que acompanha sua operação</h2>
+    <div class="eyebrow">O Sistema</div>
+    <h2 class="section-title">O sistema que acompanha sua operação</h2>
     <p class="section-sub">O GLR Central: um painel só, em tempo real, pra você e sua equipe acompanharem os resultados juntos.</p>
     <div class="card-grid">
       <div class="feat-card"><div class="ico-badge">📊</div><h3>Dashboard Executivo</h3><p>Visão consolidada da carteira, metas, crescimento e risco — tudo num só lugar.</p></div>
@@ -393,10 +317,10 @@
 </section>
 
 <!-- Decisão / Investimento -->
-<section class="section" style="background:var(--card);">
+<section class="section section-soft">
   <div class="wrap">
     <div class="decision-panel">
-      <div class="kicker"><span class="idx">04 /</span> DECISÃO</div>
+      <div class="eyebrow">Decisão</div>
       <h2 class="section-title center">Quer saber o investimento?</h2>
       <p class="section-sub center">Cada operação tem um volume e uma necessidade diferente — fale com a gente e monte um plano sob medida.</p>
       <a id="cta-preco" href="#" target="_blank" rel="noopener" class="btn btn-primary">Consulte</a>
@@ -407,9 +331,9 @@
 <!-- Diferenciais -->
 <section class="section" id="diferenciais">
   <div class="wrap">
-    <div class="kicker">POR QUE A GLR</div>
-    <h2 class="section-title" style="max-width:600px;">Consultoria de verdade — não terceirização remota sem rosto</h2>
-    <div class="card-grid" style="margin-top:44px;">
+    <h2 class="section-title">Por que a GLR?</h2>
+    <p class="section-sub">Consultoria de verdade — não terceirização remota sem rosto.</p>
+    <div class="card-grid">
       <div class="feat-card"><div class="ico-badge">🤝</div><h3>Acompanhamento humano</h3><p>Reuniões mensais reais, com gente que conhece sua conta — não um robô respondendo ticket.</p></div>
       <div class="feat-card"><div class="ico-badge">🖥️</div><h3>Sistema próprio</h3><p>O GLR Central foi construído internamente pra essa operação — não é uma ferramenta terceirizada genérica.</p></div>
       <div class="feat-card"><div class="ico-badge">📊</div><h3>Dado real, não estimado</h3><p>Financeiro calculado direto da API do marketplace, taxa por taxa — sem planilha aproximada.</p></div>
@@ -419,10 +343,9 @@
 </section>
 
 <!-- Comparação -->
-<section class="section" style="background:var(--card);">
+<section class="section section-soft">
   <div class="wrap">
-    <div class="kicker">A DIFERENÇA</div>
-    <h2 class="section-title" style="max-width:600px;">Sozinho, com consultoria genérica, ou com a GLR</h2>
+    <h2 class="section-title">Sozinho, com consultoria genérica, ou com a GLR</h2>
     <p class="section-sub">A diferença está em quem realmente acompanha sua operação todo dia.</p>
     <div class="compare-scroll">
       <table class="compare-table">
@@ -449,8 +372,7 @@
 <!-- Depoimentos -->
 <section class="section">
   <div class="wrap">
-    <div class="kicker">CLIENTES</div>
-    <h2 class="section-title" style="max-width:600px;">O que nossos clientes dizem</h2>
+    <h2 class="section-title">O que nossos clientes dizem</h2>
     <p class="section-sub">
       Depoimentos reais de clientes GLR.<br>
       <span class="placeholder-note">⚠️ Placeholder — substituir pelos depoimentos reais antes de publicar</span>
@@ -460,30 +382,29 @@
         <div class="quote-mark">"</div>
         <div class="quote">[Espaço reservado para depoimento real de cliente — substituir antes de publicar a página.]</div>
         <div class="author">Cliente GLR</div>
-        <div class="role">LOJA DE ELETRÔNICOS</div>
+        <div class="role">Loja de Eletrônicos</div>
       </div>
       <div class="testi-card">
         <div class="quote-mark">"</div>
         <div class="quote">[Espaço reservado para depoimento real de cliente — substituir antes de publicar a página.]</div>
         <div class="author">Cliente GLR</div>
-        <div class="role">LOJA DE MODA</div>
+        <div class="role">Loja de Moda</div>
       </div>
       <div class="testi-card">
         <div class="quote-mark">"</div>
         <div class="quote">[Espaço reservado para depoimento real de cliente — substituir antes de publicar a página.]</div>
         <div class="author">Cliente GLR</div>
-        <div class="role">LOJA DE CASA & DECORAÇÃO</div>
+        <div class="role">Loja de Casa & Decoração</div>
       </div>
     </div>
   </div>
 </section>
 
 <!-- FAQ -->
-<section class="section" id="faq" style="background:var(--card);">
+<section class="section section-soft" id="faq">
   <div class="wrap" style="max-width:760px;">
-    <div class="kicker">DÚVIDAS</div>
-    <h2 class="section-title" style="max-width:600px;">Dúvidas frequentes</h2>
-    <div id="faq-list" style="margin-top:36px;">
+    <h2 class="section-title">Dúvidas frequentes</h2>
+    <div id="faq-list" style="margin-top:44px;">
       <div class="faq-item open">
         <div class="faq-q">Para quem é a GLR Consultoria? <span class="plus">+</span></div>
         <div class="faq-a"><div class="faq-a-inner">Pra quem já vende (ou quer começar a vender) no Mercado Livre, Shopee ou Amazon e não tem tempo — ou time — pra acompanhar a operação todo dia.</div></div>
@@ -505,7 +426,7 @@
         <div class="faq-a"><div class="faq-a-inner">Mercado Livre, Shopee, Amazon e Magalu, com o sistema GLR Central acompanhando as quatro contas em tempo real.</div></div>
       </div>
     </div>
-    <div style="text-align:center;margin-top:36px;">
+    <div style="text-align:center;margin-top:40px;">
       <a id="cta-faq" href="#" target="_blank" rel="noopener" class="btn btn-primary">Falar com um especialista</a>
     </div>
   </div>
@@ -514,7 +435,6 @@
 <!-- Lead form -->
 <section class="section" id="contato">
   <div class="wrap">
-    <div class="kicker" style="justify-content:center;display:flex;">PRÓXIMO PASSO</div>
     <h2 class="section-title center">Vamos escalar sua operação juntos</h2>
     <p class="section-sub center">Responda 3 perguntas rápidas — a conversa com nosso time já começa direto no ponto.</p>
 
@@ -552,29 +472,26 @@
         <button id="lead-enviar" class="btn btn-primary btn-block" disabled>Enviar e falar no WhatsApp</button>
       </div>
 
-      <p style="text-align:center;font-size:12px;color:var(--text-mute);margin-top:20px;" class="mono">SEM COMPROMISSO · RESPOSTA EM ATÉ 24H ÚTEIS</p>
+      <p style="text-align:center;font-size:12px;color:var(--text-mute);margin-top:20px;">Sem compromisso · Resposta em até 24h úteis</p>
     </div>
   </div>
 </section>
 
 <!-- CTA Final -->
-<section class="section" style="padding-top:0;background:var(--paper);">
+<section class="section section-soft" style="padding-top:0;">
   <div class="cta-final">
-    <div class="kicker" style="justify-content:center;display:flex;">VAMOS COMEÇAR</div>
-    <h2 style="font-size:28px;margin-bottom:12px;">Pronto para organizar sua operação?</h2>
-    <p style="font-size:15px;color:rgba(255,255,255,0.68);">Fale com a gente e veja o sistema funcionando na prática.</p>
-    <div class="hero-ctas">
-      <a id="cta-final" href="#" target="_blank" rel="noopener" class="btn btn-primary">Falar no WhatsApp</a>
-    </div>
+    <h2 style="font-size:29px;margin-bottom:12px;">Pronto para organizar sua operação?</h2>
+    <p style="font-size:15.5px;margin-bottom:28px;">Fale com a gente e veja o sistema funcionando na prática.</p>
+    <a id="cta-final" href="#" target="_blank" rel="noopener" class="btn btn-primary">Falar no WhatsApp</a>
   </div>
 </section>
 
 <!-- Footer -->
 <footer>
   <div class="wrap">
-    <div class="logo-row"><span class="dot"></span><img src="logo.png" alt="GLR" onerror="this.style.display='none'"> GLR Consultoria</div>
-    <div class="meta">CONSULTORIA EM MARKETPLACES — MERCADO LIVRE, SHOPEE, AMAZON E MAGALU</div>
-    <div class="meta">GLR CONSULTORIA © 2026</div>
+    <div class="logo-row"><img src="logo.png" alt="GLR" onerror="this.style.display='none'"> GLR Consultoria</div>
+    <div style="font-size:13px;color:var(--text-mute);">Consultoria em Marketplaces — Mercado Livre, Shopee, Amazon e Magalu</div>
+    <div style="font-size:12px;color:var(--text-mute);">GLR Consultoria © 2026</div>
   </div>
 </footer>
 
