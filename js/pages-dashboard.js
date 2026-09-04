@@ -284,6 +284,16 @@ Router.register('dashboard', (params, el) => {
   const faturamentoAtual = (vendasDiaCache?.dias || []).reduce((s, d) => s + (parseFloat(d.faturamento) || 0), 0);
   const qtdPedidosAtual  = (vendasDiaCache?.dias || []).reduce((s, d) => s + (parseInt(d.pedidos) || 0), 0);
 
+  // Projeção de Receita GLR — mesmo princípio da "Projeção de Faturamento" (roda
+  // o real do mês até agora pelos dias restantes), aplicado à comissão em vez do
+  // faturamento bruto. Ticket médio = essa projeção dividida pelos clientes com
+  // dado real (mesma base do "X com dados reais" do card Clientes na Carteira).
+  const _hojeDash = new Date();
+  const diasNoMesDash = new Date(_hojeDash.getFullYear(), _hojeDash.getMonth() + 1, 0).getDate();
+  const diasDecorridosDash = (vendasDiaCache?.dias || []).length;
+  const projecaoReceitaGLR = diasDecorridosDash > 0 ? (receitaGLR / diasDecorridosDash) * diasNoMesDash : 0;
+  const ticketMedioGLR = clientes.length > 0 ? projecaoReceitaGLR / clientes.length : 0;
+
   const comAPI = clientes.length;
   const semAPI = clientesTodos.length - comAPI;
 
@@ -341,6 +351,8 @@ Router.register('dashboard', (params, el) => {
       <div class="kpi-flash" data-kpi="fatAtual" data-kpi-val="${faturamentoAtual}">${kpiCard('Faturamento Atual', faturamentoAtual > 0 ? GLR.formatCurrency(faturamentoAtual) : '—', faturamentoAtual > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', faturamentoAtual > 0, 'rgba(99,102,241,0.15)', '💵', '#6366f1')}</div>
       ${kpiCard('Projeção de Faturamento', GLR.formatCurrency(faturamentoTotal), crescMedioAPI!=null?`${crescMedioAPI>=0?'+':''}${crescMedioAPI.toFixed(1)}% vs mês ant.`:(semAPI>0?'vincule contas p/ ver dados reais':''), true, 'rgba(99,102,241,0.12)', '🏆', '#6366f1', comAPI>0)}
       <div class="kpi-flash" data-kpi="receitaGLR" data-kpi-val="${receitaGLR}">${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', receitaGLR > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', receitaGLR > 0, 'rgba(16,185,129,0.15)', '💰', '#10b981')}</div>
+      ${kpiCard('Projeção Receita GLR', projecaoReceitaGLR > 0 ? GLR.formatCurrency(projecaoReceitaGLR) : '—', projecaoReceitaGLR > 0 ? 'estimativa fim do mês' : 'clique em Atualizar no gráfico abaixo', projecaoReceitaGLR > 0, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
+      ${kpiCard('Ticket Médio Cliente GLR', ticketMedioGLR > 0 ? GLR.formatCurrency(ticketMedioGLR) : '—', ticketMedioGLR > 0 ? `projeção ÷ ${clientes.length} clientes` : 'clique em Atualizar no gráfico abaixo', ticketMedioGLR > 0, 'rgba(16,185,129,0.12)', '🎟️', '#10b981')}
       <div class="kpi-flash" data-kpi="qtdPedidos" data-kpi-val="${qtdPedidosAtual}">${kpiCard('Quantidade de Pedidos', qtdPedidosAtual > 0 ? qtdPedidosAtual.toLocaleString('pt-BR') : '—', qtdPedidosAtual > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', qtdPedidosAtual > 0, 'rgba(6,182,212,0.15)', '📦', '#06b6d4')}</div>
       ${kpiCard('Em Crescimento', crescimento, `${clientes.length ? Math.round(crescimento/clientes.length*100) : 0}% da carteira`, true, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
       ${kpiCard('Em Risco / Queda', risco+queda, `${risco} em risco · ${queda} em queda`, (risco+queda)===0, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
