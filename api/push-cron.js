@@ -77,7 +77,10 @@ module.exports = async function handler(req, res) {
 
     const novasVendas = [];
 
-    for (const conta of contas) {
+    // Antes rodava uma conta de cada vez — com ~75 contas e o VAPID não travando
+    // mais a função logo de cara (fix acima), isso passaria dos 60s do Hobby e
+    // estouraria 504, do mesmo jeito que aconteceu no preco-cron. Paraleliza 8 por vez.
+    async function processarConta(conta) {
       const mkt = (conta.marketplace||'').toLowerCase();
       const extId = conta.external_id;
       const jaTinhaHistorico = Array.isArray(vistos[extId]) && vistos[extId].length > 0;
@@ -139,6 +142,18 @@ module.exports = async function handler(req, res) {
       // Mantém só os últimos 500 ids por conta, pra não crescer sem limite
       vistos[extId] = [...vistosConta].slice(-500);
     }
+
+    async function mapLimit(items, limit, fn) {
+      const fila = [...items];
+      async function trabalhador() {
+        while (fila.length) {
+          const item = fila.shift();
+          await fn(item);
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(limit, items.length) }, trabalhador));
+    }
+    await mapLimit(contas, 8, processarConta);
 
     await sbSet('glr_push_vendas_vistas', vistos);
 

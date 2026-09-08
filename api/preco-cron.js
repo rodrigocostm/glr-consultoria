@@ -72,7 +72,11 @@ module.exports = async function handler(req, res) {
     const logArr = (await sbGet('glr_track_precos_log')) || [];
     const mudancas = [];
 
-    for (const conta of contas) {
+    // ~75 contas processadas uma a uma estourava os 60s do plano Hobby (timeout
+    // 504). Processa em paralelo, 8 contas de cada vez — cada conta só muta snap/
+    // logArr/mudancas depois do próprio await resolver, então não pisa em cima de
+    // outra rodando ao mesmo tempo (sem outro await no meio da mutação).
+    async function processarConta(conta) {
       const mkt = (conta.marketplace||'').toLowerCase();
       const extId = conta.external_id;
       const label = conta.nickname || extId;
@@ -97,7 +101,7 @@ module.exports = async function handler(req, res) {
           const rl = await mcpCall(apiKey, 'shopee_list_items', { shopId, item_status: 'NORMAL', page_size: 50 });
           const idsRaw = rl.data?.response?.item || rl.data?.item || [];
           const ids = idsRaw.map(x => x.item_id).filter(Boolean);
-          if (!ids.length) continue;
+          if (!ids.length) return;
           const rd = await mcpCall(apiKey, 'shopee_get_items_batch', { shopId, item_id_list: ids });
           const detalhes = rd.data?.response?.item_list || [];
           for (const it of detalhes) {
@@ -115,6 +119,18 @@ module.exports = async function handler(req, res) {
         console.warn('[preco-cron] erro conta', label, e.message);
       }
     }
+
+    async function mapLimit(items, limit, fn) {
+      const fila = [...items];
+      async function trabalhador() {
+        while (fila.length) {
+          const item = fila.shift();
+          await fn(item);
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(limit, items.length) }, trabalhador));
+    }
+    await mapLimit(contas, 8, processarConta);
 
     await sbSet('glr_track_precos_snap_auto', snap);
     await sbSet('glr_track_precos_log', logArr.slice(0, 500));
