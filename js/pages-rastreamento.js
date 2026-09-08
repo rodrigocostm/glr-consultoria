@@ -281,7 +281,7 @@ window._trackEscanearPrecos = async function() {
         // shopee_get_item não devolve preço — o preço fica em shopee_get_models
         // (por variação/model), já em reais, sem dividir por nada.
         const shopId = conta.param_to_use?.shopId || conta.external_id;
-        const r = await MarketplaceAPI.call('shopee_get_models', { shopId, params: { item_id: parseInt(w.itemId) } });
+        const r = await MarketplaceAPI.call('shopee_get_models', { shopId, item_id: parseInt(w.itemId) });
         const modelo = (r?.data?.response?.model || [])[0];
         precoAtual = modelo?.price_info?.[0]?.current_price ?? null;
       } else {
