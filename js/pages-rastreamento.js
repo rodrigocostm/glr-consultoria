@@ -58,7 +58,11 @@ function renderShell() {
         <div class="section-title" style="font-size:15px;">💲 Preços monitorados</div>
         <button class="btn btn-primary btn-sm" id="track-btn-precos" onclick="window._trackEscanearPrecos()">🔄 Verificar mudanças agora</button>
       </div>
-      <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">Adicione os anúncios que quer acompanhar — só rastreia os que estão na lista abaixo.</p>
+      <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">
+        🔔 Todo dia às 09h um robô já escaneia sozinho os anúncios ativos de todas as contas (primeiros 100 do ML, 50 da Shopee por conta)
+        e avisa por notificação push quando algum preço muda — não precisa fazer nada aqui pra isso funcionar.<br>
+        A lista abaixo é só pra acompanhar itens específicos manualmente, fora do escopo do robô, ou testar na hora.
+      </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
         <select id="track-preco-conta" class="form-input" style="min-width:200px;"><option value="">Carregando contas...</option></select>
         <input class="form-input" id="track-preco-item" placeholder="ID do anúncio (MLB... ou item Shopee)" style="min-width:220px;">

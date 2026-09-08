@@ -1,9 +1,11 @@
 {
   "crons": [
-    { "path": "/api/push-cron", "schedule": "0 13 * * *" }
+    { "path": "/api/push-cron", "schedule": "0 13 * * *" },
+    { "path": "/api/preco-cron", "schedule": "0 12 * * *" }
   ],
   "functions": {
-    "api/generate-photo.js": { "maxDuration": 60 }
+    "api/generate-photo.js": { "maxDuration": 60 },
+    "api/preco-cron.js": { "maxDuration": 60 }
   },
   "headers": [
     {
