@@ -270,24 +270,27 @@ window._trackEscanearPrecos = async function() {
   const snap = lerJSON(K_PRECO_SNAP, {});
   const logArr = lerJSON(K_PRECO_LOG, []);
   let ok = 0, erros = 0;
+  const errosDetalhe = [];
 
   for (const w of watch) {
     const conta = contasAds.find(c => c.external_id === w.contaId);
-    if (!conta) { erros++; continue; }
+    if (!conta) { erros++; errosDetalhe.push(`${w.apelido}: conta não encontrada`); continue; }
     try {
       let precoAtual = null;
       if (w.marketplace === 'shopee') {
+        // shopee_get_item não devolve preço — o preço fica em shopee_get_models
+        // (por variação/model), já em reais, sem dividir por nada.
         const shopId = conta.param_to_use?.shopId || conta.external_id;
-        const r = await MarketplaceAPI.call('shopee_get_item', { shopId, item_id_list: [parseInt(w.itemId)] });
-        const item = (r?.data?.response?.item_list || [])[0];
-        precoAtual = item?.price_info?.[0]?.current_price != null ? item.price_info[0].current_price / 100000 : null;
+        const r = await MarketplaceAPI.call('shopee_get_models', { shopId, params: { item_id: parseInt(w.itemId) } });
+        const modelo = (r?.data?.response?.model || [])[0];
+        precoAtual = modelo?.price_info?.[0]?.current_price ?? null;
       } else {
         const meliId = conta.param_to_use?.meliUserId || conta.external_id;
         const r = await MarketplaceAPI.call('ml_item_prices', { meliUserId: meliId, item_id: w.itemId });
         const dados = r?.data?.response || r?.data || r?.response;
         precoAtual = dados?.prices?.[0]?.amount ?? dados?.price ?? null;
       }
-      if (precoAtual == null) { erros++; continue; }
+      if (precoAtual == null) { erros++; errosDetalhe.push(`${w.apelido}: anúncio não encontrado nessa conta (confira o ID e a conta selecionada)`); continue; }
       const antes = snap[w.itemId];
       if (antes != null && antes !== precoAtual) {
         logArr.unshift({ id: novoId(), itemId: w.itemId, apelido: w.apelido, de: fmtR(antes), para: fmtR(precoAtual), quando: new Date().toISOString() });
@@ -296,6 +299,7 @@ window._trackEscanearPrecos = async function() {
       ok++;
     } catch(e) {
       erros++;
+      errosDetalhe.push(`${w.apelido}: ${e.message}`);
     }
   }
 
@@ -303,7 +307,10 @@ window._trackEscanearPrecos = async function() {
   salvarJSON(K_PRECO_LOG, logArr.slice(0, 300));
 
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar mudanças agora'; }
-  if (statusEl) statusEl.textContent = `Verificado em ${new Date().toLocaleString('pt-BR')} — ${ok} item(ns) ok${erros ? `, ${erros} com erro` : ''}.`;
+  if (statusEl) {
+    statusEl.innerHTML = `Verificado em ${new Date().toLocaleString('pt-BR')} — ${ok} item(ns) ok${erros ? `, ${erros} com erro` : ''}.` +
+      (errosDetalhe.length ? `<br><span style="color:#dc2626;">${errosDetalhe.map(e => '⚠️ ' + e).join('<br>')}</span>` : '');
+  }
   renderPrecoLog();
 };
 
