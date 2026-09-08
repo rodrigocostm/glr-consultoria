@@ -31,8 +31,7 @@ const GLR_KEYS = [
   'glr_logs',            // log de alterações (auditoria) — quem mudou o quê
   'glr_track_ads_snap',    // Histórico de Alterações — último retrato de campanhas ADS por conta
   'glr_track_ads_log',     // Histórico de Alterações — mudanças de ADS detectadas
-  'glr_track_precos_watch',// Histórico de Alterações — lista de anúncios monitorados
-  'glr_track_precos_snap', // Histórico de Alterações — último preço visto por item
+  'glr_track_precos_snap', // Histórico de Alterações — último preço visto por item, por conta
   'glr_track_precos_log',  // Histórico de Alterações — mudanças de preço detectadas
 ];
 

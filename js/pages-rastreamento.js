@@ -13,7 +13,6 @@ let contasTodas = []; // todas as contas, pra rastreio de preço
 
 const K_ADS_SNAP   = 'glr_track_ads_snap';
 const K_ADS_LOG     = 'glr_track_ads_log';
-const K_PRECO_WATCH = 'glr_track_precos_watch';
 const K_PRECO_SNAP  = 'glr_track_precos_snap';
 const K_PRECO_LOG   = 'glr_track_precos_log';
 
@@ -54,22 +53,15 @@ function renderShell() {
 
     <!-- Preços -->
     <div class="card" style="padding:20px;margin-bottom:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
-        <div class="section-title" style="font-size:15px;">💲 Preços monitorados</div>
-        <button class="btn btn-primary btn-sm" id="track-btn-precos" onclick="window._trackEscanearPrecos()">🔄 Verificar mudanças agora</button>
-      </div>
+      <div class="section-title" style="font-size:15px;margin-bottom:4px;">💲 Preços monitorados</div>
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">
-        🔔 Todo dia às 09h um robô já escaneia sozinho os anúncios ativos de todas as contas (primeiros 100 do ML, 50 da Shopee por conta)
-        e avisa por notificação push quando algum preço muda — não precisa fazer nada aqui pra isso funcionar.<br>
-        A lista abaixo é só pra acompanhar itens específicos manualmente, fora do escopo do robô, ou testar na hora.
+        Selecione a conta — busca automaticamente o preço de todos os anúncios ativos dela (até 100 do ML, 50 da Shopee) e compara
+        com a última verificação. Sem precisar digitar ID de anúncio nenhum. Atualização manual (sem robô automático nem notificação por enquanto).
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
-        <select id="track-preco-conta" class="form-input" style="min-width:200px;"><option value="">Carregando contas...</option></select>
-        <input class="form-input" id="track-preco-item" placeholder="ID do anúncio (MLB... ou item Shopee)" style="min-width:220px;">
-        <input class="form-input" id="track-preco-apelido" placeholder="Apelido (opcional)" style="min-width:160px;">
-        <button class="btn btn-secondary btn-sm" onclick="window._trackAdicionarWatch()">+ Adicionar</button>
+        <select id="track-preco-conta" class="form-input" style="min-width:220px;"><option value="">Carregando contas...</option></select>
+        <button class="btn btn-primary btn-sm" id="track-btn-precos" onclick="window._trackEscanearPrecos()" disabled>🔄 Verificar mudanças agora</button>
       </div>
-      <div id="track-preco-watchlist" style="margin-bottom:14px;"></div>
       <div id="track-preco-status" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
       <div id="track-preco-log"></div>
     </div>
@@ -83,7 +75,7 @@ function renderShell() {
       </p>
     </div>
   `;
-  renderWatchlist();
+  renderPrecoLog();
 }
 
 async function carregarContas() {
@@ -112,6 +104,11 @@ async function carregarContas() {
         const mp = c.marketplace === 'shopee' ? '🟠' : '🟡';
         return `<option value="${i}">${mp} ${nomeConta(c)}</option>`;
       }).join('');
+      selPreco.addEventListener('change', () => {
+        const btn = document.getElementById('track-btn-precos');
+        if (btn) btn.disabled = selPreco.value === '';
+        if (selPreco.value !== '') window._trackEscanearPrecos();
+      });
     }
 
     renderAdsLog();
@@ -225,95 +222,71 @@ function renderAdsLog() {
 }
 
 // ── Preços: watchlist manual + escaneio ──
-function renderWatchlist() {
-  const el = document.getElementById('track-preco-watchlist');
-  if (!el) return;
-  const watch = lerJSON(K_PRECO_WATCH, []);
-  if (!watch.length) {
-    el.innerHTML = `<div style="font-size:12.5px;color:var(--text-muted);">Nenhum item na lista ainda.</div>`;
-    return;
-  }
-  el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px;">
-    ${watch.map(w => `<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:4px 6px 4px 12px;">
-      ${w.apelido || w.itemId}
-      <button onclick="window._trackRemoverWatch('${w.id}')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;line-height:1;">✕</button>
-    </span>`).join('')}
-  </div>`;
-  renderPrecoLog();
-}
-
-window._trackAdicionarWatch = function() {
-  const selIdx = document.getElementById('track-preco-conta').value;
-  const itemId = document.getElementById('track-preco-item').value.trim();
-  const apelido = document.getElementById('track-preco-apelido').value.trim();
-  if (selIdx === '') { alert('Selecione a conta.'); return; }
-  if (!itemId) { alert('Informe o ID do anúncio.'); return; }
-  const conta = contasAds[parseInt(selIdx)];
-  const watch = lerJSON(K_PRECO_WATCH, []);
-  watch.push({ id: novoId(), marketplace: conta.marketplace, contaId: conta.external_id, itemId, apelido: apelido || itemId });
-  salvarJSON(K_PRECO_WATCH, watch);
-  document.getElementById('track-preco-item').value = '';
-  document.getElementById('track-preco-apelido').value = '';
-  renderWatchlist();
-};
-
-window._trackRemoverWatch = function(id) {
-  let watch = lerJSON(K_PRECO_WATCH, []);
-  watch = watch.filter(w => w.id !== id);
-  salvarJSON(K_PRECO_WATCH, watch);
-  renderWatchlist();
-};
-
+// Escaneia TODOS os anúncios ativos da conta selecionada (sem precisar digitar ID
+// de anúncio nenhum) e compara com o preço salvo na última verificação dessa
+// mesma conta. Manual — dispara ao selecionar a conta ou clicar no botão.
 window._trackEscanearPrecos = async function() {
-  const watch = lerJSON(K_PRECO_WATCH, []);
-  if (!watch.length) { alert('Adicione pelo menos um anúncio na lista primeiro.'); return; }
+  const selIdx = document.getElementById('track-preco-conta').value;
+  if (selIdx === '') { alert('Selecione a conta primeiro.'); return; }
+  const conta = contasAds[parseInt(selIdx)];
   const btn = document.getElementById('track-btn-precos');
   const statusEl = document.getElementById('track-preco-status');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando...'; }
 
-  const snap = lerJSON(K_PRECO_SNAP, {});
+  const snapPorConta = lerJSON(K_PRECO_SNAP, {});
+  const snap = snapPorConta[conta.external_id] || {};
   const logArr = lerJSON(K_PRECO_LOG, []);
-  let ok = 0, erros = 0;
-  const errosDetalhe = [];
+  const nomeConta = window._trackNomeConta ? window._trackNomeConta(conta) : conta.external_id;
+  let ok = 0, mudancas = 0, erro = '';
 
-  for (const w of watch) {
-    const conta = contasAds.find(c => c.external_id === w.contaId);
-    if (!conta) { erros++; errosDetalhe.push(`${w.apelido}: conta não encontrada`); continue; }
-    try {
-      let precoAtual = null;
-      if (w.marketplace === 'shopee') {
-        // shopee_get_item não devolve preço — o preço fica em shopee_get_models
-        // (por variação/model), já em reais, sem dividir por nada.
-        const shopId = conta.param_to_use?.shopId || conta.external_id;
-        const r = await MarketplaceAPI.call('shopee_get_models', { shopId, item_id: parseInt(w.itemId) });
-        const modelo = (r?.data?.response?.model || [])[0];
-        precoAtual = modelo?.price_info?.[0]?.current_price ?? null;
-      } else {
-        const meliId = conta.param_to_use?.meliUserId || conta.external_id;
-        const r = await MarketplaceAPI.call('ml_item_prices', { meliUserId: meliId, item_id: w.itemId });
-        const dados = r?.data?.response || r?.data || r?.response;
-        precoAtual = dados?.prices?.[0]?.amount ?? dados?.price ?? null;
+  try {
+    if (conta.marketplace === 'shopee') {
+      const shopId = conta.param_to_use?.shopId || conta.external_id;
+      const rl = await MarketplaceAPI.call('shopee_list_items', { shopId, item_status: 'NORMAL', page_size: 50 });
+      const idsRaw = rl?.data?.response?.item || rl?.data?.item || [];
+      const ids = idsRaw.map(x => x.item_id).filter(Boolean);
+      if (ids.length) {
+        const rd = await MarketplaceAPI.call('shopee_get_items_batch', { shopId, item_id_list: ids });
+        const detalhes = rd?.data?.response?.item_list || [];
+        for (const it of detalhes) {
+          const precoAtual = (it.price_info?.[0]?.current_price || 0) / 100000;
+          const antes = snap[it.item_id];
+          if (antes != null && antes !== precoAtual) {
+            logArr.unshift({ id: novoId(), itemId: it.item_id, apelido: (it.item_name || String(it.item_id)).slice(0,60), de: fmtR(antes), para: fmtR(precoAtual), quando: new Date().toISOString() });
+            mudancas++;
+          }
+          snap[it.item_id] = precoAtual;
+          ok++;
+        }
       }
-      if (precoAtual == null) { erros++; errosDetalhe.push(`${w.apelido}: anúncio não encontrado nessa conta (confira o ID e a conta selecionada)`); continue; }
-      const antes = snap[w.itemId];
-      if (antes != null && antes !== precoAtual) {
-        logArr.unshift({ id: novoId(), itemId: w.itemId, apelido: w.apelido, de: fmtR(antes), para: fmtR(precoAtual), quando: new Date().toISOString() });
+    } else {
+      const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+      const r = await MarketplaceAPI.call('list_items', { meliUserId: meliId, status: 'active', limit: 100 });
+      const itens = (r?.data?.results || r?.results || []).map(x => x.body).filter(Boolean);
+      for (const it of itens) {
+        const precoAtual = parseFloat(it.price) || 0;
+        const antes = snap[it.id];
+        if (antes != null && antes !== precoAtual) {
+          logArr.unshift({ id: novoId(), itemId: it.id, apelido: (it.title || it.id).slice(0,60), de: fmtR(antes), para: fmtR(precoAtual), quando: new Date().toISOString() });
+          mudancas++;
+        }
+        snap[it.id] = precoAtual;
+        ok++;
       }
-      snap[w.itemId] = precoAtual;
-      ok++;
-    } catch(e) {
-      erros++;
-      errosDetalhe.push(`${w.apelido}: ${e.message}`);
     }
+  } catch(e) {
+    erro = e.message;
   }
 
-  salvarJSON(K_PRECO_SNAP, snap);
+  snapPorConta[conta.external_id] = snap;
+  salvarJSON(K_PRECO_SNAP, snapPorConta);
   salvarJSON(K_PRECO_LOG, logArr.slice(0, 300));
 
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar mudanças agora'; }
   if (statusEl) {
-    statusEl.innerHTML = `Verificado em ${new Date().toLocaleString('pt-BR')} — ${ok} item(ns) ok${erros ? `, ${erros} com erro` : ''}.` +
-      (errosDetalhe.length ? `<br><span style="color:#dc2626;">${errosDetalhe.map(e => '⚠️ ' + e).join('<br>')}</span>` : '');
+    statusEl.innerHTML = erro
+      ? `<span style="color:#dc2626;">⚠️ Erro em ${nomeConta}: ${erro}</span>`
+      : `${nomeConta} — verificado em ${new Date().toLocaleString('pt-BR')}: ${ok} anúncio(s), ${mudancas} mudança(s) nova(s)${ok === 0 ? ' (nenhum anúncio ativo encontrado)' : ''}.`;
   }
   renderPrecoLog();
 };
