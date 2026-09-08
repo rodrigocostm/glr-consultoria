@@ -249,7 +249,9 @@ window._trackEscanearPrecos = async function() {
         const rd = await MarketplaceAPI.call('shopee_get_items_batch', { shopId, item_id_list: ids });
         const detalhes = rd?.data?.response?.item_list || [];
         for (const it of detalhes) {
-          const precoAtual = (it.price_info?.[0]?.current_price || 0) / 100000;
+          // Itens com variação (has_model) não trazem price_info no nível do item —
+          // o preço real (já refletindo promoção) fica em price_min/price_max.
+          const precoAtual = it.has_model ? (parseFloat(it.price_min) || 0) : (it.price_info?.[0]?.current_price || 0);
           const antes = snap[it.item_id];
           if (antes != null && antes !== precoAtual) {
             logArr.unshift({ id: novoId(), itemId: it.item_id, apelido: (it.item_name || String(it.item_id)).slice(0,60), de: fmtR(antes), para: fmtR(precoAtual), quando: new Date().toISOString() });
