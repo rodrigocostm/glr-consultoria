@@ -48,10 +48,16 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
+  // VAPID só é necessário pra ENVIAR a notificação — sem ele, a varredura de vendas
+  // e a base de dedup (glr_push_vendas_vistas) continuam sendo construídas normalmente,
+  // só o aviso por push que não sai. Antes, sem VAPID configurada, a função inteira
+  // parava aqui — a base de "vendas já vistas" nunca era criada, então no dia em que
+  // a chave fosse configurada, TODAS as vendas de todos os dias anteriores apareceriam
+  // de uma vez como "novas" e disparariam uma enxurrada de notificação.
   const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY;
   const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
-  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return res.status(500).json({ error: 'VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY não configuradas no ambiente' });
-  webpush.setVapidDetails('mailto:contatoconsultoriaglr@gmail.com', VAPID_PUBLIC, VAPID_PRIVATE);
+  const pushDisponivel = !!(VAPID_PUBLIC && VAPID_PRIVATE);
+  if (pushDisponivel) webpush.setVapidDetails('mailto:contatoconsultoriaglr@gmail.com', VAPID_PUBLIC, VAPID_PRIVATE);
 
   try {
     const apiKey = await sbGet('glr_mc_apikey');
@@ -137,6 +143,7 @@ module.exports = async function handler(req, res) {
     await sbSet('glr_push_vendas_vistas', vistos);
 
     if (!novasVendas.length) return res.status(200).json({ ok: true, novasVendas: 0 });
+    if (!pushDisponivel) return res.status(200).json({ ok: true, novasVendas: novasVendas.length, aviso: 'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY não configuradas — nenhuma notificação foi enviada.' });
 
     const subsResp = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?select=*`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },

@@ -53,10 +53,13 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
+  // VAPID só é necessário pra ENVIAR a notificação — sem ele, o escaneamento e o
+  // histórico continuam funcionando normalmente, só o aviso por push que não sai
+  // (antes isso derrubava a função inteira antes mesmo de escanear qualquer preço).
   const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY;
   const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
-  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return res.status(500).json({ error: 'VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY não configuradas no ambiente' });
-  webpush.setVapidDetails('mailto:contatoconsultoriaglr@gmail.com', VAPID_PUBLIC, VAPID_PRIVATE);
+  const pushDisponivel = !!(VAPID_PUBLIC && VAPID_PRIVATE);
+  if (pushDisponivel) webpush.setVapidDetails('mailto:contatoconsultoriaglr@gmail.com', VAPID_PUBLIC, VAPID_PRIVATE);
 
   try {
     const apiKey = await sbGet('glr_mc_apikey');
@@ -117,6 +120,7 @@ module.exports = async function handler(req, res) {
     await sbSet('glr_track_precos_log', logArr.slice(0, 500));
 
     if (!mudancas.length) return res.status(200).json({ ok: true, mudancas: 0 });
+    if (!pushDisponivel) return res.status(200).json({ ok: true, mudancas: mudancas.length, aviso: 'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY não configuradas — mudanças salvas no histórico, mas nenhuma notificação foi enviada.' });
 
     const subsResp = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?select=*`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
