@@ -373,7 +373,7 @@ window._trackEscanearPrevendaShopee = async function() {
             logArr.unshift({ id: novoId(), itemId: it.item_id, apelido: `${nomeConta} — ${nomeItem}`, de: antes ? 'Em pré-venda' : 'Normal', para: emPrevenda ? 'Em pré-venda' : 'Normal', quando: new Date().toISOString() });
             mudancas++;
           }
-          snap[it.item_id] = { emPrevenda, nome: nomeItem, conta: nomeConta };
+          snap[it.item_id] = { emPrevenda, nome: nomeItem, conta: nomeConta, marketplace: 'shopee', itemId: String(it.item_id) };
           totalItens++;
         }
       }
@@ -413,17 +413,23 @@ function renderPrevendaAtual() {
   const atuais = [];
   Object.values(snapPorConta).forEach(snap => {
     Object.entries(snap || {}).forEach(([itemId, v]) => {
-      if (v && typeof v === 'object' && v.emPrevenda) atuais.push({ itemId, nome: v.nome || itemId, conta: v.conta || '' });
+      if (v && typeof v === 'object' && v.emPrevenda) atuais.push({ itemId: v.itemId || itemId, nome: v.nome || itemId, conta: v.conta || '', marketplace: v.marketplace || '' });
     });
   });
   if (!atuais.length) {
     el.innerHTML = `<div style="padding:14px;text-align:center;color:var(--text-secondary);font-size:12.5px;background:var(--bg-card);border-radius:10px;margin-bottom:14px;">Nenhum anúncio em pré-venda no momento (ou ainda não verificado).</div>`;
     return;
   }
+  const badge = mp => mp === 'shopee' ? '<span style="color:#ee4d2d;font-weight:600;">🟠 Shopee</span>' : mp === 'ml' ? '<span style="color:#ffd100;background:#3483fa;padding:1px 6px;border-radius:3px;font-weight:600;">ML</span>' : '—';
   el.innerHTML = `<div style="margin-bottom:14px;">
     <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">📦 Em pré-venda agora (${atuais.length})</div>
     <table style="width:100%;border-collapse:collapse;">
+      <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;">
+        <th style="text-align:left;padding:6px 8px;">Plataforma</th><th style="text-align:left;padding:6px 8px;">ID</th><th style="text-align:left;padding:6px 8px;">Conta</th><th style="text-align:left;padding:6px 8px;">Anúncio</th>
+      </tr></thead>
       <tbody>${atuais.map(a => `<tr style="border-top:1px solid var(--border);">
+        <td style="padding:6px 8px;font-size:12px;white-space:nowrap;">${badge(a.marketplace)}</td>
+        <td style="padding:6px 8px;font-size:11.5px;color:var(--text-muted);white-space:nowrap;font-family:monospace;">${a.itemId}</td>
         <td style="padding:6px 8px;font-size:12px;color:var(--text-muted);white-space:nowrap;">${a.conta}</td>
         <td style="padding:6px 8px;font-size:12px;">${a.nome}</td>
       </tr>`).join('')}</tbody>
@@ -484,7 +490,7 @@ window._trackEscanearPrevendaML = async function() {
           logArr.unshift({ id: novoId(), itemId: it.id, apelido: `${nomeConta} — ${nomeItem}`, de: antes ? 'Em pré-venda' : 'Normal', para: emPrevenda ? 'Em pré-venda' : 'Normal', quando: new Date().toISOString() });
           mudancas++;
         }
-        snap[it.id] = { emPrevenda, nome: nomeItem, conta: nomeConta };
+        snap[it.id] = { emPrevenda, nome: nomeItem, conta: nomeConta, marketplace: 'ml', itemId: String(it.id) };
         totalItens++;
       }
       snapPorConta[conta.external_id] = snap;
