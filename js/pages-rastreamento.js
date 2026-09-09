@@ -74,16 +74,19 @@ function renderShell() {
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">
         <b>Shopee:</b> confirmado — a API expõe <code>pre_order.is_pre_order</code> por anúncio/variação. Selecione a conta Shopee
         acima (no bloco de Preços) e clique em verificar abaixo pra escanear todos os anúncios ativos dela.<br/>
-        <b>Mercado Livre:</b> o ML não tem um campo público confirmado e documentado pra isso — cole abaixo o link ou o ID (MLB...)
-        de um anúncio que você sabe que está em pré-venda, que eu trago os campos brutos do anúncio pra identificarmos juntos o sinal certo.
+        <b>Mercado Livre:</b> o ML não expõe um campo de API dedicado pra isso (testei ao vivo em várias contas e anúncios reais).
+        Por isso o escaneio abaixo lê automaticamente o <b>título de todos os anúncios ativos de todas as contas ML conectadas</b>
+        e detecta quem usa palavras como "pré-venda" ou "chega em breve" — sem precisar informar ID nenhum.
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
         <button class="btn btn-primary btn-sm" id="track-btn-prevenda-shopee" onclick="window._trackEscanearPrevendaShopee()">🔄 Verificar pré-venda Shopee (conta selecionada acima)</button>
+        <button class="btn btn-primary btn-sm" id="track-btn-prevenda-ml" onclick="window._trackEscanearPrevendaML()">🔄 Verificar pré-venda ML (todas as contas)</button>
       </div>
       <div id="track-prevenda-status" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
       <div id="track-prevenda-log"></div>
 
       <div style="border-top:1px solid var(--border);margin:16px 0;padding-top:14px;">
+        <p style="font-size:11.5px;color:var(--text-muted);margin:0 0 8px;">Ou, se você tiver um anúncio específico e quiser ver os campos brutos dele (pra a gente confirmar um sinal de API melhor no futuro):</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <input type="text" id="track-ml-item-id" class="form-input" placeholder="MLB... ou link do anúncio" style="min-width:260px;flex:1;">
           <button class="btn btn-secondary btn-sm" onclick="window._trackInspecionarML()">🔎 Inspecionar anúncio ML</button>
@@ -409,6 +412,60 @@ function renderPrevendaLog() {
     </tr>`).join('')}</tbody>
   </table>`;
 }
+
+// ── Pré-venda ML: escaneia TODAS as contas ML conectadas automaticamente, sem
+// precisar de ID. O ML não tem campo de API pra pré-venda (confirmado ao vivo:
+// testei get_item, ml_item_prices e listagens reais em várias contas e nenhuma
+// trouxe um sinal dedicado) — por isso o sinal usado aqui é o próprio título do
+// anúncio conter palavras que vendedores usam pra marcar pré-venda manualmente.
+const PREVENDA_PALAVRAS = /pr[eé][\s-]?venda|chega(m)?\s+em\s+breve|dispon[ií]vel\s+em\s+breve|encomenda/i;
+
+window._trackEscanearPrevendaML = async function() {
+  const btn = document.getElementById('track-btn-prevenda-ml');
+  const statusEl = document.getElementById('track-prevenda-status');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando...'; }
+
+  const snapPorConta = lerJSON(K_PREVENDA_SNAP, {});
+  const logArr = lerJSON(K_PREVENDA_LOG, []);
+  const contasML = contasTodas.filter(c => ['mercadolivre','ml','meli'].includes(c.marketplace));
+  let contasVerificadas = 0, totalItens = 0, mudancas = 0, erro = '';
+
+  for (const conta of contasML) {
+    const snap = snapPorConta[conta.external_id] || {};
+    const nomeConta = window._trackNomeConta ? window._trackNomeConta(conta) : conta.external_id;
+    try {
+      const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+      const r = await MarketplaceAPI.call('list_items', { meliUserId: meliId, status: 'active', limit: 100 });
+      const itens = (r?.data?.results || r?.results || []).map(x => x.body).filter(Boolean);
+      for (const it of itens) {
+        const emPrevenda = PREVENDA_PALAVRAS.test(it.title || '');
+        const antes = snap[it.id];
+        if (antes != null && antes !== emPrevenda) {
+          logArr.unshift({ id: novoId(), itemId: it.id, apelido: `${nomeConta} — ${(it.title || it.id).slice(0,50)}`, de: antes ? 'Em pré-venda' : 'Normal', para: emPrevenda ? 'Em pré-venda' : 'Normal', quando: new Date().toISOString() });
+          mudancas++;
+        }
+        snap[it.id] = emPrevenda;
+        totalItens++;
+      }
+      snapPorConta[conta.external_id] = snap;
+      contasVerificadas++;
+    } catch(e) {
+      erro = e.message;
+      console.warn('[Track] Erro pré-venda ML na conta', conta.external_id, e.message);
+    }
+  }
+
+  salvarJSON(K_PREVENDA_SNAP, snapPorConta);
+  salvarJSON(K_PREVENDA_LOG, logArr.slice(0, 300));
+
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar pré-venda ML (todas as contas)'; }
+  if (statusEl) {
+    statusEl.innerHTML = erro
+      ? `<span style="color:#dc2626;">⚠️ ${contasVerificadas}/${contasML.length} conta(s) ML verificada(s), ${totalItens} anúncio(s) — último erro: ${erro}</span>`
+      : `${contasVerificadas} conta(s) ML verificada(s) em ${new Date().toLocaleString('pt-BR')} — ${totalItens} anúncio(s), ${mudancas} mudança(s) nova(s) de pré-venda.`;
+  }
+  renderPrevendaLog();
+};
 
 // ── Inspeção manual ML: mostra os campos brutos do anúncio pra identificar
 // juntos o sinal de pré-venda — o ML não documenta um campo público confirmado. ──
