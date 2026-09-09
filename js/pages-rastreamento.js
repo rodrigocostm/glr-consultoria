@@ -74,18 +74,22 @@ function renderShell() {
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">
         <b>Shopee:</b> confirmado — a API expõe <code>pre_order.is_pre_order</code> por anúncio/variação. O botão abaixo escaneia
         automaticamente todos os anúncios ativos de <b>todas as contas Shopee conectadas</b>.<br/>
-        <b>Mercado Livre:</b> o ML não expõe um campo de API dedicado pra isso (testei ao vivo em várias contas e anúncios reais).
-        Por isso o escaneio abaixo lê automaticamente o <b>título de todos os anúncios ativos de todas as contas ML conectadas</b>
-        e detecta quem usa palavras como "pré-venda" ou "chega em breve" — sem precisar informar ID nenhum.
+        <b>Mercado Livre:</b> o ML não expõe um campo de API dedicado pra isso (testei ao vivo, 200 anúncios reais de 4 contas — nenhum
+        veio com estoque zerado e ativo, que seria o sinal mais óbvio). Enquanto isso o escaneio abaixo detecta pelo <b>título</b>
+        (palavras como "pré-venda"/"chega em breve") <b>e também</b> por <b>disponibilidade de estoque = 0 com anúncio ativo</b> —
+        sem precisar informar ID nenhum. Se nenhum dos dois pegar o que você espera, use o botão de estoque completo pra listar
+        todos os anúncios com a disponibilidade de cada um e apontar visualmente qual está em pré-venda.
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
         <button class="btn btn-primary btn-sm" id="track-btn-prevenda-shopee" onclick="window._trackEscanearPrevendaShopee()">🔄 Verificar pré-venda Shopee (todas as contas)</button>
         <button class="btn btn-primary btn-sm" id="track-btn-prevenda-ml" onclick="window._trackEscanearPrevendaML()">🔄 Verificar pré-venda ML (todas as contas)</button>
+        <button class="btn btn-secondary btn-sm" id="track-btn-estoque-ml" onclick="window._trackListarEstoqueML()">📋 Ver estoque de todos os anúncios ML</button>
       </div>
       <div id="track-prevenda-status-shopee" style="font-size:12px;color:var(--text-muted);margin-bottom:4px;"></div>
       <div id="track-prevenda-status-ml" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
       <div id="track-prevenda-atual"></div>
       <div id="track-prevenda-log"></div>
+      <div id="track-estoque-ml" style="margin-top:14px;"></div>
 
       <div style="border-top:1px solid var(--border);margin:16px 0;padding-top:14px;">
         <p style="font-size:11.5px;color:var(--text-muted);margin:0 0 8px;">Ou, se você tiver um anúncio específico e quiser ver os campos brutos dele (pra a gente confirmar um sinal de API melhor no futuro):</p>
@@ -483,7 +487,10 @@ window._trackEscanearPrevendaML = async function() {
       const r = await MarketplaceAPI.call('list_items', { meliUserId: meliId, status: 'active', limit: 100 });
       const itens = (r?.data?.results || r?.results || []).map(x => x.body).filter(Boolean);
       for (const it of itens) {
-        const emPrevenda = PREVENDA_PALAVRAS.test(it.title || '');
+        // Estoque zerado com anúncio ativo é um sinal real de pré-venda (vendendo
+        // sem ter estoque ainda). Testei ao vivo e não achei nenhum caso em 200
+        // anúncios amostrados — mas fica ligado pra quando aparecer.
+        const emPrevenda = PREVENDA_PALAVRAS.test(it.title || '') || (it.status === 'active' && it.available_quantity === 0);
         const nomeItem = (it.title || it.id).slice(0,50);
         const antes = lerEstadoPrevenda(snap[it.id]);
         if (antes != null && antes !== emPrevenda) {
@@ -512,6 +519,62 @@ window._trackEscanearPrevendaML = async function() {
   }
   renderPrevendaAtual();
   renderPrevendaLog();
+};
+
+// ── Estoque completo ML: lista TODOS os anúncios ativos de todas as contas com a
+// disponibilidade de estoque de cada um, ordenados do menor pro maior — pra você
+// apontar visualmente qual está em pré-venda, já que não achei um campo de API
+// dedicado nem um padrão de estoque zerado nos anúncios amostrados até agora.
+window._trackListarEstoqueML = async function() {
+  const btn = document.getElementById('track-btn-estoque-ml');
+  const el = document.getElementById('track-estoque-ml');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Buscando...'; }
+  el.innerHTML = `<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:12.5px;">Buscando anúncios de todas as contas ML...</div>`;
+
+  const contasML = contasTodas.filter(c => ['mercadolivre','ml','meli'].includes(c.marketplace));
+  const todos = [];
+  let erro = '';
+
+  for (const conta of contasML) {
+    const nomeConta = window._trackNomeConta ? window._trackNomeConta(conta) : conta.external_id;
+    try {
+      const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+      const r = await MarketplaceAPI.call('list_items', { meliUserId: meliId, status: 'active', limit: 100 });
+      const itens = (r?.data?.results || r?.results || []).map(x => x.body).filter(Boolean);
+      itens.forEach(it => todos.push({ id: it.id, nome: (it.title || it.id).slice(0,60), conta: nomeConta, estoque: it.available_quantity ?? '—', status: it.status, subStatus: (it.sub_status || []).join(', ') }));
+    } catch(e) {
+      erro = e.message;
+    }
+  }
+
+  todos.sort((a, b) => (typeof a.estoque === 'number' ? a.estoque : 999999) - (typeof b.estoque === 'number' ? b.estoque : 999999));
+  const mostrar = todos.slice(0, 300);
+
+  if (btn) { btn.disabled = false; btn.textContent = '📋 Ver estoque de todos os anúncios ML'; }
+
+  if (!todos.length) {
+    el.innerHTML = `<div style="padding:14px;text-align:center;color:#dc2626;font-size:12.5px;">Nenhum anúncio encontrado${erro ? ' — ' + erro : ''}.</div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">
+      📋 Estoque de todos os anúncios ML (${todos.length} total, mostrando os ${mostrar.length} com menor estoque)${erro ? ' — algumas contas deram erro' : ''}
+    </div>
+    <div style="max-height:400px;overflow-y:auto;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;position:sticky;top:0;background:var(--bg-card);">
+          <th style="text-align:left;padding:6px 8px;">MLB</th><th style="text-align:left;padding:6px 8px;">Conta</th><th style="text-align:left;padding:6px 8px;">Anúncio</th><th style="text-align:right;padding:6px 8px;">Estoque</th><th style="text-align:left;padding:6px 8px;">Sub-status</th>
+        </tr></thead>
+        <tbody>${mostrar.map(it => `<tr style="border-top:1px solid var(--border);${it.estoque === 0 ? 'background:rgba(220,38,38,0.08);' : ''}">
+          <td style="padding:6px 8px;font-size:11.5px;font-family:monospace;color:var(--text-muted);white-space:nowrap;">${it.id}</td>
+          <td style="padding:6px 8px;font-size:12px;color:var(--text-muted);white-space:nowrap;">${it.conta}</td>
+          <td style="padding:6px 8px;font-size:12px;">${it.nome}</td>
+          <td style="padding:6px 8px;font-size:12px;text-align:right;font-weight:${it.estoque === 0 ? '700' : '400'};color:${it.estoque === 0 ? '#dc2626' : 'inherit'};">${it.estoque}</td>
+          <td style="padding:6px 8px;font-size:11px;color:var(--text-muted);">${it.subStatus}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
 };
 
 // ── Inspeção manual ML: mostra os campos brutos do anúncio pra identificar
