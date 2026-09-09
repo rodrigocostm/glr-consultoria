@@ -83,6 +83,7 @@ function renderShell() {
         <button class="btn btn-primary btn-sm" id="track-btn-prevenda-ml" onclick="window._trackEscanearPrevendaML()">🔄 Verificar pré-venda ML (todas as contas)</button>
       </div>
       <div id="track-prevenda-status" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
+      <div id="track-prevenda-atual"></div>
       <div id="track-prevenda-log"></div>
 
       <div style="border-top:1px solid var(--border);margin:16px 0;padding-top:14px;">
@@ -96,6 +97,7 @@ function renderShell() {
     </div>
   `;
   renderPrecoLog();
+  renderPrevendaAtual();
   renderPrevendaLog();
 }
 
@@ -366,12 +368,13 @@ window._trackEscanearPrevendaShopee = async function() {
         const emPrevenda = it.has_model
           ? (it.models || []).some(m => m.pre_order?.is_pre_order)
           : !!it.pre_order?.is_pre_order;
-        const antes = snap[it.item_id];
+        const nomeItem = (it.item_name || String(it.item_id)).slice(0,60);
+        const antes = lerEstadoPrevenda(snap[it.item_id]);
         if (antes != null && antes !== emPrevenda) {
-          logArr.unshift({ id: novoId(), itemId: it.item_id, apelido: (it.item_name || String(it.item_id)).slice(0,60), de: antes ? 'Em pré-venda' : 'Normal', para: emPrevenda ? 'Em pré-venda' : 'Normal', quando: new Date().toISOString() });
+          logArr.unshift({ id: novoId(), itemId: it.item_id, apelido: nomeItem, de: antes ? 'Em pré-venda' : 'Normal', para: emPrevenda ? 'Em pré-venda' : 'Normal', quando: new Date().toISOString() });
           mudancas++;
         }
-        snap[it.item_id] = emPrevenda;
+        snap[it.item_id] = { emPrevenda, nome: nomeItem, conta: nomeConta };
         ok++;
       }
     }
@@ -389,8 +392,42 @@ window._trackEscanearPrevendaShopee = async function() {
       ? `<span style="color:#dc2626;">⚠️ Erro em ${nomeConta}: ${erro}</span>`
       : `${nomeConta} — verificado em ${new Date().toLocaleString('pt-BR')}: ${ok} anúncio(s), ${mudancas} mudança(s) nova(s)${ok === 0 ? ' (nenhum anúncio ativo encontrado)' : ''}.`;
   }
+  renderPrevendaAtual();
   renderPrevendaLog();
 };
+
+// Aceita tanto o formato antigo (booleano puro) quanto o novo ({emPrevenda, nome, conta}).
+function lerEstadoPrevenda(v) {
+  if (v == null) return null;
+  return typeof v === 'object' ? !!v.emPrevenda : !!v;
+}
+
+// Lista os anúncios que estão em pré-venda AGORA (não só as mudanças) — lê o
+// retrato salvo de todas as contas, Shopee e ML juntas.
+function renderPrevendaAtual() {
+  const el = document.getElementById('track-prevenda-atual');
+  if (!el) return;
+  const snapPorConta = lerJSON(K_PREVENDA_SNAP, {});
+  const atuais = [];
+  Object.values(snapPorConta).forEach(snap => {
+    Object.entries(snap || {}).forEach(([itemId, v]) => {
+      if (v && typeof v === 'object' && v.emPrevenda) atuais.push({ itemId, nome: v.nome || itemId, conta: v.conta || '' });
+    });
+  });
+  if (!atuais.length) {
+    el.innerHTML = `<div style="padding:14px;text-align:center;color:var(--text-secondary);font-size:12.5px;background:var(--bg-card);border-radius:10px;margin-bottom:14px;">Nenhum anúncio em pré-venda no momento (ou ainda não verificado).</div>`;
+    return;
+  }
+  el.innerHTML = `<div style="margin-bottom:14px;">
+    <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">📦 Em pré-venda agora (${atuais.length})</div>
+    <table style="width:100%;border-collapse:collapse;">
+      <tbody>${atuais.map(a => `<tr style="border-top:1px solid var(--border);">
+        <td style="padding:6px 8px;font-size:12px;color:var(--text-muted);white-space:nowrap;">${a.conta}</td>
+        <td style="padding:6px 8px;font-size:12px;">${a.nome}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+  </div>`;
+}
 
 function renderPrevendaLog() {
   const el = document.getElementById('track-prevenda-log');
@@ -439,12 +476,13 @@ window._trackEscanearPrevendaML = async function() {
       const itens = (r?.data?.results || r?.results || []).map(x => x.body).filter(Boolean);
       for (const it of itens) {
         const emPrevenda = PREVENDA_PALAVRAS.test(it.title || '');
-        const antes = snap[it.id];
+        const nomeItem = (it.title || it.id).slice(0,50);
+        const antes = lerEstadoPrevenda(snap[it.id]);
         if (antes != null && antes !== emPrevenda) {
-          logArr.unshift({ id: novoId(), itemId: it.id, apelido: `${nomeConta} — ${(it.title || it.id).slice(0,50)}`, de: antes ? 'Em pré-venda' : 'Normal', para: emPrevenda ? 'Em pré-venda' : 'Normal', quando: new Date().toISOString() });
+          logArr.unshift({ id: novoId(), itemId: it.id, apelido: `${nomeConta} — ${nomeItem}`, de: antes ? 'Em pré-venda' : 'Normal', para: emPrevenda ? 'Em pré-venda' : 'Normal', quando: new Date().toISOString() });
           mudancas++;
         }
-        snap[it.id] = emPrevenda;
+        snap[it.id] = { emPrevenda, nome: nomeItem, conta: nomeConta };
         totalItens++;
       }
       snapPorConta[conta.external_id] = snap;
@@ -461,9 +499,10 @@ window._trackEscanearPrevendaML = async function() {
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar pré-venda ML (todas as contas)'; }
   if (statusEl) {
     statusEl.innerHTML = erro
-      ? `<span style="color:#dc2626;">⚠️ ${contasVerificadas}/${contasML.length} conta(s) ML verificada(s), ${totalItens} anúncio(s) — último erro: ${erro}</span>`
+      ? `<span style="color:#dc2626;">⚠️ ${contasVerificadas}/${contasML.length} conta(s) ML verificada(s), ${totalItens} anúncio(s) — último erro: ${erro} (contas com esse erro específico precisam reconectar em marketplaces.tiops.com.br)</span>`
       : `${contasVerificadas} conta(s) ML verificada(s) em ${new Date().toLocaleString('pt-BR')} — ${totalItens} anúncio(s), ${mudancas} mudança(s) nova(s) de pré-venda.`;
   }
+  renderPrevendaAtual();
   renderPrevendaLog();
 };
 
