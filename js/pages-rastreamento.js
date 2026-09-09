@@ -72,14 +72,14 @@ function renderShell() {
     <div class="card" style="padding:20px;">
       <div class="section-title" style="font-size:15px;margin-bottom:4px;">📦 Entrada/saída de pré-venda</div>
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">
-        <b>Shopee:</b> confirmado — a API expõe <code>pre_order.is_pre_order</code> por anúncio/variação. Selecione a conta Shopee
-        acima (no bloco de Preços) e clique em verificar abaixo pra escanear todos os anúncios ativos dela.<br/>
+        <b>Shopee:</b> confirmado — a API expõe <code>pre_order.is_pre_order</code> por anúncio/variação. O botão abaixo escaneia
+        automaticamente todos os anúncios ativos de <b>todas as contas Shopee conectadas</b>.<br/>
         <b>Mercado Livre:</b> o ML não expõe um campo de API dedicado pra isso (testei ao vivo em várias contas e anúncios reais).
         Por isso o escaneio abaixo lê automaticamente o <b>título de todos os anúncios ativos de todas as contas ML conectadas</b>
         e detecta quem usa palavras como "pré-venda" ou "chega em breve" — sem precisar informar ID nenhum.
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-        <button class="btn btn-primary btn-sm" id="track-btn-prevenda-shopee" onclick="window._trackEscanearPrevendaShopee()">🔄 Verificar pré-venda Shopee (conta selecionada acima)</button>
+        <button class="btn btn-primary btn-sm" id="track-btn-prevenda-shopee" onclick="window._trackEscanearPrevendaShopee()">🔄 Verificar pré-venda Shopee (todas as contas)</button>
         <button class="btn btn-primary btn-sm" id="track-btn-prevenda-ml" onclick="window._trackEscanearPrevendaML()">🔄 Verificar pré-venda ML (todas as contas)</button>
       </div>
       <div id="track-prevenda-status" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
@@ -337,60 +337,61 @@ function renderPrecoLog() {
   </table>`;
 }
 
-// ── Pré-venda Shopee: escaneia a conta Shopee selecionada no bloco de Preços ──
-// Usa o mesmo seletor de conta (#track-preco-conta) pra não duplicar UI. Compara
-// pre_order.is_pre_order (confirmado ao vivo na API) com o último retrato salvo.
+// ── Pré-venda Shopee: escaneia TODAS as contas Shopee conectadas automaticamente,
+// sem precisar selecionar conta. Compara pre_order.is_pre_order (confirmado ao
+// vivo na API) com o último retrato salvo, conta por conta.
 window._trackEscanearPrevendaShopee = async function() {
-  const selIdx = document.getElementById('track-preco-conta')?.value;
   const statusEl = document.getElementById('track-prevenda-status');
   const btn = document.getElementById('track-btn-prevenda-shopee');
-  if (selIdx === undefined || selIdx === '') { alert('Selecione a conta no bloco de Preços acima primeiro.'); return; }
-  const conta = contasAds[parseInt(selIdx)];
-  if (conta.marketplace !== 'shopee') { alert('Essa conta é do Mercado Livre — use o campo de inspeção manual abaixo.'); return; }
-
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando...'; }
-  const snapPorConta = lerJSON(K_PREVENDA_SNAP, {});
-  const snap = snapPorConta[conta.external_id] || {};
-  const logArr = lerJSON(K_PREVENDA_LOG, []);
-  const nomeConta = window._trackNomeConta ? window._trackNomeConta(conta) : conta.external_id;
-  let ok = 0, mudancas = 0, erro = '';
 
-  try {
-    const shopId = conta.param_to_use?.shopId || conta.external_id;
-    const rl = await MarketplaceAPI.call('shopee_list_items', { shopId, item_status: 'NORMAL', page_size: 50 });
-    const idsRaw = rl?.data?.response?.item || rl?.data?.item || [];
-    const ids = idsRaw.map(x => x.item_id).filter(Boolean);
-    if (ids.length) {
-      const rd = await MarketplaceAPI.call('shopee_get_items_batch', { shopId, item_id_list: ids });
-      const detalhes = rd?.data?.response?.item_list || [];
-      for (const it of detalhes) {
-        // Item com variação: pré-venda se QUALQUER modelo estiver em pré-venda.
-        const emPrevenda = it.has_model
-          ? (it.models || []).some(m => m.pre_order?.is_pre_order)
-          : !!it.pre_order?.is_pre_order;
-        const nomeItem = (it.item_name || String(it.item_id)).slice(0,60);
-        const antes = lerEstadoPrevenda(snap[it.item_id]);
-        if (antes != null && antes !== emPrevenda) {
-          logArr.unshift({ id: novoId(), itemId: it.item_id, apelido: nomeItem, de: antes ? 'Em pré-venda' : 'Normal', para: emPrevenda ? 'Em pré-venda' : 'Normal', quando: new Date().toISOString() });
-          mudancas++;
+  const snapPorConta = lerJSON(K_PREVENDA_SNAP, {});
+  const logArr = lerJSON(K_PREVENDA_LOG, []);
+  const contasShopee = contasAds.filter(c => c.marketplace === 'shopee');
+  let contasVerificadas = 0, totalItens = 0, mudancas = 0, erro = '';
+
+  for (const conta of contasShopee) {
+    const snap = snapPorConta[conta.external_id] || {};
+    const nomeConta = window._trackNomeConta ? window._trackNomeConta(conta) : conta.external_id;
+    try {
+      const shopId = conta.param_to_use?.shopId || conta.external_id;
+      const rl = await MarketplaceAPI.call('shopee_list_items', { shopId, item_status: 'NORMAL', page_size: 50 });
+      const idsRaw = rl?.data?.response?.item || rl?.data?.item || [];
+      const ids = idsRaw.map(x => x.item_id).filter(Boolean);
+      if (ids.length) {
+        const rd = await MarketplaceAPI.call('shopee_get_items_batch', { shopId, item_id_list: ids });
+        const detalhes = rd?.data?.response?.item_list || [];
+        for (const it of detalhes) {
+          // Item com variação: pré-venda se QUALQUER modelo estiver em pré-venda.
+          const emPrevenda = it.has_model
+            ? (it.models || []).some(m => m.pre_order?.is_pre_order)
+            : !!it.pre_order?.is_pre_order;
+          const nomeItem = (it.item_name || String(it.item_id)).slice(0,60);
+          const antes = lerEstadoPrevenda(snap[it.item_id]);
+          if (antes != null && antes !== emPrevenda) {
+            logArr.unshift({ id: novoId(), itemId: it.item_id, apelido: `${nomeConta} — ${nomeItem}`, de: antes ? 'Em pré-venda' : 'Normal', para: emPrevenda ? 'Em pré-venda' : 'Normal', quando: new Date().toISOString() });
+            mudancas++;
+          }
+          snap[it.item_id] = { emPrevenda, nome: nomeItem, conta: nomeConta };
+          totalItens++;
         }
-        snap[it.item_id] = { emPrevenda, nome: nomeItem, conta: nomeConta };
-        ok++;
       }
+      snapPorConta[conta.external_id] = snap;
+      contasVerificadas++;
+    } catch(e) {
+      erro = e.message;
+      console.warn('[Track] Erro pré-venda Shopee na conta', conta.external_id, e.message);
     }
-  } catch(e) {
-    erro = e.message;
   }
 
-  snapPorConta[conta.external_id] = snap;
   salvarJSON(K_PREVENDA_SNAP, snapPorConta);
   salvarJSON(K_PREVENDA_LOG, logArr.slice(0, 300));
 
-  if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar pré-venda Shopee (conta selecionada acima)'; }
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar pré-venda Shopee (todas as contas)'; }
   if (statusEl) {
     statusEl.innerHTML = erro
-      ? `<span style="color:#dc2626;">⚠️ Erro em ${nomeConta}: ${erro}</span>`
-      : `${nomeConta} — verificado em ${new Date().toLocaleString('pt-BR')}: ${ok} anúncio(s), ${mudancas} mudança(s) nova(s)${ok === 0 ? ' (nenhum anúncio ativo encontrado)' : ''}.`;
+      ? `<span style="color:#dc2626;">⚠️ ${contasVerificadas}/${contasShopee.length} conta(s) Shopee verificada(s), ${totalItens} anúncio(s) — último erro: ${erro}</span>`
+      : `${contasVerificadas} conta(s) Shopee verificada(s) em ${new Date().toLocaleString('pt-BR')} — ${totalItens} anúncio(s), ${mudancas} mudança(s) nova(s) de pré-venda.`;
   }
   renderPrevendaAtual();
   renderPrevendaLog();
