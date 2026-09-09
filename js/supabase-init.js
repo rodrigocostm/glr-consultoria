@@ -33,6 +33,8 @@ const GLR_KEYS = [
   'glr_track_ads_log',     // Histórico de Alterações — mudanças de ADS detectadas
   'glr_track_precos_snap', // Histórico de Alterações — último preço visto por item, por conta
   'glr_track_precos_log',  // Histórico de Alterações — mudanças de preço detectadas
+  'glr_track_prevenda_snap', // Histórico de Alterações — último estado de pré-venda visto por item, por conta
+  'glr_track_prevenda_log',  // Histórico de Alterações — entradas/saídas de pré-venda detectadas
 ];
 
 // ── Intercepta localStorage.setItem para sincronizar com Supabase ──

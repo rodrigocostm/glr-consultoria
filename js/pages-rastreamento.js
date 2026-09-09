@@ -15,6 +15,8 @@ const K_ADS_SNAP   = 'glr_track_ads_snap';
 const K_ADS_LOG     = 'glr_track_ads_log';
 const K_PRECO_SNAP  = 'glr_track_precos_snap';
 const K_PRECO_LOG   = 'glr_track_precos_log';
+const K_PREVENDA_SNAP = 'glr_track_prevenda_snap';
+const K_PREVENDA_LOG  = 'glr_track_prevenda_log';
 
 function lerJSON(key, def) { try { return JSON.parse(localStorage.getItem(key) || 'null') ?? def; } catch(e) { return def; } }
 function salvarJSON(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
@@ -68,14 +70,30 @@ function renderShell() {
 
     <!-- Pré-venda -->
     <div class="card" style="padding:20px;">
-      <div class="section-title" style="font-size:15px;margin-bottom:6px;">📦 Entrada em pré-venda</div>
-      <p style="font-size:12.5px;color:var(--text-secondary);margin:0;">
-        Ainda não construí essa parte — preciso confirmar em qual campo da API o Mercado Livre marca um anúncio como pré-venda
-        (data de disponibilidade futura). Me manda o ID de um anúncio (MLB...) que esteja assim agora que eu confirmo o campo certo e encaixo aqui.
+      <div class="section-title" style="font-size:15px;margin-bottom:4px;">📦 Entrada/saída de pré-venda</div>
+      <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">
+        <b>Shopee:</b> confirmado — a API expõe <code>pre_order.is_pre_order</code> por anúncio/variação. Selecione a conta Shopee
+        acima (no bloco de Preços) e clique em verificar abaixo pra escanear todos os anúncios ativos dela.<br/>
+        <b>Mercado Livre:</b> o ML não tem um campo público confirmado e documentado pra isso — cole abaixo o link ou o ID (MLB...)
+        de um anúncio que você sabe que está em pré-venda, que eu trago os campos brutos do anúncio pra identificarmos juntos o sinal certo.
       </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <button class="btn btn-primary btn-sm" id="track-btn-prevenda-shopee" onclick="window._trackEscanearPrevendaShopee()">🔄 Verificar pré-venda Shopee (conta selecionada acima)</button>
+      </div>
+      <div id="track-prevenda-status" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
+      <div id="track-prevenda-log"></div>
+
+      <div style="border-top:1px solid var(--border);margin:16px 0;padding-top:14px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" id="track-ml-item-id" class="form-input" placeholder="MLB... ou link do anúncio" style="min-width:260px;flex:1;">
+          <button class="btn btn-secondary btn-sm" onclick="window._trackInspecionarML()">🔎 Inspecionar anúncio ML</button>
+        </div>
+        <div id="track-ml-resultado" style="font-size:12.5px;margin-top:10px;"></div>
+      </div>
     </div>
   `;
   renderPrecoLog();
+  renderPrevendaLog();
 }
 
 async function carregarContas() {
@@ -313,6 +331,127 @@ function renderPrecoLog() {
     </tr>`).join('')}</tbody>
   </table>`;
 }
+
+// ── Pré-venda Shopee: escaneia a conta Shopee selecionada no bloco de Preços ──
+// Usa o mesmo seletor de conta (#track-preco-conta) pra não duplicar UI. Compara
+// pre_order.is_pre_order (confirmado ao vivo na API) com o último retrato salvo.
+window._trackEscanearPrevendaShopee = async function() {
+  const selIdx = document.getElementById('track-preco-conta')?.value;
+  const statusEl = document.getElementById('track-prevenda-status');
+  const btn = document.getElementById('track-btn-prevenda-shopee');
+  if (selIdx === undefined || selIdx === '') { alert('Selecione a conta no bloco de Preços acima primeiro.'); return; }
+  const conta = contasAds[parseInt(selIdx)];
+  if (conta.marketplace !== 'shopee') { alert('Essa conta é do Mercado Livre — use o campo de inspeção manual abaixo.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando...'; }
+  const snapPorConta = lerJSON(K_PREVENDA_SNAP, {});
+  const snap = snapPorConta[conta.external_id] || {};
+  const logArr = lerJSON(K_PREVENDA_LOG, []);
+  const nomeConta = window._trackNomeConta ? window._trackNomeConta(conta) : conta.external_id;
+  let ok = 0, mudancas = 0, erro = '';
+
+  try {
+    const shopId = conta.param_to_use?.shopId || conta.external_id;
+    const rl = await MarketplaceAPI.call('shopee_list_items', { shopId, item_status: 'NORMAL', page_size: 50 });
+    const idsRaw = rl?.data?.response?.item || rl?.data?.item || [];
+    const ids = idsRaw.map(x => x.item_id).filter(Boolean);
+    if (ids.length) {
+      const rd = await MarketplaceAPI.call('shopee_get_items_batch', { shopId, item_id_list: ids });
+      const detalhes = rd?.data?.response?.item_list || [];
+      for (const it of detalhes) {
+        // Item com variação: pré-venda se QUALQUER modelo estiver em pré-venda.
+        const emPrevenda = it.has_model
+          ? (it.models || []).some(m => m.pre_order?.is_pre_order)
+          : !!it.pre_order?.is_pre_order;
+        const antes = snap[it.item_id];
+        if (antes != null && antes !== emPrevenda) {
+          logArr.unshift({ id: novoId(), itemId: it.item_id, apelido: (it.item_name || String(it.item_id)).slice(0,60), de: antes ? 'Em pré-venda' : 'Normal', para: emPrevenda ? 'Em pré-venda' : 'Normal', quando: new Date().toISOString() });
+          mudancas++;
+        }
+        snap[it.item_id] = emPrevenda;
+        ok++;
+      }
+    }
+  } catch(e) {
+    erro = e.message;
+  }
+
+  snapPorConta[conta.external_id] = snap;
+  salvarJSON(K_PREVENDA_SNAP, snapPorConta);
+  salvarJSON(K_PREVENDA_LOG, logArr.slice(0, 300));
+
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar pré-venda Shopee (conta selecionada acima)'; }
+  if (statusEl) {
+    statusEl.innerHTML = erro
+      ? `<span style="color:#dc2626;">⚠️ Erro em ${nomeConta}: ${erro}</span>`
+      : `${nomeConta} — verificado em ${new Date().toLocaleString('pt-BR')}: ${ok} anúncio(s), ${mudancas} mudança(s) nova(s)${ok === 0 ? ' (nenhum anúncio ativo encontrado)' : ''}.`;
+  }
+  renderPrevendaLog();
+};
+
+function renderPrevendaLog() {
+  const el = document.getElementById('track-prevenda-log');
+  if (!el) return;
+  const logArr = lerJSON(K_PREVENDA_LOG, []);
+  if (!logArr.length) {
+    el.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:13px;background:var(--bg-card);border-radius:10px;">Nenhuma mudança de pré-venda registrada ainda.</div>`;
+    return;
+  }
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+    <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;">
+      <th style="text-align:left;padding:6px 8px;">Quando</th><th style="text-align:left;padding:6px 8px;">Anúncio</th><th style="text-align:right;padding:6px 8px;">De</th><th style="text-align:right;padding:6px 8px;">Para</th>
+    </tr></thead>
+    <tbody>${logArr.slice(0, 60).map(l => `<tr style="border-top:1px solid var(--border);">
+      <td style="padding:6px 8px;font-size:12px;color:var(--text-muted);white-space:nowrap;">${fmtQuando(l.quando)}</td>
+      <td style="padding:6px 8px;font-size:12px;">${l.apelido}</td>
+      <td style="padding:6px 8px;font-size:12px;text-align:right;color:var(--text-muted);">${l.de}</td>
+      <td style="padding:6px 8px;font-size:12px;text-align:right;font-weight:600;">${l.para}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+// ── Inspeção manual ML: mostra os campos brutos do anúncio pra identificar
+// juntos o sinal de pré-venda — o ML não documenta um campo público confirmado. ──
+window._trackInspecionarML = async function() {
+  const raw = (document.getElementById('track-ml-item-id').value || '').trim();
+  const resEl = document.getElementById('track-ml-resultado');
+  if (!raw) { alert('Cole o ID (MLB...) ou o link do anúncio.'); return; }
+  const m = raw.match(/MLB-?\d+/i);
+  const itemId = m ? m[0].replace('-', '').toUpperCase() : raw.toUpperCase();
+  resEl.innerHTML = `<span style="color:var(--text-muted);">⏳ Buscando ${itemId}...</span>`;
+
+  const contasML = contasTodas.filter(c => ['mercadolivre','ml','meli'].includes(c.marketplace));
+  let item = null, erroFinal = '';
+  for (const conta of contasML) {
+    try {
+      const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+      const r = await MarketplaceAPI.call('get_item', { meliUserId: meliId, item_id: itemId });
+      const body = r?.data || r;
+      if (body && !body.error && body.id) { item = body; break; }
+      erroFinal = body?.message || body?.error || 'sem resposta';
+    } catch(e) {
+      erroFinal = e.message;
+    }
+  }
+
+  if (!item) {
+    resEl.innerHTML = `<span style="color:#dc2626;">⚠️ Não consegui acessar esse anúncio em nenhuma conta ML conectada (${erroFinal}). Confirme o ID/link ou se a conta dona dele está vinculada aqui.</span>`;
+    return;
+  }
+
+  const campos = {
+    status: item.status, sub_status: item.sub_status, tags: item.tags,
+    available_quantity: item.available_quantity, sold_quantity: item.sold_quantity,
+    shipping: item.shipping, date_created: item.date_created,
+    catalog_listing: item.catalog_listing, catalog_product_id: item.catalog_product_id,
+  };
+  resEl.innerHTML = `
+    <div style="background:var(--bg-card);border-radius:8px;padding:12px;">
+      <div style="font-weight:600;margin-bottom:6px;">${item.title || itemId}</div>
+      <pre style="white-space:pre-wrap;font-size:11.5px;color:var(--text-secondary);margin:0;">${JSON.stringify(campos, null, 2)}</pre>
+      <p style="font-size:11.5px;color:var(--text-muted);margin:8px 0 0;">Procure aqui algo que mude quando o anúncio sai/entra de pré-venda (ex.: em <code>tags</code>, <code>sub_status</code> ou <code>shipping</code>) e me avisa qual campo é — eu ligo a detecção automática nele.</p>
+    </div>`;
+};
 
 if (typeof Router !== 'undefined') {
   Router.register('rastreamento', renderPage);
