@@ -82,7 +82,8 @@ function renderShell() {
         <button class="btn btn-primary btn-sm" id="track-btn-prevenda-shopee" onclick="window._trackEscanearPrevendaShopee()">🔄 Verificar pré-venda Shopee (todas as contas)</button>
         <button class="btn btn-primary btn-sm" id="track-btn-prevenda-ml" onclick="window._trackEscanearPrevendaML()">🔄 Verificar pré-venda ML (todas as contas)</button>
       </div>
-      <div id="track-prevenda-status" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
+      <div id="track-prevenda-status-shopee" style="font-size:12px;color:var(--text-muted);margin-bottom:4px;"></div>
+      <div id="track-prevenda-status-ml" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
       <div id="track-prevenda-atual"></div>
       <div id="track-prevenda-log"></div>
 
@@ -341,7 +342,7 @@ function renderPrecoLog() {
 // sem precisar selecionar conta. Compara pre_order.is_pre_order (confirmado ao
 // vivo na API) com o último retrato salvo, conta por conta.
 window._trackEscanearPrevendaShopee = async function() {
-  const statusEl = document.getElementById('track-prevenda-status');
+  const statusEl = document.getElementById('track-prevenda-status-shopee');
   const btn = document.getElementById('track-btn-prevenda-shopee');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando...'; }
 
@@ -460,7 +461,7 @@ const PREVENDA_PALAVRAS = /pr[eé][\s-]?venda|chega(m)?\s+em\s+breve|dispon[ií]
 
 window._trackEscanearPrevendaML = async function() {
   const btn = document.getElementById('track-btn-prevenda-ml');
-  const statusEl = document.getElementById('track-prevenda-status');
+  const statusEl = document.getElementById('track-prevenda-status-ml');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando...'; }
 
   const snapPorConta = lerJSON(K_PREVENDA_SNAP, {});
