@@ -74,11 +74,10 @@ function renderShell() {
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">
         <b>Shopee:</b> confirmado — a API expõe <code>pre_order.is_pre_order</code> por anúncio/variação. O botão abaixo escaneia
         automaticamente todos os anúncios ativos de <b>todas as contas Shopee conectadas</b>.<br/>
-        <b>Mercado Livre:</b> o ML não expõe um campo de API dedicado pra isso (testei ao vivo, 200 anúncios reais de 4 contas — nenhum
-        veio com estoque zerado e ativo, que seria o sinal mais óbvio). Enquanto isso o escaneio abaixo detecta pelo <b>título</b>
-        (palavras como "pré-venda"/"chega em breve") <b>e também</b> por <b>disponibilidade de estoque = 0 com anúncio ativo</b> —
-        sem precisar informar ID nenhum. Se nenhum dos dois pegar o que você espera, use o botão de estoque completo pra listar
-        todos os anúncios com a disponibilidade de cada um e apontar visualmente qual está em pré-venda.
+        <b>Mercado Livre:</b> confirmado — o campo "Prazo de disponibilidade do produto" da tela do vendedor é o
+        <code>product_release_date</code> de <code>ml_user_product_stock</code>. O escaneio abaixo verifica esse campo (quando o
+        anúncio tem esse recurso), mais o <b>título</b> (palavras como "pré-venda"/"chega em breve") e <b>estoque zerado com
+        anúncio ativo</b> — sem precisar informar ID nenhum. Use o botão de estoque completo se quiser conferir manualmente.
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
         <button class="btn btn-primary btn-sm" id="track-btn-prevenda-shopee" onclick="window._trackEscanearPrevendaShopee()">🔄 Verificar pré-venda Shopee (todas as contas)</button>
@@ -487,10 +486,27 @@ window._trackEscanearPrevendaML = async function() {
       const r = await MarketplaceAPI.call('list_items', { meliUserId: meliId, status: 'active', limit: 100 });
       const itens = (r?.data?.results || r?.results || []).map(x => x.body).filter(Boolean);
       for (const it of itens) {
-        // Estoque zerado com anúncio ativo é um sinal real de pré-venda (vendendo
-        // sem ter estoque ainda). Testei ao vivo e não achei nenhum caso em 200
-        // anúncios amostrados — mas fica ligado pra quando aparecer.
-        const emPrevenda = PREVENDA_PALAVRAS.test(it.title || '') || (it.status === 'active' && it.available_quantity === 0);
+        // Campo confirmado ao vivo: product_release_date em ml_user_product_stock
+        // é o "Prazo de disponibilidade do produto" da tela do vendedor — quando
+        // preenchido com data futura, o anúncio está em pré-venda. Só existe pra
+        // anúncios com a tag user_product_listing (evita 2 chamadas extras por
+        // anúncio nos que nem têm esse recurso).
+        let emPrevendaEstoque = false;
+        if (Array.isArray(it.tags) && it.tags.includes('user_product_listing')) {
+          try {
+            const gi = await MarketplaceAPI.call('get_item', { meliUserId, item_id: it.id });
+            const giBody = gi?.data || gi;
+            const upId = giBody?.user_product_id;
+            if (upId) {
+              const se = await MarketplaceAPI.call('ml_user_product_stock', { meliUserId, user_product_id: upId });
+              const seBody = se?.data || se;
+              const dataLancamento = seBody?.product_release_date;
+              if (dataLancamento && new Date(dataLancamento) > new Date()) emPrevendaEstoque = true;
+            }
+          } catch(e) { /* segue sem esse sinal se der erro num item específico */ }
+        }
+        // Estoque zerado com anúncio ativo também é um sinal real de pré-venda.
+        const emPrevenda = PREVENDA_PALAVRAS.test(it.title || '') || (it.status === 'active' && it.available_quantity === 0) || emPrevendaEstoque;
         const nomeItem = (it.title || it.id).slice(0,50);
         const antes = lerEstadoPrevenda(snap[it.id]);
         if (antes != null && antes !== emPrevenda) {
