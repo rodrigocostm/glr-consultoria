@@ -998,8 +998,9 @@ Router.register('vendas', async (params, el) => {
     let totalAds = 0;
 
     sec.innerHTML = `
-    <!-- KPI Cards -->
-    <div id="dash-kpi-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;">
+    <!-- KPI Cards — grid único de 4 colunas: financeiro + ADS + visitas/pedidos, tudo no
+    mesmo padrão de card pequeno (antes eram 3 grids separados com blocos grandes) -->
+    <div id="dash-kpi-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
       ${kpiCard('💰 Faturamento',   R$(t.fat),    `${nVendas} vendas`,  '#60a5fa')}
       ${kpiCard('🏦 Líq. Marketplace', R$(t.liq!=null?t.liq:0), t.fat>0?pct(liqPct)+' do fat.':'—', '#a78bfa')}
       ${kpiCard('✅ Lucro Bruto',    R$(t.lucro),  'Margem: '+pct(t.margem), corMargem(t.margem))}
@@ -1051,36 +1052,33 @@ Router.register('vendas', async (params, el) => {
       </div>
     </div>
 
-    <!-- ADS e Lucro pós-ADS -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
-      <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(239,68,68,0.1) 0%,transparent 100%);border:1px solid rgba(239,68,68,0.2);">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">💰 INVESTIMENTO EM ADS</div>
-        <div style="font-size:24px;font-weight:800;color:#ef4444;margin-bottom:4px;" id="dashboard-ads">R$ 0,00</div>
-        <div style="font-size:11px;color:var(--text-secondary);" id="dashboard-ads-pct">0% do faturamento</div>
+    <!-- ADS, Lucro pós-ADS e Visitas/Pedidos/Faturamento — mesmo grid de 4 colunas e
+    mesmo estilo de card pequeno do bloco acima (visualmente é uma continuação dele) -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+      <div class="kpi-card">
+        <div class="kpi-label">💰 Investimento em ADS</div>
+        <div class="kpi-value" style="color:#ef4444;font-size:18px;" id="dashboard-ads">R$ 0,00</div>
+        <div class="kpi-sub" id="dashboard-ads-pct">0% do faturamento</div>
       </div>
-      <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(34,197,94,0.1) 0%,transparent 100%);border:1px solid rgba(34,197,94,0.2);">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">📊 LUCRO DEPOIS ADS</div>
-        <div style="font-size:24px;font-weight:800;color:#22c55e;margin-bottom:4px;" id="dashboard-lucro-ads">R$ 0,00</div>
-        <div style="font-size:11px;color:var(--text-secondary);" id="dashboard-lucro-ads-pct">Margem: 0%</div>
+      <div class="kpi-card">
+        <div class="kpi-label">📊 Lucro Depois ADS</div>
+        <div class="kpi-value" style="color:#22c55e;font-size:18px;" id="dashboard-lucro-ads">R$ 0,00</div>
+        <div class="kpi-sub" id="dashboard-lucro-ads-pct">Margem: 0%</div>
       </div>
-    </div>
-
-    <!-- Cards: Visitas / Vendas / Faturamento -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;">
-      <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(107,114,128,0.1) 0%,transparent 100%);border:1px solid rgba(107,114,128,0.2);">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">👁️ VISITAS TOTAL</div>
-        <div style="font-size:28px;font-weight:800;color:var(--text-muted);margin-bottom:4px;" id="card-visitas">—</div>
-        <div style="font-size:10px;color:var(--text-secondary);"><span id="card-visitas-ml">—</span> ML · <span id="card-visitas-shopee">—</span> Shopee</div>
+      <div class="kpi-card">
+        <div class="kpi-label">👁️ Visitas Total</div>
+        <div class="kpi-value" style="font-size:18px;" id="card-visitas">—</div>
+        <div class="kpi-sub"><span id="card-visitas-ml">—</span> ML · <span id="card-visitas-shopee">—</span> Shopee</div>
       </div>
-      <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(59,130,246,0.1) 0%,transparent 100%);border:1px solid rgba(59,130,246,0.2);">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">🛍️ PEDIDOS TOTAL</div>
-        <div style="font-size:28px;font-weight:800;color:#3b82f6;margin-bottom:4px;" id="card-vendas">—</div>
-        <div style="font-size:10px;color:var(--text-secondary);"><span id="card-vendas-ml">—</span> ML · <span id="card-vendas-shopee">—</span> Shopee</div>
+      <div class="kpi-card">
+        <div class="kpi-label">🛍️ Pedidos Total</div>
+        <div class="kpi-value" style="color:#3b82f6;font-size:18px;" id="card-vendas">—</div>
+        <div class="kpi-sub"><span id="card-vendas-ml">—</span> ML · <span id="card-vendas-shopee">—</span> Shopee</div>
       </div>
-      <div class="card" style="padding:20px;background:linear-gradient(135deg,rgba(52,211,153,0.1) 0%,transparent 100%);border:1px solid rgba(52,211,153,0.2);">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">💵 FATURAMENTO TOTAL</div>
-        <div style="font-size:28px;font-weight:800;color:#34d399;margin-bottom:4px;" id="card-fat">—</div>
-        <div style="font-size:10px;color:var(--text-secondary);"><span id="card-fat-ml">—</span> ML · <span id="card-fat-shopee">—</span> Shopee</div>
+      <div class="kpi-card">
+        <div class="kpi-label">💵 Faturamento Total</div>
+        <div class="kpi-value" style="color:#34d399;font-size:18px;" id="card-fat">—</div>
+        <div class="kpi-sub"><span id="card-fat-ml">—</span> ML · <span id="card-fat-shopee">—</span> Shopee</div>
       </div>
     </div>
 
