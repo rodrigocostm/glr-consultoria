@@ -216,7 +216,7 @@ window._trackEscanearAds = async function() {
   }
 
   salvarJSON(K_ADS_SNAP, snap);
-  const logFinal = logArr.slice(0, 300); // guarda só as 300 mudanças mais recentes
+  const logFinal = logArr.slice(0, 3000); // guarda só as 3000 mudanças mais recentes
   salvarJSON(K_ADS_LOG, logFinal);
 
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar mudanças agora'; }
@@ -237,7 +237,7 @@ function renderAdsLog() {
     <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;">
       <th style="text-align:left;padding:6px 8px;">Quando</th><th style="text-align:left;padding:6px 8px;">Conta</th><th style="text-align:left;padding:6px 8px;">Campanha</th><th style="text-align:left;padding:6px 8px;">Campo</th><th style="text-align:right;padding:6px 8px;">De</th><th style="text-align:right;padding:6px 8px;">Para</th>
     </tr></thead>
-    <tbody>${logArr.slice(0, 60).map(l => `<tr style="border-top:1px solid var(--border);">
+    <tbody>${logArr.slice(0, 150).map(l => `<tr style="border-top:1px solid var(--border);">
       <td style="padding:6px 8px;font-size:12px;color:var(--text-muted);white-space:nowrap;">${fmtQuando(l.quando)}</td>
       <td style="padding:6px 8px;font-size:12px;">${l.contaNome}</td>
       <td style="padding:6px 8px;font-size:12px;">${l.campanhaNome}</td>
@@ -309,7 +309,7 @@ window._trackEscanearPrecos = async function() {
 
   snapPorConta[conta.external_id] = snap;
   salvarJSON(K_PRECO_SNAP, snapPorConta);
-  salvarJSON(K_PRECO_LOG, logArr.slice(0, 300));
+  salvarJSON(K_PRECO_LOG, logArr.slice(0, 3000));
 
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar mudanças agora'; }
   if (statusEl) {
@@ -332,7 +332,7 @@ function renderPrecoLog() {
     <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;">
       <th style="text-align:left;padding:6px 8px;">Quando</th><th style="text-align:left;padding:6px 8px;">Anúncio</th><th style="text-align:right;padding:6px 8px;">De</th><th style="text-align:right;padding:6px 8px;">Para</th>
     </tr></thead>
-    <tbody>${logArr.slice(0, 60).map(l => `<tr style="border-top:1px solid var(--border);">
+    <tbody>${logArr.slice(0, 150).map(l => `<tr style="border-top:1px solid var(--border);">
       <td style="padding:6px 8px;font-size:12px;color:var(--text-muted);white-space:nowrap;">${fmtQuando(l.quando)}</td>
       <td style="padding:6px 8px;font-size:12px;">${l.apelido}</td>
       <td style="padding:6px 8px;font-size:12px;text-align:right;color:var(--text-muted);">${l.de}</td>
@@ -389,7 +389,7 @@ window._trackEscanearPrevendaShopee = async function() {
   }
 
   salvarJSON(K_PREVENDA_SNAP, snapPorConta);
-  salvarJSON(K_PREVENDA_LOG, logArr.slice(0, 300));
+  salvarJSON(K_PREVENDA_LOG, logArr.slice(0, 3000));
 
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar pré-venda Shopee (todas as contas)'; }
   if (statusEl) {
@@ -452,7 +452,7 @@ function renderPrevendaLog() {
     <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;">
       <th style="text-align:left;padding:6px 8px;">Quando</th><th style="text-align:left;padding:6px 8px;">Anúncio</th><th style="text-align:right;padding:6px 8px;">De</th><th style="text-align:right;padding:6px 8px;">Para</th>
     </tr></thead>
-    <tbody>${logArr.slice(0, 60).map(l => `<tr style="border-top:1px solid var(--border);">
+    <tbody>${logArr.slice(0, 150).map(l => `<tr style="border-top:1px solid var(--border);">
       <td style="padding:6px 8px;font-size:12px;color:var(--text-muted);white-space:nowrap;">${fmtQuando(l.quando)}</td>
       <td style="padding:6px 8px;font-size:12px;">${l.apelido}</td>
       <td style="padding:6px 8px;font-size:12px;text-align:right;color:var(--text-muted);">${l.de}</td>
@@ -525,7 +525,7 @@ window._trackEscanearPrevendaML = async function() {
   }
 
   salvarJSON(K_PREVENDA_SNAP, snapPorConta);
-  salvarJSON(K_PREVENDA_LOG, logArr.slice(0, 300));
+  salvarJSON(K_PREVENDA_LOG, logArr.slice(0, 3000));
 
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar pré-venda ML (todas as contas)'; }
   if (statusEl) {
