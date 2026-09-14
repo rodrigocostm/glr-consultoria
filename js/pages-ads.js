@@ -1505,6 +1505,7 @@ function renderAgentIA() {
         </div>
         <div style="display:flex;gap:6px;">
           <button onclick="window._adsAutoAnalisar()" style="font-size:11px;font-weight:600;color:#fff;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:5px 12px;cursor:pointer;">⚡ Analisar</button>
+          <button id="ads-btn-sugestoes" onclick="window._adsGerarSugestoes()" style="font-size:11px;font-weight:600;color:#fff;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:5px 12px;cursor:pointer;">🎯 Gerar Sugestões</button>
           <button onclick="window._adsNovaConversa()" style="font-size:11px;color:rgba(255,255,255,.8);background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:5px 10px;cursor:pointer;">🔄 Nova</button>
         </div>
       </div>
@@ -1700,6 +1701,105 @@ window._adsNovaConversa = function() {
 
 window._adsAutoAnalisar = function() {
   window._adsEnviarMensagem('Faça um diagnóstico completo das campanhas: identifique os 3 principais problemas, causa raiz de cada um e plano de ação priorizado com ações para hoje.');
+};
+
+// ── Agente de sugestões: IA analisa e devolve JSON estruturado (não prosa) com
+// ações específicas por campanha. Cada sugestão vai pra fila de aprovação
+// (glr_ads_sugestoes) — um analista humano aprova ou rejeita, nunca executa sozinha.
+window._adsGerarSugestoes = async function() {
+  if (!dadosADS || !contaAtual) { alert('Carregue os dados da conta primeiro.'); return; }
+  const btn = document.getElementById('ads-btn-sugestoes');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando...'; }
+
+  const d = dadosADS;
+  const ma = d.mesAnterior;
+  const tacosAtual = (d.vendasTotais?.total || 0) > 0 ? (d.resumo.investimento / d.vendasTotais.total) * 100 : 0;
+
+  const contexto = `
+Conta: ${d.conta} | Marketplace: ${d.marketplace} | Período: ${d.periodo.de} a ${d.periodo.ate}
+
+RESUMO: Investimento R$${d.resumo.investimento.toFixed(2)} | Receita ADS R$${d.resumo.receita.toFixed(2)} | ROAS ${(d.resumo.investimento>0?d.resumo.receita/d.resumo.investimento:0).toFixed(2)}x | ACoS ${(d.resumo.receita>0?(d.resumo.investimento/d.resumo.receita)*100:0).toFixed(1)}% | TACOS ${tacosAtual.toFixed(1)}%
+${d.saldo != null ? `Saldo ADS: R$${d.saldo.toFixed(2)}` : 'Saldo: não aplicável (ML)'}
+${ma ? `Vs mês anterior (mesmo recorte ${ma.periodo.de} a ${ma.periodo.ate}): investimento R$${ma.ads.investimento.toFixed(2)}→R$${d.resumo.investimento.toFixed(2)}, receita R$${ma.ads.receita.toFixed(2)}→R$${d.resumo.receita.toFixed(2)}, vendas totais R$${ma.vendas.total.toFixed(2)}→R$${(d.vendasTotais?.total||0).toFixed(2)}` : ''}
+
+CAMPANHAS (id | nome | investido | receita | ROAS | ACoS | CTR | orçamento | meta ROAS):
+${(d.campanhas||[]).map(c => {
+  const roas = c.gasto > 0 && c.receita > 0 ? (c.receita/c.gasto).toFixed(2) : '0';
+  const acos = c.receita > 0 ? ((c.gasto/c.receita)*100).toFixed(1) : '—';
+  const ctr  = c.impressoes > 0 ? ((c.cliques/c.impressoes)*100).toFixed(2) : '0';
+  return `${c.id} | ${c.nome} | R$${c.gasto.toFixed(2)} | R$${c.receita.toFixed(2)} | ${roas}x | ${acos}% | ${ctr}% | ${c.orcamentoLabel} | ${c.roasTarget ? c.roasTarget+'x' : '—'} | tipo:${c.bidding}`;
+}).join('\n')}
+${_estoqueProdutos.length ? `\nPRODUTOS COM ESTOQUE CRÍTICO (≤3 un.): ${_estoqueProdutos.filter(p=>(p.estoque||0)<=3).map(p=>p.nome).join(', ') || 'nenhum'}` : ''}
+`.trim();
+
+  const system = `Você é um consultor de ADS pra marketplaces (Shopee e Mercado Livre) que gera SUGESTÕES ESTRUTURADAS de otimização — NÃO texto corrido. Um analista humano vai revisar e aprovar cada uma antes de executar, então cada sugestão precisa ser específica e executável, não um conselho genérico.
+
+Responda APENAS um array JSON válido (sem markdown, sem texto antes/depois), no formato:
+[
+  {
+    "campanha_id": "id exato da campanha listada nos dados (ou null se for sobre a conta toda)",
+    "campanha_nome": "nome da campanha",
+    "tipo": "pausar" | "retomar" | "ajustar_orcamento" | "ajustar_roas_target" | "outro",
+    "valor_atual_label": "texto curto do valor atual (ex: 'R$ 50,00/dia' ou '3.5x' ou 'ativa')",
+    "valor_sugerido_label": "texto curto do valor sugerido (ex: 'R$ 30,00/dia' ou '4.0x')",
+    "valor_sugerido_numero": número puro pra executar (orçamento em R$ ou roas_target em x) ou null se tipo for pausar/retomar/outro,
+    "motivo": "1-2 frases explicando o porquê, citando os números reais",
+    "prioridade": "alta" | "media" | "baixa"
+  }
+]
+
+REGRAS:
+- Só sugira "pausar" pra campanha com investimento relevante (>R$20) e ROAS muito abaixo do aceitável, ou ACoS excessivo, ou produto sem estoque.
+- Só sugira "ajustar_orcamento" com valor_sugerido_numero preenchido (o novo orçamento diário em reais).
+- Só sugira "ajustar_roas_target" pra campanhas tipo:auto — não existe meta ROAS em campanha manual.
+- Máximo 8 sugestões, só as que têm impacto real — não force sugestão se a conta está saudável.
+- Se a conta está indo bem, pode retornar array vazio [].
+- TACOS <10% e ROAS bom = tem espaço pra sugerir aumento de orçamento em campanhas eficientes, não só corte.`;
+
+  try {
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ system, messages: [{ role: 'user', content: contexto }] }),
+    });
+    const json = await resp.json();
+    if (json.error) throw new Error(json.error);
+
+    let texto = (json.content || '[]').trim();
+    // Remove cerca de código markdown se a IA mandar mesmo pedindo pra não mandar
+    texto = texto.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '');
+    const sugestoes = JSON.parse(texto);
+
+    if (!Array.isArray(sugestoes) || !sugestoes.length) {
+      alert('A IA não encontrou nenhuma otimização relevante pra sugerir agora — conta parece saudável.');
+      return;
+    }
+
+    const linhas = sugestoes.map(s => ({
+      conta_id: contaAtual.external_id,
+      conta_nome: window._trackNomeConta ? window._trackNomeConta(contaAtual) : (contaAtual.nickname || contaAtual.name || contaAtual.external_id),
+      marketplace: d.marketplace,
+      campanha_id: s.campanha_id || null,
+      campanha_nome: s.campanha_nome || null,
+      tipo: s.tipo || 'outro',
+      valor_atual_label: s.valor_atual_label || null,
+      valor_sugerido_label: s.valor_sugerido_label || null,
+      valor_sugerido_numero: s.valor_sugerido_numero ?? null,
+      motivo: s.motivo || null,
+      prioridade: s.prioridade || 'media',
+      status: 'pendente',
+    }));
+
+    const { error } = await _sb.from('glr_ads_sugestoes').insert(linhas);
+    if (error) throw error;
+
+    alert(`${linhas.length} sugestão(ões) gerada(s) e adicionada(s) à fila. Veja em "Sugestões de ADS" no menu.`);
+  } catch (e) {
+    alert('Erro ao gerar sugestões: ' + e.message);
+    console.warn('[ADS Sugestões]', e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🎯 Gerar Sugestões'; }
+  }
 };
 
 window._adsEnviarMensagem = async function(msgPredef) {
