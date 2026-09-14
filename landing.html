@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --blue: #0B4FE0;
@@ -438,10 +439,10 @@
 <section class="section" id="contato">
   <div class="wrap">
     <h2 class="section-title center">Vamos escalar sua operação juntos</h2>
-    <p class="section-sub center">Responda 3 perguntas rápidas — a conversa com nosso time já começa direto no ponto.</p>
+    <p class="section-sub center">Responda 4 perguntas rápidas — a conversa com nosso time já começa direto no ponto.</p>
 
     <div class="lead-box">
-      <div class="lead-progress"><div id="lp-1" class="done"></div><div id="lp-2"></div><div id="lp-3"></div></div>
+      <div class="lead-progress"><div id="lp-1" class="done"></div><div id="lp-2"></div><div id="lp-3"></div><div id="lp-4"></div></div>
 
       <div class="lead-step active" data-step="1">
         <h3 style="font-size:17px;margin-bottom:4px;">Em quais marketplaces você vende hoje?</h3>
@@ -471,7 +472,20 @@
           <div class="lead-opt" data-field="dificuldade" data-value="Falta de tempo">Falta de tempo</div>
           <div class="lead-opt" data-field="dificuldade" data-value="Não sei por onde começar">Não sei por onde começar</div>
         </div>
+      </div>
+
+      <div class="lead-step" data-step="4">
+        <h3 style="font-size:17px;margin-bottom:4px;">Pra fechar, seu nome e WhatsApp</h3>
+        <p style="font-size:13px;color:var(--text-sec);margin-bottom:18px;">É só pra nosso time te chamar direto — nada de spam.</p>
+        <input type="text" id="lead-nome" placeholder="Seu nome" autocomplete="name"
+          style="width:100%;padding:14px 16px;border:1.5px solid var(--border);border-radius:12px;font-size:14.5px;font-family:'Poppins',sans-serif;margin-bottom:12px;">
+        <input type="tel" id="lead-telefone" placeholder="WhatsApp (com DDD)" autocomplete="tel" inputmode="tel"
+          style="width:100%;padding:14px 16px;border:1.5px solid var(--border);border-radius:12px;font-size:14.5px;font-family:'Poppins',sans-serif;margin-bottom:20px;">
+        <!-- Honeypot: campo invisível pra gente de verdade, mas bot de formulário costuma preencher tudo -->
+        <input type="text" id="lead-empresa2" name="empresa2" tabindex="-1" autocomplete="off"
+          style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;" aria-hidden="true">
         <button id="lead-enviar" class="btn btn-primary btn-block" disabled>Enviar e falar no WhatsApp</button>
+        <div id="lead-erro" style="display:none;color:var(--red);font-size:12.5px;text-align:center;margin-top:10px;">Preenche nome e WhatsApp pra continuar.</div>
       </div>
 
       <p style="text-align:center;font-size:12px;color:var(--text-mute);margin-top:20px;">Sem compromisso · Resposta em até 24h úteis</p>
@@ -528,6 +542,7 @@
 
   const respostas = {};
   let stepAtual = 1;
+  const TOTAL_STEPS = 4;
   function irParaStep(n) {
     document.querySelectorAll('.lead-step').forEach(s => s.classList.remove('active'));
     document.querySelector(`.lead-step[data-step="${n}"]`).classList.add('active');
@@ -540,20 +555,65 @@
       document.querySelectorAll(`.lead-opt[data-field="${field}"]`).forEach(o => o.classList.remove('selected'));
       opt.classList.add('selected');
       respostas[field] = opt.dataset.value;
-      if (stepAtual < 3) {
-        setTimeout(() => irParaStep(stepAtual + 1), 250);
-      } else {
-        document.getElementById('lead-enviar').disabled = false;
-      }
+      if (stepAtual < TOTAL_STEPS) setTimeout(() => irParaStep(stepAtual + 1), 250);
     });
   });
-  document.getElementById('lead-enviar').addEventListener('click', () => {
-    const msg = `Olá! Quero saber mais sobre a GLR Consultoria.\n\n` +
+
+  // Passo 4 (nome/telefone) só libera o botão quando os dois campos têm conteúdo real
+  const inpNome = document.getElementById('lead-nome');
+  const inpTel  = document.getElementById('lead-telefone');
+  const btnEnviar = document.getElementById('lead-enviar');
+  function validarPasso4() {
+    btnEnviar.disabled = inpNome.value.trim().length < 2 || inpTel.value.trim().length < 8;
+  }
+  inpNome.addEventListener('input', validarPasso4);
+  inpTel.addEventListener('input', validarPasso4);
+
+  // Supabase só pra gravar o lead (insert-only, anônimo) — não usa nada do login/app admin
+  const _leadsSb = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(
+        'https://rrodqlejqyaoomutriiw.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyb2RxbGVqcXlhb29tdXRyaWl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjU5NjUsImV4cCI6MjA5NjQ0MTk2NX0.JaKQHoGH8S3ZdLQInLErpC21SZ0j4FmIGtvWKcBes-A'
+      )
+    : null;
+
+  btnEnviar.addEventListener('click', async () => {
+    // Honeypot: se esse campo (invisível pra humano) veio preenchido, é bot — ignora silenciosamente
+    if (document.getElementById('lead-empresa2').value.trim() !== '') return;
+
+    const nome = inpNome.value.trim();
+    const telefone = inpTel.value.trim();
+    const erroEl = document.getElementById('lead-erro');
+    if (nome.length < 2 || telefone.length < 8) { erroEl.style.display = 'block'; return; }
+    erroEl.style.display = 'none';
+
+    btnEnviar.disabled = true;
+    btnEnviar.textContent = 'Enviando...';
+
+    if (_leadsSb) {
+      try {
+        await _leadsSb.from('glr_leads').insert({
+          nome, telefone,
+          marketplace: respostas.marketplace || null,
+          faturamento: respostas.faturamento || null,
+          dificuldade: respostas.dificuldade || null,
+          utm_source: utmSource || null,
+          utm_campaign: utmCampaign || null,
+        });
+      } catch (e) {
+        console.warn('[GLR] Não consegui salvar o lead (segue pro WhatsApp mesmo assim):', e.message);
+      }
+    }
+
+    const msg = `Olá! Sou ${nome}, quero saber mais sobre a GLR Consultoria.\n\n` +
+      `WhatsApp: ${telefone}\n` +
       `Marketplace: ${respostas.marketplace || '—'}\n` +
       `Faturamento mensal: ${respostas.faturamento || '—'}\n` +
       `Maior dificuldade: ${respostas.dificuldade || '—'}` +
       (utmSource ? `\n(origem: ${utmSource}${utmCampaign ? ' / ' + utmCampaign : ''})` : '');
     window.open(waLink(msg), '_blank', 'noopener');
+
+    btnEnviar.textContent = 'Enviado ✓';
   });
 </script>
 
