@@ -5,7 +5,7 @@
 (function() {
 
 const ADS_CACHE_KEY = 'glr_ads_cache';
-const ADS_CACHE_VER = 3;
+const ADS_CACHE_VER = 4;
 
 let contasSel   = [];   // contas carregadas
 let contaAtual  = null; // conta selecionada
@@ -187,6 +187,42 @@ async function buscarVendasTotaisPeriodo(primeiroDia, ultimoDia) {
     }
   } catch(e) {
     console.warn('[ADS] vendas totais falhou:', e.message);
+  }
+  return { total: 0, pedidos: 0 };
+}
+
+// Versão leve de buscarVendasTotaisPeriodo — usada só pro comparativo com o mês
+// anterior. A versão de cima busca pedido por pedido (preciso, mas lento em loja
+// de volume alto na Shopee); essa usa shopee_sales_summary, que já devolve o
+// total agregado numa chamada só (confirmado ao vivo: ~10s pra 382 pedidos,
+// contra dezenas de chamadas sequenciais da versão pesada). ML já era barato,
+// então só reaproveita a função de cima.
+async function buscarVendasTotaisPeriodoLeve(primeiroDia, ultimoDia) {
+  if (!contaAtual) return { total: 0, pedidos: 0 };
+  const mp = contaAtual.marketplace;
+  if (['mercadolivre', 'ml', 'meli'].includes(mp)) {
+    return buscarVendasTotaisPeriodo(primeiroDia, ultimoDia);
+  }
+  if (mp === 'shopee') {
+    const shopId = contaAtual.param_to_use?.shopId || contaAtual.external_id;
+    let total = 0, pedidos = 0, endDate = ultimoDia, guard = 0;
+    try {
+      while (guard++ < 5) {
+        const r = await MarketplaceAPI.call('shopee_sales_summary', { shopId, start_date: primeiroDia, end_date: endDate, order_status: '' });
+        const body = r?.data || r;
+        const orders = body?.orders || [];
+        orders.forEach(o => {
+          if ((o.status || '').toUpperCase() === 'CANCELLED') return;
+          total += parseFloat(o.total_amount) || 0;
+          pedidos++;
+        });
+        if (!body?.parcial || !body?.continuar_de) break;
+        endDate = body.continuar_de;
+      }
+    } catch(e) {
+      console.warn('[ADS] vendas totais leve (shopee) falhou:', e.message);
+    }
+    return { total, pedidos };
   }
   return { total: 0, pedidos: 0 };
 }
@@ -668,7 +704,7 @@ async function buscarDados(forcar = false) {
       buscarComparativoSemanal(),
       buscarJanelasCampanhas(resultado.campanhas.map(c => c.id)),
       buscarResumoAdsPeriodo(pmPrimeiro, pmUltimo),
-      buscarVendasTotaisPeriodo(pmPrimeiro, pmUltimo),
+      buscarVendasTotaisPeriodoLeve(pmPrimeiro, pmUltimo),
     ]);
     resultado.vendasTotais = vendasTotaisResp.status === 'fulfilled' ? vendasTotaisResp.value : { total: 0, pedidos: 0 };
     resultado.comparativo  = comparativoResp.status  === 'fulfilled' ? comparativoResp.value  : null;
