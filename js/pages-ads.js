@@ -5,7 +5,7 @@
 (function() {
 
 const ADS_CACHE_KEY = 'glr_ads_cache';
-const ADS_CACHE_VER = 1;
+const ADS_CACHE_VER = 2;
 
 let contasSel   = [];   // contas carregadas
 let contaAtual  = null; // conta selecionada
@@ -1829,12 +1829,13 @@ window._adsCarregarEstoque = async function(forcar = false) {
   if (!body) return;
 
   const ck = `glr_estoque_${contaAtual.external_id}`;
+  const ESTOQUE_CACHE_VER = 2; // bump invalida cache antigo (ex: bug de ids undefined no ML)
   if (!forcar) {
     try {
       const raw = localStorage.getItem(ck);
       if (raw) {
         const c = JSON.parse(raw);
-        if (Date.now() - c.at < 30 * 60 * 1000) {
+        if (c.ver === ESTOQUE_CACHE_VER && Date.now() - c.at < 30 * 60 * 1000) {
           _estoqueProdutos = c.produtos;
           _renderEstoqueTabela();
           return;
@@ -1888,7 +1889,10 @@ window._adsCarregarEstoque = async function(forcar = false) {
           const all = await MarketplaceAPI.call('list_items', { meliUserId: meliId, status: 'active', limit: 100, offset });
           const lote = all?.results || all?.data?.results || [];
           if (!Array.isArray(lote) || !lote.length) break;
-          idsAtivos.push(...lote);
+          // lote vem como [{code, body:{id,...}}] — precisa extrair o id, não empurrar
+          // o objeto inteiro (isso fazia get_items() receber lixo e devolver
+          // nome/estoque undefined pra praticamente todo produto).
+          idsAtivos.push(...lote.map(x => x.body?.id || x.id).filter(Boolean));
           if (lote.length < 100) break;
           offset += 100;
         }
@@ -1908,7 +1912,7 @@ window._adsCarregarEstoque = async function(forcar = false) {
     }
 
     _estoqueProdutos = produtos;
-    try { localStorage.setItem(ck, JSON.stringify({ at: Date.now(), produtos })); } catch {}
+    try { localStorage.setItem(ck, JSON.stringify({ ver: ESTOQUE_CACHE_VER, at: Date.now(), produtos })); } catch {}
     _renderEstoqueTabela();
   } catch(e) {
     if (body) body.innerHTML = `<div style="color:#dc2626;font-size:12px;padding:12px;">❌ Erro: ${e.message}</div>`;
