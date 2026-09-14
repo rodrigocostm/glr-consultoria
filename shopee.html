@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GLR Consultoria — Gestão para sua loja na Shopee</title>
+<meta name="description" content="Quer vender mais na Shopee sem fazer tudo sozinho? Fale com a gente.">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --orange: #EE4D2D;
+    --orange-dark: #D8401F;
+    --orange-soft: #FDECE8;
+    --ink: #0A0A0A;
+    --paper: #ffffff;
+    --paper-soft: #F7F7F9;
+    --text: #0A0A0A;
+    --text-sec: #52586B;
+    --text-mute: #8B90A0;
+    --border: #E5E8F0;
+    --red: #D93025;
+    --shadow-md: 0 8px 24px rgba(10,10,10,0.08);
+    --shadow-lg: 0 20px 50px rgba(10,10,10,0.14);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Poppins', sans-serif;
+    background: var(--paper);
+    color: var(--text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { max-width: 100%; display: block; }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 0 20px; }
+
+  header { padding: 20px 0; text-align: center; }
+  .logo-row { display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 800; font-size: 15px; }
+  .logo-row img { width: 24px; height: 24px; object-fit: contain; }
+
+  .hero { text-align: center; padding: 8px 0 28px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: var(--orange-soft);
+    border-radius: 99px; font-size: 12.5px; font-weight: 700; color: var(--orange); margin-bottom: 18px;
+  }
+  h1 { font-size: 26px; line-height: 1.25; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 12px; }
+  .hl { color: var(--orange); }
+  .hero p { font-size: 14.5px; color: var(--text-sec); max-width: 380px; margin: 0 auto; }
+
+  /* Form */
+  .lead-box {
+    background: #fff; border: 1px solid var(--border);
+    border-radius: 20px; padding: 26px 22px; box-shadow: var(--shadow-lg);
+  }
+  .lead-step { display: none; }
+  .lead-step.active { display: block; }
+  .lead-step h3 { font-size: 16px; margin-bottom: 14px; font-weight: 700; }
+  .lead-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .lead-opt {
+    padding: 14px 12px; background: var(--paper-soft); border: 1.5px solid var(--border); border-radius: 12px;
+    font-size: 13px; font-weight: 600; cursor: pointer; text-align: center; transition: border-color .15s, background .15s;
+  }
+  .lead-opt:hover { border-color: var(--orange); }
+  .lead-opt.selected { border-color: var(--orange); background: var(--orange-soft); color: var(--orange); font-weight: 800; }
+  .lead-progress { display: flex; gap: 5px; margin-bottom: 20px; }
+  .lead-progress div { height: 4px; flex: 1; border-radius: 99px; background: var(--border); }
+  .lead-progress div.done { background: var(--orange); }
+
+  input.lead-input {
+    width: 100%; padding: 14px 16px; border: 1.5px solid var(--border); border-radius: 12px;
+    font-size: 14.5px; font-family: 'Poppins', sans-serif; margin-bottom: 12px; color: var(--text);
+  }
+  input.lead-input:focus { outline: none; border-color: var(--orange); }
+
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+    padding: 16px; border-radius: 12px; font-size: 15px; font-weight: 700;
+    cursor: pointer; border: none; background: var(--orange); color: #fff;
+    box-shadow: 0 10px 28px rgba(238,77,45,0.32); transition: background .15s, opacity .15s;
+    font-family: 'Poppins', sans-serif; margin-top: 4px;
+  }
+  .btn:hover { background: var(--orange-dark); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .trust { display: flex; justify-content: center; gap: 22px; margin-top: 22px; flex-wrap: wrap; }
+  .trust-item { text-align: center; }
+  .trust-num { font-size: 18px; font-weight: 800; color: var(--text); }
+  .trust-label { font-size: 10.5px; color: var(--text-mute); font-weight: 600; text-transform: uppercase; }
+
+  #lead-erro { display: none; color: var(--red); font-size: 12px; text-align: center; margin-top: 10px; }
+  #lead-ok { display: none; text-align: center; padding: 20px 0; }
+  #lead-ok .check { font-size: 40px; margin-bottom: 10px; }
+  #lead-ok h3 { font-size: 17px; margin-bottom: 6px; }
+  #lead-ok p { font-size: 13.5px; color: var(--text-sec); }
+
+  footer { text-align: center; padding: 26px 0 20px; font-size: 11.5px; color: var(--text-mute); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="logo-row">
+      <img src="logo.png" alt="GLR" onerror="this.style.display='none'">
+      GLR Consultoria
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="badge">🟠 Especialistas em Shopee</div>
+    <h1>Sua loja na Shopee <span class="hl">vendendo mais</span>, sem você fazer tudo sozinho</h1>
+    <p>Preenche rapidinho e nosso time te chama no WhatsApp.</p>
+  </div>
+
+  <div class="lead-box">
+    <div class="lead-progress"><div id="lp-1" class="done"></div><div id="lp-2"></div><div id="lp-3"></div></div>
+
+    <div class="lead-step active" data-step="1">
+      <h3>Qual seu faturamento mensal na Shopee hoje?</h3>
+      <div class="lead-opts">
+        <div class="lead-opt" data-field="faturamento" data-value="Até R$ 20 mil">Até R$ 20 mil</div>
+        <div class="lead-opt" data-field="faturamento" data-value="R$ 20 mil a R$ 100 mil">R$ 20 mil a R$ 100 mil</div>
+        <div class="lead-opt" data-field="faturamento" data-value="R$ 100 mil a R$ 500 mil">R$ 100 mil a R$ 500 mil</div>
+        <div class="lead-opt" data-field="faturamento" data-value="Acima de R$ 500 mil">Acima de R$ 500 mil</div>
+      </div>
+    </div>
+
+    <div class="lead-step" data-step="2">
+      <h3>Qual sua maior dificuldade hoje?</h3>
+      <div class="lead-opts">
+        <div class="lead-opt" data-field="dificuldade" data-value="ADS / Anúncios">ADS / Anúncios</div>
+        <div class="lead-opt" data-field="dificuldade" data-value="Financeiro / Margem">Financeiro / Margem</div>
+        <div class="lead-opt" data-field="dificuldade" data-value="Falta de tempo">Falta de tempo</div>
+        <div class="lead-opt" data-field="dificuldade" data-value="Não sei por onde começar">Não sei por onde começar</div>
+      </div>
+    </div>
+
+    <div class="lead-step" data-step="3">
+      <h3>Seu nome e WhatsApp</h3>
+      <input type="text" id="lead-nome" class="lead-input" placeholder="Seu nome" autocomplete="name">
+      <input type="tel" id="lead-telefone" class="lead-input" placeholder="WhatsApp (com DDD)" autocomplete="tel" inputmode="tel">
+      <input type="text" id="lead-empresa2" name="empresa2" tabindex="-1" autocomplete="off"
+        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;" aria-hidden="true">
+      <button id="lead-enviar" class="btn" disabled>Quero falar com um especialista</button>
+      <div id="lead-erro">Preenche nome e WhatsApp pra continuar.</div>
+    </div>
+
+    <div id="lead-ok">
+      <div class="check">✅</div>
+      <h3>Recebemos seu contato!</h3>
+      <p>Se o WhatsApp não abriu sozinho, <a id="lead-ok-link" href="#" target="_blank" rel="noopener" style="color:var(--orange);font-weight:700;">clica aqui</a>.</p>
+    </div>
+  </div>
+
+  <div class="trust">
+    <div class="trust-item"><div class="trust-num">75+</div><div class="trust-label">Contas atendidas</div></div>
+    <div class="trust-item"><div class="trust-num">100%</div><div class="trust-label">Taxa conferida via API</div></div>
+  </div>
+</div>
+
+<footer>GLR Consultoria © 2026</footer>
+
+<script>
+  const WHATSAPP_NUMERO = '5517992117263';
+
+  const params = new URLSearchParams(window.location.search);
+  const utmSource = params.get('utm_source');
+  const utmCampaign = params.get('utm_campaign');
+
+  function waLink(msg) {
+    return `https://wa.me/${WHATSAPP_NUMERO}?text=${encodeURIComponent(msg)}`;
+  }
+
+  const respostas = {};
+  let stepAtual = 1;
+  const TOTAL_STEPS = 3;
+  function irParaStep(n) {
+    document.querySelectorAll('.lead-step').forEach(s => s.classList.remove('active'));
+    document.querySelector(`.lead-step[data-step="${n}"]`).classList.add('active');
+    document.querySelectorAll('.lead-progress > div').forEach((d, i) => d.classList.toggle('done', i < n));
+    stepAtual = n;
+  }
+  document.querySelectorAll('.lead-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      const field = opt.dataset.field;
+      document.querySelectorAll(`.lead-opt[data-field="${field}"]`).forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+      respostas[field] = opt.dataset.value;
+      if (stepAtual < TOTAL_STEPS) setTimeout(() => irParaStep(stepAtual + 1), 220);
+    });
+  });
+
+  const inpNome = document.getElementById('lead-nome');
+  const inpTel  = document.getElementById('lead-telefone');
+  const btnEnviar = document.getElementById('lead-enviar');
+  function validarPasso3() {
+    btnEnviar.disabled = inpNome.value.trim().length < 2 || inpTel.value.trim().length < 8;
+  }
+  inpNome.addEventListener('input', validarPasso3);
+  inpTel.addEventListener('input', validarPasso3);
+
+  const _leadsSb = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(
+        'https://rrodqlejqyaoomutriiw.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyb2RxbGVqcXlhb29tdXRyaWl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjU5NjUsImV4cCI6MjA5NjQ0MTk2NX0.JaKQHoGH8S3ZdLQInLErpC21SZ0j4FmIGtvWKcBes-A'
+      )
+    : null;
+
+  btnEnviar.addEventListener('click', async () => {
+    if (document.getElementById('lead-empresa2').value.trim() !== '') return; // honeypot
+
+    const nome = inpNome.value.trim();
+    const telefone = inpTel.value.trim();
+    const erroEl = document.getElementById('lead-erro');
+    if (nome.length < 2 || telefone.length < 8) { erroEl.style.display = 'block'; return; }
+    erroEl.style.display = 'none';
+
+    btnEnviar.disabled = true;
+    btnEnviar.textContent = 'Enviando...';
+
+    if (_leadsSb) {
+      try {
+        await _leadsSb.from('glr_leads').insert({
+          nome, telefone,
+          marketplace: 'Shopee',
+          faturamento: respostas.faturamento || null,
+          dificuldade: respostas.dificuldade || null,
+          utm_source: utmSource || null,
+          utm_campaign: utmCampaign || null,
+        });
+      } catch (e) {
+        console.warn('[GLR] Não consegui salvar o lead (segue pro WhatsApp mesmo assim):', e.message);
+      }
+    }
+
+    const msg = `Olá! Sou ${nome}, vim pela campanha da Shopee e quero saber mais.\n\n` +
+      `WhatsApp: ${telefone}\n` +
+      `Faturamento mensal (Shopee): ${respostas.faturamento || '—'}\n` +
+      `Maior dificuldade: ${respostas.dificuldade || '—'}` +
+      (utmSource ? `\n(origem: ${utmSource}${utmCampaign ? ' / ' + utmCampaign : ''})` : '');
+    const link = waLink(msg);
+    document.getElementById('lead-ok-link').href = link;
+
+    document.querySelectorAll('.lead-step').forEach(s => s.classList.remove('active'));
+    document.getElementById('lead-ok').style.display = 'block';
+    window.open(link, '_blank', 'noopener');
+  });
+</script>
+
+</body>
+</html>
