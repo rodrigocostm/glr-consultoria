@@ -111,6 +111,7 @@ function renderTabela() {
       <th style="text-align:left;padding:8px;">Nome</th>
       <th style="text-align:left;padding:8px;">WhatsApp</th>
       <th style="text-align:left;padding:8px;">Marketplace</th>
+      <th style="text-align:left;padding:8px;">Nicho</th>
       <th style="text-align:left;padding:8px;">Faturamento</th>
       <th style="text-align:left;padding:8px;">Dificuldade</th>
       <th style="text-align:left;padding:8px;">Origem</th>
@@ -122,6 +123,7 @@ function renderTabela() {
       <td style="padding:8px;font-size:13px;font-weight:600;">${l.nome || '—'}</td>
       <td style="padding:8px;font-size:12.5px;">${l.telefone || '—'}</td>
       <td style="padding:8px;font-size:12.5px;">${l.marketplace || '—'}</td>
+      <td style="padding:8px;font-size:12.5px;">${l.nicho || '—'}</td>
       <td style="padding:8px;font-size:12px;color:var(--text-secondary);">${l.faturamento || '—'}</td>
       <td style="padding:8px;font-size:12px;color:var(--text-secondary);">${l.dificuldade || '—'}</td>
       <td style="padding:8px;font-size:11.5px;color:var(--text-muted);">${l.utm_source || '—'}${l.utm_campaign ? ' / ' + l.utm_campaign : ''}</td>

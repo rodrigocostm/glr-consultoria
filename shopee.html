@@ -118,9 +118,19 @@
   </div>
 
   <div class="lead-box">
-    <div class="lead-progress"><div id="lp-1" class="done"></div><div id="lp-2"></div><div id="lp-3"></div></div>
+    <div class="lead-progress"><div id="lp-1" class="done"></div><div id="lp-2"></div><div id="lp-3"></div><div id="lp-4"></div></div>
 
     <div class="lead-step active" data-step="1">
+      <h3>Qual o nicho da sua loja?</h3>
+      <div class="lead-opts">
+        <div class="lead-opt" data-field="nicho" data-value="Moda">Moda</div>
+        <div class="lead-opt" data-field="nicho" data-value="Eletrônicos">Eletrônicos</div>
+        <div class="lead-opt" data-field="nicho" data-value="Casa e Decoração">Casa e Decoração</div>
+        <div class="lead-opt" data-field="nicho" data-value="Beleza">Beleza</div>
+      </div>
+    </div>
+
+    <div class="lead-step" data-step="2">
       <h3>Qual seu faturamento mensal na Shopee hoje?</h3>
       <div class="lead-opts">
         <div class="lead-opt" data-field="faturamento" data-value="Até R$ 20 mil">Até R$ 20 mil</div>
@@ -130,7 +140,7 @@
       </div>
     </div>
 
-    <div class="lead-step" data-step="2">
+    <div class="lead-step" data-step="3">
       <h3>Qual sua maior dificuldade hoje?</h3>
       <div class="lead-opts">
         <div class="lead-opt" data-field="dificuldade" data-value="ADS / Anúncios">ADS / Anúncios</div>
@@ -140,7 +150,7 @@
       </div>
     </div>
 
-    <div class="lead-step" data-step="3">
+    <div class="lead-step" data-step="4">
       <h3>Seu nome e WhatsApp</h3>
       <input type="text" id="lead-nome" class="lead-input" placeholder="Seu nome" autocomplete="name">
       <input type="tel" id="lead-telefone" class="lead-input" placeholder="WhatsApp (com DDD)" autocomplete="tel" inputmode="tel">
@@ -177,7 +187,7 @@
 
   const respostas = {};
   let stepAtual = 1;
-  const TOTAL_STEPS = 3;
+  const TOTAL_STEPS = 4;
   function irParaStep(n) {
     document.querySelectorAll('.lead-step').forEach(s => s.classList.remove('active'));
     document.querySelector(`.lead-step[data-step="${n}"]`).classList.add('active');
@@ -227,6 +237,7 @@
         await _leadsSb.from('glr_leads').insert({
           nome, telefone,
           marketplace: 'Shopee',
+          nicho: respostas.nicho || null,
           faturamento: respostas.faturamento || null,
           dificuldade: respostas.dificuldade || null,
           utm_source: utmSource || null,
@@ -239,6 +250,7 @@
 
     const msg = `Olá! Sou ${nome}, vim pela campanha da Shopee e quero saber mais.\n\n` +
       `WhatsApp: ${telefone}\n` +
+      `Nicho: ${respostas.nicho || '—'}\n` +
       `Faturamento mensal (Shopee): ${respostas.faturamento || '—'}\n` +
       `Maior dificuldade: ${respostas.dificuldade || '—'}` +
       (utmSource ? `\n(origem: ${utmSource}${utmCampaign ? ' / ' + utmCampaign : ''})` : '');
