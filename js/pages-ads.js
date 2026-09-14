@@ -881,6 +881,10 @@ function renderConteudo() {
   const pedidosTotais   = d.vendasTotais?.pedidos || 0;
   const vendasOrganicas = Math.max(vendasTotais - rec, 0);
   const pctViaAds       = vendasTotais > 0 ? (rec / vendasTotais) * 100 : 0;
+  // TACOS = investimento em ADS sobre o FATURAMENTO TOTAL (não só a receita
+  // atribuída a ads) — mostra o custo real de ADS sobre o negócio inteiro,
+  // diferente do ACoS que só olha a fatia que o próprio ads gerou.
+  const tacos            = vendasTotais > 0 ? (inv / vendasTotais) * 100 : 0;
 
   // Comparativo com o mesmo recorte de dias do mês anterior — badge verde/vermelho de % ao lado do valor
   const ma = d.mesAnterior;
@@ -934,6 +938,7 @@ function renderConteudo() {
       ${kpiCard('📈 Receita ADS', fmt(rec), 'atribuída pelo marketplace, não é o total', '#f0fdf4', '#16a34a')}
       ${kpiCard('🎯 ROAS', fmtN(roas, 2) + 'x', roas >= 3 ? '✅ Bom' : roas >= 1.5 ? '⚠️ Regular' : '❌ Baixo', roas >= 3 ? '#f0fdf4' : roas >= 1.5 ? '#fffbeb' : '#fef2f2', roas >= 3 ? '#16a34a' : roas >= 1.5 ? '#d97706' : '#dc2626')}
       ${kpiCard('📊 ACoS', fmtN(acos, 1) + '%', acos <= 30 ? '✅ Bom' : acos <= 50 ? '⚠️ Regular' : '❌ Alto', acos <= 30 ? '#f0fdf4' : acos <= 50 ? '#fffbeb' : '#fef2f2', acos <= 30 ? '#16a34a' : acos <= 50 ? '#d97706' : '#dc2626')}
+      ${kpiCard('🧮 TACOS', fmtN(tacos, 1) + '%', 'investimento sobre o faturamento TOTAL' + (tacos <= 10 ? ' — ✅ Bom' : tacos <= 20 ? ' — ⚠️ Regular' : ' — ❌ Alto'), tacos <= 10 ? '#f0fdf4' : tacos <= 20 ? '#fffbeb' : '#fef2f2', tacos <= 10 ? '#16a34a' : tacos <= 20 ? '#d97706' : '#dc2626')}
       ${kpiCard('🖱️ Cliques', fmtN(cli), '', '#faf5ff', '#9333ea')}
       ${kpiCard('👁️ Impressões', fmtN(imp), '', '#fff7ed', '#ea580c')}
       ${kpiCard('📉 CTR', fmtN(ctr, 2) + '%', '', '#f0f9ff', '#0284c7')}
@@ -1043,6 +1048,8 @@ function renderEficiencia(d) {
   const ctr  = d.resumo.impressoes > 0 ? (d.resumo.cliques / d.resumo.impressoes) * 100 : 0;
   const cpc  = d.resumo.cliques > 0 ? inv / d.resumo.cliques : 0;
   const cpa  = d.resumo.pedidos > 0 ? inv / d.resumo.pedidos : 0;
+  const vendasTotaisEf = d.vendasTotais?.total || 0;
+  const tacos = vendasTotaisEf > 0 ? (inv / vendasTotaisEf) * 100 : 0;
 
   const metrica = (icon, nome, valor, meta, atingido) => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
@@ -1061,6 +1068,7 @@ function renderEficiencia(d) {
     <div>
       ${metrica('🎯', 'ROAS', fmtN(roas, 2) + 'x', '≥ 3x', roas >= 3 ? '✅' : roas >= 1.5 ? '⚠️' : '❌')}
       ${metrica('📊', 'ACoS', fmtN(acos, 1) + '%', '≤ 30%', acos <= 30 ? '✅' : acos <= 50 ? '⚠️' : '❌')}
+      ${metrica('🧮', 'TACOS', fmtN(tacos, 1) + '%', '≤ 10%', tacos <= 10 ? '✅' : tacos <= 20 ? '⚠️' : '❌')}
       ${metrica('🖱️', 'CTR', fmtN(ctr, 2) + '%', '≥ 1%', ctr >= 1 ? '✅' : ctr >= 0.5 ? '⚠️' : '❌')}
       ${metrica('💵', 'CPC Médio', fmt(cpc), '', '')}
       ${metrica('🛒', 'CPA (Custo/Pedido)', fmt(cpa), '', '')}
@@ -1736,6 +1744,7 @@ RESUMO DO PERÍODO:
 - Receita via ADS: R$ ${(d.resumo.receita||0).toFixed(2)}
 - ROAS: ${d.resumo.investimento > 0 ? (d.resumo.receita/d.resumo.investimento).toFixed(2) : '0'}x
 - ACoS: ${d.resumo.receita > 0 ? ((d.resumo.investimento/d.resumo.receita)*100).toFixed(1) : '0'}%
+- TACOS: ${(d.vendasTotais?.total||0) > 0 ? ((d.resumo.investimento/(d.vendasTotais.total))*100).toFixed(1) : '0'}% (investimento sobre faturamento total de R$ ${(d.vendasTotais?.total||0).toFixed(2)})
 - Cliques: ${d.resumo.cliques} | Impressões: ${d.resumo.impressoes}
 - CTR: ${d.resumo.impressoes > 0 ? ((d.resumo.cliques/d.resumo.impressoes)*100).toFixed(2) : '0'}%
 - Pedidos via ADS: ${d.resumo.pedidos}
@@ -1816,6 +1825,7 @@ Para cada análise, siga esta estrutura:
 - ROAS ideal Shopee: ≥3x (bom), ≥5x (excelente)
 - ROAS ideal ML: ≥4x (bom), ≥6x (excelente)
 - ACoS ideal: <30% (bom), <20% (excelente)
+- TACOS ideal: <10% (bom), <5% (excelente) — investimento em ADS sobre o FATURAMENTO TOTAL (todos os canais, não só a receita atribuída a ads). TACOS baixo com ROAS/ACoS bons = ADS eficiente mas com espaço pra escalar sem perder eficiência; TACOS alto = ADS já é uma fatia grande demais do negócio, tem que crescer vendas orgânicas ou revisar o mix
 - CTR Shopee: >0.5% (bom), >1% (excelente)
 - CTR ML: >1% (bom), >2% (excelente)
 - Budget diário: nunca deixar campanha parar por saldo
