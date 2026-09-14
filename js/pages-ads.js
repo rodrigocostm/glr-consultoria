@@ -516,7 +516,10 @@ async function buscarDados(forcar = false) {
       // Saldo
       if (balResp.status === 'fulfilled') {
         const b = balResp.value;
-        resultado.saldo = parseFloat(b?.data?.balance) || parseFloat(b?.data?.current_balance) || parseFloat(b?.data?.response?.balance) || 0;
+        // Campo confirmado ao vivo: response.data.response.total_balance — as outras
+        // variantes (data.balance, data.current_balance, data.response.balance) nunca
+        // batiam com o formato real da API, então o saldo sempre lia R$ 0,00.
+        resultado.saldo = parseFloat(b?.data?.response?.total_balance) || parseFloat(b?.data?.balance) || parseFloat(b?.data?.current_balance) || parseFloat(b?.data?.response?.balance) || 0;
       } else {
         resultado._erros.push(`Saldo ADS falhou: ${balResp.reason?.message || balResp.reason}`);
       }
@@ -524,10 +527,39 @@ async function buscarDados(forcar = false) {
     } else if (['mercadolivre', 'ml', 'meli'].includes(mp)) {
       const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
       resultado._erros = [];
+      // ML Product Ads não tem saldo pré-pago (recarga) como a Shopee — null em vez de
+      // 0 pra IA não interpretar como problema de saldo zerado.
+      resultado.saldo = null;
 
-      const [campResp] = await Promise.allSettled([
+      const [campResp, advResp] = await Promise.allSettled([
         MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: primeiroDia, date_to: ultimoDia }),
+        MarketplaceAPI.call('ml_ads_accounts', { meliUserId: meliId }),
       ]);
+
+      // Dados diários (pra IA enxergar tendência) — precisa do advertiser_id do Product
+      // Ads (não é o meliUserId da conta) pra chamar ml_ads_metrics com group_by=day.
+      if (advResp.status === 'fulfilled') {
+        const advertiserId = advResp.value?.data?.advertisers?.[0]?.advertiser_id || advResp.value?.advertisers?.[0]?.advertiser_id;
+        if (advertiserId) {
+          try {
+            const diarioResp = await MarketplaceAPI.call('ml_ads_metrics', {
+              meliUserId: meliId, account_id: advertiserId,
+              date_from: primeiroDia, date_to: ultimoDia, group_by: 'day',
+            });
+            const diasRaw = diarioResp?.data?.results || diarioResp?.results || [];
+            resultado.diario = diasRaw.map(d => ({
+              data:       d.date || '',
+              gasto:      parseFloat(d.cost) || 0,
+              cliques:    parseInt(d.clicks) || 0,
+              impressoes: parseInt(d.prints) || 0,
+              pedidos:    parseInt(d.units_quantity) || 0,
+              receita:    parseFloat(d.total_amount) || 0,
+            }));
+          } catch (e) {
+            resultado._erros.push(`ML dados diários falhou: ${e.message}`);
+          }
+        }
+      }
 
       if (campResp.status === 'fulfilled') {
         // API retorna { data: { paging: {...}, results: [...] } }
@@ -1628,7 +1660,7 @@ RESUMO DO PERÍODO:
 - Cliques: ${d.resumo.cliques} | Impressões: ${d.resumo.impressoes}
 - CTR: ${d.resumo.impressoes > 0 ? ((d.resumo.cliques/d.resumo.impressoes)*100).toFixed(2) : '0'}%
 - Pedidos via ADS: ${d.resumo.pedidos}
-- Saldo ADS: R$ ${(d.saldo||0).toFixed(2)}
+${d.saldo != null ? `- Saldo ADS: R$ ${d.saldo.toFixed(2)}` : '- Saldo ADS: não aplicável neste marketplace (Mercado Livre Product Ads não usa saldo pré-pago)'}
 
 CAMPANHAS ATIVAS (top 15 por investimento):
 ${(d.campanhas||[]).slice(0,15).map(c => {
