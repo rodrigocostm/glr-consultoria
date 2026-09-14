@@ -5,7 +5,7 @@
 (function() {
 
 const ADS_CACHE_KEY = 'glr_ads_cache';
-const ADS_CACHE_VER = 2;
+const ADS_CACHE_VER = 3;
 
 let contasSel   = [];   // contas carregadas
 let contaAtual  = null; // conta selecionada
@@ -32,6 +32,63 @@ function periodoAtual() {
     ? `${anoSel}-${pad(mesSel + 1)}-${pad(ontem.getDate())}`
     : `${anoSel}-${pad(mesSel + 1)}-${pad(new Date(anoSel, mesSel + 1, 0).getDate())}`;
   return { primeiroDia, ultimoDia };
+}
+
+// Mesmo intervalo de dias do mês atual, mas no mês anterior — pra comparar
+// maçã com maçã (ex: mês corrente até dia 14 vs mês anterior até dia 14),
+// em vez do mês anterior completo, que sempre pareceria "maior".
+function periodoMesAnterior() {
+  const { primeiroDia, ultimoDia } = periodoAtual();
+  const diaFinal = parseInt(ultimoDia.split('-')[2], 10);
+  let m = mesSel - 1, a = anoSel;
+  if (m < 0) { m = 11; a -= 1; }
+  const ultimoDiaDoMesAnt = new Date(a, m + 1, 0).getDate();
+  const diaFinalAnt = Math.min(diaFinal, ultimoDiaDoMesAnt);
+  return {
+    primeiroDia: `${a}-${pad(m + 1)}-01`,
+    ultimoDia:   `${a}-${pad(m + 1)}-${pad(diaFinalAnt)}`,
+  };
+}
+
+// Resumo leve de ADS pra um período (só totais, sem detalhar campanha) — usado
+// pra buscar o mês anterior sem duplicar toda a lógica pesada de buscarDados().
+async function buscarResumoAdsPeriodo(primeiroDia, ultimoDia) {
+  const resumo = { investimento: 0, receita: 0, cliques: 0, impressoes: 0, pedidos: 0 };
+  if (!contaAtual) return resumo;
+  const mp = contaAtual.marketplace;
+  try {
+    if (mp === 'shopee') {
+      const shopId = contaAtual.param_to_use?.shopId || contaAtual.external_id;
+      const toShopeeDate = iso => iso.split('-').reverse().join('-');
+      const r = await MarketplaceAPI.shopeeAdsDailyPerformance({ shopId, start_date: toShopeeDate(primeiroDia), end_date: toShopeeDate(ultimoDia) });
+      const dias = r?.data?.response?.daily_performance_list || r?.data?.response || r?.data?.data || r?.data || r?.response || [];
+      if (Array.isArray(dias)) {
+        dias.forEach(d => {
+          resumo.investimento += parseFloat(d.expense) || parseFloat(d.cost) || parseFloat(d.total_cost) || 0;
+          resumo.cliques      += parseInt(d.clicks) || parseInt(d.click) || 0;
+          resumo.impressoes   += parseInt(d.impressions) || parseInt(d.impression) || 0;
+          resumo.pedidos      += parseInt(d.broad_order) || parseInt(d.direct_order) || parseInt(d.order_count) || parseInt(d.orders) || 0;
+          resumo.receita      += parseFloat(d.broad_gmv) || parseFloat(d.direct_gmv) || parseFloat(d.order_amount)
+                               || parseFloat(d.gmv_from_ads) || parseFloat(d.gmv) || parseFloat(d.revenue) || 0;
+        });
+      }
+    } else if (['mercadolivre', 'ml', 'meli'].includes(mp)) {
+      const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
+      const r = await MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: primeiroDia, date_to: ultimoDia });
+      const camps = r?.data?.results || r?.results || (Array.isArray(r?.data) ? r.data : []);
+      camps.forEach(c => {
+        const m = c.metrics || {};
+        resumo.investimento += parseFloat(m.cost) || 0;
+        resumo.cliques      += parseInt(m.clicks) || 0;
+        resumo.impressoes   += parseInt(m.prints) || 0;
+        resumo.pedidos      += parseInt(m.units_quantity) || 0;
+        resumo.receita      += parseFloat(m.total_amount) || 0;
+      });
+    }
+  } catch (e) {
+    console.warn('[ADS] resumo período anterior falhou:', e.message);
+  }
+  return resumo;
 }
 
 function fmt(v) {
@@ -601,17 +658,26 @@ async function buscarDados(forcar = false) {
       }
     }
 
-    // Vendas totais (orgânico + ads), comparativo semanal por produto e tendência
-    // de ROAS 7/15/30d por campanha — buscados em paralelo pra não somar latência
-    // extra ao que já rodou acima.
-    const [vendasTotaisResp, comparativoResp, janelasResp] = await Promise.allSettled([
+    // Vendas totais (orgânico + ads), comparativo semanal por produto, tendência
+    // de ROAS 7/15/30d por campanha, e o mesmo recorte de dias do mês anterior
+    // (ads + vendas totais) pra dar pra IA e ao dashboard uma base de comparação
+    // real — sem isso não dava pra saber se a conta está em queda ou não.
+    const { primeiroDia: pmPrimeiro, ultimoDia: pmUltimo } = periodoMesAnterior();
+    const [vendasTotaisResp, comparativoResp, janelasResp, adsMesAntResp, vendasMesAntResp] = await Promise.allSettled([
       buscarVendasTotaisPeriodo(primeiroDia, ultimoDia),
       buscarComparativoSemanal(),
       buscarJanelasCampanhas(resultado.campanhas.map(c => c.id)),
+      buscarResumoAdsPeriodo(pmPrimeiro, pmUltimo),
+      buscarVendasTotaisPeriodo(pmPrimeiro, pmUltimo),
     ]);
     resultado.vendasTotais = vendasTotaisResp.status === 'fulfilled' ? vendasTotaisResp.value : { total: 0, pedidos: 0 };
     resultado.comparativo  = comparativoResp.status  === 'fulfilled' ? comparativoResp.value  : null;
     resultado.janelas      = janelasResp.status      === 'fulfilled' ? janelasResp.value      : {};
+    resultado.mesAnterior = {
+      periodo: { de: pmPrimeiro, ate: pmUltimo },
+      ads:     adsMesAntResp.status    === 'fulfilled' ? adsMesAntResp.value    : { investimento: 0, receita: 0, cliques: 0, impressoes: 0, pedidos: 0 },
+      vendas:  vendasMesAntResp.status === 'fulfilled' ? vendasMesAntResp.value : { total: 0, pedidos: 0 },
+    };
 
     dadosADS = resultado;
     salvarCache(resultado);
@@ -816,6 +882,18 @@ function renderConteudo() {
   const vendasOrganicas = Math.max(vendasTotais - rec, 0);
   const pctViaAds       = vendasTotais > 0 ? (rec / vendasTotais) * 100 : 0;
 
+  // Comparativo com o mesmo recorte de dias do mês anterior — badge verde/vermelho de % ao lado do valor
+  const ma = d.mesAnterior;
+  const deltaBadge = (atual, antes) => {
+    if (!ma) return '';
+    if (!(antes > 0)) return atual > 0 ? `<span style="font-size:11px;font-weight:700;color:#16a34a;margin-left:6px;">novo</span>` : '';
+    const p = ((atual - antes) / antes) * 100;
+    const cor = p >= 0 ? '#16a34a' : '#dc2626';
+    const seta = p >= 0 ? '▲' : '▼';
+    return `<span style="font-size:11px;font-weight:700;color:${cor};margin-left:6px;">${seta} ${Math.abs(p).toFixed(1)}%</span>`;
+  };
+  const subLabelMesAnt = ma ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">vs ${fmt(ma.vendas.total)} (${ma.periodo.de.slice(5)} a ${ma.periodo.ate.slice(5)})</div>` : '';
+
   // Mostra erros de API diretamente na tela
   const erros = d._erros || [];
   const blocoErros = erros.length > 0 ? `
@@ -832,7 +910,8 @@ function renderConteudo() {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;">
         <div>
           <div style="font-size:11px;color:var(--text-secondary);">Vendas Totais (todos os canais)</div>
-          <div style="font-size:20px;font-weight:800;color:var(--text-primary);">${fmt(vendasTotais)}</div>
+          <div style="font-size:20px;font-weight:800;color:var(--text-primary);">${fmt(vendasTotais)}${deltaBadge(vendasTotais, ma?.vendas.total || 0)}</div>
+          ${subLabelMesAnt}
         </div>
         <div>
           <div style="font-size:11px;color:var(--text-secondary);">Vendas Orgânicas (sem Ads)</div>
@@ -840,7 +919,7 @@ function renderConteudo() {
         </div>
         <div>
           <div style="font-size:11px;color:var(--text-secondary);">Receita atribuída a Ads</div>
-          <div style="font-size:20px;font-weight:800;color:#16a34a;">${fmt(rec)}</div>
+          <div style="font-size:20px;font-weight:800;color:#16a34a;">${fmt(rec)}${deltaBadge(rec, ma?.ads.receita || 0)}</div>
         </div>
         <div>
           <div style="font-size:11px;color:var(--text-secondary);">% das vendas via Ads</div>
@@ -851,7 +930,7 @@ function renderConteudo() {
 
     <!-- KPIs principais -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px;">
-      ${kpiCard('💰 Investimento', fmt(inv), '', '#f0f9ff', '#0ea5e9')}
+      ${kpiCard('💰 Investimento', fmt(inv), ma ? `vs mês ant.: ${fmt(ma.ads.investimento)}` : '', '#f0f9ff', '#0ea5e9')}
       ${kpiCard('📈 Receita ADS', fmt(rec), 'atribuída pelo marketplace, não é o total', '#f0fdf4', '#16a34a')}
       ${kpiCard('🎯 ROAS', fmtN(roas, 2) + 'x', roas >= 3 ? '✅ Bom' : roas >= 1.5 ? '⚠️ Regular' : '❌ Baixo', roas >= 3 ? '#f0fdf4' : roas >= 1.5 ? '#fffbeb' : '#fef2f2', roas >= 3 ? '#16a34a' : roas >= 1.5 ? '#d97706' : '#dc2626')}
       ${kpiCard('📊 ACoS', fmtN(acos, 1) + '%', acos <= 30 ? '✅ Bom' : acos <= 50 ? '⚠️ Regular' : '❌ Alto', acos <= 30 ? '#f0fdf4' : acos <= 50 ? '#fffbeb' : '#fef2f2', acos <= 30 ? '#16a34a' : acos <= 50 ? '#d97706' : '#dc2626')}
@@ -1661,6 +1740,21 @@ RESUMO DO PERÍODO:
 - CTR: ${d.resumo.impressoes > 0 ? ((d.resumo.cliques/d.resumo.impressoes)*100).toFixed(2) : '0'}%
 - Pedidos via ADS: ${d.resumo.pedidos}
 ${d.saldo != null ? `- Saldo ADS: R$ ${d.saldo.toFixed(2)}` : '- Saldo ADS: não aplicável neste marketplace (Mercado Livre Product Ads não usa saldo pré-pago)'}
+${(() => {
+  const ma = d.mesAnterior;
+  if (!ma) return '';
+  const pct = (atual, antes) => antes > 0 ? (((atual - antes) / antes) * 100).toFixed(1) : (atual > 0 ? '+∞' : '0');
+  const roasAtual = d.resumo.investimento > 0 ? d.resumo.receita / d.resumo.investimento : 0;
+  const roasAnt   = ma.ads.investimento > 0 ? ma.ads.receita / ma.ads.investimento : 0;
+  return `
+COMPARATIVO COM MÊS ANTERIOR (mesmo recorte de dias: ${ma.periodo.de} a ${ma.periodo.ate}):
+- Investimento ADS: R$ ${ma.ads.investimento.toFixed(2)} → R$ ${d.resumo.investimento.toFixed(2)} (${pct(d.resumo.investimento, ma.ads.investimento)}%)
+- Receita via ADS: R$ ${ma.ads.receita.toFixed(2)} → R$ ${d.resumo.receita.toFixed(2)} (${pct(d.resumo.receita, ma.ads.receita)}%)
+- ROAS: ${roasAnt.toFixed(2)}x → ${roasAtual.toFixed(2)}x
+- Vendas totais (todos os canais): R$ ${ma.vendas.total.toFixed(2)} → R$ ${(d.vendasTotais?.total||0).toFixed(2)} (${pct(d.vendasTotais?.total||0, ma.vendas.total)}%)
+- Pedidos totais: ${ma.vendas.pedidos} → ${d.vendasTotais?.pedidos||0}
+IMPORTANTE: use esse comparativo pra decidir se a conta está em queda, estável ou em crescimento — nunca afirme "queda" ou "crescimento" só olhando o ROAS/investimento do mês atual isolado.`;
+})()}
 
 CAMPANHAS ATIVAS (top 15 por investimento):
 ${(d.campanhas||[]).slice(0,15).map(c => {
