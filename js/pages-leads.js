@@ -8,8 +8,8 @@
 let leads = [];
 let filtroStatus = 'todos';
 
-const STATUS_LABEL = { novo: '🆕 Novo', contatado: '📞 Contatado', fechado: '✅ Fechado', perdido: '❌ Perdido' };
-const STATUS_COR = { novo: '#60a5fa', contatado: '#fbbf24', fechado: '#34d399', perdido: '#f87171' };
+const STATUS_LABEL = { novo: '🆕 Novo', contatado: '📞 Contatado', em_analise: '🔎 Em Análise', reuniao_agendada: '📅 Reunião Agendada', fechado: '✅ Fechado', desqualificado: '🚫 Desqualificado', perdido: '❌ Perdido' };
+const STATUS_COR = { novo: '#60a5fa', contatado: '#fbbf24', em_analise: '#a78bfa', reuniao_agendada: '#38bdf8', fechado: '#34d399', desqualificado: '#94a3b8', perdido: '#f87171' };
 
 function renderPage(params, container) {
   container.innerHTML = `<div id="leads-root" style="padding:24px;max-width:1200px;margin:0 auto;"></div>`;
@@ -60,22 +60,20 @@ function renderKpis() {
   const el = document.getElementById('leads-kpis');
   if (!el) return;
   const total = leads.length;
-  const porStatus = { novo: 0, contatado: 0, fechado: 0, perdido: 0 };
-  leads.forEach(l => { porStatus[l.status || 'novo'] = (porStatus[l.status || 'novo'] || 0) + 1; });
+  const porStatus = {};
+  Object.keys(STATUS_LABEL).forEach(k => { porStatus[k] = 0; });
+  leads.forEach(l => { const k = l.status || 'novo'; porStatus[k] = (porStatus[k] || 0) + 1; });
   const kpi = (label, val, cor) => `<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value" style="color:${cor};font-size:18px;">${val}</div></div>`;
   el.innerHTML = `
     ${kpi('Total de leads', total, 'var(--text-primary)')}
-    ${kpi(STATUS_LABEL.novo, porStatus.novo, STATUS_COR.novo)}
-    ${kpi(STATUS_LABEL.contatado, porStatus.contatado, STATUS_COR.contatado)}
-    ${kpi(STATUS_LABEL.fechado, porStatus.fechado, STATUS_COR.fechado)}
-    ${kpi(STATUS_LABEL.perdido, porStatus.perdido, STATUS_COR.perdido)}
+    ${Object.keys(STATUS_LABEL).map(k => kpi(STATUS_LABEL[k], porStatus[k] || 0, STATUS_COR[k])).join('')}
   `;
 }
 
 function renderFiltros() {
   const el = document.getElementById('leads-filtros');
   if (!el) return;
-  const opcoes = [['todos', 'Todos'], ['novo', STATUS_LABEL.novo], ['contatado', STATUS_LABEL.contatado], ['fechado', STATUS_LABEL.fechado], ['perdido', STATUS_LABEL.perdido]];
+  const opcoes = [['todos', 'Todos'], ...Object.entries(STATUS_LABEL)];
   el.innerHTML = opcoes.map(([val, label]) => `
     <button class="btn btn-sm ${filtroStatus === val ? 'btn-primary' : 'btn-secondary'}" onclick="window._leadsFiltrar('${val}')">${label}</button>
   `).join('');
