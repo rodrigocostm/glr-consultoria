@@ -129,15 +129,19 @@ function renderLista() {
 // usados pelos botões manuais da Central de ADS (pausar/orçamento). ──
 async function executarSugestao(s) {
   const shopId = s.marketplace === 'shopee' ? s.conta_id : null; // conta_id guarda o external_id/shopId/meliUserId direto
+  // campanha_id vem como text da glr_ads_sugestoes — a Shopee exige campaign_id
+  // numérico (o botão manual de orçamento já existente sempre manda number, não
+  // string; mandar string dava "Invalid param type" na Shopee).
+  const campanhaIdShopee = Number(s.campanha_id);
   if (s.tipo === 'pausar') {
     if (s.marketplace === 'shopee') {
-      await MarketplaceAPI.call('shopee_ads_pause_campaign', { shopId, campaign_id: s.campanha_id });
+      await MarketplaceAPI.call('shopee_ads_pause_campaign', { shopId, campaign_id: campanhaIdShopee });
     } else {
       await MarketplaceAPI.call('ml_ads_update_campaign', { campaign_id: String(s.campanha_id), meliUserId: s.conta_id, status: 'paused' });
     }
   } else if (s.tipo === 'retomar') {
     if (s.marketplace === 'shopee') {
-      await MarketplaceAPI.call('shopee_ads_resume_campaign', { shopId, campaign_id: s.campanha_id });
+      await MarketplaceAPI.call('shopee_ads_resume_campaign', { shopId, campaign_id: campanhaIdShopee });
     } else {
       await MarketplaceAPI.call('ml_ads_update_campaign', { campaign_id: String(s.campanha_id), meliUserId: s.conta_id, status: 'active' });
     }
@@ -145,7 +149,7 @@ async function executarSugestao(s) {
     const novoValor = parseFloat(s.valor_sugerido_numero);
     if (!(novoValor > 0)) throw new Error('valor_sugerido_numero inválido pra orçamento');
     if (s.marketplace === 'shopee') {
-      await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId, campaign_id: s.campanha_id, campaign_budget: novoValor });
+      await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId, campaign_id: campanhaIdShopee, campaign_budget: novoValor });
     } else {
       await MarketplaceAPI.call('ml_ads_update_campaign', { campaign_id: String(s.campanha_id), meliUserId: s.conta_id, budget: novoValor });
     }
