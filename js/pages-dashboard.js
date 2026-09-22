@@ -145,6 +145,10 @@ async function _dashBuscarVendasPorDia() {
           const meliId = conta.param_to_use?.meliUserId || conta.external_id;
           const orders = await MarketplaceAPI.mlOrders(meliId, primeiroDia, dataTo);
           for (const o of orders) {
+            // Cancelamento cobre a maioria dos casos. Devolução/reembolso no ML é um
+            // fluxo separado (claims/mediations) que não muda o status do pedido —
+            // verificar isso exigiria uma chamada por pedido, inviável neste loop
+            // (dezenas de contas por atualização). Limitação conhecida, não corrigida.
             if (['cancelled','invalid'].includes((o.status||'').toLowerCase())) continue;
             const d = new Date(o.date_created||0);
             if (isNaN(d)) continue;
@@ -155,6 +159,27 @@ async function _dashBuscarVendasPorDia() {
         } else if (mkt === 'shopee') {
           const shopId = conta.param_to_use?.shopId || conta.external_id;
           const sns = await MarketplaceAPI.shopeeListOrderSns(shopId, tsFrom, tsTo);
+
+          // Pedido cancelado ou com devolução/reembolso aceito não gera comissão.
+          // order_status CANCELLED/IN_CANCEL cobre cancelamento; devolução/reembolso
+          // é um fluxo separado da Shopee (o pedido original continua COMPLETED) —
+          // por isso cruza com a lista de devoluções (get_return_list) pelo order_sn.
+          // status ACCEPTED = reembolso já confirmado; outros status (JUDGING,
+          // PROCESSING, CANCELLED da devolução) ainda não tiraram a venda, então não
+          // são descontados aqui (confirmado com dados reais de conta ativa).
+          const orderSnsReembolsados = new Set();
+          try {
+            let pagina = 1;
+            let temMais = true;
+            while (temMais && pagina <= 5) {
+              const rl = await MarketplaceAPI.call('shopee_get_return_list', { shopId, create_time_from: tsFrom, create_time_to: tsTo, page_size: 50, page_no: pagina });
+              const devolucoes = rl.data?.response?.return || rl.response?.return || [];
+              devolucoes.forEach(r => { if (r.status === 'ACCEPTED' && r.order_sn) orderSnsReembolsados.add(r.order_sn); });
+              temMais = !!(rl.data?.response?.more || rl.response?.more);
+              pagina++;
+            }
+          } catch(e) {}
+
           for (let i=0; i<sns.length; i+=50) {
             const lote = sns.slice(i,i+50).map(o=>o.sn);
             try {
@@ -166,6 +191,9 @@ async function _dashBuscarVendasPorDia() {
                 // READY_TO_SHIP não é confiável no filtro de data da API em contas
                 // com volume alto (confirmado com pedido real).
                 if (ord.create_time < tsFrom || ord.create_time > tsTo) continue;
+                const orderStatus = (ord.order_status || '').toUpperCase();
+                if (['CANCELLED','IN_CANCEL'].includes(orderStatus)) continue;
+                if (orderSnsReembolsados.has(ord.order_sn)) continue;
                 const d = new Date(ord.create_time*1000);
                 const itens = ord.item_list || ord.items || [];
                 const unidades = itens.reduce((s,it) => s + (parseInt(it.model_quantity_purchased)||parseInt(it.quantity)||1), 0) || 1;
@@ -183,6 +211,9 @@ async function _dashBuscarVendasPorDia() {
           const magaluAccountId = conta.param_to_use?.magalu_account_id || conta.external_id;
           const orders = await MarketplaceAPI.magaluOrders(magaluAccountId, primeiroDia, dataTo);
           for (const o of orders) {
+            // Mesma limitação do ML: devolução/reembolso na Magalu é rastreado via
+            // tickets separados (magalu_ticket_returns), não no status do pedido —
+            // checagem por pedido inviável neste loop. Só cancelamento é filtrado.
             if (['canceled','cancelled'].includes((o.status||'').toLowerCase())) continue;
             const d = new Date(o.purchased_at || o.created_at || 0);
             if (isNaN(d)) continue;
