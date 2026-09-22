@@ -10,7 +10,6 @@
 
   // ── Placeholder para os marketplaces ainda não construídos ──────────────
   const _PLACEHOLDER = {
-    shopee:  { nome: 'Shopee',      cor: '#ee4d2d' },
     tiktok:  { nome: 'TikTok Shop', cor: '#000000' },
     amazon:  { nome: 'Amazon',      cor: '#ff9900' },
   };
@@ -521,8 +520,540 @@
     carregarContas();
   }
 
+  // ============================================================
+  // SHOPEE
+  // ============================================================
+
+  function renderShopee(params, el) {
+    const state = {
+      contas: [], contaId: '', carregandoContas: true,
+
+      fotos: [], fotoRefBase64: '', fotoRefPreview: '',
+      iaCarregando: false, gerandoFoto: false,
+
+      arvoreCategorias: null,
+      nomeProduto: '', categoriaSugestoes: [], categoriaEscolhida: null, buscandoCategoria: false,
+      atributosObrigatorios: [], atributosOpcionais: [], mostrarOpcionais: false, carregandoAtributos: false,
+      valoresAtributos: {},
+
+      marcaOpcoes: [], marcaObrigatoria: false, carregandoMarca: false,
+
+      descricao: '', preco: '', estoque: '', condicao: 'NEW', marca: '0', sku: '',
+      peso: '', compr: '', larg: '', alt: '',
+
+      criando: false, resultado: null, erro: '',
+    };
+
+    function syncFormState() {
+      const v = id => document.getElementById(id)?.value;
+      if (document.getElementById('an-sp-nome')) {
+        state.nomeProduto = v('an-sp-nome') || ''; state.descricao = v('an-sp-descricao') || '';
+        state.preco = v('an-sp-preco') || ''; state.estoque = v('an-sp-estoque') || '';
+        state.condicao = v('an-sp-condicao') || 'NEW'; state.sku = v('an-sp-sku') || '';
+        state.peso = v('an-sp-peso') || ''; state.compr = v('an-sp-compr') || '';
+        state.larg = v('an-sp-larg') || ''; state.alt = v('an-sp-alt') || '';
+        if (document.getElementById('an-sp-marca')) state.marca = v('an-sp-marca');
+        if (document.getElementById('an-sp-marca-custom')) state.marcaCustom = v('an-sp-marca-custom') || '';
+      }
+      [...state.atributosObrigatorios, ...state.atributosOpcionais].forEach(a => {
+        const tipo = campoTipoAtributo(a);
+        if (tipo === 'numero_unidade') {
+          const n = v(`attr-${a.attribute_id}-num`); const u = v(`attr-${a.attribute_id}-unit`);
+          if (n) state.valoresAtributos[a.attribute_id] = { num: n, unit: u };
+        } else if (tipo === 'multi') {
+          const el2 = document.getElementById(`attr-${a.attribute_id}`);
+          const sel = el2 ? Array.from(el2.selectedOptions).map(o => o.value) : [];
+          if (sel.length) state.valoresAtributos[a.attribute_id] = sel;
+        } else {
+          const val = v(`attr-${a.attribute_id}`);
+          if (val) state.valoresAtributos[a.attribute_id] = val;
+        }
+      });
+    }
+
+    function render() { renderPainel(); }
+
+    async function carregarContas() {
+      try {
+        const todas = await MarketplaceAPI.listAccounts();
+        state.contas = todas.filter(c => (c.marketplace || '').toLowerCase() === 'shopee');
+        if (state.contas.length === 1) state.contaId = state.contas[0].param_to_use?.shopId || state.contas[0].external_id;
+      } catch (e) {
+        state.erro = 'Não consegui carregar as contas: ' + e.message;
+      } finally {
+        state.carregandoContas = false;
+        render();
+      }
+    }
+
+    function nomeConta(c) {
+      const tag = c.tags?.[0]?.name || c.tags?.[0];
+      return (typeof tag === 'string' ? tag : tag?.value) || c.nickname || c.external_id;
+    }
+
+    // ── Categorias (árvore cacheada localmente pra resolver nome dos IDs
+    // sugeridos sem ter que baixar tudo de novo a cada anúncio) ─────────
+    async function obterArvoreCategorias() {
+      if (state.arvoreCategorias) return state.arvoreCategorias;
+      try {
+        const cache = JSON.parse(localStorage.getItem('glr_shopee_categorias_cache') || 'null');
+        if (cache && Date.now() - cache.ts < 7 * 24 * 3600 * 1000) { state.arvoreCategorias = cache.lista; return cache.lista; }
+      } catch (e) {}
+      const resp = await MarketplaceAPI.call('shopee_get_categories', { shopId: state.contaId });
+      const lista = resp.data?.response?.category_list || resp.response?.category_list || [];
+      try { localStorage.setItem('glr_shopee_categorias_cache', JSON.stringify({ ts: Date.now(), lista })); } catch (e) {}
+      state.arvoreCategorias = lista;
+      return lista;
+    }
+
+    function nomeCategoria(id) {
+      const c = (state.arvoreCategorias || []).find(c => c.category_id === id);
+      return c?.display_category_name || c?.original_category_name || ('Categoria ' + id);
+    }
+
+    // ── Foto de referência + IA (mesmo endpoint usado no ML) ─────────
+    function processarFotoRef(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        state.fotoRefPreview = String(reader.result || '');
+        state.fotoRefBase64 = state.fotoRefPreview;
+        adicionarFoto(state.fotoRefBase64, 'referencia');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function adicionarFoto(url, origem) {
+      syncFormState();
+      state.fotos.push({ id: Date.now() + Math.random(), url, origem });
+      render();
+    }
+
+    function removerFoto(id) {
+      syncFormState();
+      state.fotos = state.fotos.filter(f => f.id !== id);
+      render();
+    }
+
+    async function sugerirComIA() {
+      if (!state.fotoRefBase64) { alert('Envie a foto do produto primeiro.'); return; }
+      syncFormState();
+      state.iaCarregando = true;
+      render();
+      try {
+        const resp = await fetch('/api/analyze-photo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: state.fotoRefBase64 }),
+        });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.error || 'Erro ao sugerir com IA.');
+        if (json.titulo) state.nomeProduto = json.titulo;
+        if (json.descricao) state.descricao = json.descricao;
+        state.iaCarregando = false;
+        if (state.nomeProduto) { await sugerirCategorias(); return; } // já chama render()
+      } catch (e) {
+        alert('Erro ao sugerir com IA: ' + (e.message || e));
+      } finally {
+        state.iaCarregando = false;
+        render();
+      }
+    }
+
+    async function gerarFotoIA() {
+      if (!state.fotoRefBase64) { alert('Envie a foto do produto primeiro.'); return; }
+      syncFormState();
+      state.gerandoFoto = true;
+      render();
+      try {
+        const resp = await fetch('/api/generate-photo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: state.fotoRefBase64, product_name: state.nomeProduto, details: state.descricao, stage: 'ambientada' }),
+        });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.error || 'Erro ao gerar foto.');
+        const img = json.images?.[0];
+        if (!img) { alert('A IA não devolveu nenhuma imagem.'); return; }
+        state.fotos.push({ id: Date.now() + Math.random(), url: img.url, origem: 'gerada' });
+      } catch (e) {
+        alert('Erro ao gerar foto: ' + (e.message || e));
+      } finally {
+        state.gerandoFoto = false;
+        render();
+      }
+    }
+
+    function processarFotosExtra(files) {
+      syncFormState();
+      [...files].forEach(file => {
+        if (!file.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.onload = () => { adicionarFoto(String(reader.result || ''), 'upload'); };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // ── Categoria sugerida pela própria Shopee a partir do nome do produto ──
+    async function sugerirCategorias() {
+      syncFormState();
+      if (!state.nomeProduto.trim()) { alert('Preencha o nome do produto primeiro.'); return; }
+      if (!state.contaId) { alert('Selecione a loja Shopee primeiro.'); return; }
+      state.buscandoCategoria = true;
+      state.categoriaSugestoes = [];
+      render();
+      try {
+        await obterArvoreCategorias();
+        const resp = await MarketplaceAPI.call('shopee_recommend_category', { item_name: state.nomeProduto, shopId: state.contaId });
+        const ids = resp.data?.response?.category_id || resp.response?.category_id || [];
+        state.categoriaSugestoes = ids.map(id => ({ category_id: id, nome: nomeCategoria(id) }));
+        if (!state.categoriaSugestoes.length) alert('A Shopee não sugeriu categoria pra esse nome. Ajuste o nome do produto e tente de novo.');
+      } catch (e) {
+        alert('Erro ao sugerir categoria: ' + (e.message || e));
+      } finally {
+        state.buscandoCategoria = false;
+        render();
+      }
+    }
+
+    async function escolherCategoria(cat) {
+      syncFormState();
+      state.categoriaEscolhida = cat;
+      state.categoriaSugestoes = [];
+      state.valoresAtributos = {};
+      state.mostrarOpcionais = false;
+      state.carregandoAtributos = true;
+      state.carregandoMarca = true;
+      render();
+      try {
+        const [respAttr, respBrand] = await Promise.allSettled([
+          MarketplaceAPI.call('shopee_get_attributes', { shopId: state.contaId, params: { category_id: cat.category_id } }),
+          MarketplaceAPI.call('shopee_get_brand_list', { shopId: state.contaId, category_id: cat.category_id, offset: 0, page_size: 100, status: 1 }),
+        ]);
+        if (respAttr.status === 'fulfilled') {
+          const arvore = respAttr.value.data?.response?.list?.[0]?.attribute_tree || respAttr.value.response?.list?.[0]?.attribute_tree || [];
+          state.atributosObrigatorios = arvore.filter(a => a.mandatory);
+          state.atributosOpcionais = arvore.filter(a => !a.mandatory);
+        }
+        if (respBrand.status === 'fulfilled') {
+          const r = respBrand.value.data?.response || respBrand.value.response || {};
+          state.marcaOpcoes = r.brand_list || [];
+          state.marcaObrigatoria = !!r.is_mandatory;
+        }
+      } catch (e) {
+        alert('Erro ao buscar ficha técnica / marcas: ' + (e.message || e));
+      } finally {
+        state.carregandoAtributos = false;
+        state.carregandoMarca = false;
+        render();
+      }
+    }
+
+    // ── Renderização de campo de atributo dinâmico ───────────
+    function labelAtributo(a) { return a.multi_lang?.find(m => m.language === 'pt-BR')?.value || a.name; }
+    function valoresAtributo(a) { return (a.attribute_value_list || []).map(v => ({ id: v.value_id, nome: v.multi_lang?.find(m => m.language === 'pt-BR')?.value || v.name })); }
+    function campoTipoAtributo(a) {
+      if (a.attribute_value_list && a.attribute_value_list.length) return a.attribute_info?.input_type === 5 ? 'multi' : 'select';
+      return a.attribute_info?.attribute_unit_list?.length ? 'numero_unidade' : 'texto';
+    }
+
+    function renderCampoAtributo(a) {
+      const tipo = campoTipoAtributo(a);
+      const valorSalvo = state.valoresAtributos[a.attribute_id];
+      if (tipo === 'select') {
+        return `<select class="form-select" id="attr-${a.attribute_id}">
+          <option value="">— não informado —</option>
+          ${valoresAtributo(a).map(v => `<option value="${v.id}" ${String(valorSalvo) === String(v.id) ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}
+        </select>`;
+      }
+      if (tipo === 'multi') {
+        const sel = Array.isArray(valorSalvo) ? valorSalvo.map(String) : [];
+        return `<select class="form-select" id="attr-${a.attribute_id}" multiple size="4">
+          ${valoresAtributo(a).map(v => `<option value="${v.id}" ${sel.includes(String(v.id)) ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}
+        </select>
+        <div style="font-size:10px;color:var(--text-muted);">Segura Ctrl/Cmd pra marcar mais de um (até ${a.attribute_info?.max_value_count || 5}).</div>`;
+      }
+      if (tipo === 'numero_unidade') {
+        const units = a.attribute_info?.attribute_unit_list || [];
+        const savedNum = valorSalvo?.num || ''; const savedUnit = valorSalvo?.unit || units[0];
+        return `<div style="display:flex;gap:6px;">
+          <input type="number" step="0.01" class="form-input" id="attr-${a.attribute_id}-num" value="${esc(savedNum)}" style="flex:1;">
+          <select class="form-select" id="attr-${a.attribute_id}-unit" style="width:80px;">
+            ${units.map(u => `<option value="${esc(u)}" ${savedUnit === u ? 'selected' : ''}>${esc(u)}</option>`).join('')}
+          </select>
+        </div>`;
+      }
+      return `<input type="text" class="form-input" id="attr-${a.attribute_id}" value="${esc(valorSalvo || '')}">`;
+    }
+
+    function renderBlocoAtributos(lista, titulo, colapsavel) {
+      if (!lista.length) return '';
+      const conteudo = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+        ${lista.map(a => `<div class="form-group" style="margin:0;">
+          <label class="form-label">${esc(labelAtributo(a))}${a.mandatory ? ' *' : ''}</label>
+          ${renderCampoAtributo(a)}
+        </div>`).join('')}
+      </div>`;
+      if (!colapsavel) return `<div style="margin-top:14px;"><div class="form-label" style="margin-bottom:8px;">${titulo}</div>${conteudo}</div>`;
+      return `<div style="margin-top:14px;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window._anSpToggleOpcionais()">
+          ${state.mostrarOpcionais ? '▲' : '▼'} ${titulo} (${lista.length})
+        </button>
+        ${state.mostrarOpcionais ? `<div style="margin-top:10px;">${conteudo}</div>` : ''}
+      </div>`;
+    }
+
+    // ── Montagem do payload e criação ────────────────────────
+    function montarAtributosPayload() {
+      const out = [];
+      [...state.atributosObrigatorios, ...state.atributosOpcionais].forEach(a => {
+        const tipo = campoTipoAtributo(a);
+        if (tipo === 'select') {
+          const val = document.getElementById(`attr-${a.attribute_id}`)?.value;
+          if (val) out.push({ attribute_id: a.attribute_id, attribute_value_list: [{ value_id: parseInt(val, 10) }] });
+        } else if (tipo === 'multi') {
+          const el2 = document.getElementById(`attr-${a.attribute_id}`);
+          const sel = el2 ? Array.from(el2.selectedOptions).map(o => parseInt(o.value, 10)) : [];
+          if (sel.length) out.push({ attribute_id: a.attribute_id, attribute_value_list: sel.map(id => ({ value_id: id })) });
+        } else if (tipo === 'numero_unidade') {
+          const num = document.getElementById(`attr-${a.attribute_id}-num`)?.value;
+          const unit = document.getElementById(`attr-${a.attribute_id}-unit`)?.value;
+          if (num) out.push({ attribute_id: a.attribute_id, attribute_value_list: [{ value_unit: unit, original_value_name: num }] });
+        } else {
+          const val = document.getElementById(`attr-${a.attribute_id}`)?.value?.trim();
+          if (val) out.push({ attribute_id: a.attribute_id, attribute_value_list: [{ original_value_name: val }] });
+        }
+      });
+      return out;
+    }
+
+    async function criarAnuncio() {
+      if (!state.contaId) return alert('Selecione a loja Shopee.');
+      if (!state.categoriaEscolhida) return alert('Escolha uma categoria antes de criar o anúncio.');
+      if (!state.fotos.length) return alert('Adicione pelo menos uma foto ao anúncio.');
+
+      const nome = document.getElementById('an-sp-nome')?.value.trim();
+      const descricao = document.getElementById('an-sp-descricao')?.value.trim();
+      const preco = parseFloat(document.getElementById('an-sp-preco')?.value);
+      const estoque = parseInt(document.getElementById('an-sp-estoque')?.value, 10);
+      const condicao = document.getElementById('an-sp-condicao')?.value;
+      const sku = document.getElementById('an-sp-sku')?.value.trim();
+      const peso = document.getElementById('an-sp-peso')?.value;
+      const compr = document.getElementById('an-sp-compr')?.value;
+      const larg = document.getElementById('an-sp-larg')?.value;
+      const alt = document.getElementById('an-sp-alt')?.value;
+      const marcaSel = document.getElementById('an-sp-marca')?.value;
+      const marcaCustom = document.getElementById('an-sp-marca-custom')?.value.trim();
+
+      if (!nome) return alert('Preencha o nome do produto.');
+      if (!descricao) return alert('Preencha a descrição.');
+      if (!(preco > 0)) return alert('Informe um preço válido.');
+      if (!(estoque >= 0)) return alert('Informe o estoque.');
+
+      const faltando = state.atributosObrigatorios.filter(a => {
+        const tipo = campoTipoAtributo(a);
+        if (tipo === 'numero_unidade') return !document.getElementById(`attr-${a.attribute_id}-num`)?.value;
+        if (tipo === 'multi') return !document.getElementById(`attr-${a.attribute_id}`)?.selectedOptions?.length;
+        return !document.getElementById(`attr-${a.attribute_id}`)?.value;
+      });
+      if (faltando.length && !confirm(`Faltam ${faltando.length} atributo(s) obrigatório(s) (${faltando.map(labelAtributo).join(', ')}). A Shopee pode recusar o anúncio. Continuar mesmo assim?`)) return;
+
+      const body = {
+        shopId: state.contaId,
+        item_name: nome,
+        description: descricao,
+        category_id: parseInt(state.categoriaEscolhida.category_id, 10),
+        original_price: preco,
+        stock: estoque,
+        condition: condicao,
+        images_base64: state.fotos.map(f => f.url),
+      };
+      if (sku) body.item_sku = sku;
+      if (peso) body.weight = parseFloat(peso);
+      if (compr && larg && alt) body.dimension = { package_length: parseFloat(compr), package_width: parseFloat(larg), package_height: parseFloat(alt) };
+      const marcaFinal = marcaCustom || (state.marcaOpcoes.find(m => String(m.brand_id) === marcaSel)?.original_brand_name) || '';
+      if (marcaFinal) body.brand = marcaFinal;
+      const atributos = montarAtributosPayload();
+      // attribute_list é o nome real do campo na API da Shopee — não aparece
+      // documentado no schema da ferramenta de criação, mas é enviado mesmo
+      // assim; se a integração ignorar, o anúncio sai sem esses atributos em
+      // vez de falhar (mesmo espírito do "continuar mesmo assim" acima).
+      if (atributos.length) body.attribute_list = atributos;
+
+      state.criando = true; state.erro = ''; state.resultado = null;
+      render();
+      try {
+        const resp = await MarketplaceAPI.call('shopee_create_item', body);
+        state.resultado = resp.data?.response || resp.response || resp.data || resp;
+      } catch (e) {
+        state.erro = e.message || String(e);
+      } finally {
+        state.criando = false;
+        render();
+      }
+    }
+
+    function resetar() { Router.navigate('anuncios-shopee'); }
+
+    // ── Render principal ──────────────────────────────────────
+    function renderPainel() {
+      const root = document.getElementById('an-sp-root');
+      if (!root) return;
+
+      if (state.resultado) {
+        root.innerHTML = `<div class="card" style="padding:40px;text-align:center;max-width:520px;margin:0 auto;">
+          <div style="font-size:44px;margin-bottom:12px;">✅</div>
+          <div style="font-size:18px;font-weight:800;margin-bottom:8px;">Anúncio criado na Shopee!</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Item ID: ${esc(state.resultado.item_id || '—')} — pode levar alguns minutos até aparecer na loja, a Shopee revisa antes de publicar.</div>
+          <button class="btn btn-secondary" style="width:100%;" onclick="window._anSpReset()">➕ Criar outro anúncio</button>
+        </div>`;
+        return;
+      }
+
+      root.innerHTML = `
+        <div class="card" style="padding:20px 22px;margin-bottom:16px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Loja Shopee</label>
+            <select class="form-select" id="an-sp-conta" ${state.carregandoContas ? 'disabled' : ''} onchange="window._anSpSelConta(this.value)">
+              ${state.carregandoContas ? '<option>Carregando lojas...</option>' :
+                `<option value="">— Selecione —</option>` + state.contas.map(c => {
+                  const id = c.param_to_use?.shopId || c.external_id;
+                  return `<option value="${id}" ${state.contaId === id ? 'selected' : ''}>${esc(nomeConta(c))}</option>`;
+                }).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:16px;" class="an-grid-resp">
+          <div class="card" style="padding:20px;">
+            <div class="form-label" style="margin-bottom:10px;">📸 Foto do produto</div>
+            <div id="an-sp-dropzone" ondragover="event.preventDefault();this.style.borderColor='#ee4d2d';" ondragleave="this.style.borderColor='var(--border)';"
+                 ondrop="event.preventDefault();this.style.borderColor='var(--border)';window._anSpDropRef(event);"
+                 onclick="document.getElementById('an-sp-ref-input').click()"
+                 style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,#f7f8fc);">
+              ${state.fotoRefPreview
+                ? `<img src="${state.fotoRefPreview}" style="max-width:100%;max-height:130px;border-radius:8px;object-fit:contain;">`
+                : `<div style="font-size:32px;">📤</div><div style="font-size:12.5px;font-weight:600;margin-top:6px;">Envie a foto de referência</div>`}
+              <input type="file" id="an-sp-ref-input" accept="image/*" style="display:none;" onchange="window._anSpUploadRef(this)">
+            </div>
+
+            <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:10px;" ${(!state.fotoRefBase64 || state.iaCarregando) ? 'disabled' : ''} onclick="window._anSpSugerirIA()">
+              ${state.iaCarregando ? '⏳ Analisando...' : '✨ Autopreencher com IA (nome, descrição, categoria)'}
+            </button>
+            <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:8px;" ${(!state.fotoRefBase64 || state.gerandoFoto) ? 'disabled' : ''} onclick="window._anSpGerarFotoIA()">
+              ${state.gerandoFoto ? '⏳ Gerando foto...' : '🎨 Gerar foto profissional com IA'}
+            </button>
+
+            <div class="form-label" style="margin-top:16px;margin-bottom:6px;">Mais fotos (opcional)</div>
+            <input type="file" accept="image/*" multiple onchange="window._anSpUploadExtra(this)">
+
+            ${state.fotos.length ? `
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;">
+                ${state.fotos.map((f, i) => `
+                  <div style="position:relative;">
+                    <img src="${f.url}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid var(--border);">
+                    ${i === 0 ? '<span style="position:absolute;top:3px;left:3px;background:#ee4d2d;color:#fff;font-size:9px;padding:1px 5px;border-radius:99px;">capa</span>' : ''}
+                    <button type="button" onclick="window._anSpRemoverFoto(${f.id})" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;">✕</button>
+                  </div>`).join('')}
+              </div>` : `<div style="font-size:11px;color:var(--text-muted);margin-top:10px;">Nenhuma foto adicionada ainda.</div>`}
+          </div>
+
+          <div class="card" style="padding:20px;">
+            <div class="form-group" style="margin-bottom:12px;">
+              <label class="form-label">Nome do produto</label>
+              <input type="text" class="form-input" id="an-sp-nome" value="${esc(state.nomeProduto)}" placeholder="Ex: Armário de Cozinha 4 Portas MDF Branco">
+            </div>
+            <button class="btn btn-secondary btn-sm" style="margin-bottom:12px;" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anSpSugerirCategoria()">
+              ${state.buscandoCategoria ? '⏳ Buscando...' : '🗂️ Sugerir categoria pra esse nome'}
+            </button>
+
+            ${state.categoriaSugestoes.length ? `
+              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
+                ${state.categoriaSugestoes.map((c, i) => `
+                  <button type="button" class="btn btn-secondary btn-sm" style="text-align:left;justify-content:flex-start;" onclick="window._anSpEscolherCategoria(${i})">
+                    ${esc(c.nome)} <span style="color:var(--text-muted);font-size:11px;">(${c.category_id})</span>
+                  </button>`).join('')}
+              </div>` : ''}
+
+            ${state.categoriaEscolhida ? `
+              <div style="background:rgba(238,77,45,0.08);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:14px;">
+                ✅ <b>${esc(state.categoriaEscolhida.nome)}</b> <span style="color:var(--text-muted);">(${esc(state.categoriaEscolhida.category_id)})</span>
+              </div>` : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Escolha a categoria antes de preencher a ficha técnica.</div>`}
+
+            <div class="form-group" style="margin-bottom:12px;">
+              <label class="form-label">Descrição</label>
+              <textarea class="form-textarea" id="an-sp-descricao" rows="4" placeholder="Descreva o produto: material, medidas, diferenciais...">${state.descricao}</textarea>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;">
+              <div class="form-group" style="margin:0;"><label class="form-label">Preço (R$)</label><input type="number" step="0.01" class="form-input" id="an-sp-preco" value="${esc(state.preco)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">Estoque</label><input type="number" class="form-input" id="an-sp-estoque" value="${esc(state.estoque)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">Condição</label>
+                <select class="form-select" id="an-sp-condicao">
+                  <option value="NEW" ${state.condicao === 'NEW' ? 'selected' : ''}>Novo</option>
+                  <option value="USED" ${state.condicao === 'USED' ? 'selected' : ''}>Usado</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;"><label class="form-label">SKU</label><input type="text" class="form-input" id="an-sp-sku" value="${esc(state.sku)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">Peso (kg)</label><input type="number" step="0.01" class="form-input" id="an-sp-peso" value="${esc(state.peso)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">Compr. embalagem (cm)</label><input type="number" class="form-input" id="an-sp-compr" value="${esc(state.compr)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">Larg. embalagem (cm)</label><input type="number" class="form-input" id="an-sp-larg" value="${esc(state.larg)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">Alt. embalagem (cm)</label><input type="number" class="form-input" id="an-sp-alt" value="${esc(state.alt)}"></div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:12px;">
+              <label class="form-label">Marca ${state.marcaObrigatoria ? '*' : '(opcional)'}</label>
+              ${state.carregandoMarca ? `<div style="font-size:12px;color:var(--text-muted);">⏳ Carregando marcas da categoria...</div>` :
+                state.marcaOpcoes.length ? `
+                  <select class="form-select" id="an-sp-marca">
+                    ${state.marcaOpcoes.map(m => `<option value="${m.brand_id}" ${String(state.marca) === String(m.brand_id) ? 'selected' : ''}>${esc(m.display_brand_name)}</option>`).join('')}
+                  </select>
+                  <input type="text" class="form-input" id="an-sp-marca-custom" placeholder="Marca não está na lista? Digite aqui (substitui a seleção acima)" value="${esc(state.marcaCustom || '')}" style="margin-top:6px;">
+                ` : `<input type="text" class="form-input" id="an-sp-marca-custom" placeholder="Ex: Genérica" value="${esc(state.marcaCustom || '')}">`}
+            </div>
+
+            ${state.carregandoAtributos ? `<div style="font-size:12px;color:var(--text-muted);">⏳ Carregando ficha técnica da categoria...</div>` : ''}
+            ${!state.carregandoAtributos && state.categoriaEscolhida ? `
+              ${renderBlocoAtributos(state.atributosObrigatorios, '📋 Ficha técnica — obrigatórios pro SEO/catálogo', false)}
+              ${renderBlocoAtributos(state.atributosOpcionais, 'Ver mais atributos (opcionais, melhoram a busca)', true)}
+            ` : ''}
+
+            ${state.erro ? `<div style="font-size:12.5px;color:var(--red);margin-top:14px;">⚠️ ${esc(state.erro)}</div>` : ''}
+
+            <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:18px;background:#ee4d2d;" ${state.criando ? 'disabled' : ''} onclick="window._anSpCriar()">
+              ${state.criando ? '⏳ Criando anúncio...' : '🚀 Criar anúncio na Shopee'}
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    el.innerHTML = `<div class="page">
+      <div class="section-title mb-16">🟠 Anúncios — Shopee</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;max-width:680px;">
+        Suba a foto, deixe a IA sugerir nome/descrição/categoria, confira a ficha técnica e publique — tudo numa tela só.
+      </div>
+      <div id="an-sp-root"></div>
+      <style>@media (max-width:900px){.an-grid-resp{grid-template-columns:1fr !important;}}</style>
+    </div>`;
+
+    window._anSpSelConta = (v) => { syncFormState(); state.contaId = v; render(); };
+    window._anSpUploadRef = (input) => processarFotoRef(input.files?.[0]);
+    window._anSpDropRef = (ev) => processarFotoRef(ev.dataTransfer?.files?.[0]);
+    window._anSpUploadExtra = (input) => processarFotosExtra(input.files || []);
+    window._anSpRemoverFoto = removerFoto;
+    window._anSpSugerirIA = sugerirComIA;
+    window._anSpGerarFotoIA = gerarFotoIA;
+    window._anSpSugerirCategoria = sugerirCategorias;
+    window._anSpEscolherCategoria = (i) => escolherCategoria(state.categoriaSugestoes[i]);
+    window._anSpToggleOpcionais = () => { syncFormState(); state.mostrarOpcionais = !state.mostrarOpcionais; render(); };
+    window._anSpCriar = criarAnuncio;
+    window._anSpReset = resetar;
+
+    render();
+    carregarContas();
+  }
+
   Router.register('anuncios-ml', renderML);
-  Router.register('anuncios-shopee', (p, el) => renderEmConstrucao('shopee', el));
+  Router.register('anuncios-shopee', renderShopee);
   Router.register('anuncios-tiktok', (p, el) => renderEmConstrucao('tiktok', el));
   Router.register('anuncios-amazon', (p, el) => renderEmConstrucao('amazon', el));
 
