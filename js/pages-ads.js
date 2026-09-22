@@ -5,7 +5,7 @@
 (function() {
 
 const ADS_CACHE_KEY = 'glr_ads_cache';
-const ADS_CACHE_VER = 7;
+const ADS_CACHE_VER = 8;
 
 let contasSel   = [];   // contas carregadas
 let contaAtual  = null; // conta selecionada
@@ -51,6 +51,71 @@ function periodoMesAnterior() {
 
 // Resumo leve de ADS pra um período (só totais, sem detalhar campanha) — usado
 // pra buscar o mês anterior sem duplicar toda a lógica pesada de buscarDados().
+// Histórico diário de 60 dias corridos (fixo, independente do mês selecionado no
+// filtro) — pra IA enxergar tendência/sazonalidade além do mês corrente, que às
+// vezes tem só poucos dias (início de mês). Usado só no contexto da IA, não no
+// dashboard visual (que continua respeitando o filtro de mês normal).
+async function buscarHistoricoDiario60d() {
+  if (!contaAtual) return [];
+  const mp = contaAtual.marketplace;
+  const hoje = new Date();
+  const inicio = new Date(hoje); inicio.setDate(inicio.getDate() - 59);
+  const iso = d => _isoDate(d);
+  try {
+    if (mp === 'shopee') {
+      const shopId = contaAtual.param_to_use?.shopId || contaAtual.external_id;
+      const toShopeeDate = s => s.split('-').reverse().join('-');
+      const r = await MarketplaceAPI.shopeeAdsDailyPerformance({ shopId, start_date: toShopeeDate(iso(inicio)), end_date: toShopeeDate(iso(hoje)) });
+      const dias = r?.data?.response?.daily_performance_list || r?.data?.response || r?.data?.data || r?.data || r?.response || [];
+      if (!Array.isArray(dias)) return [];
+      return dias.map(d => ({
+        data:    d.date || d.day || d.report_time || '',
+        gasto:   parseFloat(d.expense) || parseFloat(d.cost) || 0,
+        receita: parseFloat(d.broad_gmv) || parseFloat(d.direct_gmv) || parseFloat(d.gmv) || 0,
+        pedidos: parseInt(d.broad_order) || parseInt(d.direct_order) || 0,
+      }));
+    }
+    if (['mercadolivre', 'ml', 'meli'].includes(mp)) {
+      const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
+      const advResp = await MarketplaceAPI.call('ml_ads_accounts', { meliUserId: meliId });
+      const advertiserId = advResp?.data?.advertisers?.[0]?.advertiser_id || advResp?.advertisers?.[0]?.advertiser_id;
+      if (!advertiserId) return [];
+      const r = await MarketplaceAPI.call('ml_ads_metrics', { meliUserId: meliId, account_id: advertiserId, date_from: iso(inicio), date_to: iso(hoje), group_by: 'day' });
+      const dias = r?.data?.results || r?.results || [];
+      return dias.map(d => ({
+        data: d.date || '', gasto: parseFloat(d.cost) || 0, receita: parseFloat(d.total_amount) || 0, pedidos: parseInt(d.units_quantity) || 0,
+      }));
+    }
+  } catch (e) {
+    console.warn('[ADS] histórico 60d falhou:', e.message);
+  }
+  return [];
+}
+
+// Agrega o histórico de 60 dias em semanas (exceto os últimos 14 dias, que já
+// vêm dia a dia em outro bloco do prompt) — dá pra IA enxergar sazonalidade e
+// tendência de mais longo prazo sem inflar o prompt com 60 linhas soltas.
+function _resumoSemanal60d(historico60d) {
+  if (!historico60d || historico60d.length <= 14) return '';
+  const antigos = historico60d.slice(0, -14); // tudo exceto os últimos 14 dias
+  if (!antigos.length) return '';
+  const semanas = [];
+  for (let i = 0; i < antigos.length; i += 7) {
+    const bloco = antigos.slice(i, i + 7);
+    if (!bloco.length) continue;
+    const soma = (campo) => bloco.reduce((s, d) => s + (d[campo] || 0), 0);
+    semanas.push({ de: bloco[0].data, ate: bloco[bloco.length - 1].data, gasto: soma('gasto'), receita: soma('receita'), pedidos: soma('pedidos') });
+  }
+  if (!semanas.length) return '';
+  return `
+
+HISTÓRICO SEMANAL (dias 15 a 60 atrás, agrupado por semana — antes disso já vem dia a dia):
+${semanas.map(s => {
+    const roas = s.gasto > 0 ? (s.receita / s.gasto).toFixed(2) : '—';
+    return `${s.de} a ${s.ate}: gasto R$${s.gasto.toFixed(2)}, receita R$${s.receita.toFixed(2)}, ROAS ${roas}x, ${s.pedidos} pedidos`;
+  }).join('\n')}`;
+}
+
 async function buscarResumoAdsPeriodo(primeiroDia, ultimoDia) {
   const resumo = { investimento: 0, receita: 0, cliques: 0, impressoes: 0, pedidos: 0 };
   if (!contaAtual) return resumo;
@@ -721,18 +786,20 @@ async function buscarDados(forcar = false) {
     // (ads + vendas totais) pra dar pra IA e ao dashboard uma base de comparação
     // real — sem isso não dava pra saber se a conta está em queda ou não.
     const { primeiroDia: pmPrimeiro, ultimoDia: pmUltimo } = periodoMesAnterior();
-    const [vendasTotaisResp, comparativoResp, janelasResp, adsMesAntResp, vendasMesAntResp, sugestoesResp] = await Promise.allSettled([
+    const [vendasTotaisResp, comparativoResp, janelasResp, adsMesAntResp, vendasMesAntResp, sugestoesResp, historico60dResp] = await Promise.allSettled([
       buscarVendasTotaisPeriodo(primeiroDia, ultimoDia),
       buscarComparativoSemanal(),
       buscarJanelasCampanhas(resultado.campanhas.map(c => c.id)),
       buscarResumoAdsPeriodo(pmPrimeiro, pmUltimo),
       buscarVendasTotaisPeriodoLeve(pmPrimeiro, pmUltimo),
       buscarSugestoesPendentes(),
+      buscarHistoricoDiario60d(),
     ]);
     resultado.vendasTotais = vendasTotaisResp.status === 'fulfilled' ? vendasTotaisResp.value : { total: 0, pedidos: 0 };
     resultado.comparativo  = comparativoResp.status  === 'fulfilled' ? comparativoResp.value  : null;
     resultado.janelas      = janelasResp.status      === 'fulfilled' ? janelasResp.value      : {};
     resultado.sugestoesPorCampanha = sugestoesResp.status === 'fulfilled' ? sugestoesResp.value : {};
+    resultado.historico60d = historico60dResp.status === 'fulfilled' ? historico60dResp.value : [];
     resultado.mesAnterior = {
       periodo: { de: pmPrimeiro, ate: pmUltimo },
       ads:     adsMesAntResp.status    === 'fulfilled' ? adsMesAntResp.value    : { investimento: 0, receita: 0, cliques: 0, impressoes: 0, pedidos: 0 },
@@ -1789,6 +1856,30 @@ window._adsSalvarRoas = async function() {
   } catch(e) { msg.textContent = '❌ Erro: ' + e.message; msg.style.color = '#dc2626'; }
 };
 
+// Sinal de concorrência (ML) — só funciona pra item elegível a catálogo do ML
+// (ex: eletrônicos padronizados); testado ao vivo e confirmado que a maioria dos
+// produtos customizados (móveis etc.) não é elegível — nesse caso simplesmente
+// não entra sinal nenhum pra essa campanha, sem quebrar a geração de sugestões.
+// Limitado às 3 campanhas de maior investimento pra não multiplicar chamadas.
+async function buscarSinalConcorrenciaML(campanhas) {
+  if (!contaAtual || !['mercadolivre', 'ml', 'meli'].includes(contaAtual.marketplace)) return '';
+  const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
+  const top3 = [...(campanhas || [])].sort((a, b) => b.gasto - a.gasto).slice(0, 3);
+  const linhas = [];
+  for (const c of top3) {
+    try {
+      const itensResp = await MarketplaceAPI.call('ml_ads_items', { meliUserId: meliId, campaign_id: String(c.id), limit: 1 });
+      const item = (itensResp?.data?.results || itensResp?.results || [])[0];
+      if (!item?.item_id) continue;
+      const ptw = await MarketplaceAPI.call('ml_catalog_price_to_win', { meliUserId: meliId, item_id: item.item_id });
+      const body = ptw?.data || ptw;
+      if (body?.reason?.includes('item_not_opted_in') || body?.price_to_win == null) continue;
+      linhas.push(`• ${c.nome}: preço atual R$${(body.current_price||item.price||0).toFixed(2)}, preço pra ganhar buybox R$${parseFloat(body.price_to_win).toFixed(2)}${body.competitors_sharing_first_place ? `, ${body.competitors_sharing_first_place} concorrente(s) na primeira posição` : ''}`);
+    } catch (e) { /* item não elegível ou erro pontual — segue sem esse sinal */ }
+  }
+  return linhas.length ? `\n\nCONCORRÊNCIA (catálogo ML, top 3 campanhas — só aparece quando o produto é elegível a catálogo):\n${linhas.join('\n')}` : '';
+}
+
 // ─── Agente IA — funções globais ─────────────────────────────
 window._adsNovaConversa = function() {
   _aiHistory = [];
@@ -1816,6 +1907,7 @@ window._adsGerarSugestoes = async function() {
   const d = dadosADS;
   const ma = d.mesAnterior;
   const tacosAtual = (d.vendasTotais?.total || 0) > 0 ? (d.resumo.investimento / d.vendasTotais.total) * 100 : 0;
+  const ctxConcorrencia = await buscarSinalConcorrenciaML(d.campanhas);
 
   const contexto = `
 Conta: ${d.conta} | Marketplace: ${d.marketplace} | Período: ${d.periodo.de} a ${d.periodo.ate}
@@ -1831,6 +1923,7 @@ ${(d.campanhas||[]).map(c => {
   const ctr  = c.impressoes > 0 ? ((c.cliques/c.impressoes)*100).toFixed(2) : '0';
   return `${c.id} | ${c.nome} | R$${c.gasto.toFixed(2)} | R$${c.receita.toFixed(2)} | ${c.pedidos||0} pedidos | ${roas}x | ${acos}% | ${ctr}% | ${c.orcamentoLabel} | ${c.roasTarget ? c.roasTarget+'x' : '—'} | tipo:${c.bidding}`;
 }).join('\n')}
+${_resumoSemanal60d(d.historico60d)}${ctxConcorrencia}
 `.trim();
 
   const system = `Você é um consultor de ADS pra marketplaces (Shopee e Mercado Livre) que gera SUGESTÕES ESTRUTURADAS de otimização — NÃO texto corrido. Um analista humano vai revisar e aprovar cada uma antes de executar, então cada sugestão precisa ser específica e executável, não um conselho genérico.
@@ -1855,6 +1948,7 @@ REGRAS:
 - Só sugira "ajustar_orcamento" com valor_sugerido_numero preenchido (o novo orçamento diário em reais) — priorize aumentar orçamento de campanhas com bom volume de pedidos E ROAS acima da meta (tem espaço pra escalar), e reduzir de campanhas com muito investimento e poucos pedidos.
 - Só sugira "ajustar_roas_target" pra campanhas tipo:auto — não existe meta ROAS em campanha manual.
 - "revisar_anuncio" é pra ações FORA do ADS que aumentam conversão e vendas — o analista não executa isso automaticamente, é ação manual dele. Use quando a campanha tem tráfego decente (cliques/impressões OK) mas conversão baixa ou queda de pedidos sem motivo aparente no orçamento/ROAS: sugira coisas concretas como revisar título e fotos do anúncio, competitividade do preço frente a concorrentes, criar cupom/desconto pra destravar conversão, avaliar avaliações/reputação do produto, garantir frete grátis ou entrega rápida. Sempre específico à campanha, nunca genérico.
+- Se aparecer o bloco CONCORRÊNCIA nos dados, use esse preço real pra sugerir "revisar_anuncio" com valor_sugerido_label citando o preço pra ganhar o buybox (ex: "Baixar preço pra R$X pra competir") — é dado real da API do ML, não estimativa. Se o bloco não aparecer, não invente número de concorrência.
 - Máximo 8 sugestões, só as que têm impacto real — não force sugestão se a conta está saudável. Pelo menos 1 sugestão "revisar_anuncio" quando fizer sentido pelos dados, não só sugestões de orçamento/pausa.
 - Se a conta está indo bem (pedidos e faturamento estáveis ou crescendo), pode retornar array vazio [].
 - TACOS <10% e volume de pedidos bom = tem espaço pra sugerir aumento de orçamento em campanhas eficientes, não só corte.`;
@@ -1987,6 +2081,7 @@ ${(d.diario||[]).slice(-14).map(dia => {
   const r = dia.gasto > 0 ? (dia.receita/dia.gasto).toFixed(2) : '—';
   return `${dia.data}: gasto R$${dia.gasto.toFixed(2)}, receita R$${dia.receita.toFixed(2)}, ROAS ${r}x, cliques ${dia.cliques}`;
 }).join('\n')}
+${_resumoSemanal60d(d.historico60d)}
 ` : 'Nenhum dado carregado ainda.';
 
   const ctxRanking = (() => {
