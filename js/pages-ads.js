@@ -5,7 +5,7 @@
 (function() {
 
 const ADS_CACHE_KEY = 'glr_ads_cache';
-const ADS_CACHE_VER = 4;
+const ADS_CACHE_VER = 5;
 
 let contasSel   = [];   // contas carregadas
 let contaAtual  = null; // conta selecionada
@@ -189,6 +189,26 @@ async function buscarVendasTotaisPeriodo(primeiroDia, ultimoDia) {
     console.warn('[ADS] vendas totais falhou:', e.message);
   }
   return { total: 0, pedidos: 0 };
+}
+
+// Busca sugestões da IA pendentes (glr_ads_sugestoes) pra essa conta e devolve
+// um mapa campanha_id → sugestão, pra mostrar direto na tabela de campanhas em
+// vez de só na aba separada "Sugestões de ADS".
+async function buscarSugestoesPendentes() {
+  if (!contaAtual || typeof _sb === 'undefined') return {};
+  try {
+    const { data, error } = await _sb.from('glr_ads_sugestoes')
+      .select('campanha_id, tipo, valor_sugerido_label, motivo, prioridade')
+      .eq('conta_id', contaAtual.external_id)
+      .eq('status', 'pendente');
+    if (error) throw error;
+    const mapa = {};
+    (data || []).forEach(s => { if (s.campanha_id != null) mapa[String(s.campanha_id)] = s; });
+    return mapa;
+  } catch (e) {
+    console.warn('[ADS] sugestões pendentes falhou:', e.message);
+    return {};
+  }
 }
 
 // Versão leve de buscarVendasTotaisPeriodo — usada só pro comparativo com o mês
@@ -699,16 +719,18 @@ async function buscarDados(forcar = false) {
     // (ads + vendas totais) pra dar pra IA e ao dashboard uma base de comparação
     // real — sem isso não dava pra saber se a conta está em queda ou não.
     const { primeiroDia: pmPrimeiro, ultimoDia: pmUltimo } = periodoMesAnterior();
-    const [vendasTotaisResp, comparativoResp, janelasResp, adsMesAntResp, vendasMesAntResp] = await Promise.allSettled([
+    const [vendasTotaisResp, comparativoResp, janelasResp, adsMesAntResp, vendasMesAntResp, sugestoesResp] = await Promise.allSettled([
       buscarVendasTotaisPeriodo(primeiroDia, ultimoDia),
       buscarComparativoSemanal(),
       buscarJanelasCampanhas(resultado.campanhas.map(c => c.id)),
       buscarResumoAdsPeriodo(pmPrimeiro, pmUltimo),
       buscarVendasTotaisPeriodoLeve(pmPrimeiro, pmUltimo),
+      buscarSugestoesPendentes(),
     ]);
     resultado.vendasTotais = vendasTotaisResp.status === 'fulfilled' ? vendasTotaisResp.value : { total: 0, pedidos: 0 };
     resultado.comparativo  = comparativoResp.status  === 'fulfilled' ? comparativoResp.value  : null;
     resultado.janelas      = janelasResp.status      === 'fulfilled' ? janelasResp.value      : {};
+    resultado.sugestoesPorCampanha = sugestoesResp.status === 'fulfilled' ? sugestoesResp.value : {};
     resultado.mesAnterior = {
       periodo: { de: pmPrimeiro, ate: pmUltimo },
       ads:     adsMesAntResp.status    === 'fulfilled' ? adsMesAntResp.value    : { investimento: 0, receita: 0, cliques: 0, impressoes: 0, pedidos: 0 },
@@ -1004,7 +1026,7 @@ function renderConteudo() {
           <span style="font-size:12px;color:var(--text-secondary);">Ordenado por investimento</span>
         </div>
       </div>
-      ${renderTabelaCampanhas(d.campanhas, d.janelas)}
+      ${renderTabelaCampanhas(d.campanhas, d.janelas, d.sugestoesPorCampanha)}
     </div>
 
     <!-- Tendências período -->
@@ -1142,7 +1164,8 @@ function _sugestaoCampanha(c, roas, acos, ctr) {
   return null;
 }
 
-function renderTabelaCampanhas(campanhas, janelas) {
+function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
+  sugestoesPorCampanha = sugestoesPorCampanha || {};
   if (!campanhas || campanhas.length === 0) {
     return `<div style="text-align:center;padding:32px;color:var(--text-secondary);font-size:13px;">Nenhuma campanha ativa encontrada neste período</div>`;
   }
@@ -1159,6 +1182,8 @@ function renderTabelaCampanhas(campanhas, janelas) {
     const roasCor = roas >= 3 ? '#16a34a' : roas >= 1.5 ? '#d97706' : roas > 0 ? '#dc2626' : 'var(--text-muted,#94a3b8)';
     const acosCor = acos === 0 ? 'var(--text-muted,#94a3b8)' : acos <= 30 ? '#16a34a' : acos <= 50 ? '#d97706' : '#dc2626';
     const sug = _sugestaoCampanha(c, roas, acos, ctr);
+    const sugIA = sugestoesPorCampanha[String(c.id)] || null;
+    const TIPO_LABEL_IA = { pausar: '⏸️ Pausar', retomar: '▶️ Retomar', ajustar_orcamento: '💰 Ajustar orçamento', ajustar_roas_target: '🎯 Ajustar meta ROAS', outro: '💡 Sugestão' };
 
     // Tendência de ROAS nas 3 janelas — dá pra ver se a campanha está
     // melhorando (7d acima do 30d) ou piorando (7d abaixo do 30d) com o tempo.
@@ -1239,6 +1264,7 @@ function renderTabelaCampanhas(campanhas, janelas) {
         <td style="padding:10px 12px;max-width:220px;">
           <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.nome}">${c.nome}</div>
           ${sug ? `<span style="display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:${sug.bg};color:${sug.cor};white-space:nowrap;" title="${sug.texto}">${sug.icon} ${sug.texto}</span>` : ''}
+          ${sugIA ? `<div style="margin-top:4px;"><button onclick="Router.navigate('sugestoes-ads')" title="${(sugIA.motivo||'').replace(/"/g,'')}" style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#ede9fe;color:#6d28d9;border:none;cursor:pointer;white-space:nowrap;">${TIPO_LABEL_IA[sugIA.tipo] || '💡 Sugestão'}${sugIA.valor_sugerido_label ? ' → ' + sugIA.valor_sugerido_label : ''}</button></div>` : ''}
           ${tendenciaHtml}
           ${linkItens}
         </td>
@@ -1441,16 +1467,28 @@ function renderTendencias(d) {
     `;
   };
 
-  // Alertas automáticos de queda
+  // Meta ROAS média ponderada pelo investimento (só campanhas automáticas têm meta)
+  // — ROAS aparece junto da meta, não como o alerta principal. O que guia a
+  // decisão é volume de pedidos e faturamento, que é o que o negócio sente.
+  const campsComMeta = (d.campanhas || []).filter(c => c.roasTarget != null && c.gasto > 0);
+  const investTotalMeta = campsComMeta.reduce((s, c) => s + c.gasto, 0);
+  const metaRoasMedia = investTotalMeta > 0
+    ? campsComMeta.reduce((s, c) => s + c.roasTarget * c.gasto, 0) / investTotalMeta
+    : null;
+
+  // Alertas automáticos — pedidos e faturamento primeiro (é o que move o negócio),
+  // ROAS entra só se estiver abaixo da própria meta, não por variar vs período.
   const alertas = [];
   const roasDiff = diff(roas7, roasA);
   const recDiff  = diff(rec7,  recA);
   const cliDiff  = diff(cli7,  cliA);
-  if (roasDiff < -20) alertas.push(`🚨 ROAS caiu <strong>${fmtN(Math.abs(roasDiff), 1)}%</strong> comparado ao período anterior — revise lances e produtos`);
-  if (recDiff  < -15) alertas.push(`📉 Receita ADS caiu <strong>${fmtN(Math.abs(recDiff),  1)}%</strong> — verifique se campanhas estão ativas e com saldo`);
+  const pedDiff  = diff(ped7,  pedA);
+  if (pedDiff  < -20) alertas.push(`📦 Pedidos via ADS caíram <strong>${fmtN(Math.abs(pedDiff), 1)}%</strong> — queda de volume de vendas, não só de eficiência`);
+  if (recDiff  < -15) alertas.push(`📉 Faturamento via ADS caiu <strong>${fmtN(Math.abs(recDiff),  1)}%</strong> — verifique se campanhas estão ativas e com saldo`);
+  if (metaRoasMedia != null && roas7 < metaRoasMedia * 0.8) alertas.push(`🎯 ROAS real (${fmtN(roas7,2)}x) está abaixo da meta média (${fmtN(metaRoasMedia,2)}x) — revise lances e produtos`);
   if (cliDiff  < -20) alertas.push(`👁️ Cliques caíram <strong>${fmtN(Math.abs(cliDiff),  1)}%</strong> — anúncios podem estar perdendo relevância ou orçamento acabou`);
   const invDiff  = diff(inv7, invA);
-  if (invDiff > 30 && roas7 < roasA * 0.8) alertas.push(`⚠️ Investimento subiu <strong>${fmtN(invDiff, 1)}%</strong> mas ROAS caiu — eficiência piorando`);
+  if (invDiff > 30 && pedDiff < 0) alertas.push(`⚠️ Investimento subiu <strong>${fmtN(invDiff, 1)}%</strong> mas pedidos não acompanharam — eficiência piorando`);
 
   // Mini gráfico dia-a-dia com quantidade de pedidos por dia (para ver tendência)
   const diasRecentes = diario.slice(-14);
@@ -1483,11 +1521,22 @@ function renderTendencias(d) {
       `}
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
-        ${card('💰', 'Investimento', fmt(inv7),  fmt(invA),  invDiff,  true)}
+        ${card('🛒', 'Pedidos ADS',  fmtN(ped7), fmtN(pedA), pedDiff,  false)}
         ${card('📈', 'Receita ADS',  fmt(rec7),  fmt(recA),  recDiff,  false)}
-        ${card('🎯', 'ROAS',         fmtN(roas7,2)+'x', fmtN(roasA,2)+'x', roasDiff, false)}
+        ${card('💰', 'Investimento', fmt(inv7),  fmt(invA),  invDiff,  true)}
+        ${(() => {
+          const cor = metaRoasMedia != null ? (roas7 >= metaRoasMedia ? '#16a34a' : '#dc2626') : '#64748b';
+          const subLabel = metaRoasMedia != null
+            ? `Meta: ${fmtN(metaRoasMedia,2)}x`
+            : `${roasDiff >= 0 ? '▲' : '▼'} ${fmtN(Math.abs(roasDiff),1)}% vs período anterior`;
+          return `<div style="background:var(--bg-base);border:1px solid var(--border);border-radius:10px;padding:14px;">
+            <div style="font-size:11px;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">🎯 ROAS</div>
+            <div style="font-size:18px;font-weight:700;color:var(--text-primary);">${fmtN(roas7,2)}x</div>
+            <div style="font-size:12px;font-weight:600;color:${cor};margin-top:4px;">${subLabel}</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">Período anterior: ${fmtN(roasA,2)}x</div>
+          </div>`;
+        })()}
         ${card('🖱️', 'Cliques',      fmtN(cli7), fmtN(cliA), cliDiff,  false)}
-        ${card('🛒', 'Pedidos ADS',  fmtN(ped7), fmtN(pedA), diff(ped7,pedA), false)}
       </div>
 
       <!-- Sparkline ROAS 14 dias -->
@@ -1758,14 +1807,13 @@ RESUMO: Investimento R$${d.resumo.investimento.toFixed(2)} | Receita ADS R$${d.r
 ${d.saldo != null ? `Saldo ADS: R$${d.saldo.toFixed(2)}` : 'Saldo: não aplicável (ML)'}
 ${ma ? `Vs mês anterior (mesmo recorte ${ma.periodo.de} a ${ma.periodo.ate}): investimento R$${ma.ads.investimento.toFixed(2)}→R$${d.resumo.investimento.toFixed(2)}, receita R$${ma.ads.receita.toFixed(2)}→R$${d.resumo.receita.toFixed(2)}, vendas totais R$${ma.vendas.total.toFixed(2)}→R$${(d.vendasTotais?.total||0).toFixed(2)}` : ''}
 
-CAMPANHAS (id | nome | investido | receita | ROAS | ACoS | CTR | orçamento | meta ROAS):
+CAMPANHAS (id | nome | investido | receita | pedidos | ROAS | ACoS | CTR | orçamento | meta ROAS):
 ${(d.campanhas||[]).map(c => {
   const roas = c.gasto > 0 && c.receita > 0 ? (c.receita/c.gasto).toFixed(2) : '0';
   const acos = c.receita > 0 ? ((c.gasto/c.receita)*100).toFixed(1) : '—';
   const ctr  = c.impressoes > 0 ? ((c.cliques/c.impressoes)*100).toFixed(2) : '0';
-  return `${c.id} | ${c.nome} | R$${c.gasto.toFixed(2)} | R$${c.receita.toFixed(2)} | ${roas}x | ${acos}% | ${ctr}% | ${c.orcamentoLabel} | ${c.roasTarget ? c.roasTarget+'x' : '—'} | tipo:${c.bidding}`;
+  return `${c.id} | ${c.nome} | R$${c.gasto.toFixed(2)} | R$${c.receita.toFixed(2)} | ${c.pedidos||0} pedidos | ${roas}x | ${acos}% | ${ctr}% | ${c.orcamentoLabel} | ${c.roasTarget ? c.roasTarget+'x' : '—'} | tipo:${c.bidding}`;
 }).join('\n')}
-${_estoqueProdutos.length ? `\nPRODUTOS COM ESTOQUE CRÍTICO (≤3 un.): ${_estoqueProdutos.filter(p=>(p.estoque||0)<=3).map(p=>p.nome).join(', ') || 'nenhum'}` : ''}
 `.trim();
 
   const system = `Você é um consultor de ADS pra marketplaces (Shopee e Mercado Livre) que gera SUGESTÕES ESTRUTURADAS de otimização — NÃO texto corrido. Um analista humano vai revisar e aprovar cada uma antes de executar, então cada sugestão precisa ser específica e executável, não um conselho genérico.
@@ -1785,12 +1833,13 @@ Responda APENAS um array JSON válido (sem markdown, sem texto antes/depois), no
 ]
 
 REGRAS:
-- Só sugira "pausar" pra campanha com investimento relevante (>R$20) e ROAS muito abaixo do aceitável, ou ACoS excessivo, ou produto sem estoque.
-- Só sugira "ajustar_orcamento" com valor_sugerido_numero preenchido (o novo orçamento diário em reais).
+- O critério principal é VOLUME DE PEDIDOS e FATURAMENTO de cada campanha — não ROAS isolado. ROAS/ACoS entram como justificativa de EFICIÊNCIA, sempre citados junto da meta ROAS daquela campanha (ex: "ROAS 7,1x, abaixo da meta de 10x"), nunca como motivo único.
+- Só sugira "pausar" pra campanha com investimento relevante (>R$20) e ZERO ou pouquíssimos pedidos no período, ou ACoS excessivo mesmo com pedidos.
+- Só sugira "ajustar_orcamento" com valor_sugerido_numero preenchido (o novo orçamento diário em reais) — priorize aumentar orçamento de campanhas com bom volume de pedidos E ROAS acima da meta (tem espaço pra escalar), e reduzir de campanhas com muito investimento e poucos pedidos.
 - Só sugira "ajustar_roas_target" pra campanhas tipo:auto — não existe meta ROAS em campanha manual.
 - Máximo 8 sugestões, só as que têm impacto real — não force sugestão se a conta está saudável.
-- Se a conta está indo bem, pode retornar array vazio [].
-- TACOS <10% e ROAS bom = tem espaço pra sugerir aumento de orçamento em campanhas eficientes, não só corte.`;
+- Se a conta está indo bem (pedidos e faturamento estáveis ou crescendo), pode retornar array vazio [].
+- TACOS <10% e volume de pedidos bom = tem espaço pra sugerir aumento de orçamento em campanhas eficientes, não só corte.`;
 
   try {
     const resp = await fetch('/api/chat', {
@@ -1830,6 +1879,11 @@ REGRAS:
     if (error) throw error;
 
     alert(`${linhas.length} sugestão(ões) gerada(s) e adicionada(s) à fila. Veja em "Sugestões de ADS" no menu.`);
+    // Atualiza os selos de sugestão direto na tabela de campanhas, sem precisar recarregar tudo
+    if (dadosADS) {
+      dadosADS.sugestoesPorCampanha = await buscarSugestoesPendentes();
+      renderConteudo();
+    }
   } catch (e) {
     alert('Erro ao gerar sugestões: ' + e.message);
     console.warn('[ADS Sugestões]', e);
@@ -1917,15 +1971,6 @@ ${(d.diario||[]).slice(-14).map(dia => {
 }).join('\n')}
 ` : 'Nenhum dado carregado ainda.';
 
-  const ctxEstoque = _estoqueProdutos.length > 0 ? `
-
-ESTOQUE ATUAL (${_estoqueProdutos.length} produtos):
-${[..._estoqueProdutos].sort((a,b)=>(a.estoque||0)-(b.estoque||0)).slice(0,20).map(p => {
-  const est = p.estoque||0;
-  const flag = est <= 3 ? '🔴 CRÍTICO' : est <= 15 ? '🟡 BAIXO' : '🟢 OK';
-  return `• ${p.nome}: ${est} un. — ${flag}`;
-}).join('\n')}` : '';
-
   const ctxRanking = (() => {
     if (!contaAtual) return '';
     const sk = `glr_rank_${contaAtual.external_id}`;
@@ -1957,6 +2002,9 @@ Para cada análise, siga esta estrutura:
 3. **Plano de ação** — ações específicas em ordem de prioridade (🔴 urgente hoje / 🟡 esta semana / 🟢 próximo mês)
 4. **Impacto esperado** — estime o resultado de cada ação em % ou R$
 
+## O QUE GUIA O DIAGNÓSTICO
+O critério principal de "a conta está em queda ou crescendo" é **quantidade de pedidos e faturamento** (o que o negócio sente de verdade) — nunca ROAS isolado. ROAS/ACoS são métricas de EFICIÊNCIA e devem aparecer sempre ao lado da própria meta daquela campanha (ex: "ROAS 7,1x vs meta 8x"), não comparado contra o período anterior como se fosse o indicador principal. É perfeitamente possível a conta estar crescendo em vendas com ROAS caindo (ganhando escala) ou estar em queda de vendas com ROAS ótimo (operação pequena demais) — trate os dois eixos como independentes e diga isso claramente quando acontecer.
+
 ## BENCHMARKS QUE VOCÊ USA
 - ROAS ideal Shopee: ≥3x (bom), ≥5x (excelente)
 - ROAS ideal ML: ≥4x (bom), ≥6x (excelente)
@@ -1981,7 +2029,7 @@ Para cada análise, siga esta estrutura:
 - Nunca use linguagem genérica. Sempre cite campanhas, números e percentuais específicos dos dados fornecidos
 
 DADOS ATUAIS:
-${ctx}${ctxEstoque}${ctxRanking}`,
+${ctx}${ctxRanking}`,
         messages: _aiHistory,
       }),
     });
