@@ -5,7 +5,7 @@
 (function() {
 
 const ADS_CACHE_KEY = 'glr_ads_cache';
-const ADS_CACHE_VER = 6;
+const ADS_CACHE_VER = 7;
 
 let contasSel   = [];   // contas carregadas
 let contaAtual  = null; // conta selecionada
@@ -1078,7 +1078,7 @@ function renderGraficoDiario(diario) {
     const dataFmt = partes.length >= 2 ? `${partes[0]}/${partes[1]}` : d.data;
     return `
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;flex:1;min-width:0;height:${MAX_H}px;" title="${dataFmt}: ${fmt(d.gasto)}">
-        <div style="width:100%;background:var(--primary);border-radius:3px 3px 0 0;height:${h}px;opacity:0.85;"></div>
+        <div style="width:100%;background:#6366f1;border-radius:3px 3px 0 0;height:${h}px;opacity:0.85;"></div>
         ${slice.length <= 15 ? `<div style="font-size:9px;color:var(--text-secondary);writing-mode:vertical-lr;transform:rotate(180deg);margin-top:2px;">${dataFmt}</div>` : ''}
       </div>
     `;
@@ -1206,10 +1206,10 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
       if (taxaAnterior > 0) {
         if (taxaRecente < taxaAnterior * 0.7) {
           const queda = ((1 - taxaRecente / taxaAnterior) * 100).toFixed(0);
-          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#fef2f2;color:#dc2626;white-space:nowrap;" title="Ritmo de pedidos caiu comparando os últimos 7 dias com os 23 dias anteriores">📉 Vendas em queda (-${queda}%)</span></div>`;
+          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#fef2f2;color:#dc2626;white-space:nowrap;" title="Ritmo diário de pedidos: últimos 7 dias vs os 23 dias anteriores (dia 8 a 30)">📉 Vendas em queda (-${queda}% vs 23d antes)</span></div>`;
         } else if (taxaRecente > taxaAnterior * 1.3) {
           const alta = ((taxaRecente / taxaAnterior - 1) * 100).toFixed(0);
-          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#f0fdf4;color:#16a34a;white-space:nowrap;" title="Ritmo de pedidos subiu comparando os últimos 7 dias com os 23 dias anteriores">📈 Vendas subindo (+${alta}%)</span></div>`;
+          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#f0fdf4;color:#16a34a;white-space:nowrap;" title="Ritmo diário de pedidos: últimos 7 dias vs os 23 dias anteriores (dia 8 a 30)">📈 Vendas subindo (+${alta}% vs 23d antes)</span></div>`;
         }
       }
     }
