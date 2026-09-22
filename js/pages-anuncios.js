@@ -10,8 +10,7 @@
 
   // ── Placeholder para os marketplaces ainda não construídos ──────────────
   const _PLACEHOLDER = {
-    tiktok:  { nome: 'TikTok Shop', cor: '#000000' },
-    amazon:  { nome: 'Amazon',      cor: '#ff9900' },
+    amazon:  { nome: 'Amazon', cor: '#ff9900' },
   };
 
   function renderEmConstrucao(mkt, el) {
@@ -1052,9 +1051,535 @@
     carregarContas();
   }
 
+  // ============================================================
+  // TIKTOK SHOP
+  // ============================================================
+
+  function renderTikTok(params, el) {
+    const state = {
+      contas: [], contaId: '', carregandoContas: true,
+
+      fotos: [], fotoRefBase64: '', fotoRefPreview: '',
+      iaCarregando: false, gerandoFoto: false,
+
+      nomeProduto: '', categoriaEscolhida: null, categoriaCaminho: '', buscandoCategoria: false,
+      atributosObrigatorios: [], atributosOpcionais: [], mostrarOpcionais: false, carregandoAtributos: false,
+      valoresAtributos: {},
+
+      marcaBusca: '', marcaResultados: [], marcaEscolhida: null, buscandoMarca: false,
+      warehouseId: '',
+
+      descricao: '', preco: '', estoque: '', sku: '', identifierCode: '',
+      peso: '', compr: '', larg: '', alt: '',
+
+      criando: false, resultado: null, erro: '',
+    };
+
+    function syncFormState() {
+      const v = id => document.getElementById(id)?.value;
+      if (document.getElementById('an-tt-nome')) {
+        state.nomeProduto = v('an-tt-nome') || ''; state.descricao = v('an-tt-descricao') || '';
+        state.preco = v('an-tt-preco') || ''; state.estoque = v('an-tt-estoque') || '';
+        state.sku = v('an-tt-sku') || ''; state.identifierCode = v('an-tt-identifier') || '';
+        state.peso = v('an-tt-peso') || ''; state.compr = v('an-tt-compr') || '';
+        state.larg = v('an-tt-larg') || ''; state.alt = v('an-tt-alt') || '';
+      }
+      if (document.getElementById('an-tt-marca-busca')) state.marcaBusca = v('an-tt-marca-busca') || '';
+      [...state.atributosObrigatorios, ...state.atributosOpcionais].forEach(a => {
+        const tipo = campoTipoAtributo(a);
+        if (tipo === 'multi') {
+          const el2 = document.getElementById(`attr-${a.id}`);
+          const sel = el2 ? Array.from(el2.selectedOptions).map(o => o.value) : [];
+          if (sel.length) state.valoresAtributos[a.id] = sel;
+        } else if (tipo === 'texto') {
+          const val = v(`attr-${a.id}`);
+          if (val) state.valoresAtributos[a.id] = val;
+        } else {
+          const val = v(`attr-${a.id}`);
+          if (val) state.valoresAtributos[a.id] = val;
+        }
+      });
+    }
+
+    function render() { renderPainel(); }
+
+    async function carregarContas() {
+      try {
+        const todas = await MarketplaceAPI.listAccounts();
+        state.contas = todas.filter(c => (c.marketplace || '').toLowerCase() === 'tiktok_shop');
+        if (state.contas.length === 1) { state.contaId = state.contas[0].external_id; await carregarWarehouse(); }
+      } catch (e) {
+        state.erro = 'Não consegui carregar as lojas: ' + e.message;
+      } finally {
+        state.carregandoContas = false;
+        render();
+      }
+    }
+
+    function nomeConta(c) {
+      const tag = c.tags?.[0]?.name || c.tags?.[0];
+      return (typeof tag === 'string' ? tag : tag?.value) || c.nickname || c.external_id;
+    }
+
+    async function carregarWarehouse() {
+      try {
+        const resp = await MarketplaceAPI.call('tiktok_get_warehouses', { open_id: state.contaId });
+        const lista = resp.data?.warehouses || resp.warehouses || [];
+        const vendas = lista.filter(w => w.type === 'SALES_WAREHOUSE');
+        const escolhido = vendas.find(w => w.is_default) || vendas[0];
+        state.warehouseId = escolhido?.id || '';
+        if (!state.warehouseId) state.erro = 'Essa loja não tem um SALES_WAREHOUSE ativo — não dá pra criar produto sem isso.';
+      } catch (e) {
+        state.erro = 'Erro ao buscar o armazém da loja: ' + e.message;
+      }
+    }
+
+    // ── Foto de referência + IA ──────────────────────────────
+    function processarFotoRef(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        state.fotoRefPreview = String(reader.result || '');
+        state.fotoRefBase64 = state.fotoRefPreview;
+        adicionarFoto(state.fotoRefBase64, 'referencia');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function adicionarFoto(url, origem) {
+      syncFormState();
+      state.fotos.push({ id: Date.now() + Math.random(), url, origem });
+      render();
+    }
+
+    function removerFoto(id) {
+      syncFormState();
+      state.fotos = state.fotos.filter(f => f.id !== id);
+      render();
+    }
+
+    async function sugerirComIA() {
+      if (!state.fotoRefBase64) { alert('Envie a foto do produto primeiro.'); return; }
+      syncFormState();
+      state.iaCarregando = true;
+      render();
+      try {
+        const resp = await fetch('/api/analyze-photo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: state.fotoRefBase64 }),
+        });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.error || 'Erro ao sugerir com IA.');
+        if (json.titulo) state.nomeProduto = json.titulo;
+        if (json.descricao) state.descricao = json.descricao;
+        state.iaCarregando = false;
+        if (state.nomeProduto) { await sugerirCategoria(); return; }
+      } catch (e) {
+        alert('Erro ao sugerir com IA: ' + (e.message || e));
+      } finally {
+        state.iaCarregando = false;
+        render();
+      }
+    }
+
+    async function gerarFotoIA() {
+      if (!state.fotoRefBase64) { alert('Envie a foto do produto primeiro.'); return; }
+      syncFormState();
+      state.gerandoFoto = true;
+      render();
+      try {
+        const resp = await fetch('/api/generate-photo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: state.fotoRefBase64, product_name: state.nomeProduto, details: state.descricao, stage: 'ambientada' }),
+        });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.error || 'Erro ao gerar foto.');
+        const img = json.images?.[0];
+        if (!img) { alert('A IA não devolveu nenhuma imagem.'); return; }
+        state.fotos.push({ id: Date.now() + Math.random(), url: img.url, origem: 'gerada' });
+      } catch (e) {
+        alert('Erro ao gerar foto: ' + (e.message || e));
+      } finally {
+        state.gerandoFoto = false;
+        render();
+      }
+    }
+
+    function processarFotosExtra(files) {
+      syncFormState();
+      [...files].forEach(file => {
+        if (!file.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.onload = () => { adicionarFoto(String(reader.result || ''), 'upload'); };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // ── Categoria sugerida (TikTok devolve o caminho completo + a folha) ──
+    async function sugerirCategoria() {
+      syncFormState();
+      if (!state.nomeProduto.trim()) { alert('Preencha o nome do produto primeiro.'); return; }
+      if (!state.contaId) { alert('Selecione a loja TikTok primeiro.'); return; }
+      state.buscandoCategoria = true;
+      render();
+      try {
+        const resp = await MarketplaceAPI.call('tiktok_recommend_category', {
+          open_id: state.contaId,
+          body: { product_title: state.nomeProduto, description: state.descricao || undefined },
+        });
+        const d = resp.data || resp;
+        const caminho = d.categories || [];
+        const folhaId = d.leaf_category_id;
+        const folha = caminho.find(c => c.id === folhaId) || caminho[caminho.length - 1];
+        if (!folha) { alert('O TikTok não sugeriu categoria pra esse nome. Ajuste o nome do produto e tente de novo.'); return; }
+        state.categoriaEscolhida = { category_id: folhaId, nome: folha.name || folha.local_name };
+        state.categoriaCaminho = caminho.map(c => c.name || c.local_name).join(' › ');
+        await carregarFichaTecnica();
+      } catch (e) {
+        alert('Erro ao sugerir categoria: ' + (e.message || e));
+      } finally {
+        state.buscandoCategoria = false;
+        render();
+      }
+    }
+
+    async function carregarFichaTecnica() {
+      state.valoresAtributos = {};
+      state.mostrarOpcionais = false;
+      state.carregandoAtributos = true;
+      render();
+      try {
+        const resp = await MarketplaceAPI.call('tiktok_listing_schemas', { category_ids: state.categoriaEscolhida.category_id, open_id: state.contaId });
+        const schema = (resp.data?.listing_schemas || resp.listing_schemas || [])[0];
+        const campoAtributos = (schema?.fields || []).find(f => f.id === 'product_attribute');
+        const todos = campoAtributos?.complex_values || [];
+        state.atributosObrigatorios = todos.filter(a => a.rules?.some(r => r.type === 'REQUIRED' && r.value === 'true'));
+        state.atributosOpcionais = todos.filter(a => !a.rules?.some(r => r.type === 'REQUIRED' && r.value === 'true'));
+      } catch (e) {
+        alert('Erro ao buscar ficha técnica da categoria: ' + (e.message || e));
+      } finally {
+        state.carregandoAtributos = false;
+        render();
+      }
+    }
+
+    // ── Marca (busca sob demanda — lista global tem milhares de itens) ──
+    async function buscarMarca() {
+      syncFormState();
+      if (!state.marcaBusca.trim()) { alert('Digite o nome da marca pra buscar.'); return; }
+      state.buscandoMarca = true;
+      render();
+      try {
+        const resp = await MarketplaceAPI.call('tiktok_get_brands', { open_id: state.contaId, brand_name: state.marcaBusca, page_size: 15 });
+        state.marcaResultados = resp.data?.brands || resp.brands || [];
+        if (!state.marcaResultados.length) alert('Nenhuma marca encontrada com esse nome.');
+      } catch (e) {
+        alert('Erro ao buscar marca: ' + (e.message || e));
+      } finally {
+        state.buscandoMarca = false;
+        render();
+      }
+    }
+
+    function escolherMarca(m) {
+      syncFormState();
+      state.marcaEscolhida = m;
+      state.marcaResultados = [];
+      render();
+    }
+
+    // ── Renderização de campo de atributo dinâmico ───────────
+    function campoTipoAtributo(a) {
+      if (Array.isArray(a.options) && a.options.length) {
+        return a.rules?.some(r => r.type === 'MULTI_INPUT' && r.value === 'true') ? 'multi' : 'select';
+      }
+      return 'texto';
+    }
+
+    function renderCampoAtributo(a) {
+      const tipo = campoTipoAtributo(a);
+      const valorSalvo = state.valoresAtributos[a.id];
+      if (tipo === 'select') {
+        return `<select class="form-select" id="attr-${a.id}">
+          <option value="">— não informado —</option>
+          ${a.options.map(o => `<option value="${o.id}" ${String(valorSalvo) === String(o.id) ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}
+        </select>`;
+      }
+      if (tipo === 'multi') {
+        const sel = Array.isArray(valorSalvo) ? valorSalvo.map(String) : [];
+        return `<select class="form-select" id="attr-${a.id}" multiple size="4">
+          ${a.options.map(o => `<option value="${o.id}" ${sel.includes(String(o.id)) ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}
+        </select>
+        <div style="font-size:10px;color:var(--text-muted);">Segura Ctrl/Cmd pra marcar mais de um.</div>`;
+      }
+      return `<input type="text" class="form-input" id="attr-${a.id}" value="${esc(valorSalvo || '')}">`;
+    }
+
+    function renderBlocoAtributos(lista, titulo, colapsavel) {
+      if (!lista.length) return '';
+      const conteudo = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+        ${lista.map(a => `<div class="form-group" style="margin:0;">
+          <label class="form-label">${esc(a.name)}${a.rules?.some(r => r.type === 'REQUIRED' && r.value === 'true') ? ' *' : ''}</label>
+          ${renderCampoAtributo(a)}
+        </div>`).join('')}
+      </div>`;
+      if (!colapsavel) return `<div style="margin-top:14px;"><div class="form-label" style="margin-bottom:8px;">${titulo}</div>${conteudo}</div>`;
+      return `<div style="margin-top:14px;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window._anTtToggleOpcionais()">
+          ${state.mostrarOpcionais ? '▲' : '▼'} ${titulo} (${lista.length})
+        </button>
+        ${state.mostrarOpcionais ? `<div style="margin-top:10px;">${conteudo}</div>` : ''}
+      </div>`;
+    }
+
+    function montarAtributosPayload() {
+      const out = [];
+      [...state.atributosObrigatorios, ...state.atributosOpcionais].forEach(a => {
+        const tipo = campoTipoAtributo(a);
+        if (tipo === 'select') {
+          const val = document.getElementById(`attr-${a.id}`)?.value;
+          if (val) {
+            const opt = a.options.find(o => String(o.id) === val);
+            out.push({ id: a.id, values: [{ id: val, name: opt?.name }] });
+          }
+        } else if (tipo === 'multi') {
+          const el2 = document.getElementById(`attr-${a.id}`);
+          const sel = el2 ? Array.from(el2.selectedOptions) : [];
+          if (sel.length) out.push({ id: a.id, values: sel.map(o => ({ id: o.value, name: o.textContent })) });
+        } else {
+          const val = document.getElementById(`attr-${a.id}`)?.value?.trim();
+          if (val) out.push({ id: a.id, values: [{ name: val }] });
+        }
+      });
+      return out;
+    }
+
+    // ── Criação: sobe cada foto (TikTok exige uri própria, não aceita
+    // base64/URL de outro site direto no anúncio) e então cria o produto ──
+    async function criarAnuncio() {
+      if (!state.contaId) return alert('Selecione a loja TikTok.');
+      if (!state.warehouseId) return alert('Essa loja não tem um armazém de vendas configurado — não dá pra criar o produto.');
+      if (!state.categoriaEscolhida) return alert('Sugira e confirme uma categoria antes de criar o anúncio.');
+      if (!state.fotos.length) return alert('Adicione pelo menos uma foto ao anúncio.');
+
+      const nome = document.getElementById('an-tt-nome')?.value.trim();
+      const descricao = document.getElementById('an-tt-descricao')?.value.trim();
+      const preco = parseFloat(document.getElementById('an-tt-preco')?.value);
+      const estoque = parseInt(document.getElementById('an-tt-estoque')?.value, 10);
+      const sku = document.getElementById('an-tt-sku')?.value.trim();
+      const identifier = document.getElementById('an-tt-identifier')?.value.trim();
+      const peso = document.getElementById('an-tt-peso')?.value;
+      const compr = document.getElementById('an-tt-compr')?.value;
+      const larg = document.getElementById('an-tt-larg')?.value;
+      const alt = document.getElementById('an-tt-alt')?.value;
+
+      if (!nome) return alert('Preencha o nome do produto.');
+      if (!descricao) return alert('Preencha a descrição.');
+      if (!(preco > 0)) return alert('Informe um preço válido.');
+      if (!(estoque >= 0)) return alert('Informe o estoque.');
+      if (!(peso > 0)) return alert('Informe o peso da embalagem.');
+      if (!(compr > 0 && larg > 0 && alt > 0)) return alert('Informe comprimento, largura e altura da embalagem.');
+
+      const faltando = state.atributosObrigatorios.filter(a => {
+        const tipo = campoTipoAtributo(a);
+        if (tipo === 'multi') return !document.getElementById(`attr-${a.id}`)?.selectedOptions?.length;
+        return !document.getElementById(`attr-${a.id}`)?.value;
+      });
+      if (faltando.length && !confirm(`Faltam ${faltando.length} atributo(s) obrigatório(s) (${faltando.map(a => a.name).join(', ')}). O TikTok pode recusar o anúncio. Continuar mesmo assim?`)) return;
+
+      state.criando = true; state.erro = ''; state.resultado = null;
+      render();
+      try {
+        // 1) Sobe cada foto e pega a uri própria da TikTok
+        const imagens = [];
+        for (const f of state.fotos) {
+          const up = await MarketplaceAPI.call('tiktok_upload_image', { open_id: state.contaId, image_base64: f.url, use_case: 'MAIN_IMAGE' });
+          const uri = up.data?.uri || up.uri;
+          if (uri) imagens.push({ uri });
+        }
+        if (!imagens.length) throw new Error('Nenhuma foto foi aceita pelo TikTok.');
+
+        // 2) Monta e cria o produto
+        const body = {
+          title: nome,
+          description: descricao,
+          category_id: state.categoriaEscolhida.category_id,
+          main_images: imagens,
+          package_weight: { value: String(peso), unit: 'KILOGRAM' },
+          package_dimensions: { length: String(compr), width: String(larg), height: String(alt), unit: 'CENTIMETER' },
+          skus: [{
+            seller_sku: sku || undefined,
+            price: { amount: String(preco), currency: 'BRL' },
+            inventory: [{ warehouse_id: state.warehouseId, quantity: estoque }],
+            identifier_code: identifier ? { code: identifier } : undefined,
+          }],
+        };
+        if (state.marcaEscolhida) body.brand_id = state.marcaEscolhida.id;
+        const atributos = montarAtributosPayload();
+        if (atributos.length) body.product_attributes = atributos;
+
+        const resp = await MarketplaceAPI.call('tiktok_create_product', { open_id: state.contaId, body });
+        state.resultado = resp.data || resp;
+      } catch (e) {
+        state.erro = e.message || String(e);
+      } finally {
+        state.criando = false;
+        render();
+      }
+    }
+
+    function resetar() { Router.navigate('anuncios-tiktok'); }
+
+    // ── Render principal ──────────────────────────────────────
+    function renderPainel() {
+      const root = document.getElementById('an-tt-root');
+      if (!root) return;
+
+      if (state.resultado) {
+        root.innerHTML = `<div class="card" style="padding:40px;text-align:center;max-width:520px;margin:0 auto;">
+          <div style="font-size:44px;margin-bottom:12px;">✅</div>
+          <div style="font-size:18px;font-weight:800;margin-bottom:8px;">Anúncio criado no TikTok Shop!</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Product ID: ${esc(state.resultado.product_id || '—')} — o TikTok revisa antes de deixar visível na loja.</div>
+          <button class="btn btn-secondary" style="width:100%;" onclick="window._anTtReset()">➕ Criar outro anúncio</button>
+        </div>`;
+        return;
+      }
+
+      root.innerHTML = `
+        <div class="card" style="padding:20px 22px;margin-bottom:16px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Loja TikTok Shop</label>
+            <select class="form-select" id="an-tt-conta" ${state.carregandoContas ? 'disabled' : ''} onchange="window._anTtSelConta(this.value)">
+              ${state.carregandoContas ? '<option>Carregando lojas...</option>' :
+                `<option value="">— Selecione —</option>` + state.contas.map(c => `<option value="${c.external_id}" ${state.contaId === c.external_id ? 'selected' : ''}>${esc(nomeConta(c))}</option>`).join('')}
+            </select>
+            ${state.warehouseId ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Armazém de vendas encontrado ✓</div>` : ''}
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:16px;" class="an-grid-resp">
+          <div class="card" style="padding:20px;">
+            <div class="form-label" style="margin-bottom:10px;">📸 Foto do produto</div>
+            <div id="an-tt-dropzone" ondragover="event.preventDefault();this.style.borderColor='#25F4EE';" ondragleave="this.style.borderColor='var(--border)';"
+                 ondrop="event.preventDefault();this.style.borderColor='var(--border)';window._anTtDropRef(event);"
+                 onclick="document.getElementById('an-tt-ref-input').click()"
+                 style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,#f7f8fc);">
+              ${state.fotoRefPreview
+                ? `<img src="${state.fotoRefPreview}" style="max-width:100%;max-height:130px;border-radius:8px;object-fit:contain;">`
+                : `<div style="font-size:32px;">📤</div><div style="font-size:12.5px;font-weight:600;margin-top:6px;">Envie a foto de referência</div>`}
+              <input type="file" id="an-tt-ref-input" accept="image/*" style="display:none;" onchange="window._anTtUploadRef(this)">
+            </div>
+
+            <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:10px;" ${(!state.fotoRefBase64 || state.iaCarregando) ? 'disabled' : ''} onclick="window._anTtSugerirIA()">
+              ${state.iaCarregando ? '⏳ Analisando...' : '✨ Autopreencher com IA (nome, descrição, categoria)'}
+            </button>
+            <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:8px;" ${(!state.fotoRefBase64 || state.gerandoFoto) ? 'disabled' : ''} onclick="window._anTtGerarFotoIA()">
+              ${state.gerandoFoto ? '⏳ Gerando foto...' : '🎨 Gerar foto profissional com IA'}
+            </button>
+
+            <div class="form-label" style="margin-top:16px;margin-bottom:6px;">Mais fotos (opcional)</div>
+            <input type="file" accept="image/*" multiple onchange="window._anTtUploadExtra(this)">
+
+            ${state.fotos.length ? `
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;">
+                ${state.fotos.map((f, i) => `
+                  <div style="position:relative;">
+                    <img src="${f.url}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid var(--border);">
+                    ${i === 0 ? '<span style="position:absolute;top:3px;left:3px;background:#000;color:#fff;font-size:9px;padding:1px 5px;border-radius:99px;">capa</span>' : ''}
+                    <button type="button" onclick="window._anTtRemoverFoto(${f.id})" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;">✕</button>
+                  </div>`).join('')}
+              </div>` : `<div style="font-size:11px;color:var(--text-muted);margin-top:10px;">Nenhuma foto adicionada ainda.</div>`}
+          </div>
+
+          <div class="card" style="padding:20px;">
+            <div class="form-group" style="margin-bottom:12px;">
+              <label class="form-label">Nome do produto</label>
+              <input type="text" class="form-input" id="an-tt-nome" value="${esc(state.nomeProduto)}" placeholder="Ex: Armário de Cozinha 4 Portas MDF Branco">
+            </div>
+            <button class="btn btn-secondary btn-sm" style="margin-bottom:12px;" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anTtSugerirCategoria()">
+              ${state.buscandoCategoria ? '⏳ Buscando...' : '🗂️ Sugerir categoria pra esse nome'}
+            </button>
+
+            ${state.categoriaEscolhida ? `
+              <div style="background:rgba(37,244,238,0.08);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:14px;">
+                ✅ <b>${esc(state.categoriaCaminho || state.categoriaEscolhida.nome)}</b>
+              </div>` : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Sugira a categoria antes de preencher a ficha técnica.</div>`}
+
+            <div class="form-group" style="margin-bottom:12px;">
+              <label class="form-label">Descrição</label>
+              <textarea class="form-textarea" id="an-tt-descricao" rows="4" placeholder="Descreva o produto: material, medidas, diferenciais...">${state.descricao}</textarea>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;">
+              <div class="form-group" style="margin:0;"><label class="form-label">Preço (R$)</label><input type="number" step="0.01" class="form-input" id="an-tt-preco" value="${esc(state.preco)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">Estoque</label><input type="number" class="form-input" id="an-tt-estoque" value="${esc(state.estoque)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">SKU</label><input type="text" class="form-input" id="an-tt-sku" value="${esc(state.sku)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">GTIN/EAN (opcional)</label><input type="text" class="form-input" id="an-tt-identifier" value="${esc(state.identifierCode)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">Peso c/ embalagem (kg)</label><input type="number" step="0.01" class="form-input" id="an-tt-peso" value="${esc(state.peso)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">Compr. embalagem (cm)</label><input type="number" class="form-input" id="an-tt-compr" value="${esc(state.compr)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">Larg. embalagem (cm)</label><input type="number" class="form-input" id="an-tt-larg" value="${esc(state.larg)}"></div>
+              <div class="form-group" style="margin:0;"><label class="form-label">Alt. embalagem (cm)</label><input type="number" class="form-input" id="an-tt-alt" value="${esc(state.alt)}"></div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:12px;">
+              <label class="form-label">Marca (opcional)</label>
+              <div style="display:flex;gap:8px;">
+                <input type="text" class="form-input" id="an-tt-marca-busca" value="${esc(state.marcaBusca)}" placeholder="Buscar marca registrada na loja" style="flex:1;">
+                <button type="button" class="btn btn-secondary btn-sm" ${state.buscandoMarca ? 'disabled' : ''} onclick="window._anTtBuscarMarca()">${state.buscandoMarca ? '⏳' : '🔍'}</button>
+              </div>
+              ${state.marcaResultados.length ? `
+                <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;max-height:140px;overflow-y:auto;">
+                  ${state.marcaResultados.map((m, i) => `<button type="button" class="btn btn-secondary btn-sm" style="text-align:left;justify-content:flex-start;" onclick="window._anTtEscolherMarca(${i})">${esc(m.name)}</button>`).join('')}
+                </div>` : ''}
+              ${state.marcaEscolhida ? `<div style="font-size:12px;color:var(--text-muted);margin-top:6px;">Marca selecionada: <b>${esc(state.marcaEscolhida.name)}</b></div>` : ''}
+            </div>
+
+            ${state.carregandoAtributos ? `<div style="font-size:12px;color:var(--text-muted);">⏳ Carregando ficha técnica da categoria...</div>` : ''}
+            ${!state.carregandoAtributos && state.categoriaEscolhida ? `
+              ${renderBlocoAtributos(state.atributosObrigatorios, '📋 Ficha técnica — obrigatórios pro SEO/catálogo', false)}
+              ${renderBlocoAtributos(state.atributosOpcionais, 'Ver mais atributos (opcionais, melhoram a busca)', true)}
+            ` : ''}
+
+            ${state.erro ? `<div style="font-size:12.5px;color:var(--red);margin-top:14px;">⚠️ ${esc(state.erro)}</div>` : ''}
+
+            <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:18px;background:#000;" ${state.criando ? 'disabled' : ''} onclick="window._anTtCriar()">
+              ${state.criando ? '⏳ Criando anúncio...' : '🚀 Criar anúncio no TikTok Shop'}
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    el.innerHTML = `<div class="page">
+      <div class="section-title mb-16">⬛ Anúncios — TikTok Shop</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;max-width:680px;">
+        Suba a foto, deixe a IA sugerir nome/descrição/categoria, confira a ficha técnica e publique — tudo numa tela só.
+      </div>
+      <div id="an-tt-root"></div>
+      <style>@media (max-width:900px){.an-grid-resp{grid-template-columns:1fr !important;}}</style>
+    </div>`;
+
+    window._anTtSelConta = async (v) => { syncFormState(); state.contaId = v; state.warehouseId = ''; render(); await carregarWarehouse(); render(); };
+    window._anTtUploadRef = (input) => processarFotoRef(input.files?.[0]);
+    window._anTtDropRef = (ev) => processarFotoRef(ev.dataTransfer?.files?.[0]);
+    window._anTtUploadExtra = (input) => processarFotosExtra(input.files || []);
+    window._anTtRemoverFoto = removerFoto;
+    window._anTtSugerirIA = sugerirComIA;
+    window._anTtGerarFotoIA = gerarFotoIA;
+    window._anTtSugerirCategoria = sugerirCategoria;
+    window._anTtBuscarMarca = buscarMarca;
+    window._anTtEscolherMarca = (i) => escolherMarca(state.marcaResultados[i]);
+    window._anTtToggleOpcionais = () => { syncFormState(); state.mostrarOpcionais = !state.mostrarOpcionais; render(); };
+    window._anTtCriar = criarAnuncio;
+    window._anTtReset = resetar;
+
+    render();
+    carregarContas();
+  }
+
   Router.register('anuncios-ml', renderML);
   Router.register('anuncios-shopee', renderShopee);
-  Router.register('anuncios-tiktok', (p, el) => renderEmConstrucao('tiktok', el));
+  Router.register('anuncios-tiktok', renderTikTok);
   Router.register('anuncios-amazon', (p, el) => renderEmConstrucao('amazon', el));
 
 })();
