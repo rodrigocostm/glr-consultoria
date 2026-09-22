@@ -5,7 +5,7 @@
 (function() {
 
 const ADS_CACHE_KEY = 'glr_ads_cache';
-const ADS_CACHE_VER = 5;
+const ADS_CACHE_VER = 6;
 
 let contasSel   = [];   // contas carregadas
 let contaAtual  = null; // conta selecionada
@@ -15,7 +15,6 @@ let dadosADS    = null; // dados carregados
 let carregando  = false;
 let _aiHistory   = [];
 let _aiCarregando = false;
-let _estoqueProdutos = [];
 let _rankingSnaps = {};
 let _adsAutoRefreshOn    = false; // opt-in — evita gastar chamada de API à toa em quem não pediu
 let _adsAutoRefreshTimer = null;
@@ -367,13 +366,15 @@ async function buscarJanelasCampanhas(campIds) {
           const soma = arr => arr.reduce((acc, d) => {
             acc.gasto   += parseFloat(d.expense)  || 0;
             acc.receita += parseFloat(d.broad_gmv) || 0;
+            acc.pedidos += parseInt(d.broad_order)  || 0;
             return acc;
-          }, { gasto: 0, receita: 0 });
+          }, { gasto: 0, receita: 0, pedidos: 0 });
           const j7 = soma(ultimos(7)), j15 = soma(ultimos(15)), j30 = soma(ultimos(30));
           map[c.campaign_id] = {
             roas7:  j7.gasto  > 0 ? j7.receita  / j7.gasto  : 0,
             roas15: j15.gasto > 0 ? j15.receita / j15.gasto : 0,
             roas30: j30.gasto > 0 ? j30.receita / j30.gasto : 0,
+            pedidos7: j7.pedidos, pedidos15: j15.pedidos, pedidos30: j30.pedidos,
           };
         });
       } catch (e) {
@@ -402,6 +403,7 @@ async function buscarJanelasCampanhas(campIds) {
         const receita = parseFloat(m.total_amount) || 0;
         if (!map[c.id]) map[c.id] = {};
         map[c.id][`roas${chave}`] = gasto > 0 ? receita / gasto : 0;
+        map[c.id][`pedidos${chave}`] = parseInt(m.units_quantity) || 0;
       });
     };
     aplicar(r7, 7); aplicar(r15, 15); aplicar(r30, 30);
@@ -1038,9 +1040,6 @@ function renderConteudo() {
     <!-- Sugestões de otimização -->
     ${renderOtimizacoes(d)}
 
-    <!-- Estoque & Rompimento -->
-    ${renderEstoque()}
-
     <!-- Ranqueamento de Mercado -->
     ${renderRanqueamento()}
 
@@ -1048,9 +1047,8 @@ function renderConteudo() {
     ${renderAgentIA()}
   `;
 
-  // auto-carrega estoque e histórico de ranking
+  // auto-carrega histórico de ranking
   setTimeout(() => {
-    window._adsCarregarEstoque(false);
     _renderRankingHistorico();
   }, 300);
 }
@@ -1156,7 +1154,7 @@ function _sugestaoCampanha(c, roas, acos, ctr) {
     return { icon: '💸', texto: 'ACoS alto', cor: '#dc2626', bg: '#fef2f2' };
   }
   if (ctr > 0 && ctr < 0.5 && c.impressoes > 1000) {
-    return { icon: '🖼️', texto: 'Melhorar criativo', cor: '#d97706', bg: '#fffbeb' };
+    return { icon: '🖼️', texto: 'Revisar título/fotos do anúncio', cor: '#d97706', bg: '#fffbeb' };
   }
   if (roas >= 3) {
     return { icon: '✅', texto: 'Saudável', cor: '#16a34a', bg: '#f0fdf4' };
@@ -1183,7 +1181,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
     const acosCor = acos === 0 ? 'var(--text-muted,#94a3b8)' : acos <= 30 ? '#16a34a' : acos <= 50 ? '#d97706' : '#dc2626';
     const sug = _sugestaoCampanha(c, roas, acos, ctr);
     const sugIA = sugestoesPorCampanha[String(c.id)] || null;
-    const TIPO_LABEL_IA = { pausar: '⏸️ Pausar', retomar: '▶️ Retomar', ajustar_orcamento: '💰 Ajustar orçamento', ajustar_roas_target: '🎯 Ajustar meta ROAS', outro: '💡 Sugestão' };
+    const TIPO_LABEL_IA = { pausar: '⏸️ Pausar', retomar: '▶️ Retomar', ajustar_orcamento: '💰 Ajustar orçamento', ajustar_roas_target: '🎯 Ajustar meta ROAS', revisar_anuncio: '🛍️ Revisar anúncio', outro: '💡 Sugestão' };
 
     // Tendência de ROAS nas 3 janelas — dá pra ver se a campanha está
     // melhorando (7d acima do 30d) ou piorando (7d abaixo do 30d) com o tempo.
@@ -1196,6 +1194,24 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
       tendenciaHtml = `<div style="font-size:10px;color:var(--text-muted);margin-top:3px;white-space:nowrap;" title="ROAS por janela — 7 dias vs 15 dias vs 30 dias">
         <span style="color:${setaCor};font-weight:700;">${seta}</span> 7d ${v(j.roas7)} · 15d ${v(j.roas15)} · 30d ${v(j.roas30)}
       </div>`;
+    }
+
+    // Tendência de VENDAS (pedidos) — taxa diária dos últimos 7d vs taxa diária
+    // dos 23 dias anteriores (dia 8 a 30). É o indicador principal de queda/alta
+    // por campanha, já que ROAS sozinho não mostra volume.
+    let vendasTrendHtml = '';
+    if (j && (j.pedidos7 != null || j.pedidos30 != null)) {
+      const taxaRecente  = (j.pedidos7 || 0) / 7;
+      const taxaAnterior = ((j.pedidos30 || 0) - (j.pedidos7 || 0)) / 23;
+      if (taxaAnterior > 0) {
+        if (taxaRecente < taxaAnterior * 0.7) {
+          const queda = ((1 - taxaRecente / taxaAnterior) * 100).toFixed(0);
+          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#fef2f2;color:#dc2626;white-space:nowrap;" title="Ritmo de pedidos caiu comparando os últimos 7 dias com os 23 dias anteriores">📉 Vendas em queda (-${queda}%)</span></div>`;
+        } else if (taxaRecente > taxaAnterior * 1.3) {
+          const alta = ((taxaRecente / taxaAnterior - 1) * 100).toFixed(0);
+          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#f0fdf4;color:#16a34a;white-space:nowrap;" title="Ritmo de pedidos subiu comparando os últimos 7 dias com os 23 dias anteriores">📈 Vendas subindo (+${alta}%)</span></div>`;
+        }
+      }
     }
 
     // ROAS target (campanhas auto) — valor direto da Shopee, sem divisão
@@ -1265,6 +1281,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
           <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.nome}">${c.nome}</div>
           ${sug ? `<span style="display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:${sug.bg};color:${sug.cor};white-space:nowrap;" title="${sug.texto}">${sug.icon} ${sug.texto}</span>` : ''}
           ${sugIA ? `<div style="margin-top:4px;"><button onclick="Router.navigate('sugestoes-ads')" title="${(sugIA.motivo||'').replace(/"/g,'')}" style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#ede9fe;color:#6d28d9;border:none;cursor:pointer;white-space:nowrap;">${TIPO_LABEL_IA[sugIA.tipo] || '💡 Sugestão'}${sugIA.valor_sugerido_label ? ' → ' + sugIA.valor_sugerido_label : ''}</button></div>` : ''}
+          ${vendasTrendHtml}
           ${tendenciaHtml}
           ${linkItens}
         </td>
@@ -1823,10 +1840,10 @@ Responda APENAS um array JSON válido (sem markdown, sem texto antes/depois), no
   {
     "campanha_id": "id exato da campanha listada nos dados (ou null se for sobre a conta toda)",
     "campanha_nome": "nome da campanha",
-    "tipo": "pausar" | "retomar" | "ajustar_orcamento" | "ajustar_roas_target" | "outro",
+    "tipo": "pausar" | "retomar" | "ajustar_orcamento" | "ajustar_roas_target" | "revisar_anuncio" | "outro",
     "valor_atual_label": "texto curto do valor atual (ex: 'R$ 50,00/dia' ou '3.5x' ou 'ativa')",
-    "valor_sugerido_label": "texto curto do valor sugerido (ex: 'R$ 30,00/dia' ou '4.0x')",
-    "valor_sugerido_numero": número puro pra executar (orçamento em R$ ou roas_target em x) ou null se tipo for pausar/retomar/outro,
+    "valor_sugerido_label": "texto curto do valor sugerido/ação (ex: 'R$ 30,00/dia', '4.0x', ou pra revisar_anuncio algo tipo 'Revisar título e fotos')",
+    "valor_sugerido_numero": número puro pra executar (orçamento em R$ ou roas_target em x) ou null se tipo for pausar/retomar/revisar_anuncio/outro,
     "motivo": "1-2 frases explicando o porquê, citando os números reais",
     "prioridade": "alta" | "media" | "baixa"
   }
@@ -1837,7 +1854,8 @@ REGRAS:
 - Só sugira "pausar" pra campanha com investimento relevante (>R$20) e ZERO ou pouquíssimos pedidos no período, ou ACoS excessivo mesmo com pedidos.
 - Só sugira "ajustar_orcamento" com valor_sugerido_numero preenchido (o novo orçamento diário em reais) — priorize aumentar orçamento de campanhas com bom volume de pedidos E ROAS acima da meta (tem espaço pra escalar), e reduzir de campanhas com muito investimento e poucos pedidos.
 - Só sugira "ajustar_roas_target" pra campanhas tipo:auto — não existe meta ROAS em campanha manual.
-- Máximo 8 sugestões, só as que têm impacto real — não force sugestão se a conta está saudável.
+- "revisar_anuncio" é pra ações FORA do ADS que aumentam conversão e vendas — o analista não executa isso automaticamente, é ação manual dele. Use quando a campanha tem tráfego decente (cliques/impressões OK) mas conversão baixa ou queda de pedidos sem motivo aparente no orçamento/ROAS: sugira coisas concretas como revisar título e fotos do anúncio, competitividade do preço frente a concorrentes, criar cupom/desconto pra destravar conversão, avaliar avaliações/reputação do produto, garantir frete grátis ou entrega rápida. Sempre específico à campanha, nunca genérico.
+- Máximo 8 sugestões, só as que têm impacto real — não force sugestão se a conta está saudável. Pelo menos 1 sugestão "revisar_anuncio" quando fizer sentido pelos dados, não só sugestões de orçamento/pausa.
 - Se a conta está indo bem (pedidos e faturamento estáveis ou crescendo), pode retornar array vazio [].
 - TACOS <10% e volume de pedidos bom = tem espaço pra sugerir aumento de orçamento em campanhas eficientes, não só corte.`;
 
@@ -2067,24 +2085,6 @@ ${ctx}${ctxRanking}`,
   if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = 'Enviar'; }
 };
 
-// ─── Estoque ─────────────────────────────────────────────────
-function renderEstoque() {
-  return `
-    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div>
-          <h3 style="font-size:14px;font-weight:700;margin:0 0 2px;color:var(--text-primary);">📦 Estoque & Rompimento</h3>
-          <p style="font-size:12px;color:var(--text-secondary);margin:0;">Produtos com estoque crítico ou em risco de ruptura</p>
-        </div>
-        <button onclick="window._adsCarregarEstoque(true)" style="font-size:11px;color:var(--text-secondary);background:var(--bg-base);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;">🔄 Atualizar</button>
-      </div>
-      <div id="ads-estoque-body">
-        <div style="text-align:center;padding:32px;color:var(--text-secondary);font-size:13px;">Carregando estoque...</div>
-      </div>
-    </div>
-  `;
-}
-
 // ─── Ranqueamento ─────────────────────────────────────────────
 function renderRanqueamento() {
   return `
@@ -2110,154 +2110,6 @@ function renderRanqueamento() {
   `;
 }
 
-// ─── Estoque handlers ─────────────────────────────────────────
-window._adsCarregarEstoque = async function(forcar = false) {
-  if (!contaAtual) return;
-  const body = document.getElementById('ads-estoque-body');
-  if (!body) return;
-
-  const ck = `glr_estoque_${contaAtual.external_id}`;
-  const ESTOQUE_CACHE_VER = 2; // bump invalida cache antigo (ex: bug de ids undefined no ML)
-  if (!forcar) {
-    try {
-      const raw = localStorage.getItem(ck);
-      if (raw) {
-        const c = JSON.parse(raw);
-        if (c.ver === ESTOQUE_CACHE_VER && Date.now() - c.at < 30 * 60 * 1000) {
-          _estoqueProdutos = c.produtos;
-          _renderEstoqueTabela();
-          return;
-        }
-      }
-    } catch {}
-  }
-
-  body.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-secondary);">⟳ Carregando estoque...</div>`;
-
-  try {
-    let produtos = [];
-    const mkt = contaAtual.marketplace;
-    const contaId = String(contaAtual.external_id);
-
-    if (mkt === 'shopee') {
-      const mine = await MarketplaceAPI.call('shopee_list_items', { shopId: contaId, item_status: 'NORMAL', page_size: 100 });
-      const items = mine?.response?.item || mine?.item || [];
-      if (items.length > 0) {
-        const itemIds = items.map(i => i.item_id).slice(0, 50);
-        try {
-          const detail = await MarketplaceAPI.call('shopee_get_items_batch', { shopId: contaId, item_id_list: itemIds });
-          const dl = detail?.response?.item_list || [];
-          produtos = dl.map(i => ({
-            id: i.item_id,
-            nome: i.item_name,
-            estoque: i.stock_info_v2?.summary_info?.total_available_stock ?? i.stock_info?.current_stock ?? 0,
-            preco: (i.price_info?.[0]?.current_price || 0) / 100000,
-          }));
-        } catch {
-          produtos = items.map(i => ({ id: i.item_id, nome: i.item_name, estoque: 0, preco: 0 }));
-        }
-      }
-    } else {
-      // ML: tenta low_stock primeiro, depois lista geral
-      // IMPORTANTE: precisa de meliUserId — contaId é ignorado silenciosamente
-      // pela API e sempre retorna a conta ML padrão, misturando dados de outra conta
-      const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
-      const seen = new Set();
-      try {
-        const ls = await MarketplaceAPI.call('low_stock_items', { meliUserId: meliId, limit: 50 });
-        (ls?.results || ls?.data || []).forEach(i => {
-          seen.add(String(i.id));
-          produtos.push({ id: i.id, nome: i.title, estoque: i.available_quantity ?? 0, preco: i.price ?? 0 });
-        });
-      } catch {}
-      try {
-        const idsAtivos = [];
-        let offset = 0;
-        while (true) {
-          const all = await MarketplaceAPI.call('list_items', { meliUserId: meliId, status: 'active', limit: 100, offset });
-          const lote = all?.results || all?.data?.results || [];
-          if (!Array.isArray(lote) || !lote.length) break;
-          // lote vem como [{code, body:{id,...}}] — precisa extrair o id, não empurrar
-          // o objeto inteiro (isso fazia get_items() receber lixo e devolver
-          // nome/estoque undefined pra praticamente todo produto).
-          idsAtivos.push(...lote.map(x => x.body?.id || x.id).filter(Boolean));
-          if (lote.length < 100) break;
-          offset += 100;
-        }
-        const faltam = idsAtivos.filter(id => !seen.has(String(id)));
-        for (let i = 0; i < faltam.length; i += 20) {
-          const lote = faltam.slice(i, i+20);
-          try {
-            const det = await MarketplaceAPI.call('get_items', { meliUserId: meliId, ids: lote });
-            const arr = Array.isArray(det?.data) ? det.data : (Array.isArray(det) ? det : []);
-            arr.forEach(entry => {
-              const b = entry.body || entry;
-              if (b?.id) produtos.push({ id: b.id, nome: b.title, estoque: b.available_quantity ?? 0, preco: b.price ?? 0 });
-            });
-          } catch {}
-        }
-      } catch {}
-    }
-
-    _estoqueProdutos = produtos;
-    try { localStorage.setItem(ck, JSON.stringify({ ver: ESTOQUE_CACHE_VER, at: Date.now(), produtos })); } catch {}
-    _renderEstoqueTabela();
-  } catch(e) {
-    if (body) body.innerHTML = `<div style="color:#dc2626;font-size:12px;padding:12px;">❌ Erro: ${e.message}</div>`;
-  }
-};
-
-function _renderEstoqueTabela() {
-  const body = document.getElementById('ads-estoque-body');
-  if (!body) return;
-  const produtos = _estoqueProdutos;
-  if (!produtos || produtos.length === 0) {
-    body.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-secondary);font-size:12px;">Nenhum produto encontrado</div>`;
-    return;
-  }
-
-  const sorted = [...produtos].sort((a, b) => (a.estoque||0) - (b.estoque||0));
-  const criticos = sorted.filter(p => (p.estoque||0) <= 3);
-  const baixos   = sorted.filter(p => (p.estoque||0) > 3 && (p.estoque||0) <= 15);
-  const ok       = sorted.filter(p => (p.estoque||0) > 15);
-
-  const row = p => {
-    const est = p.estoque || 0;
-    const cor = est <= 3 ? '#dc2626' : est <= 15 ? '#d97706' : '#16a34a';
-    const bg  = est <= 3 ? '#fef2f2' : est <= 15 ? '#fffbeb' : '#f0fdf4';
-    const ico = est <= 3 ? '🔴' : est <= 15 ? '🟡' : '🟢';
-    const label = est <= 3 ? '<span style="color:#dc2626;font-weight:700;">CRÍTICO</span>' : est <= 15 ? '<span style="color:#d97706;font-weight:700;">BAIXO</span>' : '<span style="color:#16a34a;">OK</span>';
-    return `<tr style="border-bottom:1px solid var(--border);">
-      <td style="padding:9px 12px;font-size:12px;color:var(--text-primary);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.nome}</td>
-      <td style="padding:9px 12px;text-align:center;"><span style="background:${bg};color:${cor};border-radius:99px;padding:3px 10px;font-size:11px;font-weight:700;">${ico} ${est} un.</span></td>
-      <td style="padding:9px 12px;text-align:center;font-size:11px;">${label}</td>
-      <td style="padding:9px 12px;text-align:right;font-size:12px;color:var(--text-secondary);">${p.preco > 0 ? p.preco.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '—'}</td>
-    </tr>`;
-  };
-
-  const resumo = [
-    criticos.length ? `<span style="background:#fef2f2;color:#dc2626;border-radius:99px;padding:3px 12px;font-size:11px;font-weight:700;">🔴 ${criticos.length} crítico(s)</span>` : '',
-    baixos.length   ? `<span style="background:#fffbeb;color:#d97706;border-radius:99px;padding:3px 12px;font-size:11px;font-weight:700;">🟡 ${baixos.length} baixo(s)</span>` : '',
-    ok.length       ? `<span style="background:#f0fdf4;color:#16a34a;border-radius:99px;padding:3px 12px;font-size:11px;font-weight:700;">🟢 ${ok.length} OK</span>` : '',
-  ].filter(Boolean).join(' ');
-
-  body.innerHTML = `
-    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">${resumo}</div>
-    ${criticos.length ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:12px;color:#dc2626;font-weight:600;">🚨 ${criticos.length} produto(s) com estoque CRÍTICO (≤3 unidades) — risco imediato de ruptura!</div>` : ''}
-    <div style="overflow-x:auto;">
-      <table style="width:100%;border-collapse:collapse;">
-        <thead><tr style="background:var(--bg-base);border-bottom:2px solid var(--border);">
-          <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Produto</th>
-          <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Estoque</th>
-          <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Status</th>
-          <th style="padding:8px 12px;text-align:right;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;">Preço</th>
-        </tr></thead>
-        <tbody>${sorted.map(row).join('')}</tbody>
-      </table>
-    </div>
-    <div style="margin-top:10px;font-size:11px;color:var(--text-secondary);">Total: ${produtos.length} produtos • 🔴 ≤3 un. (crítico) • 🟡 4-15 un. (baixo) • 🟢 >15 un. (OK)</div>
-  `;
-}
 
 // ─── Ranking handlers ─────────────────────────────────────────
 window._adsBuscarRanking = async function() {

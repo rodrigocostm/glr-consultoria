@@ -15,6 +15,7 @@ const TIPO_LABEL = {
   retomar: '▶️ Retomar campanha',
   ajustar_orcamento: '💰 Ajustar orçamento',
   ajustar_roas_target: '🎯 Ajustar meta ROAS',
+  revisar_anuncio: '🛍️ Revisar anúncio (fora do ADS)',
   outro: '💡 Outro',
 };
 const PRIORIDADE_COR = { alta: '#dc2626', media: '#d97706', baixa: '#64748b' };
