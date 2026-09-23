@@ -111,9 +111,20 @@
         if (campanhas.length > 0 && falhasSettings >= lotes && falhasDiario >= lotes) {
           state.dadosAoVivo = { erro: `Não consegui buscar métricas das ${campanhas.length} campanhas agora. Erro real: "${ultimoErro || 'desconhecido'}". Tente "Atualizar" de novo em alguns minutos.` };
         } else {
+          // Faturamento TOTAL da loja (não só o atribuído ao ADS) — base do TACOS,
+          // que é a métrica que a GLR usa de verdade pra julgar a conta, não ACOS
+          // isolado de campanha.
+          let faturamentoTotal = 0;
+          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'SHIPPED']) {
+            try {
+              const r = await MarketplaceAPI.call('shopee_sales_summary', { shopId, days: 7, order_status: st });
+              faturamentoTotal += parseFloat(r.data?.total_revenue ?? r.total_revenue) || 0;
+            } catch (e) {}
+          }
+          const tacosGeral = faturamentoTotal > 0 ? (gastoTotal / faturamentoTotal * 100) : (gastoTotal > 0 ? Infinity : 0);
           state.dadosAoVivo = {
             atualizadoEm: new Date().toISOString(),
-            campanhasAtivas: ativas, gastoTotal, gmvTotal, pedidosTotal,
+            campanhasAtivas: ativas, gastoTotal, gmvTotal, pedidosTotal, faturamentoTotal, tacosGeral,
             acosGeral: gmvTotal > 0 ? (gastoTotal / gmvTotal * 100) : (gastoTotal > 0 ? Infinity : 0),
             top5: porCampanha.slice(0, 5),
             avisoParcial: (falhasSettings > 0 || falhasDiario > 0) ? 'Algumas campanhas podem estar faltando — houve falha parcial ao buscar dados da Shopee.' : null,
@@ -155,6 +166,7 @@
         regra_pausa_dias: parseInt(v('ag-pausa-dias'), 10) || 3,
         janela_decisao_dias: parseInt(v('ag-janela'), 10) || 1,
         alerta_variacao_pct: parseFloat(v('ag-alerta-var')) || 30,
+        dias_maturacao_campanha: parseInt(v('ag-maturacao'), 10) || 7,
         notas: v('ag-notas') || '',
         atualizado_em: new Date().toISOString(),
       };
@@ -172,7 +184,7 @@
         await _sb.from('glr_agente_log').insert({
           conta_id: contaId, cliente_nome: row.cliente_nome, tipo: 'sistema',
           titulo: ativo ? 'Piloto ativado' : 'Configuração salva',
-          explicacao: `Configuração atualizada pelo analista. Meta ACOS ${row.meta_acos ?? '—'}%, orçamento ${row.orcamento_min ?? '—'}–${row.orcamento_max ?? '—'}, pausa automática acima de ${row.regra_pausa_acos ?? '—'}% por ${row.regra_pausa_dias} dia(s).`,
+          explicacao: `Configuração atualizada pelo analista. Meta TACOS ${row.meta_acos ?? '—'}%, orçamento ${row.orcamento_min ?? '—'}–${row.orcamento_max ?? '—'}, pausa automática acima de ${row.regra_pausa_acos ?? '—'}% ACOS por ${row.regra_pausa_dias} dia(s), maturação mínima de ${row.dias_maturacao_campanha} dia(s).`,
           dados: row, resultado: 'executado', origem: 'analista',
         });
         await carregarTudo();
@@ -194,10 +206,10 @@
       const d = state.dadosAoVivo;
       const dadosTexto = !d ? '\nDADOS AO VIVO: ainda não carregados.'
         : d.erro ? `\nDADOS AO VIVO: erro ao buscar (${d.erro})`
-        : `\nDADOS AO VIVO DA SHOPEE (últimos 7 dias, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nCampanhas ativas: ${d.campanhasAtivas} | Investimento: ${R$(d.gastoTotal)} | Vendas atribuídas: ${R$(d.gmvTotal)} | Pedidos: ${d.pedidosTotal} | ACOS geral: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento:\n${d.top5.map(c => `- ${(c.nome || '').slice(0, 60)}: orçamento ${R$(c.budget)}, gasto ${R$(c.gasto)}, vendas ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
+        : `\nDADOS AO VIVO DA SHOPEE (últimos 7 dias, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nFaturamento TOTAL da loja: ${R$(d.faturamentoTotal)} | Investimento ADS: ${R$(d.gastoTotal)} | TACOS da conta: ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (esta é a métrica principal, não o ACOS isolado abaixo)\nCampanhas ativas: ${d.campanhasAtivas} | Vendas atribuídas ao ADS: ${R$(d.gmvTotal)} | Pedidos atribuídos: ${d.pedidosTotal} | ACOS médio das campanhas: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento (ACOS individual, útil só pra comparar entre elas):\n${d.top5.map(c => `- ${(c.nome || '').slice(0, 60)}: orçamento ${R$(c.budget)}, gasto ${R$(c.gasto)}, vendas ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
       return [
         cfg ? `CONFIGURAÇÃO ATUAL DO PILOTO (conta ${cfg.cliente_nome || cfg.conta_id}, ${cfg.ativo ? 'ATIVO' : 'inativo'}):` : 'Nenhuma conta piloto configurada ainda.',
-        cfg ? `Meta ACOS: ${cfg.meta_acos ?? '—'}% | Orçamento: ${cfg.orcamento_min ?? '—'} a ${cfg.orcamento_max ?? '—'} | Margem: ${cfg.margem_pct ?? '—'}% | Estoque mínimo: ${cfg.estoque_minimo ?? '—'} | Pausa automática acima de ${cfg.regra_pausa_acos ?? '—'}% ACOS por ${cfg.regra_pausa_dias ?? '—'} dia(s) | Alerta humano se variação de orçamento > ${cfg.alerta_variacao_pct ?? '—'}% | Notas: ${cfg.notas || '—'}` : '',
+        cfg ? `Meta TACOS: ${cfg.meta_acos ?? '—'}% (métrica principal: investimento ADS ÷ faturamento TOTAL da loja, não ACOS isolado) | Orçamento: ${cfg.orcamento_min ?? '—'} a ${cfg.orcamento_max ?? '—'} | Margem: ${cfg.margem_pct ?? '—'}% | Estoque mínimo: ${cfg.estoque_minimo ?? '—'} | Pausa automática acima de ${cfg.regra_pausa_acos ?? '—'}% ACOS por ${cfg.regra_pausa_dias ?? '—'} dia(s), só após ${cfg.dias_maturacao_campanha ?? 7} dia(s) de maturação da campanha | Alerta humano se variação de orçamento > ${cfg.alerta_variacao_pct ?? '—'}% | Notas: ${cfg.notas || '—'}` : '',
         cfg ? dadosTexto : '',
         ultimoRelatorio ? `\nÚLTIMO RELATÓRIO DIÁRIO (${ultimoRelatorio.data}):\n${ultimoRelatorio.resumo}` : '',
         logsRecentes ? `\nÚLTIMAS AÇÕES/EVENTOS REGISTRADOS NO LOG:\n${logsRecentes}` : '',
@@ -218,7 +230,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            system: `Você é o Agente Autônomo de ADS da GLR Consultoria, hoje rodando em modo PILOTO numa única conta Shopee. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Use os dados de contexto abaixo (configuração, último relatório, log recente) pra responder — nunca invente números que não estão aí. Se o analista pedir pra mudar uma regra, explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
+            system: `Você é o Agente Autônomo de ADS da GLR Consultoria, hoje rodando em modo PILOTO numa única conta Shopee. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Use os dados de contexto abaixo (configuração, último relatório, log recente) pra responder — nunca invente números que não estão aí. Se o analista pedir pra mudar uma regra, explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
             messages: state.chatMessages,
           }),
         });
@@ -260,7 +272,7 @@
 
       return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
         ${card('Piloto', cfg?.ativo ? '🟢 Ativo' : '⚪ Inativo', cfg?.ativo ? '#16a34a' : 'var(--text-muted)', cfg ? esc(cfg.cliente_nome || cfg.conta_id) : 'nenhuma conta configurada')}
-        ${card('ACOS mais recente', ultimoRel?.metricas?.acos_janela != null ? `${ultimoRel.metricas.acos_janela.toFixed(1)}%` : '—', null, cfg?.meta_acos ? `meta: ${cfg.meta_acos}%` : '')}
+        ${card('TACOS mais recente', ultimoRel?.metricas?.tacos_conta != null ? `${ultimoRel.metricas.tacos_conta.toFixed(1)}%` : '—', null, cfg?.meta_acos ? `meta: ${cfg.meta_acos}%` : '')}
         ${card('Decisões (7 dias)', decisoesSemana, '#6366f1', 'pausar / retomar / orçamento')}
         ${card('Alertas pendentes', alertasPendentes, alertasPendentes ? '#d97706' : '#16a34a', 'aguardando aprovação manual')}
       </div>`;
@@ -292,13 +304,14 @@
         </div>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px;">
-          <div class="form-group" style="margin:0;"><label class="form-label">Meta ACOS (%)</label><input type="number" step="0.1" class="form-input" id="ag-meta-acos" value="${esc(cfg.meta_acos ?? '')}"></div>
+          <div class="form-group" style="margin:0;"><label class="form-label" title="Investimento em ADS ÷ faturamento TOTAL da loja — não é o ACOS isolado de campanha. É a métrica principal que o agente usa pra decidir.">Meta TACOS (%)</label><input type="number" step="0.1" class="form-input" id="ag-meta-acos" value="${esc(cfg.meta_acos ?? '')}"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Orçamento mín. (R$/dia)</label><input type="number" step="0.01" class="form-input" id="ag-orc-min" value="${esc(cfg.orcamento_min ?? '')}"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Orçamento máx. (R$/dia)</label><input type="number" step="0.01" class="form-input" id="ag-orc-max" value="${esc(cfg.orcamento_max ?? '')}"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Margem (%)</label><input type="number" step="0.1" class="form-input" id="ag-margem" value="${esc(cfg.margem_pct ?? '')}"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Estoque mínimo</label><input type="number" class="form-input" id="ag-estoque-min" value="${esc(cfg.estoque_minimo ?? '')}"></div>
-          <div class="form-group" style="margin:0;"><label class="form-label">Pausa automática se ACOS acima de (%)</label><input type="number" step="0.1" class="form-input" id="ag-pausa-acos" value="${esc(cfg.regra_pausa_acos ?? '')}"></div>
+          <div class="form-group" style="margin:0;"><label class="form-label">Pausa automática se ACOS da campanha acima de (%)</label><input type="number" step="0.1" class="form-input" id="ag-pausa-acos" value="${esc(cfg.regra_pausa_acos ?? '')}"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">...por quantos dias seguidos</label><input type="number" class="form-input" id="ag-pausa-dias" value="${esc(cfg.regra_pausa_dias ?? 3)}"></div>
+          <div class="form-group" style="margin:0;"><label class="form-label" title="Campanha mais nova que isso não é pausada por ACOS ruim, mesmo que o critério acima tenha sido atingido — só registra um aviso.">Maturação mínima da campanha (dias)</label><input type="number" class="form-input" id="ag-maturacao" value="${esc(cfg.dias_maturacao_campanha ?? 7)}"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Janela de decisão (dias)</label><input type="number" class="form-input" id="ag-janela" value="${esc(cfg.janela_decisao_dias ?? 1)}"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Alerta humano se variação orçamento &gt; (%)</label><input type="number" class="form-input" id="ag-alerta-var" value="${esc(cfg.alerta_variacao_pct ?? 30)}"></div>
         </div>
@@ -364,7 +377,7 @@
       const linha = state.carregandoDadosAoVivo ? '⏳ atualizando dados da Shopee (últimos 7 dias)...'
         : !state.config?.conta_id ? 'Configure e salve uma conta piloto pra puxar dados ao vivo.'
         : d?.erro ? `⚠️ erro ao buscar dados: ${esc(d.erro)}`
-        : d ? `${d.campanhasAtivas} campanha(s) ativa(s) · investimento ${R$(d.gastoTotal)} · vendas ${R$(d.gmvTotal)} · ACOS ${d.acosGeral === Infinity ? '∞' : d.acosGeral.toFixed(1) + '%'} (últimos 7 dias, ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')})${d.avisoParcial ? ` ⚠️ ${esc(d.avisoParcial)}` : ''}`
+        : d ? `${d.campanhasAtivas} campanha(s) ativa(s) · faturamento total ${R$(d.faturamentoTotal)} · investimento ADS ${R$(d.gastoTotal)} · TACOS ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (últimos 7 dias, ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')})${d.avisoParcial ? ` ⚠️ ${esc(d.avisoParcial)}` : ''}`
         : 'Nenhum dado carregado ainda.';
       return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--bg-card-hover,#f7f7fb);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;color:var(--text-muted);">
         <span>${linha}</span>

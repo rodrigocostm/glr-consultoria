@@ -174,7 +174,21 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       });
     }
 
+    // Faturamento TOTAL da loja na mesma janela (não só o atribuído ao ADS) —
+    // é a base do TACOS. Mesmos status usados no resto do app (shopeeFaturamento
+    // em marketplace-api.js): COMPLETED + READY_TO_SHIP + SHIPPED.
+    const diasJanela = Math.max(1, cfg.regra_pausa_dias || 3);
+    let faturamentoTotalLoja = 0;
+    for (const st of ['COMPLETED', 'READY_TO_SHIP', 'SHIPPED']) {
+      try {
+        const r = await mcpCall(mcApiKey, 'shopee_sales_summary', { shopId, days: diasJanela, order_status: st });
+        faturamentoTotalLoja += parseFloat(r.data?.total_revenue || r.total_revenue) || 0;
+      } catch (e) {}
+    }
+
     let gastoTotalOntem = 0, gmvTotalJanela = 0, gastoTotalJanela = 0;
+    const diasMaturacao = cfg.dias_maturacao_campanha ?? 7;
+    const agoraTs = Date.now() / 1000;
 
     for (const c of campanhas) {
       const settings = settingsPorId[c.campaign_id];
@@ -187,45 +201,81 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       gastoTotalOntem += diario.gastoOntem;
       gmvTotalJanela += diario.gmv;
       gastoTotalJanela += diario.gasto;
+    }
+
+    // TACOS da conta = investimento total em ADS ÷ faturamento TOTAL da loja
+    // (não só a venda atribuída ao ADS) — é o critério principal, do jeito que
+    // a GLR se baseia pra decisão, não ACOS isolado por campanha (esse mede
+    // eficiência daquela campanha específica, útil pra comparar campanhas
+    // entre si, mas não pra dizer se a conta como um todo está saudável).
+    const tacosConta = faturamentoTotalLoja > 0 ? (gastoTotalJanela / faturamentoTotalLoja) * 100 : (gastoTotalJanela > 0 ? Infinity : 0);
+    const tacosDentroDaMeta = !cfg.meta_acos || tacosConta <= cfg.meta_acos * 1.1; // 10% de folga antes de travar aumento de orçamento
+
+    for (const c of campanhas) {
+      const settings = settingsPorId[c.campaign_id];
+      const diario = diarioPorId[c.campaign_id];
+      if (!settings || !diario) continue;
+      const status = (settings.campaign_status || '').toLowerCase();
+      const budgetAtual = parseFloat(settings.campaign_budget) || 0;
+      if (status !== 'ongoing') continue;
 
       const acosJanela = diario.gmv > 0 ? diario.gasto / diario.gmv : (diario.gasto > 0 ? Infinity : null);
       const nome = c.campaign_name?.slice(0, 70) || `Campanha ${c.campaign_id}`;
+      const inicioTs = settings.campaign_duration?.start_time || 0;
+      const idadeDias = inicioTs ? (agoraTs - inicioTs) / 86400 : Infinity;
+      const emMaturacao = idadeDias < diasMaturacao;
 
-      // Regra 1: gasto sem nenhuma venda na janela inteira → pausa (proteção máxima)
-      if (cfg.regra_pausa_acos && diario.diasComGasto >= Math.min(2, cfg.regra_pausa_dias || 3) && acosJanela === Infinity) {
-        await executarPausa(c.campaign_id, nome,
-          `Gastou ${R$(diario.gasto)} em ${diario.diasComGasto} dia(s) nos últimos ${cfg.regra_pausa_dias || 3} dias sem gerar NENHUMA venda atribuída. Pausada pra não continuar queimando orçamento.`,
-          { gasto: diario.gasto, gmv: 0, pedidos: 0 });
-        continue;
-      }
+      // Regra 1 e 2 (pausar por gasto sem venda / ACOS alto sustentado): uma
+      // campanha ainda em maturação não é pausada por isso — só registra que
+      // o critério bateu, mas está segurando pra dar tempo de amadurecer.
+      const bateuCriterioPausa =
+        (cfg.regra_pausa_acos && diario.diasComGasto >= Math.min(2, cfg.regra_pausa_dias || 3) && acosJanela === Infinity) ||
+        (cfg.regra_pausa_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > cfg.regra_pausa_acos && diario.diasComGasto >= (cfg.regra_pausa_dias || 3));
 
-      // Regra 2: ACOS acima do limite de pausa por N dias → pausa
-      if (cfg.regra_pausa_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > cfg.regra_pausa_acos && diario.diasComGasto >= (cfg.regra_pausa_dias || 3)) {
-        await executarPausa(c.campaign_id, nome,
-          `ACOS de ${(acosJanela * 100).toFixed(1)}% nos últimos ${cfg.regra_pausa_dias || 3} dias, acima do limite de pausa configurado (${cfg.regra_pausa_acos}%). Investimento: ${R$(diario.gasto)}, vendas atribuídas: ${R$(diario.gmv)}.`,
-          { acos: acosJanela * 100, gasto: diario.gasto, gmv: diario.gmv });
-        continue;
-      }
-
-      // Regra 3: ACOS confortavelmente abaixo da meta → oportunidade de crescer orçamento
-      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= cfg.meta_acos * 0.7 && budgetAtual > 0) {
-        const tetoOk = !cfg.orcamento_max || budgetAtual < cfg.orcamento_max;
-        if (tetoOk) {
-          const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, budgetAtual * 1.2) * 100) / 100;
-          const variacaoPct = ((novoBudget - budgetAtual) / budgetAtual) * 100;
-          const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta (${cfg.meta_acos}%) — vendendo com folga. Orçamento atual ${R$(budgetAtual)}, proposto ${R$(novoBudget)} (+${variacaoPct.toFixed(0)}%).`;
-          if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
-            await logar('alerta', `Sugestão de aumento de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: novoBudget }, 'so_alerta');
-            alertas.push(nome);
-          } else if (novoBudget > budgetAtual) {
-            await executarOrcamento(c.campaign_id, nome, novoBudget, explicacao, { acos: acosJanela * 100, budget_de: budgetAtual, budget_para: novoBudget });
-          }
+      if (bateuCriterioPausa) {
+        if (emMaturacao) {
+          await logar('sistema', `Maturação segurando pausa — ${nome}`,
+            `Critério de pausa foi atingido (ACOS ${acosJanela === Infinity ? '∞' : (acosJanela * 100).toFixed(1) + '%'}, gasto ${R$(diario.gasto)}), mas a campanha tem só ${Math.floor(idadeDias)} dia(s) — abaixo dos ${diasMaturacao} dias mínimos de maturação configurados. Não pausada ainda.`,
+            { acos: acosJanela === Infinity ? null : acosJanela * 100, idade_dias: Math.floor(idadeDias) }, 'so_alerta');
+        } else if (acosJanela === Infinity) {
+          await executarPausa(c.campaign_id, nome,
+            `Gastou ${R$(diario.gasto)} em ${diario.diasComGasto} dia(s) nos últimos ${cfg.regra_pausa_dias || 3} dias sem gerar NENHUMA venda atribuída, já madura (${Math.floor(idadeDias)} dias). Pausada pra não continuar queimando orçamento.`,
+            { gasto: diario.gasto, gmv: 0, pedidos: 0 });
+        } else {
+          await executarPausa(c.campaign_id, nome,
+            `ACOS de ${(acosJanela * 100).toFixed(1)}% nos últimos ${cfg.regra_pausa_dias || 3} dias, acima do limite de pausa configurado (${cfg.regra_pausa_acos}%), campanha já madura (${Math.floor(idadeDias)} dias). Investimento: ${R$(diario.gasto)}, vendas atribuídas: ${R$(diario.gmv)}.`,
+            { acos: acosJanela * 100, gasto: diario.gasto, gmv: diario.gmv });
         }
         continue;
       }
 
-      // Regra 4: ACOS acima da meta mas abaixo do limite de pausa → reduz orçamento com moderação
-      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > cfg.meta_acos && budgetAtual > (cfg.orcamento_min || 0)) {
+      // Regra 3: ACOS da campanha bem abaixo da meta E a conta como um todo
+      // ainda tem folga de TACOS → aumenta orçamento. Sem folga de TACOS, não
+      // aumenta automaticamente mesmo com campanha eficiente — a conta como um
+      // todo já estaria investindo mais que o saudável em ADS.
+      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= cfg.meta_acos * 0.7 && budgetAtual > 0) {
+        const tetoOk = !cfg.orcamento_max || budgetAtual < cfg.orcamento_max;
+        if (tetoOk && tacosDentroDaMeta) {
+          const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, budgetAtual * 1.2) * 100) / 100;
+          const variacaoPct = ((novoBudget - budgetAtual) / budgetAtual) * 100;
+          const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o TACOS da conta (${tacosConta.toFixed(1)}%) ainda tem folga em relação à meta (${cfg.meta_acos}%). Orçamento atual ${R$(budgetAtual)}, proposto ${R$(novoBudget)} (+${variacaoPct.toFixed(0)}%).`;
+          if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
+            await logar('alerta', `Sugestão de aumento de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: novoBudget, tacos_conta: tacosConta }, 'so_alerta');
+            alertas.push(nome);
+          } else if (novoBudget > budgetAtual) {
+            await executarOrcamento(c.campaign_id, nome, novoBudget, explicacao, { acos: acosJanela * 100, tacos_conta: tacosConta, budget_de: budgetAtual, budget_para: novoBudget });
+          }
+        } else if (tetoOk && !tacosDentroDaMeta) {
+          await logar('sistema', `Aumento represado por TACOS — ${nome}`,
+            `ACOS da campanha (${(acosJanela * 100).toFixed(1)}%) sugeriria aumentar orçamento, mas o TACOS da conta (${tacosConta.toFixed(1)}%) já está acima da meta (${cfg.meta_acos}%) — não aumenta orçamento automaticamente enquanto isso não normalizar.`,
+            { acos: acosJanela * 100, tacos_conta: tacosConta }, 'so_alerta');
+        }
+        continue;
+      }
+
+      // Regra 4: ACOS acima da meta mas abaixo do limite de pausa → reduz
+      // orçamento com moderação (corte é seguro independente do TACOS geral).
+      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > cfg.meta_acos && budgetAtual > (cfg.orcamento_min || 0) && !emMaturacao) {
         const novoBudget = Math.max(cfg.orcamento_min || 0, Math.round(budgetAtual * 0.85 * 100) / 100);
         if (novoBudget < budgetAtual) {
           const variacaoPct = Math.abs((novoBudget - budgetAtual) / budgetAtual) * 100;
@@ -243,15 +293,15 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // Resumo de execução do dia (sempre grava, mesmo sem nenhuma ação — é o
     // registro de que o agente rodou e revisou a conta)
     await logar('sistema', `Revisão diária concluída — ${decisoes.length} ação(ões), ${alertas.length} alerta(s)`,
-      `Revisadas ${campanhas.length} campanhas da conta. ${decisoes.length} decisão(ões) executada(s) automaticamente, ${alertas.length} alerta(s) aguardando aprovação manual (variação de orçamento acima do limite configurado).`,
-      { campanhas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length }, 'executado');
+      `Revisadas ${campanhas.length} campanhas da conta. TACOS da conta: ${tacosConta === Infinity ? '∞' : tacosConta.toFixed(1) + '%'} (meta: ${cfg.meta_acos ?? '—'}%). ${decisoes.length} decisão(ões) executada(s) automaticamente, ${alertas.length} alerta(s) aguardando aprovação manual.`,
+      { campanhas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta }, 'executado');
 
     // 2) Relatório diário com IA
-    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhas.length };
+    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhas.length };
     const resumo = await gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem);
     await sbInsert('glr_agente_relatorios', { data: ontem.iso, conta_id: shopId, cliente_nome: cfg.cliente_nome || null, resumo, metricas });
 
-    return { conta_id: shopId, campanhas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length };
+    return { conta_id: shopId, campanhas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta };
   } catch (e) {
     await logar('sistema', 'Erro na revisão diária', e.message || String(e), {}, 'erro');
     return { conta_id: shopId, erro: e.message };
@@ -260,8 +310,8 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
 
 async function gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem) {
   const base = `Resumo do dia ${ontem.iso} para a conta ${cfg.cliente_nome || cfg.conta_id}: `
-    + `investimento em ADS ${R$(metricas.gasto_janela)} na janela avaliada, vendas atribuídas ${R$(metricas.gmv_janela)}, `
-    + `ACOS médio ${metricas.acos_janela.toFixed(1)}% (meta: ${cfg.meta_acos || '—'}%). `
+    + `investimento em ADS ${R$(metricas.gasto_janela)} na janela avaliada, vendas atribuídas ao ADS ${R$(metricas.gmv_janela)}, faturamento TOTAL da loja no período ${R$(metricas.faturamento_total_loja)}. `
+    + `TACOS da conta (investimento ADS ÷ faturamento total): ${metricas.tacos_conta == null ? '∞' : metricas.tacos_conta.toFixed(1) + '%'} (meta: ${cfg.meta_acos || '—'}%) — essa é a métrica principal usada pra decisão, não o ACOS isolado por campanha. `
     + `${metricas.decisoes} ação(ões) executada(s): ${decisoes.join(', ') || 'nenhuma'}. `
     + `${metricas.alertas} alerta(s) aguardando aprovação: ${alertas.join(', ') || 'nenhum'}.`;
 
@@ -274,7 +324,7 @@ async function gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, on
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 700,
-        system: 'Você escreve relatórios diários curtos e diretos pra um analista de e-commerce sobre um agente autônomo de ADS na Shopee. Português do Brasil, tom objetivo e prático, sem enrolação. Formato: 1 parágrafo de visão geral, depois bullets pras ações tomadas (se houver) e alertas pendentes (se houver). Nunca invente números — use só os dados fornecidos.',
+        system: 'Você escreve relatórios diários curtos e diretos pra um analista de e-commerce sobre um agente autônomo de ADS na Shopee. Português do Brasil, tom objetivo e prático, sem enrolação. A métrica principal de saúde da conta é o TACOS (investimento ADS sobre faturamento TOTAL da loja), não ACOS isolado por campanha — trate ACOS como detalhe de eficiência de campanha individual, não como veredito sobre a conta. Formato: 1 parágrafo de visão geral, depois bullets pras ações tomadas (se houver) e alertas pendentes (se houver). Nunca invente números — use só os dados fornecidos.',
         messages: [{ role: 'user', content: base }],
       }),
     });
