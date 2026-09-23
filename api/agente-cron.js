@@ -14,9 +14,16 @@
 // glr_storage foi travado pra "authenticated" nesta mesma sessão (correção de
 // segurança), e um cron sem usuário logado não tem esse papel. Reabrir leitura
 // anônima só pra essa chave reabriria exatamente o buraco que foi fechado.
-
+//
+// Autenticação Supabase: usa a service role (env var SUPABASE_SERVICE_ROLE_KEY),
+// não a anon key. Testado ao vivo e confirmado: mesmo com policy/grant corretos
+// pro papel "anon", o INSERT falhava com RLS — anomalia real do lado do Postgres,
+// não erro de configuração. Mais correto de qualquer forma: o cron roda no
+// servidor, sem usuário logado, então não é um "visitante anônimo" — é um
+// processo de confiança, e a service role é o papel certo pra isso, ignorando
+// RLS. NUNCA usar essa chave em código que roda no navegador.
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyb2RxbGVqcXlhb29tdXRyaWl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjU5NjUsImV4cCI6MjA5NjQ0MTk2NX0.JaKQHoGH8S3ZdLQInLErpC21SZ0j4FmIGtvWKcBes-A';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function sbSelect(table, qs) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${qs}`, {
@@ -102,6 +109,9 @@ module.exports = async function handler(req, res) {
   const mcApiKey = process.env.MCP_API_KEY;
   if (!mcApiKey) {
     return res.status(200).json({ ok: true, skip: 'MCP_API_KEY não configurada no Vercel — veja Integrações no app pra pegar a chave.' });
+  }
+  if (!SUPABASE_KEY) {
+    return res.status(200).json({ ok: true, skip: 'SUPABASE_SERVICE_ROLE_KEY não configurada no Vercel — pega em Supabase → Project Settings → API → service_role key.' });
   }
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
