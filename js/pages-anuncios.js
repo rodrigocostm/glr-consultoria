@@ -8,6 +8,29 @@
 
   function esc(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
 
+  // ── Quando a busca/sugestão literal de categoria do marketplace não acha
+  // nada (nome curto ou comercial, tipo "Buffet Alaska"), pede pra IA pensar
+  // em 3 termos descritivos alternativos (tipo de produto, material) em vez
+  // de simplesmente desistir. Compartilhado pelos 3 marketplaces. ──
+  async function sugerirTermosAlternativos(nomeProduto, descricao) {
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system: 'Você ajuda a achar a categoria certa de um produto em marketplaces (Mercado Livre, Shopee, TikTok Shop). Dado o nome e a descrição de um produto, devolva APENAS um JSON válido, sem markdown e sem texto fora do JSON, neste formato exato: {"termos": ["termo 1", "termo 2", "termo 3"]}. Cada termo é uma frase curta de 2 a 4 palavras descrevendo o TIPO do produto (categoria geral, material, função) — nunca o nome comercial, marca ou nome de fantasia. Exemplo: pro produto "Buffet Alaska", um bom termo é "buffet aparador madeira" ou "móveis sala de estar", nunca "Buffet Alaska". Ordene do termo mais específico pro mais genérico.',
+          messages: [{ role: 'user', content: `Nome do produto: ${nomeProduto}${descricao ? `\nDescrição: ${descricao}` : ''}` }],
+        }),
+      });
+      const json = await resp.json();
+      if (json.error) return [];
+      const texto = json.content || '';
+      const match = texto.match(/\{[\s\S]*\}/);
+      if (!match) return [];
+      const parsed = JSON.parse(match[0]);
+      return Array.isArray(parsed.termos) ? parsed.termos.filter(Boolean).slice(0, 3) : [];
+    } catch (e) { return []; }
+  }
+
   // ── Placeholder para os marketplaces ainda não construídos ──────────────
   const _PLACEHOLDER = {
     amazon:  { nome: 'Amazon', cor: '#ff9900' },
@@ -44,7 +67,7 @@
       fotoRefBase64: '', fotoRefPreview: '',
       iaCarregando: false, gerandoFoto: false,
 
-      categoriaBuscaInput: '', categoriaResultados: [], categoriaEscolhida: null, buscandoCategoria: false,
+      categoriaBuscaInput: '', categoriaResultados: [], categoriaEscolhida: null, buscandoCategoria: false, categoriaAvisoIA: '',
       atributosObrigatorios: [], atributosOpcionais: [], mostrarOpcionais: false, carregandoAtributos: false,
       valoresAtributos: {},
 
@@ -191,11 +214,33 @@
       if (!state.contaId) { alert('Selecione a conta do Mercado Livre primeiro.'); return; }
       state.buscandoCategoria = true;
       state.categoriaResultados = [];
+      state.categoriaAvisoIA = '';
       render();
       try {
         const resp = await MarketplaceAPI.call('search_categories', { q, meliUserId: state.contaId });
         state.categoriaResultados = resp.data?.items || resp.items || [];
-        if (!state.categoriaResultados.length) alert('Nenhuma categoria encontrada pra "' + q + '". Tente outro termo.');
+
+        // Nada encontrado com o termo literal — em vez de simplesmente desistir,
+        // pede pra IA pensar em termos mais descritivos (tipo de produto) e
+        // tenta cada um, um de cada vez, até achar alguma coisa.
+        if (!state.categoriaResultados.length) {
+          state.categoriaAvisoIA = '🧠 IA pensando em termos alternativos...';
+          render();
+          const termos = await sugerirTermosAlternativos(state.titulo || q, state.descricao);
+          for (const termo of termos) {
+            const r2 = await MarketplaceAPI.call('search_categories', { q: termo, meliUserId: state.contaId }).catch(() => null);
+            const itens = r2?.data?.items || r2?.items || [];
+            if (itens.length) {
+              state.categoriaResultados = itens;
+              state.categoriaAvisoIA = `Nada encontrado pra "${q}" — a IA tentou "${termo}" e achou isso:`;
+              break;
+            }
+          }
+          if (!state.categoriaResultados.length) {
+            state.categoriaAvisoIA = '';
+            alert('Nenhuma categoria encontrada pra "' + q + '", nem com os termos alternativos que a IA tentou. Busque manualmente com outra palavra.');
+          }
+        }
       } catch (e) {
         alert('Erro ao buscar categoria: ' + (e.message || e));
       } finally {
@@ -208,6 +253,7 @@
       syncFormState();
       state.categoriaEscolhida = cat;
       state.categoriaResultados = [];
+      state.categoriaAvisoIA = '';
       state.valoresAtributos = {};
       state.mostrarOpcionais = false;
       state.carregandoAtributos = true;
@@ -437,6 +483,7 @@
               <button class="btn btn-secondary" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anMlBuscarCategoria()">${state.buscandoCategoria ? '⏳' : '🔍'}</button>
             </div>
 
+            ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:#6366f1;margin-bottom:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
             ${state.categoriaResultados.length ? `
               <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;max-height:180px;overflow-y:auto;">
                 ${state.categoriaResultados.map((c, i) => `
@@ -532,7 +579,7 @@
       iaCarregando: false, gerandoFoto: false,
 
       arvoreCategorias: null,
-      nomeProduto: '', categoriaSugestoes: [], categoriaEscolhida: null, buscandoCategoria: false,
+      nomeProduto: '', categoriaSugestoes: [], categoriaEscolhida: null, buscandoCategoria: false, categoriaAvisoIA: '',
       atributosObrigatorios: [], atributosOpcionais: [], mostrarOpcionais: false, carregandoAtributos: false,
       valoresAtributos: {},
 
@@ -650,7 +697,10 @@
         if (json.titulo) state.nomeProduto = json.titulo;
         if (json.descricao) state.descricao = json.descricao;
         state.iaCarregando = false;
-        if (state.nomeProduto) { await sugerirCategorias(); return; } // já chama render()
+        // categoria_busca é um termo já pensado pela IA especificamente pra
+        // achar categoria (ex: "buffet aparador madeira") — bem melhor que o
+        // título comercial (ex: "Buffet Alaska") pra bater com a busca da Shopee.
+        if (json.categoria_busca || state.nomeProduto) { await sugerirCategorias(json.categoria_busca); return; } // já chama render()
       } catch (e) {
         alert('Erro ao sugerir com IA: ' + (e.message || e));
       } finally {
@@ -692,20 +742,47 @@
       });
     }
 
-    // ── Categoria sugerida pela própria Shopee a partir do nome do produto ──
-    async function sugerirCategorias() {
+    // ── Categoria sugerida pela própria Shopee a partir do nome do produto.
+    // termoOverride (opcional) é o categoria_busca vindo da IA de foto — mais
+    // descritivo que o nome comercial digitado no campo. ──
+    async function sugerirCategorias(termoOverride) {
       syncFormState();
-      if (!state.nomeProduto.trim()) { alert('Preencha o nome do produto primeiro.'); return; }
+      const termoBase = termoOverride || state.nomeProduto;
+      if (!termoBase || !termoBase.trim()) { alert('Preencha o nome do produto primeiro.'); return; }
       if (!state.contaId) { alert('Selecione a loja Shopee primeiro.'); return; }
       state.buscandoCategoria = true;
       state.categoriaSugestoes = [];
+      state.categoriaAvisoIA = '';
       render();
       try {
         await obterArvoreCategorias();
-        const resp = await MarketplaceAPI.call('shopee_recommend_category', { item_name: state.nomeProduto, shopId: state.contaId });
-        const ids = resp.data?.response?.category_id || resp.response?.category_id || [];
-        state.categoriaSugestoes = ids.map(id => ({ category_id: id, nome: nomeCategoria(id) }));
-        if (!state.categoriaSugestoes.length) alert('A Shopee não sugeriu categoria pra esse nome. Ajuste o nome do produto e tente de novo.');
+        const buscar = async (termo) => {
+          const resp = await MarketplaceAPI.call('shopee_recommend_category', { item_name: termo, shopId: state.contaId });
+          const ids = resp.data?.response?.category_id || resp.response?.category_id || [];
+          return ids.map(id => ({ category_id: id, nome: nomeCategoria(id) }));
+        };
+        state.categoriaSugestoes = await buscar(termoBase);
+
+        // Nada encontrado — pede pra IA pensar em termos mais descritivos (tipo
+        // de produto, material) em vez de simplesmente desistir, e tenta cada
+        // um até achar categoria.
+        if (!state.categoriaSugestoes.length) {
+          state.categoriaAvisoIA = '🧠 IA pensando em termos alternativos...';
+          render();
+          const termos = await sugerirTermosAlternativos(state.nomeProduto, state.descricao);
+          for (const termo of termos) {
+            const achadas = await buscar(termo).catch(() => []);
+            if (achadas.length) {
+              state.categoriaSugestoes = achadas;
+              state.categoriaAvisoIA = `Nada encontrado pra "${termoBase}" — a IA tentou "${termo}" e achou isso:`;
+              break;
+            }
+          }
+          if (!state.categoriaSugestoes.length) {
+            state.categoriaAvisoIA = '';
+            alert('A Shopee não sugeriu categoria pra esse nome, nem com os termos alternativos que a IA tentou. Busque manualmente com outra palavra.');
+          }
+        }
       } catch (e) {
         alert('Erro ao sugerir categoria: ' + (e.message || e));
       } finally {
@@ -725,6 +802,7 @@
       if (!state.contaId) { alert('Selecione a loja Shopee primeiro.'); return; }
       state.buscandoCategoria = true;
       state.categoriaSugestoes = [];
+      state.categoriaAvisoIA = '';
       render();
       try {
         const arvore = await obterArvoreCategorias();
@@ -743,6 +821,7 @@
       syncFormState();
       state.categoriaEscolhida = cat;
       state.categoriaSugestoes = [];
+      state.categoriaAvisoIA = '';
       state.valoresAtributos = {};
       state.mostrarOpcionais = false;
       state.carregandoAtributos = true;
@@ -995,6 +1074,7 @@
               <button class="btn btn-secondary btn-sm" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anSpBuscarCategoriaManual()">🔍</button>
             </div>
 
+            ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:#ee4d2d;margin-bottom:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
             ${state.categoriaSugestoes.length ? `
               <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
                 ${state.categoriaSugestoes.map((c, i) => `
@@ -1094,7 +1174,7 @@
       fotos: [], fotoRefBase64: '', fotoRefPreview: '',
       iaCarregando: false, gerandoFoto: false,
 
-      nomeProduto: '', categoriaEscolhida: null, categoriaCaminho: '', buscandoCategoria: false,
+      nomeProduto: '', categoriaEscolhida: null, categoriaCaminho: '', buscandoCategoria: false, categoriaAvisoIA: '',
       atributosObrigatorios: [], atributosOpcionais: [], mostrarOpcionais: false, carregandoAtributos: false,
       valoresAtributos: {},
 
@@ -1205,7 +1285,8 @@
         if (json.titulo) state.nomeProduto = json.titulo;
         if (json.descricao) state.descricao = json.descricao;
         state.iaCarregando = false;
-        if (state.nomeProduto) { await sugerirCategoria(); return; }
+        // categoria_busca é mais descritivo que o título comercial pra achar categoria.
+        if (json.categoria_busca || state.nomeProduto) { await sugerirCategoria(json.categoria_busca); return; }
       } catch (e) {
         alert('Erro ao sugerir com IA: ' + (e.message || e));
       } finally {
@@ -1247,25 +1328,46 @@
       });
     }
 
-    // ── Categoria sugerida (TikTok devolve o caminho completo + a folha) ──
-    async function sugerirCategoria() {
+    // ── Categoria sugerida (TikTok devolve o caminho completo + a folha).
+    // termoOverride (opcional) é o categoria_busca vindo da IA de foto. ──
+    async function sugerirCategoria(termoOverride) {
       syncFormState();
-      if (!state.nomeProduto.trim()) { alert('Preencha o nome do produto primeiro.'); return; }
+      const termoBase = termoOverride || state.nomeProduto;
+      if (!termoBase || !termoBase.trim()) { alert('Preencha o nome do produto primeiro.'); return; }
       if (!state.contaId) { alert('Selecione a loja TikTok primeiro.'); return; }
       state.buscandoCategoria = true;
+      state.categoriaAvisoIA = '';
       render();
       try {
-        const resp = await MarketplaceAPI.call('tiktok_recommend_category', {
-          open_id: state.contaId,
-          body: { product_title: state.nomeProduto, description: state.descricao || undefined },
-        });
-        const d = resp.data || resp;
-        const caminho = d.categories || [];
-        const folhaId = d.leaf_category_id;
-        const folha = caminho.find(c => c.id === folhaId) || caminho[caminho.length - 1];
-        if (!folha) { alert('O TikTok não sugeriu categoria pra esse nome. Ajuste o nome do produto e tente de novo.'); return; }
-        state.categoriaEscolhida = { category_id: folhaId, nome: folha.name || folha.local_name };
-        state.categoriaCaminho = caminho.map(c => c.name || c.local_name).join(' › ');
+        const buscar = async (termo) => {
+          const resp = await MarketplaceAPI.call('tiktok_recommend_category', {
+            open_id: state.contaId,
+            body: { product_title: termo, description: state.descricao || undefined },
+          });
+          const d = resp.data || resp;
+          const caminho = d.categories || [];
+          const folhaId = d.leaf_category_id;
+          const folha = caminho.find(c => c.id === folhaId) || caminho[caminho.length - 1];
+          return folha ? { category_id: folhaId, nome: folha.name || folha.local_name, caminho: caminho.map(c => c.name || c.local_name).join(' › ') } : null;
+        };
+
+        let achada = await buscar(termoBase);
+        if (!achada) {
+          state.categoriaAvisoIA = '🧠 IA pensando em termos alternativos...';
+          render();
+          const termos = await sugerirTermosAlternativos(state.nomeProduto, state.descricao);
+          for (const termo of termos) {
+            achada = await buscar(termo).catch(() => null);
+            if (achada) { state.categoriaAvisoIA = `Nada encontrado pra "${termoBase}" — a IA tentou "${termo}" e achou isso.`; break; }
+          }
+        }
+        if (!achada) {
+          state.categoriaAvisoIA = '';
+          alert('O TikTok não sugeriu categoria pra esse nome, nem com os termos alternativos que a IA tentou. Ajuste o nome do produto e tente de novo.');
+          return;
+        }
+        state.categoriaEscolhida = { category_id: achada.category_id, nome: achada.nome };
+        state.categoriaCaminho = achada.caminho;
         await carregarFichaTecnica();
       } catch (e) {
         alert('Erro ao sugerir categoria: ' + (e.message || e));
@@ -1528,9 +1630,10 @@
               <label class="form-label">Nome do produto</label>
               <input type="text" class="form-input" id="an-tt-nome" value="${esc(state.nomeProduto)}" placeholder="Ex: Armário de Cozinha 4 Portas MDF Branco">
             </div>
-            <button class="btn btn-secondary btn-sm" style="margin-bottom:12px;" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anTtSugerirCategoria()">
+            <button class="btn btn-secondary btn-sm" style="margin-bottom:8px;" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anTtSugerirCategoria()">
               ${state.buscandoCategoria ? '⏳ Buscando...' : '🗂️ Sugerir categoria pra esse nome'}
             </button>
+            ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:#25b0aa;margin-bottom:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
 
             ${state.categoriaEscolhida ? `
               <div style="background:rgba(37,244,238,0.08);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:14px;">
