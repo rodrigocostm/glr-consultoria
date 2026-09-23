@@ -141,6 +141,21 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     }
   }
 
+  // Campanha em lance automático (sem orçamento fixo, campaign_budget=0) é
+  // controlada por roas_target: quanto MENOR o alvo, mais agressivo o lance
+  // (mais gasto/volume); quanto MAIOR, mais conservador (menos gasto). É o
+  // inverso do orçamento — por isso as regras de crescer/reduzir invertem o
+  // sinal em relação a executarOrcamento.
+  async function executarRoasTarget(campaignId, nome, novoRoasTarget, explicacao, dados) {
+    try {
+      await mcpCall(mcApiKey, 'shopee_ads_roi_target', { shopId, campaign_id: Number(campaignId), roas_target: novoRoasTarget });
+      await logar('decisao', `Meta de ROAS ajustada — ${nome}`, explicacao, dados, 'executado');
+      decisoes.push(nome);
+    } catch (e) {
+      await logar('decisao', `Falha ao ajustar meta de ROAS — ${nome}`, `Tentei ajustar por: ${explicacao} — mas deu erro: ${e.message}`, dados, 'erro');
+    }
+  }
+
   try {
     // 1) Lista campanhas (sem métricas, só id/nome)
     const listaResp = await mcpCall(mcApiKey, 'shopee_ads_campaigns', { shopId });
@@ -160,7 +175,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
         mcpCall(mcApiKey, 'shopee_ads_campaign_daily', { shopId, campaign_id_list: idsStr, start_date: inicioJanela.ddmmyyyy, end_date: ontem.ddmmyyyy }).catch(() => null),
       ]);
       (settingsResp?.data?.response?.campaign_list || settingsResp?.response?.campaign_list || []).forEach(c => {
-        settingsPorId[c.campaign_id] = c.common_info || {};
+        settingsPorId[c.campaign_id] = { ...(c.common_info || {}), roas_target: c.auto_bidding_info?.roas_target ?? null };
       });
       (diarioResp?.data?.response?.campaign_list || diarioResp?.response?.campaign_list || []).forEach(c => {
         const dias = c.metrics_list || [];
@@ -252,42 +267,81 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
         continue;
       }
 
+      const usaRoasTarget = budgetAtual === 0 && settings.roas_target != null;
+
       // Regra 3: ACOS da campanha bem abaixo da meta E a conta como um todo
-      // ainda tem folga de TACOS → aumenta orçamento. Sem folga de TACOS, não
-      // aumenta automaticamente mesmo com campanha eficiente — a conta como um
-      // todo já estaria investindo mais que o saudável em ADS.
-      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= cfg.meta_acos * 0.7 && budgetAtual > 0) {
-        const tetoOk = !cfg.orcamento_max || budgetAtual < cfg.orcamento_max;
-        if (tetoOk && tacosDentroDaMeta) {
-          const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, budgetAtual * 1.2) * 100) / 100;
-          const variacaoPct = ((novoBudget - budgetAtual) / budgetAtual) * 100;
-          const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o TACOS da conta (${tacosConta.toFixed(1)}%) ainda tem folga em relação à meta (${cfg.meta_acos}%). Orçamento atual ${R$(budgetAtual)}, proposto ${R$(novoBudget)} (+${variacaoPct.toFixed(0)}%).`;
-          if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
-            await logar('alerta', `Sugestão de aumento de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: novoBudget, tacos_conta: tacosConta }, 'so_alerta');
-            alertas.push(nome);
-          } else if (novoBudget > budgetAtual) {
-            await executarOrcamento(c.campaign_id, nome, novoBudget, explicacao, { acos: acosJanela * 100, tacos_conta: tacosConta, budget_de: budgetAtual, budget_para: novoBudget });
-          }
-        } else if (tetoOk && !tacosDentroDaMeta) {
+      // ainda tem folga de TACOS → aumenta orçamento (ou baixa a meta de ROAS,
+      // pra campanha automática — mesmo espírito, alavanca diferente). Sem
+      // folga de TACOS, não aumenta automaticamente mesmo com campanha
+      // eficiente — a conta como um todo já estaria investindo mais que o
+      // saudável em ADS.
+      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= cfg.meta_acos * 0.7 && (budgetAtual > 0 || usaRoasTarget)) {
+        if (!tacosDentroDaMeta) {
           await logar('sistema', `Aumento represado por TACOS — ${nome}`,
-            `ACOS da campanha (${(acosJanela * 100).toFixed(1)}%) sugeriria aumentar orçamento, mas o TACOS da conta (${tacosConta.toFixed(1)}%) já está acima da meta (${cfg.meta_acos}%) — não aumenta orçamento automaticamente enquanto isso não normalizar.`,
+            `ACOS da campanha (${(acosJanela * 100).toFixed(1)}%) sugeriria acelerar a campanha, mas o TACOS da conta (${tacosConta.toFixed(1)}%) já está acima da meta (${cfg.meta_acos}%) — não aumenta automaticamente enquanto isso não normalizar.`,
             { acos: acosJanela * 100, tacos_conta: tacosConta }, 'so_alerta');
+          continue;
+        }
+        if (usaRoasTarget) {
+          // Meta de ROI menor = lance mais agressivo = mais gasto/volume.
+          // Nunca desce abaixo da meta de ROI da própria conta (100/meta_acos)
+          // nem abaixo de 1.0 (mínimo aceito pela Shopee).
+          const metaRoasConta = 100 / cfg.meta_acos;
+          const roasAtual = settings.roas_target;
+          const novoRoas = Math.max(1, metaRoasConta, Math.round(roasAtual * 0.85 * 10) / 10);
+          if (novoRoas < roasAtual) {
+            const variacaoPct = Math.abs((novoRoas - roasAtual) / roasAtual) * 100;
+            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o TACOS da conta (${tacosConta.toFixed(1)}%) ainda tem folga. Campanha usa lance automático — baixando a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais agressivo e captar mais volume.`;
+            if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
+              await logar('alerta', `Sugestão de baixar meta de ROI — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, roas_atual: roasAtual, roas_sugerido: novoRoas, tacos_conta: tacosConta }, 'so_alerta');
+              alertas.push(nome);
+            } else {
+              await executarRoasTarget(c.campaign_id, nome, novoRoas, explicacao, { acos: acosJanela * 100, tacos_conta: tacosConta, roas_de: roasAtual, roas_para: novoRoas });
+            }
+          }
+        } else {
+          const tetoOk = !cfg.orcamento_max || budgetAtual < cfg.orcamento_max;
+          if (tetoOk) {
+            const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, budgetAtual * 1.2) * 100) / 100;
+            const variacaoPct = ((novoBudget - budgetAtual) / budgetAtual) * 100;
+            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o TACOS da conta (${tacosConta.toFixed(1)}%) ainda tem folga em relação à meta (${cfg.meta_acos}%). Orçamento atual ${R$(budgetAtual)}, proposto ${R$(novoBudget)} (+${variacaoPct.toFixed(0)}%).`;
+            if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
+              await logar('alerta', `Sugestão de aumento de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: novoBudget, tacos_conta: tacosConta }, 'so_alerta');
+              alertas.push(nome);
+            } else if (novoBudget > budgetAtual) {
+              await executarOrcamento(c.campaign_id, nome, novoBudget, explicacao, { acos: acosJanela * 100, tacos_conta: tacosConta, budget_de: budgetAtual, budget_para: novoBudget });
+            }
+          }
         }
         continue;
       }
 
       // Regra 4: ACOS acima da meta mas abaixo do limite de pausa → reduz
-      // orçamento com moderação (corte é seguro independente do TACOS geral).
-      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > cfg.meta_acos && budgetAtual > (cfg.orcamento_min || 0) && !emMaturacao) {
-        const novoBudget = Math.max(cfg.orcamento_min || 0, Math.round(budgetAtual * 0.85 * 100) / 100);
-        if (novoBudget < budgetAtual) {
-          const variacaoPct = Math.abs((novoBudget - budgetAtual) / budgetAtual) * 100;
-          const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% acima da meta (${cfg.meta_acos}%), mas ainda longe do limite de pausa. Reduzindo orçamento de ${R$(budgetAtual)} pra ${R$(novoBudget)} pra conter o gasto sem desligar a campanha.`;
+      // orçamento (ou sobe a meta de ROI, pra campanha automática) com
+      // moderação — corte é seguro independente do TACOS geral.
+      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > cfg.meta_acos && !emMaturacao) {
+        if (usaRoasTarget) {
+          const roasAtual = settings.roas_target;
+          const novoRoas = Math.round(roasAtual * 1.15 * 10) / 10;
+          const variacaoPct = Math.abs((novoRoas - roasAtual) / roasAtual) * 100;
+          const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% acima da meta (${cfg.meta_acos}%), mas ainda longe do limite de pausa. Campanha usa lance automático — subindo a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais conservador e conter o gasto sem pausar.`;
           if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
-            await logar('alerta', `Sugestão de corte de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: novoBudget }, 'so_alerta');
+            await logar('alerta', `Sugestão de subir meta de ROI — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, roas_atual: roasAtual, roas_sugerido: novoRoas }, 'so_alerta');
             alertas.push(nome);
           } else {
-            await executarOrcamento(c.campaign_id, nome, novoBudget, explicacao, { acos: acosJanela * 100, budget_de: budgetAtual, budget_para: novoBudget });
+            await executarRoasTarget(c.campaign_id, nome, novoRoas, explicacao, { acos: acosJanela * 100, roas_de: roasAtual, roas_para: novoRoas });
+          }
+        } else if (budgetAtual > (cfg.orcamento_min || 0)) {
+          const novoBudget = Math.max(cfg.orcamento_min || 0, Math.round(budgetAtual * 0.85 * 100) / 100);
+          if (novoBudget < budgetAtual) {
+            const variacaoPct = Math.abs((novoBudget - budgetAtual) / budgetAtual) * 100;
+            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% acima da meta (${cfg.meta_acos}%), mas ainda longe do limite de pausa. Reduzindo orçamento de ${R$(budgetAtual)} pra ${R$(novoBudget)} pra conter o gasto sem desligar a campanha.`;
+            if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
+              await logar('alerta', `Sugestão de corte de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: novoBudget }, 'so_alerta');
+              alertas.push(nome);
+            } else {
+              await executarOrcamento(c.campaign_id, nome, novoBudget, explicacao, { acos: acosJanela * 100, budget_de: budgetAtual, budget_para: novoBudget });
+            }
           }
         }
       }
