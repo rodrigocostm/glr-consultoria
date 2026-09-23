@@ -115,6 +115,28 @@ module.exports = async function handler(req, res) {
   }
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
+  // Headers HTTP só aceitam caracteres Latin1 (código <= 255). Um valor colado
+  // com caractere "inteligente" (aspas curvas, bullet •, travessão longo etc,
+  // comuns em copiar/colar de campos mascarados) quebra o fetch com um erro
+  // genérico de ByteString — aqui identificamos QUAL variável tem o problema
+  // antes de deixar isso estourar mais na frente.
+  for (const [nome, valor] of [
+    ['MCP_API_KEY', mcApiKey],
+    ['SUPABASE_SERVICE_ROLE_KEY', SUPABASE_KEY],
+    ['ANTHROPIC_API_KEY', anthropicKey],
+  ]) {
+    if (!valor) continue;
+    for (let i = 0; i < valor.length; i++) {
+      const codigo = valor.charCodeAt(i);
+      if (codigo > 255) {
+        return res.status(200).json({
+          ok: true,
+          skip: `A variável ${nome} no Vercel tem um caractere inválido na posição ${i} (código ${codigo}, provavelmente um caractere "esperto" de copiar/colar, tipo aspas curvas ou •). Apaga o valor no Vercel e cola de novo com cuidado pra não pegar caractere extra.`,
+        });
+      }
+    }
+  }
+
   try {
     const configs = await sbSelect('glr_agente_config', 'ativo=eq.true');
     if (!configs.length) {
