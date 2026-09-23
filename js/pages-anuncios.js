@@ -966,7 +966,7 @@
       render();
       try {
         const [respAttr, respBrand] = await Promise.allSettled([
-          MarketplaceAPI.call('shopee_get_attributes', { shopId: state.contaId, params: { category_id: cat.category_id } }),
+          MarketplaceAPI.call('shopee_get_attributes', { shopId: state.contaId, category_id: cat.category_id }),
           MarketplaceAPI.call('shopee_get_brand_list', { shopId: state.contaId, category_id: cat.category_id, offset: 0, page_size: 100, status: 1 }),
         ]);
         if (respAttr.status === 'fulfilled') {

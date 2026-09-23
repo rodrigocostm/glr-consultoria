@@ -80,8 +80,8 @@
           lotes++;
           const idsStr = ids.slice(i, i + 20).join(',');
           const [settingsResp, diarioResp] = await Promise.all([
-            MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, params: { campaign_id_list: idsStr } }).catch((e) => { falhasSettings++; ultimoErro = e.message || String(e); return null; }),
-            MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, params: { campaign_id_list: idsStr, start_date: seteDiasAtras, end_date: hoje } }).catch((e) => { falhasDiario++; ultimoErro = e.message || String(e); return null; }),
+            MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, campaign_id_list: idsStr }).catch((e) => { falhasSettings++; ultimoErro = e.message || String(e); return null; }),
+            MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, campaign_id_list: idsStr, start_date: seteDiasAtras, end_date: hoje }).catch((e) => { falhasDiario++; ultimoErro = e.message || String(e); return null; }),
           ]);
           (settingsResp?.data?.response?.campaign_list || settingsResp?.response?.campaign_list || []).forEach(c => { settingsPorId[c.campaign_id] = c.common_info || {}; });
           (diarioResp?.data?.response?.campaign_list || diarioResp?.response?.campaign_list || []).forEach(c => {
