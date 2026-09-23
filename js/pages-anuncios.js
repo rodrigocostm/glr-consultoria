@@ -68,6 +68,7 @@
       iaCarregando: false, gerandoFoto: false,
 
       categoriaBuscaInput: '', categoriaResultados: [], categoriaEscolhida: null, buscandoCategoria: false, categoriaAvisoIA: '',
+      categoriaNavegando: false, categoriaNavPath: [], categoriaNavItens: [], categoriaNavCarregando: false,
       atributosObrigatorios: [], atributosOpcionais: [], mostrarOpcionais: false, carregandoAtributos: false,
       valoresAtributos: {},
 
@@ -254,6 +255,7 @@
       state.categoriaEscolhida = cat;
       state.categoriaResultados = [];
       state.categoriaAvisoIA = '';
+      state.categoriaNavegando = false;
       state.valoresAtributos = {};
       state.mostrarOpcionais = false;
       state.carregandoAtributos = true;
@@ -270,6 +272,69 @@
         alert('Erro ao buscar ficha técnica da categoria: ' + (e.message || e));
       } finally {
         state.carregandoAtributos = false;
+        render();
+      }
+    }
+
+    // ── Navegador de categorias — busca sob demanda por nível (o ML não
+    // tem endpoint de árvore inteira; cada clique busca só os filhos daquele
+    // nó, via ml_category_detail). Mais direto que digitar termo de busca. ──
+    async function abrirNavegadorCategorias() {
+      syncFormState();
+      if (!state.contaId) { alert('Selecione a conta do Mercado Livre primeiro.'); return; }
+      state.categoriaNavegando = true;
+      state.categoriaNavPath = [];
+      state.categoriaNavCarregando = true;
+      render();
+      try {
+        const resp = await MarketplaceAPI.call('ml_site_categories', { meliUserId: state.contaId });
+        state.categoriaNavItens = (resp.data?.items || resp.items || []).map(c => ({ id: c.id, nome: c.name }));
+      } catch (e) {
+        alert('Erro ao carregar categorias: ' + (e.message || e));
+      } finally {
+        state.categoriaNavCarregando = false;
+        render();
+      }
+    }
+
+    async function navegarCategoriaPara(cat) {
+      state.categoriaNavCarregando = true;
+      render();
+      try {
+        const resp = await MarketplaceAPI.call('ml_category_detail', { category_id: cat.id, meliUserId: state.contaId });
+        const d = resp.data || resp;
+        const filhos = d.children_categories || [];
+        if (!filhos.length) {
+          // Categoria-folha — usa direto.
+          state.categoriaNavegando = false;
+          state.categoriaNavCarregando = false;
+          await escolherCategoria({ category_id: cat.id, category_name: cat.nome });
+          return;
+        }
+        state.categoriaNavPath.push(cat);
+        state.categoriaNavItens = filhos.map(c => ({ id: c.id, nome: c.name }));
+      } catch (e) {
+        alert('Erro ao carregar subcategorias: ' + (e.message || e));
+      } finally {
+        state.categoriaNavCarregando = false;
+        render();
+      }
+    }
+
+    async function navegarCategoriaVoltar(indice) {
+      if (indice < 0) { await abrirNavegadorCategorias(); return; }
+      state.categoriaNavPath = state.categoriaNavPath.slice(0, indice + 1);
+      const pai = state.categoriaNavPath[indice];
+      state.categoriaNavCarregando = true;
+      render();
+      try {
+        const resp = await MarketplaceAPI.call('ml_category_detail', { category_id: pai.id, meliUserId: state.contaId });
+        const d = resp.data || resp;
+        state.categoriaNavItens = (d.children_categories || []).map(c => ({ id: c.id, nome: c.name }));
+      } catch (e) {
+        alert('Erro ao carregar subcategorias: ' + (e.message || e));
+      } finally {
+        state.categoriaNavCarregando = false;
         render();
       }
     }
@@ -477,25 +542,56 @@
 
           <div class="card" style="padding:20px;">
             <div class="form-label" style="margin-bottom:6px;">🗂️ Categoria</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Busque pelo tipo de produto (ex: "armário de cozinha"), não pelo nome comercial — nomes curtos ou de marca (ex: "Buffet Alaska") costumam não achar nada.</div>
-            <div style="display:flex;gap:8px;margin-bottom:10px;">
-              <input type="text" class="form-input" id="an-cat-busca" placeholder="Ex: armário de cozinha" value="${esc(state.categoriaBuscaInput)}" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();window._anMlBuscarCategoria();}">
-              <button class="btn btn-secondary" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anMlBuscarCategoria()">${state.buscandoCategoria ? '⏳' : '🔍'}</button>
-            </div>
-
-            ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:#6366f1;margin-bottom:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
-            ${state.categoriaResultados.length ? `
-              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;max-height:180px;overflow-y:auto;">
-                ${state.categoriaResultados.map((c, i) => `
-                  <button type="button" class="btn btn-secondary btn-sm" style="text-align:left;justify-content:flex-start;" onclick="window._anMlEscolherCategoria(${i})">
-                    ${esc(c.category_name)} <span style="color:var(--text-muted);font-size:11px;">— ${esc(c.domain_name || '')}</span>
-                  </button>`).join('')}
-              </div>` : ''}
 
             ${state.categoriaEscolhida ? `
-              <div style="background:var(--accent-soft,rgba(99,102,241,0.08));border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:14px;">
+              <div style="background:var(--accent-soft,rgba(99,102,241,0.08));border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px;">
                 ✅ <b>${esc(state.categoriaEscolhida.category_name)}</b> <span style="color:var(--text-muted);">(${esc(state.categoriaEscolhida.category_id)})</span>
-              </div>` : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Busque e escolha a categoria antes de preencher a ficha técnica.</div>`}
+                <button type="button" class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._anMlNavegarCategorias()">Trocar</button>
+              </div>
+            ` : `
+              <button class="btn btn-primary btn-sm" style="margin-bottom:8px;width:100%;" ${state.categoriaNavCarregando ? 'disabled' : ''} onclick="window._anMlNavegarCategorias()">
+                📂 Escolher categoria na lista
+              </button>
+
+              ${state.categoriaNavegando ? `
+                <div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+                  <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+                    <span style="cursor:pointer;text-decoration:underline;" onclick="window._anMlNavCategoriaVoltar(-1)">Categorias</span>
+                    ${state.categoriaNavPath.map((p, i) => `<span>›</span><span style="cursor:pointer;text-decoration:underline;" onclick="window._anMlNavCategoriaVoltar(${i})">${esc(p.nome)}</span>`).join('')}
+                  </div>
+                  ${state.categoriaNavCarregando ? `<div style="font-size:12px;color:var(--text-muted);padding:8px;">⏳ Carregando...</div>` : `
+                    <div style="display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto;">
+                      ${state.categoriaNavItens.map((c, i) => `
+                        <button type="button" class="btn btn-secondary btn-sm" style="text-align:left;justify-content:space-between;" onclick="window._anMlNavCategoriaAbrir(${i})">
+                          <span>${esc(c.nome)}</span>
+                          <span style="color:var(--text-muted);">›</span>
+                        </button>`).join('') || '<div style="font-size:12px;color:var(--text-muted);padding:8px;">Sem categorias nesse nível.</div>'}
+                    </div>
+                  `}
+                </div>
+              ` : ''}
+
+              <details style="margin-bottom:12px;">
+                <summary style="cursor:pointer;font-size:11.5px;color:var(--text-muted);">Prefere buscar por nome? (opcional)</summary>
+                <div style="margin-top:8px;">
+                  <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Busque pelo tipo de produto (ex: "armário de cozinha"), não pelo nome comercial — nomes curtos ou de marca (ex: "Buffet Alaska") costumam não achar nada.</div>
+                  <div style="display:flex;gap:8px;margin-bottom:8px;">
+                    <input type="text" class="form-input" id="an-cat-busca" placeholder="Ex: armário de cozinha" value="${esc(state.categoriaBuscaInput)}" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();window._anMlBuscarCategoria();}">
+                    <button class="btn btn-secondary" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anMlBuscarCategoria()">${state.buscandoCategoria ? '⏳' : '🔍'}</button>
+                  </div>
+                  ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:#6366f1;margin-bottom:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
+                  ${state.categoriaResultados.length ? `
+                    <div style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;">
+                      ${state.categoriaResultados.map((c, i) => `
+                        <button type="button" class="btn btn-secondary btn-sm" style="text-align:left;justify-content:flex-start;" onclick="window._anMlEscolherCategoria(${i})">
+                          ${esc(c.category_name)} <span style="color:var(--text-muted);font-size:11px;">— ${esc(c.domain_name || '')}</span>
+                        </button>`).join('')}
+                    </div>` : ''}
+                </div>
+              </details>
+
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Escolha a categoria antes de preencher a ficha técnica.</div>
+            `}
 
             <div class="form-group" style="margin-bottom:12px;">
               <label class="form-label" style="display:flex;justify-content:space-between;">Título do anúncio <span style="font-weight:400;color:var(--text-muted);">até 60 caracteres</span></label>
@@ -559,6 +655,9 @@
     window._anMlGerarFotoIA = gerarFotoIA;
     window._anMlBuscarCategoria = () => buscarCategoria();
     window._anMlEscolherCategoria = (i) => escolherCategoria(state.categoriaResultados[i]);
+    window._anMlNavegarCategorias = abrirNavegadorCategorias;
+    window._anMlNavCategoriaAbrir = (i) => navegarCategoriaPara(state.categoriaNavItens[i]);
+    window._anMlNavCategoriaVoltar = navegarCategoriaVoltar;
     window._anMlToggleOpcionais = () => { syncFormState(); state.mostrarOpcionais = !state.mostrarOpcionais; render(); };
     window._anMlCriar = criarAnuncio;
     window._anMlReset = resetar;
@@ -580,6 +679,7 @@
 
       arvoreCategorias: null,
       nomeProduto: '', categoriaSugestoes: [], categoriaEscolhida: null, buscandoCategoria: false, categoriaAvisoIA: '',
+      categoriaNavegando: false, categoriaNavPath: [], categoriaNavItens: [],
       atributosObrigatorios: [], atributosOpcionais: [], mostrarOpcionais: false, carregandoAtributos: false,
       valoresAtributos: {},
 
@@ -656,6 +756,42 @@
     function nomeCategoria(id) {
       const c = (state.arvoreCategorias || []).find(c => c.category_id === id);
       return c?.display_category_name || c?.original_category_name || ('Categoria ' + id);
+    }
+
+    // ── Navegador de categorias (clica e desce de nível, tipo pasta) — mais
+    // direto que ficar tentando adivinhar o termo de busca certo. Usa a mesma
+    // árvore já cacheada. ──
+    async function abrirNavegadorCategorias() {
+      syncFormState();
+      if (!state.contaId) { alert('Selecione a loja Shopee primeiro.'); return; }
+      state.categoriaNavegando = true;
+      state.categoriaNavPath = [];
+      state.categoriaAvisoIA = '';
+      state.categoriaSugestoes = [];
+      render();
+      await obterArvoreCategorias();
+      state.categoriaNavItens = (state.arvoreCategorias || []).filter(c => c.parent_category_id === 0);
+      render();
+    }
+
+    function navegarCategoriaPara(cat) {
+      const filhos = (state.arvoreCategorias || []).filter(c => c.parent_category_id === cat.category_id);
+      if (!filhos.length) {
+        // Categoria-folha — usa direto, sem precisar de mais um clique.
+        escolherCategoria({ category_id: cat.category_id, nome: cat.display_category_name || cat.original_category_name });
+        return;
+      }
+      state.categoriaNavPath.push({ id: cat.category_id, nome: cat.display_category_name || cat.original_category_name });
+      state.categoriaNavItens = filhos;
+      render();
+    }
+
+    function navegarCategoriaVoltar(indice) {
+      if (indice < 0) { state.categoriaNavPath = []; state.categoriaNavItens = (state.arvoreCategorias || []).filter(c => c.parent_category_id === 0); render(); return; }
+      state.categoriaNavPath = state.categoriaNavPath.slice(0, indice + 1);
+      const paiId = state.categoriaNavPath[indice].id;
+      state.categoriaNavItens = (state.arvoreCategorias || []).filter(c => c.parent_category_id === paiId);
+      render();
     }
 
     // ── Foto de referência + IA (mesmo endpoint usado no ML) ─────────
@@ -822,6 +958,7 @@
       state.categoriaEscolhida = cat;
       state.categoriaSugestoes = [];
       state.categoriaAvisoIA = '';
+      state.categoriaNavegando = false;
       state.valoresAtributos = {};
       state.mostrarOpcionais = false;
       state.carregandoAtributos = true;
@@ -1065,28 +1202,55 @@
               <label class="form-label">Nome do produto</label>
               <input type="text" class="form-input" id="an-sp-nome" value="${esc(state.nomeProduto)}" placeholder="Ex: Armário de Cozinha 4 Portas MDF Branco">
             </div>
-            <button class="btn btn-secondary btn-sm" style="margin-bottom:8px;" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anSpSugerirCategoria()">
-              ${state.buscandoCategoria ? '⏳ Buscando...' : '🗂️ Sugerir categoria pra esse nome'}
-            </button>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Nome curto ou comercial (ex: "Buffet Alaska") pode não achar nada — a busca funciona melhor com palavra do tipo de produto (ex: "buffet aparador"). Se não achar, busque manualmente abaixo:</div>
-            <div style="display:flex;gap:8px;margin-bottom:12px;">
-              <input type="text" class="form-input" id="an-sp-cat-manual" placeholder="Buscar categoria manualmente (ex: armário)" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();window._anSpBuscarCategoriaManual();}">
-              <button class="btn btn-secondary btn-sm" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anSpBuscarCategoriaManual()">🔍</button>
-            </div>
-
-            ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:#ee4d2d;margin-bottom:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
-            ${state.categoriaSugestoes.length ? `
-              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
-                ${state.categoriaSugestoes.map((c, i) => `
-                  <button type="button" class="btn btn-secondary btn-sm" style="text-align:left;justify-content:flex-start;" onclick="window._anSpEscolherCategoria(${i})">
-                    ${esc(c.nome)} <span style="color:var(--text-muted);font-size:11px;">(${c.category_id})</span>
-                  </button>`).join('')}
-              </div>` : ''}
-
             ${state.categoriaEscolhida ? `
-              <div style="background:rgba(238,77,45,0.08);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:14px;">
+              <div style="background:rgba(238,77,45,0.08);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px;">
                 ✅ <b>${esc(state.categoriaEscolhida.nome)}</b> <span style="color:var(--text-muted);">(${esc(state.categoriaEscolhida.category_id)})</span>
-              </div>` : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Escolha a categoria antes de preencher a ficha técnica.</div>`}
+                <button type="button" class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._anSpNavegarCategorias()">Trocar</button>
+              </div>
+            ` : `
+              <button class="btn btn-primary btn-sm" style="margin-bottom:8px;width:100%;" onclick="window._anSpNavegarCategorias()">
+                📂 Escolher categoria na lista
+              </button>
+
+              ${state.categoriaNavegando ? `
+                <div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+                  <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+                    <span style="cursor:pointer;text-decoration:underline;" onclick="window._anSpNavCategoriaVoltar(-1)">Categorias</span>
+                    ${state.categoriaNavPath.map((p, i) => `<span>›</span><span style="cursor:pointer;text-decoration:underline;" onclick="window._anSpNavCategoriaVoltar(${i})">${esc(p.nome)}</span>`).join('')}
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto;">
+                    ${state.categoriaNavItens.map((c, i) => `
+                      <button type="button" class="btn btn-secondary btn-sm" style="text-align:left;justify-content:space-between;" onclick="window._anSpNavCategoriaAbrir(${i})">
+                        <span>${esc(c.display_category_name || c.original_category_name)}</span>
+                        <span style="color:var(--text-muted);">›</span>
+                      </button>`).join('') || '<div style="font-size:12px;color:var(--text-muted);padding:8px;">Sem categorias nesse nível.</div>'}
+                  </div>
+                </div>
+              ` : ''}
+
+              <details style="margin-bottom:12px;">
+                <summary style="cursor:pointer;font-size:11.5px;color:var(--text-muted);">Prefere buscar por nome? (opcional)</summary>
+                <div style="margin-top:8px;">
+                  <button class="btn btn-secondary btn-sm" style="margin-bottom:8px;" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anSpSugerirCategoria()">
+                    ${state.buscandoCategoria ? '⏳ Buscando...' : '✨ Sugerir categoria pra esse nome (IA)'}
+                  </button>
+                  <div style="display:flex;gap:8px;margin-bottom:8px;">
+                    <input type="text" class="form-input" id="an-sp-cat-manual" placeholder="Buscar categoria manualmente (ex: armário)" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();window._anSpBuscarCategoriaManual();}">
+                    <button class="btn btn-secondary btn-sm" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anSpBuscarCategoriaManual()">🔍</button>
+                  </div>
+                  ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:#ee4d2d;margin-bottom:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
+                  ${state.categoriaSugestoes.length ? `
+                    <div style="display:flex;flex-direction:column;gap:6px;">
+                      ${state.categoriaSugestoes.map((c, i) => `
+                        <button type="button" class="btn btn-secondary btn-sm" style="text-align:left;justify-content:flex-start;" onclick="window._anSpEscolherCategoria(${i})">
+                          ${esc(c.nome)} <span style="color:var(--text-muted);font-size:11px;">(${c.category_id})</span>
+                        </button>`).join('')}
+                    </div>` : ''}
+                </div>
+              </details>
+
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Escolha a categoria antes de preencher a ficha técnica.</div>
+            `}
 
             <div class="form-group" style="margin-bottom:12px;">
               <label class="form-label">Descrição</label>
@@ -1153,6 +1317,9 @@
     window._anSpSugerirIA = sugerirComIA;
     window._anSpGerarFotoIA = gerarFotoIA;
     window._anSpSugerirCategoria = sugerirCategorias;
+    window._anSpNavegarCategorias = abrirNavegadorCategorias;
+    window._anSpNavCategoriaAbrir = (i) => navegarCategoriaPara(state.categoriaNavItens[i]);
+    window._anSpNavCategoriaVoltar = navegarCategoriaVoltar;
     window._anSpBuscarCategoriaManual = buscarCategoriaManual;
     window._anSpEscolherCategoria = (i) => escolherCategoria(state.categoriaSugestoes[i]);
     window._anSpToggleOpcionais = () => { syncFormState(); state.mostrarOpcionais = !state.mostrarOpcionais; render(); };
@@ -1175,6 +1342,7 @@
       iaCarregando: false, gerandoFoto: false,
 
       nomeProduto: '', categoriaEscolhida: null, categoriaCaminho: '', buscandoCategoria: false, categoriaAvisoIA: '',
+      categoriaNavegando: false, categoriaNavPath: [], categoriaNavItens: [], arvoreCategorias: null,
       atributosObrigatorios: [], atributosOpcionais: [], mostrarOpcionais: false, carregandoAtributos: false,
       valoresAtributos: {},
 
@@ -1244,6 +1412,54 @@
       } catch (e) {
         state.erro = 'Erro ao buscar o armazém da loja: ' + e.message;
       }
+    }
+
+    // ── Árvore de categorias cacheada (mesmo padrão da Shopee) ──────────
+    async function obterArvoreCategorias() {
+      if (state.arvoreCategorias) return state.arvoreCategorias;
+      try {
+        const cache = JSON.parse(localStorage.getItem('glr_tiktok_categorias_cache') || 'null');
+        if (cache && Date.now() - cache.ts < 7 * 24 * 3600 * 1000) { state.arvoreCategorias = cache.lista; return cache.lista; }
+      } catch (e) {}
+      const resp = await MarketplaceAPI.call('tiktok_get_categories', { open_id: state.contaId });
+      const lista = resp.data?.categories || resp.categories || [];
+      try { localStorage.setItem('glr_tiktok_categorias_cache', JSON.stringify({ ts: Date.now(), lista })); } catch (e) {}
+      state.arvoreCategorias = lista;
+      return lista;
+    }
+
+    async function abrirNavegadorCategorias() {
+      syncFormState();
+      if (!state.contaId) { alert('Selecione a loja TikTok primeiro.'); return; }
+      state.categoriaNavegando = true;
+      state.categoriaNavPath = [];
+      state.categoriaAvisoIA = '';
+      render();
+      await obterArvoreCategorias();
+      state.categoriaNavItens = (state.arvoreCategorias || []).filter(c => c.parent_id === '0' || c.parent_id === 0);
+      render();
+    }
+
+    async function navegarCategoriaPara(cat) {
+      const filhos = (state.arvoreCategorias || []).filter(c => c.parent_id === cat.id);
+      if (!filhos.length || cat.is_leaf) {
+        state.categoriaEscolhida = { category_id: cat.id, nome: cat.local_name };
+        state.categoriaCaminho = [...state.categoriaNavPath.map(p => p.nome), cat.local_name].join(' › ');
+        state.categoriaNavegando = false;
+        await carregarFichaTecnica();
+        return;
+      }
+      state.categoriaNavPath.push({ id: cat.id, nome: cat.local_name });
+      state.categoriaNavItens = filhos;
+      render();
+    }
+
+    function navegarCategoriaVoltar(indice) {
+      if (indice < 0) { state.categoriaNavPath = []; state.categoriaNavItens = (state.arvoreCategorias || []).filter(c => c.parent_id === '0' || c.parent_id === 0); render(); return; }
+      state.categoriaNavPath = state.categoriaNavPath.slice(0, indice + 1);
+      const paiId = state.categoriaNavPath[indice].id;
+      state.categoriaNavItens = (state.arvoreCategorias || []).filter(c => c.parent_id === paiId);
+      render();
     }
 
     // ── Foto de referência + IA ──────────────────────────────
@@ -1368,6 +1584,7 @@
         }
         state.categoriaEscolhida = { category_id: achada.category_id, nome: achada.nome };
         state.categoriaCaminho = achada.caminho;
+        state.categoriaNavegando = false;
         await carregarFichaTecnica();
       } catch (e) {
         alert('Erro ao sugerir categoria: ' + (e.message || e));
@@ -1630,15 +1847,44 @@
               <label class="form-label">Nome do produto</label>
               <input type="text" class="form-input" id="an-tt-nome" value="${esc(state.nomeProduto)}" placeholder="Ex: Armário de Cozinha 4 Portas MDF Branco">
             </div>
-            <button class="btn btn-secondary btn-sm" style="margin-bottom:8px;" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anTtSugerirCategoria()">
-              ${state.buscandoCategoria ? '⏳ Buscando...' : '🗂️ Sugerir categoria pra esse nome'}
-            </button>
-            ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:#25b0aa;margin-bottom:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
-
             ${state.categoriaEscolhida ? `
-              <div style="background:rgba(37,244,238,0.08);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:14px;">
+              <div style="background:rgba(37,244,238,0.08);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px;">
                 ✅ <b>${esc(state.categoriaCaminho || state.categoriaEscolhida.nome)}</b>
-              </div>` : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Sugira a categoria antes de preencher a ficha técnica.</div>`}
+                <button type="button" class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._anTtNavegarCategorias()">Trocar</button>
+              </div>
+            ` : `
+              <button class="btn btn-primary btn-sm" style="margin-bottom:8px;width:100%;" onclick="window._anTtNavegarCategorias()">
+                📂 Escolher categoria na lista
+              </button>
+
+              ${state.categoriaNavegando ? `
+                <div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+                  <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+                    <span style="cursor:pointer;text-decoration:underline;" onclick="window._anTtNavCategoriaVoltar(-1)">Categorias</span>
+                    ${state.categoriaNavPath.map((p, i) => `<span>›</span><span style="cursor:pointer;text-decoration:underline;" onclick="window._anTtNavCategoriaVoltar(${i})">${esc(p.nome)}</span>`).join('')}
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto;">
+                    ${state.categoriaNavItens.map((c, i) => `
+                      <button type="button" class="btn btn-secondary btn-sm" style="text-align:left;justify-content:space-between;" onclick="window._anTtNavCategoriaAbrir(${i})">
+                        <span>${esc(c.local_name)}</span>
+                        <span style="color:var(--text-muted);">${c.is_leaf ? '✓' : '›'}</span>
+                      </button>`).join('') || '<div style="font-size:12px;color:var(--text-muted);padding:8px;">Sem categorias nesse nível.</div>'}
+                  </div>
+                </div>
+              ` : ''}
+
+              <details style="margin-bottom:12px;">
+                <summary style="cursor:pointer;font-size:11.5px;color:var(--text-muted);">Prefere buscar por nome? (opcional)</summary>
+                <div style="margin-top:8px;">
+                  <button class="btn btn-secondary btn-sm" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anTtSugerirCategoria()">
+                    ${state.buscandoCategoria ? '⏳ Buscando...' : '✨ Sugerir categoria pra esse nome (IA)'}
+                  </button>
+                  ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:#25b0aa;margin-top:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
+                </div>
+              </details>
+
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Escolha a categoria antes de preencher a ficha técnica.</div>
+            `}
 
             <div class="form-group" style="margin-bottom:12px;">
               <label class="form-label">Descrição</label>
@@ -1702,6 +1948,9 @@
     window._anTtSugerirIA = sugerirComIA;
     window._anTtGerarFotoIA = gerarFotoIA;
     window._anTtSugerirCategoria = sugerirCategoria;
+    window._anTtNavegarCategorias = abrirNavegadorCategorias;
+    window._anTtNavCategoriaAbrir = (i) => navegarCategoriaPara(state.categoriaNavItens[i]);
+    window._anTtNavCategoriaVoltar = navegarCategoriaVoltar;
     window._anTtBuscarMarca = buscarMarca;
     window._anTtEscolherMarca = (i) => escolherMarca(state.marcaResultados[i]);
     window._anTtToggleOpcionais = () => { syncFormState(); state.mostrarOpcionais = !state.mostrarOpcionais; render(); };
