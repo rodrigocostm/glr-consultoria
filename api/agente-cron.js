@@ -22,6 +22,11 @@
 // servidor, sem usuário logado, então não é um "visitante anônimo" — é um
 // processo de confiança, e a service role é o papel certo pra isso, ignorando
 // RLS. NUNCA usar essa chave em código que roda no navegador.
+// Meta de ROAS máxima aceita pela Shopee (tanto pra campanha individual em
+// lance automático quanto pra faixa do GMV Max da Loja) — nunca propor um
+// valor acima disso.
+const SHOPEE_ROAS_TARGET_MAX = 50;
+
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -251,7 +256,29 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       } catch (e) {}
     }
 
-    let gastoTotalOntem = 0, gmvTotalJanela = 0, gastoTotalJanela = 0;
+    // GMV Max da Loja: produto de ADS separado da Shopee (API própria,
+    // shopee_ads_gms_*) — NÃO aparece em shopee_ads_campaigns/campaign_settings
+    // (confirmado ao vivo: passar o campaign_id dele pra shopee_ads_campaign_settings
+    // dá "invalid campaignIDs"). É uma única campanha guarda-chuva por loja, com
+    // faixa de meta de ROAS (não um alvo único) e orçamento ilimitado. O gasto dela
+    // é investimento ADS de verdade e entra no TACOS da conta, senão o TACOS fica
+    // subestimado de novo (mesma classe de bug já corrigida pras campanhas normais).
+    // Por enquanto só monitora e alerta — o formato exato de edit_gms_product_campaign
+    // (edit_action, faixa de roas) ainda não foi validado ao vivo com segurança,
+    // então não executa ajuste automático nela ainda.
+    let gmsAtivo = false, gmsGasto = 0, gmsGmv = 0, gmsAcos = null;
+    try {
+      const gmsPerf = await mcpCall(mcApiKey, 'shopee_ads_gms_performance', { shopId, start_date: inicioJanela.ddmmyyyy, end_date: ontem.ddmmyyyy });
+      const rep = gmsPerf.data?.response?.report || gmsPerf.response?.report;
+      if (rep) {
+        gmsAtivo = true;
+        gmsGasto = parseFloat(rep.expense) || 0;
+        gmsGmv = parseFloat(rep.broad_gmv) || 0;
+        gmsAcos = gmsGmv > 0 ? (gmsGasto / gmsGmv) * 100 : (gmsGasto > 0 ? Infinity : 0);
+      }
+    } catch (e) { /* loja pode não ter GMV Max ativo — normal, ignora */ }
+
+    let gastoTotalOntem = 0, gmvTotalJanela = gmsGmv, gastoTotalJanela = gmsGasto;
     const diasMaturacao = cfg.dias_maturacao_campanha ?? 7;
     const agoraTs = Date.now() / 1000;
 
@@ -372,7 +399,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > cfg.meta_acos && !emMaturacao) {
         if (usaRoasTarget) {
           const roasAtual = settings.roas_target;
-          const novoRoas = Math.round(roasAtual * 1.15 * 10) / 10;
+          const novoRoas = Math.min(SHOPEE_ROAS_TARGET_MAX, Math.round(roasAtual * 1.15 * 10) / 10);
           const variacaoPct = Math.abs((novoRoas - roasAtual) / roasAtual) * 100;
           const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% acima da meta (${cfg.meta_acos}%), mas ainda longe do limite de pausa. Campanha usa lance automático — subindo a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais conservador e conter o gasto sem pausar.`;
           if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
@@ -397,6 +424,28 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       }
     }
 
+    // GMV Max da Loja: sempre registra o desempenho (visibilidade), e alerta
+    // (sem executar) quando o ACOS dela foge muito da meta da conta — decisão
+    // de ajustar a faixa de ROAS fica manual até validar o endpoint de escrita.
+    if (gmsAtivo) {
+      const gmsAcosPct = gmsAcos === Infinity ? null : gmsAcos;
+      await logar('sistema', `GMV Max da Loja — desempenho do dia`,
+        `Investimento ${R$(gmsGasto)}, vendas (GMV) ${R$(gmsGmv)}, ACOS ${gmsAcos === Infinity ? '∞ (gastou sem vender)' : gmsAcos.toFixed(1) + '%'}. Esse gasto já entra no TACOS da conta acima.`,
+        { acos: gmsAcosPct, gasto: gmsGasto, gmv: gmsGmv }, 'executado');
+
+      if (cfg.meta_acos && gmsAcos !== null && (gmsAcos === Infinity || gmsAcos * 1 > cfg.meta_acos * 1.3)) {
+        await logar('alerta', `GMV Max acima da meta — considerar subir a faixa de ROAS`,
+          `ACOS do GMV Max (${gmsAcos === Infinity ? '∞' : gmsAcos.toFixed(1) + '%'}) está bem acima da meta da conta (${cfg.meta_acos}%). O agente ainda não ajusta a faixa de ROAS do GMV Max automaticamente (endpoint de escrita da Shopee pra essa campanha específica ainda não foi validado) — considere subir manualmente a faixa de Meta de ROAS no painel da Shopee (teto aceito: ${SHOPEE_ROAS_TARGET_MAX}x) pra deixar o lance mais conservador.`,
+          { acos: gmsAcosPct, gasto: gmsGasto, gmv: gmsGmv }, 'so_alerta');
+        alertas.push('GMV Max da Loja');
+      } else if (cfg.meta_acos && gmsAcos !== null && gmsAcos * 1 <= cfg.meta_acos * 0.6) {
+        await logar('alerta', `GMV Max com folga — considerar baixar a faixa de ROAS`,
+          `ACOS do GMV Max (${gmsAcos.toFixed(1)}%) está bem abaixo da meta (${cfg.meta_acos}%), indicando espaço pra ser mais agressivo. O agente ainda não ajusta a faixa de ROAS do GMV Max automaticamente — considere baixar manualmente a faixa de Meta de ROAS no painel da Shopee pra captar mais volume.`,
+          { acos: gmsAcosPct, gasto: gmsGasto, gmv: gmsGmv }, 'so_alerta');
+        alertas.push('GMV Max da Loja');
+      }
+    }
+
     // Resumo de execução do dia (sempre grava, mesmo sem nenhuma ação — é o
     // registro de que o agente rodou e revisou a conta)
     await logar('sistema', `Revisão diária concluída — ${decisoes.length} ação(ões), ${alertas.length} alerta(s)`,
@@ -404,7 +453,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       { campanhas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta }, 'executado');
 
     // 2) Relatório diário com IA
-    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhas.length };
+    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhas.length, gms_ativo: gmsAtivo, gms_gasto: gmsGasto, gms_gmv: gmsGmv, gms_acos: gmsAcos === Infinity ? null : gmsAcos };
     const resumo = await gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem);
     await sbUpsert('glr_agente_relatorios', { data: ontem.iso, conta_id: shopId, cliente_nome: cfg.cliente_nome || null, resumo, metricas }, 'data,conta_id');
 
@@ -420,7 +469,8 @@ async function gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, on
     + `investimento em ADS ${R$(metricas.gasto_janela)} na janela avaliada, vendas atribuídas ao ADS ${R$(metricas.gmv_janela)}, faturamento TOTAL da loja no período ${R$(metricas.faturamento_total_loja)}. `
     + `TACOS da conta (investimento ADS ÷ faturamento total): ${metricas.tacos_conta == null ? '∞' : metricas.tacos_conta.toFixed(1) + '%'} (meta: ${cfg.meta_acos || '—'}%) — essa é a métrica principal usada pra decisão, não o ACOS isolado por campanha. `
     + `${metricas.decisoes} ação(ões) executada(s): ${decisoes.join(', ') || 'nenhuma'}. `
-    + `${metricas.alertas} alerta(s) aguardando aprovação: ${alertas.join(', ') || 'nenhum'}.`;
+    + `${metricas.alertas} alerta(s) aguardando aprovação: ${alertas.join(', ') || 'nenhum'}.`
+    + (metricas.gms_ativo ? ` GMV Max da Loja ativo: investimento ${R$(metricas.gms_gasto)}, vendas ${R$(metricas.gms_gmv)}, ACOS ${metricas.gms_acos == null ? '∞' : metricas.gms_acos.toFixed(1) + '%'} (já incluído no TACOS da conta acima; ajuste de faixa de ROAS ainda é manual).` : '');
 
   if (!anthropicKey) return base;
 
