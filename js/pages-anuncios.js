@@ -430,7 +430,8 @@
           </div>
 
           <div class="card" style="padding:20px;">
-            <div class="form-label" style="margin-bottom:10px;">🗂️ Categoria</div>
+            <div class="form-label" style="margin-bottom:6px;">🗂️ Categoria</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Busque pelo tipo de produto (ex: "armário de cozinha"), não pelo nome comercial — nomes curtos ou de marca (ex: "Buffet Alaska") costumam não achar nada.</div>
             <div style="display:flex;gap:8px;margin-bottom:10px;">
               <input type="text" class="form-input" id="an-cat-busca" placeholder="Ex: armário de cozinha" value="${esc(state.categoriaBuscaInput)}" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();window._anMlBuscarCategoria();}">
               <button class="btn btn-secondary" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anMlBuscarCategoria()">${state.buscandoCategoria ? '⏳' : '🔍'}</button>
@@ -713,6 +714,31 @@
       }
     }
 
+    // ── Busca manual na árvore de categorias (cacheada) — usada quando o
+    // nome do produto é curto/comercial demais e a IA da Shopee não acha
+    // nada (ex: "Buffet Alaska" não bate com nada, mas "buffet aparador"
+    // acha — confirmado ao vivo). Filtra só categoria-folha (sem filhos).
+    async function buscarCategoriaManual() {
+      syncFormState();
+      const termo = document.getElementById('an-sp-cat-manual')?.value.trim().toLowerCase();
+      if (!termo) { alert('Digite uma palavra-chave do produto (ex: "armário", "buffet", "cadeira").'); return; }
+      if (!state.contaId) { alert('Selecione a loja Shopee primeiro.'); return; }
+      state.buscandoCategoria = true;
+      state.categoriaSugestoes = [];
+      render();
+      try {
+        const arvore = await obterArvoreCategorias();
+        const achadas = arvore.filter(c => !c.has_children && ((c.display_category_name || '').toLowerCase().includes(termo) || (c.original_category_name || '').toLowerCase().includes(termo)));
+        state.categoriaSugestoes = achadas.slice(0, 20).map(c => ({ category_id: c.category_id, nome: c.display_category_name || c.original_category_name }));
+        if (!state.categoriaSugestoes.length) alert('Nenhuma categoria encontrada com esse termo. Tente uma palavra mais genérica (ex: "móveis" em vez de "buffet retrô").');
+      } catch (e) {
+        alert('Erro ao buscar categoria: ' + (e.message || e));
+      } finally {
+        state.buscandoCategoria = false;
+        render();
+      }
+    }
+
     async function escolherCategoria(cat) {
       syncFormState();
       state.categoriaEscolhida = cat;
@@ -960,9 +986,14 @@
               <label class="form-label">Nome do produto</label>
               <input type="text" class="form-input" id="an-sp-nome" value="${esc(state.nomeProduto)}" placeholder="Ex: Armário de Cozinha 4 Portas MDF Branco">
             </div>
-            <button class="btn btn-secondary btn-sm" style="margin-bottom:12px;" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anSpSugerirCategoria()">
+            <button class="btn btn-secondary btn-sm" style="margin-bottom:8px;" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anSpSugerirCategoria()">
               ${state.buscandoCategoria ? '⏳ Buscando...' : '🗂️ Sugerir categoria pra esse nome'}
             </button>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Nome curto ou comercial (ex: "Buffet Alaska") pode não achar nada — a busca funciona melhor com palavra do tipo de produto (ex: "buffet aparador"). Se não achar, busque manualmente abaixo:</div>
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+              <input type="text" class="form-input" id="an-sp-cat-manual" placeholder="Buscar categoria manualmente (ex: armário)" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();window._anSpBuscarCategoriaManual();}">
+              <button class="btn btn-secondary btn-sm" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anSpBuscarCategoriaManual()">🔍</button>
+            </div>
 
             ${state.categoriaSugestoes.length ? `
               <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
@@ -1042,6 +1073,7 @@
     window._anSpSugerirIA = sugerirComIA;
     window._anSpGerarFotoIA = gerarFotoIA;
     window._anSpSugerirCategoria = sugerirCategorias;
+    window._anSpBuscarCategoriaManual = buscarCategoriaManual;
     window._anSpEscolherCategoria = (i) => escolherCategoria(state.categoriaSugestoes[i]);
     window._anSpToggleOpcionais = () => { syncFormState(); state.mostrarOpcionais = !state.mostrarOpcionais; render(); };
     window._anSpCriar = criarAnuncio;
