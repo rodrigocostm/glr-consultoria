@@ -81,9 +81,9 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  const mcApiKey = process.env.MC_API_KEY;
+  const mcApiKey = process.env.MCP_API_KEY;
   if (!mcApiKey) {
-    return res.status(200).json({ ok: true, skip: 'MC_API_KEY não configurada no Vercel — veja Integrações no app pra pegar a chave.' });
+    return res.status(200).json({ ok: true, skip: 'MCP_API_KEY não configurada no Vercel — veja Integrações no app pra pegar a chave.' });
   }
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
