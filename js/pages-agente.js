@@ -75,13 +75,13 @@
         const hoje = dataLocal(0), seteDiasAtras = dataLocal(7);
         const settingsPorId = {}, diarioPorId = {};
         const ids = campanhas.map(c => c.campaign_id);
-        let falhasSettings = 0, falhasDiario = 0, lotes = 0;
+        let falhasSettings = 0, falhasDiario = 0, lotes = 0, ultimoErro = '';
         for (let i = 0; i < ids.length; i += 20) {
           lotes++;
           const idsStr = ids.slice(i, i + 20).join(',');
           const [settingsResp, diarioResp] = await Promise.all([
-            MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, params: { campaign_id_list: idsStr } }).catch(() => { falhasSettings++; return null; }),
-            MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, params: { campaign_id_list: idsStr, start_date: seteDiasAtras, end_date: hoje } }).catch(() => { falhasDiario++; return null; }),
+            MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, params: { campaign_id_list: idsStr } }).catch((e) => { falhasSettings++; ultimoErro = e.message || String(e); return null; }),
+            MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, params: { campaign_id_list: idsStr, start_date: seteDiasAtras, end_date: hoje } }).catch((e) => { falhasDiario++; ultimoErro = e.message || String(e); return null; }),
           ]);
           (settingsResp?.data?.response?.campaign_list || settingsResp?.response?.campaign_list || []).forEach(c => { settingsPorId[c.campaign_id] = c.common_info || {}; });
           (diarioResp?.data?.response?.campaign_list || diarioResp?.response?.campaign_list || []).forEach(c => {
@@ -109,7 +109,7 @@
         // da API da Shopee/Tiops), "0 campanhas ativas" seria enganoso — parece
         // "conta sem campanha" quando na verdade é "não consegui buscar agora".
         if (campanhas.length > 0 && falhasSettings >= lotes && falhasDiario >= lotes) {
-          state.dadosAoVivo = { erro: `Não consegui buscar métricas das ${campanhas.length} campanhas agora — a API de ADS da Shopee/Tiops parece instável no momento. Tente "Atualizar" de novo em alguns minutos.` };
+          state.dadosAoVivo = { erro: `Não consegui buscar métricas das ${campanhas.length} campanhas agora. Erro real: "${ultimoErro || 'desconhecido'}". Tente "Atualizar" de novo em alguns minutos.` };
         } else {
           state.dadosAoVivo = {
             atualizadoEm: new Date().toISOString(),
