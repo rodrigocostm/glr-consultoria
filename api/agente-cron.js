@@ -338,7 +338,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           // nem abaixo de 1.0 (mínimo aceito pela Shopee).
           const metaRoasConta = 100 / cfg.meta_acos;
           const roasAtual = settings.roas_target;
-          const novoRoas = Math.max(1, metaRoasConta, Math.round(roasAtual * 0.85 * 10) / 10);
+          const novoRoas = Math.round(Math.max(1, metaRoasConta, roasAtual * 0.85) * 10) / 10;
           if (novoRoas < roasAtual) {
             const variacaoPct = Math.abs((novoRoas - roasAtual) / roasAtual) * 100;
             const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o TACOS da conta (${tacosConta.toFixed(1)}%) ainda tem folga. Campanha usa lance automático — baixando a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais agressivo e captar mais volume.`;

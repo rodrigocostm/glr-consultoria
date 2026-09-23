@@ -269,18 +269,18 @@
       const decisoesSemana = state.logs.filter(l => l.tipo === 'decisao' && l.resultado === 'executado' && new Date(l.criado_em).getTime() > seteDiasAtras).length;
       const alertasPendentes = state.logs.filter(l => l.tipo === 'alerta' && l.resultado === 'so_alerta').length;
 
-      const card = (label, valor, cor, sub) => `
-        <div class="card" style="padding:16px 18px;">
-          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">${label}</div>
-          <div style="font-size:20px;font-weight:700;color:${cor || 'var(--text-primary)'};">${valor}</div>
-          ${sub ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${sub}</div>` : ''}
+      const card = (icone, label, valor, cor, sub) => `
+        <div class="ag-hud-card" style="--ag-hud-accent:${cor || '#6366f1'};">
+          <div class="ag-hud-label"><span>${icone}</span><span>${label}</span></div>
+          <div class="ag-hud-value" style="color:${cor || 'var(--text-primary)'};">${valor}</div>
+          ${sub ? `<div class="ag-hud-sub">${sub}</div>` : ''}
         </div>`;
 
-      return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
-        ${card('Piloto', cfg?.ativo ? '🟢 Ativo' : '⚪ Inativo', cfg?.ativo ? '#16a34a' : 'var(--text-muted)', cfg ? esc(cfg.cliente_nome || cfg.conta_id) : 'nenhuma conta configurada')}
-        ${card('TACOS mais recente', ultimoRel?.metricas?.tacos_conta != null ? `${ultimoRel.metricas.tacos_conta.toFixed(1)}%` : '—', null, cfg?.meta_acos ? `meta: ${cfg.meta_acos}%` : '')}
-        ${card('Decisões (7 dias)', decisoesSemana, '#6366f1', 'pausar / retomar / orçamento')}
-        ${card('Alertas pendentes', alertasPendentes, alertasPendentes ? '#d97706' : '#16a34a', 'aguardando aprovação manual')}
+      return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px;">
+        ${card('◉', 'Piloto', cfg?.ativo ? 'ATIVO' : 'INATIVO', cfg?.ativo ? '#22d3ee' : '#64748b', cfg ? esc(cfg.cliente_nome || cfg.conta_id) : 'nenhuma conta configurada')}
+        ${card('▲', 'TACOS mais recente', ultimoRel?.metricas?.tacos_conta != null ? `${ultimoRel.metricas.tacos_conta.toFixed(1)}%` : '—', '#818cf8', cfg?.meta_acos ? `meta: ${cfg.meta_acos}%` : '')}
+        ${card('⚙', 'Decisões (7 dias)', decisoesSemana, '#6366f1', 'pausar / retomar / orçamento')}
+        ${card('⚠', 'Alertas pendentes', alertasPendentes, alertasPendentes ? '#d97706' : '#16a34a', 'aguardando aprovação manual')}
       </div>`;
     }
 
@@ -366,40 +366,53 @@
       const decisoes = state.logs.filter(l => l.tipo === 'decisao').slice(0, 20);
       if (!decisoes.length) return '';
       const nomeCampanha = titulo => esc((titulo || '').replace(/^(Campanha pausada|Orçamento ajustado|Meta de ROAS ajustada|Falha ao pausar|Falha ao ajustar orçamento|Falha ao ajustar meta de ROAS) — /, ''));
-      return `<div class="card" style="padding:20px 22px;margin-bottom:20px;overflow-x:auto;">
-        <div style="font-size:14px;font-weight:700;margin-bottom:4px;">⚡ Últimas decisões (ações automáticas)</div>
+      const n1 = v => (Math.round(parseFloat(v) * 10) / 10).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#22d3ee;margin-bottom:20px;overflow-x:auto;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+          <span class="ag-pulse-dot" style="background:#22d3ee;"></span>
+          <div style="font-size:14px;font-weight:800;">Últimas decisões — ações automáticas</div>
+        </div>
         <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">O que o agente mudou em cada campanha, e por quê.</div>
-        <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+        <table class="ag-tech-table">
           <thead>
-            <tr style="text-align:left;color:var(--text-muted);border-bottom:1px solid var(--border);">
-              <th style="padding:6px 8px;">Produto / campanha</th>
-              <th style="padding:6px 8px;">Ação</th>
-              <th style="padding:6px 8px;">De → Para</th>
-              <th style="padding:6px 8px;">ACOS</th>
-              <th style="padding:6px 8px;">Resultado</th>
-              <th style="padding:6px 8px;">Quando</th>
+            <tr>
+              <th>Produto / campanha</th>
+              <th>Ação</th>
+              <th>De → Para</th>
+              <th>ACOS</th>
+              <th>Resultado</th>
+              <th>Quando</th>
             </tr>
           </thead>
           <tbody>
             ${decisoes.map(l => {
               const d = l.dados || {};
-              let acao = '—', deParaVal = '—';
+              let acaoLabel = '—', acaoCor = '#64748b', deParaVal = '—', rowAccent = '#64748b';
               if (d.roas_de != null && d.roas_para != null) {
-                acao = d.roas_para < d.roas_de ? '🔽 Lance + agressivo' : '🔼 Lance + conservador';
-                deParaVal = `${d.roas_de}x → ${d.roas_para}x`;
+                const maisAgressivo = d.roas_para < d.roas_de;
+                acaoLabel = maisAgressivo ? '▼ Lance + agressivo' : '▲ Lance + conservador';
+                acaoCor = maisAgressivo ? '#22d3ee' : '#d97706';
+                rowAccent = acaoCor;
+                deParaVal = `${n1(d.roas_de)}x → ${n1(d.roas_para)}x`;
               } else if (d.budget_de != null && d.budget_para != null) {
-                acao = d.budget_para > d.budget_de ? '🔼 Orçamento ↑' : '🔽 Orçamento ↓';
+                const subiu = d.budget_para > d.budget_de;
+                acaoLabel = subiu ? '▲ Orçamento ↑' : '▼ Orçamento ↓';
+                acaoCor = subiu ? '#22d3ee' : '#d97706';
+                rowAccent = acaoCor;
                 deParaVal = `${R$(d.budget_de)} → ${R$(d.budget_para)}`;
               } else if ((l.titulo || '').includes('pausada')) {
-                acao = '⏸️ Pausada';
+                acaoLabel = '⏸ Pausada';
+                acaoCor = '#dc2626';
+                rowAccent = acaoCor;
               }
-              return `<tr style="border-bottom:1px solid var(--border);">
-                <td style="padding:6px 8px;font-weight:600;max-width:260px;">${nomeCampanha(l.titulo)}</td>
-                <td style="padding:6px 8px;white-space:nowrap;">${acao}</td>
-                <td style="padding:6px 8px;white-space:nowrap;font-variant-numeric:tabular-nums;">${deParaVal}</td>
-                <td style="padding:6px 8px;white-space:nowrap;">${d.acos != null ? d.acos.toFixed(1) + '%' : '—'}</td>
-                <td style="padding:6px 8px;white-space:nowrap;color:${RESULTADO_COR[l.resultado] || 'var(--text-muted)'};font-weight:600;">${RESULTADO_LABEL[l.resultado] || l.resultado}</td>
-                <td style="padding:6px 8px;white-space:nowrap;color:var(--text-muted);">${new Date(l.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+              return `<tr style="--row-accent:${rowAccent};">
+                <td style="max-width:260px;">${nomeCampanha(l.titulo)}</td>
+                <td><span class="ag-action-chip" style="color:${acaoCor};background:${acaoCor}1a;">${acaoLabel}</span></td>
+                <td class="ag-mono" style="white-space:nowrap;">${deParaVal}</td>
+                <td class="ag-mono" style="white-space:nowrap;">${d.acos != null ? n1(d.acos) + '%' : '—'}</td>
+                <td style="white-space:nowrap;color:${RESULTADO_COR[l.resultado] || 'var(--text-muted)'};font-weight:700;">${RESULTADO_LABEL[l.resultado] || l.resultado}</td>
+                <td class="ag-mono" style="white-space:nowrap;">${new Date(l.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -481,12 +494,53 @@
     }
 
     el.innerHTML = `<div class="page">
-      <div class="section-title mb-16">🤖 Agente Autônomo de ADS</div>
-      <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;max-width:700px;">
-        Modo piloto — 1 conta Shopee por vez. O agente revisa as campanhas todo dia às 07:00, decide pausar/retomar/ajustar orçamento sozinho dentro das regras abaixo, registra tudo no log e escreve um relatório diário sobre o dia anterior. Mudanças de orçamento acima do limite de alerta esperam aprovação manual.
+      <div class="ag-hero">
+        <div class="ag-hero-grid"></div>
+        <div class="ag-hero-top">
+          <div class="ag-hero-title">
+            <span class="ag-pulse-dot"></span>
+            <span>Agente Autônomo de ADS</span>
+          </div>
+          <span class="ag-chip ag-chip-ai">⚡ IA · monitoramento contínuo</span>
+        </div>
+        <div class="ag-hero-sub">
+          Modo piloto — 1 conta Shopee por vez. O agente revisa as campanhas todo dia às 07:00, decide pausar/retomar/ajustar orçamento sozinho dentro das regras abaixo, registra tudo no log e escreve um relatório diário sobre o dia anterior. Mudanças de orçamento acima do limite de alerta esperam aprovação manual.
+        </div>
       </div>
       <div id="ag-root"></div>
-      <style>@media (max-width:980px){.ag-grid-resp{grid-template-columns:1fr !important;}}</style>
+      <style>
+        @media (max-width:980px){.ag-grid-resp{grid-template-columns:1fr !important;}}
+
+        .ag-hero { position:relative; overflow:hidden; border-radius:16px; padding:22px 26px; margin-bottom:22px;
+          background: radial-gradient(120% 160% at 0% 0%, rgba(99,102,241,0.20), transparent 60%), linear-gradient(135deg, #0f0f1a, #14141f 55%, #0f0f1a);
+          border:1px solid rgba(99,102,241,0.25); }
+        .ag-hero-grid { position:absolute; inset:0; opacity:.35; pointer-events:none;
+          background-image: linear-gradient(rgba(99,102,241,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.12) 1px, transparent 1px);
+          background-size: 26px 26px; mask-image: radial-gradient(80% 100% at 50% 0%, #000, transparent 75%); }
+        .ag-hero-top { position:relative; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+        .ag-hero-title { display:flex; align-items:center; gap:10px; font-size:19px; font-weight:800; color:#fff; letter-spacing:.01em; }
+        .ag-hero-sub { position:relative; font-size:13px; color:#9ca3d4; margin-top:10px; max-width:760px; line-height:1.6; }
+        .ag-pulse-dot { position:relative; width:10px; height:10px; border-radius:50%; background:#22d3ee; box-shadow:0 0 0 0 rgba(34,211,238,0.6); animation: ag-pulse 1.8s infinite; flex-shrink:0; }
+        @keyframes ag-pulse { 0%{box-shadow:0 0 0 0 rgba(34,211,238,0.55);} 70%{box-shadow:0 0 0 9px rgba(34,211,238,0);} 100%{box-shadow:0 0 0 0 rgba(34,211,238,0);} }
+        .ag-chip { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; letter-spacing:.02em; padding:5px 11px; border-radius:99px; white-space:nowrap; }
+        .ag-chip-ai { color:#22d3ee; background:rgba(34,211,238,0.10); border:1px solid rgba(34,211,238,0.35); }
+
+        .ag-hud-card { position:relative; border-radius:14px; padding:16px 18px; overflow:hidden;
+          background: linear-gradient(160deg, var(--bg-card), rgba(99,102,241,0.05)); border:1px solid var(--border); }
+        .ag-hud-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--ag-hud-accent,#6366f1); box-shadow:0 0 12px var(--ag-hud-accent,#6366f1); }
+        .ag-hud-label { font-size:10.5px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; display:flex; align-items:center; gap:6px; font-weight:700; }
+        .ag-hud-value { font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size:23px; font-weight:800; font-variant-numeric:tabular-nums; }
+        .ag-hud-sub { font-size:11px; color:var(--text-muted); margin-top:5px; }
+
+        .ag-tech-table { width:100%; border-collapse:separate; border-spacing:0 6px; font-size:12.5px; }
+        .ag-tech-table thead th { text-align:left; padding:0 10px 6px; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); font-weight:700; }
+        .ag-tech-table tbody tr { background:var(--bg-card-hover,#f7f7fb); }
+        .ag-tech-table tbody td { padding:9px 10px; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+        .ag-tech-table tbody td:first-child { border-left:3px solid var(--row-accent,#6366f1); border-top-left-radius:8px; border-bottom-left-radius:8px; font-weight:700; }
+        .ag-tech-table tbody td:last-child { border-top-right-radius:8px; border-bottom-right-radius:8px; color:var(--text-muted); }
+        .ag-mono { font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace; font-variant-numeric:tabular-nums; }
+        .ag-action-chip { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:3px 9px; border-radius:99px; white-space:nowrap; }
+      </style>
     </div>`;
 
     window._agSalvarConfig = salvarConfig;
