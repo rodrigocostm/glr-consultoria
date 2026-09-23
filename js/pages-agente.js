@@ -28,6 +28,7 @@
       chatEnviando: false,
       salvandoConfig: false,
       filtroLog: 'todos',
+      dadosAoVivo: null, carregandoDadosAoVivo: false,
     };
 
     function render() { renderShell(); }
@@ -50,6 +51,67 @@
         console.warn('[Agente] erro ao carregar:', e.message);
       } finally {
         state.carregando = false;
+        render();
+      }
+      if (state.config?.conta_id) buscarDadosAoVivo();
+    }
+
+    function dataLocal(diasAtras) {
+      const d = new Date(); d.setDate(d.getDate() - diasAtras);
+      const pad = n => String(n).padStart(2, '0');
+      return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
+    }
+
+    // ── Dados ao vivo da Shopee (últimos 7 dias) — pro chat e pros cards
+    // terem número de verdade mesmo antes do cron rodar pela 1ª vez ──
+    async function buscarDadosAoVivo() {
+      if (!state.config?.conta_id) return;
+      state.carregandoDadosAoVivo = true;
+      render();
+      try {
+        const shopId = state.config.conta_id;
+        const listaResp = await MarketplaceAPI.call('shopee_ads_campaigns', { shopId });
+        const campanhas = listaResp.data?.response?.campaign_list || listaResp.response?.campaign_list || [];
+        const hoje = dataLocal(0), seteDiasAtras = dataLocal(7);
+        const settingsPorId = {}, diarioPorId = {};
+        const ids = campanhas.map(c => c.campaign_id);
+        for (let i = 0; i < ids.length; i += 20) {
+          const idsStr = ids.slice(i, i + 20).join(',');
+          const [settingsResp, diarioResp] = await Promise.all([
+            MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, params: { campaign_id_list: idsStr } }).catch(() => null),
+            MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, params: { campaign_id_list: idsStr, start_date: seteDiasAtras, end_date: hoje } }).catch(() => null),
+          ]);
+          (settingsResp?.data?.response?.campaign_list || settingsResp?.response?.campaign_list || []).forEach(c => { settingsPorId[c.campaign_id] = c.common_info || {}; });
+          (diarioResp?.data?.response?.campaign_list || diarioResp?.response?.campaign_list || []).forEach(c => {
+            const dias = c.metrics_list || [];
+            diarioPorId[c.campaign_id] = {
+              gasto: dias.reduce((s, d) => s + (parseFloat(d.expense) || 0), 0),
+              gmv: dias.reduce((s, d) => s + (parseFloat(d.broad_gmv) || 0), 0),
+              pedidos: dias.reduce((s, d) => s + (parseInt(d.broad_order) || 0), 0),
+            };
+          });
+        }
+        let gastoTotal = 0, gmvTotal = 0, pedidosTotal = 0, ativas = 0;
+        const porCampanha = [];
+        campanhas.forEach(c => {
+          const s = settingsPorId[c.campaign_id], d = diarioPorId[c.campaign_id];
+          if (!s || !d || (s.campaign_status || '').toLowerCase() !== 'ongoing') return;
+          ativas++;
+          gastoTotal += d.gasto; gmvTotal += d.gmv; pedidosTotal += d.pedidos;
+          const acos = d.gmv > 0 ? (d.gasto / d.gmv * 100) : (d.gasto > 0 ? Infinity : 0);
+          porCampanha.push({ nome: c.campaign_name, budget: parseFloat(s.campaign_budget) || 0, gasto: d.gasto, gmv: d.gmv, acos });
+        });
+        porCampanha.sort((a, b) => b.gasto - a.gasto);
+        state.dadosAoVivo = {
+          atualizadoEm: new Date().toISOString(),
+          campanhasAtivas: ativas, gastoTotal, gmvTotal, pedidosTotal,
+          acosGeral: gmvTotal > 0 ? (gastoTotal / gmvTotal * 100) : (gastoTotal > 0 ? Infinity : 0),
+          top5: porCampanha.slice(0, 5),
+        };
+      } catch (e) {
+        state.dadosAoVivo = { erro: e.message || String(e) };
+      } finally {
+        state.carregandoDadosAoVivo = false;
         render();
       }
     }
@@ -118,9 +180,14 @@
         `[${new Date(l.criado_em).toLocaleString('pt-BR')}] ${TIPO_LABEL[l.tipo] || l.tipo} — ${l.titulo}: ${l.explicacao || ''}`
       ).join('\n');
       const ultimoRelatorio = state.relatorios[0];
+      const d = state.dadosAoVivo;
+      const dadosTexto = !d ? '\nDADOS AO VIVO: ainda não carregados.'
+        : d.erro ? `\nDADOS AO VIVO: erro ao buscar (${d.erro})`
+        : `\nDADOS AO VIVO DA SHOPEE (últimos 7 dias, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nCampanhas ativas: ${d.campanhasAtivas} | Investimento: ${R$(d.gastoTotal)} | Vendas atribuídas: ${R$(d.gmvTotal)} | Pedidos: ${d.pedidosTotal} | ACOS geral: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento:\n${d.top5.map(c => `- ${(c.nome || '').slice(0, 60)}: orçamento ${R$(c.budget)}, gasto ${R$(c.gasto)}, vendas ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
       return [
         cfg ? `CONFIGURAÇÃO ATUAL DO PILOTO (conta ${cfg.cliente_nome || cfg.conta_id}, ${cfg.ativo ? 'ATIVO' : 'inativo'}):` : 'Nenhuma conta piloto configurada ainda.',
         cfg ? `Meta ACOS: ${cfg.meta_acos ?? '—'}% | Orçamento: ${cfg.orcamento_min ?? '—'} a ${cfg.orcamento_max ?? '—'} | Margem: ${cfg.margem_pct ?? '—'}% | Estoque mínimo: ${cfg.estoque_minimo ?? '—'} | Pausa automática acima de ${cfg.regra_pausa_acos ?? '—'}% ACOS por ${cfg.regra_pausa_dias ?? '—'} dia(s) | Alerta humano se variação de orçamento > ${cfg.alerta_variacao_pct ?? '—'}% | Notas: ${cfg.notas || '—'}` : '',
+        cfg ? dadosTexto : '',
         ultimoRelatorio ? `\nÚLTIMO RELATÓRIO DIÁRIO (${ultimoRelatorio.data}):\n${ultimoRelatorio.resumo}` : '',
         logsRecentes ? `\nÚLTIMAS AÇÕES/EVENTOS REGISTRADOS NO LOG:\n${logsRecentes}` : '',
       ].filter(Boolean).join('\n');
@@ -281,9 +348,23 @@
     }
 
     // ── Chat ───────────────────────────────────────────────────
+    function renderDadosAoVivoResumo() {
+      const d = state.dadosAoVivo;
+      const linha = state.carregandoDadosAoVivo ? '⏳ atualizando dados da Shopee (últimos 7 dias)...'
+        : !state.config?.conta_id ? 'Configure e salve uma conta piloto pra puxar dados ao vivo.'
+        : d?.erro ? `⚠️ erro ao buscar dados: ${esc(d.erro)}`
+        : d ? `${d.campanhasAtivas} campanha(s) ativa(s) · investimento ${R$(d.gastoTotal)} · vendas ${R$(d.gmvTotal)} · ACOS ${d.acosGeral === Infinity ? '∞' : d.acosGeral.toFixed(1) + '%'} (últimos 7 dias, ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')})`
+        : 'Nenhum dado carregado ainda.';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--bg-card-hover,#f7f7fb);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;color:var(--text-muted);">
+        <span>${linha}</span>
+        <button class="btn btn-secondary btn-sm" style="white-space:nowrap;" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">🔄 Atualizar</button>
+      </div>`;
+    }
+
     function renderChat() {
       return `<div class="card" style="padding:20px 22px;display:flex;flex-direction:column;height:560px;">
         <div style="font-size:14px;font-weight:700;margin-bottom:10px;">💬 Conversar com o agente</div>
+        ${renderDadosAoVivoResumo()}
         <div id="ag-chat-msgs" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:4px;">
           ${!state.chatMessages.length ? `<div style="text-align:center;color:var(--text-muted);font-size:12.5px;padding:30px 10px;">Pergunte sobre as decisões recentes, o desempenho da conta piloto, ou peça pra explicar por que pausou/ajustou alguma campanha.</div>` : ''}
           ${state.chatMessages.map(m => `
@@ -334,6 +415,7 @@
     window._agSalvarConfig = salvarConfig;
     window._agEnviarChat = enviarChat;
     window._agFiltrarLog = (t) => { state.filtroLog = t; render(); };
+    window._agAtualizarDados = buscarDadosAoVivo;
 
     render();
     carregarTudo();
