@@ -1,6 +1,6 @@
 // Cron do Agente Autônomo de ADS — roda 1x/dia às 07:00 BRT (vercel.json).
-// Para cada conta marcada como piloto (glr_agente_config.ativo=true — hoje é
-// sempre 1 conta só, de propósito, é o teste controlado), avalia as campanhas
+// Para cada conta marcada como piloto (glr_agente_config.ativo=true — pode
+// ser 1 ou várias ao mesmo tempo, o loop abaixo já processa todas), avalia as campanhas
 // Shopee do dia anterior contra as metas configuradas, executa pausar/retomar/
 // ajustar orçamento quando a decisão é clara, registra TUDO em glr_agente_log
 // (mesmo quando não age) e fecha com um relatório diário em português gerado
