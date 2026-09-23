@@ -10,7 +10,7 @@
 // nesta integração (pausar/retomar/orçamento testados ao vivo). ML/TikTok/
 // Amazon ficam de fora da execução autônoma até serem validados do mesmo jeito.
 //
-// Autenticação Tiops: usa MC_API_KEY (env var), não glr_storage — o RLS de
+// Autenticação Tiops: usa MCP_API_KEY (env var), não glr_storage — o RLS de
 // glr_storage foi travado pra "authenticated" nesta mesma sessão (correção de
 // segurança), e um cron sem usuário logado não tem esse papel. Reabrir leitura
 // anônima só pra essa chave reabriria exatamente o buraco que foi fechado.
@@ -39,6 +39,24 @@ async function sbInsert(table, row) {
   if (!r.ok) {
     const t = await r.text().catch(() => '');
     throw new Error(`Supabase insert ${table} falhou: HTTP ${r.status} ${t}`);
+  }
+}
+
+// Upsert por (data,conta_id) — se o cron rodar 2x no mesmo dia (reteste manual,
+// retry), atualiza o relatório existente em vez de quebrar com 409.
+async function sbUpsert(table, row, onConflict) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${onConflict}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`,
+      Prefer: 'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify(row),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    throw new Error(`Supabase upsert ${table} falhou: HTTP ${r.status} ${t}`);
   }
 }
 
@@ -356,7 +374,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // 2) Relatório diário com IA
     const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhas.length };
     const resumo = await gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem);
-    await sbInsert('glr_agente_relatorios', { data: ontem.iso, conta_id: shopId, cliente_nome: cfg.cliente_nome || null, resumo, metricas });
+    await sbUpsert('glr_agente_relatorios', { data: ontem.iso, conta_id: shopId, cliente_nome: cfg.cliente_nome || null, resumo, metricas }, 'data,conta_id');
 
     return { conta_id: shopId, campanhas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta };
   } catch (e) {
