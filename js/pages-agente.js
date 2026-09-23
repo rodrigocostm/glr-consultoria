@@ -361,6 +361,52 @@
       </div>`;
     }
 
+    // ── Decisões recentes (tabela estruturada, mais legível que o log em texto) ──
+    function renderDecisoesRecentes() {
+      const decisoes = state.logs.filter(l => l.tipo === 'decisao').slice(0, 20);
+      if (!decisoes.length) return '';
+      const nomeCampanha = titulo => esc((titulo || '').replace(/^(Campanha pausada|Orçamento ajustado|Meta de ROAS ajustada|Falha ao pausar|Falha ao ajustar orçamento|Falha ao ajustar meta de ROAS) — /, ''));
+      return `<div class="card" style="padding:20px 22px;margin-bottom:20px;overflow-x:auto;">
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px;">⚡ Últimas decisões (ações automáticas)</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">O que o agente mudou em cada campanha, e por quê.</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+          <thead>
+            <tr style="text-align:left;color:var(--text-muted);border-bottom:1px solid var(--border);">
+              <th style="padding:6px 8px;">Produto / campanha</th>
+              <th style="padding:6px 8px;">Ação</th>
+              <th style="padding:6px 8px;">De → Para</th>
+              <th style="padding:6px 8px;">ACOS</th>
+              <th style="padding:6px 8px;">Resultado</th>
+              <th style="padding:6px 8px;">Quando</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${decisoes.map(l => {
+              const d = l.dados || {};
+              let acao = '—', deParaVal = '—';
+              if (d.roas_de != null && d.roas_para != null) {
+                acao = d.roas_para < d.roas_de ? '🔽 Lance + agressivo' : '🔼 Lance + conservador';
+                deParaVal = `${d.roas_de}x → ${d.roas_para}x`;
+              } else if (d.budget_de != null && d.budget_para != null) {
+                acao = d.budget_para > d.budget_de ? '🔼 Orçamento ↑' : '🔽 Orçamento ↓';
+                deParaVal = `${R$(d.budget_de)} → ${R$(d.budget_para)}`;
+              } else if ((l.titulo || '').includes('pausada')) {
+                acao = '⏸️ Pausada';
+              }
+              return `<tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:6px 8px;font-weight:600;max-width:260px;">${nomeCampanha(l.titulo)}</td>
+                <td style="padding:6px 8px;white-space:nowrap;">${acao}</td>
+                <td style="padding:6px 8px;white-space:nowrap;font-variant-numeric:tabular-nums;">${deParaVal}</td>
+                <td style="padding:6px 8px;white-space:nowrap;">${d.acos != null ? d.acos.toFixed(1) + '%' : '—'}</td>
+                <td style="padding:6px 8px;white-space:nowrap;color:${RESULTADO_COR[l.resultado] || 'var(--text-muted)'};font-weight:600;">${RESULTADO_LABEL[l.resultado] || l.resultado}</td>
+                <td style="padding:6px 8px;white-space:nowrap;color:var(--text-muted);">${new Date(l.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    }
+
     // ── Relatórios diários ────────────────────────────────────
     function renderRelatorios() {
       return `<div class="card" style="padding:20px 22px;margin-bottom:20px;">
@@ -420,6 +466,7 @@
       }
       root.innerHTML = `
         ${renderCards()}
+        ${renderDecisoesRecentes()}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="ag-grid-resp">
           <div>
             ${renderConfig()}
