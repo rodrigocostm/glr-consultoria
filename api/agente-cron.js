@@ -190,13 +190,16 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     const diasMaturacao = cfg.dias_maturacao_campanha ?? 7;
     const agoraTs = Date.now() / 1000;
 
+    // Soma TODA campanha com atividade na janela pro cálculo de TACOS, mesmo
+    // que já tenha encerrado depois de gastar (o filtro "só ongoing" aqui
+    // subestimava o investimento real — confirmado comparando com o Gestor
+    // Seller: metade do valor real de ADS). O filtro "ongoing" continua valendo
+    // só pra decidir em qual campanha AGIR (pausar/ajustar), lá embaixo.
     for (const c of campanhas) {
       const settings = settingsPorId[c.campaign_id];
       const diario = diarioPorId[c.campaign_id];
       if (!settings || !diario) continue;
-      const status = (settings.campaign_status || '').toLowerCase();
-      const budgetAtual = parseFloat(settings.campaign_budget) || 0;
-      if (status !== 'ongoing') continue; // só reavalia campanha ativa hoje
+      if (diario.gasto <= 0 && diario.gmv <= 0) continue;
 
       gastoTotalOntem += diario.gastoOntem;
       gmvTotalJanela += diario.gmv;

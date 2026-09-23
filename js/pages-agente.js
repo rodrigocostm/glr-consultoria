@@ -93,15 +93,21 @@
             };
           });
         }
+        // Soma o gasto de TODA campanha que teve atividade na janela, mesmo
+        // que já tenha encerrado depois — uma campanha que gastou 3 dias e
+        // terminou ontem ainda pesou no TACOS da semana. Filtrar só "ongoing"
+        // aqui subestimava o investimento real (confirmado comparando com o
+        // Gestor Seller: R$371 vs R$703 reais na mesma janela).
         let gastoTotal = 0, gmvTotal = 0, pedidosTotal = 0, ativas = 0;
         const porCampanha = [];
         campanhas.forEach(c => {
           const s = settingsPorId[c.campaign_id], d = diarioPorId[c.campaign_id];
-          if (!s || !d || (s.campaign_status || '').toLowerCase() !== 'ongoing') return;
-          ativas++;
+          if (!s || !d) return;
+          if (d.gasto <= 0 && d.gmv <= 0) return; // sem atividade na janela, ignora
           gastoTotal += d.gasto; gmvTotal += d.gmv; pedidosTotal += d.pedidos;
+          if ((s.campaign_status || '').toLowerCase() === 'ongoing') ativas++;
           const acos = d.gmv > 0 ? (d.gasto / d.gmv * 100) : (d.gasto > 0 ? Infinity : 0);
-          porCampanha.push({ nome: c.campaign_name, budget: parseFloat(s.campaign_budget) || 0, gasto: d.gasto, gmv: d.gmv, acos });
+          porCampanha.push({ nome: c.campaign_name, budget: parseFloat(s.campaign_budget) || 0, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status });
         });
         porCampanha.sort((a, b) => b.gasto - a.gasto);
 
