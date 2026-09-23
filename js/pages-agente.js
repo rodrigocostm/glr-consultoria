@@ -75,11 +75,13 @@
         const hoje = dataLocal(0), seteDiasAtras = dataLocal(7);
         const settingsPorId = {}, diarioPorId = {};
         const ids = campanhas.map(c => c.campaign_id);
+        let falhasSettings = 0, falhasDiario = 0, lotes = 0;
         for (let i = 0; i < ids.length; i += 20) {
+          lotes++;
           const idsStr = ids.slice(i, i + 20).join(',');
           const [settingsResp, diarioResp] = await Promise.all([
-            MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, params: { campaign_id_list: idsStr } }).catch(() => null),
-            MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, params: { campaign_id_list: idsStr, start_date: seteDiasAtras, end_date: hoje } }).catch(() => null),
+            MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, params: { campaign_id_list: idsStr } }).catch(() => { falhasSettings++; return null; }),
+            MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, params: { campaign_id_list: idsStr, start_date: seteDiasAtras, end_date: hoje } }).catch(() => { falhasDiario++; return null; }),
           ]);
           (settingsResp?.data?.response?.campaign_list || settingsResp?.response?.campaign_list || []).forEach(c => { settingsPorId[c.campaign_id] = c.common_info || {}; });
           (diarioResp?.data?.response?.campaign_list || diarioResp?.response?.campaign_list || []).forEach(c => {
@@ -102,12 +104,21 @@
           porCampanha.push({ nome: c.campaign_name, budget: parseFloat(s.campaign_budget) || 0, gasto: d.gasto, gmv: d.gmv, acos });
         });
         porCampanha.sort((a, b) => b.gasto - a.gasto);
-        state.dadosAoVivo = {
-          atualizadoEm: new Date().toISOString(),
-          campanhasAtivas: ativas, gastoTotal, gmvTotal, pedidosTotal,
-          acosGeral: gmvTotal > 0 ? (gastoTotal / gmvTotal * 100) : (gastoTotal > 0 ? Infinity : 0),
-          top5: porCampanha.slice(0, 5),
-        };
+
+        // Se as chamadas de métrica falharam em todos os lotes (ex: instabilidade
+        // da API da Shopee/Tiops), "0 campanhas ativas" seria enganoso — parece
+        // "conta sem campanha" quando na verdade é "não consegui buscar agora".
+        if (campanhas.length > 0 && falhasSettings >= lotes && falhasDiario >= lotes) {
+          state.dadosAoVivo = { erro: `Não consegui buscar métricas das ${campanhas.length} campanhas agora — a API de ADS da Shopee/Tiops parece instável no momento. Tente "Atualizar" de novo em alguns minutos.` };
+        } else {
+          state.dadosAoVivo = {
+            atualizadoEm: new Date().toISOString(),
+            campanhasAtivas: ativas, gastoTotal, gmvTotal, pedidosTotal,
+            acosGeral: gmvTotal > 0 ? (gastoTotal / gmvTotal * 100) : (gastoTotal > 0 ? Infinity : 0),
+            top5: porCampanha.slice(0, 5),
+            avisoParcial: (falhasSettings > 0 || falhasDiario > 0) ? 'Algumas campanhas podem estar faltando — houve falha parcial ao buscar dados da Shopee.' : null,
+          };
+        }
       } catch (e) {
         state.dadosAoVivo = { erro: e.message || String(e) };
       } finally {
@@ -353,7 +364,7 @@
       const linha = state.carregandoDadosAoVivo ? '⏳ atualizando dados da Shopee (últimos 7 dias)...'
         : !state.config?.conta_id ? 'Configure e salve uma conta piloto pra puxar dados ao vivo.'
         : d?.erro ? `⚠️ erro ao buscar dados: ${esc(d.erro)}`
-        : d ? `${d.campanhasAtivas} campanha(s) ativa(s) · investimento ${R$(d.gastoTotal)} · vendas ${R$(d.gmvTotal)} · ACOS ${d.acosGeral === Infinity ? '∞' : d.acosGeral.toFixed(1) + '%'} (últimos 7 dias, ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')})`
+        : d ? `${d.campanhasAtivas} campanha(s) ativa(s) · investimento ${R$(d.gastoTotal)} · vendas ${R$(d.gmvTotal)} · ACOS ${d.acosGeral === Infinity ? '∞' : d.acosGeral.toFixed(1) + '%'} (últimos 7 dias, ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')})${d.avisoParcial ? ` ⚠️ ${esc(d.avisoParcial)}` : ''}`
         : 'Nenhum dado carregado ainda.';
       return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--bg-card-hover,#f7f7fb);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;color:var(--text-muted);">
         <span>${linha}</span>
