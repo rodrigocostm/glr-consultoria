@@ -132,7 +132,7 @@
             atualizadoEm: new Date().toISOString(),
             campanhasAtivas: ativas, gastoTotal, gmvTotal, pedidosTotal, faturamentoTotal, tacosGeral,
             acosGeral: gmvTotal > 0 ? (gastoTotal / gmvTotal * 100) : (gastoTotal > 0 ? Infinity : 0),
-            top5: porCampanha.slice(0, 5),
+            topCampanhas: porCampanha.slice(0, 8),
             avisoParcial: (falhasSettings > 0 || falhasDiario > 0) ? 'Algumas campanhas podem estar faltando — houve falha parcial ao buscar dados da Shopee.' : null,
           };
         }
@@ -212,7 +212,7 @@
       const d = state.dadosAoVivo;
       const dadosTexto = !d ? '\nDADOS AO VIVO: ainda não carregados.'
         : d.erro ? `\nDADOS AO VIVO: erro ao buscar (${d.erro})`
-        : `\nDADOS AO VIVO DA SHOPEE (últimos 7 dias, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nFaturamento TOTAL da loja: ${R$(d.faturamentoTotal)} | Investimento ADS: ${R$(d.gastoTotal)} | TACOS da conta: ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (esta é a métrica principal, não o ACOS isolado abaixo)\nCampanhas ativas: ${d.campanhasAtivas} | Vendas atribuídas ao ADS: ${R$(d.gmvTotal)} | Pedidos atribuídos: ${d.pedidosTotal} | ACOS médio das campanhas: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento (ACOS individual, útil só pra comparar entre elas):\n${d.top5.map(c => `- ${(c.nome || '').slice(0, 60)}: orçamento ${R$(c.budget)}, gasto ${R$(c.gasto)}, vendas ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
+        : `\nDADOS AO VIVO DA SHOPEE (últimos 7 dias, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nFaturamento TOTAL da loja: ${R$(d.faturamentoTotal)} | Investimento ADS: ${R$(d.gastoTotal)} | TACOS da conta: ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (esta é a métrica principal, não o ACOS isolado abaixo)\nCampanhas ativas: ${d.campanhasAtivas} | Vendas atribuídas ao ADS: ${R$(d.gmvTotal)} | Pedidos atribuídos: ${d.pedidosTotal} | ACOS médio das campanhas: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento (ACOS individual, útil só pra comparar entre elas):\n${d.topCampanhas.map(c => `- ${(c.nome || '').slice(0, 60)}: orçamento ${R$(c.budget)}, gasto ${R$(c.gasto)}, vendas (GMV) ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
       return [
         cfg ? `CONFIGURAÇÃO ATUAL DO PILOTO (conta ${cfg.cliente_nome || cfg.conta_id}, ${cfg.ativo ? 'ATIVO' : 'inativo'}):` : 'Nenhuma conta piloto configurada ainda.',
         cfg ? `Meta TACOS: ${cfg.meta_acos ?? '—'}% (métrica principal: investimento ADS ÷ faturamento TOTAL da loja, não ACOS isolado) | Orçamento: ${cfg.orcamento_min ?? '—'} a ${cfg.orcamento_max ?? '—'} | Margem: ${cfg.margem_pct ?? '—'}% | Estoque mínimo: ${cfg.estoque_minimo ?? '—'} | Pausa automática acima de ${cfg.regra_pausa_acos ?? '—'}% ACOS por ${cfg.regra_pausa_dias ?? '—'} dia(s), só após ${cfg.dias_maturacao_campanha ?? 7} dia(s) de maturação da campanha | Alerta humano se variação de orçamento > ${cfg.alerta_variacao_pct ?? '—'}% | Notas: ${cfg.notas || '—'}` : '',
@@ -361,6 +361,49 @@
       </div>`;
     }
 
+    // ── Campanhas ao vivo (com GMV, orçamento, gasto e ACOS por campanha) ──
+    function renderCampanhasAoVivo() {
+      const d = state.dadosAoVivo;
+      if (!d || d.erro || !d.topCampanhas?.length) return '';
+      const STATUS_COR = { ongoing: '#22d3ee', paused: '#d97706', ended: '#64748b', closed: '#64748b' };
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;overflow-x:auto;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:2px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="ag-pulse-dot" style="background:#818cf8;"></span>
+            <div style="font-size:14px;font-weight:800;">Campanhas ao vivo (últimos 7 dias)</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">🔄 Atualizar</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Top ${d.topCampanhas.length} por investimento — inclui GMV (vendas atribuídas ao ADS) por campanha.</div>
+        <table class="ag-tech-table">
+          <thead>
+            <tr>
+              <th>Campanha</th>
+              <th>Status</th>
+              <th>Orçamento</th>
+              <th>Gasto</th>
+              <th>GMV</th>
+              <th>ACOS</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${d.topCampanhas.map(c => {
+              const statusChave = (c.status || '').toLowerCase();
+              const cor = STATUS_COR[statusChave] || '#64748b';
+              return `<tr style="--row-accent:${cor};">
+                <td style="max-width:280px;">${esc(c.nome)}</td>
+                <td><span class="ag-action-chip" style="color:${cor};background:${cor}1a;">${esc(c.status || '—')}</span></td>
+                <td class="ag-mono" style="white-space:nowrap;">${R$(c.budget)}</td>
+                <td class="ag-mono" style="white-space:nowrap;">${R$(c.gasto)}</td>
+                <td class="ag-mono" style="white-space:nowrap;font-weight:700;">${R$(c.gmv)}</td>
+                <td class="ag-mono" style="white-space:nowrap;">${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    }
+
     // ── Decisões recentes (tabela estruturada, mais legível que o log em texto) ──
     function renderDecisoesRecentes() {
       const decisoes = state.logs.filter(l => l.tipo === 'decisao').slice(0, 20);
@@ -479,6 +522,7 @@
       }
       root.innerHTML = `
         ${renderCards()}
+        ${renderCampanhasAoVivo()}
         ${renderDecisoesRecentes()}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="ag-grid-resp">
           <div>
