@@ -105,6 +105,7 @@
         await carregarTudo();
       } catch (e) {
         alert('Erro ao salvar configuração: ' + (e.message || e));
+      } finally {
         state.salvandoConfig = false;
         render();
       }
