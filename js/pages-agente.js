@@ -78,6 +78,32 @@
       }
     }
 
+    // Lista TODAS as campanhas individuais de uma loja, com paginação de
+    // verdade. A ação "shopee_ads_campaigns" só devolve a primeira leva sem
+    // jeito de pedir a próxima — confirmado ao vivo numa conta com 100+
+    // campanhas: só voltavam as mais antigas, todas encerradas, enquanto o
+    // painel da Shopee mostrava campanhas recentes ativas com milhares de
+    // reais investidos. Endpoint raw certo (usado pelo SDK oficial como
+    // getProductLevelCampaignIdList): /api/v2/ads/get_product_level_campaign_id_list,
+    // que aceita offset/limit e devolve has_next_page de verdade.
+    async function listarTodasCampanhasShopee(shopId) {
+      const campanhas = [];
+      let offset = 0;
+      const limit = 100;
+      for (let pagina = 0; pagina < 20; pagina++) { // teto de 2000 campanhas
+        const json = await MarketplaceAPI.call('raw_read', {
+          marketplace: 'shopee', shopId,
+          path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
+        });
+        const lista = json.data?.response?.campaign_list || json.response?.campaign_list || [];
+        campanhas.push(...lista);
+        const temMais = json.data?.response?.has_next_page ?? json.response?.has_next_page;
+        if (!temMais || !lista.length) break;
+        offset += limit;
+      }
+      return campanhas;
+    }
+
     function dataLocal(diasAtras) {
       const d = new Date(); d.setDate(d.getDate() - diasAtras);
       const pad = n => String(n).padStart(2, '0');
@@ -97,8 +123,7 @@
       render();
       try {
         const shopId = contaId;
-        const listaResp = await MarketplaceAPI.call('shopee_ads_campaigns', { shopId });
-        const campanhas = listaResp.data?.response?.campaign_list || listaResp.response?.campaign_list || [];
+        const campanhas = await listarTodasCampanhasShopee(shopId);
         const hoje = dataLocal(0), seteDiasAtras = dataLocal(7);
         const settingsPorId = {}, diarioPorId = {};
         const ids = campanhas.map(c => c.campaign_id);
@@ -139,7 +164,7 @@
           pedidosTotal += d.pedidos;
           if ((s.campaign_status || '').toLowerCase() === 'ongoing') ativas++;
           const acos = d.gmv > 0 ? (d.gasto / d.gmv * 100) : (d.gasto > 0 ? Infinity : 0);
-          porCampanha.push({ nome: c.campaign_name, budget: parseFloat(s.campaign_budget) || 0, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status });
+          porCampanha.push({ nome: s.ad_name || `Campanha ${c.campaign_id}`, budget: parseFloat(s.campaign_budget) || 0, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status });
         });
         porCampanha.sort((a, b) => b.gasto - a.gasto);
 

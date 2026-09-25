@@ -85,6 +85,34 @@ async function mcpCall(apiKey, action, params) {
   return json;
 }
 
+// Lista TODAS as campanhas individuais de uma loja, com paginação de verdade.
+// A ação "shopee_ads_campaigns" do conector só devolve a primeira leva (sem
+// jeito de pedir a próxima) — confirmado ao vivo numa conta com 100+
+// campanhas: só voltavam as mais antigas, todas encerradas, enquanto o
+// painel da Shopee mostrava campanhas recentes ativas com milhares de reais
+// investidos. O endpoint raw certo (usado pelo SDK oficial como
+// getProductLevelCampaignIdList) é /api/v2/ads/get_product_level_campaign_id_list,
+// que aceita offset/limit e devolve has_next_page — aqui a gente pagina até
+// esgotar, com um teto de segurança pra nunca rodar pra sempre numa loja
+// gigante.
+async function listarTodasCampanhas(apiKey, shopId) {
+  const campanhas = [];
+  let offset = 0;
+  const limit = 100;
+  for (let pagina = 0; pagina < 20; pagina++) { // teto de 2000 campanhas
+    const json = await mcpCall(apiKey, 'raw_read', {
+      marketplace: 'shopee', shopId,
+      path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
+    });
+    const lista = json.data?.response?.campaign_list || json.response?.campaign_list || [];
+    campanhas.push(...lista);
+    const temMais = json.data?.response?.has_next_page ?? json.response?.has_next_page;
+    if (!temMais || !lista.length) break;
+    offset += limit;
+  }
+  return campanhas;
+}
+
 function dataBRT(diasAtras = 0) {
   const brt = new Date(Date.now() - 3 * 3600 * 1000);
   brt.setUTCDate(brt.getUTCDate() - diasAtras);
@@ -212,9 +240,8 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
   }
 
   try {
-    // 1) Lista campanhas (sem métricas, só id/nome)
-    const listaResp = await mcpCall(mcApiKey, 'shopee_ads_campaigns', { shopId });
-    const campanhas = listaResp.data?.response?.campaign_list || listaResp.response?.campaign_list || [];
+    // 1) Lista campanhas (só id/ad_type — nome vem do settings mais abaixo)
+    const campanhas = await listarTodasCampanhas(mcApiKey, shopId);
     if (!campanhas.length) {
       await logar('sistema', 'Nenhuma campanha encontrada', 'Conta não tem campanhas de ADS ativas na Shopee — nada pra avaliar hoje.', {}, 'so_alerta');
       return { conta_id: shopId, campanhas: 0 };
@@ -331,7 +358,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       if (status !== 'ongoing') continue;
 
       const acosJanela = diario.gmv > 0 ? diario.gasto / diario.gmv : (diario.gasto > 0 ? Infinity : null);
-      const nome = c.campaign_name?.slice(0, 70) || `Campanha ${c.campaign_id}`;
+      const nome = settings.ad_name?.slice(0, 70) || `Campanha ${c.campaign_id}`;
       const inicioTs = settings.campaign_duration?.start_time || 0;
       const idadeDias = inicioTs ? (agoraTs - inicioTs) / 86400 : Infinity;
       const emMaturacao = idadeDias < diasMaturacao;
