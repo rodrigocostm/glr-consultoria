@@ -150,12 +150,12 @@ module.exports = async function handler(req, res) {
 
     const ontem = dataBRT(1);
 
-    const resultados = [];
-    for (const cfg of configs) {
+    // Contas em paralelo — sequencial estourava os 60s do plano com mais de
+    // 1 conta ativa (cada conta já faz vários round-trips pra Tiops).
+    const resultados = await Promise.all(configs.map(cfg => {
       const inicioJanela = dataBRT(Math.max(1, cfg.regra_pausa_dias || 3));
-      const r = await processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela);
-      resultados.push(r);
-    }
+      return processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela);
+    }));
     return res.status(200).json({ ok: true, processadas: resultados.length, resultados });
   } catch (e) {
     return res.status(500).json({ error: e.message || String(e) });
@@ -223,7 +223,9 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     const settingsPorId = {};
     const diarioPorId = {}; // soma da janela (regra_pausa_dias) por campanha
 
-    for (const lote of chunk(campanhas.map(c => c.campaign_id), 20)) {
+    // Lotes em paralelo — contas com muitas campanhas (ex: 100+) tinham
+    // dezenas de round-trips sequenciais e estouravam os 60s do plano.
+    await Promise.all(chunk(campanhas.map(c => c.campaign_id), 20).map(async (lote) => {
       const idsStr = lote.join(',');
       const [settingsResp, diarioResp] = await Promise.all([
         mcpCall(mcApiKey, 'shopee_ads_campaign_settings', { shopId, campaign_id_list: idsStr }).catch(() => null),
@@ -242,19 +244,19 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           gastoOntem: parseFloat(dias.find(d => d.date === ontem.ddmmyyyy)?.expense) || 0,
         };
       });
-    }
+    }));
 
     // Faturamento TOTAL da loja na mesma janela (não só o atribuído ao ADS) —
     // é a base do TACOS. Mesmos status usados no resto do app (shopeeFaturamento
     // em marketplace-api.js): COMPLETED + READY_TO_SHIP + SHIPPED.
     const diasJanela = Math.max(1, cfg.regra_pausa_dias || 3);
     let faturamentoTotalLoja = 0;
-    for (const st of ['COMPLETED', 'READY_TO_SHIP', 'SHIPPED']) {
+    await Promise.all(['COMPLETED', 'READY_TO_SHIP', 'SHIPPED'].map(async (st) => {
       try {
         const r = await mcpCall(mcApiKey, 'shopee_sales_summary', { shopId, days: diasJanela, order_status: st });
         faturamentoTotalLoja += parseFloat(r.data?.total_revenue || r.total_revenue) || 0;
       } catch (e) {}
-    }
+    }));
 
     // GMV Max da Loja: produto de ADS separado da Shopee (API própria,
     // shopee_ads_gms_*) — NÃO aparece em shopee_ads_campaigns/campaign_settings
@@ -266,42 +268,51 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // Por enquanto só monitora e alerta — o formato exato de edit_gms_product_campaign
     // (edit_action, faixa de roas) ainda não foi validado ao vivo com segurança,
     // então não executa ajuste automático nela ainda.
+    // GMV Max da Loja e performance diária das campanhas individuais (inclusive
+    // modo "GMV Max - Meta de ROAS", bidding automático DENTRO de campanha
+    // individual — diferente do GMV Max da Loja) buscados em paralelo. O
+    // segundo vem de shopee_ads_daily_performance (agregado da loja inteira),
+    // não da lista de campanhas — confirmado ao vivo: shopee_ads_campaigns só
+    // lista campanhas ad_type=manual e, numa conta real com campanhas em modo
+    // GMV Max por produto, devolveu só campanhas antigas encerradas (0
+    // investimento) enquanto o painel da Shopee mostrava milhares de reais
+    // ativos. Por enquanto só monitora e alerta o GMV Max da Loja — o formato
+    // exato de edit_gms_product_campaign ainda não foi validado ao vivo com
+    // segurança, então não executa ajuste automático nele ainda.
     let gmsAtivo = false, gmsGasto = 0, gmsGmv = 0, gmsAcos = null;
-    try {
-      const gmsPerf = await mcpCall(mcApiKey, 'shopee_ads_gms_performance', { shopId, start_date: inicioJanela.ddmmyyyy, end_date: ontem.ddmmyyyy });
-      const rep = gmsPerf.data?.response?.report || gmsPerf.response?.report;
-      if (rep) {
-        gmsAtivo = true;
-        gmsGasto = parseFloat(rep.expense) || 0;
-        gmsGmv = parseFloat(rep.broad_gmv) || 0;
-        gmsAcos = gmsGmv > 0 ? (gmsGasto / gmsGmv) * 100 : (gmsGasto > 0 ? Infinity : 0);
-      }
-    } catch (e) { /* loja pode não ter GMV Max ativo — normal, ignora */ }
+    let gastoTotalOntem = 0, gmvTotalJanela = 0, gastoTotalJanela = 0;
+    await Promise.all([
+      (async () => {
+        try {
+          const gmsPerf = await mcpCall(mcApiKey, 'shopee_ads_gms_performance', { shopId, start_date: inicioJanela.ddmmyyyy, end_date: ontem.ddmmyyyy });
+          const rep = gmsPerf.data?.response?.report || gmsPerf.response?.report;
+          if (rep) {
+            gmsAtivo = true;
+            gmsGasto = parseFloat(rep.expense) || 0;
+            gmsGmv = parseFloat(rep.broad_gmv) || 0;
+            gmsAcos = gmsGmv > 0 ? (gmsGasto / gmsGmv) * 100 : (gmsGasto > 0 ? Infinity : 0);
+            gastoTotalJanela += gmsGasto;
+            gmvTotalJanela += gmsGmv;
+          }
+        } catch (e) { /* loja pode não ter GMV Max ativo — normal, ignora */ }
+      })(),
+      (async () => {
+        try {
+          const perfDiario = await mcpCall(mcApiKey, 'shopee_ads_daily_performance', { shopId, start_date: inicioJanela.ddmmyyyy, end_date: ontem.ddmmyyyy });
+          const dias = perfDiario.data?.response || perfDiario.response || [];
+          for (const d of dias) {
+            const gasto = parseFloat(d.expense) || 0;
+            const gmv = parseFloat(d.broad_gmv) || 0;
+            gastoTotalJanela += gasto;
+            gmvTotalJanela += gmv;
+            if (d.date === ontem.ddmmyyyy) gastoTotalOntem += gasto;
+          }
+        } catch (e) { /* sem dados de performance na janela — segue só com GMV Max da Loja */ }
+      })(),
+    ]);
 
-    let gastoTotalOntem = 0, gmvTotalJanela = gmsGmv, gastoTotalJanela = gmsGasto;
     const diasMaturacao = cfg.dias_maturacao_campanha ?? 7;
     const agoraTs = Date.now() / 1000;
-
-    // Total de campanhas individuais (inclusive as em modo "GMV Max - Meta de
-    // ROAS", que é um bidding automático DENTRO de uma campanha individual —
-    // diferente do GMV Max da Loja acima) vem de shopee_ads_daily_performance,
-    // que é agregado da loja inteira, não da lista de campanhas. Confirmado
-    // ao vivo: shopee_ads_campaigns só lista campanhas ad_type=manual e, numa
-    // conta real com campanhas ativas em modo GMV Max por produto, devolveu
-    // só campanhas antigas encerradas (0 investimento) — enquanto o painel da
-    // Shopee mostrava milhares de reais de investimento ativo. Esse endpoint
-    // de performance diária não depende dessa lista incompleta.
-    try {
-      const perfDiario = await mcpCall(mcApiKey, 'shopee_ads_daily_performance', { shopId, start_date: inicioJanela.ddmmyyyy, end_date: ontem.ddmmyyyy });
-      const dias = perfDiario.data?.response || perfDiario.response || [];
-      for (const d of dias) {
-        const gasto = parseFloat(d.expense) || 0;
-        const gmv = parseFloat(d.broad_gmv) || 0;
-        gastoTotalJanela += gasto;
-        gmvTotalJanela += gmv;
-        if (d.date === ontem.ddmmyyyy) gastoTotalOntem += gasto;
-      }
-    } catch (e) { /* sem dados de performance na janela — segue só com GMV Max da Loja */ }
 
     // TACOS da conta = investimento total em ADS ÷ faturamento TOTAL da loja
     // (não só a venda atribuída ao ADS) — é o critério principal, do jeito que
