@@ -282,21 +282,26 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     const diasMaturacao = cfg.dias_maturacao_campanha ?? 7;
     const agoraTs = Date.now() / 1000;
 
-    // Soma TODA campanha com atividade na janela pro cálculo de TACOS, mesmo
-    // que já tenha encerrado depois de gastar (o filtro "só ongoing" aqui
-    // subestimava o investimento real — confirmado comparando com o Gestor
-    // Seller: metade do valor real de ADS). O filtro "ongoing" continua valendo
-    // só pra decidir em qual campanha AGIR (pausar/ajustar), lá embaixo.
-    for (const c of campanhas) {
-      const settings = settingsPorId[c.campaign_id];
-      const diario = diarioPorId[c.campaign_id];
-      if (!settings || !diario) continue;
-      if (diario.gasto <= 0 && diario.gmv <= 0) continue;
-
-      gastoTotalOntem += diario.gastoOntem;
-      gmvTotalJanela += diario.gmv;
-      gastoTotalJanela += diario.gasto;
-    }
+    // Total de campanhas individuais (inclusive as em modo "GMV Max - Meta de
+    // ROAS", que é um bidding automático DENTRO de uma campanha individual —
+    // diferente do GMV Max da Loja acima) vem de shopee_ads_daily_performance,
+    // que é agregado da loja inteira, não da lista de campanhas. Confirmado
+    // ao vivo: shopee_ads_campaigns só lista campanhas ad_type=manual e, numa
+    // conta real com campanhas ativas em modo GMV Max por produto, devolveu
+    // só campanhas antigas encerradas (0 investimento) — enquanto o painel da
+    // Shopee mostrava milhares de reais de investimento ativo. Esse endpoint
+    // de performance diária não depende dessa lista incompleta.
+    try {
+      const perfDiario = await mcpCall(mcApiKey, 'shopee_ads_daily_performance', { shopId, start_date: inicioJanela.ddmmyyyy, end_date: ontem.ddmmyyyy });
+      const dias = perfDiario.data?.response || perfDiario.response || [];
+      for (const d of dias) {
+        const gasto = parseFloat(d.expense) || 0;
+        const gmv = parseFloat(d.broad_gmv) || 0;
+        gastoTotalJanela += gasto;
+        gmvTotalJanela += gmv;
+        if (d.date === ontem.ddmmyyyy) gastoTotalOntem += gasto;
+      }
+    } catch (e) { /* sem dados de performance na janela — segue só com GMV Max da Loja */ }
 
     // TACOS da conta = investimento total em ADS ÷ faturamento TOTAL da loja
     // (não só a venda atribuída ao ADS) — é o critério principal, do jeito que

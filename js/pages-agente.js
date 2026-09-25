@@ -120,18 +120,23 @@
             };
           });
         }
-        // Soma o gasto de TODA campanha que teve atividade na janela, mesmo
-        // que já tenha encerrado depois — uma campanha que gastou 3 dias e
-        // terminou ontem ainda pesou no TACOS da semana. Filtrar só "ongoing"
-        // aqui subestimava o investimento real (confirmado comparando com o
-        // Gestor Seller: R$371 vs R$703 reais na mesma janela).
-        let gastoTotal = 0, gmvTotal = 0, pedidosTotal = 0, ativas = 0;
+        // Os totais de gasto/GMV da conta NÃO vêm mais dessa lista de
+        // campanhas — shopee_ads_campaigns só lista ad_type=manual e, numa
+        // conta com campanhas ativas em modo "GMV Max - Meta de ROAS" (um
+        // bidding automático dentro de campanha individual), devolveu só
+        // campanhas antigas encerradas, 0 investimento, enquanto o painel da
+        // Shopee mostrava milhares de reais ativos. Essa lista aqui só serve
+        // pra popular a tabela "Campanhas ao vivo" (o que dá pra ver), e
+        // "pedidosTotal"/"ativas" ficam limitados ao que ela enxerga — os
+        // totais de verdade (gastoTotal/gmvTotal/tacosGeral) são calculados
+        // depois, com shopee_ads_daily_performance + GMV Max da Loja.
+        let pedidosTotal = 0, ativas = 0;
         const porCampanha = [];
         campanhas.forEach(c => {
           const s = settingsPorId[c.campaign_id], d = diarioPorId[c.campaign_id];
           if (!s || !d) return;
           if (d.gasto <= 0 && d.gmv <= 0) return; // sem atividade na janela, ignora
-          gastoTotal += d.gasto; gmvTotal += d.gmv; pedidosTotal += d.pedidos;
+          pedidosTotal += d.pedidos;
           if ((s.campaign_status || '').toLowerCase() === 'ongoing') ativas++;
           const acos = d.gmv > 0 ? (d.gasto / d.gmv * 100) : (d.gasto > 0 ? Infinity : 0);
           porCampanha.push({ nome: c.campaign_name, budget: parseFloat(s.campaign_budget) || 0, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status });
@@ -155,6 +160,21 @@
               faturamentoTotal += parseFloat(r.data?.total_revenue ?? r.total_revenue) || 0;
             } catch (e) {}
           }
+          // Gasto/GMV de ADS de verdade: performance diária da loja inteira
+          // (campanhas individuais, inclusive modo GMV Max por produto) +
+          // GMV Max da Loja (campanha guarda-chuva separada) — as duas somadas,
+          // nunca uma no lugar da outra.
+          let gastoTotal = 0, gmvTotal = 0;
+          try {
+            const perfDiario = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: seteDiasAtras, end_date: hoje });
+            const diasPerf = perfDiario.data?.response || perfDiario.response || [];
+            diasPerf.forEach(d => { gastoTotal += parseFloat(d.expense) || 0; gmvTotal += parseFloat(d.broad_gmv) || 0; });
+          } catch (e) {}
+          try {
+            const gmsPerf = await MarketplaceAPI.call('shopee_ads_gms_performance', { shopId, start_date: seteDiasAtras, end_date: hoje });
+            const rep = gmsPerf.data?.response?.report || gmsPerf.response?.report;
+            if (rep) { gastoTotal += parseFloat(rep.expense) || 0; gmvTotal += parseFloat(rep.broad_gmv) || 0; }
+          } catch (e) { /* loja pode não ter GMV Max da Loja ativo — normal */ }
           const tacosGeral = faturamentoTotal > 0 ? (gastoTotal / faturamentoTotal * 100) : (gastoTotal > 0 ? Infinity : 0);
           resultado = {
             atualizadoEm: new Date().toISOString(),
@@ -575,7 +595,7 @@
         <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:2px;">
           <button class="btn btn-secondary btn-sm" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">🔄 Atualizar</button>
         </div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Top ${d.topCampanhas.length} por investimento — inclui GMV (vendas atribuídas ao ADS) por campanha.</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Top ${d.topCampanhas.length} por investimento — inclui GMV (vendas atribuídas ao ADS) por campanha. Pode não bater com o total acima: a Shopee às vezes não lista aqui campanhas em modo "GMV Max - Meta de ROAS", mesmo contando o gasto delas no total.</div>
         <table class="ag-tech-table">
           <thead>
             <tr>
