@@ -39,7 +39,7 @@
       salvandoConfig: false,
       filtroLog: 'todos',
       dadosAoVivoPorConta: {}, carregandoDadosAoVivo: false,
-      negocioPorConta: {}, carregandoNegocio: false,
+      negocioPorConta: {}, carregandoNegocio: false, negocioPeriodo: '7',
     };
 
     function render() { renderShell(); }
@@ -224,30 +224,53 @@
     // Analytics → Produtos em Queda; reconstruir esse motor aqui seria
     // duplicar trabalho e arriscar divergir do número que já é usado hoje.
     // Aqui a gente só linka pra lá, filtrado nesta conta. ──
-    async function buscarNegocio(contaId) {
+    function isoDe(d) {
+      const pad = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+
+    // Janela do período atual + período anterior de igual tamanho, pra
+    // comparação de faturamento. "mes" compara o mês corrente (dia 1 até
+    // hoje) com o mesmo intervalo de dias do mês anterior (comparação justa,
+    // não o mês anterior inteiro).
+    function janelasNegocio(periodo) {
+      const hoje = new Date();
+      if (periodo === 'mes') {
+        const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+        const inicioMesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+        const fimMesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, hoje.getDate());
+        return { atualDe: isoDe(inicioMes), atualAte: isoDe(hoje), anteriorDe: isoDe(inicioMesAnterior), anteriorAte: isoDe(fimMesAnterior) };
+      }
+      const n = parseInt(periodo, 10) || 7;
+      return { atualDe: dataISO(n - 1), atualAte: dataISO(0), anteriorDe: dataISO(2 * n - 1), anteriorAte: dataISO(n) };
+    }
+
+    async function buscarNegocio(contaId, periodo) {
       if (!contaId || contaId === '__novo__') return;
+      periodo = periodo || state.negocioPeriodo;
       state.carregandoNegocio = true;
       render();
       try {
         const shopId = contaId;
         const somaPeriodo = async (inicioISO, fimISO) => {
           let total = 0;
-          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'SHIPPED']) {
+          await Promise.all(['COMPLETED', 'READY_TO_SHIP', 'SHIPPED'].map(async (st) => {
             try {
               const r = await MarketplaceAPI.call('shopee_sales_summary', { shopId, start_date: inicioISO, end_date: fimISO, order_status: st });
               total += parseFloat(r.data?.total_revenue ?? r.total_revenue) || 0;
             } catch (e) {}
-          }
+          }));
           return total;
         };
+        const janelas = janelasNegocio(periodo);
         const [semanaAtual, semanaAnterior] = await Promise.all([
-          somaPeriodo(dataISO(6), dataISO(0)),
-          somaPeriodo(dataISO(13), dataISO(7)),
+          somaPeriodo(janelas.atualDe, janelas.atualAte),
+          somaPeriodo(janelas.anteriorDe, janelas.anteriorAte),
         ]);
         const variacaoPct = semanaAnterior > 0 ? ((semanaAtual - semanaAnterior) / semanaAnterior) * 100 : (semanaAtual > 0 ? Infinity : 0);
-        state.negocioPorConta[shopId] = { semanaAtual, semanaAnterior, variacaoPct, atualizadoEm: new Date().toISOString() };
+        state.negocioPorConta[contaId + ':' + periodo] = { semanaAtual, semanaAnterior, variacaoPct, atualizadoEm: new Date().toISOString() };
       } catch (e) {
-        state.negocioPorConta[contaId] = { erro: e.message || String(e) };
+        state.negocioPorConta[contaId + ':' + periodo] = { erro: e.message || String(e) };
       } finally {
         state.carregandoNegocio = false;
         render();
@@ -341,8 +364,8 @@
       const dadosTexto = !d ? '\nDADOS AO VIVO: ainda não carregados.'
         : d.erro ? `\nDADOS AO VIVO: erro ao buscar (${d.erro})`
         : `\nDADOS AO VIVO DA SHOPEE (últimos 7 dias, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nFaturamento TOTAL da loja: ${R$(d.faturamentoTotal)} | Investimento ADS: ${R$(d.gastoTotal)} | TACOS da conta: ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (esta é a métrica principal, não o ACOS isolado abaixo)\nCampanhas ativas: ${d.campanhasAtivas} | Vendas atribuídas ao ADS: ${R$(d.gmvTotal)} | Pedidos atribuídos: ${d.pedidosTotal} | ACOS médio das campanhas: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento (ACOS individual, útil só pra comparar entre elas):\n${d.topCampanhas.map(c => `- ${(c.nome || '').slice(0, 60)}: orçamento ${R$(c.budget)}, gasto ${R$(c.gasto)}, vendas (GMV) ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
-      const neg = state.negocioPorConta[state.contaAbertaId];
-      const negTexto = neg && !neg.erro ? `\nSAÚDE DO NEGÓCIO: faturamento desta semana ${R$(neg.semanaAtual)} vs semana anterior ${R$(neg.semanaAnterior)} (${neg.variacaoPct === Infinity ? '∞' : (neg.variacaoPct >= 0 ? '+' : '') + neg.variacaoPct.toFixed(1) + '%'}).` : '';
+      const neg = state.negocioPorConta[state.contaAbertaId + ':' + state.negocioPeriodo];
+      const negTexto = neg && !neg.erro ? `\nSAÚDE DO NEGÓCIO (período: ${state.negocioPeriodo === 'mes' ? 'mês atual' : state.negocioPeriodo + ' dias'}): faturamento ${R$(neg.semanaAtual)} vs período anterior equivalente ${R$(neg.semanaAnterior)} (${neg.variacaoPct === Infinity ? '∞' : (neg.variacaoPct >= 0 ? '+' : '') + neg.variacaoPct.toFixed(1) + '%'}).` : '';
       return [
         cfg ? `CONFIGURAÇÃO ATUAL DO PILOTO (conta ${cfg.cliente_nome || cfg.conta_id}, ${cfg.ativo ? 'ATIVO' : 'inativo'}):` : 'Nenhuma conta piloto configurada ainda.',
         cfg ? `Meta TACOS: ${cfg.meta_acos ?? '—'}% (métrica principal: investimento ADS ÷ faturamento TOTAL da loja, não ACOS isolado) | Orçamento: ${cfg.orcamento_min ?? '—'} a ${cfg.orcamento_max ?? '—'} | Margem: ${cfg.margem_pct ?? '—'}% | Estoque mínimo: ${cfg.estoque_minimo ?? '—'} | Pausa automática acima de ${cfg.regra_pausa_acos ?? '—'}% ACOS por ${cfg.regra_pausa_dias ?? '—'} dia(s), só após ${cfg.dias_maturacao_campanha ?? 7} dia(s) de maturação da campanha | Alerta humano se variação de orçamento > ${cfg.alerta_variacao_pct ?? '—'}% | Notas: ${cfg.notas || '—'}` : '',
@@ -488,21 +511,28 @@
 
     // ── Saúde do negócio (faturamento semana vs semana anterior) ──
     function renderNegocio(contaId) {
-      const n = state.negocioPorConta[contaId];
+      const n = state.negocioPorConta[contaId + ':' + state.negocioPeriodo];
       const subindo = n && !n.erro && n.variacaoPct !== Infinity && n.variacaoPct >= 0;
       const cor = !n || n.erro ? '#64748b' : subindo ? '#16a34a' : '#dc2626';
+      const PERIODOS = [['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['mes', 'Mês atual']];
+      const labelAtual = n && n.erro === undefined ? (state.negocioPeriodo === 'mes' ? 'mês anterior (mesmo período)' : `${state.negocioPeriodo} dias anteriores`) : '';
       return `<div class="ag-hud-card" style="--ag-hud-accent:${cor};margin-bottom:20px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:2px;">
           <div style="font-size:14px;font-weight:800;">📈 Saúde do negócio</div>
           <button class="btn btn-secondary btn-sm" ${state.carregandoNegocio ? 'disabled' : ''} onclick="window._agAtualizarNegocio()">🔄 Atualizar</button>
         </div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Faturamento total da loja — não só o atribuído ao ADS.</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px;">Faturamento total da loja — não só o atribuído ao ADS.</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+          ${PERIODOS.map(([valor, label]) => `
+            <button class="btn btn-sm ${state.negocioPeriodo === valor ? 'btn-primary' : 'btn-secondary'}" onclick="window._agMudarPeriodoNegocio('${valor}')">${label}</button>
+          `).join('')}
+        </div>
         ${state.carregandoNegocio && !n ? `<div style="color:var(--text-muted);font-size:13px;">⏳ calculando...</div>`
           : !n ? `<div style="color:var(--text-muted);font-size:13px;">Sem dados ainda.</div>`
           : n.erro ? `<div style="color:var(--text-muted);font-size:13px;">⚠️ erro ao buscar: ${esc(n.erro)}</div>` : `
           <div style="display:flex;gap:26px;flex-wrap:wrap;align-items:flex-end;">
-            <div><div class="ag-hud-label" style="margin-bottom:2px;">Esta semana</div><div class="ag-mono" style="font-size:22px;font-weight:800;">${R$(n.semanaAtual)}</div></div>
-            <div><div class="ag-hud-label" style="margin-bottom:2px;">Semana anterior</div><div class="ag-mono" style="font-size:16px;color:var(--text-muted);">${R$(n.semanaAnterior)}</div></div>
+            <div><div class="ag-hud-label" style="margin-bottom:2px;">${state.negocioPeriodo === 'mes' ? 'Mês atual' : `Últimos ${state.negocioPeriodo} dias`}</div><div class="ag-mono" style="font-size:22px;font-weight:800;">${R$(n.semanaAtual)}</div></div>
+            <div><div class="ag-hud-label" style="margin-bottom:2px;">${labelAtual || 'Período anterior'}</div><div class="ag-mono" style="font-size:16px;color:var(--text-muted);">${R$(n.semanaAnterior)}</div></div>
             <div><div class="ag-hud-label" style="margin-bottom:2px;">Variação</div><div class="ag-mono" style="font-size:22px;font-weight:800;color:${cor};">${n.variacaoPct === Infinity ? '∞' : (n.variacaoPct >= 0 ? '+' : '') + n.variacaoPct.toFixed(1) + '%'}</div></div>
           </div>
           <div style="margin-top:12px;font-size:12px;color:var(--text-muted);">Quer ver quais SKUs estão puxando essa variação (produtos em alta/queda)? A <a href="#analytics" style="color:var(--accent-light,#818cf8);">aba Analytics → Produtos em Queda</a> já tem esse detalhamento semana a semana, filtrado por cliente.</div>
@@ -860,6 +890,7 @@
     window._agFiltrarLog = (t) => { state.filtroLog = t; render(); };
     window._agAtualizarDados = () => buscarDadosAoVivo(state.contaAbertaId);
     window._agAtualizarNegocio = () => buscarNegocio(state.contaAbertaId);
+    window._agMudarPeriodoNegocio = (periodo) => { state.negocioPeriodo = periodo; render(); buscarNegocio(state.contaAbertaId, periodo); };
     window._agAbrirConta = (id) => {
       state.contaAbertaId = id; state.chatMessages = []; render();
       if (id && id !== '__novo__') { buscarDadosAoVivo(id); buscarNegocio(id); }
