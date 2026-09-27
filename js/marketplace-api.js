@@ -138,26 +138,60 @@ const MarketplaceAPI = {
 
   // ── Shopee ────────────────────────────────────────────────
 
+  // Converte um timestamp unix (segundos) pro formato "AAAA-MM-DD HH:MM:SS"
+  // em horário de Brasília — formato que shopee_sales_summary espera no
+  // end_date quando a gente continua uma busca parcial (continuar_de).
+  _brtDatetimeDe(unixSegundos) {
+    const d = new Date(unixSegundos * 1000 - 3 * 3600 * 1000);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+  },
+
+  _dataISO(diasAtras) {
+    const d = new Date(); d.setDate(d.getDate() - diasAtras);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  },
+
+  // Faturamento de um período/status, com paginação de verdade. Confirmado
+  // ao vivo: um período de só 27 dias já veio com parcial=true (800 de 1229
+  // pedidos somados) — usar só o 1º total_revenue SUBESTIMA o faturamento
+  // real. Continua chamando com end_date=continuar_de até parcial=false,
+  // somando (janelas disjuntas, nunca conta o mesmo pedido 2x).
+  async _shopeeFaturamentoPeriodo(shopId, startDate, endDate, orderStatus) {
+    let total = 0, pedidos = 0, itens = 0;
+    let end = endDate;
+    for (let i = 0; i < 40; i++) { // teto de segurança
+      const r = await this.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+      const d = r.data || r || {};
+      total += parseFloat(d.total_revenue) || 0;
+      pedidos = parseInt(d.total_orders) || pedidos; // total_orders já é a contagem cheia, não soma por página
+      itens += parseInt(d.total_items) || 0;
+      const parcial = d.parcial;
+      const continuarDe = d.continuar_de;
+      if (!parcial || !continuarDe) break;
+      end = this._brtDatetimeDe(continuarDe);
+    }
+    return { total, pedidos, itens };
+  },
+
   // Resumo de vendas Shopee (até 90 dias)
   // Soma COMPLETED + READY_TO_SHIP + SHIPPED (exclui CANCELLED e UNPAID)
   async shopeeFaturamento(shopId, dias = 30) {
     const diasLimitado = Math.min(dias, 90);
     const statuses = ['COMPLETED', 'READY_TO_SHIP', 'SHIPPED'];
+    const inicioISO = this._dataISO(diasLimitado - 1);
+    const fimISO = this._dataISO(0);
     let totalFaturamento = 0;
     let totalPedidos = 0;
     let totalItens = 0;
 
     for (const st of statuses) {
       try {
-        const r = await this.call('shopee_sales_summary', {
-          shopId,
-          days: diasLimitado,
-          order_status: st,
-        });
-        const d = r.data || r || {};
-        totalFaturamento += parseFloat(d.total_revenue) || 0;
-        totalPedidos     += parseInt(d.total_orders)    || 0;
-        totalItens       += parseInt(d.total_items)     || 0;
+        const { total, pedidos, itens } = await this._shopeeFaturamentoPeriodo(shopId, inicioISO, fimISO, st);
+        totalFaturamento += total;
+        totalPedidos     += pedidos;
+        totalItens       += itens;
       } catch(e) {
         console.warn(`[SHOPEE] erro status ${st}:`, e.message);
       }
