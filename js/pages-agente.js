@@ -91,10 +91,20 @@
       let offset = 0;
       const limit = 100;
       for (let pagina = 0; pagina < 20; pagina++) { // teto de 2000 campanhas
-        const json = await MarketplaceAPI.call('raw_read', {
-          marketplace: 'shopee', shopId,
-          path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
-        });
+        let json;
+        try {
+          json = await MarketplaceAPI.call('raw_read', {
+            marketplace: 'shopee', shopId,
+            path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
+          });
+        } catch (e) {
+          // "raw_read" já apareceu falhando com "Falha ao renovar token Meli"
+          // numa conta 100% Shopee — parece o conector renovando token de
+          // TODAS as contas vinculadas à chave antes de atender o pedido.
+          // Não deixa isso quebrar a tela inteira — segue com o que já foi
+          // paginado até aqui.
+          break;
+        }
         const lista = json.data?.response?.campaign_list || json.response?.campaign_list || [];
         campanhas.push(...lista);
         const temMais = json.data?.response?.has_next_page ?? json.response?.has_next_page;
@@ -486,26 +496,72 @@
       </div>`;
     }
 
-    // ── Fila de Atenção: só o que precisa de humano (alertas pendentes) ──
-    function renderFilaAtencao(contaId) {
-      const itens = state.logs.filter(l => l.conta_id === contaId && l.tipo === 'alerta' && l.resultado === 'so_alerta')
-        .sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 15);
-      return `<div class="ag-hud-card" style="--ag-hud-accent:#d97706;margin-bottom:20px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
-          <div style="font-size:14px;font-weight:800;">🔔 Fila de atenção</div>
+    // ── Extrai ação/de→para de uma entrada de log (decisão ou alerta) pra
+    // exibição compacta em card — mesma lógica usada no Kanban. ──
+    function descreverAcao(l) {
+      const d = l.dados || {};
+      const n1 = v => (Math.round(parseFloat(v) * 10) / 10).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      const nomeCampanha = esc((l.titulo || '').replace(/^(Campanha pausada|Orçamento ajustado|Meta de ROAS ajustada|Falha ao pausar|Falha ao ajustar orçamento|Falha ao ajustar meta de ROAS|Sugestão de baixar meta de ROI|Sugestão de subir meta de ROI|Sugestão de aumento de orçamento|Sugestão de corte de orçamento) — /, ''));
+      let acaoLabel = null, acaoCor = '#64748b', deParaVal = null;
+      if (d.roas_de != null && d.roas_para != null) {
+        const maisAgressivo = d.roas_para < d.roas_de;
+        acaoLabel = maisAgressivo ? '▼ Lance + agressivo' : '▲ Lance + conservador';
+        acaoCor = maisAgressivo ? '#22d3ee' : '#d97706';
+        deParaVal = `${n1(d.roas_de)}x → ${n1(d.roas_para)}x`;
+      } else if (d.budget_de != null && d.budget_para != null) {
+        const subiu = d.budget_para > d.budget_de;
+        acaoLabel = subiu ? '▲ Orçamento ↑' : '▼ Orçamento ↓';
+        acaoCor = subiu ? '#22d3ee' : '#d97706';
+        deParaVal = `${R$(d.budget_de)} → ${R$(d.budget_para)}`;
+      } else if ((l.titulo || '').includes('pausada')) {
+        acaoLabel = '⏸ Pausada'; acaoCor = '#dc2626';
+      }
+      return { nomeCampanha, acaoLabel, acaoCor, deParaVal, acos: d.acos != null ? n1(d.acos) + '%' : null };
+    }
+
+    function cardKanban(l, corBorda) {
+      const { nomeCampanha, acaoLabel, acaoCor, deParaVal, acos } = descreverAcao(l);
+      return `<div style="border:1px solid var(--border);border-left:3px solid ${corBorda};border-radius:8px;padding:10px 12px;background:var(--bg-card-hover,#f7f7fb);">
+        <div style="font-size:12.5px;font-weight:700;line-height:1.4;">${nomeCampanha || esc(l.titulo)}</div>
+        ${acaoLabel ? `<span class="ag-action-chip" style="color:${acaoCor};background:${acaoCor}1a;margin-top:6px;">${acaoLabel}</span>` : ''}
+        ${deParaVal ? `<div class="ag-mono" style="font-size:12px;margin-top:6px;">${deParaVal}</div>` : ''}
+        ${acos ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">ACOS ${acos}</div>` : ''}
+        ${l.explicacao && !acaoLabel ? `<div style="font-size:11.5px;color:var(--text-secondary);margin-top:6px;line-height:1.5;">${nl2br(l.explicacao.slice(0, 180))}${l.explicacao.length > 180 ? '…' : ''}</div>` : ''}
+        <div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;">${new Date(l.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+      </div>`;
+    }
+
+    // ── Kanban de mudanças e resultados: 3 colunas por status — aguardando
+    // aprovação (precisa de humano), executado (ação automática deu certo),
+    // falhou (tentou executar e a API devolveu erro). Mais visual que a
+    // tabela/log corrido — dá pra ver de relance o que está pendente e o
+    // que já foi resolvido. ──
+    function renderKanban(contaId) {
+      const relevantes = state.logs.filter(l => l.conta_id === contaId && (l.tipo === 'decisao' || l.tipo === 'alerta'));
+      const pendentes = relevantes.filter(l => l.resultado === 'so_alerta').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
+      const executados = relevantes.filter(l => l.resultado === 'executado').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
+      const falharam = relevantes.filter(l => l.resultado === 'erro').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
+
+      const coluna = (titulo, cor, itens, vazio) => `
+        <div style="flex:1;min-width:260px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:${cor};"></span>
+            <div style="font-size:13px;font-weight:800;">${titulo}</div>
+            <span style="font-size:11px;color:var(--text-muted);background:var(--bg-card-hover,#f1f1f5);padding:1px 8px;border-radius:99px;">${itens.length}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;max-height:520px;overflow-y:auto;padding-right:2px;">
+            ${itens.length ? itens.map(l => cardKanban(l, cor)).join('') : `<div style="text-align:center;padding:20px 10px;color:var(--text-muted);font-size:12px;">${vazio}</div>`}
+          </div>
+        </div>`;
+
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:800;margin-bottom:2px;">🗂️ Mudanças e resultados</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:16px;">O que está esperando sua aprovação, o que o agente já executou sozinho, e o que tentou executar e falhou.</div>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;">
+          ${coluna('🔔 Aguardando aprovação', '#d97706', pendentes, '✅ Nada pendente agora')}
+          ${coluna('✅ Executado', '#16a34a', executados, 'Nenhuma ação automática ainda')}
+          ${coluna('⚠️ Falhou', '#dc2626', falharam, 'Sem falhas registradas')}
         </div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Só o que precisa de um julgamento seu — mais recente primeiro.</div>
-        ${!itens.length ? `<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px;">✅ Nada pendente agora — o agente está resolvendo tudo dentro das regras configuradas.</div>` : `
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          ${itens.map(l => `
-            <div style="border:1px solid var(--border);border-left:3px solid #d97706;border-radius:8px;padding:10px 14px;">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px;">
-                <div style="font-size:13px;font-weight:700;">${esc(l.titulo)}</div>
-                <span style="font-size:10.5px;color:var(--text-muted);white-space:nowrap;">${new Date(l.criado_em).toLocaleString('pt-BR')}</span>
-              </div>
-              ${l.explicacao ? `<div style="font-size:12.5px;color:var(--text-secondary);margin-top:6px;line-height:1.55;">${nl2br(l.explicacao)}</div>` : ''}
-            </div>`).join('')}
-        </div>`}
       </div>`;
     }
 
@@ -682,63 +738,6 @@
     }
 
     // ── Decisões automáticas (histórico, colapsado) ──
-    function renderDecisoesRecentes(contaId) {
-      const decisoes = state.logs.filter(l => l.conta_id === contaId && l.tipo === 'decisao').slice(0, 30);
-      if (!decisoes.length) return '';
-      const nomeCampanha = titulo => esc((titulo || '').replace(/^(Campanha pausada|Orçamento ajustado|Meta de ROAS ajustada|Falha ao pausar|Falha ao ajustar orçamento|Falha ao ajustar meta de ROAS) — /, ''));
-      const n1 = v => (Math.round(parseFloat(v) * 10) / 10).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-
-      return `<details style="margin-bottom:20px;">
-        <summary style="cursor:pointer;font-size:14px;font-weight:700;padding:4px 0;">⚙️ Decisões automáticas — histórico (${decisoes.length})</summary>
-        <div class="ag-hud-card" style="--ag-hud-accent:#22d3ee;margin-top:10px;overflow-x:auto;">
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">O que o agente mudou em cada campanha, sozinho, dentro dos guardrails.</div>
-        <table class="ag-tech-table">
-          <thead>
-            <tr>
-              <th>Produto / campanha</th>
-              <th>Ação</th>
-              <th>De → Para</th>
-              <th>ACOS</th>
-              <th>Resultado</th>
-              <th>Quando</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${decisoes.map(l => {
-              const d = l.dados || {};
-              let acaoLabel = '—', acaoCor = '#64748b', deParaVal = '—', rowAccent = '#64748b';
-              if (d.roas_de != null && d.roas_para != null) {
-                const maisAgressivo = d.roas_para < d.roas_de;
-                acaoLabel = maisAgressivo ? '▼ Lance + agressivo' : '▲ Lance + conservador';
-                acaoCor = maisAgressivo ? '#22d3ee' : '#d97706';
-                rowAccent = acaoCor;
-                deParaVal = `${n1(d.roas_de)}x → ${n1(d.roas_para)}x`;
-              } else if (d.budget_de != null && d.budget_para != null) {
-                const subiu = d.budget_para > d.budget_de;
-                acaoLabel = subiu ? '▲ Orçamento ↑' : '▼ Orçamento ↓';
-                acaoCor = subiu ? '#22d3ee' : '#d97706';
-                rowAccent = acaoCor;
-                deParaVal = `${R$(d.budget_de)} → ${R$(d.budget_para)}`;
-              } else if ((l.titulo || '').includes('pausada')) {
-                acaoLabel = '⏸ Pausada';
-                acaoCor = '#dc2626';
-                rowAccent = acaoCor;
-              }
-              return `<tr style="--row-accent:${rowAccent};">
-                <td style="max-width:260px;">${nomeCampanha(l.titulo)}</td>
-                <td><span class="ag-action-chip" style="color:${acaoCor};background:${acaoCor}1a;">${acaoLabel}</span></td>
-                <td class="ag-mono" style="white-space:nowrap;">${deParaVal}</td>
-                <td class="ag-mono" style="white-space:nowrap;">${d.acos != null ? n1(d.acos) + '%' : '—'}</td>
-                <td style="white-space:nowrap;color:${RESULTADO_COR[l.resultado] || 'var(--text-muted)'};font-weight:700;">${RESULTADO_LABEL[l.resultado] || l.resultado}</td>
-                <td class="ag-mono" style="white-space:nowrap;">${new Date(l.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-        </div>
-      </details>`;
-    }
-
     // ── Relatórios diários ────────────────────────────────────
     function renderRelatorios(contaId) {
       const lista = state.relatorios.filter(r => r.conta_id === contaId);
@@ -818,10 +817,9 @@
       root.innerHTML = `
         ${voltar}
         ${renderSaudeHero(cfg)}
-        ${renderFilaAtencao(cfg.conta_id)}
+        ${renderKanban(cfg.conta_id)}
         ${renderNegocio(cfg.conta_id)}
         ${renderCampanhasAoVivo(cfg.conta_id)}
-        ${renderDecisoesRecentes(cfg.conta_id)}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="ag-grid-resp">
           <div>
             ${renderConfig()}
