@@ -164,7 +164,7 @@
         // pra popular a tabela "Campanhas ao vivo" (o que dá pra ver), e
         // "pedidosTotal"/"ativas" ficam limitados ao que ela enxerga — os
         // totais de verdade (gastoTotal/gmvTotal/tacosGeral) são calculados
-        // depois, com shopee_ads_daily_performance + GMV Max da Loja.
+        // depois, com shopee_ads_daily_performance.
         let pedidosTotal = 0, ativas = 0;
         const porCampanha = [];
         campanhas.forEach(c => {
@@ -195,21 +195,16 @@
               faturamentoTotal += parseFloat(r.data?.total_revenue ?? r.total_revenue) || 0;
             } catch (e) {}
           }
-          // Gasto/GMV de ADS de verdade: performance diária da loja inteira
-          // (campanhas individuais, inclusive modo GMV Max por produto) +
-          // GMV Max da Loja (campanha guarda-chuva separada) — as duas somadas,
-          // nunca uma no lugar da outra.
+          // Gasto/GMV de ADS: performance diária da loja inteira (campanhas
+          // individuais, inclusive modo GMV Max por produto). Escopo do
+          // agente é só campanhas individuais — GMV Max da Loja fica de fora
+          // (o agente nunca conseguia agir nele mesmo, só gerava alerta).
           let gastoTotal = 0, gmvTotal = 0;
           try {
             const perfDiario = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: seteDiasAtras, end_date: hoje });
             const diasPerf = perfDiario.data?.response || perfDiario.response || [];
             diasPerf.forEach(d => { gastoTotal += parseFloat(d.expense) || 0; gmvTotal += parseFloat(d.broad_gmv) || 0; });
           } catch (e) {}
-          try {
-            const gmsPerf = await MarketplaceAPI.call('shopee_ads_gms_performance', { shopId, start_date: seteDiasAtras, end_date: hoje });
-            const rep = gmsPerf.data?.response?.report || gmsPerf.response?.report;
-            if (rep) { gastoTotal += parseFloat(rep.expense) || 0; gmvTotal += parseFloat(rep.broad_gmv) || 0; }
-          } catch (e) { /* loja pode não ter GMV Max da Loja ativo — normal */ }
           const tacosGeral = faturamentoTotal > 0 ? (gastoTotal / faturamentoTotal * 100) : (gastoTotal > 0 ? Infinity : 0);
           resultado = {
             atualizadoEm: new Date().toISOString(),
@@ -400,7 +395,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            system: `Você é o Agente Autônomo de ADS da GLR Consultoria. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento/meta de ROAS diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Muitas campanhas hoje em dia (GMV Max, lance automático) são geridas pelo algoritmo da própria Shopee/TikTok — o papel do agente aí é ajustar o guardrail (meta de ROAS), não microgerenciar lance por lance. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Use os dados de contexto abaixo (configuração, dados ao vivo, saúde do negócio, último relatório, log recente) pra responder — nunca invente números que não estão aí. Se o analista pedir pra mudar uma regra, explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
+            system: `Você é o Agente Autônomo de ADS da GLR Consultoria. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento/meta de ROAS diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Muitas campanhas individuais hoje em dia (modo GMV Max por produto, lance automático) são geridas pelo algoritmo da própria Shopee/TikTok — o papel do agente aí é ajustar o guardrail (meta de ROAS), não microgerenciar lance por lance. O agente só mexe em campanhas individuais — o GMV Max da Loja (campanha única, guarda-chuva, por conta inteira) está fora do escopo por decisão do analista, não monitorado nem ajustado. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Use os dados de contexto abaixo (configuração, dados ao vivo, saúde do negócio, último relatório, log recente) pra responder — nunca invente números que não estão aí. Se o analista pedir pra mudar uma regra, explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
             messages: state.chatMessages,
           }),
         });
