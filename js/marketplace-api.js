@@ -165,7 +165,11 @@ const MarketplaceAPI = {
       const r = await this.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
       const d = r.data || r || {};
       total += parseFloat(d.total_revenue) || 0;
-      pedidos = parseInt(d.total_orders) || pedidos; // total_orders já é a contagem cheia, não soma por página
+      // pedidos_somados (não total_orders) — confirmado ao vivo que
+      // total_orders NÃO é estável entre páginas de continuação (voltou 1229
+      // na 1ª chamada e 82 na 2ª, sem bater), enquanto pedidos_somados reflete
+      // corretamente os pedidos genuinamente somados naquela janela.
+      pedidos += parseInt(d.pedidos_somados) || 0;
       itens += parseInt(d.total_items) || 0;
       const parcial = d.parcial;
       const continuarDe = d.continuar_de;
