@@ -42,6 +42,7 @@
       negocioPorConta: {}, carregandoNegocio: false, negocioPeriodo: '7',
       executandoAcaoManual: false,
       rodandoAgente: false, resultadoRodada: null,
+      processandoAlertaId: null,
     };
 
     function render() { renderShell(); }
@@ -750,16 +751,77 @@
       return { nomeCampanha, acaoLabel, acaoCor, deParaVal, acos: d.acos != null ? n1(d.acos) + '%' : null };
     }
 
-    function cardKanban(l, corBorda) {
+    function cardKanban(l, corBorda, comAcoes) {
       const { nomeCampanha, acaoLabel, acaoCor, deParaVal, acos } = descreverAcao(l);
+      // Alerta pendente tem os valores sugeridos em campos "_atual/_sugerido"
+      // (gerados pela Regra 3/4 do cron), não "_de/_para" (só usado nos já
+      // executados) — precisa achar aqui pra saber se dá pra aprovar de
+      // verdade ou se é só informativo (ex: alerta de GMV Max da Loja, fora
+      // do escopo do agente, sem ação automática associada).
+      const d = l.dados || {};
+      const temAcaoExecutavel = d.campaign_id != null && (d.roas_sugerido != null || d.budget_sugerido != null);
+      const processando = state.processandoAlertaId === l.id;
       return `<div style="border:1px solid var(--border);border-left:3px solid ${corBorda};border-radius:8px;padding:10px 12px;background:var(--bg-card-hover,#f7f7fb);">
         <div style="font-size:12.5px;font-weight:700;line-height:1.4;">${nomeCampanha || esc(l.titulo)}</div>
         ${acaoLabel ? `<span class="ag-action-chip" style="color:${acaoCor};background:${acaoCor}1a;margin-top:6px;">${acaoLabel}</span>` : ''}
         ${deParaVal ? `<div class="ag-mono" style="font-size:12px;margin-top:6px;">${deParaVal}</div>` : ''}
         ${acos ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">ACOS ${acos}</div>` : ''}
-        ${l.explicacao && !acaoLabel ? `<div style="font-size:11.5px;color:var(--text-secondary);margin-top:6px;line-height:1.5;">${nl2br(l.explicacao.slice(0, 180))}${l.explicacao.length > 180 ? '…' : ''}</div>` : ''}
+        ${l.explicacao ? `<div style="font-size:11.5px;color:var(--text-secondary);margin-top:6px;line-height:1.5;">${nl2br(l.explicacao.slice(0, 180))}${l.explicacao.length > 180 ? '…' : ''}</div>` : ''}
         <div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;">${new Date(l.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+        ${comAcoes ? `<div style="display:flex;gap:6px;margin-top:10px;">
+          ${temAcaoExecutavel ? `<button class="btn btn-sm" style="background:#16a34a1a;color:#16a34a;border:1px solid #16a34a44;flex:1;" ${processando ? 'disabled' : ''} onclick="window._agAprovarAlerta('${l.id}')">${processando ? '⏳...' : '✅ Aprovar'}</button>` : `<span style="font-size:10.5px;color:var(--text-muted);flex:1;align-self:center;">Informativo — sem ação automática pra aprovar</span>`}
+          <button class="btn btn-sm" style="background:#dc26261a;color:#dc2626;border:1px solid #dc262644;" ${processando ? 'disabled' : ''} onclick="window._agDescartarAlerta('${l.id}')">${processando ? '⏳' : '🚫 Descartar'}</button>
+        </div>` : ''}
       </div>`;
+    }
+
+    async function aprovarAlerta(logId) {
+      const l = state.logs.find(x => String(x.id) === String(logId));
+      if (!l) return;
+      const d = l.dados || {};
+      if (d.campaign_id == null || (d.roas_sugerido == null && d.budget_sugerido == null)) {
+        alert('Esse alerta é informativo — não tem ação automática associada pra aprovar. Ajuste manualmente na Shopee se for o caso, ou descarte.');
+        return;
+      }
+      const cfg = configDaConta(l.conta_id);
+      state.processandoAlertaId = logId;
+      render();
+      try {
+        if (d.roas_sugerido != null) {
+          await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: l.conta_id, campaign_id: Number(d.campaign_id), roas_target: d.roas_sugerido });
+        } else {
+          await MarketplaceAPI.call('shopee_ads_edit_campaign', {
+            shopId: l.conta_id,
+            params: { campaign_id: Number(d.campaign_id), budget: d.budget_sugerido, edit_action: 'change_budget', reference_id: `glr-aprovado-${Date.now()}-${d.campaign_id}` },
+          });
+        }
+        await _sb.from('glr_agente_log').update({ resultado: 'executado' }).eq('id', l.id);
+        await _sb.from('glr_agente_log').insert({
+          conta_id: l.conta_id, cliente_nome: cfg?.cliente_nome || null, tipo: 'decisao',
+          titulo: `Aprovado manualmente — ${(l.titulo || '').replace(/^Sugestão de /, '')}`,
+          explicacao: `Alerta aprovado pelo analista. ${l.explicacao || ''}`, dados: d, resultado: 'executado', origem: 'aprovacao_manual',
+        });
+      } catch (e) {
+        alert('Erro ao executar: ' + (e.message || e));
+      } finally {
+        state.processandoAlertaId = null;
+        await carregarTudo();
+      }
+    }
+
+    async function descartarAlerta(logId) {
+      const l = state.logs.find(x => String(x.id) === String(logId));
+      if (!l) return;
+      state.processandoAlertaId = logId;
+      render();
+      try {
+        await _sb.from('glr_agente_log').update({ resultado: 'descartado' }).eq('id', l.id);
+      } catch (e) {
+        alert('Erro ao descartar: ' + (e.message || e));
+      } finally {
+        state.processandoAlertaId = null;
+        await carregarTudo();
+      }
     }
 
     // ── Kanban de mudanças e resultados: 3 colunas por status — aguardando
@@ -773,7 +835,7 @@
       const executados = relevantes.filter(l => l.resultado === 'executado').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
       const falharam = relevantes.filter(l => l.resultado === 'erro').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
 
-      const coluna = (titulo, cor, itens, vazio) => `
+      const coluna = (titulo, cor, itens, vazio, comAcoes) => `
         <div style="flex:1;min-width:260px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
             <span style="width:8px;height:8px;border-radius:50%;background:${cor};"></span>
@@ -781,7 +843,7 @@
             <span style="font-size:11px;color:var(--text-muted);background:var(--bg-card-hover,#f1f1f5);padding:1px 8px;border-radius:99px;">${itens.length}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;max-height:520px;overflow-y:auto;padding-right:2px;">
-            ${itens.length ? itens.map(l => cardKanban(l, cor)).join('') : `<div style="text-align:center;padding:20px 10px;color:var(--text-muted);font-size:12px;">${vazio}</div>`}
+            ${itens.length ? itens.map(l => cardKanban(l, cor, comAcoes)).join('') : `<div style="text-align:center;padding:20px 10px;color:var(--text-muted);font-size:12px;">${vazio}</div>`}
           </div>
         </div>`;
 
@@ -789,9 +851,9 @@
         <div style="font-size:14px;font-weight:800;margin-bottom:2px;">🗂️ Mudanças e resultados</div>
         <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:16px;">O que está esperando sua aprovação, o que o agente já executou sozinho, e o que tentou executar e falhou.</div>
         <div style="display:flex;gap:18px;flex-wrap:wrap;">
-          ${coluna('🔔 Aguardando aprovação', '#d97706', pendentes, '✅ Nada pendente agora')}
-          ${coluna('✅ Executado', '#16a34a', executados, 'Nenhuma ação automática ainda')}
-          ${coluna('⚠️ Falhou', '#dc2626', falharam, 'Sem falhas registradas')}
+          ${coluna('🔔 Aguardando aprovação', '#d97706', pendentes, '✅ Nada pendente agora', true)}
+          ${coluna('✅ Executado', '#16a34a', executados, 'Nenhuma ação automática ainda', false)}
+          ${coluna('⚠️ Falhou', '#dc2626', falharam, 'Sem falhas registradas', false)}
         </div>
       </div>`;
     }
@@ -1134,6 +1196,8 @@
     window._agVoltarPortfolio = () => { state.contaAbertaId = null; render(); };
     window._agExecutarAcaoManual = executarAcaoManual;
     window._agRodarAgora = rodarAgenteAgora;
+    window._agAprovarAlerta = aprovarAlerta;
+    window._agDescartarAlerta = descartarAlerta;
     window._agUsarCampanhaManual = (id, nome) => {
       const campoId = document.getElementById('ag-man-campanha');
       const campoNome = document.getElementById('ag-man-nome');
