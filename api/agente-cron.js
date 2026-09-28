@@ -557,6 +557,72 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       }
     }
 
+    // Regra 5 — saúde do negócio: as Regras 1-4 acima só reagem ao ACOS de
+    // cada campanha isolada. Pedido explícito do analista: "se a conta está
+    // em queda, precisa fazer alguma coisa pra avaliar melhora" — sem
+    // depender dele perguntar no chat toda vez. Compara faturamento total da
+    // loja dos últimos 7 dias vs os 7 dias anteriores (mesma janela que o
+    // card "Saúde do negócio" usa) e, se caiu de forma relevante (≥15%),
+    // sugere reforçar a campanha ativa mais eficiente (menor ACOS) — sempre
+    // como alerta pendente de aprovação, nunca executa sozinho. Quando a
+    // conta está em crescimento ou estável, não faz nada aqui: a Regra 3
+    // já acelera sozinha (sem esperar pergunta) qualquer campanha com ACOS
+    // bem abaixo da meta, que é o "acelerar ainda mais" que crescimento pede.
+    try {
+      const fimSaude = dataBRT(1), inicioSaude = dataBRT(7);
+      const fimAnteriorSaude = dataBRT(8), inicioAnteriorSaude = dataBRT(14);
+      let faturamentoSaudeAtual = 0, faturamentoSaudeAnterior = 0;
+      for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
+        try { faturamentoSaudeAtual += await shopeeFaturamentoPeriodo(mcApiKey, shopId, inicioSaude.iso, fimSaude.iso, st); } catch (e) {}
+      }
+      for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
+        try { faturamentoSaudeAnterior += await shopeeFaturamentoPeriodo(mcApiKey, shopId, inicioAnteriorSaude.iso, fimAnteriorSaude.iso, st); } catch (e) {}
+      }
+      const variacaoSaude = faturamentoSaudeAnterior > 0 ? ((faturamentoSaudeAtual - faturamentoSaudeAnterior) / faturamentoSaudeAnterior) * 100 : null;
+
+      // Evita empilhar o mesmo alerta toda vez que o agente roda (cron diário
+      // + cliques manuais no mesmo dia) — só sugere de novo se a pendência
+      // anterior já foi resolvida (aprovada/descartada).
+      const jaTemAlertaPendente = (await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&titulo=like.*Queda%20de%20faturamento*&resultado=eq.so_alerta&select=id&limit=1`).catch(() => [])).length > 0;
+
+      if (!jaTemAlertaPendente && variacaoSaude != null && variacaoSaude <= -15) {
+        let melhor = null;
+        for (const c of campanhas) {
+          const settings = settingsPorId[c.campaign_id], diario = diarioPorId[c.campaign_id];
+          if (!settings || !diario) continue;
+          if ((settings.campaign_status || '').toLowerCase() !== 'ongoing') continue;
+          const acosC = diario.gmv > 0 ? (diario.gasto / diario.gmv) * 100 : (diario.gasto > 0 ? Infinity : null);
+          if (acosC == null || acosC === Infinity) continue;
+          if (!melhor || acosC < melhor.acos) melhor = { id: c.campaign_id, nome: (settings.ad_name || `Campanha ${c.campaign_id}`).slice(0, 70), acos: acosC, budget: parseFloat(settings.campaign_budget) || 0, roasTarget: settings.roas_target };
+        }
+        if (melhor) {
+          const usaRoas = melhor.budget === 0 && melhor.roasTarget != null;
+          const dadosSug = { campaign_id: melhor.id };
+          let titulo = null, explicacao = '';
+          if (usaRoas) {
+            const metaRoasConta = 100 / (cfg.meta_acos || 8);
+            const novoRoas = Math.round(Math.max(1, metaRoasConta, melhor.roasTarget * 0.85) * 10) / 10;
+            if (novoRoas < melhor.roasTarget) {
+              dadosSug.roas_atual = melhor.roasTarget; dadosSug.roas_sugerido = novoRoas;
+              titulo = `Queda de faturamento — reforçar ${melhor.nome}`;
+              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% nos últimos 7 dias vs os 7 anteriores (${R$(faturamentoSaudeAtual)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — baixando meta de ROAS de ${melhor.roasTarget}x pra ${novoRoas}x pra tentar puxar mais volume e ajudar a reverter a queda.`;
+            }
+          } else if (melhor.budget > 0) {
+            const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, melhor.budget * 1.2) * 100) / 100;
+            if (novoBudget > melhor.budget) {
+              dadosSug.budget_atual = melhor.budget; dadosSug.budget_sugerido = novoBudget;
+              titulo = `Queda de faturamento — reforçar ${melhor.nome}`;
+              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% nos últimos 7 dias vs os 7 anteriores (${R$(faturamentoSaudeAtual)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — subindo orçamento de ${R$(melhor.budget)} pra ${R$(novoBudget)} pra tentar puxar mais volume e ajudar a reverter a queda.`;
+            }
+          }
+          if (titulo) {
+            await logar('alerta', titulo, explicacao, dadosSug, 'so_alerta');
+            alertas.push(titulo);
+          }
+        }
+      }
+    } catch (e) { /* saúde do negócio é bônus — não derruba a revisão diária se falhar */ }
+
     // Resumo de execução do dia (sempre grava, mesmo sem nenhuma ação — é o
     // registro de que o agente rodou e revisou a conta)
     await logar('sistema', `Revisão diária concluída — ${decisoes.length} ação(ões), ${alertas.length} alerta(s)`,
