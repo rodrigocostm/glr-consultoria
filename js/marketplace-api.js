@@ -162,16 +162,25 @@ const MarketplaceAPI = {
     let total = 0, pedidos = 0, itens = 0;
     let end = endDate;
     for (let i = 0; i < 40; i++) { // teto de segurança
-      // Retry único por página — confirmado ao vivo que a chamada pode falhar
-      // de forma intermitente; sem retry, um catch externo engolia o erro e
-      // tratava como "R$0 desse status", subestimando o faturamento total
-      // (chegou a aparecer pela metade do real).
-      let r;
-      try {
-        r = await this.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
-      } catch (e) {
-        r = await this.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+      // A falha aqui NÃO é sempre um erro de rede — confirmado ao vivo que às
+      // vezes a chamada "funciona" (sem lançar exceção) mas devolve uma
+      // resposta sem total_orders, como se não tivesse pedido nenhum, quando
+      // na verdade tem centenas. Trata resposta sem total_orders como falha
+      // e tenta de novo (até 3 tentativas no total).
+      let r, ultimoErro;
+      for (let tentativa = 0; tentativa < 3; tentativa++) {
+        try {
+          r = await this.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+          const dd = r.data || r || {};
+          if (dd.total_orders != null) break;
+          ultimoErro = new Error('resposta sem total_orders (provável falha silenciosa da API)');
+          r = null;
+        } catch (e) {
+          ultimoErro = e;
+          r = null;
+        }
       }
+      if (!r) throw ultimoErro || new Error(`Não consegui buscar ${orderStatus} depois de 3 tentativas`);
       const d = r.data || r || {};
       total += parseFloat(d.total_revenue) || 0;
       // pedidos_somados (não total_orders) — confirmado ao vivo que

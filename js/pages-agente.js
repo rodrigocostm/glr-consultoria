@@ -134,16 +134,27 @@
       let total = 0;
       let end = endDate;
       for (let i = 0; i < 40; i++) { // teto de segurança
-        // Retry único por página — confirmado ao vivo que a chamada pode
-        // falhar de forma intermitente (mesma instabilidade do conector já
-        // vista com raw_read); sem retry, o catch de fora engolia o erro e
-        // tratava como "R$0 desse status", subestimando o total em até ~1/3.
-        let r;
-        try {
-          r = await MarketplaceAPI.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
-        } catch (e) {
-          r = await MarketplaceAPI.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+        // A falha aqui NÃO é sempre um erro de rede (isso o try/catch já
+        // pegava) — confirmado ao vivo que às vezes a chamada "funciona"
+        // (sem lançar exceção) mas devolve uma resposta sem total_orders,
+        // como se não tivesse pedido nenhum, quando na verdade tem centenas.
+        // Um total_revenue "limpo" de R$0 sem total_orders é sinal de
+        // resposta incompleta, não de status realmente vazio — trata como
+        // falha e tenta de novo (até 3 tentativas no total).
+        let r, ultimoErro;
+        for (let tentativa = 0; tentativa < 3; tentativa++) {
+          try {
+            r = await MarketplaceAPI.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+            const d = r.data || r || {};
+            if (d.total_orders != null) break; // resposta bem formada, aceita
+            ultimoErro = new Error('resposta sem total_orders (provável falha silenciosa da API)');
+            r = null;
+          } catch (e) {
+            ultimoErro = e;
+            r = null;
+          }
         }
+        if (!r) throw ultimoErro || new Error(`Não consegui buscar ${orderStatus} depois de 3 tentativas`);
         total += parseFloat(r.data?.total_revenue ?? r.total_revenue) || 0;
         const parcial = r.data?.parcial ?? r.parcial;
         const continuarDe = r.data?.continuar_de ?? r.continuar_de;
