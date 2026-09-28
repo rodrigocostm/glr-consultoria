@@ -655,7 +655,19 @@
       try {
         let dados = {};
         if (tipo === 'orcamento') {
-          await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaId, campaign_id: Number(campaignId), campaign_budget: valor });
+          // shopee_ads_edit_campaign é passthrough cru — exige params.edit_action
+          // ="change_budget", params.budget (não campaign_budget) e um
+          // params.reference_id único, confirmado ao vivo (sem isso a Shopee
+          // rejeita com "Invalid param type" / "EditAction is required").
+          await MarketplaceAPI.call('shopee_ads_edit_campaign', {
+            shopId: contaId,
+            params: {
+              campaign_id: Number(campaignId),
+              budget: valor,
+              edit_action: 'change_budget',
+              reference_id: `glr-manual-${Date.now()}-${campaignId}`,
+            },
+          });
           dados = { budget_para: valor };
         } else if (tipo === 'roas') {
           await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: contaId, campaign_id: Number(campaignId), roas_target: valor });

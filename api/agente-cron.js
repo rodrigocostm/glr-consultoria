@@ -307,7 +307,21 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
 
   async function executarOrcamento(campaignId, nome, novoBudget, explicacao, dados) {
     try {
-      await mcpCall(mcApiKey, 'shopee_ads_edit_campaign', { shopId, campaign_id: Number(campaignId), campaign_budget: novoBudget });
+      // shopee_ads_edit_campaign é passthrough cru pra edit_manual_product_ads
+      // — confirmado ao vivo que exige params.edit_action="change_budget",
+      // params.budget (não campaign_budget) e um params.reference_id único.
+      // Sem isso a Shopee rejeita com "Invalid param type" / "EditAction is
+      // required" — essa função vinha falhando silenciosamente (cai no catch,
+      // loga 'erro') toda vez que a Regra 3/4 tentava ajustar orçamento.
+      await mcpCall(mcApiKey, 'shopee_ads_edit_campaign', {
+        shopId,
+        params: {
+          campaign_id: Number(campaignId),
+          budget: novoBudget,
+          edit_action: 'change_budget',
+          reference_id: `glr-agente-${Date.now()}-${campaignId}`,
+        },
+      });
       await logar('decisao', `Orçamento ajustado — ${nome}`, explicacao, dados, 'executado');
       decisoes.push(nome);
     } catch (e) {
