@@ -569,14 +569,31 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // já acelera sozinha (sem esperar pergunta) qualquer campanha com ACOS
     // bem abaixo da meta, que é o "acelerar ainda mais" que crescimento pede.
     try {
+      // Custo baixo de propósito: a versão inicial usava shopeeFaturamentoPeriodo
+      // (com retry 3x e paginação real por status) pras 2 janelas — 10 chamadas
+      // pesadas, cada uma podendo encadear várias outras. Isso estourou os 60s
+      // de maxDuration da função na Vercel e derrubou o cron pra TODAS as
+      // contas (confirmado ao vivo: timeout em Lojas 3B e doce festa, mesmo
+      // essa última sendo pequena — não era só "conta grande demora muito").
+      // Essa regra só precisa de um sinal de tendência (queda ≥15% ou não),
+      // não do número exato — então usa chamada única sem retry/paginação,
+      // aceitando que pode ficar um pouco abaixo do valor real (mesma
+      // limitação que já existia antes de qualquer fix de paginação nesta
+      // sessão), e limita a 3 status em vez de 5.
+      const faturamentoRapido = async (startDate, endDate, orderStatus) => {
+        try {
+          const json = await mcpCall(mcApiKey, 'shopee_sales_summary', { shopId, start_date: startDate, end_date: endDate, order_status: orderStatus });
+          return parseFloat(json.data?.total_revenue ?? json.total_revenue) || 0;
+        } catch (e) { return 0; }
+      };
       const fimSaude = dataBRT(1), inicioSaude = dataBRT(7);
       const fimAnteriorSaude = dataBRT(8), inicioAnteriorSaude = dataBRT(14);
       let faturamentoSaudeAtual = 0, faturamentoSaudeAnterior = 0;
-      for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
-        try { faturamentoSaudeAtual += await shopeeFaturamentoPeriodo(mcApiKey, shopId, inicioSaude.iso, fimSaude.iso, st); } catch (e) {}
+      for (const st of ['COMPLETED', 'PROCESSED', 'SHIPPED']) {
+        faturamentoSaudeAtual += await faturamentoRapido(inicioSaude.iso, fimSaude.iso, st);
       }
-      for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
-        try { faturamentoSaudeAnterior += await shopeeFaturamentoPeriodo(mcApiKey, shopId, inicioAnteriorSaude.iso, fimAnteriorSaude.iso, st); } catch (e) {}
+      for (const st of ['COMPLETED', 'PROCESSED', 'SHIPPED']) {
+        faturamentoSaudeAnterior += await faturamentoRapido(inicioAnteriorSaude.iso, fimAnteriorSaude.iso, st);
       }
       const variacaoSaude = faturamentoSaudeAnterior > 0 ? ((faturamentoSaudeAtual - faturamentoSaudeAnterior) / faturamentoSaudeAnterior) * 100 : null;
 
