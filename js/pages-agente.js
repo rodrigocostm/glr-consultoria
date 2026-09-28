@@ -310,20 +310,24 @@
         // limpo como se fosse completo — isso é o próprio bug que o analista
         // reportou (faturamento pela metade, sem aviso nenhum). Marca
         // "incompleto" e mostra na tela, em vez de engolir o erro.
+        // Sequencial, NUNCA em paralelo — confirmado ao vivo (comparando com
+        // buscarDadosAoVivo, que já era sequencial e nunca deu esse bug) que
+        // disparar as 3 chamadas de status ao mesmo tempo via Promise.all faz
+        // o conector devolver dado incompleto pra 2 delas (sem erro, sem
+        // sinalizar nada — só um total_revenue menor). Mais lento, mas o
+        // único jeito confirmado de pegar o valor certo.
         const somaPeriodo = async (inicioISO, fimISO) => {
           let total = 0, statusFalhou = [];
-          await Promise.all(['COMPLETED', 'READY_TO_SHIP', 'SHIPPED'].map(async (st) => {
+          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'SHIPPED']) {
             try {
               total += await shopeeFaturamentoPeriodo(shopId, inicioISO, fimISO, st);
             } catch (e) { statusFalhou.push(st); }
-          }));
+          }
           return { total, statusFalhou };
         };
         const janelas = janelasNegocio(periodo);
-        const [atual, anterior] = await Promise.all([
-          somaPeriodo(janelas.atualDe, janelas.atualAte),
-          somaPeriodo(janelas.anteriorDe, janelas.anteriorAte),
-        ]);
+        const atual = await somaPeriodo(janelas.atualDe, janelas.atualAte);
+        const anterior = await somaPeriodo(janelas.anteriorDe, janelas.anteriorAte);
         const semanaAtual = atual.total, semanaAnterior = anterior.total;
         const falhas = [...atual.statusFalhou, ...anterior.statusFalhou];
         const variacaoPct = semanaAnterior > 0 ? ((semanaAtual - semanaAnterior) / semanaAnterior) * 100 : (semanaAtual > 0 ? Infinity : 0);

@@ -334,12 +334,16 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // Faturamento TOTAL da loja na mesma janela (não só o atribuído ao ADS) —
     // é a base do TACOS. Mesmos status usados no resto do app (shopeeFaturamento
     // em marketplace-api.js): COMPLETED + READY_TO_SHIP + SHIPPED.
+    // Sequencial, NUNCA em paralelo — confirmado ao vivo que disparar as 3
+    // chamadas de status ao mesmo tempo faz o conector devolver dado
+    // incompleto pra 2 delas (sem erro, só um total_revenue menor). Mais
+    // lento, mas o único jeito confirmado de pegar o valor certo.
     let faturamentoTotalLoja = 0;
-    await Promise.all(['COMPLETED', 'READY_TO_SHIP', 'SHIPPED'].map(async (st) => {
+    for (const st of ['COMPLETED', 'READY_TO_SHIP', 'SHIPPED']) {
       try {
         faturamentoTotalLoja += await shopeeFaturamentoPeriodo(mcApiKey, shopId, inicioJanela.iso, ontem.iso, st);
       } catch (e) {}
-    }));
+    }
 
     // Escopo do agente é só campanhas individuais (inclusive as em modo
     // "GMV Max - Meta de ROAS", que é um bidding automático DENTRO de uma
