@@ -576,33 +576,20 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // já acelera sozinha (sem esperar pergunta) qualquer campanha com ACOS
     // bem abaixo da meta, que é o "acelerar ainda mais" que crescimento pede.
     try {
-      // Custo baixo de propósito: a versão inicial usava shopeeFaturamentoPeriodo
-      // (com retry 3x e paginação real por status) pras 2 janelas — 10 chamadas
-      // pesadas, cada uma podendo encadear várias outras. Isso estourou os 60s
-      // de maxDuration da função na Vercel e derrubou o cron pra TODAS as
-      // contas (confirmado ao vivo: timeout em Lojas 3B e doce festa, mesmo
-      // essa última sendo pequena — não era só "conta grande demora muito").
-      // Essa regra só precisa de um sinal de tendência (queda ≥15% ou não),
-      // não do número exato — então usa chamada única sem retry/paginação,
-      // aceitando que pode ficar um pouco abaixo do valor real (mesma
-      // limitação que já existia antes de qualquer fix de paginação nesta
-      // sessão), e limita a 3 status em vez de 5.
-      const faturamentoRapido = async (startDate, endDate, orderStatus) => {
-        try {
-          const json = await mcpCall(mcApiKey, 'shopee_sales_summary', { shopId, start_date: startDate, end_date: endDate, order_status: orderStatus });
-          return parseFloat(json.data?.total_revenue ?? json.total_revenue) || 0;
-        } catch (e) { return 0; }
-      };
-      const fimSaude = dataBRT(1), inicioSaude = dataBRT(7);
-      const fimAnteriorSaude = dataBRT(8), inicioAnteriorSaude = dataBRT(14);
-      let faturamentoSaudeAtual = 0, faturamentoSaudeAnterior = 0;
-      for (const st of ['COMPLETED', 'PROCESSED', 'SHIPPED']) {
-        faturamentoSaudeAtual += await faturamentoRapido(inicioSaude.iso, fimSaude.iso, st);
-      }
-      for (const st of ['COMPLETED', 'PROCESSED', 'SHIPPED']) {
-        faturamentoSaudeAnterior += await faturamentoRapido(inicioAnteriorSaude.iso, fimAnteriorSaude.iso, st);
-      }
-      const variacaoSaude = faturamentoSaudeAnterior > 0 ? ((faturamentoSaudeAtual - faturamentoSaudeAnterior) / faturamentoSaudeAnterior) * 100 : null;
+      // Zero chamadas novas à Shopee de propósito — as 2 primeiras versões
+      // desta regra buscavam faturamento de novo (10 chamadas, depois 6),
+      // e mesmo a versão "leve" ainda estourava os 60s do plano na Vercel
+      // (confirmado ao vivo, timeout em doce festa — conta pequena, então
+      // não era sobre volume de campanha, era sobre chamada extra nenhuma).
+      // faturamentoTotalLoja (acima) já é o faturamento da janela atual
+      // (inicioJanela..ontem) — compara com o mesmo campo já salvo no
+      // relatório de exatamente 1 janela atrás (glr_agente_relatorios),
+      // puramente uma leitura no Supabase, sem custo de API externa.
+      const diasJanela = Math.max(1, cfg.regra_pausa_dias || 3);
+      const dataRelatorioAnterior = dataBRT(1 + diasJanela).iso;
+      const relatorioAnterior = await sbSelect('glr_agente_relatorios', `conta_id=eq.${encodeURIComponent(shopId)}&data=eq.${dataRelatorioAnterior}&select=metricas&limit=1`).catch(() => []);
+      const faturamentoSaudeAnterior = relatorioAnterior[0]?.metricas?.faturamento_total_loja;
+      const variacaoSaude = faturamentoSaudeAnterior > 0 ? ((faturamentoTotalLoja - faturamentoSaudeAnterior) / faturamentoSaudeAnterior) * 100 : null;
 
       // Evita empilhar o mesmo alerta toda vez que o agente roda (cron diário
       // + cliques manuais no mesmo dia) — só sugere de novo se a pendência
@@ -629,14 +616,14 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
             if (novoRoas < melhor.roasTarget) {
               dadosSug.roas_atual = melhor.roasTarget; dadosSug.roas_sugerido = novoRoas;
               titulo = `Queda de faturamento — reforçar ${melhor.nome}`;
-              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% nos últimos 7 dias vs os 7 anteriores (${R$(faturamentoSaudeAtual)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — baixando meta de ROAS de ${melhor.roasTarget}x pra ${novoRoas}x pra tentar puxar mais volume e ajudar a reverter a queda.`;
+              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% na janela de ${diasJanela} dia(s) vs a janela anterior equivalente (${R$(faturamentoTotalLoja)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — baixando meta de ROAS de ${melhor.roasTarget}x pra ${novoRoas}x pra tentar puxar mais volume e ajudar a reverter a queda.`;
             }
           } else if (melhor.budget > 0) {
             const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, melhor.budget * 1.2) * 100) / 100;
             if (novoBudget > melhor.budget) {
               dadosSug.budget_atual = melhor.budget; dadosSug.budget_sugerido = novoBudget;
               titulo = `Queda de faturamento — reforçar ${melhor.nome}`;
-              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% nos últimos 7 dias vs os 7 anteriores (${R$(faturamentoSaudeAtual)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — subindo orçamento de ${R$(melhor.budget)} pra ${R$(novoBudget)} pra tentar puxar mais volume e ajudar a reverter a queda.`;
+              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% na janela de ${diasJanela} dia(s) vs a janela anterior equivalente (${R$(faturamentoTotalLoja)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — subindo orçamento de ${R$(melhor.budget)} pra ${R$(novoBudget)} pra tentar puxar mais volume e ajudar a reverter a queda.`;
             }
           }
           if (titulo) {
