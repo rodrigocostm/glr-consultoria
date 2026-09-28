@@ -250,7 +250,7 @@
           // que é a métrica que a GLR usa de verdade pra julgar a conta, não ACOS
           // isolado de campanha.
           let faturamentoTotal = 0;
-          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'SHIPPED']) {
+          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED']) {
             try {
               faturamentoTotal += await shopeeFaturamentoPeriodo(shopId, dataISO(6), dataISO(0), st);
             } catch (e) {}

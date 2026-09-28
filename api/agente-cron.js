@@ -360,13 +360,15 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
 
     // Faturamento TOTAL da loja na mesma janela (não só o atribuído ao ADS) —
     // é a base do TACOS. Mesmos status usados no resto do app (shopeeFaturamento
-    // em marketplace-api.js): COMPLETED + READY_TO_SHIP + SHIPPED.
-    // Sequencial, NUNCA em paralelo — confirmado ao vivo que disparar as 3
-    // chamadas de status ao mesmo tempo faz o conector devolver dado
-    // incompleto pra 2 delas (sem erro, só um total_revenue menor). Mais
-    // lento, mas o único jeito confirmado de pegar o valor certo.
+    // em marketplace-api.js): COMPLETED + READY_TO_SHIP + PROCESSED + SHIPPED
+    // (PROCESSED = pago e em preparação, ainda não postado — faltava e derrubava
+    // o faturamento a quase metade do real).
+    // Sequencial, NUNCA em paralelo — confirmado ao vivo que disparar as chamadas
+    // de status ao mesmo tempo faz o conector devolver dado incompleto pra
+    // algumas delas (sem erro, só um total_revenue menor). Mais lento, mas o
+    // único jeito confirmado de pegar o valor certo.
     let faturamentoTotalLoja = 0;
-    for (const st of ['COMPLETED', 'READY_TO_SHIP', 'SHIPPED']) {
+    for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED']) {
       try {
         faturamentoTotalLoja += await shopeeFaturamentoPeriodo(mcApiKey, shopId, inicioJanela.iso, ontem.iso, st);
       } catch (e) {}
