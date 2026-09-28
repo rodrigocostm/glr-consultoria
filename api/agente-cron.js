@@ -355,17 +355,24 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     const settingsPorId = {};
     const diarioPorId = {}; // soma da janela (regra_pausa_dias) por campanha
 
-    // Lotes em paralelo — contas com muitas campanhas (ex: 100+) tinham
-    // dezenas de round-trips sequenciais e estouravam os 60s do plano.
+    // Etapa 1: settings de TODAS as campanhas listadas — é o único jeito de
+    // saber o status (ongoing/closed/ended) de cada uma antes de decidir o
+    // que mais buscar. Em paralelo por lote de 20.
     await Promise.all(chunk(campanhas.map(c => c.campaign_id), 20).map(async (lote) => {
-      const idsStr = lote.join(',');
-      const [settingsResp, diarioResp] = await Promise.all([
-        mcpCall(mcApiKey, 'shopee_ads_campaign_settings', { shopId, campaign_id_list: idsStr }).catch(() => null),
-        mcpCall(mcApiKey, 'shopee_ads_campaign_daily', { shopId, campaign_id_list: idsStr, start_date: inicioJanela.ddmmyyyy, end_date: ontem.ddmmyyyy }).catch(() => null),
-      ]);
+      const settingsResp = await mcpCall(mcApiKey, 'shopee_ads_campaign_settings', { shopId, campaign_id_list: lote.join(',') }).catch(() => null);
       (settingsResp?.data?.response?.campaign_list || settingsResp?.response?.campaign_list || []).forEach(c => {
         settingsPorId[c.campaign_id] = { ...(c.common_info || {}), roas_target: c.auto_bidding_info?.roas_target ?? null };
       });
+    }));
+
+    // Etapa 2: performance diária só das campanhas 'ongoing' — contas
+    // grandes (200+) têm a maioria das campanhas closed/ended (histórico de
+    // anos), e buscar performance dessas é trabalho jogado fora. Confirmado
+    // ao vivo: era isso que estourava os 60s do plano na Vercel mesmo em
+    // conta pequena (settings+daily pra TODAS, em vez de só ongoing).
+    const idsOngoing = campanhas.map(c => c.campaign_id).filter(id => (settingsPorId[id]?.campaign_status || '').toLowerCase() === 'ongoing');
+    await Promise.all(chunk(idsOngoing, 20).map(async (lote) => {
+      const diarioResp = await mcpCall(mcApiKey, 'shopee_ads_campaign_daily', { shopId, campaign_id_list: lote.join(','), start_date: inicioJanela.ddmmyyyy, end_date: ontem.ddmmyyyy }).catch(() => null);
       (diarioResp?.data?.response?.campaign_list || diarioResp?.response?.campaign_list || []).forEach(c => {
         const dias = c.metrics_list || [];
         diarioPorId[c.campaign_id] = {
