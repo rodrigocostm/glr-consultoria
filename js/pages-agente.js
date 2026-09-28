@@ -134,7 +134,16 @@
       let total = 0;
       let end = endDate;
       for (let i = 0; i < 40; i++) { // teto de segurança
-        const r = await MarketplaceAPI.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+        // Retry único por página — confirmado ao vivo que a chamada pode
+        // falhar de forma intermitente (mesma instabilidade do conector já
+        // vista com raw_read); sem retry, o catch de fora engolia o erro e
+        // tratava como "R$0 desse status", subestimando o total em até ~1/3.
+        let r;
+        try {
+          r = await MarketplaceAPI.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+        } catch (e) {
+          r = await MarketplaceAPI.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+        }
         total += parseFloat(r.data?.total_revenue ?? r.total_revenue) || 0;
         const parcial = r.data?.parcial ?? r.parcial;
         const continuarDe = r.data?.continuar_de ?? r.continuar_de;
@@ -286,22 +295,32 @@
       render();
       try {
         const shopId = contaId;
+        // Se algum status falhar mesmo depois do retry, NÃO mostra um número
+        // limpo como se fosse completo — isso é o próprio bug que o analista
+        // reportou (faturamento pela metade, sem aviso nenhum). Marca
+        // "incompleto" e mostra na tela, em vez de engolir o erro.
         const somaPeriodo = async (inicioISO, fimISO) => {
-          let total = 0;
+          let total = 0, statusFalhou = [];
           await Promise.all(['COMPLETED', 'READY_TO_SHIP', 'SHIPPED'].map(async (st) => {
             try {
               total += await shopeeFaturamentoPeriodo(shopId, inicioISO, fimISO, st);
-            } catch (e) {}
+            } catch (e) { statusFalhou.push(st); }
           }));
-          return total;
+          return { total, statusFalhou };
         };
         const janelas = janelasNegocio(periodo);
-        const [semanaAtual, semanaAnterior] = await Promise.all([
+        const [atual, anterior] = await Promise.all([
           somaPeriodo(janelas.atualDe, janelas.atualAte),
           somaPeriodo(janelas.anteriorDe, janelas.anteriorAte),
         ]);
+        const semanaAtual = atual.total, semanaAnterior = anterior.total;
+        const falhas = [...atual.statusFalhou, ...anterior.statusFalhou];
         const variacaoPct = semanaAnterior > 0 ? ((semanaAtual - semanaAnterior) / semanaAnterior) * 100 : (semanaAtual > 0 ? Infinity : 0);
-        state.negocioPorConta[contaId + ':' + periodo] = { semanaAtual, semanaAnterior, variacaoPct, atualizadoEm: new Date().toISOString() };
+        state.negocioPorConta[contaId + ':' + periodo] = {
+          semanaAtual, semanaAnterior, variacaoPct, atualizadoEm: new Date().toISOString(),
+          incompleto: falhas.length > 0,
+          avisoIncompleto: falhas.length ? `Não consegui buscar ${[...new Set(falhas)].join(', ')} mesmo com retry — o valor acima está SUBESTIMADO. Clique em Atualizar pra tentar de novo.` : null,
+        };
       } catch (e) {
         state.negocioPorConta[contaId + ':' + periodo] = { erro: e.message || String(e) };
       } finally {
@@ -592,7 +611,7 @@
     function renderNegocio(contaId) {
       const n = state.negocioPorConta[contaId + ':' + state.negocioPeriodo];
       const subindo = n && !n.erro && n.variacaoPct !== Infinity && n.variacaoPct >= 0;
-      const cor = !n || n.erro ? '#64748b' : subindo ? '#16a34a' : '#dc2626';
+      const cor = !n || n.erro ? '#64748b' : n.incompleto ? '#d97706' : subindo ? '#16a34a' : '#dc2626';
       const PERIODOS = [['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['mes', 'Mês atual']];
       const labelAtual = n && n.erro === undefined ? (state.negocioPeriodo === 'mes' ? 'mês anterior (mesmo período)' : `${state.negocioPeriodo} dias anteriores`) : '';
       return `<div class="ag-hud-card" style="--ag-hud-accent:${cor};margin-bottom:20px;">
@@ -614,6 +633,7 @@
             <div><div class="ag-hud-label" style="margin-bottom:2px;">${labelAtual || 'Período anterior'}</div><div class="ag-mono" style="font-size:16px;color:var(--text-muted);">${R$(n.semanaAnterior)}</div></div>
             <div><div class="ag-hud-label" style="margin-bottom:2px;">Variação</div><div class="ag-mono" style="font-size:22px;font-weight:800;color:${cor};">${n.variacaoPct === Infinity ? '∞' : (n.variacaoPct >= 0 ? '+' : '') + n.variacaoPct.toFixed(1) + '%'}</div></div>
           </div>
+          ${n.incompleto ? `<div style="margin-top:10px;background:#d977061a;border:1px solid #d97706;border-radius:8px;padding:8px 12px;font-size:12px;color:#d97706;font-weight:600;">⚠️ ${esc(n.avisoIncompleto)}</div>` : ''}
           <div style="margin-top:12px;font-size:12px;color:var(--text-muted);">Quer ver quais SKUs estão puxando essa variação (produtos em alta/queda)? A <a href="#analytics" style="color:var(--accent-light,#818cf8);">aba Analytics → Produtos em Queda</a> já tem esse detalhamento semana a semana, filtrado por cliente.</div>
         `}
       </div>`;

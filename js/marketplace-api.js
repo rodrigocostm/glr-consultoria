@@ -162,7 +162,16 @@ const MarketplaceAPI = {
     let total = 0, pedidos = 0, itens = 0;
     let end = endDate;
     for (let i = 0; i < 40; i++) { // teto de segurança
-      const r = await this.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+      // Retry único por página — confirmado ao vivo que a chamada pode falhar
+      // de forma intermitente; sem retry, um catch externo engolia o erro e
+      // tratava como "R$0 desse status", subestimando o faturamento total
+      // (chegou a aparecer pela metade do real).
+      let r;
+      try {
+        r = await this.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+      } catch (e) {
+        r = await this.call('shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+      }
       const d = r.data || r || {};
       total += parseFloat(d.total_revenue) || 0;
       // pedidos_somados (não total_orders) — confirmado ao vivo que

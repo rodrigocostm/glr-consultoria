@@ -104,7 +104,16 @@ async function shopeeFaturamentoPeriodo(apiKey, shopId, startDate, endDate, orde
   let total = 0;
   let end = endDate;
   for (let i = 0; i < 40; i++) { // teto de segurança
-    const r = await mcpCall(apiKey, 'shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+    // Retry único por página — confirmado ao vivo que a chamada pode falhar
+    // de forma intermitente; sem retry, um catch externo engolia o erro e
+    // tratava como "R$0 desse status", subestimando o total (chegou a
+    // aparecer pela metade do real).
+    let r;
+    try {
+      r = await mcpCall(apiKey, 'shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+    } catch (e) {
+      r = await mcpCall(apiKey, 'shopee_sales_summary', { shopId, start_date: startDate, end_date: end, order_status: orderStatus });
+    }
     total += parseFloat(r.data?.total_revenue ?? r.total_revenue) || 0;
     const parcial = r.data?.parcial ?? r.parcial;
     const continuarDe = r.data?.continuar_de ?? r.continuar_de;
