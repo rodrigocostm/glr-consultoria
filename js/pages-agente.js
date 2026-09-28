@@ -41,6 +41,7 @@
       dadosAoVivoPorConta: {}, carregandoDadosAoVivo: false,
       negocioPorConta: {}, carregandoNegocio: false, negocioPeriodo: '7',
       executandoAcaoManual: false,
+      rodandoAgente: false, resultadoRodada: null,
     };
 
     function render() { renderShell(); }
@@ -555,6 +556,66 @@
       </div>`;
     }
 
+    // ── Rodar o agente agora: dispara o MESMO ciclo do cron (listar
+    // campanhas, avaliar contra os guardrails, decidir e agir) pra essa
+    // conta na hora, sem esperar as 07:00. Pedido do usuário: quer a
+    // execução do agente de verdade (a análise que já foi montada), não
+    // mexer campanha por campanha na mão. ──
+    async function rodarAgenteAgora() {
+      const contaId = state.contaAbertaId;
+      if (!contaId) return;
+      state.rodandoAgente = true;
+      state.resultadoRodada = null;
+      render();
+      try {
+        const resp = await fetch(`/api/agente-cron?conta_id=${encodeURIComponent(contaId)}`);
+        const json = await resp.json();
+        const r = json.resultados?.[0];
+        if (json.skip) {
+          state.resultadoRodada = { erro: json.skip };
+        } else if (r?.erro) {
+          state.resultadoRodada = { erro: r.erro };
+        } else if (r) {
+          state.resultadoRodada = {
+            ok: true,
+            campanhas: r.campanhas ?? 0, decisoes: r.decisoes ?? 0, alertas: r.alertas ?? 0,
+            tacos: r.tacos_conta != null ? r.tacos_conta.toFixed(1) + '%' : '—',
+          };
+        } else {
+          state.resultadoRodada = { erro: 'Resposta inesperada do servidor.' };
+        }
+        await carregarTudo();
+      } catch (e) {
+        state.resultadoRodada = { erro: e.message || String(e) };
+      } finally {
+        state.rodandoAgente = false;
+        render();
+      }
+    }
+
+    function renderRodarAgente(contaId) {
+      const r = state.resultadoRodada;
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#22d3ee;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:14px;font-weight:800;margin-bottom:2px;">🚀 Rodar o agente agora</div>
+            <div style="font-size:11.5px;color:var(--text-muted);">Dispara o mesmo ciclo do cron das 07:00 nesta conta agora: lista campanhas, avalia contra os guardrails configurados abaixo, e age (pausa/ajusta) sozinho.</div>
+          </div>
+          <button class="btn btn-primary" style="white-space:nowrap;" ${state.rodandoAgente ? 'disabled' : ''} onclick="window._agRodarAgora()">
+            ${state.rodandoAgente ? '⏳ Rodando...' : '🚀 Rodar agora'}
+          </button>
+        </div>
+        ${r ? (r.erro
+          ? `<div style="margin-top:12px;background:#dc26261a;border:1px solid #dc2626;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#dc2626;">⚠️ ${esc(r.erro)}</div>`
+          : `<div style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;">
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">Campanhas revisadas</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${r.campanhas}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">Decisões</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:#16a34a;">${r.decisoes}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">Alertas</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:${r.alertas ? '#d97706' : 'inherit'};">${r.alertas}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${r.tacos}</div></div>
+            </div>`) : ''}
+      </div>`;
+    }
+
     // ── Ação manual: executa direto na Shopee (pausar/orçamento/meta de
     // ROAS) sem depender da listagem automática de campanhas — usa as
     // mesmas ações já validadas ao vivo (shopee_ads_edit_campaign,
@@ -618,9 +679,10 @@
     }
 
     function renderAcaoManual(contaId) {
-      return `<div class="ag-hud-card" style="--ag-hud-accent:#dc2626;margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:800;margin-bottom:2px;">⚡ Ação manual — executa direto na Shopee</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Pra quando você já sabe o que quer fazer (por exemplo, pelo chat) e não quer esperar o pipeline automático — não depende da listagem de campanhas. Pega o ID na tabela "Campanhas ao vivo" acima ou clica em "⚡ Usar" numa linha.</div>
+      return `<details style="margin-bottom:20px;">
+      <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--text-muted);padding:4px 0;">⚡ Avançado: ajustar 1 campanha específica na mão</summary>
+      <div class="ag-hud-card" style="--ag-hud-accent:#dc2626;margin-top:10px;">
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Só pra casos pontuais — pega o ID na tabela "Campanhas ao vivo" ou clica em "⚡ Usar" numa linha.</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px;">
           <div class="form-group" style="margin:0;"><label class="form-label">ID da campanha</label><input type="text" class="form-input" id="ag-man-campanha" placeholder="Ex: 86858387"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Nome (só pro log)</label><input type="text" class="form-input" id="ag-man-nome" placeholder="Opcional"></div>
@@ -638,7 +700,8 @@
         <button class="btn btn-primary" style="background:#dc2626;border-color:#dc2626;" ${state.executandoAcaoManual ? 'disabled' : ''} onclick="window._agExecutarAcaoManual()">
           ${state.executandoAcaoManual ? '⏳ Executando na Shopee...' : '⚡ Executar agora'}
         </button>
-      </div>`;
+      </div>
+      </details>`;
     }
 
     // ── Extrai ação/de→para de uma entrada de log (decisão ou alerta) pra
@@ -967,6 +1030,7 @@
       root.innerHTML = `
         ${voltar}
         ${renderSaudeHero(cfg)}
+        ${renderRodarAgente(cfg.conta_id)}
         ${renderAcaoManual(cfg.conta_id)}
         ${renderKanban(cfg.conta_id)}
         ${renderNegocio(cfg.conta_id)}
@@ -1046,6 +1110,7 @@
     };
     window._agVoltarPortfolio = () => { state.contaAbertaId = null; render(); };
     window._agExecutarAcaoManual = executarAcaoManual;
+    window._agRodarAgora = rodarAgenteAgora;
     window._agUsarCampanhaManual = (id, nome) => {
       const campoId = document.getElementById('ag-man-campanha');
       const campoNome = document.getElementById('ag-man-nome');

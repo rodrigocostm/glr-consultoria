@@ -230,9 +230,16 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const configs = await sbSelect('glr_agente_config', 'ativo=eq.true');
+    // ?conta_id=X — disparo manual pra 1 conta só ("Rodar agente agora" no
+    // painel), roda mesmo que o piloto esteja desligado (o analista decidiu
+    // rodar agora, não precisa estar em modo automático pra isso). Sem esse
+    // parâmetro, comportamento normal do cron: todas as contas ativo=true.
+    const contaIdFiltro = req.query?.conta_id;
+    const configs = contaIdFiltro
+      ? await sbSelect('glr_agente_config', `conta_id=eq.${encodeURIComponent(contaIdFiltro)}`)
+      : await sbSelect('glr_agente_config', 'ativo=eq.true');
     if (!configs.length) {
-      return res.status(200).json({ ok: true, skip: 'nenhuma conta piloto ativa em glr_agente_config' });
+      return res.status(200).json({ ok: true, skip: contaIdFiltro ? `conta ${contaIdFiltro} não tem configuração salva` : 'nenhuma conta piloto ativa em glr_agente_config' });
     }
 
     const ontem = dataBRT(1);
