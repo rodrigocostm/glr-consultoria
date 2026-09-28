@@ -168,6 +168,7 @@ async function listarTodasCampanhas(apiKey, shopId) {
     // tentar o complemento sem a base.
     throw e;
   }
+  campanhas.paginacaoErro = null; // diagnóstico temporário — remover depois de confirmar a causa
   if (!hasNextPage) return campanhas;
 
   // Complemento opcional (contas grandes, >100 campanhas): tenta estender
@@ -177,16 +178,16 @@ async function listarTodasCampanhas(apiKey, shopId) {
   let offset = 100;
   const limit = 100;
   for (let pagina = 0; pagina < 20; pagina++) { // teto de 2000 campanhas
-    let json;
+    let json, ultimoErro = null;
     for (let tentativa = 0; tentativa < 2 && !json; tentativa++) {
       try {
         json = await mcpCall(apiKey, 'raw_read', {
           marketplace: 'shopee', shopId,
           path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
         });
-      } catch (e) { /* tenta mais uma vez, ou desiste e fica com a base */ }
+      } catch (e) { ultimoErro = e.message || String(e); /* tenta mais uma vez, ou desiste e fica com a base */ }
     }
-    if (!json) break;
+    if (!json) { campanhas.paginacaoErro = ultimoErro; break; }
     const lista = json.data?.response?.campaign_list || json.response?.campaign_list || [];
     for (const c of lista) { if (!vistos.has(c.campaign_id)) { vistos.add(c.campaign_id); campanhas.push(c); } }
     const temMais = json.data?.response?.has_next_page ?? json.response?.has_next_page;
@@ -545,7 +546,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     const resumo = await gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem);
     await sbUpsert('glr_agente_relatorios', { data: ontem.iso, conta_id: shopId, cliente_nome: cfg.cliente_nome || null, resumo, metricas }, 'data,conta_id');
 
-    return { conta_id: shopId, campanhas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta };
+    return { conta_id: shopId, campanhas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta, paginacaoErro: campanhas.paginacaoErro || undefined };
   } catch (e) {
     await logar('sistema', 'Erro na revisão diária', e.message || String(e), {}, 'erro');
     return { conta_id: shopId, erro: e.message };
