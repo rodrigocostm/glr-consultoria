@@ -431,6 +431,13 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     const tacosConta = faturamentoTotalLoja > 0 ? (gastoTotalJanela / faturamentoTotalLoja) * 100 : (gastoTotalJanela > 0 ? Infinity : 0);
     const tacosDentroDaMeta = !cfg.meta_acos || tacosConta <= cfg.meta_acos * 1.1; // 10% de folga antes de travar aumento de orçamento
 
+    // Conta quantas das campanhas listadas estão realmente 'ongoing' — a
+    // listagem bruta (campanhas.length) mistura campanhas ativas com anos de
+    // histórico morto (closed/ended), então "campanhas revisadas" mostrando
+    // o total bruto é enganoso (confirmado ao vivo: conta com só ~11 ongoing
+    // reais, mas listagem bruta de 100+ campanhas antigas). Mostra só a
+    // contagem de ativas de verdade pro usuário.
+    let campanhasAtivas = 0;
     for (const c of campanhas) {
       const settings = settingsPorId[c.campaign_id];
       const diario = diarioPorId[c.campaign_id];
@@ -438,6 +445,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       const status = (settings.campaign_status || '').toLowerCase();
       const budgetAtual = parseFloat(settings.campaign_budget) || 0;
       if (status !== 'ongoing') continue;
+      campanhasAtivas++;
 
       const acosJanela = diario.gmv > 0 ? diario.gasto / diario.gmv : (diario.gasto > 0 ? Infinity : null);
       const nome = settings.ad_name?.slice(0, 70) || `Campanha ${c.campaign_id}`;
@@ -552,15 +560,15 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // Resumo de execução do dia (sempre grava, mesmo sem nenhuma ação — é o
     // registro de que o agente rodou e revisou a conta)
     await logar('sistema', `Revisão diária concluída — ${decisoes.length} ação(ões), ${alertas.length} alerta(s)`,
-      `Revisadas ${campanhas.length} campanhas da conta. TACOS da conta: ${tacosConta === Infinity ? '∞' : tacosConta.toFixed(1) + '%'} (meta: ${cfg.meta_acos ?? '—'}%). ${decisoes.length} decisão(ões) executada(s) automaticamente, ${alertas.length} alerta(s) aguardando aprovação manual.`,
-      { campanhas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta }, 'executado');
+      `Revisadas ${campanhasAtivas} campanhas ativas (de ${campanhas.length} listadas, incluindo histórico antigo). TACOS da conta: ${tacosConta === Infinity ? '∞' : tacosConta.toFixed(1) + '%'} (meta: ${cfg.meta_acos ?? '—'}%). ${decisoes.length} decisão(ões) executada(s) automaticamente, ${alertas.length} alerta(s) aguardando aprovação manual.`,
+      { campanhas: campanhasAtivas, campanhas_listadas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta }, 'executado');
 
     // 2) Relatório diário com IA
-    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhas.length };
+    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhasAtivas, campanhas_listadas: campanhas.length };
     const resumo = await gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem);
     await sbUpsert('glr_agente_relatorios', { data: ontem.iso, conta_id: shopId, cliente_nome: cfg.cliente_nome || null, resumo, metricas }, 'data,conta_id');
 
-    return { conta_id: shopId, campanhas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta, paginacaoErro: campanhas.paginacaoErro || undefined };
+    return { conta_id: shopId, campanhas: campanhasAtivas, campanhas_listadas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta, paginacaoErro: campanhas.paginacaoErro || undefined };
   } catch (e) {
     await logar('sistema', 'Erro na revisão diária', e.message || String(e), {}, 'erro');
     return { conta_id: shopId, erro: e.message };

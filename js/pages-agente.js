@@ -659,8 +659,10 @@
         } else if (r) {
           state.resultadoRodada = {
             ok: true,
-            campanhas: r.campanhas ?? 0, decisoes: r.decisoes ?? 0, alertas: r.alertas ?? 0,
+            campanhas: r.campanhas ?? 0, campanhasListadas: r.campanhas_listadas ?? r.campanhas ?? 0,
+            decisoes: r.decisoes ?? 0, alertas: r.alertas ?? 0,
             tacos: r.tacos_conta != null ? r.tacos_conta.toFixed(1) + '%' : '—',
+            paginacaoErro: r.paginacaoErro || null,
           };
         } else {
           state.resultadoRodada = { erro: 'Resposta inesperada do servidor.' };
@@ -689,11 +691,11 @@
         ${r ? (r.erro
           ? `<div style="margin-top:12px;background:#dc26261a;border:1px solid #dc2626;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#dc2626;">⚠️ ${esc(r.erro)}</div>`
           : `<div style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;">
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">Campanhas revisadas</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${r.campanhas}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">Campanhas ativas</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${r.campanhas}</div>${r.campanhasListadas > r.campanhas ? `<div class="ag-hud-sub">de ${r.campanhasListadas} listadas (resto é histórico antigo)</div>` : ''}</div>
               <div><div class="ag-hud-label" style="margin-bottom:2px;">Decisões</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:#16a34a;">${r.decisoes}</div></div>
               <div><div class="ag-hud-label" style="margin-bottom:2px;">Alertas</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:${r.alertas ? '#d97706' : 'inherit'};">${r.alertas}</div></div>
               <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${r.tacos}</div></div>
-            </div>`) : ''}
+            </div>${r.paginacaoErro ? `<div style="margin-top:10px;background:#d977061a;border:1px solid #d97706;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#d97706;">⚠️ A Shopee/Tiops recusou parte da paginação (${esc(r.paginacaoErro)}) — pode ter campanha ativa fora dessa lista. Chamado aberto com o suporte do Tiops, aguardando resposta.</div>` : ''}`) : ''}
       </div>`;
     }
 
