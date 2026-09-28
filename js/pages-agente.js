@@ -91,20 +91,21 @@
       let offset = 0;
       const limit = 100;
       for (let pagina = 0; pagina < 20; pagina++) { // teto de 2000 campanhas
+        // "raw_read" já apareceu falhando com "Falha ao renovar token Meli"
+        // numa conta 100% Shopee — parece o conector renovando token de
+        // TODAS as contas vinculadas à chave antes de atender o pedido.
+        // Tenta 3x antes de desistir da página; se mesmo assim falhar, segue
+        // com o que já foi paginado até aqui em vez de quebrar a tela.
         let json;
-        try {
-          json = await MarketplaceAPI.call('raw_read', {
-            marketplace: 'shopee', shopId,
-            path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
-          });
-        } catch (e) {
-          // "raw_read" já apareceu falhando com "Falha ao renovar token Meli"
-          // numa conta 100% Shopee — parece o conector renovando token de
-          // TODAS as contas vinculadas à chave antes de atender o pedido.
-          // Não deixa isso quebrar a tela inteira — segue com o que já foi
-          // paginado até aqui.
-          break;
+        for (let tentativa = 0; tentativa < 3 && !json; tentativa++) {
+          try {
+            json = await MarketplaceAPI.call('raw_read', {
+              marketplace: 'shopee', shopId,
+              path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
+            });
+          } catch (e) { /* tenta de novo */ }
         }
+        if (!json) break;
         const lista = json.data?.response?.campaign_list || json.response?.campaign_list || [];
         campanhas.push(...lista);
         const temMais = json.data?.response?.has_next_page ?? json.response?.has_next_page;

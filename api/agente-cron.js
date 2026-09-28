@@ -147,21 +147,22 @@ async function listarTodasCampanhas(apiKey, shopId) {
   let offset = 0;
   const limit = 100;
   for (let pagina = 0; pagina < 20; pagina++) { // teto de 2000 campanhas
+    // "raw_read" já apareceu falhando com "Falha ao renovar token Meli" numa
+    // conta 100% Shopee — parece uma rotina do conector que renova token de
+    // TODAS as contas vinculadas à chave antes de atender o pedido, mesmo
+    // sendo Shopee. Tenta 3x antes de desistir da página (mesmo padrão que
+    // resolveu o bug de faturamento); se mesmo assim falhar, segue com o
+    // que já foi paginado até aqui em vez de derrubar a conta inteira.
     let json;
-    try {
-      json = await mcpCall(apiKey, 'raw_read', {
-        marketplace: 'shopee', shopId,
-        path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
-      });
-    } catch (e) {
-      // "raw_read" já apareceu falhando com "Falha ao renovar token Meli"
-      // numa conta 100% Shopee — parece uma rotina do conector que renova
-      // token de TODAS as contas vinculadas à chave antes de atender o
-      // pedido, mesmo sendo Shopee. Não é problema da conta que estamos
-      // avaliando — não deixa a conta inteira falhar por causa disso,
-      // segue com o que já foi paginado até aqui.
-      break;
+    for (let tentativa = 0; tentativa < 3 && !json; tentativa++) {
+      try {
+        json = await mcpCall(apiKey, 'raw_read', {
+          marketplace: 'shopee', shopId,
+          path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
+        });
+      } catch (e) { /* tenta de novo */ }
     }
+    if (!json) break;
     const lista = json.data?.response?.campaign_list || json.response?.campaign_list || [];
     campanhas.push(...lista);
     const temMais = json.data?.response?.has_next_page ?? json.response?.has_next_page;
