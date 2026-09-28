@@ -360,15 +360,17 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
 
     // Faturamento TOTAL da loja na mesma janela (não só o atribuído ao ADS) —
     // é a base do TACOS. Mesmos status usados no resto do app (shopeeFaturamento
-    // em marketplace-api.js): COMPLETED + READY_TO_SHIP + PROCESSED + SHIPPED
-    // (PROCESSED = pago e em preparação, ainda não postado — faltava e derrubava
-    // o faturamento a quase metade do real).
+    // em marketplace-api.js): COMPLETED + READY_TO_SHIP + PROCESSED + SHIPPED +
+    // CANCELLED. Bruto de propósito (inclui CANCELLED): é o que bate com o
+    // "Gestor Seller" (ferramenta terceira que a GLR usa de referência) —
+    // confirmado ao vivo que excluir CANCELLED deixava o número ~40% menor
+    // que a referência real da conta.
     // Sequencial, NUNCA em paralelo — confirmado ao vivo que disparar as chamadas
     // de status ao mesmo tempo faz o conector devolver dado incompleto pra
     // algumas delas (sem erro, só um total_revenue menor). Mais lento, mas o
     // único jeito confirmado de pegar o valor certo.
     let faturamentoTotalLoja = 0;
-    for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED']) {
+    for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
       try {
         faturamentoTotalLoja += await shopeeFaturamentoPeriodo(mcApiKey, shopId, inicioJanela.iso, ontem.iso, st);
       } catch (e) {}

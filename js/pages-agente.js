@@ -248,9 +248,12 @@
         } else {
           // Faturamento TOTAL da loja (não só o atribuído ao ADS) — base do TACOS,
           // que é a métrica que a GLR usa de verdade pra julgar a conta, não ACOS
-          // isolado de campanha.
+          // isolado de campanha. Inclui CANCELLED de propósito: é bruto (pedidos
+          // realizados), igual ao "Gestor Seller" que a GLR usa pra comparar —
+          // confirmado ao vivo que sem CANCELLED o número ficava ~40% menor que
+          // o valor real de referência.
           let faturamentoTotal = 0;
-          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED']) {
+          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
             try {
               faturamentoTotal += await shopeeFaturamentoPeriodo(shopId, dataISO(6), dataISO(0), st);
             } catch (e) {}
@@ -329,7 +332,7 @@
         // único jeito confirmado de pegar o valor certo.
         const somaPeriodo = async (inicioISO, fimISO) => {
           let total = 0, statusFalhou = [];
-          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'SHIPPED']) {
+          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
             try {
               total += await shopeeFaturamentoPeriodo(shopId, inicioISO, fimISO, st);
             } catch (e) { statusFalhou.push(st); }

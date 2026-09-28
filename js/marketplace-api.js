@@ -198,10 +198,11 @@ const MarketplaceAPI = {
   },
 
   // Resumo de vendas Shopee (até 90 dias)
-  // Soma COMPLETED + READY_TO_SHIP + PROCESSED + SHIPPED (exclui CANCELLED e UNPAID)
+  // Soma COMPLETED + READY_TO_SHIP + PROCESSED + SHIPPED + CANCELLED (exclui só
+  // UNPAID). Bruto de propósito — bate com o "Gestor Seller" (referência da GLR).
   async shopeeFaturamento(shopId, dias = 30) {
     const diasLimitado = Math.min(dias, 90);
-    const statuses = ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED'];
+    const statuses = ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED'];
     const inicioISO = this._dataISO(diasLimitado - 1);
     const fimISO = this._dataISO(0);
     let totalFaturamento = 0;
