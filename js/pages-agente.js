@@ -89,27 +89,35 @@
     // getProductLevelCampaignIdList): /api/v2/ads/get_product_level_campaign_id_list,
     // que aceita offset/limit e devolve has_next_page de verdade.
     async function listarTodasCampanhasShopee(shopId) {
-      const campanhas = [];
-      let offset = 0;
+      // Base confiável: shopee_ads_campaigns é a ação original, que sempre
+      // funcionou (confirmado ao vivo: instantânea, sem erro, cobre contas
+      // com até ~100 campanhas numa chamada só). "raw_read" só complementa
+      // contas maiores, best-effort — nunca é o único jeito de listar.
+      let campanhas = [];
+      let hasNextPage = false;
+      try {
+        const base = await MarketplaceAPI.call('shopee_ads_campaigns', { shopId });
+        campanhas = base.data?.response?.campaign_list || base.response?.campaign_list || [];
+        hasNextPage = base.data?.response?.has_next_page ?? base.response?.has_next_page ?? false;
+      } catch (e) { throw e; }
+      if (!hasNextPage) return campanhas;
+
+      const vistos = new Set(campanhas.map(c => c.campaign_id));
+      let offset = 100;
       const limit = 100;
       for (let pagina = 0; pagina < 20; pagina++) { // teto de 2000 campanhas
-        // "raw_read" já apareceu falhando com "Falha ao renovar token Meli"
-        // numa conta 100% Shopee — parece o conector renovando token de
-        // TODAS as contas vinculadas à chave antes de atender o pedido.
-        // Tenta 3x antes de desistir da página; se mesmo assim falhar, segue
-        // com o que já foi paginado até aqui em vez de quebrar a tela.
         let json;
-        for (let tentativa = 0; tentativa < 3 && !json; tentativa++) {
+        for (let tentativa = 0; tentativa < 2 && !json; tentativa++) {
           try {
             json = await MarketplaceAPI.call('raw_read', {
               marketplace: 'shopee', shopId,
               path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
             });
-          } catch (e) { /* tenta de novo */ }
+          } catch (e) { /* tenta mais uma vez, ou desiste e fica com a base */ }
         }
         if (!json) break;
         const lista = json.data?.response?.campaign_list || json.response?.campaign_list || [];
-        campanhas.push(...lista);
+        for (const c of lista) { if (!vistos.has(c.campaign_id)) { vistos.add(c.campaign_id); campanhas.push(c); } }
         const temMais = json.data?.response?.has_next_page ?? json.response?.has_next_page;
         if (!temMais || !lista.length) break;
         offset += limit;

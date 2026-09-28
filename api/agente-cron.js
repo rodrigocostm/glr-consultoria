@@ -143,28 +143,47 @@ async function shopeeFaturamentoPeriodo(apiKey, shopId, startDate, endDate, orde
 // esgotar, com um teto de segurança pra nunca rodar pra sempre numa loja
 // gigante.
 async function listarTodasCampanhas(apiKey, shopId) {
-  const campanhas = [];
-  let offset = 0;
+  // Base confiável: shopee_ads_campaigns é a ação original, dedicada, que
+  // sempre funcionou (confirmado ao vivo agora: instantânea, sem erro,
+  // has_next_page:false pra contas com até ~100 campanhas — cobre a
+  // "doce festa" inteira numa chamada só). "raw_read" (abaixo) foi
+  // introduzido só pra estender além disso em contas gigantes tipo "Lojas
+  // 3B", mas se mostrou instável ("Falha ao renovar token Meli", mesmo em
+  // pedido 100% Shopee) — nunca deixa ele ser o único jeito de listar
+  // campanha, só um complemento best-effort.
+  let campanhas = [];
+  let hasNextPage = false;
+  try {
+    const base = await mcpCall(apiKey, 'shopee_ads_campaigns', { shopId });
+    campanhas = base.data?.response?.campaign_list || base.response?.campaign_list || [];
+    hasNextPage = base.data?.response?.has_next_page ?? base.response?.has_next_page ?? false;
+  } catch (e) {
+    // shopee_ads_campaigns falhando é sinal de instabilidade geral da API
+    // Shopee/Tiops (não só do raw_read) — propaga o erro, não adianta
+    // tentar o complemento sem a base.
+    throw e;
+  }
+  if (!hasNextPage) return campanhas;
+
+  // Complemento opcional (contas grandes, >100 campanhas): tenta estender
+  // via raw_read paginado. Se falhar, fica só com a base já obtida acima —
+  // melhor que nada, e nunca derruba a conta inteira por causa disso.
+  const vistos = new Set(campanhas.map(c => c.campaign_id));
+  let offset = 100;
   const limit = 100;
   for (let pagina = 0; pagina < 20; pagina++) { // teto de 2000 campanhas
-    // "raw_read" já apareceu falhando com "Falha ao renovar token Meli" numa
-    // conta 100% Shopee — parece uma rotina do conector que renova token de
-    // TODAS as contas vinculadas à chave antes de atender o pedido, mesmo
-    // sendo Shopee. Tenta 3x antes de desistir da página (mesmo padrão que
-    // resolveu o bug de faturamento); se mesmo assim falhar, segue com o
-    // que já foi paginado até aqui em vez de derrubar a conta inteira.
     let json;
-    for (let tentativa = 0; tentativa < 3 && !json; tentativa++) {
+    for (let tentativa = 0; tentativa < 2 && !json; tentativa++) {
       try {
         json = await mcpCall(apiKey, 'raw_read', {
           marketplace: 'shopee', shopId,
           path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
         });
-      } catch (e) { /* tenta de novo */ }
+      } catch (e) { /* tenta mais uma vez, ou desiste e fica com a base */ }
     }
     if (!json) break;
     const lista = json.data?.response?.campaign_list || json.response?.campaign_list || [];
-    campanhas.push(...lista);
+    for (const c of lista) { if (!vistos.has(c.campaign_id)) { vistos.add(c.campaign_id); campanhas.push(c); } }
     const temMais = json.data?.response?.has_next_page ?? json.response?.has_next_page;
     if (!temMais || !lista.length) break;
     offset += limit;
