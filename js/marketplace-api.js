@@ -41,9 +41,16 @@ const MarketplaceAPI = {
       throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
     }
     const json = await res.json();
+    // raw_read (e outras ações "cruas") costuma devolver HTTP 200 com o erro
+    // real só no campo json.error, sem json.status — sem checar isso aqui
+    // também, a paginação de campanhas (listarTodasCampanhasShopee) tratava
+    // erro real como "acabaram as campanhas" e parava sempre em 100.
     if (json.status && json.status !== 200) {
       const causas = Array.isArray(json.cause) ? json.cause.map(c => c.message).filter(Boolean).join(' | ') : '';
       throw new Error(causas || json.data?.error || json.message || 'Erro na API');
+    }
+    if (json.error && String(json.error).trim()) {
+      throw new Error(json.error);
     }
     return json;
   },

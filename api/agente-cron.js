@@ -78,7 +78,12 @@ async function mcpCall(apiKey, action, params) {
     body: JSON.stringify({ action, params: params || {} }),
   });
   const json = await r.json();
-  if (!r.ok || (json.status && json.status !== 200)) {
+  // raw_read (e outras ações "cruas") costuma devolver HTTP 200 com o erro
+  // real só no campo json.error, sem json.status — confirmado ao vivo que
+  // isso fazia a paginação de campanhas parar sempre em exatamente 100
+  // (tratava erro real como "acabaram as campanhas", nunca chegava nas
+  // campanhas ongoing de verdade que ficam depois da página 1).
+  if (!r.ok || (json.status && json.status !== 200) || (json.error && String(json.error).trim())) {
     throw new Error(json.error || json.message || `Erro na ação ${action}`);
   }
   return json;
