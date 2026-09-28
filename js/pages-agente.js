@@ -458,6 +458,34 @@
       ].filter(Boolean).join('\n');
     }
 
+    // Boost de 1 campanha: mesma fórmula da Regra 3 do cron (roas*0.85 com piso
+    // 100/meta_acos, ou budget*1.2 com teto orcamento_max) mas disparado na hora
+    // pelo analista pra UMA campanha específica, sem depender do ciclo diário
+    // nem de ACOS já estar "bem abaixo da meta" — o analista está pedindo de
+    // propósito. Cria a sugestão como card no Kanban (mesmo fluxo do chat),
+    // nunca executa direto — sempre passa por Aprovar.
+    async function boostCampanha(campaignId, nome, budgetAtual, roasAtual, acos) {
+      const cfg = configDaConta(state.contaAbertaId);
+      if (!cfg?.meta_acos) { alert('Configura a meta de TACOS dessa conta primeiro (seção "Guardrails do piloto") pra eu saber até onde posso ser agressivo.'); return; }
+      const usaRoasTarget = (parseFloat(budgetAtual) || 0) === 0 && roasAtual != null;
+      let sugestao;
+      if (usaRoasTarget) {
+        const metaRoasConta = 100 / cfg.meta_acos;
+        const novoRoas = Math.round(Math.max(1, metaRoasConta, roasAtual * 0.85) * 10) / 10;
+        if (novoRoas >= roasAtual) { alert(`"${nome}" já está no lance mais agressivo permitido pela meta de TACOS da conta (${cfg.meta_acos}%) — não dá pra baixar mais a meta de ROAS sem furar o guardrail.`); return; }
+        sugestao = { campaign_id: Number(campaignId), nome_campanha: nome, tipo: 'roas', valor_atual: roasAtual, valor_sugerido: novoRoas, titulo: `Boost solicitado — ${nome}`, explicacao: `Analista pediu boost manual. Baixando meta de ROAS de ${roasAtual}x pra ${novoRoas}x (piso: 100/meta TACOS = ${metaRoasConta.toFixed(1)}x) pra deixar o lance mais agressivo.` };
+      } else {
+        const budgetNum = parseFloat(budgetAtual) || 0;
+        if (budgetNum <= 0) { alert(`"${nome}" não tem orçamento fixo nem meta de ROAS configurada — não dá pra calcular um boost automático. Ajusta manualmente no painel "Avançado".`); return; }
+        const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, budgetNum * 1.2) * 100) / 100;
+        if (novoBudget <= budgetNum) { alert(`"${nome}" já está no teto de orçamento configurado (${R$(cfg.orcamento_max)}) — não dá pra subir mais sem mudar o guardrail.`); return; }
+        sugestao = { campaign_id: Number(campaignId), nome_campanha: nome, tipo: 'orcamento', valor_atual: budgetNum, valor_sugerido: novoBudget, titulo: `Boost solicitado — ${nome}`, explicacao: `Analista pediu boost manual. Subindo orçamento de ${R$(budgetNum)} pra ${R$(novoBudget)} (+20%). ACOS atual: ${acos === Infinity ? '∞' : acos.toFixed(1) + '%'}.` };
+      }
+      await criarSugestoesNoKanban([sugestao]);
+      await carregarTudo();
+      alert(`Sugestão de boost criada pra "${nome}" — veja em "Mudanças e resultados", coluna "Aguardando aprovação", pra aprovar.`);
+    }
+
     // Tira o bloco ```json...``` (se houver) da resposta do modelo e devolve
     // a lista de sugestões válidas (campaign_id + tipo reconhecido). Pedidos
     // que não geram ação concreta (pergunta geral, "por que caiu tal coisa")
@@ -686,7 +714,7 @@
       const valor = parseFloat(v('ag-man-valor'));
       const explicacaoInput = v('ag-man-explicacao');
 
-      if (!campaignId) { alert('Cola o ID da campanha (aparece na tabela "Campanhas ao vivo", coluna ID, ou clica em "⚡ Usar" numa linha).'); return; }
+      if (!campaignId) { alert('Cola o ID da campanha (aparece na tabela "Campanhas ao vivo", coluna ID).'); return; }
       if (tipo !== 'pausar' && (isNaN(valor) || valor <= 0)) { alert('Preenche o valor novo (orçamento ou meta de ROAS).'); return; }
 
       const acaoLabel = { orcamento: 'Orçamento ajustado manualmente', roas: 'Meta de ROAS ajustada manualmente', pausar: 'Campanha pausada manualmente' }[tipo];
@@ -747,7 +775,7 @@
       return `<details style="margin-bottom:20px;">
       <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--text-muted);padding:4px 0;">⚡ Avançado: ajustar 1 campanha específica na mão</summary>
       <div class="ag-hud-card" style="--ag-hud-accent:#dc2626;margin-top:10px;">
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Só pra casos pontuais — pega o ID na tabela "Campanhas ao vivo" ou clica em "⚡ Usar" numa linha.</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Só pra casos pontuais — pega o ID na tabela "Campanhas ao vivo" (coluna ID). Pra aumentar investimento, prefira o botão "🚀 Boost" na própria tabela, que já sugere o valor certo pra aprovar.</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px;">
           <div class="form-group" style="margin:0;"><label class="form-label">ID da campanha</label><input type="text" class="form-input" id="ag-man-campanha" placeholder="Ex: 86858387"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Nome (só pro log)</label><input type="text" class="form-input" id="ag-man-nome" placeholder="Opcional"></div>
@@ -1082,7 +1110,7 @@
                 <td class="ag-mono" style="white-space:nowrap;">${R$(c.gasto)}</td>
                 <td class="ag-mono" style="white-space:nowrap;font-weight:700;">${R$(c.gmv)}</td>
                 <td class="ag-mono" style="white-space:nowrap;">${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}</td>
-                <td style="white-space:nowrap;">${c.id ? `<button class="btn btn-secondary btn-sm" onclick="window._agUsarCampanhaManual('${c.id}', '${esc(c.nome).replace(/'/g, "\\'")}')">⚡ Usar</button>` : ''}</td>
+                <td style="white-space:nowrap;">${c.id ? `<button class="btn btn-secondary btn-sm" title="Sugere um aumento de investimento pra essa campanha, pra aprovar no Kanban" onclick="window._agBoostCampanha('${c.id}', '${esc(c.nome).replace(/'/g, "\\'")}', ${c.budget || 0}, ${c.roasTarget != null ? c.roasTarget : 'null'}, ${c.acos === Infinity ? 'Infinity' : c.acos})">🚀 Boost</button>` : ''}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -1254,6 +1282,7 @@
     window._agRodarAgora = rodarAgenteAgora;
     window._agAprovarAlerta = aprovarAlerta;
     window._agDescartarAlerta = descartarAlerta;
+    window._agBoostCampanha = boostCampanha;
     window._agUsarCampanhaManual = (id, nome) => {
       const campoId = document.getElementById('ag-man-campanha');
       const campoNome = document.getElementById('ag-man-nome');
