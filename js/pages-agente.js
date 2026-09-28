@@ -40,6 +40,7 @@
       filtroLog: 'todos',
       dadosAoVivoPorConta: {}, carregandoDadosAoVivo: false,
       negocioPorConta: {}, carregandoNegocio: false, negocioPeriodo: '7',
+      executandoAcaoManual: false,
     };
 
     function render() { renderShell(); }
@@ -225,7 +226,7 @@
           pedidosTotal += d.pedidos;
           if ((s.campaign_status || '').toLowerCase() === 'ongoing') ativas++;
           const acos = d.gmv > 0 ? (d.gasto / d.gmv * 100) : (d.gasto > 0 ? Infinity : 0);
-          porCampanha.push({ nome: s.ad_name || `Campanha ${c.campaign_id}`, budget: parseFloat(s.campaign_budget) || 0, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status });
+          porCampanha.push({ id: c.campaign_id, nome: s.ad_name || `Campanha ${c.campaign_id}`, budget: parseFloat(s.campaign_budget) || 0, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status });
         });
         porCampanha.sort((a, b) => b.gasto - a.gasto);
 
@@ -554,6 +555,92 @@
       </div>`;
     }
 
+    // ── Ação manual: executa direto na Shopee (pausar/orçamento/meta de
+    // ROAS) sem depender da listagem automática de campanhas — usa as
+    // mesmas ações já validadas ao vivo (shopee_ads_edit_campaign,
+    // shopee_ads_roi_target, shopee_ads_pause_campaign). Pedido do usuário
+    // pra ter um jeito de agir mesmo quando o pipeline automático (que
+    // depende de listar campanhas primeiro) está bloqueado pela
+    // instabilidade do conector. ──
+    async function executarAcaoManual() {
+      const contaId = state.contaAbertaId;
+      const cfg = configDaConta(contaId);
+      const v = id => document.getElementById(id)?.value?.trim();
+      const campaignId = v('ag-man-campanha');
+      const nome = v('ag-man-nome') || `Campanha ${campaignId}`;
+      const tipo = v('ag-man-tipo');
+      const valor = parseFloat(v('ag-man-valor'));
+      const explicacaoInput = v('ag-man-explicacao');
+
+      if (!campaignId) { alert('Cola o ID da campanha (aparece na tabela "Campanhas ao vivo", coluna ID, ou clica em "⚡ Usar" numa linha).'); return; }
+      if (tipo !== 'pausar' && (isNaN(valor) || valor <= 0)) { alert('Preenche o valor novo (orçamento ou meta de ROAS).'); return; }
+
+      const acaoLabel = { orcamento: 'Orçamento ajustado manualmente', roas: 'Meta de ROAS ajustada manualmente', pausar: 'Campanha pausada manualmente' }[tipo];
+      const explicacao = explicacaoInput || `Ação manual do analista via botão "Executar agora" — bypassa a listagem automática de campanhas.`;
+
+      state.executandoAcaoManual = true;
+      render();
+      try {
+        let dados = {};
+        if (tipo === 'orcamento') {
+          await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaId, campaign_id: Number(campaignId), campaign_budget: valor });
+          dados = { budget_para: valor };
+        } else if (tipo === 'roas') {
+          await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: contaId, campaign_id: Number(campaignId), roas_target: valor });
+          dados = { roas_para: valor };
+        } else if (tipo === 'pausar') {
+          await MarketplaceAPI.call('shopee_ads_pause_campaign', { shopId: contaId, campaign_id: Number(campaignId) });
+        }
+        await _sb.from('glr_agente_log').insert({
+          conta_id: contaId, cliente_nome: cfg?.cliente_nome || null, tipo: 'decisao',
+          titulo: `${acaoLabel} — ${nome}`, explicacao, dados: { ...dados, campaign_id: Number(campaignId) },
+          resultado: 'executado', origem: 'analista',
+        });
+        document.getElementById('ag-man-campanha').value = '';
+        document.getElementById('ag-man-nome').value = '';
+        document.getElementById('ag-man-valor').value = '';
+        document.getElementById('ag-man-explicacao').value = '';
+        await carregarTudo();
+      } catch (e) {
+        try {
+          await _sb.from('glr_agente_log').insert({
+            conta_id: contaId, cliente_nome: cfg?.cliente_nome || null, tipo: 'decisao',
+            titulo: `Falha ao executar manualmente — ${nome}`, explicacao: `Tentei: ${explicacao} — mas deu erro: ${e.message || e}`,
+            dados: { campaign_id: Number(campaignId) || null }, resultado: 'erro', origem: 'analista',
+          });
+        } catch (e2) {}
+        alert('Erro ao executar: ' + (e.message || e));
+        await carregarTudo();
+      } finally {
+        state.executandoAcaoManual = false;
+        render();
+      }
+    }
+
+    function renderAcaoManual(contaId) {
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#dc2626;margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:800;margin-bottom:2px;">⚡ Ação manual — executa direto na Shopee</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Pra quando você já sabe o que quer fazer (por exemplo, pelo chat) e não quer esperar o pipeline automático — não depende da listagem de campanhas. Pega o ID na tabela "Campanhas ao vivo" acima ou clica em "⚡ Usar" numa linha.</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px;">
+          <div class="form-group" style="margin:0;"><label class="form-label">ID da campanha</label><input type="text" class="form-input" id="ag-man-campanha" placeholder="Ex: 86858387"></div>
+          <div class="form-group" style="margin:0;"><label class="form-label">Nome (só pro log)</label><input type="text" class="form-input" id="ag-man-nome" placeholder="Opcional"></div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">O que fazer</label>
+            <select class="form-select" id="ag-man-tipo" onchange="window._agAtualizarTipoManual()">
+              <option value="orcamento">Ajustar orçamento (R$/dia)</option>
+              <option value="roas">Ajustar meta de ROAS (x)</option>
+              <option value="pausar">Pausar campanha</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;" id="ag-man-valor-wrap"><label class="form-label">Valor novo</label><input type="number" step="0.1" class="form-input" id="ag-man-valor" placeholder="Ex: 300 ou 17.5"></div>
+        </div>
+        <div class="form-group" style="margin-bottom:12px;"><label class="form-label">Por quê (opcional, vai pro log)</label><input type="text" class="form-input" id="ag-man-explicacao" placeholder="Ex: recomendação do chat — Rack Linea, ACOS saudável, aumentar orçamento"></div>
+        <button class="btn btn-primary" style="background:#dc2626;border-color:#dc2626;" ${state.executandoAcaoManual ? 'disabled' : ''} onclick="window._agExecutarAcaoManual()">
+          ${state.executandoAcaoManual ? '⏳ Executando na Shopee...' : '⚡ Executar agora'}
+        </button>
+      </div>`;
+    }
+
     // ── Extrai ação/de→para de uma entrada de log (decisão ou alerta) pra
     // exibição compacta em card — mesma lógica usada no Kanban. ──
     function descreverAcao(l) {
@@ -770,11 +857,13 @@
           <thead>
             <tr>
               <th>Campanha</th>
+              <th>ID</th>
               <th>Status</th>
               <th>Orçamento</th>
               <th>Gasto</th>
               <th>GMV</th>
               <th>ACOS</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -783,11 +872,13 @@
               const cor = STATUS_COR[statusChave] || '#64748b';
               return `<tr style="--row-accent:${cor};">
                 <td style="max-width:280px;">${esc(c.nome)}</td>
+                <td class="ag-mono" style="white-space:nowrap;color:var(--text-muted);">${c.id ?? '—'}</td>
                 <td><span class="ag-action-chip" style="color:${cor};background:${cor}1a;">${esc(c.status || '—')}</span></td>
                 <td class="ag-mono" style="white-space:nowrap;">${R$(c.budget)}</td>
                 <td class="ag-mono" style="white-space:nowrap;">${R$(c.gasto)}</td>
                 <td class="ag-mono" style="white-space:nowrap;font-weight:700;">${R$(c.gmv)}</td>
                 <td class="ag-mono" style="white-space:nowrap;">${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}</td>
+                <td style="white-space:nowrap;">${c.id ? `<button class="btn btn-secondary btn-sm" onclick="window._agUsarCampanhaManual('${c.id}', '${esc(c.nome).replace(/'/g, "\\'")}')">⚡ Usar</button>` : ''}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -876,6 +967,7 @@
       root.innerHTML = `
         ${voltar}
         ${renderSaudeHero(cfg)}
+        ${renderAcaoManual(cfg.conta_id)}
         ${renderKanban(cfg.conta_id)}
         ${renderNegocio(cfg.conta_id)}
         ${renderCampanhasAoVivo(cfg.conta_id)}
@@ -953,6 +1045,19 @@
       if (id && id !== '__novo__') { buscarDadosAoVivo(id); buscarNegocio(id); }
     };
     window._agVoltarPortfolio = () => { state.contaAbertaId = null; render(); };
+    window._agExecutarAcaoManual = executarAcaoManual;
+    window._agUsarCampanhaManual = (id, nome) => {
+      const campoId = document.getElementById('ag-man-campanha');
+      const campoNome = document.getElementById('ag-man-nome');
+      if (campoId) campoId.value = id;
+      if (campoNome) campoNome.value = nome;
+      campoId?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    window._agAtualizarTipoManual = () => {
+      const tipo = document.getElementById('ag-man-tipo')?.value;
+      const wrap = document.getElementById('ag-man-valor-wrap');
+      if (wrap) wrap.style.display = tipo === 'pausar' ? 'none' : '';
+    };
 
     render();
     carregarTudo();
