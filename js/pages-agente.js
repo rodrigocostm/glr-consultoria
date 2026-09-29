@@ -186,6 +186,8 @@
               gasto: dias.reduce((s, d) => s + (parseFloat(d.expense) || 0), 0),
               gmv: dias.reduce((s, d) => s + (parseFloat(d.broad_gmv) || 0), 0),
               pedidos: dias.reduce((s, d) => s + (parseInt(d.broad_order) || 0), 0),
+              impressoes: dias.reduce((s, d) => s + (parseInt(d.impression) || 0), 0),
+              cliques: dias.reduce((s, d) => s + (parseInt(d.clicks) || 0), 0),
             };
           });
         }
@@ -208,7 +210,7 @@
           pedidosTotal += d.pedidos;
           if ((s.campaign_status || '').toLowerCase() === 'ongoing') ativas++;
           const acos = d.gmv > 0 ? (d.gasto / d.gmv * 100) : (d.gasto > 0 ? Infinity : 0);
-          porCampanha.push({ id: c.campaign_id, nome: s.ad_name || `Campanha ${c.campaign_id}`, budget: parseFloat(s.campaign_budget) || 0, roasTarget: s.roas_target, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status });
+          porCampanha.push({ id: c.campaign_id, nome: s.ad_name || `Campanha ${c.campaign_id}`, budget: parseFloat(s.campaign_budget) || 0, roasTarget: s.roas_target, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status, impressoes: d.impressoes || 0, cliques: d.cliques || 0, pedidos: d.pedidos || 0, ctr: d.impressoes > 0 ? (d.cliques / d.impressoes * 100) : 0 });
         });
         porCampanha.sort((a, b) => b.gasto - a.gasto);
 
@@ -235,17 +237,25 @@
           // individuais, inclusive modo GMV Max por produto). Escopo do
           // agente é só campanhas individuais — GMV Max da Loja fica de fora
           // (o agente nunca conseguia agir nele mesmo, só gerava alerta).
-          let gastoTotal = 0, gmvTotal = 0;
+          let gastoTotal = 0, gmvTotal = 0, impressoesTotal = 0, cliquesTotal = 0, pedidosAdsTotal = 0;
           try {
             const perfDiario = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: seteDiasAtras, end_date: hoje });
             const diasPerf = perfDiario.data?.response || perfDiario.response || [];
-            diasPerf.forEach(d => { gastoTotal += parseFloat(d.expense) || 0; gmvTotal += parseFloat(d.broad_gmv) || 0; });
+            diasPerf.forEach(d => {
+              gastoTotal += parseFloat(d.expense) || 0; gmvTotal += parseFloat(d.broad_gmv) || 0;
+              impressoesTotal += parseInt(d.impression) || 0; cliquesTotal += parseInt(d.clicks) || 0;
+              pedidosAdsTotal += parseInt(d.broad_order) || 0;
+            });
           } catch (e) {}
           const tacosGeral = faturamentoTotal > 0 ? (gastoTotal / faturamentoTotal * 100) : (gastoTotal > 0 ? Infinity : 0);
           resultado = {
             atualizadoEm: new Date().toISOString(),
             campanhasAtivas: ativas, gastoTotal, gmvTotal, pedidosTotal, faturamentoTotal, tacosGeral,
             acosGeral: gmvTotal > 0 ? (gastoTotal / gmvTotal * 100) : (gastoTotal > 0 ? Infinity : 0),
+            impressoesTotal, cliquesTotal, pedidosAdsTotal,
+            ctrGeral: impressoesTotal > 0 ? (cliquesTotal / impressoesTotal * 100) : 0,
+            crGeral: cliquesTotal > 0 ? (pedidosAdsTotal / cliquesTotal * 100) : 0,
+            cpcGeral: cliquesTotal > 0 ? (gastoTotal / cliquesTotal) : 0,
             topCampanhas: porCampanha.slice(0, 8),
             avisoParcial: (falhasSettings > 0 || falhasDiario > 0) ? 'Algumas campanhas podem estar faltando — houve falha parcial ao buscar dados da Shopee.' : null,
           };
@@ -1048,6 +1058,27 @@
     }
 
     // ── Campanhas ao vivo (com GMV, orçamento, gasto e ACOS por campanha) ──
+    // ── Impressões, Cliques e Vendas: funil de ADS da conta (topo de funil
+    // até venda), pedido explícito do analista — separado da tabela de
+    // campanhas porque é uma leitura de conta inteira, não por campanha. ──
+    function renderImpressoesCliquesVendas(contaId) {
+      const d = state.dadosAoVivoPorConta[contaId];
+      if (!d || d.erro || d.impressoesTotal == null) return '';
+      const n = v => (v || 0).toLocaleString('pt-BR');
+      const metrica = (label, valor, sub) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${label}</div><div class="ag-mono" style="font-size:20px;font-weight:800;">${valor}</div>${sub ? `<div class="ag-hud-sub">${sub}</div>` : ''}</div>`;
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#0ea5e9;margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:800;margin-bottom:2px;">📊 Impressões, Cliques e Vendas (últimos 7 dias)</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Funil de ADS da conta inteira — de quantas vezes o anúncio apareceu até quantas vendas ele gerou.</div>
+        <div style="display:flex;gap:28px;flex-wrap:wrap;">
+          ${metrica('Impressões', n(d.impressoesTotal))}
+          ${metrica('Cliques', n(d.cliquesTotal), `CTR ${d.ctrGeral.toFixed(2)}%`)}
+          ${metrica('Pedidos (ADS)', n(d.pedidosAdsTotal), `Conversão ${d.crGeral.toFixed(2)}%`)}
+          ${metrica('CPC médio', R$(d.cpcGeral))}
+          ${metrica('Vendas atribuídas', R$(d.gmvTotal), `ACOS ${d.acosGeral === Infinity ? '∞' : d.acosGeral.toFixed(1) + '%'}`)}
+        </div>
+      </div>`;
+    }
+
     function renderCampanhasAoVivo(contaId) {
       const d = state.dadosAoVivoPorConta[contaId];
       if (!d) return '';
@@ -1079,6 +1110,10 @@
               <th>Status</th>
               <th>Orçamento</th>
               <th>Gasto</th>
+              <th>Impressões</th>
+              <th>Cliques</th>
+              <th>CTR</th>
+              <th>Pedidos</th>
               <th>GMV</th>
               <th>ACOS</th>
               <th></th>
@@ -1094,6 +1129,10 @@
                 <td><span class="ag-action-chip" style="color:${cor};background:${cor}1a;">${esc(c.status || '—')}</span></td>
                 <td class="ag-mono" style="white-space:nowrap;">${R$(c.budget)}</td>
                 <td class="ag-mono" style="white-space:nowrap;">${R$(c.gasto)}</td>
+                <td class="ag-mono" style="white-space:nowrap;">${(c.impressoes || 0).toLocaleString('pt-BR')}</td>
+                <td class="ag-mono" style="white-space:nowrap;">${(c.cliques || 0).toLocaleString('pt-BR')}</td>
+                <td class="ag-mono" style="white-space:nowrap;">${(c.ctr || 0).toFixed(2)}%</td>
+                <td class="ag-mono" style="white-space:nowrap;">${c.pedidos || 0}</td>
                 <td class="ag-mono" style="white-space:nowrap;font-weight:700;">${R$(c.gmv)}</td>
                 <td class="ag-mono" style="white-space:nowrap;">${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}</td>
                 <td style="white-space:nowrap;">${c.id ? `<button class="btn btn-secondary btn-sm" title="Sugere um aumento de investimento pra essa campanha, pra aprovar no Kanban" onclick="window._agBoostCampanha('${c.id}', '${esc(c.nome).replace(/'/g, "\\'")}', ${c.budget || 0}, ${c.roasTarget != null ? c.roasTarget : 'null'}, ${c.acos === Infinity ? 'Infinity' : c.acos})">🚀 Boost</button>` : ''}</td>
@@ -1189,6 +1228,7 @@
         ${renderAcaoManual(cfg.conta_id)}
         ${renderKanban(cfg.conta_id)}
         ${renderNegocio(cfg.conta_id)}
+        ${renderImpressoesCliquesVendas(cfg.conta_id)}
         ${renderCampanhasAoVivo(cfg.conta_id)}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="ag-grid-resp">
           <div>
