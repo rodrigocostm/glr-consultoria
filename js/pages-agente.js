@@ -695,7 +695,7 @@
               <div><div class="ag-hud-label" style="margin-bottom:2px;">Decisões</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:#16a34a;">${r.decisoes}</div></div>
               <div><div class="ag-hud-label" style="margin-bottom:2px;">Alertas</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:${r.alertas ? '#d97706' : 'inherit'};">${r.alertas}</div></div>
               <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${r.tacos}</div></div>
-            </div>${r.paginacaoErro ? `<div style="margin-top:10px;background:#d977061a;border:1px solid #d97706;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#d97706;">⚠️ Instabilidade do provedor Tiops ao paginar campanhas Shopee além das primeiras 100 — pode ter campanha ativa fora dessa lista agora. Chamado TCK-001148 aberto com o suporte deles, aguardando resposta.</div>` : ''}`) : ''}
+            </div>${r.paginacaoErro ? `<div style="margin-top:10px;background:#d977061a;border:1px solid #d97706;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#d97706;">⚠️ Instabilidade do provedor Tiops ao paginar campanhas Shopee além das primeiras 100 — pode ter campanha ativa fora dessa lista agora. Chamado TCK-001154 aberto com o suporte deles, aguardando resposta.</div>` : ''}`) : ''}
       </div>`;
     }
 
@@ -1087,7 +1087,7 @@
         // mostra um aviso em vez de desaparecer.
         return `<div class="ag-hud-card" style="--ag-hud-accent:#d97706;margin-bottom:20px;">
           <div style="font-size:14px;font-weight:800;margin-bottom:6px;">📡 Campanhas ao vivo — indisponível agora</div>
-          <div style="font-size:12px;color:var(--text-secondary);line-height:1.6;">Não consegui listar as campanhas ativas dessa conta agora (instabilidade do provedor Tiops ao paginar além das primeiras 100 campanhas da Shopee — chamado TCK-001148 aberto, aguardando resposta). Não é um problema na conta: as campanhas continuam existindo e ativas na Shopee, só a listagem que está falhando aqui.</div>
+          <div style="font-size:12px;color:var(--text-secondary);line-height:1.6;">Não consegui listar as campanhas ativas dessa conta agora (instabilidade do provedor Tiops ao paginar além das primeiras 100 campanhas da Shopee — chamado TCK-001154 aberto, aguardando resposta). Não é um problema na conta: as campanhas continuam existindo e ativas na Shopee, só a listagem que está falhando aqui.</div>
           <button class="btn btn-secondary btn-sm" style="margin-top:10px;" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">🔄 Tentar de novo</button>
         </div>`;
       }
