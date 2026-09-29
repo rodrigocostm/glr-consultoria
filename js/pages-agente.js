@@ -247,6 +247,19 @@
               pedidosAdsTotal += parseInt(d.broad_order) || 0;
             });
           } catch (e) {}
+          // Comparativo com os 7 dias anteriores — mesmo período, deslocado,
+          // pra dar noção de tendência (subindo/caindo) em vez de só um
+          // número solto. Mesma janela usada no card "Saúde do negócio".
+          let impressoesAnterior = 0, cliquesAnterior = 0, pedidosAdsAnterior = 0, gmvAnterior = 0;
+          try {
+            const perfAnterior = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: dataLocal(14), end_date: dataLocal(8) });
+            const diasAnt = perfAnterior.data?.response || perfAnterior.response || [];
+            diasAnt.forEach(d => {
+              impressoesAnterior += parseInt(d.impression) || 0; cliquesAnterior += parseInt(d.clicks) || 0;
+              pedidosAdsAnterior += parseInt(d.broad_order) || 0; gmvAnterior += parseFloat(d.broad_gmv) || 0;
+            });
+          } catch (e) {}
+          const variacaoPct = (atual, anterior) => anterior > 0 ? ((atual - anterior) / anterior * 100) : (atual > 0 ? Infinity : null);
           const tacosGeral = faturamentoTotal > 0 ? (gastoTotal / faturamentoTotal * 100) : (gastoTotal > 0 ? Infinity : 0);
           resultado = {
             atualizadoEm: new Date().toISOString(),
@@ -256,6 +269,11 @@
             ctrGeral: impressoesTotal > 0 ? (cliquesTotal / impressoesTotal * 100) : 0,
             crGeral: cliquesTotal > 0 ? (pedidosAdsTotal / cliquesTotal * 100) : 0,
             cpcGeral: cliquesTotal > 0 ? (gastoTotal / cliquesTotal) : 0,
+            impressoesAnterior, cliquesAnterior, pedidosAdsAnterior, gmvAnterior,
+            variacaoImpressoes: variacaoPct(impressoesTotal, impressoesAnterior),
+            variacaoCliques: variacaoPct(cliquesTotal, cliquesAnterior),
+            variacaoPedidosAds: variacaoPct(pedidosAdsTotal, pedidosAdsAnterior),
+            variacaoGmv: variacaoPct(gmvTotal, gmvAnterior),
             topCampanhas: porCampanha.slice(0, 8),
             avisoParcial: (falhasSettings > 0 || falhasDiario > 0) ? 'Algumas campanhas podem estar faltando — houve falha parcial ao buscar dados da Shopee.' : null,
           };
@@ -1065,16 +1083,22 @@
       const d = state.dadosAoVivoPorConta[contaId];
       if (!d || d.erro || d.impressoesTotal == null) return '';
       const n = v => (v || 0).toLocaleString('pt-BR');
-      const metrica = (label, valor, sub) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${label}</div><div class="ag-mono" style="font-size:20px;font-weight:800;">${valor}</div>${sub ? `<div class="ag-hud-sub">${sub}</div>` : ''}</div>`;
+      const varChip = v => {
+        if (v == null) return '';
+        const sobe = v > 0, cor = sobe ? '#16a34a' : v < 0 ? '#dc2626' : '#64748b';
+        const txt = v === Infinity ? 'novo' : `${sobe ? '+' : ''}${v.toFixed(1)}%`;
+        return `<span style="color:${cor};font-weight:700;">${sobe ? '▲' : v < 0 ? '▼' : '–'} ${txt}</span>`;
+      };
+      const metrica = (label, valor, sub, variacao) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${label}</div><div class="ag-mono" style="font-size:20px;font-weight:800;">${valor}</div><div class="ag-hud-sub">${sub || ''}${sub && variacao != null ? ' · ' : ''}${varChip(variacao)}</div></div>`;
       return `<div class="ag-hud-card" style="--ag-hud-accent:#0ea5e9;margin-bottom:20px;">
         <div style="font-size:14px;font-weight:800;margin-bottom:2px;">📊 Impressões, Cliques e Vendas (últimos 7 dias)</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Funil de ADS da conta inteira — de quantas vezes o anúncio apareceu até quantas vendas ele gerou.</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Funil de ADS da conta inteira — de quantas vezes o anúncio apareceu até quantas vendas ele gerou. Variação vs os 7 dias anteriores.</div>
         <div style="display:flex;gap:28px;flex-wrap:wrap;">
-          ${metrica('Impressões', n(d.impressoesTotal))}
-          ${metrica('Cliques', n(d.cliquesTotal), `CTR ${d.ctrGeral.toFixed(2)}%`)}
-          ${metrica('Pedidos (ADS)', n(d.pedidosAdsTotal), `Conversão ${d.crGeral.toFixed(2)}%`)}
+          ${metrica('Impressões', n(d.impressoesTotal), null, d.variacaoImpressoes)}
+          ${metrica('Cliques', n(d.cliquesTotal), `CTR ${d.ctrGeral.toFixed(2)}%`, d.variacaoCliques)}
+          ${metrica('Pedidos (ADS)', n(d.pedidosAdsTotal), `Conversão ${d.crGeral.toFixed(2)}%`, d.variacaoPedidosAds)}
           ${metrica('CPC médio', R$(d.cpcGeral))}
-          ${metrica('Vendas atribuídas', R$(d.gmvTotal), `ACOS ${d.acosGeral === Infinity ? '∞' : d.acosGeral.toFixed(1) + '%'}`)}
+          ${metrica('Vendas atribuídas', R$(d.gmvTotal), `ACOS ${d.acosGeral === Infinity ? '∞' : d.acosGeral.toFixed(1) + '%'}`, d.variacaoGmv)}
         </div>
       </div>`;
     }
