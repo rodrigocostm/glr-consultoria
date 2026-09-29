@@ -695,7 +695,7 @@
               <div><div class="ag-hud-label" style="margin-bottom:2px;">Decisões</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:#16a34a;">${r.decisoes}</div></div>
               <div><div class="ag-hud-label" style="margin-bottom:2px;">Alertas</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:${r.alertas ? '#d97706' : 'inherit'};">${r.alertas}</div></div>
               <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${r.tacos}</div></div>
-            </div>${r.paginacaoErro ? `<div style="margin-top:10px;background:#d977061a;border:1px solid #d97706;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#d97706;">⚠️ Instabilidade do provedor Tiops ao paginar campanhas além das primeiras 100 (não é sobre Mercado Livre, apesar do erro técnico bruto citar isso — mensagem interna do próprio Tiops) — pode ter campanha ativa fora dessa lista agora. Chamado TCK-001148 aberto com o suporte deles, aguardando resposta.</div>` : ''}`) : ''}
+            </div>${r.paginacaoErro ? `<div style="margin-top:10px;background:#d977061a;border:1px solid #d97706;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#d97706;">⚠️ Instabilidade do provedor Tiops ao paginar campanhas Shopee além das primeiras 100 — pode ter campanha ativa fora dessa lista agora. Chamado TCK-001148 aberto com o suporte deles, aguardando resposta.</div>` : ''}`) : ''}
       </div>`;
     }
 
