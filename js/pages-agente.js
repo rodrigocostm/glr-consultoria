@@ -506,10 +506,16 @@
       const cfg = configDaConta(state.contaAbertaId);
       const contaId = state.contaAbertaId;
       for (const s of sugestoes) {
-        const dados = { campaign_id: Number(s.campaign_id) };
-        if (s.tipo === 'roas') { dados.roas_atual = s.valor_atual; dados.roas_sugerido = s.valor_sugerido; }
-        else if (s.tipo === 'orcamento') { dados.budget_atual = s.valor_atual; dados.budget_sugerido = s.valor_sugerido; }
-        else if (s.tipo === 'pausar') { dados.pausar = true; }
+        // Ads usa campaign_id; estoque/preço (Fundação do Analista GLR,
+        // módulos ainda não produzem essas sugestões sozinhos, mas o Kanban
+        // já reconhece o formato) usam item_id — dados começa vazio e cada
+        // tipo preenche o que precisa, em vez de assumir campaign_id sempre.
+        const dados = {};
+        if (s.tipo === 'roas') { dados.campaign_id = Number(s.campaign_id); dados.roas_atual = s.valor_atual; dados.roas_sugerido = s.valor_sugerido; }
+        else if (s.tipo === 'orcamento') { dados.campaign_id = Number(s.campaign_id); dados.budget_atual = s.valor_atual; dados.budget_sugerido = s.valor_sugerido; }
+        else if (s.tipo === 'pausar') { dados.campaign_id = Number(s.campaign_id); dados.pausar = true; }
+        else if (s.tipo === 'estoque') { dados.item_id = s.item_id; dados.marketplace = s.marketplace; dados.model_id = s.model_id; dados.estoque_atual = s.valor_atual; dados.estoque_sugerido = s.valor_sugerido; }
+        else if (s.tipo === 'preco') { dados.item_id = s.item_id; dados.marketplace = s.marketplace; dados.model_id = s.model_id; dados.preco_atual = s.valor_atual; dados.preco_sugerido = s.valor_sugerido; }
         try {
           await _sb.from('glr_agente_log').insert({
             conta_id: contaId, cliente_nome: cfg?.cliente_nome || null, tipo: 'alerta',
@@ -829,6 +835,16 @@
         deParaVal = `${R$(d.budget_atual)} → ${R$(d.budget_sugerido)}`;
       } else if (d.pausar === true) {
         acaoLabel = '⏸ Sugestão: pausar'; acaoCor = '#dc2626';
+      } else if (d.estoque_atual != null && d.estoque_sugerido != null) {
+        const subiu = d.estoque_sugerido > d.estoque_atual;
+        acaoLabel = subiu ? '▲ Sugestão: repor estoque' : '▼ Sugestão: reduzir estoque';
+        acaoCor = subiu ? '#22d3ee' : '#d97706';
+        deParaVal = `${d.estoque_atual} un → ${d.estoque_sugerido} un`;
+      } else if (d.preco_atual != null && d.preco_sugerido != null) {
+        const subiu = d.preco_sugerido > d.preco_atual;
+        acaoLabel = subiu ? '▲ Sugestão: subir preço' : '▼ Sugestão: baixar preço';
+        acaoCor = subiu ? '#22d3ee' : '#d97706';
+        deParaVal = `${R$(d.preco_atual)} → ${R$(d.preco_sugerido)}`;
       } else if ((l.titulo || '').includes('pausada')) {
         acaoLabel = '⏸ Pausada'; acaoCor = '#dc2626';
       }
@@ -843,7 +859,7 @@
       // verdade ou se é só informativo (ex: alerta de GMV Max da Loja, fora
       // do escopo do agente, sem ação automática associada).
       const d = l.dados || {};
-      const temAcaoExecutavel = d.campaign_id != null && (d.roas_sugerido != null || d.budget_sugerido != null || d.pausar === true);
+      const temAcaoExecutavel = !!temAcaoReconhecida(d);
       const processando = state.processandoAlertaId === l.id;
       return `<div style="border:1px solid var(--border);border-left:3px solid ${corBorda};border-radius:8px;padding:10px 12px;background:var(--bg-card-hover,#f7f7fb);">
         <div style="font-size:12.5px;font-weight:700;line-height:1.4;">${nomeCampanha || esc(l.titulo)}</div>
@@ -859,27 +875,58 @@
       </div>`;
     }
 
+    // Um alerta é "executável" se tiver ação automática reconhecida associada.
+    // Ads (campaign_id + roas/budget/pausar) já existia; estoque (item_id +
+    // estoque_sugerido) e preço (item_id + preco_sugerido) são novos — parte
+    // da Fundação do Analista GLR (nenhum módulo ainda produz esses alertas
+    // sozinho, mas o Kanban/aprovação já reconhece o formato pra quando os
+    // módulos de Rentabilidade/Estoque existirem, sem precisar mexer aqui de novo).
+    function temAcaoReconhecida(d) {
+      if (d.campaign_id != null && (d.roas_sugerido != null || d.budget_sugerido != null || d.pausar === true)) return 'ads';
+      if (d.item_id != null && d.estoque_sugerido != null) return 'estoque';
+      if (d.item_id != null && d.preco_sugerido != null) return 'preco';
+      return null;
+    }
+
     async function aprovarAlerta(logId) {
       const l = state.logs.find(x => String(x.id) === String(logId));
       if (!l) return;
       const d = l.dados || {};
-      if (d.campaign_id == null || (d.roas_sugerido == null && d.budget_sugerido == null && d.pausar !== true)) {
-        alert('Esse alerta é informativo — não tem ação automática associada pra aprovar. Ajuste manualmente na Shopee se for o caso, ou descarte.');
+      const tipoAcao = temAcaoReconhecida(d);
+      if (!tipoAcao) {
+        alert('Esse alerta é informativo — não tem ação automática associada pra aprovar. Ajuste manualmente no marketplace se for o caso, ou descarte.');
         return;
       }
       const cfg = configDaConta(l.conta_id);
       state.processandoAlertaId = logId;
       render();
       try {
-        if (d.pausar === true) {
-          await MarketplaceAPI.call('shopee_ads_pause_campaign', { shopId: l.conta_id, campaign_id: Number(d.campaign_id) });
-        } else if (d.roas_sugerido != null) {
-          await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: l.conta_id, campaign_id: Number(d.campaign_id), roas_target: d.roas_sugerido });
-        } else {
-          await MarketplaceAPI.call('shopee_ads_edit_campaign', {
-            shopId: l.conta_id,
-            params: { campaign_id: Number(d.campaign_id), budget: d.budget_sugerido, edit_action: 'change_budget', reference_id: `glr-aprovado-${Date.now()}-${d.campaign_id}` },
-          });
+        if (tipoAcao === 'ads') {
+          if (d.pausar === true) {
+            await MarketplaceAPI.call('shopee_ads_pause_campaign', { shopId: l.conta_id, campaign_id: Number(d.campaign_id) });
+          } else if (d.roas_sugerido != null) {
+            await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: l.conta_id, campaign_id: Number(d.campaign_id), roas_target: d.roas_sugerido });
+          } else {
+            await MarketplaceAPI.call('shopee_ads_edit_campaign', {
+              shopId: l.conta_id,
+              params: { campaign_id: Number(d.campaign_id), budget: d.budget_sugerido, edit_action: 'change_budget', reference_id: `glr-aprovado-${Date.now()}-${d.campaign_id}` },
+            });
+          }
+        } else if (tipoAcao === 'estoque') {
+          // marketplace da sugestão decide a ação — Shopee e ML cobertos
+          // desde já (ações confirmadas no diagnóstico); outros marketplaces
+          // entram conforme forem validados ao vivo, não antes.
+          if (d.marketplace === 'ml') {
+            await MarketplaceAPI.call('ml_update_variation_stock', { item_id: d.item_id, variation_id: d.model_id, available_quantity: d.estoque_sugerido });
+          } else {
+            await MarketplaceAPI.call('shopee_update_stock', { shopId: l.conta_id, item_id: Number(d.item_id), model_id: d.model_id ? Number(d.model_id) : undefined, stock: d.estoque_sugerido });
+          }
+        } else if (tipoAcao === 'preco') {
+          if (d.marketplace === 'ml') {
+            await MarketplaceAPI.call('ml_update_variations_price', { item_id: d.item_id, price: d.preco_sugerido });
+          } else {
+            await MarketplaceAPI.call('shopee_update_price', { shopId: l.conta_id, item_id: Number(d.item_id), model_id: d.model_id ? Number(d.model_id) : undefined, price: d.preco_sugerido });
+          }
         }
         await _sb.from('glr_agente_log').update({ resultado: 'executado' }).eq('id', l.id);
         await _sb.from('glr_agente_log').insert({
