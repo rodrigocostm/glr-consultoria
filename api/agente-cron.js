@@ -137,64 +137,18 @@ async function shopeeFaturamentoPeriodo(apiKey, shopId, startDate, endDate, orde
   return total;
 }
 
-// Lista TODAS as campanhas individuais de uma loja, com paginação de verdade.
-// A ação "shopee_ads_campaigns" do conector só devolve a primeira leva (sem
-// jeito de pedir a próxima) — confirmado ao vivo numa conta com 100+
-// campanhas: só voltavam as mais antigas, todas encerradas, enquanto o
-// painel da Shopee mostrava campanhas recentes ativas com milhares de reais
-// investidos. O endpoint raw certo (usado pelo SDK oficial como
-// getProductLevelCampaignIdList) é /api/v2/ads/get_product_level_campaign_id_list,
-// que aceita offset/limit e devolve has_next_page — aqui a gente pagina até
-// esgotar, com um teto de segurança pra nunca rodar pra sempre numa loja
-// gigante.
+// Lista TODAS as campanhas individuais de uma loja. Até 29/09/2026,
+// "shopee_ads_campaigns" só devolvia a primeira leva (~100) e a gente tinha
+// que complementar via raw_read paginado à mão — instável ("Falha ao
+// renovar token Meli", causa raiz: o backend do conector roteava errado
+// quando o campo marketplace vinha vazio em alguns casos). O Tiops corrigiu
+// dos dois lados: shopee_ads_campaigns agora pagina sozinha e devolve a
+// loja inteira numa chamada só (confirmado ao vivo: conta com 205
+// campanhas, has_next_page:false, total:205). Não precisa mais de
+// complemento nenhum.
 async function listarTodasCampanhas(apiKey, shopId) {
-  // Base confiável: shopee_ads_campaigns é a ação original, dedicada, que
-  // sempre funcionou (confirmado ao vivo agora: instantânea, sem erro,
-  // has_next_page:false pra contas com até ~100 campanhas — cobre a
-  // "doce festa" inteira numa chamada só). "raw_read" (abaixo) foi
-  // introduzido só pra estender além disso em contas gigantes tipo "Lojas
-  // 3B", mas se mostrou instável ("Falha ao renovar token Meli", mesmo em
-  // pedido 100% Shopee) — nunca deixa ele ser o único jeito de listar
-  // campanha, só um complemento best-effort.
-  let campanhas = [];
-  let hasNextPage = false;
-  try {
-    const base = await mcpCall(apiKey, 'shopee_ads_campaigns', { shopId });
-    campanhas = base.data?.response?.campaign_list || base.response?.campaign_list || [];
-    hasNextPage = base.data?.response?.has_next_page ?? base.response?.has_next_page ?? false;
-  } catch (e) {
-    // shopee_ads_campaigns falhando é sinal de instabilidade geral da API
-    // Shopee/Tiops (não só do raw_read) — propaga o erro, não adianta
-    // tentar o complemento sem a base.
-    throw e;
-  }
-  campanhas.paginacaoErro = null; // diagnóstico temporário — remover depois de confirmar a causa
-  if (!hasNextPage) return campanhas;
-
-  // Complemento opcional (contas grandes, >100 campanhas): tenta estender
-  // via raw_read paginado. Se falhar, fica só com a base já obtida acima —
-  // melhor que nada, e nunca derruba a conta inteira por causa disso.
-  const vistos = new Set(campanhas.map(c => c.campaign_id));
-  let offset = 100;
-  const limit = 100;
-  for (let pagina = 0; pagina < 20; pagina++) { // teto de 2000 campanhas
-    let json, ultimoErro = null;
-    for (let tentativa = 0; tentativa < 2 && !json; tentativa++) {
-      try {
-        json = await mcpCall(apiKey, 'raw_read', {
-          marketplace: 'shopee', shopId,
-          path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
-        });
-      } catch (e) { ultimoErro = e.message || String(e); /* tenta mais uma vez, ou desiste e fica com a base */ }
-    }
-    if (!json) { campanhas.paginacaoErro = ultimoErro; break; }
-    const lista = json.data?.response?.campaign_list || json.response?.campaign_list || [];
-    for (const c of lista) { if (!vistos.has(c.campaign_id)) { vistos.add(c.campaign_id); campanhas.push(c); } }
-    const temMais = json.data?.response?.has_next_page ?? json.response?.has_next_page;
-    if (!temMais || !lista.length) break;
-    offset += limit;
-  }
-  return campanhas;
+  const base = await mcpCall(apiKey, 'shopee_ads_campaigns', { shopId });
+  return base.data?.response?.campaign_list || base.response?.campaign_list || [];
 }
 
 function dataBRT(diasAtras = 0) {
@@ -645,7 +599,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     const resumo = await gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem);
     await sbUpsert('glr_agente_relatorios', { data: ontem.iso, conta_id: shopId, cliente_nome: cfg.cliente_nome || null, resumo, metricas }, 'data,conta_id');
 
-    return { conta_id: shopId, campanhas: campanhasAtivas, campanhas_listadas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta, paginacaoErro: campanhas.paginacaoErro || undefined };
+    return { conta_id: shopId, campanhas: campanhasAtivas, campanhas_listadas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta };
   } catch (e) {
     await logar('sistema', 'Erro na revisão diária', e.message || String(e), {}, 'erro');
     return { conta_id: shopId, erro: e.message };

@@ -90,40 +90,12 @@
     // getProductLevelCampaignIdList): /api/v2/ads/get_product_level_campaign_id_list,
     // que aceita offset/limit e devolve has_next_page de verdade.
     async function listarTodasCampanhasShopee(shopId) {
-      // Base confiável: shopee_ads_campaigns é a ação original, que sempre
-      // funcionou (confirmado ao vivo: instantânea, sem erro, cobre contas
-      // com até ~100 campanhas numa chamada só). "raw_read" só complementa
-      // contas maiores, best-effort — nunca é o único jeito de listar.
-      let campanhas = [];
-      let hasNextPage = false;
-      try {
-        const base = await MarketplaceAPI.call('shopee_ads_campaigns', { shopId });
-        campanhas = base.data?.response?.campaign_list || base.response?.campaign_list || [];
-        hasNextPage = base.data?.response?.has_next_page ?? base.response?.has_next_page ?? false;
-      } catch (e) { throw e; }
-      if (!hasNextPage) return campanhas;
-
-      const vistos = new Set(campanhas.map(c => c.campaign_id));
-      let offset = 100;
-      const limit = 100;
-      for (let pagina = 0; pagina < 20; pagina++) { // teto de 2000 campanhas
-        let json;
-        for (let tentativa = 0; tentativa < 2 && !json; tentativa++) {
-          try {
-            json = await MarketplaceAPI.call('raw_read', {
-              marketplace: 'shopee', shopId,
-              path: `/api/v2/ads/get_product_level_campaign_id_list?ad_type=all&offset=${offset}&limit=${limit}`,
-            });
-          } catch (e) { /* tenta mais uma vez, ou desiste e fica com a base */ }
-        }
-        if (!json) break;
-        const lista = json.data?.response?.campaign_list || json.response?.campaign_list || [];
-        for (const c of lista) { if (!vistos.has(c.campaign_id)) { vistos.add(c.campaign_id); campanhas.push(c); } }
-        const temMais = json.data?.response?.has_next_page ?? json.response?.has_next_page;
-        if (!temMais || !lista.length) break;
-        offset += limit;
-      }
-      return campanhas;
+      // Até 29/09/2026 precisava complementar com raw_read paginado à mão
+      // (shopee_ads_campaigns só trazia a primeira leva). O Tiops corrigiu:
+      // agora pagina sozinha e devolve a loja inteira numa chamada só
+      // (confirmado ao vivo: conta com 205 campanhas, has_next_page:false).
+      const base = await MarketplaceAPI.call('shopee_ads_campaigns', { shopId });
+      return base.data?.response?.campaign_list || base.response?.campaign_list || [];
     }
 
     // Converte um timestamp unix (segundos) pro formato "AAAA-MM-DD HH:MM:SS"
