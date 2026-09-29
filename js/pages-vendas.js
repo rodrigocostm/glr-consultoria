@@ -182,63 +182,12 @@ Router.register('vendas', async (params, el) => {
   // ── Cálculo de lucro ────────────────────────────────────────
   // Se temos taxas da API (Shopee escrow), usa liquido como base.
   // Senão, usa receita bruta.
+  // Delega pro módulo único js/margem-lucro.js (GLR_Margem) — mesma fórmula
+  // que já rodava aqui, agora compartilhada com Financeiro/DRE/Decision
+  // Engine do Analista GLR, num lugar só (evita as 3 implementações
+  // divergentes que existiam antes).
   function calcLucro(p) {
-    const receita  = parseFloat(p.valor) || 0;
-    const tx       = p.taxas || {};
-    // A Magalu não devolve um "líquido" pronto (como o escrow_amount da Shopee) —
-    // vem comissão e frete separados, direto do pedido. Sem calcular um líquido a
-    // partir disso, a comissão só aparecia no detalhamento do pedido (informativo)
-    // sem nunca ser descontada de verdade do lucro/margem — por isso pedidos Magalu
-    // apareciam com margem de 100% mesmo com comissão real diferente de zero.
-    let liquido = tx.liquido != null ? parseFloat(tx.liquido) : null;
-    if (liquido == null && p.plataforma === 'Magalu' && (tx.comissao || tx.frete)) {
-      liquido = receita - (parseFloat(tx.comissao) || 0) - (parseFloat(tx.frete) || 0);
-    }
-    const c        = custos[p.id] || {};
-    // Custo: 1) valor lançado manualmente nesse pedido específico, 2) catálogo por produto
-    // (aplica automaticamente em qualquer pedido do mesmo produto, sem precisar relançar).
-    const custoPedido  = parseFloat(c.custo) || 0;
-    const custoCatalogo= parseFloat(catalogoCusto[produtoKey(p)]) || 0;
-    const custo    = custoPedido || custoCatalogo;
-    const outros   = parseFloat(c.outros) || 0;
-    // Imposto: 1) valor da API (escrow), 2) manual por pedido (%), 3) alíquota da conta
-    const impAPIRaw= tx.imposto != null ? parseFloat(tx.imposto) : null;
-    const impManual= parseFloat(c.imposto) || 0;
-    const impAliq  = parseFloat(aliquotas[p.contaId] || 0);
-    const impPct   = impManual || impAliq;   // manual tem prioridade sobre alíquota da conta
-    // imposto da API (escrow_tax): só usa se > 0, e já está deduzido do liquido
-    const impDeEscrow = (impAPIRaw != null && impAPIRaw > 0);
-    const impAPI      = impDeEscrow ? impAPIRaw : null;
-    // impVal = valor mostrado na coluna imposto
-    // Se veio do escrow (já deduzido do liquido): mostramos mas não subtraímos de novo
-    // Se veio da alíquota/manual (imposto do vendedor, não no escrow): exibimos E subtraímos
-    const impVal   = impAPI != null ? impAPI : (receita * impPct / 100);
-
-    let extra = 0;
-    for (const l of linhasExt)
-      extra += l.tipo==='pct' ? receita*(parseFloat(l.valor)||0)/100 : (parseFloat(l.valor)||0);
-
-    // Base de lucro
-    // ML: o frete (custo do shipment, via /shipments) já era buscado mas nunca entrava
-    // na conta do lucro — ficava só exibido, sem efeito real. Passa a ser descontado do
-    // net_received_amount aqui. Shopee NÃO entra nessa dedução: lá o frete já está
-    // embutido dentro do escrow_amount (liquido), descontar de novo duplicaria o custo.
-    const isML     = p.plataforma === 'Mercado Livre';
-    const freteML  = isML ? (parseFloat(tx.frete) || 0) : 0;
-    const base  = (liquido != null ? liquido : receita) - freteML;
-    // O campo "imposto" da API (seller_transaction_fee + buyer_tax_amount + seller_coin_cash_back)
-    // NÃO é deduzido do escrow_amount pela Shopee — confirmado comparando com o Financeiro (pages-financeiro.js),
-    // que sempre subtrai esse valor sem essa exceção. Pular a subtração aqui inflava lucro e margem
-    // sempre que esses campos vinham preenchidos da API (bug corrigido).
-    const lucro = base - custo - impVal - outros - extra;
-
-    const margem = receita > 0 ? (lucro/receita)*100 : 0;
-    // liquidoExibido: pra ML já vem com o frete descontado (bate com o que vira base do lucro).
-    // Pra Shopee continua sendo o escrow_amount puro (frete já embutido nele).
-    const liquidoExibido = liquido != null ? (isML ? liquido - freteML : liquido) : null;
-    return { receita, liquido: liquidoExibido, liquidoBruto: liquido, custo, impVal, impPct, outros, extra, lucro, margem,
-             comissao: tx.comissao||0, taxaServico: tx.taxaServico||0,
-             frete: tx.frete||0, voucher: tx.voucher||0 };
+    return window.GLR_Margem.calcularLucroPedido(p, { custos, catalogoCusto, linhasExt, aliquotas });
   }
 
   function calcTotais(lista) {
