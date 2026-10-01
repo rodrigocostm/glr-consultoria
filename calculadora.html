@@ -325,21 +325,43 @@
     calcular(true);
   }
 
+  // Prévia rápida enquanto digita, baseada só no Valor do Produto (custo) —
+  // é só pra não deixar os campos "Auto" vazios/desatualizados antes do
+  // cálculo iterativo de verdade rodar (feito dentro de calcular(), que é
+  // chamado logo em seguida por todo oninput). A faixa definitiva usa o
+  // PREÇO DE VENDA calculado, não o custo — ver resolverFaixaShopee().
   function onValorChange() {
     if (mpAtual !== 'shopee') return;
     const valor = parseFloat(document.getElementById('f-valor').value) || 0;
     const faixa = shopeeFaixa(valor);
     const cpf = document.querySelector('input[name="shopee-tipo"]:checked').value === 'cpf';
     const campanha = document.getElementById('shopee-campanha').checked;
+    document.getElementById('f-comissao').value = faixa.comissao + (campanha ? 2.5 : 0);
+    document.getElementById('f-taxafixa').value = faixa.taxafixa + (cpf ? 3 : 0);
+  }
 
-    let comissao = faixa.comissao + (campanha ? 2.5 : 0);
-    let taxafixa = faixa.taxafixa + (cpf ? 3 : 0);
-
-    document.getElementById('f-comissao').value = comissao;
-    document.getElementById('f-taxafixa').value = taxafixa;
-    document.getElementById('shopee-resumo').textContent =
-      `Taxas aplicadas: ${comissao}% + R$${taxafixa.toFixed(2)} taxa fixa (faixa: ${faixa.label})` +
-      (cpf ? ' (CPF)' : '') + (campanha ? ' (campanha destaque)' : '');
+  // A Shopee cobra comissão sobre o PREÇO DE VENDA (o que o comprador paga),
+  // não sobre o "Valor do Produto" (custo-base informado aqui) — por isso
+  // calcular a faixa a partir do valor de custo dava faixa errada sempre
+  // que o preço final cruzava pra faixa seguinte (ex: custo R$70 → faixa
+  // "R$8–R$79,99", mas o preço sugerido de R$92,50 já é da faixa
+  // "R$80–R$99,99", com comissão/taxa diferentes). Resolve por tentativa:
+  // chuta uma faixa, calcula o preço com ela, confere se o preço ainda cai
+  // na mesma faixa — repete até convergir (no máximo 5 faixas existem).
+  function resolverFaixaShopee(valor, custos, taxafixaExtra, percentuaisResto) {
+    let faixa = shopeeFaixa(valor);
+    for (let i = 0; i < 6; i++) {
+      const comissaoTentativa = (faixa.comissao + taxafixaExtra.campanhaPct) / 100;
+      const taxafixaTentativa = faixa.taxafixa + taxafixaExtra.cpfExtra;
+      const totalTentativa = comissaoTentativa + percentuaisResto;
+      if (totalTentativa >= 1) break; // deixa o erro de "passou de 100%" aparecer depois, com esses valores
+      const custoBaseTentativa = valor + custos + taxafixaTentativa;
+      const precoTentativo = custoBaseTentativa / (1 - totalTentativa);
+      const novaFaixa = shopeeFaixa(precoTentativo);
+      if (novaFaixa.label === faixa.label) break; // convergiu
+      faixa = novaFaixa;
+    }
+    return faixa;
   }
 
   document.getElementById('mp-grid').addEventListener('click', e => {
@@ -362,11 +384,31 @@
     const custos     = parseFloat(document.getElementById('f-custos').value) || 0;
     const imposto    = (parseFloat(document.getElementById('f-imposto').value) || 0) / 100;
     const ads        = (parseFloat(document.getElementById('f-ads').value) || 0) / 100;
-    const comissao   = (parseFloat(document.getElementById('f-comissao').value) || 0) / 100;
-    const taxafixa   = parseFloat(document.getElementById('f-taxafixa').value) || 0;
     const custofixo  = (parseFloat(document.getElementById('f-custofixo').value) || 0) / 100;
     const margem     = (parseFloat(document.getElementById('f-margem').value) || 0) / 100;
     const praticado  = parseFloat(document.getElementById('f-praticado').value) || 0;
+
+    let comissao = (parseFloat(document.getElementById('f-comissao').value) || 0) / 100;
+    let taxafixa = parseFloat(document.getElementById('f-taxafixa').value) || 0;
+
+    // Shopee: resolve a faixa certa pelo PREÇO DE VENDA, não pelo valor de
+    // custo digitado, e já deixa os campos "Auto" mostrando o valor final
+    // usado no cálculo (evita o campo mostrar uma faixa e o resultado usar
+    // outra, que era exatamente o bug reportado).
+    if (mpAtual === 'shopee' && valor > 0) {
+      const cpf = document.querySelector('input[name="shopee-tipo"]:checked').value === 'cpf';
+      const campanha = document.getElementById('shopee-campanha').checked;
+      const extras = { cpfExtra: cpf ? 3 : 0, campanhaPct: campanha ? 2.5 : 0 };
+      const percentuaisResto = ads + imposto + custofixo + margem;
+      const faixa = resolverFaixaShopee(valor, custos, extras, percentuaisResto);
+      comissao = (faixa.comissao + extras.campanhaPct) / 100;
+      taxafixa = faixa.taxafixa + extras.cpfExtra;
+      document.getElementById('f-comissao').value = faixa.comissao + extras.campanhaPct;
+      document.getElementById('f-taxafixa').value = taxafixa;
+      document.getElementById('shopee-resumo').textContent =
+        `Taxas aplicadas: ${(comissao*100).toFixed(1)}% + R$${taxafixa.toFixed(2)} taxa fixa (faixa pelo preço de venda: ${faixa.label})` +
+        (cpf ? ' (CPF)' : '') + (campanha ? ' (campanha destaque)' : '');
+    }
 
     if (valor <= 0) { if (!silencioso) alert('Informe o valor do produto.'); return; }
 
