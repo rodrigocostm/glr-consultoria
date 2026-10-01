@@ -122,15 +122,40 @@
   .preco-sugerido .label { font-size: 11.5px; font-weight: 600; color: var(--primary); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
   .preco-sugerido .valor { font-size: 36px; font-weight: 700; color: var(--fg); }
 
+  /* Barra de composição do preço — pra onde vai cada real, de relance,
+     em vez de só uma lista de números pra ler linha por linha. */
+  .comp-bar-label { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 8px; }
+  .comp-bar { display: flex; width: 100%; height: 30px; border-radius: 999px; overflow: hidden; margin-bottom: 14px; background: var(--border-soft); }
+  .comp-bar .fatia { height: 100%; transition: width .3s; min-width: 2px; }
+  .comp-legenda { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 20px; }
+  .comp-legenda .item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .comp-legenda .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .comp-legenda .item strong { color: var(--fg); font-weight: 600; }
+
   .breakdown { display: flex; flex-direction: column; gap: 0; }
-  .breakdown-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
+  .breakdown-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
   .breakdown-row:last-child { border-bottom: none; }
-  .breakdown-row .k { color: var(--muted); }
+  .breakdown-row .k { color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .breakdown-row .k .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .breakdown-row .v { font-weight: 600; }
 
-  .margem-real { margin-top: 16px; padding: 14px 16px; border-radius: var(--radius-md); font-size: 13px; display: flex; justify-content: space-between; align-items: center; border: 1px solid; }
-  .margem-real.ok { background: var(--green-soft); color: var(--green); border-color: rgba(45,212,167,0.25); }
-  .margem-real.baixa { background: var(--red-soft); color: var(--red); border-color: rgba(242,85,90,0.25); }
+  /* Saúde da margem — semáforo visual, não só o número da porcentagem. */
+  .margem-saude { margin-top: 18px; padding: 18px; border-radius: var(--radius-lg); border: 1px solid; }
+  .margem-saude .topo { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .margem-saude .titulo { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+  .margem-saude .selo { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; }
+  .margem-saude .pct { font-size: 22px; font-weight: 700; }
+  .margem-saude .medidor { height: 8px; border-radius: 999px; background: var(--border-soft); overflow: hidden; margin-top: 10px; }
+  .margem-saude .medidor .preenchido { height: 100%; border-radius: 999px; transition: width .3s; }
+  .margem-saude.ok { background: var(--green-soft); border-color: rgba(45,212,167,0.25); }
+  .margem-saude.ok .selo { background: rgba(45,212,167,0.2); color: var(--green); }
+  .margem-saude.ok .pct, .margem-saude.ok .titulo { color: var(--green); }
+  .margem-saude.apertada { background: rgba(242,180,60,0.1); border-color: rgba(242,180,60,0.25); }
+  .margem-saude.apertada .selo { background: rgba(242,180,60,0.2); color: #F2B43C; }
+  .margem-saude.apertada .pct, .margem-saude.apertada .titulo { color: #F2B43C; }
+  .margem-saude.baixa { background: var(--red-soft); border-color: rgba(242,85,90,0.25); }
+  .margem-saude.baixa .selo { background: rgba(242,85,90,0.2); color: var(--red); }
+  .margem-saude.baixa .pct, .margem-saude.baixa .titulo { color: var(--red); }
 
   .empty-hint { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 13.5px; }
 </style>
@@ -276,7 +301,22 @@
           <div class="label">Preço sugerido de venda</div>
           <div class="valor" id="r-preco">R$ 0,00</div>
         </div>
+
+        <div class="comp-bar-label"><span>Pra onde vai cada real</span></div>
+        <div class="comp-bar" id="r-comp-bar"></div>
+        <div class="comp-legenda" id="r-comp-legenda"></div>
+
         <div class="breakdown" id="r-breakdown"></div>
+
+        <div class="margem-saude" id="r-margem-saude">
+          <div class="topo">
+            <div class="titulo">📊 Saúde da margem</div>
+            <span class="selo" id="r-margem-selo">—</span>
+          </div>
+          <div class="pct" id="r-margem-pct">0,0%</div>
+          <div class="medidor"><div class="preenchido" id="r-margem-medidor" style="width:0%;"></div></div>
+        </div>
+
         <div class="margem-real" id="r-margem-real" style="display:none;"></div>
       </div>
     </div>
@@ -422,31 +462,53 @@
 
     document.getElementById('r-preco').textContent = fmtBRL(precoSugerido);
 
-    const linhas = [
-      ['Valor do produto', fmtBRL(valor)],
-      ['Custos adicionais', fmtBRL(custos)],
-      ['Taxa fixa marketplace', fmtBRL(taxafixa)],
-      [`Comissão marketplace (${(comissao*100).toFixed(1)}%)`, fmtBRL(precoSugerido * comissao)],
-      [`ADS (${(ads*100).toFixed(1)}%)`, fmtBRL(precoSugerido * ads)],
-      [`Imposto (${(imposto*100).toFixed(1)}%)`, fmtBRL(precoSugerido * imposto)],
-      [`Custo fixo (${(custofixo*100).toFixed(1)}%)`, fmtBRL(precoSugerido * custofixo)],
-      [`Margem líquida (${(margem*100).toFixed(1)}%)`, fmtBRL(precoSugerido * margem)],
-    ];
-    document.getElementById('r-breakdown').innerHTML = linhas.map(([k,v]) =>
-      `<div class="breakdown-row"><span class="k">${k}</span><span class="v">${v}</span></div>`
+    // Composição do preço — as 6 fatias somam exatamente o preço sugerido
+    // (custoBase + preço*totalPercentual = preço, por construção da fórmula
+    // acima), então a barra sempre fecha em 100% sem sobra nem falta.
+    const fatias = [
+      { label: 'Custo do produto', valor: valor + custos, cor: '#64748B' },
+      { label: 'Taxas marketplace', valor: taxafixa + precoSugerido * comissao, cor: '#F2555A' },
+      { label: 'ADS', valor: precoSugerido * ads, cor: '#855CD6' },
+      { label: 'Imposto', valor: precoSugerido * imposto, cor: '#F2B43C' },
+      { label: 'Custo fixo', valor: precoSugerido * custofixo, cor: '#8B90A0' },
+      { label: 'Margem líquida', valor: precoSugerido * margem, cor: '#2DD4A7' },
+    ].filter(f => f.valor > 0.005);
+
+    document.getElementById('r-comp-bar').innerHTML = fatias.map(f =>
+      `<div class="fatia" style="width:${(f.valor / precoSugerido * 100).toFixed(2)}%;background:${f.cor};" title="${f.label}: ${fmtBRL(f.valor)}"></div>`
+    ).join('');
+    document.getElementById('r-comp-legenda').innerHTML = fatias.map(f =>
+      `<div class="item"><span class="dot" style="background:${f.cor};"></span>${f.label} <strong>${(f.valor / precoSugerido * 100).toFixed(1)}%</strong></div>`
+    ).join('');
+    document.getElementById('r-breakdown').innerHTML = fatias.map(f =>
+      `<div class="breakdown-row"><span class="k"><span class="dot" style="background:${f.cor};"></span>${f.label}</span><span class="v">${fmtBRL(f.valor)}</span></div>`
     ).join('');
 
+    // Saúde da margem: semáforo visual em vez de só o número. Usa a margem
+    // real sobre o preço praticado quando informado (é o que importa de
+    // verdade); senão usa a margem desejada que já está embutida no preço
+    // sugerido. Faixas (ajustáveis): ≥15% confortável, 5–15% apertada,
+    // abaixo disso ou negativa é risco — referência comum de e-commerce,
+    // não uma regra fixa do negócio do cliente.
+    let margemExibidaPct = margem * 100;
     const margemBox = document.getElementById('r-margem-real');
     if (praticado > 0) {
       const custosTotais = custoBase + praticado * (comissao + ads + imposto + custofixo);
       const lucroReal = praticado - custosTotais;
-      const margemRealPct = (lucroReal / praticado) * 100;
+      margemExibidaPct = (lucroReal / praticado) * 100;
       margemBox.style.display = 'flex';
-      margemBox.className = 'margem-real ' + (margemRealPct >= (margem*100) ? 'ok' : 'baixa');
-      margemBox.innerHTML = `<span>Com o preço praticado de ${fmtBRL(praticado)}, sua margem real é</span><strong>${margemRealPct.toFixed(1)}%</strong>`;
+      margemBox.className = 'margem-real ' + (margemExibidaPct >= (margem*100) ? 'ok' : 'baixa');
+      margemBox.innerHTML = `<span>Com o preço praticado de ${fmtBRL(praticado)}, sua margem real é</span><strong>${margemExibidaPct.toFixed(1)}%</strong>`;
     } else {
       margemBox.style.display = 'none';
     }
+    const saudeCls = margemExibidaPct >= 15 ? 'ok' : margemExibidaPct >= 5 ? 'apertada' : 'baixa';
+    const saudeLabel = { ok: 'Saudável', apertada: 'Apertada', baixa: 'Risco' }[saudeCls];
+    document.getElementById('r-margem-saude').className = 'margem-saude ' + saudeCls;
+    document.getElementById('r-margem-selo').textContent = saudeLabel;
+    document.getElementById('r-margem-pct').textContent = margemExibidaPct.toFixed(1) + '%';
+    document.getElementById('r-margem-medidor').style.width = Math.max(0, Math.min(100, margemExibidaPct / 40 * 100)) + '%';
+    document.getElementById('r-margem-medidor').style.background = { ok: 'var(--green)', apertada: '#F2B43C', baixa: 'var(--red)' }[saudeCls];
 
     document.getElementById('resultado-vazio').style.display = 'none';
     document.getElementById('resultado').classList.add('show');
