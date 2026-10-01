@@ -53,15 +53,24 @@
 
   .panel { margin-top: 18px; padding: 22px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius-lg); }
 
-  .mp-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 4px; }
+  .mp-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 4px; }
   @media (max-width: 560px) { .mp-grid { grid-template-columns: repeat(3, 1fr); } }
   .mp-btn {
-    padding: 16px 6px; border: 2px solid var(--border); border-radius: var(--radius-md); background: rgba(255,255,255,0.05);
-    font-size: 13px; font-weight: 500; text-align: center; cursor: pointer; transition: border-color .2s, background .2s, color .2s, box-shadow .2s;
-    color: var(--fg);
+    padding: 18px 6px; border: 2px solid var(--border); border-radius: var(--radius-md); background: rgba(255,255,255,0.05);
+    font-size: 12.5px; font-weight: 600; text-align: center; cursor: pointer; transition: border-color .2s, background .2s, color .2s, box-shadow .2s, transform .15s;
+    color: var(--fg); display: flex; flex-direction: column; align-items: center; gap: 6px;
   }
-  .mp-btn:hover { border-color: rgba(48,171,232,0.3); }
-  .mp-btn.active { border-color: var(--primary); background: rgba(48,171,232,0.1); color: var(--primary); box-shadow: 0 0 30px -5px rgba(48,171,232,0.3); }
+  .mp-btn .mp-icon { font-size: 22px; line-height: 1; }
+  .mp-btn:hover { border-color: var(--mp-color, rgba(48,171,232,0.4)); transform: translateY(-1px); }
+  .mp-btn.active {
+    border-color: var(--mp-color, var(--primary)); background: color-mix(in srgb, var(--mp-color, var(--primary)) 14%, transparent);
+    color: var(--mp-color, var(--primary)); box-shadow: 0 0 30px -8px var(--mp-color, var(--primary));
+  }
+  .mp-btn[data-mp="shopee"] { --mp-color: #FF6633; }
+  .mp-btn[data-mp="ml"] { --mp-color: #FFE600; }
+  .mp-btn[data-mp="amazon"] { --mp-color: #FF9900; }
+  .mp-btn[data-mp="tiktok"] { --mp-color: #25F4EE; }
+  .mp-btn[data-mp="outro"] { --mp-color: var(--accent); }
 
   .toggle-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
   .toggle-label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; }
@@ -121,6 +130,18 @@
   .preco-sugerido { text-align: center; padding: 22px; background: rgba(48,171,232,0.08); border: 1px solid rgba(48,171,232,0.2); border-radius: var(--radius-lg); margin-bottom: 18px; }
   .preco-sugerido .label { font-size: 11.5px; font-weight: 600; color: var(--primary); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
   .preco-sugerido .valor { font-size: 36px; font-weight: 700; color: var(--fg); }
+
+  /* Lucro por Unidade + Margem Real — mesmos blocos de destaque que o outro
+     sistema (calculadoraglr.lovable.app) mostra, pra bater o olho sem ter
+     que ler a lista de composição linha por linha. */
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+  @media (max-width: 480px) { .stat-grid { grid-template-columns: 1fr; } }
+  .stat-card { padding: 18px; border-radius: var(--radius-lg); border: 1px solid; text-align: center; }
+  .stat-card .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; opacity: .85; }
+  .stat-card .valor { font-size: 24px; font-weight: 700; }
+  .stat-card .sub { font-size: 11.5px; margin-top: 6px; opacity: .8; }
+  .stat-card.lucro { background: var(--green-soft); border-color: rgba(45,212,167,0.25); color: var(--green); }
+  .stat-card.margem { background: rgba(48,171,232,0.08); border-color: rgba(48,171,232,0.2); color: var(--primary); }
 
   /* Barra de composição do preço — pra onde vai cada real, de relance,
      em vez de só uma lista de números pra ler linha por linha. */
@@ -188,14 +209,16 @@
         <h2>Marketplace</h2>
         <div class="card-sub">Selecione a plataforma de vendas</div>
         <div class="mp-grid" id="mp-grid">
-          <div class="mp-btn active" data-mp="shopee">Shopee</div>
-          <div class="mp-btn" data-mp="ml">Mercado Livre</div>
-          <div class="mp-btn" data-mp="amazon">Amazon</div>
-          <div class="mp-btn" data-mp="tiktok">TikTok Shop</div>
-          <div class="mp-btn" data-mp="outro">Outro</div>
+          <div class="mp-btn active" data-mp="shopee"><span class="mp-icon">🛍️</span>Shopee</div>
+          <div class="mp-btn" data-mp="ml"><span class="mp-icon">🟡</span>Mercado Livre</div>
+          <div class="mp-btn" data-mp="amazon"><span class="mp-icon">📦</span>Amazon</div>
+          <div class="mp-btn" data-mp="tiktok"><span class="mp-icon">🎵</span>TikTok Shop</div>
+          <div class="mp-btn" data-mp="outro"><span class="mp-icon">⚙️</span>Outro</div>
         </div>
+      </div>
 
-        <div id="shopee-config" class="panel">
+      <div class="card">
+        <div id="shopee-config">
           <h2>⚙️ Configurações Shopee 2026</h2>
           <div class="card-sub">Comissão calculada automaticamente pelo valor do produto</div>
           <div class="toggle-row2">
@@ -227,8 +250,16 @@
           <div class="fee-banner" id="shopee-resumo">Preencha o valor do produto pra ver a faixa aplicada.</div>
         </div>
 
-        <div id="tiktok-config" class="panel">
+        <div id="tiktok-config">
+          <h2>🎵 Configuração TikTok Shop</h2>
+          <div class="card-sub">Taxas padrão 2026 — ajustáveis nos campos ao lado</div>
           <div class="fee-note-plain">TikTok Shop: comissão de <strong style="color:var(--fg);">12%</strong> + taxa fixa de <strong style="color:var(--fg);">R$5,00</strong> por venda (padrão 2026 — ajustável abaixo se sua categoria for diferente).</div>
+        </div>
+
+        <div id="generico-config">
+          <h2 id="generico-titulo">⚙️ Configuração do marketplace</h2>
+          <div class="card-sub" id="generico-sub">Comissão e taxa fixa</div>
+          <div class="fee-note-plain" id="generico-nota"></div>
         </div>
       </div>
 
@@ -302,6 +333,18 @@
           <div class="valor" id="r-preco">R$ 0,00</div>
         </div>
 
+        <div class="stat-grid">
+          <div class="stat-card lucro">
+            <div class="label">Lucro por Unidade</div>
+            <div class="valor" id="r-lucro-unidade">R$ 0,00</div>
+          </div>
+          <div class="stat-card margem">
+            <div class="label">Margem Real</div>
+            <div class="valor" id="r-margem-real-pct">0,0%</div>
+            <div class="sub" id="r-margem-real-sub">sobre o preço sugerido</div>
+          </div>
+        </div>
+
         <div class="comp-bar-label"><span>Pra onde vai cada real</span></div>
         <div class="comp-bar" id="r-comp-bar"></div>
         <div class="comp-legenda" id="r-comp-legenda"></div>
@@ -317,7 +360,6 @@
           <div class="medidor"><div class="preenchido" id="r-margem-medidor" style="width:0%;"></div></div>
         </div>
 
-        <div class="margem-real" id="r-margem-real" style="display:none;"></div>
       </div>
     </div>
 
@@ -347,6 +389,16 @@
     document.querySelectorAll('.mp-btn').forEach(b => b.classList.toggle('active', b.dataset.mp === mp));
     document.getElementById('shopee-config').style.display = mp === 'shopee' ? 'block' : 'none';
     document.getElementById('tiktok-config').style.display = mp === 'tiktok' ? 'block' : 'none';
+    document.getElementById('generico-config').style.display = (mp === 'shopee' || mp === 'tiktok') ? 'none' : 'block';
+    if (mp === 'ml' || mp === 'amazon') {
+      document.getElementById('generico-titulo').textContent = (mp === 'ml' ? '🟡 Configuração Mercado Livre' : '📦 Configuração Amazon');
+      document.getElementById('generico-sub').textContent = 'Comissão padrão pré-preenchida nos campos ao lado';
+      document.getElementById('generico-nota').innerHTML = `Valores de referência: comissão de <strong style="color:var(--fg);">${PRESETS[mp].comissao}%</strong> + taxa fixa de <strong style="color:var(--fg);">R$${PRESETS[mp].taxafixa.toFixed(2)}</strong> por venda. Pode variar por categoria — confira no painel do marketplace se precisar ajustar.`;
+    } else if (mp === 'outro') {
+      document.getElementById('generico-titulo').textContent = '⚙️ Marketplace sem tabela fixa';
+      document.getElementById('generico-sub').textContent = 'Informe comissão e taxa fixa manualmente nos campos ao lado';
+      document.getElementById('generico-nota').innerHTML = `Esse marketplace não tem comissão pré-cadastrada aqui — preencha "Comissão Marketplace (%)" e "Taxa Fixa (R$)" com os valores reais cobrados pela plataforma.`;
+    }
 
     const p = PRESETS[mp];
     document.getElementById('f-comissao').value = p.comissao || '';
@@ -490,18 +542,24 @@
     // sugerido. Faixas (ajustáveis): ≥15% confortável, 5–15% apertada,
     // abaixo disso ou negativa é risco — referência comum de e-commerce,
     // não uma regra fixa do negócio do cliente.
-    let margemExibidaPct = margem * 100;
-    const margemBox = document.getElementById('r-margem-real');
+    // Lucro por Unidade + Margem Real: com Preço Praticado preenchido, usa o
+    // preço real que o produto vende (o que importa de verdade); sem isso,
+    // usa o Preço Sugerido — que por construção já embute a Margem Desejada,
+    // então lucroReal cai exatamente em precoSugerido*margem nesse caso.
+    let lucroReal, margemExibidaPct;
     if (praticado > 0) {
       const custosTotais = custoBase + praticado * (comissao + ads + imposto + custofixo);
-      const lucroReal = praticado - custosTotais;
+      lucroReal = praticado - custosTotais;
       margemExibidaPct = (lucroReal / praticado) * 100;
-      margemBox.style.display = 'flex';
-      margemBox.className = 'margem-real ' + (margemExibidaPct >= (margem*100) ? 'ok' : 'baixa');
-      margemBox.innerHTML = `<span>Com o preço praticado de ${fmtBRL(praticado)}, sua margem real é</span><strong>${margemExibidaPct.toFixed(1)}%</strong>`;
+      document.getElementById('r-margem-real-sub').textContent = `sobre o preço praticado (${fmtBRL(praticado)})`;
     } else {
-      margemBox.style.display = 'none';
+      lucroReal = precoSugerido * margem;
+      margemExibidaPct = margem * 100;
+      document.getElementById('r-margem-real-sub').textContent = 'sobre o preço sugerido';
     }
+    document.getElementById('r-lucro-unidade').textContent = fmtBRL(lucroReal);
+    document.getElementById('r-margem-real-pct').textContent = margemExibidaPct.toFixed(1) + '%';
+
     const saudeCls = margemExibidaPct >= 15 ? 'ok' : margemExibidaPct >= 5 ? 'apertada' : 'baixa';
     const saudeLabel = { ok: 'Saudável', apertada: 'Apertada', baixa: 'Risco' }[saudeCls];
     document.getElementById('r-margem-saude').className = 'margem-saude ' + saudeCls;
