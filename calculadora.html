@@ -70,6 +70,7 @@
     font-family: 'Poppins', sans-serif; color: var(--text); background: #fff; outline: none; transition: border-color .15s;
   }
   .form-input:focus { border-color: var(--blue); }
+  .form-input[readonly] { background: var(--paper-soft); color: var(--text-sec); cursor: not-allowed; }
   .form-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
   .btn-calcular {
@@ -169,46 +170,46 @@
       <div class="form-row2">
         <div class="form-group">
           <label>Valor do Produto (R$)</label>
-          <input class="form-input" id="f-valor" type="number" step="0.01" min="0" placeholder="0,00" oninput="onValorChange()">
+          <input class="form-input" id="f-valor" type="number" step="0.01" min="0" placeholder="0,00" oninput="onValorChange(); calcular(true);">
         </div>
         <div class="form-group">
           <label>Custos Adicionais (R$)</label>
-          <input class="form-input" id="f-custos" type="number" step="0.01" min="0" placeholder="0,00">
+          <input class="form-input" id="f-custos" type="number" step="0.01" min="0" placeholder="0,00" oninput="calcular(true)">
         </div>
       </div>
       <div class="form-row2">
         <div class="form-group">
           <label>Imposto (%)</label>
-          <input class="form-input" id="f-imposto" type="number" step="0.1" min="0" placeholder="0">
+          <input class="form-input" id="f-imposto" type="number" step="0.1" min="0" placeholder="0" oninput="calcular(true)">
         </div>
         <div class="form-group">
           <label>Custo de ADS (%)</label>
-          <input class="form-input" id="f-ads" type="number" step="0.1" min="0" placeholder="0">
+          <input class="form-input" id="f-ads" type="number" step="0.1" min="0" placeholder="0" oninput="calcular(true)">
         </div>
       </div>
       <div class="form-row2">
         <div class="form-group">
           <label>Comissão Marketplace (%) <span class="auto-tag" id="tag-comissao">Auto</span></label>
-          <input class="form-input" id="f-comissao" type="number" step="0.1" min="0">
+          <input class="form-input" id="f-comissao" type="number" step="0.1" min="0" oninput="calcular(true)">
         </div>
         <div class="form-group">
           <label>Taxa Fixa (R$) <span class="auto-tag" id="tag-taxafixa">Auto</span></label>
-          <input class="form-input" id="f-taxafixa" type="number" step="0.01" min="0">
+          <input class="form-input" id="f-taxafixa" type="number" step="0.01" min="0" oninput="calcular(true)">
         </div>
       </div>
       <div class="form-row2">
         <div class="form-group">
           <label>Custo Fixo (%)</label>
-          <input class="form-input" id="f-custofixo" type="number" step="0.1" min="0" placeholder="0">
+          <input class="form-input" id="f-custofixo" type="number" step="0.1" min="0" placeholder="0" oninput="calcular(true)">
         </div>
         <div class="form-group">
           <label>Margem Desejada (%)</label>
-          <input class="form-input" id="f-margem" type="number" step="0.1" min="0" placeholder="20">
+          <input class="form-input" id="f-margem" type="number" step="0.1" min="0" placeholder="20" oninput="calcular(true)">
         </div>
       </div>
       <div class="form-group">
         <label>Preço Praticado (R$) — opcional</label>
-        <input class="form-input" id="f-praticado" type="number" step="0.01" min="0" placeholder="Deixe em branco se ainda não souber">
+        <input class="form-input" id="f-praticado" type="number" step="0.01" min="0" placeholder="Deixe em branco se ainda não souber" oninput="calcular(true)">
       </div>
 
       <button class="btn-calcular" onclick="calcular()">Calcular</button>
@@ -264,8 +265,15 @@
     const autoOn = mp !== 'outro';
     document.getElementById('tag-comissao').style.display = autoOn ? 'inline' : 'none';
     document.getElementById('tag-taxafixa').style.display = autoOn ? 'inline' : 'none';
+    // Comissão/taxa fixa são tabeladas pelo marketplace (Shopee em especial
+    // segue a tabela por faixa de valor mostrada acima) — travar pra não dar
+    // pra digitar por cima e descolar do que o marketplace realmente cobra.
+    // "Outro" fica livre, já que não tem tabela nenhuma pra seguir.
+    document.getElementById('f-comissao').readOnly = autoOn;
+    document.getElementById('f-taxafixa').readOnly = autoOn;
 
     if (mp === 'shopee') onValorChange();
+    calcular(true);
   }
 
   function onValorChange() {
@@ -289,14 +297,18 @@
     const btn = e.target.closest('.mp-btn');
     if (btn) aplicarPreset(btn.dataset.mp);
   });
-  document.querySelectorAll('input[name="shopee-tipo"]').forEach(r => r.addEventListener('change', onValorChange));
-  document.getElementById('shopee-campanha').addEventListener('change', onValorChange);
+  document.querySelectorAll('input[name="shopee-tipo"]').forEach(r => r.addEventListener('change', () => { onValorChange(); calcular(true); }));
+  document.getElementById('shopee-campanha').addEventListener('change', () => { onValorChange(); calcular(true); });
 
   function fmtBRL(v) {
     return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   }
 
-  function calcular() {
+  // silencioso=true: recalcula ao vivo a cada mudança de campo, sem alert
+  // quando ainda não dá pra calcular (valor vazio, percentuais inválidos) —
+  // só fica quieto e espera o usuário terminar de preencher. silencioso
+  // falsy (clique no botão "Calcular") continua avisando com alert.
+  function calcular(silencioso) {
     const valor      = parseFloat(document.getElementById('f-valor').value) || 0;
     const custos     = parseFloat(document.getElementById('f-custos').value) || 0;
     const imposto    = (parseFloat(document.getElementById('f-imposto').value) || 0) / 100;
@@ -307,11 +319,11 @@
     const margem     = (parseFloat(document.getElementById('f-margem').value) || 0) / 100;
     const praticado  = parseFloat(document.getElementById('f-praticado').value) || 0;
 
-    if (valor <= 0) { alert('Informe o valor do produto.'); return; }
+    if (valor <= 0) { if (!silencioso) alert('Informe o valor do produto.'); return; }
 
     const totalPercentual = comissao + ads + imposto + custofixo + margem;
     if (totalPercentual >= 1) {
-      alert('A soma de comissão + ADS + imposto + custo fixo + margem passou de 100% — não dá pra calcular um preço válido. Revise os percentuais.');
+      if (!silencioso) alert('A soma de comissão + ADS + imposto + custo fixo + margem passou de 100% — não dá pra calcular um preço válido. Revise os percentuais.');
       return;
     }
     const custoBase = valor + custos + taxafixa;
