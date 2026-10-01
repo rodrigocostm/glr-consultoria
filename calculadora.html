@@ -133,6 +133,17 @@
   .preco-sugerido { text-align: center; padding: 22px; background: rgba(48,171,232,0.08); border: 1px solid rgba(48,171,232,0.2); border-radius: var(--radius-lg); margin-bottom: 18px; }
   .preco-sugerido .label { font-size: 11.5px; font-weight: 600; color: var(--primary); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
   .preco-sugerido .valor { font-size: 36px; font-weight: 700; color: var(--fg); }
+  .preco-sugerido .sub { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+  /* Preço mínimo (break-even, margem ZERO) — separado do Preço Sugerido
+     (que já embute a Margem Desejada) pra não confundir os dois quando a
+     margem desejada está em 0: nesse caso os dois batem no mesmo valor,
+     mas o rótulo "sugerido" sozinho dava a entender que vender ali já dava
+     lucro, quando na verdade é só o ponto de equilíbrio. */
+  .preco-minimo { text-align: center; padding: 16px 20px; background: rgba(242,180,60,0.08); border: 1px solid rgba(242,180,60,0.22); border-radius: var(--radius-lg); margin-bottom: 14px; }
+  .preco-minimo .label { font-size: 11px; font-weight: 600; color: #F2B43C; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+  .preco-minimo .valor { font-size: 24px; font-weight: 700; color: var(--fg); }
+  .preco-minimo .sub { font-size: 11.5px; color: var(--muted); margin-top: 6px; max-width: 420px; margin-left: auto; margin-right: auto; }
 
   /* Lucro por Unidade + Margem Real — mesmos blocos de destaque que o outro
      sistema (calculadoraglr.lovable.app) mostra, pra bater o olho sem ter
@@ -335,9 +346,16 @@
       <div class="empty-hint" id="resultado-vazio">Preencha os dados do produto pra ver o preço sugerido aqui.</div>
 
       <div class="resultado" id="resultado">
+        <div class="preco-minimo">
+          <div class="label">⚠️ Preço mínimo (break-even)</div>
+          <div class="valor" id="r-preco-minimo">R$ 0,00</div>
+          <div class="sub">Cobre custos + comissão + ADS + imposto, com margem ZERO — abaixo disso você vende no prejuízo</div>
+        </div>
+
         <div class="preco-sugerido">
           <div class="label">Preço sugerido de venda</div>
           <div class="valor" id="r-preco">R$ 0,00</div>
+          <div class="sub" id="r-preco-sub">para atingir a margem desejada de 0,0%</div>
         </div>
 
         <div class="stat-grid">
@@ -531,7 +549,19 @@
     const custoBase = valor + custos + taxafixa;
     const precoSugerido = custoBase / (1 - totalPercentual);
 
+    // Preço mínimo = break-even de verdade (margem ZERO), sempre calculado
+    // à parte do Preço Sugerido (que embute a Margem Desejada). Quando a
+    // Margem Desejada é 0, os dois batem no mesmo valor — correto, mas por
+    // isso o Preço Mínimo existe como rótulo separado, pra deixar claro que
+    // aquele valor é só o ponto de equilíbrio, não um preço com lucro.
+    const totalPercentualSemMargem = comissao + ads + imposto + custofixo;
+    const precoMinimo = totalPercentualSemMargem < 1 ? custoBase / (1 - totalPercentualSemMargem) : null;
+    document.getElementById('r-preco-minimo').textContent = precoMinimo != null ? fmtBRL(precoMinimo) : '—';
+
     document.getElementById('r-preco').textContent = fmtBRL(precoSugerido);
+    document.getElementById('r-preco-sub').textContent = margem > 0
+      ? `para atingir a margem desejada de ${(margem * 100).toFixed(1)}%`
+      : 'margem desejada em 0% — equivale ao preço mínimo acima';
 
     // Composição do preço — as 6 fatias somam exatamente o preço sugerido
     // (custoBase + preço*totalPercentual = preço, por construção da fórmula
