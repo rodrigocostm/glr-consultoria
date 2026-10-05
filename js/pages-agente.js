@@ -40,6 +40,7 @@
       filtroLog: 'todos',
       dadosAoVivoPorConta: {}, carregandoDadosAoVivo: false,
       negocioPorConta: {}, carregandoNegocio: false, negocioPeriodo: '7',
+      abcPorConta: {}, carregandoABC: false, abcProgresso: '',
       executandoAcaoManual: false,
       rodandoAgente: false, resultadoRodada: null,
       processandoAlertaId: null,
@@ -78,6 +79,8 @@
       if (cfgAberta?.conta_id) {
         buscarDadosAoVivo(cfgAberta.conta_id);
         buscarNegocio(cfgAberta.conta_id);
+        abcCarregarDoCache(cfgAberta.conta_id);
+        render();
       }
     }
 
@@ -359,6 +362,200 @@
       }
     }
 
+    // ── Curva ABC de vendas por produto + alerta de projeção ─────────
+    // Pedido do analista: a IA tem que entender de curva A e avisar quando um
+    // produto que cresceu no mês passado está projetando queda neste mês,
+    // pra agir em conjunto. A Shopee não tem ranking por produto da conta
+    // inteira (shopee_sales_by_item exige item_id), então agrega a partir dos
+    // pedidos. Mês fechado nunca muda → fica em cache local pra sempre; só o
+    // mês corrente é rebuscado. Receita exclui cancelados/devolvidos.
+    const ABC_PREFIXO = 'glr_agente_abc_';
+    const ABC_STATUS = ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'INVOICE_PENDING'];
+    const ABC_CRESCIMENTO_MIN = 0.10; // "estava crescendo": mês passado ≥ +10% sobre o retrasado
+    const ABC_QUEDA_PROJ = -0.15;     // projeção do mês ≤ -15% sobre o mês passado
+    const ABC_QUEDA_FORTE_A = -0.25;  // produto A: alerta mesmo sem ter crescido antes
+    const ABC_DIA_MIN_PROJECAO = 5;   // antes disso a projeção linear é ruído
+
+    function abcLerCache(contaId) { try { return JSON.parse(localStorage.getItem(ABC_PREFIXO + contaId) || '{}'); } catch (e) { return {}; } }
+    function abcSalvarCache(contaId, c) { try { localStorage.setItem(ABC_PREFIXO + contaId, JSON.stringify(c)); } catch (e) { /* cache é só otimização */ } }
+    function abcChaveMes(ano, mes0) { return `${ano}-${String(mes0 + 1).padStart(2, '0')}`; }
+
+    async function abcAgregarMes(shopId, ano, mes0, ateDia, onProgresso) {
+      const tsFrom = Math.floor(new Date(ano, mes0, 1, 0, 0, 0).getTime() / 1000);
+      const tsTo = Math.floor(new Date(ano, mes0, ateDia || new Date(ano, mes0 + 1, 0).getDate(), 23, 59, 59).getTime() / 1000);
+      const sns = await MarketplaceAPI.shopeeListOrderSns(shopId, tsFrom, tsTo, ABC_STATUS);
+      const itens = {};
+      for (let i = 0; i < sns.length; i += 50) {
+        if (onProgresso) onProgresso(i, sns.length);
+        const lote = sns.slice(i, i + 50).map(o => o.sn);
+        let rd;
+        // Um lote que falha não pode virar "venda menor" em silêncio (mesmo
+        // bug que já mordeu o faturamento) — tenta de novo e, se persistir,
+        // aborta o mês inteiro em vez de gravar número incompleto no cache.
+        try { rd = await MarketplaceAPI.call('shopee_get_order_detail', { shopId, order_sn_list: lote }); }
+        catch (e) { rd = await MarketplaceAPI.call('shopee_get_order_detail', { shopId, order_sn_list: lote }); }
+        const lista = rd.data?.response?.order_list || rd.data?.order_list || [];
+        for (const ord of lista) {
+          if (!ord.create_time || ord.create_time < tsFrom || ord.create_time > tsTo) continue;
+          for (const it of (ord.item_list || ord.items || [])) {
+            const id = String(it.item_id || it.item_name);
+            const qtd = parseInt(it.model_quantity_purchased) || parseInt(it.quantity) || 1;
+            const preco = parseFloat(it.model_discounted_price) || parseFloat(it.item_price) || 0;
+            if (!itens[id]) itens[id] = { nome: it.item_name || it.model_name || id, receita: 0, un: 0 };
+            itens[id].receita += preco * qtd;
+            itens[id].un += qtd;
+          }
+        }
+      }
+      return itens;
+    }
+
+    function abcAnalisar(cache) {
+      const hoje = new Date();
+      const ano = hoje.getFullYear(), m0 = hoje.getMonth();
+      const d1 = new Date(ano, m0 - 1, 1), d2 = new Date(ano, m0 - 2, 1);
+      const k0 = abcChaveMes(ano, m0), k1 = abcChaveMes(d1.getFullYear(), d1.getMonth()), k2 = abcChaveMes(d2.getFullYear(), d2.getMonth());
+      const mes0 = cache[k0]?.itens || {}, mes1 = cache[k1]?.itens, mes2 = cache[k2]?.itens || {};
+      if (!mes1) return null;
+      const diasNoMes = new Date(ano, m0 + 1, 0).getDate();
+      const diasDecorridos = hoje.getDate() - 1; // até ontem
+      const projecaoOk = diasDecorridos >= ABC_DIA_MIN_PROJECAO;
+
+      const ordenados = Object.entries(mes1).map(([id, v]) => ({ id, ...v })).filter(p => p.receita > 0).sort((a, b) => b.receita - a.receita);
+      const total1 = ordenados.reduce((s, p) => s + p.receita, 0);
+      let acum = 0;
+      const produtos = ordenados.map(p => {
+        const classe = acum < total1 * 0.8 ? 'A' : acum < total1 * 0.95 ? 'B' : 'C';
+        acum += p.receita;
+        const r1 = p.receita, r2 = mes2[p.id]?.receita || 0, r0 = mes0[p.id]?.receita || 0;
+        const proj = diasDecorridos >= 1 ? (r0 / diasDecorridos) * diasNoMes : null;
+        const crescimentoAnterior = r2 > 0 ? (r1 - r2) / r2 : null;
+        const varProj = projecaoOk && proj != null ? (proj - r1) / r1 : null;
+        let alerta = null;
+        if (varProj != null && classe !== 'C') {
+          if (crescimentoAnterior != null && crescimentoAnterior >= ABC_CRESCIMENTO_MIN && varProj <= ABC_QUEDA_PROJ) alerta = 'virada';
+          else if (classe === 'A' && varProj <= ABC_QUEDA_FORTE_A) alerta = 'queda_a';
+        }
+        return { id: p.id, nome: p.nome, classe, r2, r1, r0, proj, crescimentoAnterior, varProj, alerta, impacto: proj != null ? r1 - proj : 0 };
+      });
+      const resumo = { A: 0, B: 0, C: 0 };
+      produtos.forEach(p => resumo[p.classe]++);
+      return {
+        k0, k1, k2, diasDecorridos, diasNoMes, projecaoOk, total1, resumo, produtos,
+        alertas: produtos.filter(p => p.alerta).sort((a, b) => b.impacto - a.impacto).slice(0, 8),
+        semMes2: !cache[k2],
+      };
+    }
+
+    async function abcAtualizar(contaId) {
+      if (!contaId || contaId === '__novo__' || state.carregandoABC) return;
+      state.carregandoABC = true;
+      state.abcProgresso = 'preparando...';
+      render();
+      try {
+        const hoje = new Date();
+        const ano = hoje.getFullYear(), m0 = hoje.getMonth();
+        const cache = abcLerCache(contaId);
+        const meses = [new Date(ano, m0 - 2, 1), new Date(ano, m0 - 1, 1), new Date(ano, m0, 1)];
+        for (const d of meses) {
+          const k = abcChaveMes(d.getFullYear(), d.getMonth());
+          const ehAtual = d.getFullYear() === ano && d.getMonth() === m0;
+          if (!ehAtual && cache[k]?.itens) continue; // mês fechado já em cache
+          if (ehAtual && hoje.getDate() === 1) { cache[k] = { itens: {}, atualizadoEm: Date.now() }; continue; }
+          const label = d.toLocaleDateString('pt-BR', { month: 'long' });
+          state.abcProgresso = `lendo pedidos de ${label}...`;
+          render();
+          const itens = await abcAgregarMes(contaId, d.getFullYear(), d.getMonth(), ehAtual ? hoje.getDate() - 1 : null, (i, n) => {
+            state.abcProgresso = `lendo pedidos de ${label}: ${i}/${n}`;
+            const el = document.getElementById('ag-abc-prog'); if (el) el.textContent = '⏳ ' + state.abcProgresso;
+          });
+          cache[k] = { itens, atualizadoEm: Date.now() };
+          abcSalvarCache(contaId, cache);
+        }
+        abcSalvarCache(contaId, cache);
+        const analise = abcAnalisar(cache);
+        state.abcPorConta[contaId] = analise ? { ...analise, atualizadoEm: Date.now() } : { erro: 'Sem vendas no mês passado pra montar a curva.' };
+        if (analise?.alertas.length) await abcCriarAlertas(contaId, analise);
+      } catch (e) {
+        state.abcPorConta[contaId] = { erro: e.message || String(e) };
+      } finally {
+        state.carregandoABC = false;
+        state.abcProgresso = '';
+        render();
+      }
+    }
+
+    function abcCarregarDoCache(contaId) {
+      if (!contaId || state.abcPorConta[contaId]) return;
+      const cache = abcLerCache(contaId);
+      const analise = abcAnalisar(cache);
+      const atual = cache[abcChaveMes(new Date().getFullYear(), new Date().getMonth())];
+      if (analise) state.abcPorConta[contaId] = { ...analise, atualizadoEm: atual?.atualizadoEm || null };
+    }
+
+    // Um alerta por produto por mês (não repete a cada atualização).
+    async function abcCriarAlertas(contaId, a) {
+      const cfg = configDaConta(contaId);
+      const mesAtual = new Date().toISOString().slice(0, 7);
+      for (const p of a.alertas) {
+        const titulo = p.alerta === 'virada'
+          ? `Curva ${p.classe} em risco — ${p.nome.slice(0, 60)}`
+          : `Queda em produto curva A — ${p.nome.slice(0, 60)}`;
+        const jaExiste = state.logs.some(l => l.conta_id === contaId && l.titulo === titulo && String(l.criado_em).slice(0, 7) === mesAtual);
+        if (jaExiste) continue;
+        const cresc = p.crescimentoAnterior != null ? `${p.crescimentoAnterior >= 0 ? '+' : ''}${(p.crescimentoAnterior * 100).toFixed(0)}%` : '—';
+        const explicacao = p.alerta === 'virada'
+          ? `Produto curva ${p.classe} que vinha crescendo (mês passado ${cresc} sobre o retrasado: ${R$(p.r2)} → ${R$(p.r1)}) e agora projeta ${R$(p.proj)} no mês (${(p.varProj * 100).toFixed(0)}% vs mês passado, projeção linear com ${a.diasDecorridos} dia(s) de dados). Impacto estimado: ${R$(p.impacto)}. Vale revisar anúncio, preço, estoque e ADS desse produto em conjunto.`
+          : `Produto curva A (parte dos ~80% da receita) projetando ${R$(p.proj)} no mês contra ${R$(p.r1)} no mês passado (${(p.varProj * 100).toFixed(0)}%, projeção linear com ${a.diasDecorridos} dia(s) de dados). Impacto estimado: ${R$(p.impacto)}. Vale revisar anúncio, preço, estoque e ADS desse produto em conjunto.`;
+        try {
+          await _sb.from('glr_agente_log').insert({
+            conta_id: contaId, cliente_nome: cfg?.cliente_nome || null, tipo: 'alerta', titulo, explicacao,
+            dados: { origem_analise: 'curva_abc', produto_id: p.id, classe: p.classe, receita_mes_retrasado: p.r2, receita_mes_passado: p.r1, projecao_mes: p.proj, variacao_projecao_pct: p.varProj * 100 },
+            resultado: 'so_alerta', origem: 'chat',
+          });
+        } catch (e) { /* um alerta falhando não derruba os outros */ }
+      }
+      const { data } = await _sb.from('glr_agente_log').select('*').order('criado_em', { ascending: false }).limit(250);
+      if (data) state.logs = data;
+    }
+
+    function renderCurvaABC(contaId) {
+      const a = state.abcPorConta[contaId];
+      const carregando = state.carregandoABC;
+      const pct = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(0) + '%';
+      const COR_CLASSE = { A: '#16a34a', B: '#d97706', C: '#64748b' };
+      const cor = a && !a.erro && a.alertas.length ? '#dc2626' : '#6366f1';
+      const mesLabel = k => { const [y, m] = k.split('-'); return new Date(+y, +m - 1, 1).toLocaleDateString('pt-BR', { month: 'short' }); };
+      let corpo;
+      if (carregando) corpo = `<div id="ag-abc-prog" style="color:var(--text-muted);font-size:13px;">⏳ ${esc(state.abcProgresso || 'calculando...')}</div><div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">A primeira leitura puxa 3 meses de pedidos e pode levar alguns minutos — os meses fechados ficam guardados e as próximas atualizações leem só o mês atual.</div>`;
+      else if (!a) corpo = `<div style="color:var(--text-muted);font-size:13px;">Ainda não analisado. Clique em Analisar pra montar a curva e comparar a projeção do mês com o mês passado.</div>`;
+      else if (a.erro) corpo = `<div style="color:#dc2626;font-size:13px;">⚠️ ${esc(a.erro)}</div>`;
+      else {
+        const top = a.produtos.filter(p => p.classe === 'A' || p.alerta).slice(0, 12);
+        corpo = `
+          <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:12px;">
+            ${['A', 'B', 'C'].map(c => `<div><div class="ag-hud-label" style="margin-bottom:2px;">Curva ${c}</div><div class="ag-mono" style="font-size:20px;font-weight:800;color:${COR_CLASSE[c]};">${a.resumo[c]}</div></div>`).join('')}
+            <div><div class="ag-hud-label" style="margin-bottom:2px;">Receita ${mesLabel(a.k1)}</div><div class="ag-mono" style="font-size:20px;font-weight:800;">${R$(a.total1)}</div></div>
+          </div>
+          ${a.alertas.length ? `<div style="background:#dc26261a;border:1px solid #dc2626;border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+            <div style="font-size:12.5px;font-weight:800;color:#dc2626;margin-bottom:6px;">🚨 ${a.alertas.length} produto(s) pedindo ação conjunta</div>
+            ${a.alertas.map(p => `<div style="font-size:12px;line-height:1.5;margin-top:4px;"><b>${esc(p.nome.slice(0, 70))}</b> <span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:${COR_CLASSE[p.classe]}1a;">Curva ${p.classe}</span> — ${p.alerta === 'virada' ? `vinha crescendo (${pct(p.crescimentoAnterior)}) e` : ''} projeta ${R$(p.proj)} (${pct(p.varProj)} vs ${mesLabel(a.k1)}), impacto ≈ ${R$(p.impacto)}</div>`).join('')}
+          </div>` : (a.projecaoOk ? `<div style="font-size:12.5px;color:#16a34a;margin-bottom:12px;">✅ Nenhum produto A/B com queda projetada relevante neste mês.</div>` : `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;">Projeção do mês só é confiável a partir do dia ${ABC_DIA_MIN_PROJECAO + 1} (hoje há ${a.diasDecorridos} dia(s) de dados) — por enquanto sem alertas.</div>`)}
+          <div style="overflow-x:auto;"><table class="ag-tech-table"><thead><tr><th>Produto</th><th>Classe</th><th>${mesLabel(a.k2)}</th><th>${mesLabel(a.k1)}</th><th>Projeção ${mesLabel(a.k0)}</th><th>Variação</th></tr></thead><tbody>
+            ${top.map(p => `<tr style="--row-accent:${COR_CLASSE[p.classe]};"><td>${esc(p.nome.slice(0, 55))}</td><td><span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:${COR_CLASSE[p.classe]}1a;">${p.classe}</span></td><td class="ag-mono">${a.semMes2 ? '—' : R$(p.r2)}</td><td class="ag-mono">${R$(p.r1)}</td><td class="ag-mono">${p.proj != null && a.projecaoOk ? R$(p.proj) : '—'}</td><td class="ag-mono" style="font-weight:800;color:${p.varProj == null ? 'var(--text-muted)' : p.varProj <= ABC_QUEDA_PROJ ? '#dc2626' : '#16a34a'};">${p.varProj == null ? '—' : pct(p.varProj)}</td></tr>`).join('')}
+          </tbody></table></div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Curva A = produtos que somam ~80% da receita de ${mesLabel(a.k1)}, B até 95%, C o resto. Projeção linear (receita até ontem ÷ dias decorridos × dias do mês), receita sem cancelados.${a.atualizadoEm ? ` Atualizado ${new Date(a.atualizadoEm).toLocaleString('pt-BR')}.` : ''}</div>`;
+      }
+      return `<div class="ag-hud-card" style="--ag-hud-accent:${cor};margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:2px;">
+          <div style="font-size:14px;font-weight:800;">🅰️ Curva ABC de vendas</div>
+          <button class="btn btn-secondary btn-sm" ${carregando ? 'disabled' : ''} onclick="window._agAnalisarABC()">${a && !a.erro ? '🔄 Atualizar' : '▶ Analisar'}</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:12px;">Produto que cresceu mês passado e projeta queda neste mês vira alerta na Fila de Atenção, pra decidirmos a ação juntos.</div>
+        ${corpo}
+      </div>`;
+    }
+
     function nomeConta(c) {
       const tag = c.tags?.[0]?.name || c.tags?.[0];
       return (typeof tag === 'string' ? tag : tag?.value) || c.nickname || c.external_id;
@@ -448,11 +645,16 @@
         : `\nDADOS AO VIVO DA SHOPEE (últimos 7 dias, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nFaturamento TOTAL da loja: ${R$(d.faturamentoTotal)} | Investimento ADS: ${R$(d.gastoTotal)} | TACOS da conta: ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (esta é a métrica principal, não o ACOS isolado abaixo)\nCampanhas ativas: ${d.campanhasAtivas} | Vendas atribuídas ao ADS: ${R$(d.gmvTotal)} | Pedidos atribuídos: ${d.pedidosTotal} | ACOS médio das campanhas: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento (ACOS individual, útil só pra comparar entre elas — use o ID exato ao sugerir mudança):\n${d.topCampanhas.map(c => `- ID ${c.id} — ${(c.nome || '').slice(0, 60)}: orçamento ${R$(c.budget)}${c.roasTarget != null ? `, meta de ROAS atual ${c.roasTarget}x (lance automático)` : ''}, gasto ${R$(c.gasto)}, vendas (GMV) ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
       const neg = state.negocioPorConta[state.contaAbertaId + ':' + state.negocioPeriodo];
       const negTexto = neg && !neg.erro ? `\nSAÚDE DO NEGÓCIO (período: ${state.negocioPeriodo === 'mes' ? 'mês atual' : state.negocioPeriodo + ' dias'}): faturamento ${R$(neg.semanaAtual)} vs período anterior equivalente ${R$(neg.semanaAnterior)} (${neg.variacaoPct === Infinity ? '∞' : (neg.variacaoPct >= 0 ? '+' : '') + neg.variacaoPct.toFixed(1) + '%'}).` : '';
+      const abc = state.abcPorConta[state.contaAbertaId];
+      const abcTexto = abc && !abc.erro
+        ? `\nCURVA ABC DE VENDAS (base: receita de ${abc.k1}; A = ~80% da receita, B até 95%, C o resto; ${abc.resumo.A} produtos A, ${abc.resumo.B} B, ${abc.resumo.C} C; receita do mês passado ${R$(abc.total1)}). Top produtos A (receita ${abc.k2} → ${abc.k1} → projeção ${abc.k0}):\n${abc.produtos.filter(p => p.classe === 'A').slice(0, 10).map(p => `- ${p.nome.slice(0, 60)}: ${R$(p.r2)} → ${R$(p.r1)} → ${p.proj != null && abc.projecaoOk ? R$(p.proj) + ' (' + (p.varProj >= 0 ? '+' : '') + (p.varProj * 100).toFixed(0) + '%)' : 'projeção ainda sem dados suficientes'}`).join('\n')}\n${abc.alertas.length ? 'ALERTAS ABC: ' + abc.alertas.map(p => `${p.nome.slice(0, 50)} (curva ${p.classe}, ${p.alerta === 'virada' ? 'vinha crescendo e' : ''} projeta ${(p.varProj * 100).toFixed(0)}% vs mês passado)`).join('; ') : 'Nenhum alerta ABC no momento.'}`
+        : '';
       return [
         cfg ? `CONFIGURAÇÃO ATUAL DO PILOTO (conta ${cfg.cliente_nome || cfg.conta_id}, ${cfg.ativo ? 'ATIVO' : 'inativo'}):` : 'Nenhuma conta piloto configurada ainda.',
         cfg ? `Meta TACOS: ${cfg.meta_acos ?? '—'}% (métrica principal: investimento ADS ÷ faturamento TOTAL da loja, não ACOS isolado) | Orçamento: ${cfg.orcamento_min ?? '—'} a ${cfg.orcamento_max ?? '—'} | Margem: ${cfg.margem_pct ?? '—'}% | Estoque mínimo: ${cfg.estoque_minimo ?? '—'} | Pausa automática acima de ${cfg.regra_pausa_acos ?? '—'}% ACOS por ${cfg.regra_pausa_dias ?? '—'} dia(s), só após ${cfg.dias_maturacao_campanha ?? 7} dia(s) de maturação da campanha | Alerta humano se variação de orçamento > ${cfg.alerta_variacao_pct ?? '—'}% | Notas: ${cfg.notas || '—'}` : '',
         cfg ? dadosTexto : '',
         cfg ? negTexto : '',
+        cfg ? abcTexto : '',
         ultimoRelatorio ? `\nÚLTIMO RELATÓRIO DIÁRIO (${ultimoRelatorio.data}):\n${ultimoRelatorio.resumo}` : '',
         logsRecentes ? `\nÚLTIMAS AÇÕES/EVENTOS REGISTRADOS NO LOG:\n${logsRecentes}` : '',
       ].filter(Boolean).join('\n');
@@ -540,7 +742,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            system: `Você é o Agente Autônomo de ADS da GLR Consultoria. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento/meta de ROAS diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Muitas campanhas individuais hoje em dia (modo GMV Max por produto, lance automático) são geridas pelo algoritmo da própria Shopee/TikTok — o papel do agente aí é ajustar o guardrail (meta de ROAS), não microgerenciar lance por lance. O agente só mexe em campanhas individuais — o GMV Max da Loja (campanha única, guarda-chuva, por conta inteira) está fora do escopo por decisão do analista, não monitorado nem ajustado. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Use os dados de contexto abaixo (configuração, dados ao vivo, saúde do negócio, último relatório, log recente) pra responder — nunca invente números que não estão aí, nunca invente campaign_id que não apareça na lista "Top campanhas" do contexto.\n\nQUANDO O ANALISTA PEDIR UMA MUDANÇA CONCRETA (ex: "aumenta o investimento", "pausa a campanha X", "sobe a meta de ROAS da campanha Y", "reduz orçamento de Z"): responda com no máximo 2 frases confirmando o que você está sugerindo e por quê, e termine a mensagem com um bloco \`\`\`json contendo um array de sugestões, uma por campanha, no formato exato: [{"campaign_id": <ID numérico exato do contexto>, "nome_campanha": "<nome curto>", "tipo": "pausar"|"orcamento"|"roas", "valor_atual": <número, omita se tipo=pausar>, "valor_sugerido": <número, omita se tipo=pausar>, "titulo": "<título curto pro card, ex: Aumentar orçamento — Nome da campanha>", "explicacao": "<1-2 frases explicando o motivo, com os números que embasam>"}]. Use tipo \"roas\" só pra campanha que already tem \"meta de ROAS atual\" no contexto (lance automático); use \"orcamento\" só pra campanha com orçamento fixo (budget > 0); nunca sugira os dois tipos pra mesma campanha na mesma resposta. NÃO execute nada você mesmo pelo chat — a sugestão vira um card na Fila de Atenção (Kanban) e só é aplicada de verdade quando o analista clicar em \"Aprovar\" ali. Se o pedido for só uma pergunta ou pedir explicação (\"por que caiu tal coisa\", \"como está a conta\"), responda em texto normal e NÃO inclua o bloco \`\`\`json. Se o analista pedir pra mudar uma regra/guardrail (meta TACOS, regra de pausa, etc — não uma campanha específica), explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
+            system: `Você é o Agente Autônomo de ADS da GLR Consultoria. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento/meta de ROAS diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Muitas campanhas individuais hoje em dia (modo GMV Max por produto, lance automático) são geridas pelo algoritmo da própria Shopee/TikTok — o papel do agente aí é ajustar o guardrail (meta de ROAS), não microgerenciar lance por lance. O agente só mexe em campanhas individuais — o GMV Max da Loja (campanha única, guarda-chuva, por conta inteira) está fora do escopo por decisão do analista, não monitorado nem ajustado. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Você também entende de curva ABC de vendas (A = produtos que somam ~80% da receita, B até 95%, C o resto): produto curva A que cresceu e projeta queda é prioridade de atenção, e nesses casos você levanta o alerta e propõe a ação junto com o analista (revisar anúncio, preço, estoque, ADS) em vez de decidir sozinho — use o bloco CURVA ABC do contexto quando existir. Use os dados de contexto abaixo (configuração, dados ao vivo, saúde do negócio, último relatório, log recente) pra responder — nunca invente números que não estão aí, nunca invente campaign_id que não apareça na lista "Top campanhas" do contexto.\n\nQUANDO O ANALISTA PEDIR UMA MUDANÇA CONCRETA (ex: "aumenta o investimento", "pausa a campanha X", "sobe a meta de ROAS da campanha Y", "reduz orçamento de Z"): responda com no máximo 2 frases confirmando o que você está sugerindo e por quê, e termine a mensagem com um bloco \`\`\`json contendo um array de sugestões, uma por campanha, no formato exato: [{"campaign_id": <ID numérico exato do contexto>, "nome_campanha": "<nome curto>", "tipo": "pausar"|"orcamento"|"roas", "valor_atual": <número, omita se tipo=pausar>, "valor_sugerido": <número, omita se tipo=pausar>, "titulo": "<título curto pro card, ex: Aumentar orçamento — Nome da campanha>", "explicacao": "<1-2 frases explicando o motivo, com os números que embasam>"}]. Use tipo \"roas\" só pra campanha que already tem \"meta de ROAS atual\" no contexto (lance automático); use \"orcamento\" só pra campanha com orçamento fixo (budget > 0); nunca sugira os dois tipos pra mesma campanha na mesma resposta. NÃO execute nada você mesmo pelo chat — a sugestão vira um card na Fila de Atenção (Kanban) e só é aplicada de verdade quando o analista clicar em \"Aprovar\" ali. Se o pedido for só uma pergunta ou pedir explicação (\"por que caiu tal coisa\", \"como está a conta\"), responda em texto normal e NÃO inclua o bloco \`\`\`json. Se o analista pedir pra mudar uma regra/guardrail (meta TACOS, regra de pausa, etc — não uma campanha específica), explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
             messages: state.chatMessages,
           }),
         });
@@ -1299,6 +1501,7 @@
         ${renderAcaoManual(cfg.conta_id)}
         ${renderKanban(cfg.conta_id)}
         ${renderNegocio(cfg.conta_id)}
+        ${renderCurvaABC(cfg.conta_id)}
         ${renderImpressoesCliquesVendas(cfg.conta_id)}
         ${renderCampanhasAoVivo(cfg.conta_id)}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="ag-grid-resp">
@@ -1372,8 +1575,9 @@
     window._agMudarPeriodoNegocio = (periodo) => { state.negocioPeriodo = periodo; render(); buscarNegocio(state.contaAbertaId, periodo); };
     window._agAbrirConta = (id) => {
       state.contaAbertaId = id; state.chatMessages = []; render();
-      if (id && id !== '__novo__') { buscarDadosAoVivo(id); buscarNegocio(id); }
+      if (id && id !== '__novo__') { buscarDadosAoVivo(id); buscarNegocio(id); abcCarregarDoCache(id); render(); }
     };
+    window._agAnalisarABC = () => abcAtualizar(state.contaAbertaId);
     window._agVoltarPortfolio = () => { state.contaAbertaId = null; render(); };
     window._agExecutarAcaoManual = executarAcaoManual;
     window._agRodarAgora = rodarAgenteAgora;
