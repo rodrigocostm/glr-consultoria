@@ -438,7 +438,21 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
         continue;
       }
 
-      const usaRoasTarget = budgetAtual === 0 && settings.roas_target != null;
+      // Campanha de lance automático tem DUAS alavancas ao mesmo tempo: orçamento
+      // diário (teto de gasto) e meta de ROAS (agressividade do lance). Antes só
+      // mexia no ROAS quando o orçamento era 0, então nas campanhas reais (que
+      // têm os dois) o ROAS nunca era ajustado. Agora escolhe a alavanca pela
+      // estratégia: pra acelerar, se o orçamento já está sendo consumido (>=80%)
+      // ele é o gargalo e sobe; senão subir orçamento não muda nada e o certo é
+      // baixar a meta de ROAS. Pra conter gasto, aperta a meta de ROAS primeiro
+      // (corta lance caro sem tirar a campanha do ar) e só corta orçamento se o
+      // ROAS já estiver no teto da Shopee.
+      const temRoas = settings.roas_target != null && settings.roas_target > 0;
+      const gastoMedioDia = diario.gasto / Math.max(1, diario.diasComGasto || 1);
+      const orcamentoSaturado = budgetAtual > 0 && gastoMedioDia >= budgetAtual * 0.8;
+      const tetoOrcamentoAtingido = !!cfg.orcamento_max && budgetAtual >= cfg.orcamento_max;
+      const usarRoasAcelerar = temRoas && (budgetAtual === 0 || !orcamentoSaturado || tetoOrcamentoAtingido);
+      const usarRoasConter = temRoas && settings.roas_target < SHOPEE_ROAS_TARGET_MAX;
 
       // Regra 3: ACOS da campanha bem abaixo da meta E a conta como um todo
       // ainda tem folga de TACOS → aumenta orçamento (ou baixa a meta de ROAS,
@@ -446,14 +460,14 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       // folga de TACOS, não aumenta automaticamente mesmo com campanha
       // eficiente — a conta como um todo já estaria investindo mais que o
       // saudável em ADS.
-      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= cfg.meta_acos * 0.7 && (budgetAtual > 0 || usaRoasTarget)) {
+      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= cfg.meta_acos * 0.7 && (budgetAtual > 0 || temRoas)) {
         if (!tacosDentroDaMeta) {
           await logar('sistema', `Aumento represado por TACOS — ${nome}`,
             `ACOS da campanha (${(acosJanela * 100).toFixed(1)}%) sugeriria acelerar a campanha, mas o TACOS da conta (${tacosConta.toFixed(1)}%) já está acima da meta (${cfg.meta_acos}%) — não aumenta automaticamente enquanto isso não normalizar.`,
             { acos: acosJanela * 100, tacos_conta: tacosConta }, 'so_alerta');
           continue;
         }
-        if (usaRoasTarget) {
+        if (usarRoasAcelerar) {
           // Meta de ROI menor = lance mais agressivo = mais gasto/volume.
           // Nunca desce abaixo da meta de ROI da própria conta (100/meta_acos)
           // nem abaixo de 1.0 (mínimo aceito pela Shopee).
@@ -462,7 +476,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           const novoRoas = Math.round(Math.max(1, metaRoasConta, roasAtual * 0.85) * 10) / 10;
           if (novoRoas < roasAtual) {
             const variacaoPct = Math.abs((novoRoas - roasAtual) / roasAtual) * 100;
-            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o TACOS da conta (${tacosConta.toFixed(1)}%) ainda tem folga. Campanha usa lance automático — baixando a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais agressivo e captar mais volume.`;
+            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o TACOS da conta (${tacosConta.toFixed(1)}%) ainda tem folga. ${budgetAtual > 0 && !orcamentoSaturado ? `O orçamento diário (${R$(budgetAtual)}) não está sendo consumido por completo (média de ${R$(gastoMedioDia)}/dia), então subir orçamento não ajudaria — o limitador é o lance.` : 'Campanha usa lance automático.'} Baixando a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais agressivo e captar mais volume.`;
             if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
               await logar('alerta', `Sugestão de baixar meta de ROI — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, roas_atual: roasAtual, roas_sugerido: novoRoas, tacos_conta: tacosConta }, 'so_alerta');
               alertas.push(nome);
@@ -491,7 +505,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       // orçamento (ou sobe a meta de ROI, pra campanha automática) com
       // moderação — corte é seguro independente do TACOS geral.
       if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > cfg.meta_acos && !emMaturacao) {
-        if (usaRoasTarget) {
+        if (usarRoasConter) {
           const roasAtual = settings.roas_target;
           const novoRoas = Math.min(SHOPEE_ROAS_TARGET_MAX, Math.round(roasAtual * 1.15 * 10) / 10);
           const variacaoPct = Math.abs((novoRoas - roasAtual) / roasAtual) * 100;
