@@ -680,6 +680,20 @@
       }
     }
 
+    // Lista COMPLETA de campanhas pro chat (antes só as 8 de maior gasto — o
+    // chat não conseguia montar reativação/otimização em lote porque não
+    // enxergava as pausadas nem os IDs das demais).
+    function campanhasTexto(cfg) {
+      const d = state.dadosAoVivoPorConta[state.contaAbertaId];
+      const todas = d && !d.erro ? (d.todasCampanhas || []) : [];
+      if (!todas.length) return '';
+      const linhas = todas.slice(0, 60).map(c => {
+        const s = statusCampanha(state.contaAbertaId, c, cfg);
+        return `- ID ${c.id} | ${String(c.nome).slice(0, 55)} | ${s.txt}${s.anomalia ? ' (ACOS DENTRO DA META — candidata a reativar)' : ''} | orçamento ${c.budget > 0 ? R$(c.budget) : 'sem limite'}${c.roasTarget != null ? ` | meta de ROAS ${fmtNum(c.roasTarget)}x` : ''} | gasto ${R$(c.gasto)} | GMV ${R$(c.gmv)} | ACOS ${fmtPct(c.acos)}`;
+      });
+      return `\nTODAS AS CAMPANHAS COM ATIVIDADE NO PERÍODO (${todas.length}${todas.length > 60 ? ', mostrando as 60 de maior gasto' : ''}; estado atual na Shopee; use estes IDs exatos):\n${linhas.join('\n')}`;
+    }
+
     // ── Chat com o agente (escopo: conta aberta) ─────────────────
     function contextoAgente() {
       const cfg = configDaConta(state.contaAbertaId);
@@ -702,6 +716,7 @@
         cfg ? `CONFIGURAÇÃO ATUAL DO PILOTO (conta ${nomeExibicao(cfg)}, ${cfg.ativo ? 'ATIVO' : 'inativo'}):` : 'Nenhuma conta piloto configurada ainda.',
         cfg ? `Meta TACOS: ${cfg.meta_acos ?? '—'}% (métrica principal: investimento ADS ÷ faturamento TOTAL da loja, não ACOS isolado) | Orçamento: ${cfg.orcamento_min ?? '—'} a ${cfg.orcamento_max ?? '—'} | Margem: ${cfg.margem_pct ?? '—'}% | Estoque mínimo: ${cfg.estoque_minimo ?? '—'} | Pausa automática acima de ${cfg.regra_pausa_acos ?? '—'}% ACOS por ${cfg.regra_pausa_dias ?? '—'} dia(s), só após ${cfg.dias_maturacao_campanha ?? 7} dia(s) de maturação da campanha | Alerta humano se variação de orçamento > ${cfg.alerta_variacao_pct ?? '—'}% | Notas: ${cfg.notas || '—'}` : '',
         cfg ? dadosTexto : '',
+        cfg ? campanhasTexto(cfg) : '',
         cfg ? negTexto : '',
         cfg ? abcTexto : '',
         ultimoRelatorio ? `\nÚLTIMO RELATÓRIO DIÁRIO (${ultimoRelatorio.data}):\n${ultimoRelatorio.resumo}` : '',
@@ -792,7 +807,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            system: `Você é o Agente Autônomo de ADS da GLR Consultoria. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento/meta de ROAS diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Muitas campanhas individuais hoje em dia (modo GMV Max por produto, lance automático) são geridas pelo algoritmo da própria Shopee/TikTok — o papel do agente aí é ajustar o guardrail (meta de ROAS), não microgerenciar lance por lance. O agente só mexe em campanhas individuais — o GMV Max da Loja (campanha única, guarda-chuva, por conta inteira) está fora do escopo por decisão do analista, não monitorado nem ajustado. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Você também entende de curva ABC de vendas (A = produtos que somam ~80% da receita, B até 95%, C o resto): produto curva A que cresceu e projeta queda é prioridade de atenção, e nesses casos você levanta o alerta e propõe a ação junto com o analista (revisar anúncio, preço, estoque, ADS) em vez de decidir sozinho — use o bloco CURVA ABC do contexto quando existir. Use os dados de contexto abaixo (configuração, dados ao vivo, saúde do negócio, último relatório, log recente) pra responder — nunca invente números que não estão aí, nunca invente campaign_id que não apareça na lista "Top campanhas" do contexto.\n\nQUANDO O ANALISTA PEDIR UMA MUDANÇA CONCRETA (ex: "aumenta o investimento", "pausa a campanha X", "sobe a meta de ROAS da campanha Y", "reduz orçamento de Z"): responda com no máximo 2 frases confirmando o que você está sugerindo e por quê, e termine a mensagem com um bloco \`\`\`json contendo um array de sugestões, uma por campanha, no formato exato: [{"campaign_id": <ID numérico exato do contexto>, "nome_campanha": "<nome curto>", "tipo": "pausar"|"orcamento"|"roas"|"retomar", "valor_atual": <número, omita se tipo=pausar>, "valor_sugerido": <número, omita se tipo=pausar>, "titulo": "<título curto pro card, ex: Aumentar orçamento — Nome da campanha>", "explicacao": "<1-2 frases explicando o motivo, com os números que embasam>"}]. Use tipo \"roas\" só pra campanha que already tem \"meta de ROAS atual\" no contexto (lance automático); use \"orcamento\" só pra campanha com orçamento fixo (budget > 0); nunca sugira os dois tipos pra mesma campanha na mesma resposta. Use tipo \"retomar\" só pra campanha que o contexto mostra como PAUSADA, quando o analista pedir pra reativar; se ele quiser reativar E mudar a meta de ROAS, use tipo \"retomar\" com valor_atual/valor_sugerido da meta de ROAS (o card faz as duas coisas ao aprovar). Nunca escreva no título/explicação que vai reativar uma campanha se o tipo não for \"retomar\" — o card só executa o que o tipo diz. NÃO execute nada você mesmo pelo chat — a sugestão vira um card na Fila de Atenção (Kanban) e só é aplicada de verdade quando o analista clicar em \"Aprovar\" ali. Se o pedido for só uma pergunta ou pedir explicação (\"por que caiu tal coisa\", \"como está a conta\"), responda em texto normal e NÃO inclua o bloco \`\`\`json. Se o analista pedir pra mudar uma regra/guardrail (meta TACOS, regra de pausa, etc — não uma campanha específica), explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
+            system: `Você é o Agente Autônomo de ADS da GLR Consultoria. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento/meta de ROAS diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Muitas campanhas individuais hoje em dia (modo GMV Max por produto, lance automático) são geridas pelo algoritmo da própria Shopee/TikTok — o papel do agente aí é ajustar o guardrail (meta de ROAS), não microgerenciar lance por lance. O agente só mexe em campanhas individuais — o GMV Max da Loja (campanha única, guarda-chuva, por conta inteira) está fora do escopo por decisão do analista, não monitorado nem ajustado. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Você também entende de curva ABC de vendas (A = produtos que somam ~80% da receita, B até 95%, C o resto): produto curva A que cresceu e projeta queda é prioridade de atenção, e nesses casos você levanta o alerta e propõe a ação junto com o analista (revisar anúncio, preço, estoque, ADS) em vez de decidir sozinho — use o bloco CURVA ABC do contexto quando existir. Use os dados de contexto abaixo (configuração, dados ao vivo, saúde do negócio, último relatório, log recente) pra responder — nunca invente números que não estão aí, nunca invente campaign_id que não apareça na lista "TODAS AS CAMPANHAS" do contexto (use os IDs exatos de lá, inclusive das pausadas).\n\nPEDIDOS EM LOTE (ex: "reativa as pausadas que valem a pena", "otimiza todas", "pausa as piores"): escolha as campanhas pelos critérios que o analista deu ou, se ele não deu, pela meta e pelos limites do contexto (ex.: pausada com ACOS dentro da meta vale reativar; ACOS acima do limite de pausa não). Responda em texto com a lista curta do que escolheu e por quê (uma linha por campanha, com o ACOS), e no bloco \`\`\`json inclua UMA sugestão por campanha escolhida, no máximo 20 por resposta, com "explicacao" de no máximo 15 palavras pra caber. Se houver mais de 20 candidatas, sugira as 20 mais importantes e diga que dá pra pedir o resto depois. Pra reativar E otimizar, use tipo \"retomar\" com valor_atual/valor_sugerido da meta de ROAS quando fizer sentido.\n\nQUANDO O ANALISTA PEDIR UMA MUDANÇA CONCRETA (ex: "aumenta o investimento", "pausa a campanha X", "sobe a meta de ROAS da campanha Y", "reduz orçamento de Z"): responda com no máximo 2 frases confirmando o que você está sugerindo e por quê, e termine a mensagem com um bloco \`\`\`json contendo um array de sugestões, uma por campanha, no formato exato: [{"campaign_id": <ID numérico exato do contexto>, "nome_campanha": "<nome curto>", "tipo": "pausar"|"orcamento"|"roas"|"retomar", "valor_atual": <número, omita se tipo=pausar>, "valor_sugerido": <número, omita se tipo=pausar>, "titulo": "<título curto pro card, ex: Aumentar orçamento — Nome da campanha>", "explicacao": "<1-2 frases explicando o motivo, com os números que embasam>"}]. Use tipo \"roas\" só pra campanha que already tem \"meta de ROAS atual\" no contexto (lance automático); use \"orcamento\" só pra campanha com orçamento fixo (budget > 0); nunca sugira os dois tipos pra mesma campanha na mesma resposta. Use tipo \"retomar\" só pra campanha que o contexto mostra como PAUSADA, quando o analista pedir pra reativar; se ele quiser reativar E mudar a meta de ROAS, use tipo \"retomar\" com valor_atual/valor_sugerido da meta de ROAS (o card faz as duas coisas ao aprovar). Nunca escreva no título/explicação que vai reativar uma campanha se o tipo não for \"retomar\" — o card só executa o que o tipo diz. NÃO execute nada você mesmo pelo chat — a sugestão vira um card na Fila de Atenção (Kanban) e só é aplicada de verdade quando o analista clicar em \"Aprovar\" ali. Se o pedido for só uma pergunta ou pedir explicação (\"por que caiu tal coisa\", \"como está a conta\"), responda em texto normal e NÃO inclua o bloco \`\`\`json. Se o analista pedir pra mudar uma regra/guardrail (meta TACOS, regra de pausa, etc — não uma campanha específica), explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
             messages: state.chatMessages,
           }),
         });
@@ -1067,9 +1082,11 @@
       return null;
     }
 
-    async function aprovarAlerta(logId) {
+    // emLote: usado por "Aprovar todas" — não recarrega nem alerta a cada item
+    // (o chamador recarrega uma vez no fim) e devolve true/false.
+    async function aprovarAlerta(logId, emLote) {
       const l = state.logs.find(x => String(x.id) === String(logId));
-      if (!l) return;
+      if (!l) return false;
       const d = l.dados || {};
       const tipoAcao = temAcaoReconhecida(d);
       if (!tipoAcao) {
@@ -1077,6 +1094,7 @@
         return;
       }
       const cfg = configDaConta(l.conta_id);
+      let ok = false;
       state.processandoAlertaId = logId;
       render();
       try {
@@ -1128,12 +1146,33 @@
           titulo: `Aprovado manualmente — ${(l.titulo || '').replace(/^Sugestão de /, '')}`,
           explicacao: `Alerta aprovado pelo analista. ${l.explicacao || ''}`, dados: dadosExec, resultado: 'executado', origem: 'aprovacao_manual',
         });
+        ok = true;
       } catch (e) {
-        alert('Erro ao executar: ' + (e.message || e));
+        if (emLote) state.ultimoErroLote = `${l.titulo}: ${e.message || e}`; else alert('Erro ao executar: ' + (e.message || e));
       } finally {
         state.processandoAlertaId = null;
-        await carregarTudo();
+        if (!emLote) await carregarTudo();
       }
+      return ok;
+    }
+
+    // Aprova de uma vez todas as sugestões executáveis pendentes (ex.: um
+    // lote de reativações pedido pelo chat), uma a uma, só depois de confirmar.
+    async function aprovarTodasPendentes() {
+      const contaId = state.contaAbertaId;
+      const pend = logsDaConta(contaId).filter(l => l.tipo === 'alerta' && l.resultado === 'so_alerta' && temAcaoReconhecida(l.dados || {})).sort(maisRecente);
+      if (pend.length < 2 || state.aprovandoLote) return;
+      const resumo = pend.slice(0, 12).map(l => '• ' + (descreverAcao(l).acaoLabel || '') + ' — ' + (nomeNoLog(l.titulo) || l.titulo).slice(0, 55)).join('\n');
+      if (!confirm(`Aprovar e executar agora ${pend.length} sugestão(ões) na Shopee?\n\n${resumo}${pend.length > 12 ? `\n… e mais ${pend.length - 12}` : ''}`)) return;
+      state.aprovandoLote = true; state.ultimoErroLote = null; render();
+      let feitas = 0; const falhas = [];
+      for (const l of pend) {
+        state.ultimoErroLote = null;
+        if (await aprovarAlerta(l.id, true)) feitas++; else falhas.push(state.ultimoErroLote || l.titulo);
+      }
+      state.aprovandoLote = false;
+      await carregarTudo();
+      alert(falhas.length ? `Executei ${feitas} de ${pend.length}. Falharam:\n${falhas.slice(0, 8).join('\n')}` : `${feitas} sugestão(ões) aprovada(s) e enviada(s) à Shopee. A confirmação aparece na timeline.`);
     }
 
     async function descartarAlerta(logId) {
@@ -1521,6 +1560,7 @@
         </div>
         <div class="ag-topbar-r">
           <span class="ag-topbar-run">${ultima ? `Última execução: <b>${quandoCurto(ultima.criado_em)}</b>${resumoTxt ? ` · ${h(resumoTxt)}` : ''}` : 'Ainda não rodou'}${cfg.ativo ? ` · próxima: <b>${proximaExecucao()}</b>` : ' · piloto desligado, não roda sozinho'}</span>
+          <button class="btn btn-primary btn-sm" onclick="window._agChatToggle()" title="Abrir o chat com o agente — peça pra reativar, otimizar ou explicar qualquer coisa desta conta">💬 Chat com o agente</button>
           <button class="btn btn-secondary btn-sm" ${state.rodandoAgente ? 'disabled' : ''} onclick="window._agRodarAgora()" title="Dispara agora o mesmo ciclo das 07:00 nesta conta.">${state.rodandoAgente ? '⏳ Rodando...' : '🚀 Rodar agora'}</button>
         </div>
       </div>${renderResultadoRodada()}`;
@@ -1608,7 +1648,9 @@
         </div>`;
       };
       return `<div class="ag-hud-card" style="--ag-hud-accent:#d97706;margin-bottom:20px;">
-        <div class="ag-sec-head"><div class="ag-sec-titulo">🔔 Precisa de você <span class="ag-contagem">${pend.length + falhas.length + (reativ.length ? 1 : 0)}</span></div></div>
+        <div class="ag-sec-head"><div class="ag-sec-titulo">🔔 Precisa de você <span class="ag-contagem">${pend.length + falhas.length + (reativ.length ? 1 : 0)}</span></div>
+          ${pend.filter(l => temAcaoReconhecida(l.dados || {})).length >= 2 ? `<button class="btn btn-sm ag-btn-ok" ${state.aprovandoLote ? 'disabled' : ''} onclick="window._agAprovarTodas()">${state.aprovandoLote ? '⏳ Aprovando...' : `✅ Aprovar todas (${pend.filter(l => temAcaoReconhecida(l.dados || {})).length})`}</button>` : ''}
+        </div>
         <div class="ag-lista-precisa">${bannerReativ}${pend.map(l => linha(l, false)).join('')}${falhas.map(l => linha(l, true)).join('')}</div>
       </div>`;
     }
@@ -1708,11 +1750,18 @@
         </div>`;
       };
       const mostrados = lista.slice(0, state.timelineMostrar);
+      // Muitas pausas de uma vez: atalho pro chat sugerir quais reativar/otimizar.
+      const pausas24h = todas.filter(l => l.resultado === 'executado' && (l.dados?.pausada === true || /pausada/i.test(l.titulo || '')) && Date.now() - new Date(l.criado_em).getTime() < 86400000).length;
+      const bannerPausas = pausas24h >= 3 ? `<div class="ag-aviso ag-aviso-aten" style="margin:0 0 12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <span>⏸ O agente pausou <b>${pausas24h} campanhas</b> nas últimas 24 horas. Quer revisar quais valem ser reativadas e como otimizar?</span>
+        <button class="btn btn-primary btn-sm" onclick="window._agChatPedir(0)">💬 Pedir ao chat pra sugerir reativações</button>
+      </div>` : '';
       return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
         <div class="ag-sec-head">
           <div class="ag-sec-titulo">🕘 O que o agente fez <span class="ag-sec-sub">últimos 7 dias: ${c7('auto')} automáticas · ${c7('manual')} manuais · ${c7('falhas')} falhas</span></div>
           <div class="ag-periodos">${FILTROS.map(([k, l]) => `<button class="btn btn-sm ${filtro === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agFiltroTimeline('${k}')">${l} (${grupos[k].length})</button>`).join('')}</div>
         </div>
+        ${bannerPausas}
         ${mostrados.length ? `<div class="ag-tl">${mostrados.map(item).join('')}</div>` : '<div class="ag-vazio">Nenhuma ação neste filtro nos últimos 30 dias.</div>'}
         ${lista.length > mostrados.length ? `<div style="text-align:center;margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="window._agTimelineMais()">Ver mais (${lista.length - mostrados.length})</button></div>` : ''}
         <div class="ag-nota" style="margin-top:12px;">Contagens dos últimos 30 dias registrados. “Confirmada na Shopee” compara a ação com o estado atual da campanha.</div>
@@ -1839,6 +1888,7 @@
     // re-renders da tela, senão cada carga de dados apagava o que estava sendo
     // digitado.
     const PERGUNTAS_RAPIDAS = [
+      'Quais campanhas pausadas valem ser reativadas? Sugira a reativação e como otimizar cada uma.',
       'Como está a conta hoje?',
       'O que o agente fez nos últimos dias e funcionou?',
       'Quais campanhas devo olhar primeiro?',
@@ -2191,6 +2241,8 @@
       }
     };
     window._agReativarAgora = reativarPendentesAgora;
+    window._agAprovarTodas = aprovarTodasPendentes;
+    window._agChatPedir = (i) => { state.chatAberto = true; renderChatDrawer(true); perguntarRapido(i); };
     window._agToggleRegras = () => { state.sec.regras = !state.sec.regras; render(); };
     window._agRegrasMudou = () => {
       const txt = document.getElementById('ag-regras-live-txt'); if (txt) txt.innerHTML = textoRegras(lerRegrasDoForm());
