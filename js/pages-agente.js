@@ -43,13 +43,14 @@
       abcPorConta: {}, carregandoABC: false, abcProgresso: '',
       timelineFiltro: 'todos', timelineMostrar: 5,
       tabOrdem: { col: 'gasto', dir: -1 }, tabTodas: false,
+      logBusca: '', logMostrar: 20, regrasSalvoEm: null, chatAberto: false, reativando: false,
       sec: {}, // seções recolhíveis abertas (o render recria o HTML, então o estado mora aqui)
       executandoAcaoManual: false,
       rodandoAgente: false, resultadoRodada: null,
       processandoAlertaId: null,
     };
 
-    function render() { renderShell(); }
+    function render() { renderShell(); renderChatDrawer(); }
 
     function configDaConta(id) { return state.contas.find(c => c.conta_id === id) || null; }
 
@@ -620,7 +621,8 @@
       const contaId = v('ag-conta');
       if (!contaId) { alert('Selecione a conta Shopee que vai virar o piloto.'); return; }
       const contaObj = state.contasShopee.find(c => (c.param_to_use?.shopId || c.external_id) === contaId);
-      const ativo = document.getElementById('ag-ativo')?.checked || false;
+      const chkAtivo = document.getElementById('ag-ativo');
+      const ativo = chkAtivo ? chkAtivo.checked : !!configDaConta(contaId)?.ativo;
       const vinculo = clienteVinculado(contaId);
 
       const row = {
@@ -655,7 +657,9 @@
           dados: row, resultado: 'executado', origem: 'analista',
         });
         state.contaAbertaId = contaId;
+        state.regrasSalvoEm = Date.now();
         await carregarTudo();
+        setTimeout(() => render(), 20500);
       } catch (e) {
         alert('Erro ao salvar configuração: ' + (e.message || e));
       } finally {
@@ -769,7 +773,7 @@
       input.value = '';
       state.chatMessages.push({ role: 'user', content: texto });
       state.chatEnviando = true;
-      render();
+      renderChatDrawer(true);
 
       try {
         const resp = await fetch('/api/chat', {
@@ -787,7 +791,7 @@
         let resposta = textoLimpo;
         if (sugestoes.length) {
           await criarSugestoesNoKanban(sugestoes);
-          resposta = (resposta ? resposta + '\n\n' : '') + `📋 Criei ${sugestoes.length} sugestão${sugestoes.length > 1 ? 'ões' : ''} — veja em "Mudanças e resultados" abaixo, coluna "Aguardando aprovação", pra aprovar ou descartar.`;
+          resposta = (resposta ? resposta + '\n\n' : '') + `📋 Criei ${sugestoes.length} sugestão${sugestoes.length > 1 ? 'ões' : ''} — veja em "Precisa de você", no topo da tela, pra aprovar ou rejeitar.`;
         }
         state.chatMessages.push({ role: 'assistant', content: resposta || 'Sem resposta.' });
         try {
@@ -803,9 +807,7 @@
         state.chatMessages.push({ role: 'assistant', content: '⚠️ Erro ao falar com o agente: ' + (e.message || e) });
       } finally {
         state.chatEnviando = false;
-        render();
-        const msgs = document.getElementById('ag-chat-msgs');
-        if (msgs) msgs.scrollTop = msgs.scrollHeight;
+        renderChatDrawer(true);
       }
     }
 
@@ -1137,23 +1139,43 @@
       }
     }
 
-    // ── Config do piloto (reagrupada em guardrails, em português) ──
-    function renderConfig() {
-      const cfg = state.contaAbertaId && state.contaAbertaId !== '__novo__' ? (configDaConta(state.contaAbertaId) || {}) : {};
-      const jaConfiguradas = new Set(state.contas.map(c => c.conta_id));
-      return `<div class="card" style="padding:20px 22px;margin-bottom:20px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <div style="font-size:14px;font-weight:700;">⚙️ Guardrails do piloto</div>
-          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;">
-            <input type="checkbox" id="ag-ativo" ${cfg.ativo ? 'checked' : ''}> Piloto ativo nesta conta
-          </label>
-        </div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">
-          Cada conta liga/desliga o piloto de forma independente — o cron avalia todas as ativas todo dia às 07:00.
-        </div>
+    // ── Guardrails do piloto: as regras que o agente segue (o "coração") ──
+    function numRegra(x) { return x == null || isNaN(x) ? '—' : fmtNum(x, Number.isInteger(x) ? 0 : 1); }
+    // Frase em português simples descrevendo EXATAMENTE o que o cron faz com
+    // esses números (Regras 1 a 4 de api/agente-cron.js).
+    function textoRegras(v) {
+      const avisos = [];
+      if (v.pausaAcos != null && v.meta != null && v.pausaAcos <= v.meta) avisos.push(`⚠️ O limite de pausa (${numRegra(v.pausaAcos)}%) está igual ou abaixo da meta (${numRegra(v.meta)}%): o agente pausaria antes de tentar conter o gasto.`);
+      if (v.orcMin != null && v.orcMax != null && v.orcMin > v.orcMax) avisos.push('⚠️ O orçamento mínimo está maior que o máximo.');
+      if (v.pausaAcos == null) avisos.push('⚠️ Sem limite de pausa configurado: o agente não pausa campanha por ACOS alto.');
+      if (v.meta == null) avisos.push('⚠️ Sem meta configurada: o agente não aumenta nem reduz investimento sozinho.');
+      return `<p><b>Pausa</b> a campanha se o ${sigla('ACOS')} passar de <b>${numRegra(v.pausaAcos)}%</b> por <b>${numRegra(v.pausaDias)} dia(s) seguidos</b> (ou se gastar sem nenhuma venda), mas só depois de <b>${numRegra(v.mat)} dias</b> de vida da campanha.</p>
+        <p><b>Cresce sozinho</b> quando o ${sigla('ACOS')} da campanha fica abaixo de <b>${v.meta != null ? numRegra(v.meta * 0.7) : '—'}%</b> (70% da meta de <b>${numRegra(v.meta)}%</b>) e o ${sigla('TACOS')} da conta ainda tem folga: sobe o orçamento 20% (teto de <b>${v.orcMax != null ? R$(v.orcMax) : 'sem teto'}</b>/dia) ou baixa a meta de ${sigla('ROAS')} em 15%.</p>
+        <p><b>Contém o gasto</b> quando o ${sigla('ACOS')} passa da meta de <b>${numRegra(v.meta)}%</b> mas ainda não chegou no limite de pausa: aperta a meta de ${sigla('ROAS')} em 15% ou corta o orçamento em 15% (piso de <b>${v.orcMin != null ? R$(v.orcMin) : 'sem piso'}</b>/dia).</p>
+        <p><b>Sempre pede sua aprovação</b> quando a mudança proposta passa de <b>${numRegra(v.alerta)}%</b>.</p>
+        ${avisos.map(a => `<p class="ag-regras-aviso">${a}</p>`).join('')}`;
+    }
 
-        <div class="form-group" style="margin-bottom:16px;">
-          <label class="form-label">Conta Shopee</label>
+    function lerRegrasDoForm() {
+      const num = id => { const v = parseFloat(document.getElementById(id)?.value); return isNaN(v) ? null : v; };
+      return { pausaAcos: num('ag-pausa-acos'), pausaDias: num('ag-pausa-dias'), mat: num('ag-maturacao'), meta: num('ag-meta-acos'), orcMin: num('ag-orc-min'), orcMax: num('ag-orc-max'), alerta: num('ag-alerta-var') };
+    }
+
+    function campoRegra(id, label, valor, o) {
+      o = o || {};
+      return `<div class="ag-campo">
+        <label class="ag-campo-label" for="${id}">${label}</label>
+        <div class="ag-campo-grupo"><input type="number" ${o.step ? `step="${o.step}"` : ''} min="0" class="form-input" id="${id}" value="${esc(valor ?? '')}" ${o.ph ? `placeholder="${o.ph}"` : ''}>${o.sufixo ? `<span class="ag-campo-sufixo">${o.sufixo}</span>` : ''}</div>
+        ${o.dica ? `<div class="ag-campo-dica">${o.dica}</div>` : ''}
+      </div>`;
+    }
+
+    function formRegras(cfg, novo) {
+      const jaConfiguradas = new Set(state.contas.map(c => c.conta_id));
+      const v = { pausaAcos: cfg.regra_pausa_acos, pausaDias: cfg.regra_pausa_dias ?? 3, mat: cfg.dias_maturacao_campanha ?? 7, meta: cfg.meta_acos, orcMin: cfg.orcamento_min, orcMax: cfg.orcamento_max, alerta: cfg.alerta_variacao_pct ?? 30 };
+      return `<div id="ag-regras-form" oninput="window._agRegrasMudou()">
+        ${novo ? `<div class="ag-campo" style="max-width:420px;margin-bottom:14px;">
+          <label class="ag-campo-label" for="ag-conta">Conta Shopee</label>
           <select class="form-select" id="ag-conta">
             <option value="">— Selecione —</option>
             ${state.contasShopee.map(c => {
@@ -1162,78 +1184,140 @@
               return `<option value="${id}" ${cfg.conta_id === id ? 'selected' : ''} ${jaConfigurada ? 'disabled' : ''}>${esc(nomeConta(c))}${jaConfigurada ? ' (já configurada)' : ''}</option>`;
             }).join('')}
           </select>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;margin-top:10px;"><input type="checkbox" id="ag-ativo"> Ligar o piloto nesta conta</label>
+        </div>` : `<input type="hidden" id="ag-conta" value="${esc(cfg.conta_id)}">`}
+        <div class="ag-regras-grid">
+          <div class="ag-regra-bloco" style="--c:#dc2626;">
+            <div class="ag-regra-tit">🛑 Quando pausar</div>
+            ${campoRegra('ag-pausa-acos', `${sigla('ACOS')} da campanha acima de`, cfg.regra_pausa_acos, { step: '0.1', sufixo: '%', dica: 'Limite a partir do qual a campanha é considerada cara demais.' })}
+            ${campoRegra('ag-pausa-dias', 'por quantos dias seguidos', cfg.regra_pausa_dias ?? 3, { sufixo: 'dias', dica: 'Evita pausar por um dia ruim isolado.' })}
+            ${campoRegra('ag-maturacao', 'Maturação mínima da campanha', cfg.dias_maturacao_campanha ?? 7, { sufixo: 'dias', dica: 'Campanha mais nova que isso não é pausada ainda — só registra um aviso.' })}
+          </div>
+          <div class="ag-regra-bloco" style="--c:#16a34a;">
+            <div class="ag-regra-tit">📈 Quando pode crescer sozinho</div>
+            ${campoRegra('ag-meta-acos', `Meta de ${sigla('TACOS')}`, cfg.meta_acos, { step: '0.1', sufixo: '%', dica: 'Quanto da venda total da loja pode ir para ADS. É a métrica principal do agente.' })}
+            ${campoRegra('ag-orc-min', 'Orçamento mínimo', cfg.orcamento_min, { step: '0.01', sufixo: 'R$/dia', dica: 'Piso ao reduzir o investimento.' })}
+            ${campoRegra('ag-orc-max', 'Orçamento máximo', cfg.orcamento_max, { step: '0.01', sufixo: 'R$/dia', dica: 'Teto ao aumentar o investimento.' })}
+            ${campoRegra('ag-janela', 'Janela de decisão', cfg.janela_decisao_dias ?? 1, { sufixo: 'dias', dica: 'Quantos dias de dados entram na análise.' })}
+          </div>
+          <div class="ag-regra-bloco" style="--c:#d97706;">
+            <div class="ag-regra-tit">✋ O que sempre espera sua aprovação</div>
+            ${campoRegra('ag-alerta-var', 'Alerta se a variação proposta passar de', cfg.alerta_variacao_pct ?? 30, { sufixo: '%', dica: 'Mudança maior que isso não é feita sozinha: vira item em “Precisa de você”.' })}
+          </div>
         </div>
-
-        <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin:0 0 8px;">Quando pausar</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;">
-          <div class="form-group" style="margin:0;"><label class="form-label">ACOS da campanha acima de (%)</label><input type="number" step="0.1" class="form-input" id="ag-pausa-acos" value="${esc(cfg.regra_pausa_acos ?? '')}"></div>
-          <div class="form-group" style="margin:0;"><label class="form-label">...por quantos dias seguidos</label><input type="number" class="form-input" id="ag-pausa-dias" value="${esc(cfg.regra_pausa_dias ?? 3)}"></div>
-          <div class="form-group" style="margin:0;"><label class="form-label" title="Campanha mais nova que isso não é pausada por ACOS ruim ainda, mesmo que o critério ao lado tenha sido atingido — só registra um aviso.">Maturação mínima da campanha (dias)</label><input type="number" class="form-input" id="ag-maturacao" value="${esc(cfg.dias_maturacao_campanha ?? 7)}"></div>
-        </div>
-
-        <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin:0 0 8px;">Quando pode crescer sozinho</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;">
-          <div class="form-group" style="margin:0;"><label class="form-label" title="Investimento em ADS ÷ faturamento TOTAL da loja — não é o ACOS isolado de campanha. É a métrica principal que o agente usa pra decidir.">Meta TACOS (%)</label><input type="number" step="0.1" class="form-input" id="ag-meta-acos" value="${esc(cfg.meta_acos ?? '')}"></div>
-          <div class="form-group" style="margin:0;"><label class="form-label">Orçamento mín. (R$/dia)</label><input type="number" step="0.01" class="form-input" id="ag-orc-min" value="${esc(cfg.orcamento_min ?? '')}"></div>
-          <div class="form-group" style="margin:0;"><label class="form-label">Orçamento máx. (R$/dia)</label><input type="number" step="0.01" class="form-input" id="ag-orc-max" value="${esc(cfg.orcamento_max ?? '')}"></div>
-          <div class="form-group" style="margin:0;"><label class="form-label">Janela de decisão (dias)</label><input type="number" class="form-input" id="ag-janela" value="${esc(cfg.janela_decisao_dias ?? 1)}"></div>
-        </div>
-
-        <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin:0 0 8px;">O que sempre espera sua aprovação</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;">
-          <div class="form-group" style="margin:0;"><label class="form-label">Alerta se variação proposta &gt; (%)</label><input type="number" class="form-input" id="ag-alerta-var" value="${esc(cfg.alerta_variacao_pct ?? 30)}"></div>
-        </div>
-
-        <details style="margin-bottom:16px;">
-          <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text-muted);">Avançado</summary>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:10px;">
-            <div class="form-group" style="margin:0;"><label class="form-label">Margem (%)</label><input type="number" step="0.1" class="form-input" id="ag-margem" value="${esc(cfg.margem_pct ?? '')}"></div>
-            <div class="form-group" style="margin:0;"><label class="form-label">Estoque mínimo</label><input type="number" class="form-input" id="ag-estoque-min" value="${esc(cfg.estoque_minimo ?? '')}"></div>
+        <details class="ag-avancado">
+          <summary>Avançado</summary>
+          <div class="ag-regras-grid" style="margin-top:10px;">
+            <div class="ag-regra-bloco" style="--c:#64748b;">
+              ${campoRegra('ag-margem', 'Margem', cfg.margem_pct, { step: '0.1', sufixo: '%' })}
+              ${campoRegra('ag-estoque-min', 'Estoque mínimo', cfg.estoque_minimo, { sufixo: 'un' })}
+            </div>
           </div>
         </details>
-
-        <div class="form-group" style="margin-bottom:14px;">
-          <label class="form-label">Notas / calendário de promoções / contexto extra</label>
-          <textarea class="form-textarea" id="ag-notas" rows="2" placeholder="Ex: Black Friday em novembro, não cortar orçamento nessa semana mesmo se ACOS subir.">${cfg.notas || ''}</textarea>
+        <div class="ag-campo" style="margin-top:14px;">
+          <label class="ag-campo-label" for="ag-notas">Notas, calendário de promoções, contexto extra</label>
+          <textarea class="form-textarea" id="ag-notas" rows="2" placeholder="Ex: Black Friday em novembro, não cortar orçamento nessa semana mesmo se o ACOS subir.">${h(cfg.notas || '')}</textarea>
+          <div class="ag-campo-dica">O chat usa esse texto como contexto ao responder.</div>
         </div>
-
-        <button class="btn btn-primary" ${state.salvandoConfig ? 'disabled' : ''} onclick="window._agSalvarConfig()">
-          ${state.salvandoConfig ? '⏳ Salvando...' : '💾 Salvar configuração'}
-        </button>
+        <div class="ag-regras-live" id="ag-regras-live"><div class="ag-regras-live-tit">Como isso vira regra</div><div id="ag-regras-live-txt">${textoRegras(v)}</div></div>
+        <div class="ag-regras-rodape">
+          <span id="ag-regras-estado" class="ag-regras-estado"></span>
+          ${novo ? '' : '<button class="btn btn-secondary btn-sm" id="ag-regras-descartar" style="display:none;" onclick="window._agRegrasDescartar()">Descartar alterações</button>'}
+          <button class="btn btn-primary" id="ag-regras-salvar" ${state.salvandoConfig ? 'disabled' : ''} onclick="window._agSalvarConfig()">${state.salvandoConfig ? '⏳ Salvando...' : '💾 Salvar regras'}</button>
+        </div>
       </div>`;
     }
 
-    // ── Log completo ────────────────────────────────────────────
-    function renderLog(contaId) {
-      const doConta = state.logs.filter(l => l.conta_id === contaId);
-      const lista = state.filtroLog === 'todos' ? doConta : doConta.filter(l => l.tipo === state.filtroLog);
-      return `<details style="margin-bottom:20px;">
-        <summary style="cursor:pointer;font-size:14px;font-weight:700;padding:4px 0;">📜 Log completo (${doConta.length})</summary>
-        <div class="card" style="padding:20px 22px;margin-top:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-          <div style="font-size:12.5px;color:var(--text-muted);">Tudo que foi feito, decidido e conversado — inclusive as ações 100% automáticas.</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${['todos', 'decisao', 'alerta', 'sistema', 'chat'].map(t => `
-              <button class="btn btn-sm ${state.filtroLog === t ? 'btn-primary' : 'btn-secondary'}" onclick="window._agFiltrarLog('${t}')">${t === 'todos' ? 'Todos' : TIPO_LABEL[t]}</button>
-            `).join('')}
+    // Formulário de conta nova (sem conta aberta ainda)
+    function renderConfig() {
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
+        <div class="ag-sec-head"><div class="ag-sec-titulo">🛡️ Guardrails do piloto <span class="ag-sec-sub">Defina as regras que o agente vai seguir nesta conta. O cron avalia todas as contas com o piloto ligado todo dia às 07:00.</span></div></div>
+        ${formRegras({}, true)}
+      </div>`;
+    }
+
+    // Cartão compacto: a frase das regras em vigor sempre à vista; o
+    // formulário abre sob demanda.
+    function renderRegras(cfg) {
+      const aberto = !!state.sec.regras;
+      const v = { pausaAcos: cfg.regra_pausa_acos, pausaDias: cfg.regra_pausa_dias ?? 3, mat: cfg.dias_maturacao_campanha ?? 7, meta: cfg.meta_acos, orcMin: cfg.orcamento_min, orcMax: cfg.orcamento_max, alerta: cfg.alerta_variacao_pct ?? 30 };
+      const salvoAgora = state.regrasSalvoEm && Date.now() - state.regrasSalvoEm < 20000;
+      const chip = (txt, cor) => `<span class="ag-action-chip" style="color:${cor};background:${cor}1a;">${txt}</span>`;
+      return `<div class="ag-hud-card" id="ag-regras-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
+        <div class="ag-sec-head">
+          <div class="ag-sec-titulo">🛡️ Guardrails do piloto <span class="ag-sec-sub">as regras que o agente segue sozinho em cada campanha</span></div>
+          <div class="ag-periodos">
+            ${salvoAgora ? '<span class="ag-regras-salvo">✔ Regras salvas</span>' : ''}
+            <button class="btn btn-sm ${aberto ? 'btn-primary' : 'btn-secondary'}" onclick="window._agToggleRegras()">${aberto ? 'Fechar edição' : '✏️ Editar regras'}</button>
           </div>
         </div>
-        ${!lista.length ? `<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:13px;">Nenhum registro ainda — o log enche assim que o piloto rodar pela primeira vez.</div>` : `
-        <div style="display:flex;flex-direction:column;gap:8px;max-height:480px;overflow-y:auto;">
-          ${lista.map(l => `
-            <div style="border:1px solid var(--border);border-left:3px solid ${TIPO_COR[l.tipo] || '#64748b'};border-radius:8px;padding:10px 14px;">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px;">
-                <div style="font-size:13px;font-weight:600;">${esc(l.titulo)}</div>
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <span style="font-size:10.5px;color:${RESULTADO_COR[l.resultado] || 'var(--text-muted)'};font-weight:600;">${RESULTADO_LABEL[l.resultado] || l.resultado}</span>
-                  <span style="font-size:10.5px;color:var(--text-muted);">${new Date(l.criado_em).toLocaleString('pt-BR')}</span>
-                </div>
-              </div>
-              ${l.explicacao ? `<div style="font-size:12.5px;color:var(--text-secondary);margin-top:6px;line-height:1.55;white-space:pre-wrap;">${nl2br(l.explicacao)}</div>` : ''}
-            </div>`).join('')}
-        </div>`}
+        ${aberto ? formRegras(cfg, false) : `
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+            ${chip(`Pausa: ${sigla('ACOS')} > ${numRegra(v.pausaAcos)}% · ${numRegra(v.pausaDias)} dia(s)`, '#dc2626')}
+            ${chip(`Maturação: ${numRegra(v.mat)} dias`, '#64748b')}
+            ${chip(`Meta ${sigla('TACOS')}: ${numRegra(v.meta)}%`, '#16a34a')}
+            ${chip(`Orçamento: ${v.orcMin != null ? R$(v.orcMin) : '—'} a ${v.orcMax != null ? R$(v.orcMax) : '—'}`, '#16a34a')}
+            ${chip(`Aprovação acima de ${numRegra(v.alerta)}%`, '#d97706')}
+            ${chip(cfg.ativo ? 'Piloto ON' : 'Piloto OFF', cfg.ativo ? '#22d3ee' : '#64748b')}
+          </div>
+          <div class="ag-regras-resumo">${textoRegras(v)}</div>
+          ${cfg.notas ? `<div class="ag-nota"><b>Notas:</b> ${h(cfg.notas)}</div>` : ''}`}
+      </div>`;
+    }
+
+    // ── Registro do agente: tudo que foi feito, decidido e conversado ──
+    const LOG_POR_PAGINA = 20;
+    function diaRotulo(ts) {
+      const d = new Date(ts), agora = new Date();
+      const ini = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+      const dif = Math.round((ini(agora) - ini(d)) / 86400000);
+      if (dif === 0) return 'Hoje';
+      if (dif === 1) return 'Ontem';
+      return d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+    }
+    function logsFiltrados(contaId) {
+      const busca = (state.logBusca || '').trim().toLowerCase();
+      return logsDaConta(contaId)
+        .filter(l => state.filtroLog === 'todos' || l.tipo === state.filtroLog)
+        .filter(l => !busca || ((l.titulo || '') + ' ' + (l.explicacao || '')).toLowerCase().includes(busca))
+        .sort(maisRecente);
+    }
+    function renderLogLista(contaId) {
+      const todos = logsFiltrados(contaId);
+      const lista = todos.slice(0, state.logMostrar);
+      if (!lista.length) return `<div class="ag-vazio">${(state.logBusca || '').trim() ? 'Nenhum registro com esse texto.' : 'Nenhum registro ainda — o registro enche assim que o piloto rodar pela primeira vez.'}</div>`;
+      let diaAtual = '', html = '';
+      lista.forEach(l => {
+        const dia = diaRotulo(l.criado_em);
+        if (dia !== diaAtual) { diaAtual = dia; html += `<div class="ag-log-dia">${h(dia)}</div>`; }
+        const cor = TIPO_COR[l.tipo] || '#64748b';
+        const res = l.resultado === 'so_alerta' ? { txt: 'Aguardando você', cor: '#d97706' } : l.resultado === 'executado' ? { txt: 'Executado', cor: '#16a34a' } : l.resultado === 'erro' ? { txt: 'Erro', cor: '#dc2626' } : l.resultado === 'descartado' ? { txt: 'Descartado', cor: '#64748b' } : { txt: l.resultado || '', cor: '#64748b' };
+        const orig = l.origem === 'cron' ? 'Automático' : l.origem === 'chat' ? 'Chat' : l.origem === 'aprovacao_manual' ? 'Aprovado por você' : l.origem === 'analista' ? 'Você' : '';
+        html += `<details class="ag-log-item" style="--c:${cor};">
+          <summary>
+            <span class="ag-log-hora">${new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+            <span class="ag-action-chip" style="color:${cor};background:${cor}1a;">${TIPO_LABEL[l.tipo] || l.tipo}</span>
+            <span class="ag-log-titulo">${h(l.titulo)}</span>
+            ${res.txt ? `<span class="ag-action-chip" style="color:${res.cor};background:${res.cor}1a;">${res.txt}</span>` : ''}
+            ${orig ? `<span class="ag-log-origem">${orig}</span>` : ''}
+          </summary>
+          ${l.explicacao ? `<div class="ag-log-corpo">${nl2br(h(l.explicacao))}</div>` : '<div class="ag-log-corpo ag-camp-motivo">Sem detalhes.</div>'}
+        </details>`;
+      });
+      if (todos.length > lista.length) html += `<div style="text-align:center;margin-top:12px;"><button class="btn btn-secondary btn-sm" onclick="window._agLogMais()">Ver mais (${todos.length - lista.length})</button></div>`;
+      return html;
+    }
+    function renderLog(contaId) {
+      const doConta = logsDaConta(contaId);
+      const cont = t => t === 'todos' ? doConta.length : doConta.filter(l => l.tipo === t).length;
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
+        <div class="ag-sec-head">
+          <div class="ag-sec-titulo">📜 Registro do agente <span class="ag-sec-sub">tudo que foi feito, decidido e conversado — inclusive as ações automáticas e as suas</span></div>
+          <div class="ag-periodos">${['todos', 'decisao', 'alerta', 'sistema', 'chat'].map(t => `<button class="btn btn-sm ${state.filtroLog === t ? 'btn-primary' : 'btn-secondary'}" onclick="window._agFiltrarLog('${t}')">${t === 'todos' ? 'Todos' : TIPO_LABEL[t]} (${cont(t)})</button>`).join('')}</div>
         </div>
-      </details>`;
+        <input type="search" class="form-input" id="ag-log-busca" placeholder="Buscar no registro (campanha, motivo, ação)…" value="${esc(state.logBusca || '')}" oninput="window._agLogBusca(this.value)" style="margin-bottom:12px;" aria-label="Buscar no registro do agente">
+        <div id="ag-log-lista">${renderLogLista(contaId)}</div>
+      </div>`;
     }
 
     // ── Campanhas ao vivo (com GMV, orçamento, gasto e ACOS por campanha) ──
@@ -1323,7 +1407,14 @@
     }
 
     // ── Ligação decisão ↔ campanha (id quando existe; senão pelo nome no título) ──
-    function nomeNoLog(titulo) { return String(titulo || '').split(' — ').slice(1).join(' — '); }
+    // Nome da campanha = último trecho do título (títulos de aprovação têm
+    // dois traços: "Aprovado manualmente — Reativar e apertar ROAS — Nome").
+    function nomeNoLog(titulo) { const p = String(titulo || '').split(' — '); return p.length > 1 ? p[p.length - 1] : ''; }
+    // Decisões antigas aprovadas pelo chat: o texto prometia reativar, mas só
+    // a meta de ROAS era enviada (o tipo "retomar" não existia). Sem a flag
+    // retomada, a campanha nunca foi reativada por elas.
+    function alegaReativacao(l) { return /reativ/i.test((l.titulo || '') + ' ' + (l.explicacao || '')); }
+    function reativacaoLegada(l) { return l.tipo === 'decisao' && alegaReativacao(l) && l.dados?.retomada !== true; }
     function mesmoNome(c, n) { return !!n && (c.nome === n || c.nome.slice(0, 70) === n || c.nome.startsWith(n)); }
     function logEhDaCampanha(l, c) {
       const d = l.dados || {};
@@ -1342,12 +1433,16 @@
       if (l.resultado === 'erro') return l.titulo || 'Ação com falha';
       const partes = [];
       if (d.retomada === true) partes.push('Reativou a campanha');
-      if (d.roas_de != null && d.roas_para != null) {
-        const cons = d.roas_para > d.roas_de;
-        partes.push(`${cons ? 'Subiu' : 'Baixou'} a meta de ROAS de ${fmtNum(d.roas_de)}x para ${fmtNum(d.roas_para)}x (${cons ? 'lance mais conservador' : 'lance mais agressivo'})`);
-      } else if (d.budget_de != null && d.budget_para != null) {
-        partes.push(`${d.budget_para > d.budget_de ? 'Aumentou' : 'Reduziu'} o orçamento de ${R$(d.budget_de)} para ${R$(d.budget_para)}`);
+      // Decisões aprovadas antes do ajuste guardam "atual/sugerido" em vez de "de/para".
+      const roasDe = d.roas_de ?? d.roas_atual, roasPara = d.roas_para ?? d.roas_sugerido;
+      const budDe = d.budget_de ?? d.budget_atual, budPara = d.budget_para ?? d.budget_sugerido;
+      if (roasDe != null && roasPara != null) {
+        const cons = roasPara > roasDe;
+        partes.push(`${cons ? 'Subiu' : 'Baixou'} a meta de ROAS de ${fmtNum(roasDe)}x para ${fmtNum(roasPara)}x (${cons ? 'lance mais conservador' : 'lance mais agressivo'})`);
+      } else if (budDe != null && budPara != null) {
+        partes.push(`${budPara > budDe ? 'Aumentou' : 'Reduziu'} o orçamento de ${R$(budDe)} para ${R$(budPara)}`);
       }
+      if (reativacaoLegada(l) && partes.length) return partes.join(' e ') + ' — a reativação aprovada não foi enviada à Shopee';
       if (d.pausada === true || (/pausada/i.test(l.titulo || '') && !/falha/i.test(l.titulo || ''))) partes.push('Pausou a campanha');
       return partes.length ? partes.join(' e ') : (l.titulo || '');
     }
@@ -1372,10 +1467,12 @@
       if (posterior) return { k: 'sup', txt: 'Superada por ação posterior', cor: '#64748b' };
       const st = (live.status || '').toLowerCase();
       let ok = null;
+      const roasPara = d.roas_para ?? d.roas_sugerido, budPara = d.budget_para ?? d.budget_sugerido;
+      if (reativacaoLegada(l) && st === 'paused') return { k: 'div', txt: '⚠ Só a meta de ROAS mudou — a campanha continua pausada', cor: '#dc2626' };
       if (d.retomada === true) ok = st === 'ongoing';
       else if (d.pausada === true || (/pausada/i.test(l.titulo || '') && !/falha/i.test(l.titulo || ''))) ok = st === 'paused';
-      else if (d.roas_para != null) ok = live.roasTarget != null && Math.abs(live.roasTarget - d.roas_para) < 0.06;
-      else if (d.budget_para != null) ok = Math.abs((live.budget || 0) - d.budget_para) < 0.01;
+      else if (roasPara != null) ok = live.roasTarget != null && Math.abs(live.roasTarget - roasPara) < 0.06;
+      else if (budPara != null) ok = Math.abs((live.budget || 0) - budPara) < 0.01;
       if (ok === null) return nv;
       if (ok) return { k: 'ok', txt: '✔ Confirmada na Shopee', cor: '#16a34a' };
       if (Date.now() - t < 3600000) return { k: 'pend', txt: '⏳ Enviada, aguardando confirmação', cor: '#d97706' };
@@ -1417,13 +1514,66 @@
       </div>${renderResultadoRodada()}`;
     }
 
+    // Campanhas que estão pausadas na Shopee AGORA mas cuja última decisão
+    // registrada diz que foram reativadas.
+    function reativacoesPendentes(contaId) {
+      const lista = state.dadosAoVivoPorConta[contaId]?.todasCampanhas || [];
+      const decisoes = logsDaConta(contaId).filter(l => l.tipo === 'decisao' && l.resultado === 'executado').sort(maisRecente);
+      const out = [];
+      lista.filter(c => (c.status || '').toLowerCase() === 'paused').forEach(c => {
+        const ultima = decisoes.find(l => logEhDaCampanha(l, c));
+        if (ultima && alegaReativacao(ultima)) out.push({ c, log: ultima });
+      });
+      return out;
+    }
+
+    // Reativa de verdade, mas só depois da sua confirmação (volta a gastar).
+    async function reativarPendentesAgora() {
+      const contaId = state.contaAbertaId;
+      const itens = reativacoesPendentes(contaId);
+      if (!itens.length || state.reativando) return;
+      if (!confirm(`Reativar agora na Shopee ${itens.length} campanha(s)?\n\n${itens.map(i => '• ' + i.c.nome.slice(0, 70)).join('\n')}\n\nElas voltam a gastar com ADS.`)) return;
+      const cfg = configDaConta(contaId);
+      state.reativando = true; render();
+      const falhas = [];
+      for (const { c } of itens) {
+        try {
+          await MarketplaceAPI.call('shopee_ads_resume_campaign', { shopId: contaId, campaign_id: Number(c.id) });
+          await _sb.from('glr_agente_log').insert({
+            conta_id: contaId, cliente_nome: cfg?.cliente_nome || null, tipo: 'decisao',
+            titulo: `Reativada manualmente — ${c.nome}`,
+            explicacao: 'Reativação confirmada por você na tela do agente (as aprovações anteriores só tinham alterado a meta de ROAS).',
+            dados: { campaign_id: Number(c.id), retomada: true }, resultado: 'executado', origem: 'analista',
+          });
+        } catch (e) {
+          falhas.push(`${c.nome.slice(0, 50)}: ${e.message || e}`);
+          try { await _sb.from('glr_agente_log').insert({ conta_id: contaId, cliente_nome: cfg?.cliente_nome || null, tipo: 'decisao', titulo: `Falha ao reativar — ${c.nome}`, explicacao: `Tentei reativar — mas deu erro: ${e.message || e}`, dados: { campaign_id: Number(c.id) }, resultado: 'erro', origem: 'analista' }); } catch (e2) {}
+        }
+      }
+      state.reativando = false;
+      await carregarTudo();
+      alert(falhas.length ? `Reativei ${itens.length - falhas.length} de ${itens.length}. Falhas:\n${falhas.join('\n')}` : `${itens.length} campanha(s) reativada(s). A confirmação aparece na timeline assim que a Shopee atualizar.`);
+    }
+
     // ── 2. Faixa "Precisa de você" (só aparece se houver o que fazer) ──
     function renderPrecisaDeVoce(contaId) {
       const logs = logsDaConta(contaId);
       const pend = logs.filter(l => l.tipo === 'alerta' && l.resultado === 'so_alerta').sort(maisRecente);
       const tresDias = Date.now() - 3 * 86400000;
       const falhas = logs.filter(l => l.tipo === 'decisao' && l.resultado === 'erro' && new Date(l.criado_em).getTime() > tresDias).sort(maisRecente);
-      if (!pend.length && !falhas.length) return '<div class="ag-nada">✅ Nada pendente — o agente não precisa de você agora.</div>';
+      const reativ = reativacoesPendentes(contaId);
+      if (!pend.length && !falhas.length && !reativ.length) return '<div class="ag-nada">✅ Nada pendente — o agente não precisa de você agora.</div>';
+      const bannerReativ = reativ.length ? (() => {
+        const algumaLegada = reativ.some(r => reativacaoLegada(r.log));
+        const nomes = reativ.slice(0, 5).map(r => h(r.c.nome.slice(0, 45))).join(', ') + (reativ.length > 5 ? ` e mais ${reativ.length - 5}` : '');
+        return `<div class="ag-precisa-item" style="--c:#dc2626;">
+          <div class="ag-precisa-corpo">
+            <div class="ag-precisa-titulo">⚠️ ${reativ.length} campanha(s) com reativação aprovada continuam pausadas na Shopee</div>
+            <div class="ag-precisa-motivo">${nomes}. ${algumaLegada ? 'As aprovações antigas só alteraram a meta de ROAS — o comando de reativar nunca foi enviado (já corrigido para as próximas).' : 'A Shopee ainda mostra essas campanhas como pausadas.'}</div>
+          </div>
+          <div class="ag-precisa-acoes"><button class="btn btn-sm ag-btn-ok" ${state.reativando ? 'disabled' : ''} onclick="window._agReativarAgora()">${state.reativando ? '⏳ Reativando...' : `▶ Reativar ${reativ.length} agora`}</button></div>
+        </div>`;
+      })() : '';
       const linha = (l, falha) => {
         const d = descreverAcao(l);
         const exec = !falha && !!temAcaoReconhecida(l.dados || {});
@@ -1446,8 +1596,8 @@
         </div>`;
       };
       return `<div class="ag-hud-card" style="--ag-hud-accent:#d97706;margin-bottom:20px;">
-        <div class="ag-sec-head"><div class="ag-sec-titulo">🔔 Precisa de você <span class="ag-contagem">${pend.length + falhas.length}</span></div></div>
-        <div class="ag-lista-precisa">${pend.map(l => linha(l, false)).join('')}${falhas.map(l => linha(l, true)).join('')}</div>
+        <div class="ag-sec-head"><div class="ag-sec-titulo">🔔 Precisa de você <span class="ag-contagem">${pend.length + falhas.length + (reativ.length ? 1 : 0)}</span></div></div>
+        <div class="ag-lista-precisa">${bannerReativ}${pend.map(l => linha(l, false)).join('')}${falhas.map(l => linha(l, true)).join('')}</div>
       </div>`;
     }
 
@@ -1530,7 +1680,7 @@
         const orig = origemInfo(l);
         const d = l.dados || {};
         const live = campanhaAoVivo(contaId, d.campaign_id, l.titulo);
-        const nome = h(nomeNoLog(l.titulo) || l.titulo);
+        const nome = h(live ? live.nome : (nomeNoLog(l.titulo) || l.titulo));
         const nomeHtml = live ? `<a href="#" class="ag-link" onclick="window._agIrParaCampanha('${live.id}'); return false;" title="Ver a linha desta campanha na tabela">${nome}</a>` : `<b>${nome}</b>`;
         const motivo = l.resultado === 'erro' ? 'Erro: ' + motivoCurto(String(l.explicacao || '').split('mas deu erro:')[1] || l.explicacao, 130) : motivoCurto(l.explicacao, 140);
         return `<div class="ag-tl-item" style="--c:${est.cor};">
@@ -1658,9 +1808,7 @@
     // ── Relatórios diários ────────────────────────────────────
     function renderRelatorios(contaId) {
       const lista = state.relatorios.filter(r => r.conta_id === contaId);
-      return `<div class="card" style="padding:20px 22px;margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:700;margin-bottom:4px;">🗞️ Relatórios diários</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Gerado automaticamente todo dia às 07:00, sobre o dia anterior.</div>
+      return `<div class="card" style="padding:20px 22px;margin-bottom:10px;">
         ${!lista.length ? `<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:13px;">Nenhum relatório ainda — sai amanhã de manhã se o piloto estiver ativo hoje.</div>` : `
         <div style="display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;">
           ${lista.map((r, i) => `
@@ -1673,36 +1821,90 @@
     }
 
     // ── Chat ───────────────────────────────────────────────────
-    function renderDadosAoVivoResumo(contaId) {
+    // Painel flutuante do chat: fica acessível de qualquer ponto da tela (antes
+    // ficava no fim da página, depois das configurações). Mora num contêiner
+    // próprio (#ag-chat-root) e preserva rascunho, foco e rolagem entre os
+    // re-renders da tela, senão cada carga de dados apagava o que estava sendo
+    // digitado.
+    const PERGUNTAS_RAPIDAS = [
+      'Como está a conta hoje?',
+      'O que o agente fez nos últimos dias e funcionou?',
+      'Quais campanhas devo olhar primeiro?',
+      'Tem produto curva A em risco neste mês?',
+    ];
+    function mdLeve(t) {
+      return h(t).replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>').replace(/^[-•]\s+/gm, '• ').replace(/\n/g, '<br>');
+    }
+    function contextoChatCurto(contaId) {
       const d = state.dadosAoVivoPorConta[contaId];
-      const linha = state.carregandoDadosAoVivo ? '⏳ atualizando dados da Shopee...'
-        : !contaId ? 'Configure e salve uma conta piloto pra puxar dados ao vivo.'
-        : d?.erro ? `⚠️ erro ao buscar dados: ${esc(d.erro)}`
-        : d ? `${d.campanhasAtivas} campanha(s) ativa(s) · faturamento total ${R$(d.faturamentoTotal)} · investimento ADS ${R$(d.gastoTotal)} · TACOS ${fmtPct(d.tacosGeral)} (${periodoLabel(d.periodo || state.negocioPeriodo)}, ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')})${d.avisoParcial ? ` ⚠️ ${esc(d.avisoParcial)}` : ''}`
-        : 'Nenhum dado carregado ainda.';
-      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--bg-card-hover,#f7f7fb);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;color:var(--text-muted);">
-        <span>${linha}</span>
-        <button class="btn btn-secondary btn-sm" style="white-space:nowrap;" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">🔄 Atualizar</button>
-      </div>`;
+      if (state.carregandoDadosAoVivo && !d) return '⏳ carregando dados da conta...';
+      if (!d) return 'sem dados da conta carregados ainda';
+      if (d.erro) return '⚠️ dados da conta indisponíveis agora';
+      return `${periodoLabel(d.periodo || state.negocioPeriodo)} · ${d.campanhasAtivas} ativa(s) · ${sigla('TACOS')} ${fmtPct(d.tacosGeral)} · dados de ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
     }
 
-    function renderChat(contaId) {
-      return `<div class="card" style="padding:20px 22px;display:flex;flex-direction:column;height:560px;">
-        <div style="font-size:14px;font-weight:700;margin-bottom:10px;">💬 Conversar com o agente</div>
-        ${renderDadosAoVivoResumo(contaId)}
-        <div id="ag-chat-msgs" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:4px;">
-          ${!state.chatMessages.length ? `<div style="text-align:center;color:var(--text-muted);font-size:12.5px;padding:30px 10px;">Pergunte sobre as decisões recentes, o desempenho da conta, ou peça pra explicar por que pausou/ajustou alguma campanha.</div>` : ''}
-          ${state.chatMessages.map(m => `
-            <div style="display:flex;justify-content:${m.role === 'user' ? 'flex-end' : 'flex-start'};">
-              <div style="max-width:88%;background:${m.role === 'user' ? '#6366f1' : 'var(--bg-card-hover,#f1f1f5)'};color:${m.role === 'user' ? '#fff' : 'var(--text-primary)'};border-radius:12px;padding:10px 14px;font-size:13px;line-height:1.55;white-space:pre-wrap;">${nl2br(m.content)}</div>
-            </div>`).join('')}
-          ${state.chatEnviando ? `<div style="font-size:12px;color:var(--text-muted);">⏳ o agente está respondendo...</div>` : ''}
+    function renderChatDrawer(rolarParaFim) {
+      const raiz = document.getElementById('ag-chat-root');
+      if (!raiz) return;
+      const cfg = state.contaAbertaId && state.contaAbertaId !== '__novo__' ? configDaConta(state.contaAbertaId) : null;
+      if (!cfg || state.carregando) { raiz.innerHTML = ''; return; }
+
+      const antigo = document.getElementById('ag-chat-input');
+      const rascunho = antigo ? antigo.value : '';
+      const tinhaFoco = !!antigo && document.activeElement === antigo;
+      const msgsAntigo = document.getElementById('ag-chat-msgs');
+      const noFim = !msgsAntigo || msgsAntigo.scrollHeight - msgsAntigo.scrollTop - msgsAntigo.clientHeight < 60;
+      const rolagemAntiga = msgsAntigo ? msgsAntigo.scrollTop : 0;
+
+      if (!state.chatAberto) {
+        raiz.innerHTML = `<button class="ag-chat-fab" onclick="window._agChatToggle()" title="Conversar com o agente sobre esta conta">💬 Perguntar ao agente</button>`;
+        return;
+      }
+      raiz.innerHTML = `<div class="ag-chat-panel" role="dialog" aria-label="Conversa com o agente">
+        <div class="ag-chat-head">
+          <div style="min-width:0;">
+            <div class="ag-chat-titulo">💬 Agente · ${h(cfg.cliente_nome || cfg.conta_id)}</div>
+            <div class="ag-chat-sub">${contextoChatCurto(cfg.conta_id)}</div>
+          </div>
+          <div class="ag-chat-head-acoes">
+            <button onclick="window._agAtualizarDados()" title="Atualizar os dados que o agente enxerga" ${state.carregandoDadosAoVivo ? 'disabled' : ''}>🔄</button>
+            <button onclick="window._agChatNova()" title="Começar uma conversa nova" ${state.chatMessages.length ? '' : 'disabled'}>↺</button>
+            <button onclick="window._agChatToggle()" title="Fechar (Esc)">✕</button>
+          </div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:12px;">
-          <input type="text" class="form-input" id="ag-chat-input" placeholder="Ex: por que pausou a campanha X ontem?" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();window._agEnviarChat();}">
-          <button class="btn btn-primary" ${state.chatEnviando ? 'disabled' : ''} onclick="window._agEnviarChat()">Enviar</button>
+        <div class="ag-chat-msgs" id="ag-chat-msgs">
+          ${!state.chatMessages.length ? `<div class="ag-chat-vazio">
+            <div style="font-weight:700;margin-bottom:4px;">Pergunte ou peça uma ação</div>
+            <div>Eu vejo os indicadores, as campanhas, o que o agente fez e a curva ABC desta conta. Pedidos de mudança viram sugestões em "Precisa de você" — nada é executado sem o seu aprovar.</div>
+            <div class="ag-chat-chips">${PERGUNTAS_RAPIDAS.map((p, i) => `<button onclick="window._agPerguntar(${i})">${h(p)}</button>`).join('')}</div>
+          </div>` : ''}
+          ${state.chatMessages.map(m => `<div class="ag-chat-linha ${m.role === 'user' ? 'eu' : 'ag'}"><div class="ag-chat-balao">${mdLeve(m.content)}</div></div>`).join('')}
+          ${state.chatEnviando ? '<div class="ag-chat-linha ag"><div class="ag-chat-balao ag-chat-digitando"><span></span><span></span><span></span></div></div>' : ''}
         </div>
+        <div class="ag-chat-entrada">
+          <textarea id="ag-chat-input" rows="1" placeholder="Pergunte sobre a conta ou peça uma ação…" aria-label="Mensagem para o agente"
+            oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window._agEnviarChat();}else if(event.key==='Escape'){window._agChatToggle();}"></textarea>
+          <button class="btn btn-primary btn-sm" ${state.chatEnviando ? 'disabled' : ''} onclick="window._agEnviarChat()">Enviar</button>
+        </div>
+        <div class="ag-chat-dica">Enter envia · Shift+Enter quebra a linha</div>
       </div>`;
+
+      const novoInput = document.getElementById('ag-chat-input');
+      if (novoInput) {
+        novoInput.value = rascunho;
+        if (rascunho) { novoInput.style.height = 'auto'; novoInput.style.height = Math.min(novoInput.scrollHeight, 120) + 'px'; }
+        if (tinhaFoco || rolarParaFim) { novoInput.focus(); novoInput.setSelectionRange(novoInput.value.length, novoInput.value.length); }
+      }
+      const msgs = document.getElementById('ag-chat-msgs');
+      if (msgs) msgs.scrollTop = (rolarParaFim || noFim) ? msgs.scrollHeight : rolagemAntiga;
+    }
+
+    function perguntarRapido(i) {
+      const input = document.getElementById('ag-chat-input');
+      if (!input) return;
+      input.value = PERGUNTAS_RAPIDAS[i];
+      enviarChat();
     }
 
     // ── Shell ────────────────────────────────────────────────
@@ -1736,23 +1938,16 @@
         ${renderCabecalho(cfg)}
         ${renderPrecisaDeVoce(cfg.conta_id)}
         ${renderKPIs(cfg)}
+        ${renderRegras(cfg)}
         ${renderTimeline(cfg.conta_id)}
         ${renderTabelaCampanhas(cfg)}
+        ${renderLog(cfg.conta_id)}
         <div class="ag-secundarias">
           ${secaoColapsavel('funil', '📊 Funil de ADS (impressões → cliques → pedidos)', funil || '<div class="ag-vazio">Sem dados de ADS no período.</div>')}
           ${blocoABC(cfg.conta_id)}
           ${renderAcaoManual(cfg.conta_id)}
+          ${secaoColapsavel('relatorios', '🗞️ Relatórios diários (gerados às 07:00 sobre o dia anterior)', renderRelatorios(cfg.conta_id))}
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="ag-grid-resp">
-          <div>
-            ${renderConfig()}
-            ${renderRelatorios(cfg.conta_id)}
-          </div>
-          <div>
-            ${renderChat(cfg.conta_id)}
-          </div>
-        </div>
-        ${renderLog(cfg.conta_id)}
       `;
     }
 
@@ -1765,7 +1960,38 @@
         </details>
       </div>
       <div id="ag-root"></div>
+      <div id="ag-chat-root"></div>
       <style>
+        .ag-chat-fab { position:fixed; right:22px; bottom:22px; z-index:40; padding:12px 18px; border:none; border-radius:99px; background:#6366f1; color:#fff; font-size:13.5px; font-weight:700; cursor:pointer; box-shadow:0 8px 24px rgba(99,102,241,.45); }
+        .ag-chat-fab:hover { background:#5558e6; }
+        .ag-chat-panel { position:fixed; right:22px; bottom:22px; z-index:41; width:min(430px, calc(100vw - 24px)); height:min(680px, calc(100vh - 110px)); display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:16px; box-shadow:0 18px 50px rgba(0,0,0,.28); overflow:hidden; }
+        .ag-chat-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; border-bottom:1px solid var(--border); background:linear-gradient(135deg, rgba(99,102,241,.14), transparent); }
+        .ag-chat-titulo { font-size:14px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ag-chat-sub { font-size:11px; color:var(--text-muted); margin-top:2px; }
+        .ag-chat-head-acoes { display:flex; gap:4px; flex-shrink:0; }
+        .ag-chat-head-acoes button { width:30px; height:30px; border:none; border-radius:8px; background:transparent; color:var(--text-muted); font-size:15px; cursor:pointer; }
+        .ag-chat-head-acoes button:hover:not(:disabled) { background:var(--bg-card-hover,#f1f1f5); color:var(--text-primary,inherit); }
+        .ag-chat-head-acoes button:disabled { opacity:.35; cursor:default; }
+        .ag-chat-msgs { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; scroll-behavior:smooth; }
+        .ag-chat-vazio { font-size:12.5px; line-height:1.6; color:var(--text-muted); padding:6px 2px; }
+        .ag-chat-chips { display:flex; flex-direction:column; gap:7px; margin-top:12px; }
+        .ag-chat-chips button { text-align:left; padding:9px 12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card-hover,#f7f7fb); color:var(--text-primary,inherit); font-size:12.5px; cursor:pointer; }
+        .ag-chat-chips button:hover { border-color:#6366f1; }
+        .ag-chat-linha { display:flex; }
+        .ag-chat-linha.eu { justify-content:flex-end; }
+        .ag-chat-balao { max-width:90%; padding:9px 13px; border-radius:14px; font-size:13px; line-height:1.55; word-break:break-word; }
+        .ag-chat-linha.eu .ag-chat-balao { background:#6366f1; color:#fff; border-bottom-right-radius:4px; }
+        .ag-chat-linha.ag .ag-chat-balao { background:var(--bg-card-hover,#f1f1f5); color:var(--text-primary,inherit); border-bottom-left-radius:4px; }
+        .ag-chat-digitando { display:flex; gap:4px; align-items:center; padding:12px 14px; }
+        .ag-chat-digitando span { width:6px; height:6px; border-radius:50%; background:var(--text-muted); animation:ag-ponto 1.2s infinite ease-in-out; }
+        .ag-chat-digitando span:nth-child(2) { animation-delay:.15s; } .ag-chat-digitando span:nth-child(3) { animation-delay:.3s; }
+        @keyframes ag-ponto { 0%,80%,100% { opacity:.3; transform:translateY(0); } 40% { opacity:1; transform:translateY(-3px); } }
+        .ag-chat-entrada { display:flex; align-items:flex-end; gap:8px; padding:10px 12px 4px; border-top:1px solid var(--border); }
+        .ag-chat-entrada textarea { flex:1; resize:none; max-height:120px; padding:9px 12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); color:var(--text-primary,inherit); font:inherit; font-size:13px; line-height:1.45; }
+        .ag-chat-entrada textarea:focus { outline:2px solid #6366f1; outline-offset:-1px; }
+        .ag-chat-dica { padding:0 14px 8px; font-size:10.5px; color:var(--text-muted); }
+        @media (max-width:640px) { .ag-chat-panel { right:8px; bottom:8px; height:calc(100vh - 80px); } }
+        @media (prefers-reduced-motion:reduce) { .ag-chat-digitando span { animation:none; } .ag-chat-msgs { scroll-behavior:auto; } }
         @media (max-width:980px){.ag-grid-resp{grid-template-columns:1fr !important;}}
 
         .ag-titulo-pagina { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
@@ -1843,6 +2069,34 @@
         .ag-menu-lista { position:absolute; right:0; z-index:6; min-width:210px; margin-top:4px; padding:5px; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.2); }
         .ag-menu-lista button { text-align:left; background:none; border:none; color:inherit; font-size:12.5px; padding:8px 10px; border-radius:6px; cursor:pointer; }
         .ag-menu-lista button:hover { background:var(--bg-card-hover,#f1f1f5); }
+        .ag-regras-resumo p, .ag-regras-live p { margin:0 0 8px; font-size:13px; line-height:1.65; }
+        .ag-regras-aviso { color:#d97706; font-weight:700; }
+        .ag-regras-salvo { font-size:12px; font-weight:800; color:#16a34a; align-self:center; }
+        .ag-regras-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px; }
+        .ag-regra-bloco { padding:14px; border:1px solid var(--border); border-top:3px solid var(--c); border-radius:12px; background:var(--bg-card-hover,#f7f7fb); }
+        .ag-regra-tit { font-size:13px; font-weight:800; margin-bottom:12px; }
+        .ag-campo { margin-bottom:12px; }
+        .ag-campo:last-child { margin-bottom:0; }
+        .ag-campo-label { display:block; font-size:12px; font-weight:700; margin-bottom:5px; }
+        .ag-campo-grupo { display:flex; align-items:stretch; }
+        .ag-campo-grupo .form-input { border-top-right-radius:0; border-bottom-right-radius:0; min-width:0; }
+        .ag-campo-sufixo { display:flex; align-items:center; padding:0 10px; border:1px solid var(--border); border-left:none; border-radius:0 8px 8px 0; background:var(--bg-card); color:var(--text-muted); font-size:11.5px; font-weight:700; white-space:nowrap; }
+        .ag-campo-dica { margin-top:4px; font-size:11px; line-height:1.45; color:var(--text-muted); }
+        .ag-avancado { margin-top:14px; }
+        .ag-avancado > summary { cursor:pointer; font-size:12px; font-weight:700; color:var(--text-muted); }
+        .ag-regras-live { margin-top:16px; padding:12px 14px; border:1px dashed var(--border); border-radius:12px; }
+        .ag-regras-live-tit { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); margin-bottom:6px; }
+        .ag-regras-rodape { display:flex; align-items:center; justify-content:flex-end; gap:10px; flex-wrap:wrap; margin-top:14px; }
+        .ag-regras-estado { margin-right:auto; font-size:12px; font-weight:700; color:#d97706; }
+        .ag-log-dia { margin:14px 0 4px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
+        .ag-log-dia:first-child { margin-top:0; }
+        .ag-log-item { border-left:3px solid var(--c); margin-bottom:4px; border-radius:0 8px 8px 0; background:var(--bg-card-hover,#f7f7fb); }
+        .ag-log-item > summary { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:8px 12px; cursor:pointer; list-style:none; font-size:12.5px; }
+        .ag-log-item > summary::-webkit-details-marker { display:none; }
+        .ag-log-hora { font-size:11px; color:var(--text-muted); font-variant-numeric:tabular-nums; min-width:36px; }
+        .ag-log-titulo { flex:1; min-width:180px; font-weight:600; }
+        .ag-log-origem { font-size:11px; color:var(--text-muted); }
+        .ag-log-corpo { padding:2px 14px 12px 56px; font-size:12.5px; line-height:1.6; color:var(--text-secondary,inherit); }
         .ag-secundarias { margin-bottom:20px; }
         .ag-sec { margin-bottom:10px; }
         .ag-sec > summary { cursor:pointer; font-size:13px; font-weight:700; color:var(--text-muted); padding:6px 0; }
@@ -1885,7 +2139,7 @@
 
     window._agSalvarConfig = salvarConfig;
     window._agEnviarChat = enviarChat;
-    window._agFiltrarLog = (t) => { state.filtroLog = t; render(); };
+    window._agFiltrarLog = (t) => { state.filtroLog = t; state.logMostrar = LOG_POR_PAGINA; render(); };
     window._agAtualizarDados = () => buscarDadosAoVivo(state.contaAbertaId, state.negocioPeriodo, true);
     // Troca o período da tela inteira: indicadores e tabela de campanhas.
     window._agMudarPeriodo = (periodo) => {
@@ -1924,6 +2178,25 @@
         render();
       }
     };
+    window._agReativarAgora = reativarPendentesAgora;
+    window._agToggleRegras = () => { state.sec.regras = !state.sec.regras; render(); };
+    window._agRegrasMudou = () => {
+      const txt = document.getElementById('ag-regras-live-txt'); if (txt) txt.innerHTML = textoRegras(lerRegrasDoForm());
+      const est = document.getElementById('ag-regras-estado'); if (est) est.textContent = '● Alterações não salvas';
+      const d = document.getElementById('ag-regras-descartar'); if (d) d.style.display = '';
+    };
+    window._agRegrasDescartar = () => { render(); };
+    window._agLogBusca = (v) => {
+      state.logBusca = v; state.logMostrar = LOG_POR_PAGINA;
+      const lista = document.getElementById('ag-log-lista'); if (lista) lista.innerHTML = renderLogLista(state.contaAbertaId);
+    };
+    window._agLogMais = () => {
+      state.logMostrar += LOG_POR_PAGINA;
+      const lista = document.getElementById('ag-log-lista'); if (lista) lista.innerHTML = renderLogLista(state.contaAbertaId);
+    };
+    window._agChatToggle = () => { state.chatAberto = !state.chatAberto; renderChatDrawer(true); };
+    window._agChatNova = () => { state.chatMessages = []; renderChatDrawer(); };
+    window._agPerguntar = perguntarRapido;
     window._agFiltroTimeline = (k) => { state.timelineFiltro = k; state.timelineMostrar = 5; render(); };
     window._agTimelineMais = () => { state.timelineMostrar += 10; render(); };
     window._agOrdenar = (col) => {
