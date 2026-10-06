@@ -594,6 +594,16 @@
       const tag = c.tags?.[0]?.name || c.tags?.[0];
       return (typeof tag === 'string' ? tag : tag?.value) || c.nickname || c.external_id;
     }
+    // Nome da LOJA como aparece na conta do marketplace ("ELATOR - SHOPEE" →
+    // "Elator"), não o do cliente/grupo vinculado (várias lojas podem
+    // pertencer ao mesmo cliente, ex.: Mega Fácil, e precisam ser distintas).
+    function nomeLojaLimpo(c) {
+      return String(nomeConta(c) || '').replace(/\s*[-–]\s*shopee\s*$/i, '').trim();
+    }
+    function nomeExibicao(cfg) {
+      const c = state.contasShopee.find(x => String(x.param_to_use?.shopId || x.external_id) === String(cfg.conta_id));
+      return (c ? nomeLojaLimpo(c) : '') || cfg.cliente_nome || cfg.conta_id;
+    }
 
     // Tenta achar o cliente da Carteira vinculado a essa conta de marketplace
     // (glr_mc_vinculos: { [clienteId]: [{external_id, marketplace, nickname}] }
@@ -627,7 +637,9 @@
 
       const row = {
         conta_id: contaId,
-        cliente_nome: vinculo.cliente_nome || (contaObj ? nomeConta(contaObj) : contaId),
+        // Guarda o nome da LOJA (o cliente fica em cliente_id): várias lojas
+        // do mesmo grupo não podem aparecer todas com o nome do grupo.
+        cliente_nome: contaObj ? nomeLojaLimpo(contaObj) : (vinculo.cliente_nome || contaId),
         cliente_id: vinculo.cliente_id || null,
         marketplace: 'shopee',
         ativo,
@@ -687,7 +699,7 @@
         ? `\nCURVA ABC DE VENDAS (base: receita de ${abc.k1}; A = ~80% da receita, B até 95%, C o resto; ${abc.resumo.A} produtos A, ${abc.resumo.B} B, ${abc.resumo.C} C; receita do mês passado ${R$(abc.total1)}). Top produtos A (receita ${abc.k2} → ${abc.k1} → projeção ${abc.k0}):\n${abc.produtos.filter(p => p.classe === 'A').slice(0, 10).map(p => `- ${p.nome.slice(0, 60)}: ${R$(p.r2)} → ${R$(p.r1)} → ${p.proj != null && abc.projecaoOk ? R$(p.proj) + ' (' + (p.varProj >= 0 ? '+' : '') + (p.varProj * 100).toFixed(0) + '%)' : 'projeção ainda sem dados suficientes'}`).join('\n')}\n${abc.alertas.length ? 'ALERTAS ABC: ' + abc.alertas.map(p => `${p.nome.slice(0, 50)} (curva ${p.classe}, ${p.alerta === 'virada' ? 'vinha crescendo e' : ''} projeta ${(p.varProj * 100).toFixed(0)}% vs mês passado)`).join('; ') : 'Nenhum alerta ABC no momento.'}`
         : '';
       return [
-        cfg ? `CONFIGURAÇÃO ATUAL DO PILOTO (conta ${cfg.cliente_nome || cfg.conta_id}, ${cfg.ativo ? 'ATIVO' : 'inativo'}):` : 'Nenhuma conta piloto configurada ainda.',
+        cfg ? `CONFIGURAÇÃO ATUAL DO PILOTO (conta ${nomeExibicao(cfg)}, ${cfg.ativo ? 'ATIVO' : 'inativo'}):` : 'Nenhuma conta piloto configurada ainda.',
         cfg ? `Meta TACOS: ${cfg.meta_acos ?? '—'}% (métrica principal: investimento ADS ÷ faturamento TOTAL da loja, não ACOS isolado) | Orçamento: ${cfg.orcamento_min ?? '—'} a ${cfg.orcamento_max ?? '—'} | Margem: ${cfg.margem_pct ?? '—'}% | Estoque mínimo: ${cfg.estoque_minimo ?? '—'} | Pausa automática acima de ${cfg.regra_pausa_acos ?? '—'}% ACOS por ${cfg.regra_pausa_dias ?? '—'} dia(s), só após ${cfg.dias_maturacao_campanha ?? 7} dia(s) de maturação da campanha | Alerta humano se variação de orçamento > ${cfg.alerta_variacao_pct ?? '—'}% | Notas: ${cfg.notas || '—'}` : '',
         cfg ? dadosTexto : '',
         cfg ? negTexto : '',
@@ -837,8 +849,8 @@
           return `<div class="ag-hud-card" style="--ag-hud-accent:${saude.cor};cursor:pointer;" onclick="window._agAbrirConta('${esc(cfg.conta_id)}')">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
               <div>
-                <div style="font-size:15px;font-weight:800;">${esc(cfg.cliente_nome || cfg.conta_id)}</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Shopee · ${cfg.ativo ? 'piloto ativo' : 'piloto pausado'}</div>
+                <div style="font-size:15px;font-weight:800;">${h(nomeExibicao(cfg))}</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Shopee · ${cfg.ativo ? 'piloto ativo' : 'piloto pausado'}${clienteVinculado(cfg.conta_id).cliente_nome ? ` · cliente ${h(clienteVinculado(cfg.conta_id).cliente_nome)}` : ''}</div>
               </div>
               <span style="font-size:20px;line-height:1;" title="${saude.label}">${saude.emoji}</span>
             </div>
@@ -1493,7 +1505,7 @@
       const ultima = logs.filter(l => l.origem === 'cron').sort(maisRecente)[0];
       const resumo = logs.filter(l => l.origem === 'cron' && /^Revisão diária concluída/.test(l.titulo || '')).sort(maisRecente)[0];
       const resumoTxt = resumo ? String(resumo.titulo).replace(/^Revisão diária concluída — /, '') : '';
-      const opcoes = state.contas.map(c => `<option value="${esc(c.conta_id)}" ${c.conta_id === cfg.conta_id ? 'selected' : ''}>${h(c.cliente_nome || c.conta_id)}</option>`).join('');
+      const opcoes = state.contas.map(c => `<option value="${esc(c.conta_id)}" ${c.conta_id === cfg.conta_id ? 'selected' : ''}>${h(nomeExibicao(c))}</option>`).join('');
       return `<div class="ag-topbar" style="--ag-hud-accent:${saude.cor};">
         <div class="ag-topbar-l">
           <select class="form-select ag-sel-conta" onchange="window._agTrocarConta(this.value)" title="Trocar de conta">
@@ -1863,7 +1875,7 @@
       raiz.innerHTML = `<div class="ag-chat-panel" role="dialog" aria-label="Conversa com o agente">
         <div class="ag-chat-head">
           <div style="min-width:0;">
-            <div class="ag-chat-titulo">💬 Agente · ${h(cfg.cliente_nome || cfg.conta_id)}</div>
+            <div class="ag-chat-titulo">💬 Agente · ${h(nomeExibicao(cfg))}</div>
             <div class="ag-chat-sub">${contextoChatCurto(cfg.conta_id)}</div>
           </div>
           <div class="ag-chat-head-acoes">
