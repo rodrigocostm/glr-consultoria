@@ -41,6 +41,9 @@
       dadosAoVivoPorConta: {}, carregandoDadosAoVivo: false,
       negocioPorConta: {}, carregandoNegocio: false, negocioPeriodo: '7',
       abcPorConta: {}, carregandoABC: false, abcProgresso: '',
+      timelineFiltro: 'todos', timelineMostrar: 5,
+      tabOrdem: { col: 'gasto', dir: -1 }, tabTodas: false,
+      sec: {}, // seções recolhíveis abertas (o render recria o HTML, então o estado mora aqui)
       executandoAcaoManual: false,
       rodandoAgente: false, resultadoRodada: null,
       processandoAlertaId: null,
@@ -77,8 +80,8 @@
       }
       const cfgAberta = configDaConta(state.contaAbertaId);
       if (cfgAberta?.conta_id) {
-        buscarDadosAoVivo(cfgAberta.conta_id);
         buscarNegocio(cfgAberta.conta_id);
+        buscarDadosAoVivo(cfgAberta.conta_id);
         abcCarregarDoCache(cfgAberta.conta_id);
         render();
       }
@@ -162,152 +165,18 @@
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     }
 
-    // ── Dados ao vivo da Shopee (últimos 7 dias) — pro chat e pra fila
-    // terem número de verdade mesmo antes do cron rodar pela 1ª vez ──
-    async function buscarDadosAoVivo(contaId) {
-      if (!contaId || contaId === '__novo__') return;
-      state.carregandoDadosAoVivo = true;
-      render();
-      try {
-        const shopId = contaId;
-        const campanhas = await listarTodasCampanhasShopee(shopId);
-        // 7 dias CORRIDOS incluindo hoje (hoje-6 … hoje), a mesma janela do
-        // faturamento total (dataISO(6)…dataISO(0)). Antes o ADS usava hoje-7
-        // (8 dias) e "Vendas via ADS" podia passar do faturamento só por isso.
-        const hoje = dataLocal(0), seteDiasAtras = dataLocal(6);
-        const settingsPorId = {}, diarioPorId = {};
-        const ids = campanhas.map(c => c.campaign_id);
-        let falhasSettings = 0, falhasDiario = 0, lotes = 0, ultimoErro = '';
-        for (let i = 0; i < ids.length; i += 20) {
-          lotes++;
-          const idsStr = ids.slice(i, i + 20).join(',');
-          const [settingsResp, diarioResp] = await Promise.all([
-            MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, campaign_id_list: idsStr }).catch((e) => { falhasSettings++; ultimoErro = e.message || String(e); return null; }),
-            MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, campaign_id_list: idsStr, start_date: seteDiasAtras, end_date: hoje }).catch((e) => { falhasDiario++; ultimoErro = e.message || String(e); return null; }),
-          ]);
-          (settingsResp?.data?.response?.campaign_list || settingsResp?.response?.campaign_list || []).forEach(c => { settingsPorId[c.campaign_id] = { ...(c.common_info || {}), roas_target: c.auto_bidding_info?.roas_target ?? null }; });
-          (diarioResp?.data?.response?.campaign_list || diarioResp?.response?.campaign_list || []).forEach(c => {
-            const dias = c.metrics_list || [];
-            diarioPorId[c.campaign_id] = {
-              gasto: dias.reduce((s, d) => s + (parseFloat(d.expense) || 0), 0),
-              gmv: dias.reduce((s, d) => s + (parseFloat(d.broad_gmv) || 0), 0),
-              pedidos: dias.reduce((s, d) => s + (parseInt(d.broad_order) || 0), 0),
-              impressoes: dias.reduce((s, d) => s + (parseInt(d.impression) || 0), 0),
-              cliques: dias.reduce((s, d) => s + (parseInt(d.clicks) || 0), 0),
-            };
-          });
-        }
-        // Os totais de gasto/GMV da conta NÃO vêm mais dessa lista de
-        // campanhas — shopee_ads_campaigns só lista ad_type=manual e, numa
-        // conta com campanhas ativas em modo "GMV Max - Meta de ROAS" (um
-        // bidding automático dentro de campanha individual), devolveu só
-        // campanhas antigas encerradas, 0 investimento, enquanto o painel da
-        // Shopee mostrava milhares de reais ativos. Essa lista aqui só serve
-        // pra popular a tabela "Campanhas ao vivo" (o que dá pra ver), e
-        // "pedidosTotal"/"ativas" ficam limitados ao que ela enxerga — os
-        // totais de verdade (gastoTotal/gmvTotal/tacosGeral) são calculados
-        // depois, com shopee_ads_daily_performance.
-        let pedidosTotal = 0, ativas = 0;
-        const porCampanha = [];
-        campanhas.forEach(c => {
-          const s = settingsPorId[c.campaign_id], d = diarioPorId[c.campaign_id];
-          if (!s || !d) return;
-          if (d.gasto <= 0 && d.gmv <= 0) return; // sem atividade na janela, ignora
-          pedidosTotal += d.pedidos;
-          if ((s.campaign_status || '').toLowerCase() === 'ongoing') ativas++;
-          const acos = d.gmv > 0 ? (d.gasto / d.gmv * 100) : (d.gasto > 0 ? Infinity : 0);
-          porCampanha.push({ id: c.campaign_id, nome: s.ad_name || `Campanha ${c.campaign_id}`, budget: parseFloat(s.campaign_budget) || 0, roasTarget: s.roas_target, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status, impressoes: d.impressoes || 0, cliques: d.cliques || 0, pedidos: d.pedidos || 0, ctr: d.impressoes > 0 ? (d.cliques / d.impressoes * 100) : 0 });
-        });
-        porCampanha.sort((a, b) => b.gasto - a.gasto);
-
-        let resultado;
-        // Se as chamadas de métrica falharam em todos os lotes (ex: instabilidade
-        // da API da Shopee/Tiops), "0 campanhas ativas" seria enganoso — parece
-        // "conta sem campanha" quando na verdade é "não consegui buscar agora".
-        if (campanhas.length > 0 && falhasSettings >= lotes && falhasDiario >= lotes) {
-          resultado = { erro: `Não consegui buscar métricas das ${campanhas.length} campanhas agora. Erro real: "${ultimoErro || 'desconhecido'}". Tente "Atualizar" de novo em alguns minutos.` };
-        } else {
-          // Faturamento TOTAL da loja (não só o atribuído ao ADS) — base do TACOS,
-          // que é a métrica que a GLR usa de verdade pra julgar a conta, não ACOS
-          // isolado de campanha. Inclui CANCELLED de propósito: é bruto (pedidos
-          // realizados), igual ao "Gestor Seller" que a GLR usa pra comparar —
-          // confirmado ao vivo que sem CANCELLED o número ficava ~40% menor que
-          // o valor real de referência.
-          let faturamentoTotal = 0;
-          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
-            try {
-              faturamentoTotal += await shopeeFaturamentoPeriodo(shopId, dataISO(6), dataISO(0), st);
-            } catch (e) {}
-          }
-          // Gasto/GMV de ADS: performance diária da loja inteira (campanhas
-          // individuais, inclusive modo GMV Max por produto). Escopo do
-          // agente é só campanhas individuais — GMV Max da Loja fica de fora
-          // (o agente nunca conseguia agir nele mesmo, só gerava alerta).
-          let gastoTotal = 0, gmvTotal = 0, impressoesTotal = 0, cliquesTotal = 0, pedidosAdsTotal = 0;
-          try {
-            const perfDiario = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: seteDiasAtras, end_date: hoje });
-            const diasPerf = perfDiario.data?.response || perfDiario.response || [];
-            diasPerf.forEach(d => {
-              gastoTotal += parseFloat(d.expense) || 0; gmvTotal += parseFloat(d.broad_gmv) || 0;
-              impressoesTotal += parseInt(d.impression) || 0; cliquesTotal += parseInt(d.clicks) || 0;
-              pedidosAdsTotal += parseInt(d.broad_order) || 0;
-            });
-          } catch (e) {}
-          // Comparativo com os 7 dias anteriores — mesmo período, deslocado,
-          // pra dar noção de tendência (subindo/caindo) em vez de só um
-          // número solto. Mesma janela usada no card "Saúde do negócio".
-          let impressoesAnterior = 0, cliquesAnterior = 0, pedidosAdsAnterior = 0, gmvAnterior = 0;
-          try {
-            const perfAnterior = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: dataLocal(13), end_date: dataLocal(7) });
-            const diasAnt = perfAnterior.data?.response || perfAnterior.response || [];
-            diasAnt.forEach(d => {
-              impressoesAnterior += parseInt(d.impression) || 0; cliquesAnterior += parseInt(d.clicks) || 0;
-              pedidosAdsAnterior += parseInt(d.broad_order) || 0; gmvAnterior += parseFloat(d.broad_gmv) || 0;
-            });
-          } catch (e) {}
-          const variacaoPct = (atual, anterior) => anterior > 0 ? ((atual - anterior) / anterior * 100) : (atual > 0 ? Infinity : null);
-          const tacosGeral = faturamentoTotal > 0 ? (gastoTotal / faturamentoTotal * 100) : (gastoTotal > 0 ? Infinity : 0);
-          resultado = {
-            atualizadoEm: new Date().toISOString(),
-            campanhasAtivas: ativas, gastoTotal, gmvTotal, pedidosTotal, faturamentoTotal, tacosGeral,
-            acosGeral: gmvTotal > 0 ? (gastoTotal / gmvTotal * 100) : (gastoTotal > 0 ? Infinity : 0),
-            impressoesTotal, cliquesTotal, pedidosAdsTotal,
-            ctrGeral: impressoesTotal > 0 ? (cliquesTotal / impressoesTotal * 100) : 0,
-            crGeral: cliquesTotal > 0 ? (pedidosAdsTotal / cliquesTotal * 100) : 0,
-            cpcGeral: cliquesTotal > 0 ? (gastoTotal / cliquesTotal) : 0,
-            impressoesAnterior, cliquesAnterior, pedidosAdsAnterior, gmvAnterior,
-            variacaoImpressoes: variacaoPct(impressoesTotal, impressoesAnterior),
-            variacaoCliques: variacaoPct(cliquesTotal, cliquesAnterior),
-            variacaoPedidosAds: variacaoPct(pedidosAdsTotal, pedidosAdsAnterior),
-            variacaoGmv: variacaoPct(gmvTotal, gmvAnterior),
-            topCampanhas: porCampanha.slice(0, 8),
-            avisoParcial: (falhasSettings > 0 || falhasDiario > 0) ? 'Algumas campanhas podem estar faltando — houve falha parcial ao buscar dados da Shopee.' : null,
-          };
-        }
-        state.dadosAoVivoPorConta[shopId] = resultado;
-      } catch (e) {
-        state.dadosAoVivoPorConta[contaId] = { erro: e.message || String(e) };
-      } finally {
-        state.carregandoDadosAoVivo = false;
-        render();
-      }
-    }
-
-    // ── Saúde do negócio: faturamento desta semana vs semana anterior.
-    // SKU a SKU (produtos em alta/queda) não entra aqui — isso já existe,
-    // com o motor certo (varredura de pedidos semana a semana), na aba
-    // Analytics → Produtos em Queda; reconstruir esse motor aqui seria
-    // duplicar trabalho e arriscar divergir do número que já é usado hoje.
-    // Aqui a gente só linka pra lá, filtrado nesta conta. ──
+    // ── Período único da tela (state.negocioPeriodo: '7' | '15' | '30' | 'mes') ──
     function isoDe(d) {
       const pad = n => String(n).padStart(2, '0');
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     }
+    function isoParaBR(iso) { return iso.split('-').reverse().join('-'); }
+    function periodoLabel(p) { return p === 'mes' ? 'mês atual' : `${p} dias`; }
 
     // Janela do período atual + período anterior de igual tamanho, pra
-    // comparação de faturamento. "mes" compara o mês corrente (dia 1 até
-    // hoje) com o mesmo intervalo de dias do mês anterior (comparação justa,
-    // não o mês anterior inteiro).
+    // comparação. "mes" compara o mês corrente (dia 1 até hoje) com o mesmo
+    // intervalo de dias do mês anterior (comparação justa, não o mês anterior
+    // inteiro).
     function janelasNegocio(periodo) {
       const hoje = new Date();
       if (periodo === 'mes') {
@@ -320,23 +189,39 @@
       return { atualDe: dataISO(n - 1), atualAte: dataISO(0), anteriorDe: dataISO(2 * n - 1), anteriorAte: dataISO(n) };
     }
 
-    async function buscarNegocio(contaId, periodo) {
-      if (!contaId || contaId === '__novo__') return;
-      periodo = periodo || state.negocioPeriodo;
-      state.carregandoNegocio = true;
-      render();
-      try {
-        const shopId = contaId;
+    // A API de Ads da Shopee recusa janela maior que 1 mês ("Date range can't
+    // be longer than 1 month") — confirmado ao vivo: 31 dias falha, 30 passa.
+    // Só afeta "Mês atual" nos dias 31 em diante; nesse caso usa os últimos 30.
+    function janelaAds(periodo) {
+      const j = janelasNegocio(periodo);
+      let reduzida = false;
+      const limitar = (de, ate) => {
+        const d1 = new Date(de + 'T12:00:00'), d2 = new Date(ate + 'T12:00:00');
+        const dias = Math.round((d2 - d1) / 86400000) + 1;
+        if (dias <= 30) return [de, ate];
+        reduzida = true;
+        const nd = new Date(d2); nd.setDate(nd.getDate() - 29);
+        return [isoDe(nd), ate];
+      };
+      const [atualDe, atualAte] = limitar(j.atualDe, j.atualAte);
+      const [anteriorDe, anteriorAte] = limitar(j.anteriorDe, j.anteriorAte);
+      return { atualDe, atualAte, anteriorDe, anteriorAte, reduzida };
+    }
+
+    // Faturamento total + métricas de ADS do período e do período anterior.
+    // É a ÚNICA fonte desses números na tela (indicadores, chat e tabela
+    // reaproveitam o mesmo resultado), pra nunca dois blocos mostrarem
+    // janelas ou valores diferentes. Guarda a promessa em andamento: abrir a
+    // conta dispara vários consumidores ao mesmo tempo e só o primeiro busca.
+    const negEmAndamento = {};
+    function calcularNegocio(shopId, periodo, forcar) {
+      const chave = shopId + ':' + periodo;
+      if (!forcar && negEmAndamento[chave]) return negEmAndamento[chave];
+      const promessa = (async () => {
         // Se algum status falhar mesmo depois do retry, NÃO mostra um número
-        // limpo como se fosse completo — isso é o próprio bug que o analista
-        // reportou (faturamento pela metade, sem aviso nenhum). Marca
-        // "incompleto" e mostra na tela, em vez de engolir o erro.
-        // Sequencial, NUNCA em paralelo — confirmado ao vivo (comparando com
-        // buscarDadosAoVivo, que já era sequencial e nunca deu esse bug) que
-        // disparar as 3 chamadas de status ao mesmo tempo via Promise.all faz
-        // o conector devolver dado incompleto pra 2 delas (sem erro, sem
-        // sinalizar nada — só um total_revenue menor). Mais lento, mas o
-        // único jeito confirmado de pegar o valor certo.
+        // limpo como se fosse completo — marca "incompleto" e mostra na tela.
+        // Sequencial, NUNCA em paralelo: confirmado ao vivo que disparar as
+        // chamadas de status juntas faz o conector devolver dado incompleto.
         const somaPeriodo = async (inicioISO, fimISO) => {
           let total = 0, statusFalhou = [];
           for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
@@ -349,18 +234,163 @@
         const janelas = janelasNegocio(periodo);
         const atual = await somaPeriodo(janelas.atualDe, janelas.atualAte);
         const anterior = await somaPeriodo(janelas.anteriorDe, janelas.anteriorAte);
-        const semanaAtual = atual.total, semanaAnterior = anterior.total;
         const falhas = [...atual.statusFalhou, ...anterior.statusFalhou];
-        const variacaoPct = semanaAnterior > 0 ? ((semanaAtual - semanaAnterior) / semanaAnterior) * 100 : (semanaAtual > 0 ? Infinity : 0);
-        state.negocioPorConta[contaId + ':' + periodo] = {
-          semanaAtual, semanaAnterior, variacaoPct, atualizadoEm: new Date().toISOString(),
-          incompleto: falhas.length > 0,
-          avisoIncompleto: falhas.length ? `Não consegui buscar ${[...new Set(falhas)].join(', ')} mesmo com retry — o valor acima está SUBESTIMADO. Clique em Atualizar pra tentar de novo.` : null,
+
+        // Gasto/GMV de ADS: performance diária da loja inteira (campanhas
+        // individuais, inclusive GMV Max por produto). O GMV Max da Loja fica
+        // de fora por decisão do analista (o agente não consegue agir nele).
+        const somaAds = async (deISO, ateISO) => {
+          const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: isoParaBR(deISO), end_date: isoParaBR(ateISO) });
+          const dias = r.data?.response || r.response || [];
+          const s = { gasto: 0, gmv: 0, impressoes: 0, cliques: 0, pedidos: 0 };
+          dias.forEach(d => {
+            s.gasto += parseFloat(d.expense) || 0; s.gmv += parseFloat(d.broad_gmv) || 0;
+            s.impressoes += parseInt(d.impression) || 0; s.cliques += parseInt(d.clicks) || 0;
+            s.pedidos += parseInt(d.broad_order) || 0;
+          });
+          return s;
         };
+        const adsJ = janelaAds(periodo);
+        let adsAtual = null, adsAnterior = null, adsErro = null;
+        try {
+          adsAtual = await somaAds(adsJ.atualDe, adsJ.atualAte);
+          adsAnterior = await somaAds(adsJ.anteriorDe, adsJ.anteriorAte);
+        } catch (e) { adsErro = e.message || String(e); }
+
+        const semanaAtual = atual.total, semanaAnterior = anterior.total;
+        return {
+          periodo, semanaAtual, semanaAnterior,
+          variacaoPct: semanaAnterior > 0 ? ((semanaAtual - semanaAnterior) / semanaAnterior) * 100 : (semanaAtual > 0 ? Infinity : 0),
+          atualizadoEm: new Date().toISOString(),
+          incompleto: falhas.length > 0,
+          avisoIncompleto: falhas.length ? `Não consegui buscar ${[...new Set(falhas)].join(', ')} mesmo com retry — o faturamento está SUBESTIMADO. Clique em Atualizar pra tentar de novo.` : null,
+          adsAtual, adsAnterior, adsErro, adsJanelaReduzida: adsJ.reduzida,
+        };
+      })();
+      negEmAndamento[chave] = promessa;
+      promessa.catch(() => { if (negEmAndamento[chave] === promessa) delete negEmAndamento[chave]; });
+      return promessa;
+    }
+
+    async function buscarNegocio(contaId, periodo, forcar) {
+      if (!contaId || contaId === '__novo__') return;
+      periodo = periodo || state.negocioPeriodo;
+      state.carregandoNegocio = true;
+      render();
+      try {
+        state.negocioPorConta[contaId + ':' + periodo] = await calcularNegocio(contaId, periodo, forcar);
       } catch (e) {
         state.negocioPorConta[contaId + ':' + periodo] = { erro: e.message || String(e) };
       } finally {
         state.carregandoNegocio = false;
+        render();
+      }
+    }
+
+    // ── Dados ao vivo das campanhas (tabela + contexto do chat), no período
+    // selecionado. Faturamento e totais de ADS vêm de calcularNegocio (mesma
+    // fonte dos indicadores). Aqui só busca o que é por campanha. ──
+    async function buscarDadosAoVivo(contaId, periodo, forcar) {
+      if (!contaId || contaId === '__novo__') return;
+      periodo = periodo || state.negocioPeriodo;
+      state.carregandoDadosAoVivo = true;
+      render();
+      try {
+        const shopId = contaId;
+        const adsJ = janelaAds(periodo);
+        const inicioBR = isoParaBR(adsJ.atualDe), fimBR = isoParaBR(adsJ.atualAte);
+        const inicioMs = new Date(adsJ.atualDe + 'T00:00:00').getTime();
+        const campanhas = await listarTodasCampanhasShopee(shopId);
+        const settingsPorId = {}, diarioPorId = {};
+        const ids = campanhas.map(c => c.campaign_id);
+        let falhasSettings = 0, falhasDiario = 0, lotesSettings = 0, lotesDiario = 0, ultimoErro = '';
+
+        // 1) status/orçamento/meta de ROAS de todas as campanhas listadas
+        for (let i = 0; i < ids.length; i += 20) {
+          lotesSettings++;
+          const r = await MarketplaceAPI.call('shopee_ads_campaign_settings', { shopId, campaign_id_list: ids.slice(i, i + 20).join(',') })
+            .catch((e) => { falhasSettings++; ultimoErro = e.message || String(e); return null; });
+          (r?.data?.response?.campaign_list || r?.response?.campaign_list || []).forEach(c => {
+            settingsPorId[c.campaign_id] = { ...(c.common_info || {}), roas_target: c.auto_bidding_info?.roas_target ?? null };
+          });
+        }
+        // 2) métricas diárias só das campanhas que importam: ativas, pausadas
+        // ou encerradas dentro da janela (o resto é histórico morto — a conta
+        // lista centenas de campanhas antigas).
+        const idsRelevantes = ids.filter(id => {
+          const s = settingsPorId[id];
+          if (!s) return false;
+          const st = (s.campaign_status || '').toLowerCase();
+          if (st === 'ongoing' || st === 'paused') return true;
+          const fim = s.campaign_duration?.end_time;
+          return fim ? fim * 1000 >= inicioMs : false;
+        });
+        for (let i = 0; i < idsRelevantes.length; i += 20) {
+          lotesDiario++;
+          const r = await MarketplaceAPI.call('shopee_ads_campaign_daily', { shopId, campaign_id_list: idsRelevantes.slice(i, i + 20).join(','), start_date: inicioBR, end_date: fimBR })
+            .catch((e) => { falhasDiario++; ultimoErro = e.message || String(e); return null; });
+          (r?.data?.response?.campaign_list || r?.response?.campaign_list || []).forEach(c => {
+            const dias = c.metrics_list || [];
+            diarioPorId[c.campaign_id] = {
+              gasto: dias.reduce((s, d) => s + (parseFloat(d.expense) || 0), 0),
+              gmv: dias.reduce((s, d) => s + (parseFloat(d.broad_gmv) || 0), 0),
+              pedidos: dias.reduce((s, d) => s + (parseInt(d.broad_order) || 0), 0),
+              impressoes: dias.reduce((s, d) => s + (parseInt(d.impression) || 0), 0),
+              cliques: dias.reduce((s, d) => s + (parseInt(d.clicks) || 0), 0),
+            };
+          });
+        }
+
+        let pedidosTotal = 0, ativas = 0;
+        const porCampanha = [];
+        idsRelevantes.forEach(id => {
+          const s = settingsPorId[id], d = diarioPorId[id];
+          if (!s || !d) return;
+          if (d.gasto <= 0 && d.gmv <= 0) return; // sem atividade na janela, ignora
+          pedidosTotal += d.pedidos;
+          if ((s.campaign_status || '').toLowerCase() === 'ongoing') ativas++;
+          const acos = d.gmv > 0 ? (d.gasto / d.gmv * 100) : (d.gasto > 0 ? Infinity : 0);
+          porCampanha.push({ id, nome: s.ad_name || `Campanha ${id}`, budget: parseFloat(s.campaign_budget) || 0, roasTarget: s.roas_target, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status, impressoes: d.impressoes || 0, cliques: d.cliques || 0, pedidos: d.pedidos || 0, ctr: d.impressoes > 0 ? (d.cliques / d.impressoes * 100) : 0 });
+        });
+        porCampanha.sort((a, b) => b.gasto - a.gasto);
+
+        let resultado;
+        // Se as chamadas falharam por completo, "0 campanhas" seria enganoso —
+        // parece "conta sem campanha" quando na verdade é "não consegui buscar".
+        if (campanhas.length > 0 && (falhasSettings >= lotesSettings || (lotesDiario > 0 && falhasDiario >= lotesDiario))) {
+          resultado = { erro: `Não consegui buscar métricas das ${campanhas.length} campanhas agora. Erro real: "${ultimoErro || 'desconhecido'}". Tente "Atualizar" de novo em alguns minutos.` };
+        } else {
+          let neg = null;
+          try { neg = await calcularNegocio(shopId, periodo, forcar); } catch (e) { /* segue sem faturamento */ }
+          const faturamentoTotal = neg ? neg.semanaAtual : 0;
+          const zero = { gasto: 0, gmv: 0, impressoes: 0, cliques: 0, pedidos: 0 };
+          const A = neg?.adsAtual || zero, P = neg?.adsAnterior || zero;
+          const gastoTotal = A.gasto, gmvTotal = A.gmv;
+          const variacaoPct = (atual, anterior) => anterior > 0 ? ((atual - anterior) / anterior * 100) : (atual > 0 ? Infinity : null);
+          resultado = {
+            periodo, atualizadoEm: new Date().toISOString(),
+            campanhasAtivas: ativas, gastoTotal, gmvTotal, pedidosTotal, faturamentoTotal,
+            tacosGeral: faturamentoTotal > 0 ? (gastoTotal / faturamentoTotal * 100) : (gastoTotal > 0 ? Infinity : 0),
+            acosGeral: gmvTotal > 0 ? (gastoTotal / gmvTotal * 100) : (gastoTotal > 0 ? Infinity : 0),
+            impressoesTotal: A.impressoes, cliquesTotal: A.cliques, pedidosAdsTotal: A.pedidos,
+            ctrGeral: A.impressoes > 0 ? (A.cliques / A.impressoes * 100) : 0,
+            crGeral: A.cliques > 0 ? (A.pedidos / A.cliques * 100) : 0,
+            cpcGeral: A.cliques > 0 ? (gastoTotal / A.cliques) : 0,
+            impressoesAnterior: P.impressoes, cliquesAnterior: P.cliques, pedidosAdsAnterior: P.pedidos, gmvAnterior: P.gmv,
+            variacaoImpressoes: variacaoPct(A.impressoes, P.impressoes),
+            variacaoCliques: variacaoPct(A.cliques, P.cliques),
+            variacaoPedidosAds: variacaoPct(A.pedidos, P.pedidos),
+            variacaoGmv: variacaoPct(gmvTotal, P.gmv),
+            topCampanhas: porCampanha.slice(0, 8),
+            todasCampanhas: porCampanha,
+            avisoParcial: (falhasSettings > 0 || falhasDiario > 0 || !neg || neg.adsErro) ? 'Algumas campanhas ou totais podem estar faltando — houve falha parcial ao buscar dados da Shopee.' : null,
+          };
+        }
+        state.dadosAoVivoPorConta[shopId] = resultado;
+      } catch (e) {
+        state.dadosAoVivoPorConta[contaId] = { erro: e.message || String(e) };
+      } finally {
+        state.carregandoDadosAoVivo = false;
         render();
       }
     }
@@ -645,7 +675,7 @@
       const d = state.dadosAoVivoPorConta[state.contaAbertaId];
       const dadosTexto = !d ? '\nDADOS AO VIVO: ainda não carregados.'
         : d.erro ? `\nDADOS AO VIVO: erro ao buscar (${d.erro})`
-        : `\nDADOS AO VIVO DA SHOPEE (últimos 7 dias, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nFaturamento TOTAL da loja: ${R$(d.faturamentoTotal)} | Investimento ADS: ${R$(d.gastoTotal)} | TACOS da conta: ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (esta é a métrica principal, não o ACOS isolado abaixo)\nCampanhas ativas: ${d.campanhasAtivas} | Vendas atribuídas ao ADS: ${R$(d.gmvTotal)} | Pedidos atribuídos: ${d.pedidosTotal} | ACOS médio das campanhas: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento (ACOS individual, útil só pra comparar entre elas — use o ID exato ao sugerir mudança):\n${d.topCampanhas.map(c => `- ID ${c.id} — ${(c.nome || '').slice(0, 60)}: status ${c.status === 'ongoing' ? 'ATIVA' : c.status === 'paused' ? 'PAUSADA' : c.status || '—'}, orçamento ${R$(c.budget)}${c.roasTarget != null ? `, meta de ROAS atual ${c.roasTarget}x (lance automático)` : ''}, gasto ${R$(c.gasto)}, vendas (GMV) ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
+        : `\nDADOS AO VIVO DA SHOPEE (${periodoLabel(d.periodo || state.negocioPeriodo)}, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nFaturamento TOTAL da loja: ${R$(d.faturamentoTotal)} | Investimento ADS: ${R$(d.gastoTotal)} | TACOS da conta: ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (esta é a métrica principal, não o ACOS isolado abaixo)\nCampanhas ativas: ${d.campanhasAtivas} | Vendas atribuídas ao ADS: ${R$(d.gmvTotal)} | Pedidos atribuídos: ${d.pedidosTotal} | ACOS médio das campanhas: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento (ACOS individual, útil só pra comparar entre elas — use o ID exato ao sugerir mudança):\n${d.topCampanhas.map(c => `- ID ${c.id} — ${(c.nome || '').slice(0, 60)}: status ${c.status === 'ongoing' ? 'ATIVA' : c.status === 'paused' ? 'PAUSADA' : c.status || '—'}, orçamento ${R$(c.budget)}${c.roasTarget != null ? `, meta de ROAS atual ${c.roasTarget}x (lance automático)` : ''}, gasto ${R$(c.gasto)}, vendas (GMV) ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
       const neg = state.negocioPorConta[state.contaAbertaId + ':' + state.negocioPeriodo];
       const negTexto = neg && !neg.erro ? `\nSAÚDE DO NEGÓCIO (período: ${state.negocioPeriodo === 'mes' ? 'mês atual' : state.negocioPeriodo + ' dias'}): faturamento ${R$(neg.semanaAtual)} vs período anterior equivalente ${R$(neg.semanaAnterior)} (${neg.variacaoPct === Infinity ? '∞' : (neg.variacaoPct >= 0 ? '+' : '') + neg.variacaoPct.toFixed(1) + '%'}).` : '';
       const abc = state.abcPorConta[state.contaAbertaId];
@@ -811,45 +841,13 @@
               <span style="font-size:20px;line-height:1;" title="${saude.label}">${saude.emoji}</span>
             </div>
             <div style="display:flex;gap:18px;margin-top:14px;">
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${tacos != null ? tacos.toFixed(1) + '%' : '—'}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${tacos != null ? fmtPct(tacos) : '—'}</div></div>
               <div><div class="ag-hud-label" style="margin-bottom:2px;">Fila</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:${pendencias ? '#d97706' : 'inherit'};">${pendencias}</div></div>
             </div>
           </div>`;
         }).join('')}
         <div class="ag-hud-card" style="--ag-hud-accent:#64748b;cursor:pointer;border-style:dashed;display:flex;align-items:center;justify-content:center;min-height:110px;" onclick="window._agAbrirConta('__novo__')">
           <div style="text-align:center;color:var(--text-muted);font-size:13px;font-weight:600;">+ Adicionar conta</div>
-        </div>
-      </div>`;
-    }
-
-    // ── Saúde da conta aberta (card único no topo do detalhe) ──
-    function renderSaudeHero(cfg) {
-      const saude = saudeDaConta(cfg);
-      const relatorio = state.relatorios.find(r => r.conta_id === cfg.conta_id);
-      const tacos = relatorio?.metricas?.tacos_conta;
-      const seteDiasAtras = Date.now() - 7 * 24 * 3600 * 1000;
-      // Só conta decisões de verdade (tipo 'decisao'), separadas por quem
-      // executou: 'cron' = automática; 'aprovacao_manual'/'analista' = feita
-      // por você. Antes tudo isso era somado e chamado de "automáticas".
-      const decisoes7d = state.logs.filter(l => l.conta_id === cfg.conta_id && l.tipo === 'decisao' && l.resultado === 'executado' && new Date(l.criado_em).getTime() > seteDiasAtras);
-      const decisoesSemana = decisoes7d.filter(l => l.origem === 'cron').length;
-      const decisoesManuais7d = decisoes7d.length - decisoesSemana;
-      const pendencias = state.logs.filter(l => l.conta_id === cfg.conta_id && l.tipo === 'alerta' && l.resultado === 'so_alerta').length;
-      const frase = pendencias ? `${pendencias} ${pendencias === 1 ? 'item pedindo' : 'itens pedindo'} sua atenção` : 'Nada pedindo aprovação agora — tudo dentro do combinado';
-      return `<div class="ag-hud-card" style="--ag-hud-accent:${saude.cor};margin-bottom:20px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;">
-          <div style="display:flex;align-items:center;gap:14px;">
-            <span style="font-size:34px;line-height:1;">${saude.emoji}</span>
-            <div>
-              <div style="font-size:17px;font-weight:800;">${esc(cfg.cliente_nome || cfg.conta_id)}</div>
-              <div style="font-size:12.5px;color:var(--text-muted);margin-top:2px;">${saude.label} · ${esc(frase)}</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:26px;">
-            <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS</div><div class="ag-mono" style="font-size:22px;font-weight:800;">${tacos != null ? tacos.toFixed(1) + '%' : '—'}</div><div class="ag-hud-sub">meta ${cfg.meta_acos ?? '—'}%</div></div>
-            <div><div class="ag-hud-label" style="margin-bottom:2px;">Decisões 7d</div><div class="ag-mono" style="font-size:22px;font-weight:800;">${decisoesSemana}</div><div class="ag-hud-sub">automáticas · ${decisoesManuais7d} manuais</div></div>
-            <div><div class="ag-hud-label" style="margin-bottom:2px;">Piloto</div><div class="ag-mono" style="font-size:22px;font-weight:800;color:${cfg.ativo ? '#22d3ee' : '#64748b'};">${cfg.ativo ? 'ON' : 'OFF'}</div></div>
-          </div>
         </div>
       </div>`;
     }
@@ -878,7 +876,7 @@
             ok: true,
             campanhas: r.campanhas ?? 0, campanhasListadas: r.campanhas_listadas ?? r.campanhas ?? 0,
             decisoes: r.decisoes ?? 0, alertas: r.alertas ?? 0,
-            tacos: r.tacos_conta != null ? r.tacos_conta.toFixed(1) + '%' : '—',
+            tacos: r.tacos_conta != null ? fmtPct(r.tacos_conta) : '—',
             paginacaoErro: r.paginacaoErro || null,
           };
         } else {
@@ -891,29 +889,6 @@
         state.rodandoAgente = false;
         render();
       }
-    }
-
-    function renderRodarAgente(contaId) {
-      const r = state.resultadoRodada;
-      return `<div class="ag-hud-card" style="--ag-hud-accent:#22d3ee;margin-bottom:20px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
-          <div>
-            <div style="font-size:14px;font-weight:800;margin-bottom:2px;">🚀 Rodar o agente agora</div>
-            <div style="font-size:11.5px;color:var(--text-muted);">Dispara o mesmo ciclo do cron das 07:00 nesta conta agora: lista campanhas, avalia contra os guardrails configurados abaixo, e age (pausa/ajusta) sozinho.</div>
-          </div>
-          <button class="btn btn-primary" style="white-space:nowrap;" ${state.rodandoAgente ? 'disabled' : ''} onclick="window._agRodarAgora()">
-            ${state.rodandoAgente ? '⏳ Rodando...' : '🚀 Rodar agora'}
-          </button>
-        </div>
-        ${r ? (r.erro
-          ? `<div style="margin-top:12px;background:#dc26261a;border:1px solid #dc2626;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#dc2626;">⚠️ ${esc(r.erro)}</div>`
-          : `<div style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;">
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">Campanhas ativas</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${r.campanhas}</div>${r.campanhasListadas > r.campanhas ? `<div class="ag-hud-sub">de ${r.campanhasListadas} listadas (resto é histórico antigo)</div>` : ''}</div>
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">Decisões</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:#16a34a;">${r.decisoes}</div></div>
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">Alertas</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:${r.alertas ? '#d97706' : 'inherit'};">${r.alertas}</div></div>
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${r.tacos}</div></div>
-            </div>${r.paginacaoErro ? `<div style="margin-top:10px;background:#d977061a;border:1px solid #d97706;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#d97706;">⚠️ Instabilidade do provedor Tiops ao paginar campanhas Shopee além das primeiras 100 — pode ter campanha ativa fora dessa lista agora. Chamado TCK-001154 aberto com o suporte deles, aguardando resposta.</div>` : ''}`) : ''}
-      </div>`;
     }
 
     // ── Ação manual: executa direto na Shopee (pausar/orçamento/meta de
@@ -991,10 +966,10 @@
     }
 
     function renderAcaoManual(contaId) {
-      return `<details style="margin-bottom:20px;">
-      <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--text-muted);padding:4px 0;">⚡ Avançado: ajustar 1 campanha específica na mão</summary>
+      return `<details class="ag-sec" ${state.sec.manual ? 'open' : ''} ontoggle="window._agToggleSec('manual', this.open)">
+      <summary>⚡ Ajuste manual avançado (1 campanha na mão)</summary>
       <div class="ag-hud-card" style="--ag-hud-accent:#dc2626;margin-top:10px;">
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Só pra casos pontuais — pega o ID na tabela "Campanhas ao vivo" (coluna ID). Pra aumentar investimento, prefira o botão "🚀 Boost" na própria tabela, que já sugere o valor certo pra aprovar.</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Só pra casos pontuais — pode colar o ID aqui ou usar "✏️ Ajustar à mão" no menu ⋯ da linha da campanha, que já preenche tudo. Pra aumentar investimento, prefira "🚀 Sugerir mais investimento" no mesmo menu, que já calcula o valor certo pra você aprovar.</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px;">
           <div class="form-group" style="margin:0;"><label class="form-label">ID da campanha</label><input type="text" class="form-input" id="ag-man-campanha" placeholder="Ex: 86858387"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Nome (só pro log)</label><input type="text" class="form-input" id="ag-man-nome" placeholder="Opcional"></div>
@@ -1063,30 +1038,6 @@
       else if (d.retomada === true) { acaoLabel = '▶ Reativada' + (acaoLabel ? ' + ' + acaoLabel : ''); acaoCor = '#22d3ee'; }
       else if (d.pausada === true) { acaoLabel = '⏸ Pausada'; acaoCor = '#dc2626'; }
       return { nomeCampanha, acaoLabel, acaoCor, deParaVal, acos: d.acos != null ? n1(d.acos) + '%' : null };
-    }
-
-    function cardKanban(l, corBorda, comAcoes) {
-      const { nomeCampanha, acaoLabel, acaoCor, deParaVal, acos } = descreverAcao(l);
-      // Alerta pendente tem os valores sugeridos em campos "_atual/_sugerido"
-      // (gerados pela Regra 3/4 do cron), não "_de/_para" (só usado nos já
-      // executados) — precisa achar aqui pra saber se dá pra aprovar de
-      // verdade ou se é só informativo (ex: alerta de GMV Max da Loja, fora
-      // do escopo do agente, sem ação automática associada).
-      const d = l.dados || {};
-      const temAcaoExecutavel = !!temAcaoReconhecida(d);
-      const processando = state.processandoAlertaId === l.id;
-      return `<div style="border:1px solid var(--border);border-left:3px solid ${corBorda};border-radius:8px;padding:10px 12px;background:var(--bg-card-hover,#f7f7fb);">
-        <div style="font-size:12.5px;font-weight:700;line-height:1.4;">${nomeCampanha || esc(l.titulo)}</div>
-        ${acaoLabel ? `<span class="ag-action-chip" style="color:${acaoCor};background:${acaoCor}1a;margin-top:6px;">${acaoLabel}</span>` : ''}
-        ${deParaVal ? `<div class="ag-mono" style="font-size:12px;margin-top:6px;">${deParaVal}</div>` : ''}
-        ${acos ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">ACOS ${acos}</div>` : ''}
-        ${l.explicacao ? `<div style="font-size:11.5px;color:var(--text-secondary);margin-top:6px;line-height:1.5;">${nl2br(l.explicacao.slice(0, 180))}${l.explicacao.length > 180 ? '…' : ''}</div>` : ''}
-        <div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;">${new Date(l.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
-        ${comAcoes ? `<div style="display:flex;gap:6px;margin-top:10px;">
-          ${temAcaoExecutavel ? `<button class="btn btn-sm" style="background:#16a34a1a;color:#16a34a;border:1px solid #16a34a44;flex:1;" ${processando ? 'disabled' : ''} onclick="window._agAprovarAlerta('${l.id}')">${processando ? '⏳...' : '✅ Aprovar'}</button>` : `<span style="font-size:10.5px;color:var(--text-muted);flex:1;align-self:center;">Informativo — sem ação automática pra aprovar</span>`}
-          <button class="btn btn-sm" style="background:#dc26261a;color:#dc2626;border:1px solid #dc262644;" ${processando ? 'disabled' : ''} onclick="window._agDescartarAlerta('${l.id}')">${processando ? '⏳' : '🚫 Descartar'}</button>
-        </div>` : ''}
-      </div>`;
     }
 
     // Um alerta é "executável" se tiver ação automática reconhecida associada.
@@ -1184,75 +1135,6 @@
         state.processandoAlertaId = null;
         await carregarTudo();
       }
-    }
-
-    // ── Kanban de mudanças e resultados: 3 colunas por status — aguardando
-    // aprovação (precisa de humano), executado (ação automática deu certo),
-    // falhou (tentou executar e a API devolveu erro). Mais visual que a
-    // tabela/log corrido — dá pra ver de relance o que está pendente e o
-    // que já foi resolvido. ──
-    function renderKanban(contaId) {
-      const relevantes = state.logs.filter(l => l.conta_id === contaId && (l.tipo === 'decisao' || l.tipo === 'alerta'));
-      const pendentes = relevantes.filter(l => l.resultado === 'so_alerta').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
-      // Só decisões (tipo 'decisao'): aprovar um alerta vira o alerta original
-      // 'executado' + uma decisão nova — contar os dois mostrava cada aprovação
-      // em dobro (16 itens contra 11 decisões no contador).
-      const executados = relevantes.filter(l => l.resultado === 'executado' && l.tipo === 'decisao').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
-      const falharam = relevantes.filter(l => l.resultado === 'erro').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
-
-      const coluna = (titulo, cor, itens, vazio, comAcoes) => `
-        <div style="flex:1;min-width:260px;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-            <span style="width:8px;height:8px;border-radius:50%;background:${cor};"></span>
-            <div style="font-size:13px;font-weight:800;">${titulo}</div>
-            <span style="font-size:11px;color:var(--text-muted);background:var(--bg-card-hover,#f1f1f5);padding:1px 8px;border-radius:99px;">${itens.length}</span>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px;max-height:520px;overflow-y:auto;padding-right:2px;">
-            ${itens.length ? itens.map(l => cardKanban(l, cor, comAcoes)).join('') : `<div style="text-align:center;padding:20px 10px;color:var(--text-muted);font-size:12px;">${vazio}</div>`}
-          </div>
-        </div>`;
-
-      return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:800;margin-bottom:2px;">🗂️ Mudanças e resultados</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:16px;">O que está esperando sua aprovação, o que o agente já executou sozinho, e o que tentou executar e falhou.</div>
-        <div style="display:flex;gap:18px;flex-wrap:wrap;">
-          ${coluna('🔔 Aguardando aprovação', '#d97706', pendentes, '✅ Nada pendente agora', true)}
-          ${coluna('✅ Executado', '#16a34a', executados, 'Nenhuma ação automática ainda', false)}
-          ${coluna('⚠️ Falhou', '#dc2626', falharam, 'Sem falhas registradas', false)}
-        </div>
-      </div>`;
-    }
-
-    // ── Saúde do negócio (faturamento semana vs semana anterior) ──
-    function renderNegocio(contaId) {
-      const n = state.negocioPorConta[contaId + ':' + state.negocioPeriodo];
-      const subindo = n && !n.erro && n.variacaoPct !== Infinity && n.variacaoPct >= 0;
-      const cor = !n || n.erro ? '#64748b' : n.incompleto ? '#d97706' : subindo ? '#16a34a' : '#dc2626';
-      const PERIODOS = [['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['mes', 'Mês atual']];
-      const labelAtual = n && n.erro === undefined ? (state.negocioPeriodo === 'mes' ? 'mês anterior (mesmo período)' : `${state.negocioPeriodo} dias anteriores`) : '';
-      return `<div class="ag-hud-card" style="--ag-hud-accent:${cor};margin-bottom:20px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:2px;">
-          <div style="font-size:14px;font-weight:800;">📈 Saúde do negócio</div>
-          <button class="btn btn-secondary btn-sm" ${state.carregandoNegocio ? 'disabled' : ''} onclick="window._agAtualizarNegocio()">🔄 Atualizar</button>
-        </div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:10px;">Faturamento total da loja — não só o atribuído ao ADS.</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
-          ${PERIODOS.map(([valor, label]) => `
-            <button class="btn btn-sm ${state.negocioPeriodo === valor ? 'btn-primary' : 'btn-secondary'}" onclick="window._agMudarPeriodoNegocio('${valor}')">${label}</button>
-          `).join('')}
-        </div>
-        ${state.carregandoNegocio && !n ? `<div style="color:var(--text-muted);font-size:13px;">⏳ calculando...</div>`
-          : !n ? `<div style="color:var(--text-muted);font-size:13px;">Sem dados ainda.</div>`
-          : n.erro ? `<div style="color:var(--text-muted);font-size:13px;">⚠️ erro ao buscar: ${esc(n.erro)}</div>` : `
-          <div style="display:flex;gap:26px;flex-wrap:wrap;align-items:flex-end;">
-            <div><div class="ag-hud-label" style="margin-bottom:2px;">${state.negocioPeriodo === 'mes' ? 'Mês atual' : `Últimos ${state.negocioPeriodo} dias`}</div><div class="ag-mono" style="font-size:22px;font-weight:800;">${R$(n.semanaAtual)}</div></div>
-            <div><div class="ag-hud-label" style="margin-bottom:2px;">${labelAtual || 'Período anterior'}</div><div class="ag-mono" style="font-size:16px;color:var(--text-muted);">${R$(n.semanaAnterior)}</div></div>
-            <div><div class="ag-hud-label" style="margin-bottom:2px;">Variação</div><div class="ag-mono" style="font-size:22px;font-weight:800;color:${cor};">${n.variacaoPct === Infinity ? '∞' : (n.variacaoPct >= 0 ? '+' : '') + n.variacaoPct.toFixed(1) + '%'}</div></div>
-          </div>
-          ${n.incompleto ? `<div style="margin-top:10px;background:#d977061a;border:1px solid #d97706;border-radius:8px;padding:8px 12px;font-size:12px;color:#d97706;font-weight:600;">⚠️ ${esc(n.avisoIncompleto)}</div>` : ''}
-          <div style="margin-top:12px;font-size:12px;color:var(--text-muted);">Quer ver quais SKUs estão puxando essa variação (produtos em alta/queda)? A <a href="#analytics" style="color:var(--accent-light,#818cf8);">aba Analytics → Produtos em Queda</a> já tem esse detalhamento semana a semana, filtrado por cliente.</div>
-        `}
-      </div>`;
     }
 
     // ── Config do piloto (reagrupada em guardrails, em português) ──
@@ -1365,86 +1247,411 @@
       const varChip = v => {
         if (v == null) return '';
         const sobe = v > 0, cor = sobe ? '#16a34a' : v < 0 ? '#dc2626' : '#64748b';
-        const txt = v === Infinity ? 'novo' : `${sobe ? '+' : ''}${v.toFixed(1)}%`;
+        const txt = v === Infinity ? 'novo' : `${sobe ? '+' : '−'}${fmtNum(Math.abs(v))}%`;
         return `<span style="color:${cor};font-weight:700;">${sobe ? '▲' : v < 0 ? '▼' : '–'} ${txt}</span>`;
       };
       const metrica = (label, valor, sub, variacao) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${label}</div><div class="ag-mono" style="font-size:20px;font-weight:800;">${valor}</div><div class="ag-hud-sub">${sub || ''}${sub && variacao != null ? ' · ' : ''}${varChip(variacao)}</div></div>`;
       return `<div class="ag-hud-card" style="--ag-hud-accent:#0ea5e9;margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:800;margin-bottom:2px;">📊 Impressões, Cliques e Vendas (últimos 7 dias)</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Funil de ADS da conta inteira — de quantas vezes o anúncio apareceu até quantas vendas ele gerou. Variação vs os 7 dias anteriores.</div>
+        <div style="font-size:14px;font-weight:800;margin-bottom:2px;">📊 Impressões, Cliques e Vendas (${periodoLabel(d.periodo || state.negocioPeriodo)})</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Funil de ADS da conta inteira — de quantas vezes o anúncio apareceu até quantas vendas ele gerou. Variação vs o período anterior equivalente.</div>
         <div style="display:flex;gap:28px;flex-wrap:wrap;">
           ${metrica('Impressões', n(d.impressoesTotal), null, d.variacaoImpressoes)}
-          ${metrica('Cliques', n(d.cliquesTotal), `CTR ${d.ctrGeral.toFixed(2)}%`, d.variacaoCliques)}
-          ${metrica('Pedidos (ADS)', n(d.pedidosAdsTotal), `Conversão ${d.crGeral.toFixed(2)}%`, d.variacaoPedidosAds)}
+          ${metrica('Cliques', n(d.cliquesTotal), `CTR ${fmtPct(d.ctrGeral, 2)}`, d.variacaoCliques)}
+          ${metrica('Pedidos (ADS)', n(d.pedidosAdsTotal), `Conversão ${fmtPct(d.crGeral, 2)}`, d.variacaoPedidosAds)}
           ${metrica('CPC médio', R$(d.cpcGeral))}
-          ${metrica('Vendas atribuídas', R$(d.gmvTotal), `ACOS ${d.acosGeral === Infinity ? '∞' : d.acosGeral.toFixed(1) + '%'}`, d.variacaoGmv)}
+          ${metrica('Vendas atribuídas', R$(d.gmvTotal), `ACOS ${fmtPct(d.acosGeral)}`, d.variacaoGmv)}
         </div>
       </div>`;
     }
 
-    function renderCampanhasAoVivo(contaId) {
-      const d = state.dadosAoVivoPorConta[contaId];
-      if (!d) return '';
-      if (d.erro || !d.topCampanhas?.length) {
-        // Antes sumia sem explicação quando a lista vinha vazia — mas isso
-        // acontece de verdade (instabilidade do Tiops paginando além de 100
-        // campanhas, mesmo chamada Shopee-only) e o usuário lia como "as
-        // campanhas sumiram", achando que era um bug novo. Agora sempre
-        // mostra um aviso em vez de desaparecer.
-        return `<div class="ag-hud-card" style="--ag-hud-accent:#d97706;margin-bottom:20px;">
-          <div style="font-size:14px;font-weight:800;margin-bottom:6px;">📡 Campanhas ao vivo — indisponível agora</div>
-          <div style="font-size:12px;color:var(--text-secondary);line-height:1.6;">Não consegui listar as campanhas ativas dessa conta agora (instabilidade do provedor Tiops ao paginar além das primeiras 100 campanhas da Shopee — chamado TCK-001154 aberto, aguardando resposta). Não é um problema na conta: as campanhas continuam existindo e ativas na Shopee, só a listagem que está falhando aqui.</div>
-          <button class="btn btn-secondary btn-sm" style="margin-top:10px;" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">🔄 Tentar de novo</button>
-        </div>`;
+    // ═════════════════════════════════════════════════════════════
+    // Interface da conta aberta: cabeçalho → "Precisa de você" →
+    // indicadores → timeline do que o agente fez → campanhas →
+    // seções secundárias. Responde, sem rolar: a conta está bem? o que
+    // mudou? preciso agir? E por que cada campanha está como está.
+    // ═════════════════════════════════════════════════════════════
+
+    // ── Formatação pt-BR e glossário das siglas ──
+    function h(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function fmtNum(v, c) { c = c == null ? 1 : c; return (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c }); }
+    function fmtPct(v, c) { return v === Infinity ? '∞' : fmtNum(v, c) + '%'; }
+    const GLOSSARIO = {
+      TACOS: 'Investimento em anúncios ÷ faturamento TOTAL da loja. É a métrica principal do agente: mostra quanto do que a loja vendeu foi gasto com ADS.',
+      ACOS: 'Investimento em anúncios ÷ vendas atribuídas aos anúncios. Serve pra comparar campanhas entre si.',
+      ROAS: 'Retorno sobre o investimento: quantos reais vendidos para cada R$ 1 gasto (20x = R$ 20 vendidos por R$ 1). Meta de ROAS maior deixa o lance mais conservador.',
+      GMV: 'Valor bruto de vendas que a Shopee atribui ao anúncio, antes de descontos e cancelamentos.',
+      CTR: 'Taxa de cliques: de cada 100 vezes que o anúncio apareceu, quantas viraram clique.',
+      ADS: 'Anúncios pagos dentro da Shopee.',
+    };
+    function sigla(s) { return `<abbr class="ag-sigla" title="${esc(GLOSSARIO[s] || '')}">${s}</abbr>`; }
+
+    function varChip(v, inverso) {
+      if (v == null) return '';
+      const sobe = v > 0, bom = inverso ? !sobe : sobe;
+      const cor = v === 0 ? '#64748b' : bom ? '#16a34a' : '#dc2626';
+      const txt = v === Infinity ? 'novo' : (sobe ? '+' : '−') + fmtNum(Math.abs(v)) + '%';
+      return `<span style="color:${cor};font-weight:700;">${v === 0 ? '–' : sobe ? '▲' : '▼'} ${txt}</span>`;
+    }
+
+    function quandoCurto(ts) {
+      const d = new Date(ts), agora = new Date();
+      const hm = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const diaIni = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+      const dif = Math.round((diaIni(agora) - diaIni(d)) / 86400000);
+      if (dif === 0) return `hoje ${hm}`;
+      if (dif === 1) return `ontem ${hm}`;
+      return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' + hm;
+    }
+
+    // O cron roda 07:00 de Brasília (10:00 UTC).
+    function proximaExecucao() {
+      const agora = new Date();
+      const prox = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), agora.getUTCDate(), 10, 0, 0));
+      if (prox <= agora) prox.setUTCDate(prox.getUTCDate() + 1);
+      const mesmoDia = prox.getDate() === agora.getDate() && prox.getMonth() === agora.getMonth();
+      return `${mesmoDia ? 'hoje' : 'amanhã'} 07:00`;
+    }
+
+    function logsDaConta(contaId) { return state.logs.filter(l => l.conta_id === contaId); }
+    const maisRecente = (a, b) => new Date(b.criado_em) - new Date(a.criado_em);
+
+    function motivoCurto(txt, n) {
+      const t = String(txt || '').replace(/^Alerta aprovado pelo analista\.\s*/, '').trim();
+      const m = t.match(/^[\s\S]*?[.!?](?=\s|$)/);
+      const prim = m ? m[0] : t;
+      return prim.length > n ? prim.slice(0, n - 1) + '…' : prim;
+    }
+
+    // ── Ligação decisão ↔ campanha (id quando existe; senão pelo nome no título) ──
+    function nomeNoLog(titulo) { return String(titulo || '').split(' — ').slice(1).join(' — '); }
+    function mesmoNome(c, n) { return !!n && (c.nome === n || c.nome.slice(0, 70) === n || c.nome.startsWith(n)); }
+    function logEhDaCampanha(l, c) {
+      const d = l.dados || {};
+      if (d.campaign_id != null) return String(d.campaign_id) === String(c.id);
+      return mesmoNome(c, nomeNoLog(l.titulo));
+    }
+    function campanhaAoVivo(contaId, id, titulo) {
+      const lista = state.dadosAoVivoPorConta[contaId]?.todasCampanhas || [];
+      if (id != null) return lista.find(c => String(c.id) === String(id)) || null;
+      const n = nomeNoLog(titulo);
+      return lista.find(c => mesmoNome(c, n)) || null;
+    }
+
+    function textoAcao(l) {
+      const d = l.dados || {};
+      if (l.resultado === 'erro') return l.titulo || 'Ação com falha';
+      const partes = [];
+      if (d.retomada === true) partes.push('Reativou a campanha');
+      if (d.roas_de != null && d.roas_para != null) {
+        const cons = d.roas_para > d.roas_de;
+        partes.push(`${cons ? 'Subiu' : 'Baixou'} a meta de ROAS de ${fmtNum(d.roas_de)}x para ${fmtNum(d.roas_para)}x (${cons ? 'lance mais conservador' : 'lance mais agressivo'})`);
+      } else if (d.budget_de != null && d.budget_para != null) {
+        partes.push(`${d.budget_para > d.budget_de ? 'Aumentou' : 'Reduziu'} o orçamento de ${R$(d.budget_de)} para ${R$(d.budget_para)}`);
       }
-      const STATUS_COR = { ongoing: '#22d3ee', paused: '#d97706', ended: '#64748b', closed: '#64748b' };
-      return `<details style="margin-bottom:20px;" open>
-        <summary style="cursor:pointer;font-size:14px;font-weight:700;padding:4px 0;">📡 Campanhas ao vivo (últimos 7 dias)</summary>
-        <div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-top:10px;overflow-x:auto;">
-        <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:2px;">
-          <button class="btn btn-secondary btn-sm" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">🔄 Atualizar</button>
+      if (d.pausada === true || (/pausada/i.test(l.titulo || '') && !/falha/i.test(l.titulo || ''))) partes.push('Pausou a campanha');
+      return partes.length ? partes.join(' e ') : (l.titulo || '');
+    }
+
+    function origemInfo(l) {
+      if (l.origem === 'cron') return { txt: 'Automático', cor: '#6366f1' };
+      if (l.origem === 'aprovacao_manual') return { txt: 'Aprovado por você', cor: '#0ea5e9' };
+      return { txt: 'Feito por você', cor: '#0ea5e9' };
+    }
+
+    // O "Executado" só quer dizer que a Shopee não devolveu erro. Aqui
+    // compara o que foi pedido com o estado ao vivo da campanha pra dizer se
+    // realmente pegou.
+    function estadoAplicacao(l, contaId) {
+      if (l.resultado === 'erro') return { k: 'falhou', txt: '✖ Falhou', cor: '#dc2626' };
+      const d = l.dados || {};
+      const nv = { k: 'nv', txt: 'Sem confirmação (campanha fora da janela)', cor: '#64748b' };
+      const live = campanhaAoVivo(contaId, d.campaign_id, l.titulo);
+      if (!live) return nv;
+      const t = new Date(l.criado_em).getTime();
+      const posterior = logsDaConta(contaId).some(x => x.id !== l.id && x.tipo === 'decisao' && x.resultado === 'executado' && new Date(x.criado_em).getTime() > t && logEhDaCampanha(x, live));
+      if (posterior) return { k: 'sup', txt: 'Superada por ação posterior', cor: '#64748b' };
+      const st = (live.status || '').toLowerCase();
+      let ok = null;
+      if (d.retomada === true) ok = st === 'ongoing';
+      else if (d.pausada === true || (/pausada/i.test(l.titulo || '') && !/falha/i.test(l.titulo || ''))) ok = st === 'paused';
+      else if (d.roas_para != null) ok = live.roasTarget != null && Math.abs(live.roasTarget - d.roas_para) < 0.06;
+      else if (d.budget_para != null) ok = Math.abs((live.budget || 0) - d.budget_para) < 0.01;
+      if (ok === null) return nv;
+      if (ok) return { k: 'ok', txt: '✔ Confirmada na Shopee', cor: '#16a34a' };
+      if (Date.now() - t < 3600000) return { k: 'pend', txt: '⏳ Enviada, aguardando confirmação', cor: '#d97706' };
+      return { k: 'div', txt: '⚠ A Shopee mostra outro valor', cor: '#dc2626' };
+    }
+
+    // ── 1. Cabeçalho compacto da conta ──
+    function renderResultadoRodada() {
+      const r = state.resultadoRodada;
+      if (!r) return '';
+      if (r.erro) return `<div class="ag-aviso ag-aviso-erro">⚠️ ${h(r.erro)}</div>`;
+      return `<div class="ag-aviso ag-aviso-ok">✅ Rodada concluída agora: ${r.campanhas} campanha(s) ativa(s) revisadas, ${r.decisoes} decisão(ões), ${r.alertas} alerta(s), ${sigla('TACOS')} ${h(r.tacos)}.${r.paginacaoErro ? ' ⚠️ A listagem de campanhas pode estar incompleta nesta rodada.' : ''}</div>`;
+    }
+
+    function renderCabecalho(cfg) {
+      const saude = saudeDaConta(cfg);
+      const logs = logsDaConta(cfg.conta_id);
+      const ultima = logs.filter(l => l.origem === 'cron').sort(maisRecente)[0];
+      const resumo = logs.filter(l => l.origem === 'cron' && /^Revisão diária concluída/.test(l.titulo || '')).sort(maisRecente)[0];
+      const resumoTxt = resumo ? String(resumo.titulo).replace(/^Revisão diária concluída — /, '') : '';
+      const opcoes = state.contas.map(c => `<option value="${esc(c.conta_id)}" ${c.conta_id === cfg.conta_id ? 'selected' : ''}>${h(c.cliente_nome || c.conta_id)}</option>`).join('');
+      return `<div class="ag-topbar" style="--ag-hud-accent:${saude.cor};">
+        <div class="ag-topbar-l">
+          <select class="form-select ag-sel-conta" onchange="window._agTrocarConta(this.value)" title="Trocar de conta">
+            ${opcoes}
+            ${state.contas.length > 1 ? '<option value="__portfolio__">⟵ Todas as contas</option>' : ''}
+            <option value="__novo__">+ Adicionar conta</option>
+          </select>
+          <span class="ag-saude-pill" style="color:${saude.cor};background:${saude.cor}1a;" title="Combina o TACOS contra a meta e se há pendências antigas esperando você.">${saude.emoji} ${saude.label}</span>
+          <label class="ag-toggle" title="Ligado: o agente revisa e age nesta conta todo dia às 07:00.">
+            <input type="checkbox" ${cfg.ativo ? 'checked' : ''} onchange="window._agTogglePiloto(this.checked)">
+            <span class="ag-toggle-trilho"></span><span>Piloto ${cfg.ativo ? 'ON' : 'OFF'}</span>
+          </label>
         </div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Top ${d.topCampanhas.length} por investimento — inclui GMV (vendas atribuídas ao ADS) por campanha. Pode não bater com o total acima: a Shopee às vezes não lista aqui campanhas em modo "GMV Max - Meta de ROAS", mesmo contando o gasto delas no total.</div>
+        <div class="ag-topbar-r">
+          <span class="ag-topbar-run">${ultima ? `Última execução: <b>${quandoCurto(ultima.criado_em)}</b>${resumoTxt ? ` · ${h(resumoTxt)}` : ''}` : 'Ainda não rodou'}${cfg.ativo ? ` · próxima: <b>${proximaExecucao()}</b>` : ' · piloto desligado, não roda sozinho'}</span>
+          <button class="btn btn-secondary btn-sm" ${state.rodandoAgente ? 'disabled' : ''} onclick="window._agRodarAgora()" title="Dispara agora o mesmo ciclo das 07:00 nesta conta.">${state.rodandoAgente ? '⏳ Rodando...' : '🚀 Rodar agora'}</button>
+        </div>
+      </div>${renderResultadoRodada()}`;
+    }
+
+    // ── 2. Faixa "Precisa de você" (só aparece se houver o que fazer) ──
+    function renderPrecisaDeVoce(contaId) {
+      const logs = logsDaConta(contaId);
+      const pend = logs.filter(l => l.tipo === 'alerta' && l.resultado === 'so_alerta').sort(maisRecente);
+      const tresDias = Date.now() - 3 * 86400000;
+      const falhas = logs.filter(l => l.tipo === 'decisao' && l.resultado === 'erro' && new Date(l.criado_em).getTime() > tresDias).sort(maisRecente);
+      if (!pend.length && !falhas.length) return '<div class="ag-nada">✅ Nada pendente — o agente não precisa de você agora.</div>';
+      const linha = (l, falha) => {
+        const d = descreverAcao(l);
+        const exec = !falha && !!temAcaoReconhecida(l.dados || {});
+        const proc = state.processandoAlertaId === l.id;
+        const impacto = (String(l.explicacao || '').match(/Impacto estimado:\s*(R\$\s*[\d.,]+)/) || [])[1];
+        const motivo = falha ? 'Erro: ' + motivoCurto(String(l.explicacao || '').split('mas deu erro:')[1] || l.explicacao, 150) : motivoCurto(l.explicacao, 170);
+        return `<div class="ag-precisa-item" style="--c:${falha ? '#dc2626' : '#d97706'};">
+          <div class="ag-precisa-corpo">
+            <div class="ag-precisa-titulo">${d.nomeCampanha || esc(l.titulo)}
+              ${d.acaoLabel ? `<span class="ag-action-chip" style="color:${d.acaoCor};background:${d.acaoCor}1a;">${d.acaoLabel}</span>` : ''}
+              ${falha ? '<span class="ag-action-chip" style="color:#dc2626;background:#dc26261a;">✖ Falhou</span>' : ''}
+            </div>
+            ${d.deParaVal ? `<div class="ag-mono ag-precisa-depara">${d.deParaVal}</div>` : ''}
+            <div class="ag-precisa-motivo">${h(motivo)}${impacto ? ` · <b>impacto ≈ ${h(impacto)}</b>` : ''}</div>
+          </div>
+          <div class="ag-precisa-acoes">
+            ${exec ? `<button class="btn btn-sm ag-btn-ok" ${proc ? 'disabled' : ''} onclick="window._agAprovarAlerta('${l.id}')">${proc ? '⏳' : '✅ Aprovar'}</button>` : ''}
+            <button class="btn btn-sm ag-btn-no" ${proc ? 'disabled' : ''} onclick="window._agDescartarAlerta('${l.id}')">${falha ? 'Marcar como visto' : exec ? '🚫 Rejeitar' : 'Dispensar'}</button>
+          </div>
+        </div>`;
+      };
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#d97706;margin-bottom:20px;">
+        <div class="ag-sec-head"><div class="ag-sec-titulo">🔔 Precisa de você <span class="ag-contagem">${pend.length + falhas.length}</span></div></div>
+        <div class="ag-lista-precisa">${pend.map(l => linha(l, false)).join('')}${falhas.map(l => linha(l, true)).join('')}</div>
+      </div>`;
+    }
+
+    // ── 3. Indicadores (um seletor de período vale pra tela toda) ──
+    function kpiCard(label, valor, rodape, cor, valorCor) {
+      return `<div class="ag-kpi" style="--ag-hud-accent:${cor};"><div class="ag-hud-label">${label}</div><div class="ag-hud-value" ${valorCor ? `style="color:${valorCor};"` : ''}>${valor}</div><div class="ag-hud-sub">${rodape || ''}</div></div>`;
+    }
+    function corAcos(acos, cfg) {
+      if (acos === Infinity) return '#dc2626';
+      if (!cfg.meta_acos) return null;
+      if (acos <= cfg.meta_acos) return '#16a34a';
+      return acos <= (cfg.regra_pausa_acos || cfg.meta_acos * 1.5) ? '#d97706' : '#dc2626';
+    }
+
+    function renderKPIs(cfg) {
+      const contaId = cfg.conta_id, p = state.negocioPeriodo;
+      const n = state.negocioPorConta[contaId + ':' + p];
+      const PERIODOS = [['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['mes', 'Mês atual']];
+      const cab = `<div class="ag-sec-head">
+        <div class="ag-sec-titulo">📈 Indicadores <span class="ag-sec-sub">${periodoLabel(p)} vs período anterior equivalente · vale também para a tabela de campanhas</span></div>
+        <div class="ag-periodos">
+          ${PERIODOS.map(([v, l]) => `<button class="btn btn-sm ${p === v ? 'btn-primary' : 'btn-secondary'}" onclick="window._agMudarPeriodo('${v}')">${l}</button>`).join('')}
+          <button class="btn btn-secondary btn-sm" ${state.carregandoNegocio ? 'disabled' : ''} onclick="window._agAtualizarTudo()" title="Buscar de novo na Shopee">🔄</button>
+        </div>
+      </div>`;
+      let corpo;
+      if (!n && state.carregandoNegocio) {
+        corpo = `<div class="ag-kpi-grid">${'<div class="ag-kpi ag-skel"></div>'.repeat(5)}</div>`;
+      } else if (!n) {
+        corpo = '<div class="ag-vazio">Ainda sem dados. <button class="btn btn-secondary btn-sm" onclick="window._agAtualizarTudo()">Carregar</button></div>';
+      } else if (n.erro) {
+        corpo = `<div class="ag-aviso ag-aviso-erro">⚠️ Não consegui buscar os indicadores: ${h(n.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._agAtualizarTudo()">Tentar de novo</button></div>`;
+      } else {
+        const fat = n.semanaAtual, fatAnt = n.semanaAnterior, A = n.adsAtual, P = n.adsAnterior;
+        const cards = [kpiCard('Faturamento total', R$(fat), `${varChip(n.variacaoPct)} vs ${R$(fatAnt)}`, '#6366f1')];
+        let notas = '';
+        if (A) {
+          const tacos = fat > 0 ? A.gasto / fat * 100 : (A.gasto > 0 ? Infinity : 0);
+          const tacosAnt = P && fatAnt > 0 ? P.gasto / fatAnt * 100 : null;
+          const meta = cfg.meta_acos;
+          const corTacos = !meta ? '#6366f1' : tacos <= meta ? '#16a34a' : tacos <= meta * 1.3 ? '#d97706' : '#dc2626';
+          const larg = !meta || tacos === Infinity ? 100 : Math.min(100, tacos / (meta * 1.6) * 100);
+          const veredito = !meta ? 'sem meta configurada' : tacos <= meta ? 'dentro da meta' : tacos <= meta * 1.3 ? 'um pouco acima da meta' : 'bem acima da meta';
+          const medidor = meta ? `<div class="ag-meter"><div class="ag-meter-fill" style="width:${larg}%;background:${corTacos};"></div><div class="ag-meter-meta" style="left:${100 / 1.6}%;" title="Meta ${fmtPct(meta)}"></div></div>` : '';
+          cards.push(kpiCard(`${sigla('TACOS')} vs meta`, fmtPct(tacos), `${medidor}meta ${meta != null ? fmtPct(meta) : '—'} · ${veredito}${tacosAnt ? ` · ${varChip((tacos - tacosAnt) / tacosAnt * 100, true)}` : ''}`, corTacos, corTacos));
+          cards.push(kpiCard(`Investimento em ${sigla('ADS')}`, R$(A.gasto), `${P && P.gasto > 0 ? varChip((A.gasto - P.gasto) / P.gasto * 100, true) + ' ' : ''}vs ${R$(P ? P.gasto : 0)}`, '#0ea5e9'));
+          const gmvAcima = fat > 0 && A.gmv > fat;
+          cards.push(kpiCard(`Vendas via ${sigla('ADS')} (${sigla('GMV')})`, R$(A.gmv), `${P && P.gmv > 0 ? varChip((A.gmv - P.gmv) / P.gmv * 100) + ' ' : ''}vs ${R$(P ? P.gmv : 0)}${gmvAcima ? ' · ⚠️ acima do faturamento (veja a nota)' : ''}`, '#22d3ee'));
+          const acos = A.gmv > 0 ? A.gasto / A.gmv * 100 : (A.gasto > 0 ? Infinity : 0);
+          const acosAnt = P && P.gmv > 0 ? P.gasto / P.gmv * 100 : null;
+          cards.push(kpiCard(sigla('ACOS'), fmtPct(acos), `${acosAnt ? varChip((acos - acosAnt) / acosAnt * 100, true) + ' ' : ''}${acosAnt != null ? `vs ${fmtPct(acosAnt)}` : ''}`, '#d97706', corAcos(acos, cfg)));
+          if (gmvAcima) notas += `<div class="ag-nota">ℹ️ <b>Por que as vendas via ADS passam do faturamento?</b> O ${sigla('GMV')} é a atribuição da Shopee: conta compras de qualquer produto da loja feitas depois do clique no anúncio, antes de descontos e inclusive pedidos que depois foram cancelados. O faturamento soma só o que o comprador pagou. Por isso o primeiro pode superar o segundo — não é erro de janela (os dois usam o mesmo período).</div>`;
+        } else {
+          cards.push(`<div class="ag-kpi" style="--ag-hud-accent:#dc2626;grid-column:span 4;"><div class="ag-hud-label">Dados de ADS</div><div class="ag-hud-sub">Não consegui buscar o investimento em ADS agora${n.adsErro ? ` (${h(n.adsErro)})` : ''}. <button class="btn btn-secondary btn-sm" onclick="window._agAtualizarTudo()">Tentar de novo</button></div></div>`);
+        }
+        if (n.incompleto) notas += `<div class="ag-aviso ag-aviso-aten">⚠️ ${h(n.avisoIncompleto)}</div>`;
+        if (n.adsJanelaReduzida) notas += '<div class="ag-nota">ℹ️ A Shopee só entrega até 30 dias de dados de ADS por consulta — o investimento e as vendas via ADS usam os últimos 30 dias, mesmo com "Mês atual" mais longo.</div>';
+        corpo = `<div class="ag-kpi-grid">${cards.join('')}</div>${notas}`;
+      }
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">${cab}${corpo}</div>`;
+    }
+
+    // ── 4. O que o agente fez (timeline) ──
+    function renderTimeline(contaId) {
+      const trintaDias = Date.now() - 30 * 86400000;
+      const todas = logsDaConta(contaId).filter(l => l.tipo === 'decisao' && new Date(l.criado_em).getTime() > trintaDias).sort(maisRecente);
+      const grupos = {
+        todos: todas,
+        auto: todas.filter(l => l.origem === 'cron' && l.resultado !== 'erro'),
+        manual: todas.filter(l => l.origem !== 'cron' && l.resultado !== 'erro'),
+        falhas: todas.filter(l => l.resultado === 'erro'),
+      };
+      const FILTROS = [['todos', 'Todos'], ['auto', 'Automáticos'], ['manual', 'Manuais'], ['falhas', 'Falhas']];
+      const filtro = grupos[state.timelineFiltro] ? state.timelineFiltro : 'todos';
+      const lista = grupos[filtro];
+      const sete = Date.now() - 7 * 86400000;
+      const c7 = k => grupos[k].filter(l => new Date(l.criado_em).getTime() > sete).length;
+      const item = l => {
+        const est = estadoAplicacao(l, contaId);
+        const orig = origemInfo(l);
+        const d = l.dados || {};
+        const live = campanhaAoVivo(contaId, d.campaign_id, l.titulo);
+        const nome = h(nomeNoLog(l.titulo) || l.titulo);
+        const nomeHtml = live ? `<a href="#" class="ag-link" onclick="window._agIrParaCampanha('${live.id}'); return false;" title="Ver a linha desta campanha na tabela">${nome}</a>` : `<b>${nome}</b>`;
+        const motivo = l.resultado === 'erro' ? 'Erro: ' + motivoCurto(String(l.explicacao || '').split('mas deu erro:')[1] || l.explicacao, 130) : motivoCurto(l.explicacao, 140);
+        return `<div class="ag-tl-item" style="--c:${est.cor};">
+          <div class="ag-tl-quando">${quandoCurto(l.criado_em)}</div>
+          <div class="ag-tl-corpo">
+            <div>${nomeHtml} — ${h(textoAcao(l))}</div>
+            <div class="ag-tl-meta">
+              <span class="ag-action-chip" style="color:${orig.cor};background:${orig.cor}1a;">${orig.txt}</span>
+              <span class="ag-action-chip" style="color:${est.cor};background:${est.cor}1a;">${est.txt}</span>
+              <span class="ag-tl-motivo">${h(motivo)}</span>
+            </div>
+          </div>
+        </div>`;
+      };
+      const mostrados = lista.slice(0, state.timelineMostrar);
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
+        <div class="ag-sec-head">
+          <div class="ag-sec-titulo">🕘 O que o agente fez <span class="ag-sec-sub">últimos 7 dias: ${c7('auto')} automáticas · ${c7('manual')} manuais · ${c7('falhas')} falhas</span></div>
+          <div class="ag-periodos">${FILTROS.map(([k, l]) => `<button class="btn btn-sm ${filtro === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agFiltroTimeline('${k}')">${l} (${grupos[k].length})</button>`).join('')}</div>
+        </div>
+        ${mostrados.length ? `<div class="ag-tl">${mostrados.map(item).join('')}</div>` : '<div class="ag-vazio">Nenhuma ação neste filtro nos últimos 30 dias.</div>'}
+        ${lista.length > mostrados.length ? `<div style="text-align:center;margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="window._agTimelineMais()">Ver mais (${lista.length - mostrados.length})</button></div>` : ''}
+        <div class="ag-nota" style="margin-top:12px;">Contagens dos últimos 30 dias registrados. “Confirmada na Shopee” compara a ação com o estado atual da campanha.</div>
+      </div>`;
+    }
+
+    // ── 5. Tabela de campanhas (por quê, não só o quê) ──
+    const ORDENACAO = {
+      nome: c => (c.nome || '').toLowerCase(), status: c => c.status || '', orcamento: c => c.budget || 0,
+      gasto: c => c.gasto, impressoes: c => c.impressoes, cliques: c => c.cliques, ctr: c => c.ctr, pedidos: c => c.pedidos,
+      gmv: c => c.gmv, acos: c => (c.acos === Infinity ? 1e12 : c.acos),
+    };
+
+    function statusCampanha(contaId, c, cfg) {
+      const st = (c.status || '').toLowerCase();
+      if (st === 'ongoing') return { txt: 'Ativa', cor: '#16a34a', anomalia: false };
+      if (st === 'paused') {
+        const pausa = logsDaConta(contaId).filter(l => l.tipo === 'decisao' && l.resultado === 'executado' && (l.dados?.pausada === true || /pausada/i.test(l.titulo || '')) && logEhDaCampanha(l, c)).sort(maisRecente)[0];
+        const txt = !pausa ? 'Pausada (fora do agente)' : pausa.origem === 'cron' ? 'Pausada pelo agente' : 'Pausada por você';
+        const anomalia = c.gasto > 0 && c.acos !== Infinity && !!cfg.meta_acos && c.acos <= cfg.meta_acos;
+        return { txt, cor: '#d97706', anomalia };
+      }
+      if (st === 'ended') return { txt: 'Encerrada', cor: '#64748b', anomalia: false };
+      if (st === 'closed') return { txt: 'Fechada', cor: '#64748b', anomalia: false };
+      return { txt: c.status || '—', cor: '#64748b', anomalia: false };
+    }
+
+    function renderTabelaCampanhas(cfg) {
+      const contaId = cfg.conta_id, d = state.dadosAoVivoPorConta[contaId];
+      const cab = `<div class="ag-sec-head">
+        <div class="ag-sec-titulo">📡 Campanhas <span class="ag-sec-sub">${periodoLabel(state.negocioPeriodo)} · ativas e pausadas com atividade no período</span></div>
+        <button class="btn btn-secondary btn-sm" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">🔄 Atualizar</button>
+      </div>`;
+      if (!d && state.carregandoDadosAoVivo) return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}<div class="ag-skel" style="height:180px;border-radius:10px;"></div></div>`;
+      if (!d) return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}<div class="ag-vazio">Ainda sem dados. <button class="btn btn-secondary btn-sm" onclick="window._agAtualizarDados()">Carregar</button></div></div>`;
+      if (d.erro) return `<div class="ag-hud-card" style="--ag-hud-accent:#d97706;margin-bottom:20px;">${cab}<div class="ag-aviso ag-aviso-erro">⚠️ ${h(d.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._agAtualizarDados()">Tentar de novo</button></div></div>`;
+      if (!d.todasCampanhas?.length) return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}<div class="ag-vazio">Nenhuma campanha com atividade em ${periodoLabel(state.negocioPeriodo)}.</div></div>`;
+
+      const { col, dir } = state.tabOrdem;
+      const acesso = ORDENACAO[col] || ORDENACAO.gasto;
+      const linhasOrd = [...d.todasCampanhas].sort((a, b) => { const x = acesso(a), y = acesso(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+      const LIMITE = 10;
+      const linhas = state.tabTodas ? linhasOrd : linhasOrd.slice(0, LIMITE);
+      const th = (chave, rotulo, extra) => `<th class="ag-th-sort" onclick="window._agOrdenar('${chave}')">${rotulo}${col === chave ? (dir === 1 ? ' ▲' : ' ▼') : ''}${extra || ''}</th>`;
+      const logs = logsDaConta(contaId);
+
+      const linha = c => {
+        const s = statusCampanha(contaId, c, cfg);
+        const ult = logs.filter(l => (l.tipo === 'decisao' || (l.tipo === 'alerta' && l.resultado === 'so_alerta')) && logEhDaCampanha(l, c)).sort(maisRecente)[0];
+        const ultHtml = ult
+          ? `<span class="ag-camp-quando">${quandoCurto(ult.criado_em)}</span> ${ult.tipo === 'alerta' ? '<i>Sugestão pendente:</i> ' : ''}${h(textoAcao(ult))}<div class="ag-camp-motivo">${h(motivoCurto(ult.explicacao, 110))}</div>`
+          : ((c.status || '').toLowerCase() === 'paused' ? '<span class="ag-camp-motivo">Sem registro do agente — pausada direto na Shopee.</span>' : '<span class="ag-camp-motivo">—</span>');
+        const orc = c.budget > 0 ? R$(c.budget) : `Sem limite${c.roasTarget != null ? ` <div class="ag-camp-motivo">meta de ${sigla('ROAS')} ${fmtNum(c.roasTarget)}x</div>` : ''}`;
+        const nomeJs = esc(c.nome).replace(/'/g, "\\'");
+        const ativa = (c.status || '').toLowerCase() === 'ongoing', pausada = (c.status || '').toLowerCase() === 'paused';
+        const cAcos = corAcos(c.acos, cfg);
+        return `<tr id="ag-camp-${c.id}" style="--row-accent:${s.anomalia ? '#dc2626' : s.cor};">
+          <td style="max-width:260px;"><div class="ag-camp-nome">${h(c.nome)}</div><div class="ag-camp-id">ID ${c.id}</div></td>
+          <td><span class="ag-action-chip" style="color:${s.cor};background:${s.cor}1a;">${s.txt}</span>${s.anomalia ? `<div class="ag-camp-anom" title="Pausada com ACOS dentro da meta — vale checar se a pausa foi intencional.">⚠ pausada com ACOS bom</div>` : ''}</td>
+          <td style="min-width:200px;max-width:280px;">${ultHtml}</td>
+          <td class="ag-mono">${orc}</td>
+          <td class="ag-mono">${R$(c.gasto)}</td>
+          <td class="ag-mono">${(c.impressoes || 0).toLocaleString('pt-BR')}</td>
+          <td class="ag-mono">${(c.cliques || 0).toLocaleString('pt-BR')}</td>
+          <td class="ag-mono">${fmtPct(c.ctr, 2)}</td>
+          <td class="ag-mono">${c.pedidos || 0}</td>
+          <td class="ag-mono" style="font-weight:700;">${R$(c.gmv)}</td>
+          <td class="ag-mono" style="font-weight:700;${cAcos ? `color:${cAcos};` : ''}">${fmtPct(c.acos)}</td>
+          <td><details class="ag-menu"><summary title="Ações">⋯</summary><div class="ag-menu-lista">
+            ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agBoostCampanha('${c.id}', '${nomeJs}', ${c.budget || 0}, ${c.roasTarget != null ? c.roasTarget : 'null'}, ${c.acos === Infinity ? 'Infinity' : c.acos})">🚀 Sugerir mais investimento</button>` : ''}
+            ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agSugerirCampanha('${c.id}', 'pausar', '${nomeJs}')">⏸ Sugerir pausar</button>` : ''}
+            ${pausada ? `<button onclick="this.closest('details').removeAttribute('open');window._agSugerirCampanha('${c.id}', 'retomar', '${nomeJs}')">▶ Sugerir reativar</button>` : ''}
+            <button onclick="this.closest('details').removeAttribute('open');window._agUsarCampanhaManual('${c.id}', '${nomeJs}')">✏️ Ajustar à mão</button>
+          </div></details></td>
+        </tr>`;
+      };
+      return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">
+        ${cab}
+        <div style="overflow-x:auto;">
         <table class="ag-tech-table">
-          <thead>
-            <tr>
-              <th>Campanha</th>
-              <th>ID</th>
-              <th>Status</th>
-              <th>Orçamento</th>
-              <th>Gasto</th>
-              <th>Impressões</th>
-              <th>Cliques</th>
-              <th>CTR</th>
-              <th>Pedidos</th>
-              <th>GMV</th>
-              <th>ACOS</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${d.topCampanhas.map(c => {
-              const statusChave = (c.status || '').toLowerCase();
-              const cor = STATUS_COR[statusChave] || '#64748b';
-              return `<tr style="--row-accent:${cor};">
-                <td style="max-width:280px;">${esc(c.nome)}</td>
-                <td class="ag-mono" style="white-space:nowrap;color:var(--text-muted);">${c.id ?? '—'}</td>
-                <td><span class="ag-action-chip" style="color:${cor};background:${cor}1a;">${esc(c.status || '—')}</span></td>
-                <td class="ag-mono" style="white-space:nowrap;">${R$(c.budget)}</td>
-                <td class="ag-mono" style="white-space:nowrap;">${R$(c.gasto)}</td>
-                <td class="ag-mono" style="white-space:nowrap;">${(c.impressoes || 0).toLocaleString('pt-BR')}</td>
-                <td class="ag-mono" style="white-space:nowrap;">${(c.cliques || 0).toLocaleString('pt-BR')}</td>
-                <td class="ag-mono" style="white-space:nowrap;">${(c.ctr || 0).toFixed(2)}%</td>
-                <td class="ag-mono" style="white-space:nowrap;">${c.pedidos || 0}</td>
-                <td class="ag-mono" style="white-space:nowrap;font-weight:700;">${R$(c.gmv)}</td>
-                <td class="ag-mono" style="white-space:nowrap;">${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}</td>
-                <td style="white-space:nowrap;">${c.id ? `<button class="btn btn-secondary btn-sm" title="Sugere um aumento de investimento pra essa campanha, pra aprovar no Kanban" onclick="window._agBoostCampanha('${c.id}', '${esc(c.nome).replace(/'/g, "\\'")}', ${c.budget || 0}, ${c.roasTarget != null ? c.roasTarget : 'null'}, ${c.acos === Infinity ? 'Infinity' : c.acos})">🚀 Boost</button>` : ''}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
+          <thead><tr>
+            ${th('nome', 'Campanha')}${th('status', 'Status')}<th>Última ação do agente / motivo</th>${th('orcamento', 'Orçamento')}${th('gasto', 'Gasto')}${th('impressoes', 'Impressões')}${th('cliques', 'Cliques')}${th('ctr', sigla('CTR'))}${th('pedidos', 'Pedidos')}${th('gmv', sigla('GMV'))}${th('acos', sigla('ACOS'))}<th></th>
+          </tr></thead>
+          <tbody>${linhas.map(linha).join('')}</tbody>
         </table>
         </div>
-      </details>`;
+        ${linhasOrd.length > LIMITE ? `<div style="text-align:center;margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="window._agTabelaTodas()">${state.tabTodas ? 'Mostrar só as 10 primeiras' : `Ver todas (${linhasOrd.length})`}</button></div>` : ''}
+        <div class="ag-nota" style="margin-top:10px;">“Sem limite” = campanha sem orçamento diário fixo (lance automático por meta de ${sigla('ROAS')}). Cores do ${sigla('ACOS')}: verde dentro da meta, amarelo acima da meta, vermelho perto do limite de pausa. Ações do menu ⋯ viram sugestões pra você aprovar em “Precisa de você”.</div>
+      </div>`;
+    }
+
+    // ── 6. Seções secundárias, recolhidas por padrão ──
+    function secaoColapsavel(chave, titulo, conteudo) {
+      return `<details class="ag-sec" ${state.sec[chave] ? 'open' : ''} ontoggle="window._agToggleSec('${chave}', this.open)"><summary>${titulo}</summary><div class="ag-sec-corpo">${conteudo}</div></details>`;
+    }
+    function blocoABC(contaId) {
+      const a = state.abcPorConta[contaId];
+      if (!a && !state.carregandoABC) {
+        return `<div class="ag-sec ag-linha-abc">🅰️ <b>Curva ABC de vendas</b> <span class="ag-sec-sub">ainda não gerada</span> <button class="btn btn-secondary btn-sm" onclick="window._agAnalisarABC()">Gerar Curva ABC</button></div>`;
+      }
+      return secaoColapsavel('abc', `🅰️ Curva ABC de vendas${a && !a.erro && a.alertas.length ? ` <span class="ag-contagem">${a.alertas.length} alerta(s)</span>` : ''}`, renderCurvaABC(contaId));
     }
 
     // ── Decisões automáticas (histórico, colapsado) ──
@@ -1468,10 +1675,10 @@
     // ── Chat ───────────────────────────────────────────────────
     function renderDadosAoVivoResumo(contaId) {
       const d = state.dadosAoVivoPorConta[contaId];
-      const linha = state.carregandoDadosAoVivo ? '⏳ atualizando dados da Shopee (últimos 7 dias)...'
+      const linha = state.carregandoDadosAoVivo ? '⏳ atualizando dados da Shopee...'
         : !contaId ? 'Configure e salve uma conta piloto pra puxar dados ao vivo.'
         : d?.erro ? `⚠️ erro ao buscar dados: ${esc(d.erro)}`
-        : d ? `${d.campanhasAtivas} campanha(s) ativa(s) · faturamento total ${R$(d.faturamentoTotal)} · investimento ADS ${R$(d.gastoTotal)} · TACOS ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (últimos 7 dias, ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')})${d.avisoParcial ? ` ⚠️ ${esc(d.avisoParcial)}` : ''}`
+        : d ? `${d.campanhasAtivas} campanha(s) ativa(s) · faturamento total ${R$(d.faturamentoTotal)} · investimento ADS ${R$(d.gastoTotal)} · TACOS ${fmtPct(d.tacosGeral)} (${periodoLabel(d.periodo || state.negocioPeriodo)}, ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')})${d.avisoParcial ? ` ⚠️ ${esc(d.avisoParcial)}` : ''}`
         : 'Nenhum dado carregado ainda.';
       return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--bg-card-hover,#f7f7fb);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;color:var(--text-muted);">
         <span>${linha}</span>
@@ -1516,7 +1723,7 @@
       }
 
       const cfg = state.contaAbertaId === '__novo__' ? null : configDaConta(state.contaAbertaId);
-      const voltar = state.contas.length > 1 ? `<button class="btn btn-secondary btn-sm" style="margin-bottom:16px;" onclick="window._agVoltarPortfolio()">← Portfólio</button>` : '';
+      const voltar = state.contas.length > 0 ? `<button class="btn btn-secondary btn-sm" style="margin-bottom:16px;" onclick="window._agVoltarPortfolio()">← Voltar</button>` : '';
 
       if (!cfg) {
         // '__novo__' ou conta_id que ainda não tem linha salva — só o form.
@@ -1524,16 +1731,18 @@
         return;
       }
 
+      const funil = renderImpressoesCliquesVendas(cfg.conta_id);
       root.innerHTML = `
-        ${voltar}
-        ${renderSaudeHero(cfg)}
-        ${renderRodarAgente(cfg.conta_id)}
-        ${renderAcaoManual(cfg.conta_id)}
-        ${renderKanban(cfg.conta_id)}
-        ${renderNegocio(cfg.conta_id)}
-        ${renderCurvaABC(cfg.conta_id)}
-        ${renderImpressoesCliquesVendas(cfg.conta_id)}
-        ${renderCampanhasAoVivo(cfg.conta_id)}
+        ${renderCabecalho(cfg)}
+        ${renderPrecisaDeVoce(cfg.conta_id)}
+        ${renderKPIs(cfg)}
+        ${renderTimeline(cfg.conta_id)}
+        ${renderTabelaCampanhas(cfg)}
+        <div class="ag-secundarias">
+          ${secaoColapsavel('funil', '📊 Funil de ADS (impressões → cliques → pedidos)', funil || '<div class="ag-vazio">Sem dados de ADS no período.</div>')}
+          ${blocoABC(cfg.conta_id)}
+          ${renderAcaoManual(cfg.conta_id)}
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="ag-grid-resp">
           <div>
             ${renderConfig()}
@@ -1548,22 +1757,99 @@
     }
 
     el.innerHTML = `<div class="page">
-      <div class="ag-hero">
-        <div class="ag-hero-grid"></div>
-        <div class="ag-hero-top">
-          <div class="ag-hero-title">
-            <span class="ag-pulse-dot"></span>
-            <span>Agente Autônomo — Central de Comando</span>
-          </div>
-          <span class="ag-chip ag-chip-ai">⚡ IA · monitoramento contínuo</span>
-        </div>
-        <div class="ag-hero-sub">
-          Portfólio de contas com piloto configurado. Todo dia às 07:00, o agente revisa cada conta ativa contra os guardrails abaixo, decide pausar/retomar/ajustar sozinho o que está dentro da faixa, e só levanta a mão (Fila de Atenção) pro que precisa do seu julgamento.
-        </div>
+      <div class="ag-titulo-pagina">
+        <div class="ag-hero-title"><span class="ag-pulse-dot"></span><span>Agente Autônomo</span></div>
+        <details class="ag-como">
+          <summary title="Como o agente funciona">ⓘ Como funciona</summary>
+          <div class="ag-como-corpo">Todo dia às 07:00 o agente revisa cada conta com o piloto ligado contra as regras da seção "Guardrails do piloto": pausa, reativa e ajusta orçamento ou meta de <abbr class="ag-sigla" title="Retorno sobre o investimento: quantos reais vendidos para cada R$ 1 gasto.">ROAS</abbr> sozinho quando a mudança está dentro da faixa combinada. O que passa do limite, ou que ele não pode decidir sozinho, aparece em "Precisa de você" pra você aprovar ou rejeitar.</div>
+        </details>
       </div>
       <div id="ag-root"></div>
       <style>
         @media (max-width:980px){.ag-grid-resp{grid-template-columns:1fr !important;}}
+
+        .ag-titulo-pagina { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+        .ag-titulo-pagina .ag-hero-title { color:var(--text-primary,inherit); font-size:19px; }
+        .ag-como summary { cursor:pointer; font-size:12px; color:var(--text-muted); list-style:none; padding:3px 10px; border:1px solid var(--border); border-radius:99px; }
+        .ag-como summary::-webkit-details-marker { display:none; }
+        .ag-como-corpo { position:absolute; z-index:5; max-width:520px; margin-top:6px; padding:12px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; font-size:12.5px; line-height:1.6; box-shadow:0 8px 24px rgba(0,0,0,.18); }
+        .ag-como { position:relative; }
+        .ag-sigla { text-decoration:underline dotted; cursor:help; }
+        .ag-topbar { display:flex; align-items:center; justify-content:space-between; gap:12px 18px; flex-wrap:wrap; padding:12px 16px; margin-bottom:14px; border:1px solid var(--border); border-left:4px solid var(--ag-hud-accent,#6366f1); border-radius:12px; background:var(--bg-card); }
+        .ag-topbar-l, .ag-topbar-r { display:flex; align-items:center; gap:10px 14px; flex-wrap:wrap; }
+        .ag-sel-conta { width:auto; min-width:170px; font-weight:700; }
+        .ag-saude-pill { font-size:12px; font-weight:800; padding:4px 11px; border-radius:99px; white-space:nowrap; }
+        .ag-topbar-run { font-size:12px; color:var(--text-muted); }
+        .ag-toggle { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:700; cursor:pointer; }
+        .ag-toggle input { position:absolute; opacity:0; pointer-events:none; }
+        .ag-toggle-trilho { width:34px; height:19px; border-radius:99px; background:#64748b; position:relative; transition:background .15s; flex-shrink:0; }
+        .ag-toggle-trilho::after { content:''; position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%; background:#fff; transition:transform .15s; }
+        .ag-toggle input:checked + .ag-toggle-trilho { background:#22d3ee; }
+        .ag-toggle input:checked + .ag-toggle-trilho::after { transform:translateX(15px); }
+        .ag-toggle input:focus-visible + .ag-toggle-trilho { outline:2px solid #6366f1; outline-offset:2px; }
+        .ag-aviso { margin:-6px 0 14px; padding:9px 13px; border-radius:8px; font-size:12.5px; line-height:1.5; }
+        .ag-aviso-ok { background:#16a34a1a; border:1px solid #16a34a55; color:#16a34a; }
+        .ag-aviso-erro { background:#dc26261a; border:1px solid #dc2626; color:#dc2626; margin-top:0; }
+        .ag-aviso-aten { background:#d977061a; border:1px solid #d97706; color:#d97706; margin:10px 0 0; }
+        .ag-nada { margin-bottom:14px; padding:8px 14px; font-size:12.5px; color:#16a34a; background:#16a34a12; border:1px solid #16a34a33; border-radius:10px; }
+        .ag-nota { margin-top:10px; font-size:11.5px; line-height:1.6; color:var(--text-muted); }
+        .ag-vazio { padding:18px 6px; font-size:13px; color:var(--text-muted); text-align:center; }
+        .ag-sec-head { display:flex; align-items:center; justify-content:space-between; gap:10px 16px; flex-wrap:wrap; margin-bottom:14px; }
+        .ag-sec-titulo { font-size:14px; font-weight:800; }
+        .ag-sec-sub { display:block; font-size:11.5px; font-weight:400; color:var(--text-muted); margin-top:2px; }
+        .ag-contagem { display:inline-block; min-width:20px; padding:0 7px; margin-left:4px; border-radius:99px; background:#d97706; color:#fff; font-size:11px; font-weight:800; text-align:center; line-height:19px; vertical-align:middle; }
+        .ag-periodos { display:flex; gap:6px; flex-wrap:wrap; }
+        .ag-lista-precisa { display:flex; flex-direction:column; gap:8px; }
+        .ag-precisa-item { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:10px 12px; border:1px solid var(--border); border-left:3px solid var(--c); border-radius:8px; background:var(--bg-card-hover,#f7f7fb); }
+        .ag-precisa-corpo { flex:1; min-width:240px; }
+        .ag-precisa-titulo { font-size:13px; font-weight:700; line-height:1.5; }
+        .ag-precisa-depara { font-size:12px; margin-top:4px; }
+        .ag-precisa-motivo { font-size:11.5px; color:var(--text-secondary,var(--text-muted)); margin-top:4px; line-height:1.5; }
+        .ag-precisa-acoes { display:flex; gap:6px; flex-shrink:0; }
+        .ag-btn-ok { background:#16a34a1a; color:#16a34a; border:1px solid #16a34a55; }
+        .ag-btn-no { background:#dc26261a; color:#dc2626; border:1px solid #dc262655; }
+        .ag-kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; }
+        .ag-kpi { position:relative; border-radius:12px; padding:13px 15px; border:1px solid var(--border); background:var(--bg-card-hover,#f7f7fb); overflow:hidden; min-height:92px; }
+        .ag-kpi::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--ag-hud-accent,#6366f1); }
+        .ag-kpi .ag-hud-value { font-size:21px; }
+        .ag-meter { position:relative; height:6px; border-radius:99px; background:var(--border); margin:2px 0 6px; }
+        .ag-meter-fill { height:100%; border-radius:99px; }
+        .ag-meter-meta { position:absolute; top:-3px; width:2px; height:12px; background:var(--text-primary,#111); opacity:.55; }
+        .ag-skel { background:linear-gradient(90deg,var(--border) 25%,transparent 50%,var(--border) 75%); background-size:200% 100%; animation:ag-brilho 1.3s infinite linear; border:none; }
+        @keyframes ag-brilho { to { background-position:-200% 0; } }
+        .ag-tl { display:flex; flex-direction:column; gap:0; }
+        .ag-tl-item { display:flex; gap:12px; padding:10px 0 10px 12px; border-left:3px solid var(--c); margin-left:4px; border-bottom:1px solid var(--border); }
+        .ag-tl-item:last-child { border-bottom:none; }
+        .ag-tl-quando { width:92px; flex-shrink:0; font-size:11.5px; color:var(--text-muted); padding-top:2px; }
+        .ag-tl-corpo { flex:1; font-size:12.5px; line-height:1.55; min-width:0; }
+        .ag-tl-meta { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:5px; }
+        .ag-tl-motivo { font-size:11.5px; color:var(--text-muted); }
+        .ag-link { color:var(--accent-light,#818cf8); font-weight:700; text-decoration:none; }
+        .ag-link:hover { text-decoration:underline; }
+        .ag-th-sort { cursor:pointer; user-select:none; white-space:nowrap; }
+        .ag-th-sort:hover { color:var(--text-primary,inherit); }
+        .ag-tech-table td.ag-mono { white-space:nowrap; }
+        .ag-camp-nome { font-weight:700; line-height:1.4; }
+        .ag-camp-id { font-size:10.5px; color:var(--text-muted); font-weight:400; }
+        .ag-camp-quando { font-size:11px; color:var(--text-muted); }
+        .ag-camp-motivo { font-size:11px; color:var(--text-muted); font-weight:400; line-height:1.45; }
+        .ag-camp-anom { margin-top:4px; font-size:10.5px; font-weight:700; color:#dc2626; }
+        .ag-tech-table tbody td { font-weight:400; }
+        .ag-tech-table tbody td:first-child { font-weight:400; }
+        .ag-linha-destaque td { background:#6366f126 !important; transition:background .3s; }
+        .ag-menu { position:relative; }
+        .ag-menu summary { list-style:none; cursor:pointer; font-size:18px; line-height:1; padding:2px 9px; border-radius:6px; border:1px solid var(--border); color:var(--text-muted); }
+        .ag-menu summary::-webkit-details-marker { display:none; }
+        .ag-menu-lista { position:absolute; right:0; z-index:6; min-width:210px; margin-top:4px; padding:5px; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.2); }
+        .ag-menu-lista button { text-align:left; background:none; border:none; color:inherit; font-size:12.5px; padding:8px 10px; border-radius:6px; cursor:pointer; }
+        .ag-menu-lista button:hover { background:var(--bg-card-hover,#f1f1f5); }
+        .ag-secundarias { margin-bottom:20px; }
+        .ag-sec { margin-bottom:10px; }
+        .ag-sec > summary { cursor:pointer; font-size:13px; font-weight:700; color:var(--text-muted); padding:6px 0; }
+        .ag-sec-corpo { margin-top:8px; }
+        .ag-linha-abc { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13px; color:var(--text-muted); padding:6px 0; }
+        .ag-linha-abc .ag-sec-sub { display:inline; margin:0; }
+        @media (prefers-reduced-motion:reduce){ .ag-skel { animation:none; } .ag-toggle-trilho, .ag-toggle-trilho::after { transition:none; } }
 
         .ag-hero { position:relative; overflow:hidden; border-radius:16px; padding:22px 26px; margin-bottom:22px;
           background: radial-gradient(120% 160% at 0% 0%, rgba(99,102,241,0.20), transparent 60%), linear-gradient(135deg, #0f0f1a, #14141f 55%, #0f0f1a);
@@ -1600,12 +1886,67 @@
     window._agSalvarConfig = salvarConfig;
     window._agEnviarChat = enviarChat;
     window._agFiltrarLog = (t) => { state.filtroLog = t; render(); };
-    window._agAtualizarDados = () => buscarDadosAoVivo(state.contaAbertaId);
-    window._agAtualizarNegocio = () => buscarNegocio(state.contaAbertaId);
-    window._agMudarPeriodoNegocio = (periodo) => { state.negocioPeriodo = periodo; render(); buscarNegocio(state.contaAbertaId, periodo); };
+    window._agAtualizarDados = () => buscarDadosAoVivo(state.contaAbertaId, state.negocioPeriodo, true);
+    // Troca o período da tela inteira: indicadores e tabela de campanhas.
+    window._agMudarPeriodo = (periodo) => {
+      state.negocioPeriodo = periodo;
+      render();
+      buscarNegocio(state.contaAbertaId, periodo);
+      buscarDadosAoVivo(state.contaAbertaId, periodo);
+    };
+    window._agAtualizarTudo = () => {
+      buscarNegocio(state.contaAbertaId, state.negocioPeriodo, true);
+      buscarDadosAoVivo(state.contaAbertaId, state.negocioPeriodo);
+    };
     window._agAbrirConta = (id) => {
       state.contaAbertaId = id; state.chatMessages = []; render();
-      if (id && id !== '__novo__') { buscarDadosAoVivo(id); buscarNegocio(id); abcCarregarDoCache(id); render(); }
+      if (id && id !== '__novo__') { buscarNegocio(id); buscarDadosAoVivo(id); abcCarregarDoCache(id); render(); }
+    };
+    window._agTrocarConta = (id) => {
+      if (id === '__portfolio__') window._agVoltarPortfolio(); else window._agAbrirConta(id);
+    };
+    window._agTogglePiloto = async (ativo) => {
+      const cfg = configDaConta(state.contaAbertaId);
+      if (!cfg) return;
+      try {
+        const { error } = await _sb.from('glr_agente_config').update({ ativo, atualizado_em: new Date().toISOString() }).eq('conta_id', cfg.conta_id);
+        if (error) throw error;
+        cfg.ativo = ativo;
+        await _sb.from('glr_agente_log').insert({
+          conta_id: cfg.conta_id, cliente_nome: cfg.cliente_nome || null, tipo: 'sistema',
+          titulo: `Piloto ${ativo ? 'ligado' : 'desligado'}`,
+          explicacao: ativo ? 'Piloto ligado pelo analista — o agente volta a revisar e agir nesta conta às 07:00.' : 'Piloto desligado pelo analista — o agente não roda mais sozinho nesta conta até ser ligado de novo.',
+          dados: { ativo }, resultado: 'executado', origem: 'analista',
+        });
+      } catch (e) {
+        alert('Não consegui alterar o piloto: ' + (e.message || e));
+      } finally {
+        render();
+      }
+    };
+    window._agFiltroTimeline = (k) => { state.timelineFiltro = k; state.timelineMostrar = 5; render(); };
+    window._agTimelineMais = () => { state.timelineMostrar += 10; render(); };
+    window._agOrdenar = (col) => {
+      state.tabOrdem = state.tabOrdem.col === col ? { col, dir: -state.tabOrdem.dir } : { col, dir: col === 'nome' || col === 'status' ? 1 : -1 };
+      render();
+    };
+    window._agTabelaTodas = () => { state.tabTodas = !state.tabTodas; render(); };
+    window._agToggleSec = (chave, aberta) => { state.sec[chave] = aberta; };
+    window._agIrParaCampanha = (id) => {
+      state.tabTodas = true; render();
+      const linha = document.getElementById('ag-camp-' + id);
+      if (!linha) return;
+      linha.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      linha.classList.add('ag-linha-destaque');
+      setTimeout(() => linha.classList.remove('ag-linha-destaque'), 2200);
+    };
+    // Ações do menu ⋯ da tabela: nunca executam direto — viram sugestão em
+    // "Precisa de você" pra você aprovar (mesmo fluxo do chat).
+    window._agSugerirCampanha = async (id, tipo, nome) => {
+      const rotulo = tipo === 'pausar' ? 'Pausar' : 'Reativar';
+      await criarSugestoesNoKanban([{ campaign_id: Number(id), nome_campanha: nome, tipo, titulo: `${rotulo} campanha — ${nome}`, explicacao: `${rotulo} solicitado por você na tabela de campanhas.` }]);
+      await carregarTudo();
+      alert(`Sugestão criada: "${rotulo} — ${nome}". Aprove (ou rejeite) na faixa "Precisa de você" lá em cima.`);
     };
     window._agAnalisarABC = () => abcAtualizar(state.contaAbertaId);
     window._agVoltarPortfolio = () => { state.contaAbertaId = null; render(); };
@@ -1615,6 +1956,7 @@
     window._agDescartarAlerta = descartarAlerta;
     window._agBoostCampanha = boostCampanha;
     window._agUsarCampanhaManual = (id, nome) => {
+      state.sec.manual = true; render(); // abre o painel antes de preencher
       const campoId = document.getElementById('ag-man-campanha');
       const campoNome = document.getElementById('ag-man-nome');
       if (campoId) campoId.value = id;
