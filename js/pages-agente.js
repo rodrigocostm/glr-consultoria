@@ -171,7 +171,10 @@
       try {
         const shopId = contaId;
         const campanhas = await listarTodasCampanhasShopee(shopId);
-        const hoje = dataLocal(0), seteDiasAtras = dataLocal(7);
+        // 7 dias CORRIDOS incluindo hoje (hoje-6 … hoje), a mesma janela do
+        // faturamento total (dataISO(6)…dataISO(0)). Antes o ADS usava hoje-7
+        // (8 dias) e "Vendas via ADS" podia passar do faturamento só por isso.
+        const hoje = dataLocal(0), seteDiasAtras = dataLocal(6);
         const settingsPorId = {}, diarioPorId = {};
         const ids = campanhas.map(c => c.campaign_id);
         let falhasSettings = 0, falhasDiario = 0, lotes = 0, ultimoErro = '';
@@ -255,7 +258,7 @@
           // número solto. Mesma janela usada no card "Saúde do negócio".
           let impressoesAnterior = 0, cliquesAnterior = 0, pedidosAdsAnterior = 0, gmvAnterior = 0;
           try {
-            const perfAnterior = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: dataLocal(14), end_date: dataLocal(8) });
+            const perfAnterior = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: dataLocal(13), end_date: dataLocal(7) });
             const diasAnt = perfAnterior.data?.response || perfAnterior.response || [];
             diasAnt.forEach(d => {
               impressoesAnterior += parseInt(d.impression) || 0; cliquesAnterior += parseInt(d.clicks) || 0;
@@ -642,7 +645,7 @@
       const d = state.dadosAoVivoPorConta[state.contaAbertaId];
       const dadosTexto = !d ? '\nDADOS AO VIVO: ainda não carregados.'
         : d.erro ? `\nDADOS AO VIVO: erro ao buscar (${d.erro})`
-        : `\nDADOS AO VIVO DA SHOPEE (últimos 7 dias, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nFaturamento TOTAL da loja: ${R$(d.faturamentoTotal)} | Investimento ADS: ${R$(d.gastoTotal)} | TACOS da conta: ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (esta é a métrica principal, não o ACOS isolado abaixo)\nCampanhas ativas: ${d.campanhasAtivas} | Vendas atribuídas ao ADS: ${R$(d.gmvTotal)} | Pedidos atribuídos: ${d.pedidosTotal} | ACOS médio das campanhas: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento (ACOS individual, útil só pra comparar entre elas — use o ID exato ao sugerir mudança):\n${d.topCampanhas.map(c => `- ID ${c.id} — ${(c.nome || '').slice(0, 60)}: orçamento ${R$(c.budget)}${c.roasTarget != null ? `, meta de ROAS atual ${c.roasTarget}x (lance automático)` : ''}, gasto ${R$(c.gasto)}, vendas (GMV) ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
+        : `\nDADOS AO VIVO DA SHOPEE (últimos 7 dias, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nFaturamento TOTAL da loja: ${R$(d.faturamentoTotal)} | Investimento ADS: ${R$(d.gastoTotal)} | TACOS da conta: ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (esta é a métrica principal, não o ACOS isolado abaixo)\nCampanhas ativas: ${d.campanhasAtivas} | Vendas atribuídas ao ADS: ${R$(d.gmvTotal)} | Pedidos atribuídos: ${d.pedidosTotal} | ACOS médio das campanhas: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento (ACOS individual, útil só pra comparar entre elas — use o ID exato ao sugerir mudança):\n${d.topCampanhas.map(c => `- ID ${c.id} — ${(c.nome || '').slice(0, 60)}: status ${c.status === 'ongoing' ? 'ATIVA' : c.status === 'paused' ? 'PAUSADA' : c.status || '—'}, orçamento ${R$(c.budget)}${c.roasTarget != null ? `, meta de ROAS atual ${c.roasTarget}x (lance automático)` : ''}, gasto ${R$(c.gasto)}, vendas (GMV) ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
       const neg = state.negocioPorConta[state.contaAbertaId + ':' + state.negocioPeriodo];
       const negTexto = neg && !neg.erro ? `\nSAÚDE DO NEGÓCIO (período: ${state.negocioPeriodo === 'mes' ? 'mês atual' : state.negocioPeriodo + ' dias'}): faturamento ${R$(neg.semanaAtual)} vs período anterior equivalente ${R$(neg.semanaAnterior)} (${neg.variacaoPct === Infinity ? '∞' : (neg.variacaoPct >= 0 ? '+' : '') + neg.variacaoPct.toFixed(1) + '%'}).` : '';
       const abc = state.abcPorConta[state.contaAbertaId];
@@ -699,7 +702,7 @@
       let sugestoes = [];
       try {
         const arr = JSON.parse(m[1]);
-        sugestoes = Array.isArray(arr) ? arr.filter(s => s && s.campaign_id != null && ['pausar', 'orcamento', 'roas'].includes(s.tipo)) : [];
+        sugestoes = Array.isArray(arr) ? arr.filter(s => s && s.campaign_id != null && ['pausar', 'orcamento', 'roas', 'retomar'].includes(s.tipo)) : [];
       } catch (e) { /* JSON malformado — ignora, trata como se não tivesse sugestão */ }
       return { sugestoes, textoLimpo: texto.replace(m[0], '').trim() };
     }
@@ -716,6 +719,7 @@
         if (s.tipo === 'roas') { dados.campaign_id = Number(s.campaign_id); dados.roas_atual = s.valor_atual; dados.roas_sugerido = s.valor_sugerido; }
         else if (s.tipo === 'orcamento') { dados.campaign_id = Number(s.campaign_id); dados.budget_atual = s.valor_atual; dados.budget_sugerido = s.valor_sugerido; }
         else if (s.tipo === 'pausar') { dados.campaign_id = Number(s.campaign_id); dados.pausar = true; }
+        else if (s.tipo === 'retomar') { dados.campaign_id = Number(s.campaign_id); dados.retomar = true; if (s.valor_sugerido != null) { dados.roas_atual = s.valor_atual; dados.roas_sugerido = s.valor_sugerido; } }
         else if (s.tipo === 'estoque') { dados.item_id = s.item_id; dados.marketplace = s.marketplace; dados.model_id = s.model_id; dados.estoque_atual = s.valor_atual; dados.estoque_sugerido = s.valor_sugerido; }
         else if (s.tipo === 'preco') { dados.item_id = s.item_id; dados.marketplace = s.marketplace; dados.model_id = s.model_id; dados.preco_atual = s.valor_atual; dados.preco_sugerido = s.valor_sugerido; }
         try {
@@ -742,7 +746,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            system: `Você é o Agente Autônomo de ADS da GLR Consultoria. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento/meta de ROAS diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Muitas campanhas individuais hoje em dia (modo GMV Max por produto, lance automático) são geridas pelo algoritmo da própria Shopee/TikTok — o papel do agente aí é ajustar o guardrail (meta de ROAS), não microgerenciar lance por lance. O agente só mexe em campanhas individuais — o GMV Max da Loja (campanha única, guarda-chuva, por conta inteira) está fora do escopo por decisão do analista, não monitorado nem ajustado. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Você também entende de curva ABC de vendas (A = produtos que somam ~80% da receita, B até 95%, C o resto): produto curva A que cresceu e projeta queda é prioridade de atenção, e nesses casos você levanta o alerta e propõe a ação junto com o analista (revisar anúncio, preço, estoque, ADS) em vez de decidir sozinho — use o bloco CURVA ABC do contexto quando existir. Use os dados de contexto abaixo (configuração, dados ao vivo, saúde do negócio, último relatório, log recente) pra responder — nunca invente números que não estão aí, nunca invente campaign_id que não apareça na lista "Top campanhas" do contexto.\n\nQUANDO O ANALISTA PEDIR UMA MUDANÇA CONCRETA (ex: "aumenta o investimento", "pausa a campanha X", "sobe a meta de ROAS da campanha Y", "reduz orçamento de Z"): responda com no máximo 2 frases confirmando o que você está sugerindo e por quê, e termine a mensagem com um bloco \`\`\`json contendo um array de sugestões, uma por campanha, no formato exato: [{"campaign_id": <ID numérico exato do contexto>, "nome_campanha": "<nome curto>", "tipo": "pausar"|"orcamento"|"roas", "valor_atual": <número, omita se tipo=pausar>, "valor_sugerido": <número, omita se tipo=pausar>, "titulo": "<título curto pro card, ex: Aumentar orçamento — Nome da campanha>", "explicacao": "<1-2 frases explicando o motivo, com os números que embasam>"}]. Use tipo \"roas\" só pra campanha que already tem \"meta de ROAS atual\" no contexto (lance automático); use \"orcamento\" só pra campanha com orçamento fixo (budget > 0); nunca sugira os dois tipos pra mesma campanha na mesma resposta. NÃO execute nada você mesmo pelo chat — a sugestão vira um card na Fila de Atenção (Kanban) e só é aplicada de verdade quando o analista clicar em \"Aprovar\" ali. Se o pedido for só uma pergunta ou pedir explicação (\"por que caiu tal coisa\", \"como está a conta\"), responda em texto normal e NÃO inclua o bloco \`\`\`json. Se o analista pedir pra mudar uma regra/guardrail (meta TACOS, regra de pausa, etc — não uma campanha específica), explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
+            system: `Você é o Agente Autônomo de ADS da GLR Consultoria. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento/meta de ROAS diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Muitas campanhas individuais hoje em dia (modo GMV Max por produto, lance automático) são geridas pelo algoritmo da própria Shopee/TikTok — o papel do agente aí é ajustar o guardrail (meta de ROAS), não microgerenciar lance por lance. O agente só mexe em campanhas individuais — o GMV Max da Loja (campanha única, guarda-chuva, por conta inteira) está fora do escopo por decisão do analista, não monitorado nem ajustado. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Você também entende de curva ABC de vendas (A = produtos que somam ~80% da receita, B até 95%, C o resto): produto curva A que cresceu e projeta queda é prioridade de atenção, e nesses casos você levanta o alerta e propõe a ação junto com o analista (revisar anúncio, preço, estoque, ADS) em vez de decidir sozinho — use o bloco CURVA ABC do contexto quando existir. Use os dados de contexto abaixo (configuração, dados ao vivo, saúde do negócio, último relatório, log recente) pra responder — nunca invente números que não estão aí, nunca invente campaign_id que não apareça na lista "Top campanhas" do contexto.\n\nQUANDO O ANALISTA PEDIR UMA MUDANÇA CONCRETA (ex: "aumenta o investimento", "pausa a campanha X", "sobe a meta de ROAS da campanha Y", "reduz orçamento de Z"): responda com no máximo 2 frases confirmando o que você está sugerindo e por quê, e termine a mensagem com um bloco \`\`\`json contendo um array de sugestões, uma por campanha, no formato exato: [{"campaign_id": <ID numérico exato do contexto>, "nome_campanha": "<nome curto>", "tipo": "pausar"|"orcamento"|"roas"|"retomar", "valor_atual": <número, omita se tipo=pausar>, "valor_sugerido": <número, omita se tipo=pausar>, "titulo": "<título curto pro card, ex: Aumentar orçamento — Nome da campanha>", "explicacao": "<1-2 frases explicando o motivo, com os números que embasam>"}]. Use tipo \"roas\" só pra campanha que already tem \"meta de ROAS atual\" no contexto (lance automático); use \"orcamento\" só pra campanha com orçamento fixo (budget > 0); nunca sugira os dois tipos pra mesma campanha na mesma resposta. Use tipo \"retomar\" só pra campanha que o contexto mostra como PAUSADA, quando o analista pedir pra reativar; se ele quiser reativar E mudar a meta de ROAS, use tipo \"retomar\" com valor_atual/valor_sugerido da meta de ROAS (o card faz as duas coisas ao aprovar). Nunca escreva no título/explicação que vai reativar uma campanha se o tipo não for \"retomar\" — o card só executa o que o tipo diz. NÃO execute nada você mesmo pelo chat — a sugestão vira um card na Fila de Atenção (Kanban) e só é aplicada de verdade quando o analista clicar em \"Aprovar\" ali. Se o pedido for só uma pergunta ou pedir explicação (\"por que caiu tal coisa\", \"como está a conta\"), responda em texto normal e NÃO inclua o bloco \`\`\`json. Se o analista pedir pra mudar uma regra/guardrail (meta TACOS, regra de pausa, etc — não uma campanha específica), explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
             messages: state.chatMessages,
           }),
         });
@@ -824,7 +828,12 @@
       const relatorio = state.relatorios.find(r => r.conta_id === cfg.conta_id);
       const tacos = relatorio?.metricas?.tacos_conta;
       const seteDiasAtras = Date.now() - 7 * 24 * 3600 * 1000;
-      const decisoesSemana = state.logs.filter(l => l.conta_id === cfg.conta_id && l.tipo === 'decisao' && l.resultado === 'executado' && new Date(l.criado_em).getTime() > seteDiasAtras).length;
+      // Só conta decisões de verdade (tipo 'decisao'), separadas por quem
+      // executou: 'cron' = automática; 'aprovacao_manual'/'analista' = feita
+      // por você. Antes tudo isso era somado e chamado de "automáticas".
+      const decisoes7d = state.logs.filter(l => l.conta_id === cfg.conta_id && l.tipo === 'decisao' && l.resultado === 'executado' && new Date(l.criado_em).getTime() > seteDiasAtras);
+      const decisoesSemana = decisoes7d.filter(l => l.origem === 'cron').length;
+      const decisoesManuais7d = decisoes7d.length - decisoesSemana;
       const pendencias = state.logs.filter(l => l.conta_id === cfg.conta_id && l.tipo === 'alerta' && l.resultado === 'so_alerta').length;
       const frase = pendencias ? `${pendencias} ${pendencias === 1 ? 'item pedindo' : 'itens pedindo'} sua atenção` : 'Nada pedindo aprovação agora — tudo dentro do combinado';
       return `<div class="ag-hud-card" style="--ag-hud-accent:${saude.cor};margin-bottom:20px;">
@@ -838,7 +847,7 @@
           </div>
           <div style="display:flex;gap:26px;">
             <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS</div><div class="ag-mono" style="font-size:22px;font-weight:800;">${tacos != null ? tacos.toFixed(1) + '%' : '—'}</div><div class="ag-hud-sub">meta ${cfg.meta_acos ?? '—'}%</div></div>
-            <div><div class="ag-hud-label" style="margin-bottom:2px;">Decisões 7d</div><div class="ag-mono" style="font-size:22px;font-weight:800;">${decisoesSemana}</div><div class="ag-hud-sub">automáticas</div></div>
+            <div><div class="ag-hud-label" style="margin-bottom:2px;">Decisões 7d</div><div class="ag-mono" style="font-size:22px;font-weight:800;">${decisoesSemana}</div><div class="ag-hud-sub">automáticas · ${decisoesManuais7d} manuais</div></div>
             <div><div class="ag-hud-label" style="margin-bottom:2px;">Piloto</div><div class="ag-mono" style="font-size:22px;font-weight:800;color:${cfg.ativo ? '#22d3ee' : '#64748b'};">${cfg.ativo ? 'ON' : 'OFF'}</div></div>
           </div>
         </div>
@@ -1050,6 +1059,9 @@
       } else if ((l.titulo || '').includes('pausada')) {
         acaoLabel = '⏸ Pausada'; acaoCor = '#dc2626';
       }
+      if (d.retomar === true) { acaoLabel = '▶ Sugestão: reativar' + (acaoLabel ? ' + ' + acaoLabel.replace('Sugestão: ', '') : ''); acaoCor = '#22d3ee'; }
+      else if (d.retomada === true) { acaoLabel = '▶ Reativada' + (acaoLabel ? ' + ' + acaoLabel : ''); acaoCor = '#22d3ee'; }
+      else if (d.pausada === true) { acaoLabel = '⏸ Pausada'; acaoCor = '#dc2626'; }
       return { nomeCampanha, acaoLabel, acaoCor, deParaVal, acos: d.acos != null ? n1(d.acos) + '%' : null };
     }
 
@@ -1084,7 +1096,7 @@
     // sozinho, mas o Kanban/aprovação já reconhece o formato pra quando os
     // módulos de Rentabilidade/Estoque existirem, sem precisar mexer aqui de novo).
     function temAcaoReconhecida(d) {
-      if (d.campaign_id != null && (d.roas_sugerido != null || d.budget_sugerido != null || d.pausar === true)) return 'ads';
+      if (d.campaign_id != null && (d.roas_sugerido != null || d.budget_sugerido != null || d.pausar === true || d.retomar === true)) return 'ads';
       if (d.item_id != null && d.estoque_sugerido != null) return 'estoque';
       if (d.item_id != null && d.preco_sugerido != null) return 'preco';
       return null;
@@ -1104,7 +1116,14 @@
       render();
       try {
         if (tipoAcao === 'ads') {
-          if (d.pausar === true) {
+          if (d.retomar === true) {
+            // Reativar de verdade na Shopee; se a sugestão trouxe também uma
+            // meta de ROAS nova ("reativar e apertar ROAS"), aplica depois.
+            await MarketplaceAPI.call('shopee_ads_resume_campaign', { shopId: l.conta_id, campaign_id: Number(d.campaign_id) });
+            if (d.roas_sugerido != null) {
+              await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: l.conta_id, campaign_id: Number(d.campaign_id), roas_target: d.roas_sugerido });
+            }
+          } else if (d.pausar === true) {
             await MarketplaceAPI.call('shopee_ads_pause_campaign', { shopId: l.conta_id, campaign_id: Number(d.campaign_id) });
           } else if (d.roas_sugerido != null) {
             await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: l.conta_id, campaign_id: Number(d.campaign_id), roas_target: d.roas_sugerido });
@@ -1130,11 +1149,19 @@
             await MarketplaceAPI.call('shopee_update_price', { shopId: l.conta_id, item_id: Number(d.item_id), model_id: d.model_id ? Number(d.model_id) : undefined, price: d.preco_sugerido });
           }
         }
+        // A decisão executada usa o formato "de → para" (igual às do cron), não
+        // o "atual/sugerido" do alerta — senão o card executado continuava com
+        // o selo laranja de "Sugestão" e parecia ainda pendente.
+        const dadosExec = { ...d };
+        if (d.roas_sugerido != null) { dadosExec.roas_de = d.roas_atual; dadosExec.roas_para = d.roas_sugerido; delete dadosExec.roas_atual; delete dadosExec.roas_sugerido; }
+        if (d.budget_sugerido != null) { dadosExec.budget_de = d.budget_atual; dadosExec.budget_para = d.budget_sugerido; delete dadosExec.budget_atual; delete dadosExec.budget_sugerido; }
+        if (d.retomar === true) { dadosExec.retomada = true; delete dadosExec.retomar; }
+        if (d.pausar === true) { dadosExec.pausada = true; delete dadosExec.pausar; }
         await _sb.from('glr_agente_log').update({ resultado: 'executado' }).eq('id', l.id);
         await _sb.from('glr_agente_log').insert({
           conta_id: l.conta_id, cliente_nome: cfg?.cliente_nome || null, tipo: 'decisao',
           titulo: `Aprovado manualmente — ${(l.titulo || '').replace(/^Sugestão de /, '')}`,
-          explicacao: `Alerta aprovado pelo analista. ${l.explicacao || ''}`, dados: d, resultado: 'executado', origem: 'aprovacao_manual',
+          explicacao: `Alerta aprovado pelo analista. ${l.explicacao || ''}`, dados: dadosExec, resultado: 'executado', origem: 'aprovacao_manual',
         });
       } catch (e) {
         alert('Erro ao executar: ' + (e.message || e));
@@ -1167,7 +1194,10 @@
     function renderKanban(contaId) {
       const relevantes = state.logs.filter(l => l.conta_id === contaId && (l.tipo === 'decisao' || l.tipo === 'alerta'));
       const pendentes = relevantes.filter(l => l.resultado === 'so_alerta').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
-      const executados = relevantes.filter(l => l.resultado === 'executado').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
+      // Só decisões (tipo 'decisao'): aprovar um alerta vira o alerta original
+      // 'executado' + uma decisão nova — contar os dois mostrava cada aprovação
+      // em dobro (16 itens contra 11 decisões no contador).
+      const executados = relevantes.filter(l => l.resultado === 'executado' && l.tipo === 'decisao').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
       const falharam = relevantes.filter(l => l.resultado === 'erro').sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em)).slice(0, 20);
 
       const coluna = (titulo, cor, itens, vazio, comAcoes) => `

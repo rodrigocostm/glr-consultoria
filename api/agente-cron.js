@@ -249,7 +249,11 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     } catch (e) { /* não deixa falha de log derrubar a revisão */ }
   }
 
-  async function executarPausa(campaignId, nome, explicacao, dados) {
+  // As 3 funções de execução gravam o campaign_id junto dos dados da decisão
+  // — a tela usa isso pra ligar cada decisão à linha da campanha (antes só
+  // tinha o nome no título). Só acrescenta informação ao log.
+  async function executarPausa(campaignId, nome, explicacao, dadosBase) {
+    const dados = { campaign_id: Number(campaignId), ...dadosBase };
     try {
       await mcpCall(mcApiKey, 'shopee_ads_pause_campaign', { shopId, campaign_id: Number(campaignId) });
       await logar('decisao', `Campanha pausada — ${nome}`, explicacao, dados, 'executado');
@@ -259,7 +263,8 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     }
   }
 
-  async function executarOrcamento(campaignId, nome, novoBudget, explicacao, dados) {
+  async function executarOrcamento(campaignId, nome, novoBudget, explicacao, dadosBase) {
+    const dados = { campaign_id: Number(campaignId), ...dadosBase };
     try {
       // shopee_ads_edit_campaign é passthrough cru pra edit_manual_product_ads
       // — confirmado ao vivo que exige params.edit_action="change_budget",
@@ -288,7 +293,8 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
   // (mais gasto/volume); quanto MAIOR, mais conservador (menos gasto). É o
   // inverso do orçamento — por isso as regras de crescer/reduzir invertem o
   // sinal em relação a executarOrcamento.
-  async function executarRoasTarget(campaignId, nome, novoRoasTarget, explicacao, dados) {
+  async function executarRoasTarget(campaignId, nome, novoRoasTarget, explicacao, dadosBase) {
+    const dados = { campaign_id: Number(campaignId), ...dadosBase };
     try {
       await mcpCall(mcApiKey, 'shopee_ads_roi_target', { shopId, campaign_id: Number(campaignId), roas_target: novoRoasTarget });
       await logar('decisao', `Meta de ROAS ajustada — ${nome}`, explicacao, dados, 'executado');
