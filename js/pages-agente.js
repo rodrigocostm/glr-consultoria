@@ -42,7 +42,7 @@
       negocioPorConta: {}, carregandoNegocio: false, negocioPeriodo: '7',
       abcPorConta: {}, carregandoABC: false, abcProgresso: '',
       timelineFiltro: 'todos', timelineMostrar: 5,
-      tabOrdem: { col: 'gasto', dir: -1 }, tabTodas: false,
+      tabOrdem: { col: 'gasto', dir: -1 }, tabTodas: false, tabFiltro: 'todas',
       logBusca: '', logMostrar: 20, regrasSalvoEm: null, chatAberto: false, reativando: false,
       sec: {}, // seções recolhíveis abertas (o render recria o HTML, então o estado mora aqui)
       executandoAcaoManual: false,
@@ -347,7 +347,9 @@
         idsRelevantes.forEach(id => {
           const s = settingsPorId[id], d = diarioPorId[id];
           if (!s || !d) return;
-          if (d.gasto <= 0 && d.gmv <= 0) return; // sem atividade na janela, ignora
+          // Sem atividade na janela: ignora, EXCETO pausada — a aba "Pausadas"
+          // precisa listar todas as pausadas, mesmo as que não gastaram no período.
+          if (d.gasto <= 0 && d.gmv <= 0 && (s.campaign_status || '').toLowerCase() !== 'paused') return;
           pedidosTotal += d.pedidos;
           if ((s.campaign_status || '').toLowerCase() === 'ongoing') ativas++;
           const acos = d.gmv > 0 ? (d.gasto / d.gmv * 100) : (d.gasto > 0 ? Infinity : 0);
@@ -1792,7 +1794,7 @@
     function renderTabelaCampanhas(cfg) {
       const contaId = cfg.conta_id, d = state.dadosAoVivoPorConta[contaId];
       const cab = `<div class="ag-sec-head">
-        <div class="ag-sec-titulo">📡 Campanhas <span class="ag-sec-sub">${periodoLabel(state.negocioPeriodo)} · ativas e pausadas com atividade no período</span></div>
+        <div class="ag-sec-titulo">📡 Campanhas <span class="ag-sec-sub">${periodoLabel(state.negocioPeriodo)} · ativas com atividade no período e todas as pausadas</span></div>
         <button class="btn btn-secondary btn-sm" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">🔄 Atualizar</button>
       </div>`;
       if (!d && state.carregandoDadosAoVivo) return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}<div class="ag-skel" style="height:180px;border-radius:10px;"></div></div>`;
@@ -1802,7 +1804,15 @@
 
       const { col, dir } = state.tabOrdem;
       const acesso = ORDENACAO[col] || ORDENACAO.gasto;
-      const linhasOrd = [...d.todasCampanhas].sort((a, b) => { const x = acesso(a), y = acesso(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+      const st = c => (c.status || '').toLowerCase();
+      const FILTROS_CAMP = { todas: () => true, ativas: c => st(c) === 'ongoing', pausadas: c => st(c) === 'paused' };
+      const contagem = k => d.todasCampanhas.filter(FILTROS_CAMP[k]).length;
+      const filtro = FILTROS_CAMP[state.tabFiltro] ? state.tabFiltro : 'todas';
+      const abas = `<div class="ag-periodos" style="margin-bottom:12px;">
+        ${[['todas', 'Todas'], ['ativas', 'Ativas'], ['pausadas', '⏸ Pausadas']].map(([k, l]) => `<button class="btn btn-sm ${filtro === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agTabFiltro('${k}')">${l} (${contagem(k)})</button>`).join('')}
+      </div>`;
+      const linhasOrd = d.todasCampanhas.filter(FILTROS_CAMP[filtro]).sort((a, b) => { const x = acesso(a), y = acesso(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+      if (!linhasOrd.length) return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}${abas}<div class="ag-vazio">${filtro === 'pausadas' ? '✅ Nenhuma campanha pausada agora.' : 'Nenhuma campanha neste filtro.'}</div></div>`;
       const LIMITE = 10;
       const linhas = state.tabTodas ? linhasOrd : linhasOrd.slice(0, LIMITE);
       const th = (chave, rotulo, extra) => `<th class="ag-th-sort" onclick="window._agOrdenar('${chave}')">${rotulo}${col === chave ? (dir === 1 ? ' ▲' : ' ▼') : ''}${extra || ''}</th>`;
@@ -1840,6 +1850,8 @@
       };
       return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">
         ${cab}
+        ${abas}
+        ${filtro === 'pausadas' ? '<div class="ag-nota" style="margin:-4px 0 12px;">Todas as campanhas pausadas na Shopee agora, inclusive as que não gastaram neste período. A coluna “Última ação” mostra quem pausou e por quê; as marcadas com ⚠ estão pausadas com o ACOS dentro da meta (candidatas a reativar). Use o menu ⋯ pra sugerir a reativação.</div>' : ''}
         <div style="overflow-x:auto;">
         <table class="ag-tech-table">
           <thead><tr>
@@ -2268,6 +2280,7 @@
       render();
     };
     window._agTabelaTodas = () => { state.tabTodas = !state.tabTodas; render(); };
+    window._agTabFiltro = (k) => { state.tabFiltro = k; state.tabTodas = false; render(); };
     window._agToggleSec = (chave, aberta) => { state.sec[chave] = aberta; };
     window._agIrParaCampanha = (id) => {
       state.tabTodas = true; render();
