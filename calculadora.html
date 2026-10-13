@@ -657,7 +657,7 @@
         ${custofixo > 0 ? linhaExtrato(`Custo fixo (${pc(custofixo)})`, precoBase * custofixo, 'sub') : ''}
         ${linhaExtrato('Sobra final (lucro por unidade)', sobraFinal, 'total', sobraFinal >= 0 ? 'var(--green)' : 'var(--red)')}
       </details>`;
-    document.getElementById('r-lucro-unidade').textContent = fmtBRL(lucroReal);
+    document.getElementById('r-lucro-unidade').textContent = fmtBRL(sobraFinal); // mesmo valor do extrato (evita 1 centavo de diferença por arredondamento)
     document.getElementById('r-margem-real-pct').textContent = margemExibidaPct.toFixed(1) + '%';
 
     const saudeCls = margemExibidaPct >= 15 ? 'ok' : margemExibidaPct >= 5 ? 'apertada' : 'baixa';
