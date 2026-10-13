@@ -21,6 +21,7 @@ const CONCORRENCIA = 10;         // lojas em paralelo (dentro da loja é sequenc
 const DIAS_HISTORICO = 90;       // histórico inicial carregado aos poucos
 const DIAS_REPROCESSAR = 45;     // rede de segurança diária (cancelamento/devolução tardia)
 const TEMPO_FUNDO_POR_CONTA_MS = 60000; // histórico/reprocesso: no máx. 1 min por loja por rodada
+const TEMPO_TAXAS_POR_CONTA_MS = 25000; // taxas reais por pedido: no máx. 25 s por loja por rodada
 const SEG = 1000;
 const DIA = 86400;
 
@@ -62,6 +63,16 @@ async function comRetry(fn, tentativas = 3) {
 }
 
 const agora = () => Math.floor(Date.now() / SEG);
+// Dias (de venda, horário de Brasília) que mudaram nesta rodada, por loja —
+// só eles têm o resumo diário recalculado.
+const TOCADOS = new Map();
+const diaBRTdeISO = iso => new Date(new Date(iso).getTime() - 3 * 3600 * SEG).toISOString().slice(0, 10);
+function tocar(mkt, conta, iso) {
+  if (!iso) return;
+  const k = `${mkt}:${conta}`;
+  if (!TOCADOS.has(k)) TOCADOS.set(k, new Set());
+  TOCADOS.get(k).add(diaBRTdeISO(iso));
+}
 const isoDeUnix = s => new Date(s * SEG).toISOString();
 const r2 = v => Math.round((parseFloat(v) || 0) * 100) / 100;
 const ddmmyyyy = unix => { const d = new Date((unix - 3 * 3600) * SEG); const p = n => String(n).padStart(2, '0'); return `${p(d.getUTCDate())}-${p(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`; };
@@ -142,7 +153,14 @@ async function gravarPedidos(apiKey, shopId, sns, prazo) {
       const linha = mapearPedidoShopee(shopId, o);
       if (linha) linhas.push(linha);
     }
-    if (linhas.length) await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id');
+    if (linhas.length) {
+      // Devolução aceita vem de outra lista (get_return_list) e o pedido segue
+      // COMPLETED — não deixa a releitura do pedido desfazer a marcação.
+      const dev = await sbSelect('glr_pedidos', `marketplace=eq.shopee&conta_id=eq.${shopId}&situacao=eq.devolvido&pedido_id=in.(${linhas.map(l => l.pedido_id).join(',')})&select=pedido_id`).catch(() => []);
+      const devSet = new Set(dev.map(d => d.pedido_id));
+      for (const l of linhas) { if (devSet.has(l.pedido_id) && l.situacao === 'valido') l.situacao = 'devolvido'; tocar('shopee', shopId, l.criado_em); }
+      await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id');
+    }
     n += linhas.length;
   }
   return { n, completo: true };
@@ -179,8 +197,9 @@ function mapearPedidoML(contaId, o) {
     status_original: o.status || '',
     situacao: status.includes('cancel') || status === 'invalid' ? 'cancelado' : 'valido',
     valor_bruto: r2(o.total_amount),
-    valor_itens: r2(itens.reduce((s, i) => s + i.preco * i.qtd, 0)), frete: null,
-    taxas: { tarifa_venda: r2(itens.reduce((s, i) => s + i.tarifa_venda * i.qtd, 0)), pack_id: o.pack_id || null },
+    valor_itens: r2(itens.reduce((s, i) => s + i.preco * i.qtd, 0)),
+    // líquido e frete do vendedor vêm depois, do recebimento (/collections)
+    taxas: { tarifa_venda: r2(itens.reduce((s, i) => s + i.tarifa_venda * i.qtd, 0)), pack_id: o.pack_id || null, payment_id: o.payments?.[0]?.id || null },
     itens, sincronizado_em: new Date().toISOString(),
   };
 }
@@ -193,6 +212,7 @@ async function gravarPedidosML(apiKey, contaId, dataDe, dataAte, prazo) {
     const d = r.data || r;
     const res = d.results || [];
     const linhas = res.filter(o => o && o.id && o.date_created).map(o => mapearPedidoML(contaId, o));
+    linhas.forEach(l => tocar('ml', contaId, l.criado_em));
     if (linhas.length) await sbUpsert('glr_pedidos', [...new Map(linhas.map(l => [l.pedido_id, l])).values()], 'marketplace,conta_id,pedido_id');
     n += linhas.length;
     const total = parseInt(d.paging?.total) || 0;
@@ -222,6 +242,135 @@ async function gravarAdsML(apiKey, contaId, de, ate) {
   return unicas.length;
 }
 
+// ── Shopee: devoluções/reembolsos ACEITOS tiram o pedido do faturamento
+//    válido (mesma regra do Dashboard). A lista é por data de atualização. ──
+async function marcarDevolucoesShopee(apiKey, shopId, de, ate, prazo) {
+  const sns = new Set();
+  for (let ini = de; ini < ate; ini += 14 * DIA) {
+    const fim = Math.min(ini + 14 * DIA, ate);
+    for (let pagina = 1; pagina <= 20; pagina++) {
+      if (Date.now() > prazo) return { n: 0, completo: false };
+      const r = await comRetry(() => mcpCall(apiKey, 'shopee_get_return_list', { shopId, update_time_from: ini, update_time_to: fim, page_size: 50, page_no: pagina }));
+      const resp = r.data?.response || r.response || {};
+      for (const d of (resp.return || [])) if (d.status === 'ACCEPTED' && d.order_sn) sns.add(String(d.order_sn));
+      if (!resp.more) break;
+    }
+  }
+  if (!sns.size) return { n: 0, completo: true };
+  const lista = [...sns];
+  let n = 0;
+  for (let i = 0; i < lista.length; i += 100) {
+    const lote = lista.slice(i, i + 100);
+    const rows = await sbSelect('glr_pedidos', `marketplace=eq.shopee&conta_id=eq.${shopId}&situacao=eq.valido&pedido_id=in.(${lote.join(',')})&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto`);
+    if (!rows.length) continue;
+    rows.forEach(r => { r.situacao = 'devolvido'; tocar('shopee', shopId, r.criado_em); });
+    await sbUpsert('glr_pedidos', rows, 'marketplace,conta_id,pedido_id');
+    n += rows.length;
+  }
+  return { n, completo: true };
+}
+
+// ── Taxas reais por pedido (o que o Financeiro precisa) ──
+// Shopee: escrow dos pedidos COMPLETED. Mesma interpretação da tela Financeiro:
+// comissão e tarifa de serviço BRUTAS (batem com o escrow_amount), frete do
+// vendedor = custo real − pago pelo comprador − subsídio da Shopee.
+const ESCROW_USADOS = new Set(['actual_shipping_fee', 'buyer_paid_shipping_fee', 'shopee_shipping_rebate', 'net_commission_fee', 'commission_fee', 'net_service_fee', 'service_fee', 'seller_product_rebate', 'shopee_discount', 'escrow_amount', 'escrow_amount_after_adjustment', 'seller_transaction_fee', 'buyer_tax_amount', 'seller_coin_cash_back', 'shipping_seller_protection_fee_amount', 'voucher_from_shopee', 'credit_card_promotion_fee', 'credit_card_promotion', 'coins', 'shopee_coins_cash_back', 'buyer_total_amount', 'cost_of_goods_sold', 'original_cost_of_goods_sold', 'order_discounted_price', 'order_original_price', 'order_selling_price', 'original_price', 'original_shopee_discount', 'estimated_shipping_fee', 'remaining_voucher', 'net_commission_fee_info_list', 'net_service_fee_info_list', 'tenure_info_list', 'items', 'seller_voucher_code', 'buyer_payment_method', 'instalment_plan', 'final_shipping_fee', 'order_seller_discount', 'credit_card_transaction_fee',
+  'order_chargeable_weight', 'final_height', 'final_width', 'final_length', 'order_sn', 'escrow_release_time', 'order_income_struct', 'is_paid_by_credit_card', 'shopee_voucher_code', 'reverse_shipping_fee_confirmed', 'tax_payment_method']);
+function taxasDoEscrow(oi) {
+  const n = v => parseFloat(v) || 0;
+  const detalhes = {};
+  const varrer = (obj, pre) => {
+    for (const [k, v] of Object.entries(obj || {})) {
+      if (ESCROW_USADOS.has(k)) continue;
+      if (v && typeof v === 'object' && !Array.isArray(v)) { varrer(v, pre ? `${pre}.${k}` : k); continue; }
+      const num = typeof v === 'number' ? v : (typeof v === 'string' ? parseFloat(v) : NaN);
+      if (!isNaN(num) && Math.abs(num) > 0.001) detalhes[pre ? `${pre}.${k}` : k] = num;
+    }
+  };
+  varrer(oi, '');
+  return {
+    liquido: n(oi.escrow_amount), comissao: n(oi.commission_fee), taxaServico: n(oi.service_fee),
+    imposto: n(oi.seller_transaction_fee) + n(oi.buyer_tax_amount) + n(oi.seller_coin_cash_back),
+    frete: Math.max(0, n(oi.actual_shipping_fee) - n(oi.buyer_paid_shipping_fee) - n(oi.shopee_shipping_rebate)) + n(oi.shipping_seller_protection_fee_amount),
+    voucher: n(oi.voucher_from_shopee), rebate: n(oi.seller_product_rebate?.amount),
+    taxaCartao: n(oi.credit_card_promotion), moedas: n(oi.coins) + n(oi.shopee_coins_cash_back),
+    detalhes,
+  };
+}
+const desdeTaxas = t => encodeURIComponent(new Date((t - 120 * DIA) * SEG).toISOString());
+async function enriquecerTaxasShopee(apiKey, shopId, t, prazo) {
+  const pend = await sbSelect('glr_pedidos', `marketplace=eq.shopee&conta_id=eq.${shopId}&status_original=eq.COMPLETED&liquido=is.null&criado_em=gte.${desdeTaxas(t)}&order=criado_em.desc&limit=300&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto`);
+  let n = 0;
+  for (let i = 0; i < pend.length; i += 50) {
+    if (Date.now() > prazo) break;
+    const lote = pend.slice(i, i + 50);
+    const r = await comRetry(() => mcpCall(apiKey, 'shopee_get_escrow_detail_batch', { shopId, order_sn_list: lote.map(p => p.pedido_id) }));
+    const lista = r.data?.response?.result_list || r.response?.result_list || (Array.isArray(r.data?.response) ? r.data.response : null) || (Array.isArray(r.response) ? r.response : []);
+    const porSn = {};
+    for (const it of lista) {
+      const sn = it.escrow_detail?.order_sn || it.order_sn;
+      const oi = it.escrow_detail?.order_income || it.order_income;
+      if (sn && oi) porSn[sn] = taxasDoEscrow(oi);
+    }
+    const linhas = lote.filter(p => porSn[p.pedido_id]?.liquido > 0).map(p => ({ ...p, liquido: r2(porSn[p.pedido_id].liquido), taxas: porSn[p.pedido_id] }));
+    if (linhas.length) { await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id'); linhas.forEach(l => tocar('shopee', shopId, l.criado_em)); n += linhas.length; }
+  }
+  return n;
+}
+// ML: líquido recebido do pagamento (/collections). Frete do vendedor = o que
+// sobra além da tarifa de venda (mesma conta da tela Financeiro).
+async function enriquecerTaxasML(apiKey, contaId, t, prazo) {
+  const pend = await sbSelect('glr_pedidos', `marketplace=eq.ml&conta_id=eq.${contaId}&situacao=eq.valido&status_original=eq.paid&liquido=is.null&criado_em=gte.${desdeTaxas(t)}&order=criado_em.desc&limit=80&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto,taxas`);
+  const linhas = [];
+  let falhas = 0;
+  for (const p of pend) {
+    if (Date.now() > prazo || falhas >= 3) break;
+    const pay = p.taxas?.payment_id;
+    if (!pay) continue;
+    try {
+      const r = await mcpCall(apiKey, 'raw', { method: 'GET', path: `/collections/${pay}`, meliUserId: contaId });
+      const d = r.data || r;
+      const net = parseFloat(d.net_received_amount ?? d.collection?.net_received_amount);
+      if (!isNaN(net) && net > 0) linhas.push({ marketplace: 'ml', conta_id: p.conta_id, pedido_id: p.pedido_id, criado_em: p.criado_em, situacao: p.situacao, valor_bruto: p.valor_bruto, liquido: r2(net), frete: r2(Math.max(0, p.valor_bruto - net - (parseFloat(p.taxas?.tarifa_venda) || 0))) });
+    } catch (e) { falhas++; }
+  }
+  if (linhas.length) { await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id'); linhas.forEach(l => tocar('ml', contaId, l.criado_em)); }
+  return linhas.length;
+}
+
+// ── Resumo diário por loja (fica no próprio glr_sync_estado, recurso
+//    "resumo"): o Dashboard lê isso em vez de buscar pedido a pedido. ──
+const DIAS_RESUMO = 100;
+async function atualizarResumo(mkt, conta, resumoAtual, t) {
+  const dias = { ...(resumoAtual?.cursor?.dias || {}) };
+  const hoje = dataBR(t), ontem = dataBR(t - DIA);
+  const tocados = new Set([...(TOCADOS.get(`${mkt}:${conta}`) || []), hoje, ontem]);
+  const corte = dataBR(t - DIAS_RESUMO * DIA);
+  for (const dia of [...tocados].filter(d => d >= corte).sort().slice(-(DIAS_RESUMO + 2))) {
+    const de = new Date(`${dia}T00:00:00-03:00`).toISOString();
+    const ate = new Date(new Date(`${dia}T00:00:00-03:00`).getTime() + DIA * SEG).toISOString();
+    const rows = [];
+    for (let off = 0; off < 20000; off += 1000) {
+      const pg = await sbSelect('glr_pedidos', `marketplace=eq.${mkt}&conta_id=eq.${conta}&criado_em=gte.${encodeURIComponent(de)}&criado_em=lt.${encodeURIComponent(ate)}&select=situacao,valor_bruto,liquido,itens&limit=1000&offset=${off}`);
+      rows.push(...pg);
+      if (pg.length < 1000) break;
+    }
+    const v = rows.filter(r => r.situacao === 'valido');
+    const soma = (rs, f) => r2(rs.reduce((s, r) => s + f(r), 0));
+    const comLiq = v.filter(r => r.liquido != null);
+    const res = {
+      pedidos: v.length, faturamento: soma(v, r => parseFloat(r.valor_bruto) || 0),
+      unidades: v.reduce((s, r) => s + (r.itens || []).reduce((a, i) => a + (parseInt(i.qtd) || 1), 0), 0),
+      cancelados: rows.filter(r => r.situacao === 'cancelado').length, valor_cancelado: soma(rows.filter(r => r.situacao === 'cancelado'), r => parseFloat(r.valor_bruto) || 0),
+      devolvidos: rows.filter(r => r.situacao === 'devolvido').length, valor_devolvido: soma(rows.filter(r => r.situacao === 'devolvido'), r => parseFloat(r.valor_bruto) || 0),
+      liquido: soma(comLiq, r => parseFloat(r.liquido) || 0), com_liquido: comLiq.length,
+    };
+    if (rows.length) dias[dia] = res; else delete dias[dia];
+  }
+  for (const d of Object.keys(dias)) if (d < corte) delete dias[d];
+  await salvarEstado(mkt, conta, 'resumo', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, cursor: { dias }, registros: Object.keys(dias).length });
+}
+
 // ── O que muda entre marketplaces fica aqui; o resto do motor é igual ──
 const ADAPTADORES = {
   shopee: {
@@ -233,6 +382,13 @@ const ADAPTADORES = {
       return r.n;
     },
     async bloco(apiKey, id, de, ate, prazo) { return gravarPedidos(apiKey, id, await listarSns(apiKey, id, 'create_time', de, ate), prazo); },
+    async devolucoes(apiKey, id, cursor, t, prazo) {
+      const de = Math.max((cursor.dev_ate || t - DIAS_HISTORICO * DIA) - 600, t - DIAS_HISTORICO * DIA);
+      const r = await marcarDevolucoesShopee(apiKey, id, de, t, prazo);
+      if (r.completo) cursor.dev_ate = t;
+      return r.n;
+    },
+    taxas: enriquecerTaxasShopee,
     ads: gravarAds,
   },
   ml: {
@@ -240,6 +396,7 @@ const ADAPTADORES = {
     // cancelamento de venda mais antiga é pego pela reconferência diária dos 45 dias.
     async incremental(apiKey, id, cursor, t, prazo) { return (await gravarPedidosML(apiKey, id, dataBR(t - DIA), dataBR(t), prazo)).n; },
     async bloco(apiKey, id, de, ate, prazo) { return gravarPedidosML(apiKey, id, dataBR(de), dataBR(ate), prazo); },
+    taxas: enriquecerTaxasML,
     ads: gravarAdsML,
   },
 };
@@ -260,11 +417,16 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
   const cursor = { ...(estadoAtual?.cursor || {}) };
   const t = agora();
   let gravados = 0;
+  TOCADOS.delete(`${mkt}:${shopId}`);
   // Marca a tentativa já no início: a próxima rodada começa por quem está há
   // mais tempo sem ser visitado, mesmo que esta aqui seja cortada no meio.
   await salvarEstado(mkt, shopId, 'pedidos', {}).catch(() => {});
   try {
     gravados += await ad.incremental(apiKey, shopId, cursor, t, prazo);
+    if (ad.devolucoes) {
+      try { await ad.devolucoes(apiKey, shopId, cursor, t, prazo); }
+      catch (e) { console.warn('[sync-dados] devoluções', mkt, shopId, e.message); }
+    }
 
     // Reprocesso diário: começa uma vez por dia, depois das 03:00 (Brasília).
     const hoje = dataBR(t);
@@ -292,6 +454,11 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
         if (cursor.reproc_de >= cursor.reproc_ate) { delete cursor.reproc_de; delete cursor.reproc_ate; }
       }
     }
+    // Taxas reais (escrow Shopee / recebimento ML) dos pedidos que ainda não têm.
+    if (ad.taxas && Date.now() < prazo) {
+      try { cursor.taxas_ult = await ad.taxas(apiKey, shopId, t, Math.min(prazo, Date.now() + TEMPO_TAXAS_POR_CONTA_MS)); }
+      catch (e) { cursor.taxas_erro = String(e.message || e).slice(0, 200); }
+    }
     await salvarEstado(mkt, shopId, 'pedidos', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, cursor, registros: gravados });
   } catch (e) {
     await salvarEstado(mkt, shopId, 'pedidos', { ultimo_erro: String(e.message || e).slice(0, 500), cursor }).catch(() => {});
@@ -308,6 +475,8 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
       await salvarEstado(mkt, shopId, 'ads', { ultimo_erro: String(e.message || e).slice(0, 500) }).catch(() => {});
     }
   }
+  try { await atualizarResumo(mkt, shopId, estadoAtual?.resumo, t); }
+  catch (e) { await salvarEstado(mkt, shopId, 'resumo', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
   return { mkt, conta: shopId, pedidos: gravados };
 }
 
@@ -322,6 +491,7 @@ async function executar(apiKey, soConta) {
     porConta[k] = porConta[k] || {};
     if (e.recurso === 'pedidos') Object.assign(porConta[k], e);
     if (e.recurso === 'ads') porConta[k].ads = e;
+    if (e.recurso === 'resumo') porConta[k].resumo = e;
   }
   const chave = c => `${c.mkt}:${c.id}`;
   // Fila justa: quem foi visitado há mais tempo (ou nunca) vai primeiro; o que
