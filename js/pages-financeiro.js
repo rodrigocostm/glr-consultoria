@@ -75,8 +75,10 @@ Router.register('financeiro', async (params, el) => {
 
   // Mês selecionado persiste entre recarregamentos (não volta sozinho pro mês atual)
   let mesSel   = localStorage.getItem('glr_fin_mes') || `${hoje.getFullYear()}-${pad(hoje.getMonth()+1)}`;
-  let empresaSel = 'todas';  // empresa/tag selecionada
-  let contaSel = 'todas';    // conta individual selecionada
+  // Empresa/conta escolhidas ficam lembradas: a tela já abre carregada da base.
+  let empresaSel = localStorage.getItem('glr_fin_empresa') || 'todas';  // empresa/tag selecionada
+  let contaSel = localStorage.getItem('glr_fin_conta') || 'todas';      // conta individual selecionada
+  let ultimaBuscaSoBase = false; // última busca veio toda da base → pode recarregar sozinha
   let incluirReemb = true;
   let pedidos  = [];
   let contas   = [];
@@ -275,7 +277,7 @@ Router.register('financeiro', async (params, el) => {
     const cont = document.getElementById('fin-conteudo');
     if (!cont) return;
     if (!pedidos.length) {
-      cont.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">⏳ Nenhum dado carregado. Clique em Atualizar.</div>`;
+      cont.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">${empresaSel === 'todas' && contaSel === 'todas' ? 'Escolha uma empresa ou conta no filtro acima — os dados carregam sozinhos.' : '⏳ Carregando…'}</div>`;
       return;
     }
 
@@ -642,6 +644,63 @@ Router.register('financeiro', async (params, el) => {
   let forceReprocess = false; // força reprocessamento mesmo se tiver cache
   let contaReprocess = null; // se setado, reprocessa apenas essa conta
 
+  // ── Base sincronizada (servidor, a cada 15 min) ───────────────────────────
+  // Pedidos com as taxas reais (escrow Shopee / recebimento ML) e ADS por dia já
+  // gravados pelo motor do servidor. Conta só é lida da base se o histórico dela
+  // cobre o mês inteiro; as outras seguem pela busca antiga, pela API.
+  const idNaBase = c => String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id);
+  function pedidoDaBase(mkt, r, contaId) {
+    const valor = parseFloat(r.valor_bruto) || 0;
+    const status = r.situacao === 'devolvido' ? 'devolvido' : (r.status_original || '');
+    if (mkt === 'shopee') {
+      // Igual à busca antiga: sem escrow (pedido ainda não concluído) → líquido = valor, sem taxas
+      const tx = r.liquido != null && r.taxas ? { ...r.taxas, liquido: parseFloat(r.liquido) } : { liquido: valor, comissao: 0, taxaServico: 0, imposto: 0, frete: 0, voucher: 0 };
+      return { id: r.pedido_id, plataforma: 'Shopee', contaId, dataTs: Date.parse(r.criado_em), valor, freteComprador: parseFloat(r.frete) || 0, status, taxas: tx, _base: true, _semTaxa: r.liquido == null && status === 'COMPLETED' };
+    }
+    const tarifa = parseFloat(r.taxas?.tarifa_venda) || 0;
+    const liq = r.liquido != null ? parseFloat(r.liquido) : null;
+    // Igual à busca antiga: sem recebimento ainda → líquido estimado = valor − tarifa, frete 0
+    return { id: r.pedido_id, plataforma: 'Mercado Livre', contaId, dataTs: Date.parse(r.criado_em), valor, status, paymentId: r.taxas?.payment_id || null,
+      taxas: { liquido: liq != null ? liq : valor - tarifa, comissao: tarifa, taxaServico: 0, imposto: 0, frete: liq != null ? (parseFloat(r.frete) || 0) : 0, voucher: 0 },
+      _base: true, _semTaxa: liq == null && r.situacao === 'valido' };
+  }
+  async function carregarDaBase(contasAlvo, primeiroDia, dataTo) {
+    const out = { contas: [], pedidos: [], ads: {}, det: {} };
+    if (!window.BaseDados) return out;
+    const base = await BaseDados.carregar(true);
+    for (const c of contasAlvo) {
+      const mkt = BaseDados.mktDe(c.marketplace);
+      if (mkt && BaseDados.cobre(base[BaseDados.chave(mkt, idNaBase(c))], primeiroDia)) out.contas.push(c);
+    }
+    if (!out.contas.length) return out;
+    const ini = new Date(`${primeiroDia}T00:00:00-03:00`).toISOString();
+    const fim = new Date(new Date(`${dataTo}T00:00:00-03:00`).getTime() + 86400000).toISOString();
+    for (const mkt of ['shopee', 'ml']) {
+      const doMkt = out.contas.filter(c => BaseDados.mktDe(c.marketplace) === mkt);
+      if (!doMkt.length) continue;
+      const ids = doMkt.map(idNaBase);
+      const contaDe = Object.fromEntries(doMkt.map(c => [idNaBase(c), c.external_id]));
+      for (let off = 0; off < 200000; off += 1000) {
+        const { data, error } = await _sb.from('glr_pedidos')
+          .select('conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto,frete,liquido,taxas')
+          .eq('marketplace', mkt).in('conta_id', ids).gte('criado_em', ini).lt('criado_em', fim)
+          .order('criado_em').order('pedido_id').range(off, off + 999);
+        if (error) throw error;
+        for (const r of (data || [])) out.pedidos.push(pedidoDaBase(mkt, r, contaDe[r.conta_id]));
+        if (!data || data.length < 1000) break;
+      }
+      const { data: ads, error: eAds } = await _sb.from('glr_ads_diario')
+        .select('gasto,gmv_ads,pedidos_ads,impressoes,cliques').eq('marketplace', mkt).in('conta_id', ids).gte('data', primeiroDia).lte('data', dataTo);
+      if (eAds) throw eAds;
+      const plat = mkt === 'shopee' ? 'Shopee' : 'Mercado Livre';
+      const soma = c => (ads || []).reduce((t, d) => t + (parseFloat(d[c]) || 0), 0);
+      out.ads[plat] = soma('gasto');
+      const inv = soma('gasto'), cl = soma('cliques'), imp = soma('impressoes'), fatAds = soma('gmv_ads');
+      if (inv > 0) out.det[plat] = { investimento: inv, cliques: cl, impressoes: imp, vendas: soma('pedidos_ads'), faturamentoAds: fatAds, ctr: imp > 0 ? cl / imp * 100 : 0, cpc: cl > 0 ? inv / cl : 0, roas: inv > 0 ? fatAds / inv : 0 };
+    }
+    return out;
+  }
+
   async function buscar() {
     console.log('[BUSCAR] Iniciado | forceReprocess:', forceReprocess);
     const statusEl = document.getElementById('fin-status');
@@ -675,6 +734,7 @@ Router.register('financeiro', async (params, el) => {
 
     // IMPORTANTE: Guardar contaReprocess ANTES de resetar flags
     const contaReprocessLocal = contaReprocess;
+    const forcarAPI = forceReprocess; // ♻️ Reprocessar = busca direto na API, ignorando a base
 
     forceReprocess = false; // reseta flag
     contaReprocess = null; // reseta conta a reprocessar
@@ -733,6 +793,21 @@ Router.register('financeiro', async (params, el) => {
       } else {
         pedidos = [];
       }
+
+      // Base sincronizada primeiro: instantâneo. Só o que ela ainda não cobre
+      // (histórico carregando, Amazon/Magalu...) segue pela API abaixo.
+      const contasSelecionadas = contasParaBuscar.slice();
+      let viaBase = { contas: [], pedidos: [], ads: {}, det: {} };
+      if (!forcarAPI) {
+        if (statusEl) statusEl.textContent = '⚡ Lendo a base automática...';
+        try { viaBase = await carregarDaBase(contasParaBuscar, primeiroDia, dataTo); }
+        catch (eBase) { console.warn('[Financeiro] base indisponível, seguindo pela API:', eBase.message); }
+      }
+      const idsDaBase = new Set(viaBase.contas.map(c => c.external_id));
+      contasParaBuscar = contasParaBuscar.filter(c => !idsDaBase.has(c.external_id));
+      pedidos.push(...viaBase.pedidos);
+      ultimaBuscaSoBase = !forcarAPI && viaBase.contas.length > 0 && contasParaBuscar.length === 0;
+      if (viaBase.pedidos.length) renderConteudo();
 
       const errosConta = [];
       const log = [];
@@ -1071,11 +1146,11 @@ Router.register('financeiro', async (params, el) => {
       console.log('[✓] Pedidos carregados:', pedidos.length, 'pedidos. Buscando ADS e Afiliados...');
 
       // ── ADS: investimento + métricas detalhadas ──
-      adsAPI = {};
-      adsDetalhados = {};
-      console.log('[ADS] Iniciando busca para', contas.length, 'contas');
+      adsAPI = { ...viaBase.ads };
+      adsDetalhados = { ...viaBase.det };
+      console.log('[ADS] Base:', viaBase.ads, '| API para', contasParaBuscar.length, 'contas');
       if (statusEl) statusEl.textContent = '📢 Buscando investimento em ADS...';
-      for (const conta of contas) {
+      for (const conta of contasParaBuscar) {
         try {
           if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
             try {
@@ -1090,12 +1165,12 @@ Router.register('financeiro', async (params, el) => {
                 if (res.length < 50) break;
                 off += 50;
               }
-              adsAPI['Mercado Livre'] = custo;
+              adsAPI['Mercado Livre'] = (adsAPI['Mercado Livre'] || 0) + custo;
 
               // Puxar métricas detalhadas de ML ADS
               try {
                 const det = await MarketplaceAPI.mlAdsMetricsDetailed(meliId, primeiroDia, dataTo);
-                adsDetalhados['Mercado Livre'] = det;
+                if (!adsDetalhados['Mercado Livre']) adsDetalhados['Mercado Livre'] = det;
                 console.log(`[ADS] ML Detalhado:`, det);
               } catch(e) {
                 console.warn('[ADS] Erro ao puxar métricas detalhadas ML:', e.message);
@@ -1126,8 +1201,8 @@ Router.register('financeiro', async (params, el) => {
                 cur = addDays(chunkEnd, 1);
               }
               const totalCusto = todasDias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0);
-              adsAPI['Shopee'] = totalCusto;
-              if (todasDias.length > 0) {
+              adsAPI['Shopee'] = (adsAPI['Shopee'] || 0) + totalCusto;
+              if (todasDias.length > 0 && !adsDetalhados['Shopee']) {
                 adsDetalhados['Shopee'] = {
                   investimento: totalCusto,
                   cliques:    todasDias.reduce((s,d) => s + (parseInt(d.clicks)||0), 0),
@@ -1168,7 +1243,7 @@ Router.register('financeiro', async (params, el) => {
       // ── Payout/Carteira: informações de pagamento ──
       payout = {};
       if (statusEl) statusEl.textContent = '💳 Buscando informações de payout...';
-      for (const conta of contas) {
+      for (const conta of contasSelecionadas) {
         try {
           if (conta.marketplace === 'shopee') {
             const shopId = conta.param_to_use?.shopId||conta.external_id;
@@ -1195,7 +1270,9 @@ Router.register('financeiro', async (params, el) => {
         const erroHtml = errosConta.length
           ? ` <span style="font-size:10px;background:rgba(239,68,68,0.15);color:var(--red);padding:2px 8px;border-radius:8px;">⚠️ ${errosConta.join(' · ')}</span>`
           : ` <span style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--green);padding:2px 8px;border-radius:8px;">✓ salvo</span>`;
-        statusEl.innerHTML = `${pedidos.length} pedidos · ${log.join(' | ')} · ${primeiroDia} a ${dataTo}${erroHtml}`;
+        const semTaxa = pedidos.filter(p => p._semTaxa).length;
+        const fonteBase = viaBase.contas.length ? `⚡ ${viaBase.contas.length} conta${viaBase.contas.length !== 1 ? 's' : ''} da base automática${semTaxa ? ` (${semTaxa} pedido${semTaxa !== 1 ? 's' : ''} ainda sem taxa real — o servidor está buscando)` : ''}` : '';
+        statusEl.innerHTML = `${pedidos.length} pedidos · ${[fonteBase, ...log].filter(Boolean).join(' | ')} · ${primeiroDia} a ${dataTo}${erroHtml}`;
       }
       renderConteudo();
       console.log('[FLUXO] ✓ Concluído!');
@@ -1258,7 +1335,7 @@ Router.register('financeiro', async (params, el) => {
   function renderFiltroContas() {
     const sel = document.getElementById('fin-sel-conta');
     if (!sel) return;
-    const atual = sel.value;
+    const atual = sel.value || contaSel;
 
     // Filtrar contas por empresa selecionada (usando nome de empresa extraído da tag)
     let contasFiltradas = contas;
@@ -1479,12 +1556,12 @@ Router.register('financeiro', async (params, el) => {
 
   document.getElementById('fin-chk-reemb').addEventListener('change', e=>{ incluirReemb=e.target.checked; renderConteudo(); });
   document.getElementById('fin-sel-empresa').addEventListener('change', e=>{
-    empresaSel=e.target.value; renderFiltroContas();
+    empresaSel=e.target.value; localStorage.setItem('glr_fin_empresa', empresaSel); renderFiltroContas(); localStorage.setItem('glr_fin_conta', contaSel);
     // Selecionar uma empresa já dispara a busca — sem isso a trava em buscar()
     // ficaria esperando pra sempre (usuário teria que clicar em Atualizar também)
     buscar();
   });
-  document.getElementById('fin-sel-conta').addEventListener('change', e=>{ contaSel=e.target.value; buscar(); });
+  document.getElementById('fin-sel-conta').addEventListener('change', e=>{ contaSel=e.target.value; localStorage.setItem('glr_fin_conta', contaSel); buscar(); });
   document.getElementById('fin-sel-mes').addEventListener('change', e=>{
     mesSel = e.target.value;
     localStorage.setItem('glr_fin_mes', mesSel);
@@ -1509,6 +1586,8 @@ Router.register('financeiro', async (params, el) => {
     renderFiltroEmpresas();
     renderFiltroContas();
     console.log('[Contas] Carregadas:', contas.length);
+    // Já tinha empresa/conta escolhida → carrega sozinho (da base, instantâneo)
+    if ((empresaSel !== 'todas' || contaSel !== 'todas') && Router.currentPage === 'financeiro') buscar();
   }).catch(e => {
     console.error('[Contas] Erro:', e.message);
   });
@@ -1522,7 +1601,17 @@ Router.register('financeiro', async (params, el) => {
     if (s) s.textContent = `${pedidos.length} pedidos (cache)`;
     renderConteudo();
   } else {
-    if (s) s.innerHTML = '⚠️ Selecione uma <strong>conta</strong> ou <strong>empresa</strong> no filtro para buscar os dados.';
+    if (s) s.innerHTML = empresaSel !== 'todas' || contaSel !== 'todas' ? '⏳ Carregando…' : '⚠️ Selecione uma <strong>conta</strong> ou <strong>empresa</strong> no filtro para ver os dados.';
     renderConteudo();
+  }
+
+  // Servidor terminou uma rodada de sincronização → recarrega sozinho, se o que
+  // está na tela veio todo da base (recarregar contas da API seria lento demais).
+  window._finRecarregarDaBase = () => {
+    if (Router.currentPage === 'financeiro' && ultimaBuscaSoBase && !buscando && document.getElementById('fin-conteudo')) buscar();
+  };
+  if (!window._finOuvindoBase) {
+    window._finOuvindoBase = true;
+    window.addEventListener('glr-base-atualizada', () => window._finRecarregarDaBase && window._finRecarregarDaBase());
   }
 });
