@@ -374,7 +374,7 @@ async function adsBase(ctx, { inicio, fim, escopo, agrupar }) {
     por_loja: porLoja,
     serie: sAds.map(x => ({ ...x, faturamento_valido: sVen[x.periodo]?.faturamento_valido ?? 0, tacos_bruto_pct: sVen[x.periodo]?.faturamento_bruto > 0 ? r2(x.gasto / sVen[x.periodo].faturamento_bruto * 100) : null })),
     avisos: [aviso, ...(await coberturaBase(lojas, inicio))].filter(Boolean),
-    regra: 'GMV de ADS é a atribuição da plataforma (pode passar do faturamento). TACOS = gasto ÷ faturamento total da loja. No ML, pedidos_ads = unidades vendidas via ADS.',
+    regra: 'GMV de ADS é a atribuição da plataforma (pode passar do faturamento). Na Shopee o gasto já inclui o GMV Max (campanha de loja). TACOS = gasto ÷ faturamento total da loja. No ML, pedidos_ads = unidades vendidas via ADS.',
   };
 }
 

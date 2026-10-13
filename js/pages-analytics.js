@@ -204,9 +204,11 @@ Router.register('analytics-conteudo', async (params, el) => {
             const baseMes = BaseDados.cobre(info, primeiroDia), baseMeses = BaseDados.cobre(info, m2.from);
             if (baseMes) fatBase += BaseDados.somar(info, primeiroDia, dataTo).faturamento;
             if (baseMeses) { fatM1 += BaseDados.somar(info, m1.from, m1.to).faturamento; fatM2 += BaseDados.somar(info, m2.from, m2.to).faturamento; }
+            const adsDaBase = BaseDados.cobreAds(info, primeiroDia);
+            if (adsDaBase) adsBase += BaseDados.somar(info, primeiroDia, dataTo).ads;
             const tarefas = [
               baseMes ? Promise.resolve() : MarketplaceAPI.mlOrders(meliId, primeiroDia, dataTo).then(os => { fatBase += somaFat(os); }).catch(()=>{}),
-              (async () => {
+              adsDaBase ? Promise.resolve() : (async () => {
                 try {
                   let adsTotal = 0, off = 0;
                   while (true) {
@@ -258,9 +260,12 @@ Router.register('analytics-conteudo', async (params, el) => {
             const baseMes = BaseDados.cobre(info, primeiroDia), baseMeses = BaseDados.cobre(info, m2.from);
             if (baseMes) fatBase += BaseDados.somar(info, primeiroDia, dataTo).faturamento;
             if (baseMeses) { fatM1 += BaseDados.somar(info, m1.from, m1.to).faturamento; fatM2 += BaseDados.somar(info, m2.from, m2.to).faturamento; }
+            // ADS da base já inclui o GMV Max (o servidor soma os dois por dia)
+            const adsDaBase = BaseDados.cobreAds(info, primeiroDia);
+            if (adsDaBase) adsBase += BaseDados.somar(info, primeiroDia, dataTo).ads;
             const tarefasShopee = [
               baseMes ? Promise.resolve() : subtotalShopeePeriodo(Math.floor(tsFrom/1000), Math.floor(tsTo/1000)).then(v => { fatBase += v; }).catch(()=>{}),
-              (async () => {
+              adsDaBase ? Promise.resolve() : (async () => {
                 try {
                   const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(primeiroDia), end_date: toShopeeDate(dataTo) });
                   const dias = r?.data?.response || [];

@@ -166,6 +166,74 @@ async function gravarPedidos(apiKey, shopId, sns, prazo) {
   return { n, completo: true };
 }
 
+// ── Shopee GMV Max: campanha de loja com API própria. NÃO entra no
+//    shopee_ads_daily_performance, então soma no ADS do dia (gasto, vendas
+//    atribuídas, pedidos, cliques, impressões). A API só devolve o total do
+//    período pedido — por isso é consultado dia a dia. ──
+const inicioDiaUnix = unix => Math.floor((unix - 3 * 3600) / DIA) * DIA + 3 * 3600; // 00:00 de Brasília
+async function gmvMaxDia(apiKey, shopId, diaUnix) {
+  const d = ddmmyyyy(diaUnix);
+  const r = await comRetry(() => mcpCall(apiKey, 'shopee_ads_gms_performance', { shopId, start_date: d, end_date: d }));
+  const resp = r.data?.response || r.response || {};
+  const rep = resp.report;
+  if (!resp.campaign_id || !rep) return null; // loja sem GMV Max
+  return { gasto: r2(rep.expense), gmv: r2(rep.broad_gmv), pedidos: parseInt(rep.broad_order) || 0, impressoes: parseInt(rep.impression) || 0, cliques: parseInt(rep.clicks) || 0 };
+}
+// Grava os dias [de..ate] (máx. 30): ADS normal numa chamada + GMV Max dia a dia.
+// Só grava se conseguiu os dois — dia pela metade seria pior que dia velho.
+async function gravarDiasAdsShopee(apiKey, shopId, de, ate, comGmv, gmvPorDia, prazo) {
+  const r = await comRetry(() => mcpCall(apiKey, 'shopee_ads_daily_performance', { shopId, start_date: ddmmyyyy(de), end_date: ddmmyyyy(ate) }));
+  const porDia = {};
+  for (let u = de; u <= ate; u += DIA) porDia[dataBR(u)] = { marketplace: 'shopee', conta_id: String(shopId), data: dataBR(u), gasto: 0, gmv_ads: 0, pedidos_ads: 0, impressoes: 0, cliques: 0 };
+  for (const d of (r.data?.response || r.response || [])) {
+    const [dd, mm, aa] = String(d.date || '').split('-');
+    const l = porDia[`${aa}-${mm}-${dd}`];
+    if (!l) continue;
+    l.gasto = r2(d.expense); l.gmv_ads = r2(d.broad_gmv); l.pedidos_ads = parseInt(d.broad_order) || 0; l.impressoes = parseInt(d.impression) || 0; l.cliques = parseInt(d.clicks) || 0;
+  }
+  if (comGmv) {
+    for (let u = de; u <= ate; u += DIA) {
+      if (Date.now() > prazo) return { n: 0, completo: false };
+      const g = await gmvMaxDia(apiKey, shopId, u);
+      const l = porDia[dataBR(u)];
+      gmvPorDia[dataBR(u)] = g ? g.gasto : 0;
+      if (!g) continue;
+      l.gasto = r2(l.gasto + g.gasto); l.gmv_ads = r2(l.gmv_ads + g.gmv); l.pedidos_ads += g.pedidos; l.impressoes += g.impressoes; l.cliques += g.cliques;
+    }
+  }
+  const linhas = Object.values(porDia).map(l => ({ ...l, sincronizado_em: new Date().toISOString() }));
+  if (linhas.length) await sbUpsert('glr_ads_diario', linhas, 'marketplace,conta_id,data');
+  return { n: linhas.length, completo: true };
+}
+// Cada rodada: últimos 3 dias + um bloco de 10 dias do histórico (até 90),
+// regravando com o GMV Max incluído.
+async function gravarAdsShopee(apiKey, shopId, estAds, t, prazo) {
+  const cursor = { ...(estAds?.cursor || {}) };
+  const gmvPorDia = { ...(cursor.gmv_max || {}) };
+  const hoje0 = inicioDiaUnix(t);
+  // Tem GMV Max? Confere uma vez por dia (consulta de ontem).
+  if (cursor.gmv_verificado !== dataBR(t)) {
+    cursor.tem_gmv_max = !!(await gmvMaxDia(apiKey, shopId, hoje0 - DIA).catch(() => null));
+    cursor.gmv_verificado = dataBR(t);
+  }
+  const comGmv = !!cursor.tem_gmv_max;
+  let n = 0;
+  const rec = await gravarDiasAdsShopee(apiKey, shopId, hoje0 - 2 * DIA, hoje0, comGmv, gmvPorDia, prazo);
+  n += rec.n;
+  const limite = hoje0 - DIAS_HISTORICO * DIA;
+  const histAte = cursor.hist_ate || hoje0 - 2 * DIA; // tudo antes disso ainda precisa (re)gravar
+  if (rec.completo && histAte > limite && Date.now() < prazo) {
+    const de = Math.max(histAte - 10 * DIA, limite);
+    const r = await gravarDiasAdsShopee(apiKey, shopId, de, histAte - DIA, comGmv, gmvPorDia, prazo);
+    n += r.n;
+    if (r.completo) cursor.hist_ate = de;
+  }
+  const corte = dataBR(t - DIAS_RESUMO * DIA);
+  for (const d of Object.keys(gmvPorDia)) if (d < corte) delete gmvPorDia[d];
+  cursor.gmv_max = gmvPorDia;
+  return { n, cursor };
+}
+
 async function gravarAds(apiKey, shopId, de, ate) {
   const linhas = [];
   for (let ini = de; ini <= ate; ini += 30 * 86400) {
@@ -365,7 +433,18 @@ async function atualizarResumo(mkt, conta, resumoAtual, t) {
       devolvidos: rows.filter(r => r.situacao === 'devolvido').length, valor_devolvido: soma(rows.filter(r => r.situacao === 'devolvido'), r => parseFloat(r.valor_bruto) || 0),
       liquido: soma(comLiq, r => parseFloat(r.liquido) || 0), com_liquido: comLiq.length,
     };
-    if (rows.length) dias[dia] = res; else delete dias[dia];
+    if (rows.length) dias[dia] = { ...(dias[dia] || {}), ...res }; else if (dias[dia]) Object.assign(dias[dia], res);
+  }
+  // ADS do dia (já com GMV Max na Shopee) entra no mesmo resumo — TACOS sem consulta extra.
+  const ads = await sbSelect('glr_ads_diario', `marketplace=eq.${mkt}&conta_id=eq.${conta}&data=gte.${corte}&select=data,gasto,gmv_ads&limit=200`).catch(() => null);
+  if (ads) {
+    const porDia = Object.fromEntries(ads.map(a => [a.data, a]));
+    for (const d of new Set([...Object.keys(dias), ...Object.keys(porDia)])) {
+      const a = porDia[d];
+      if (!dias[d]) { if (!a || !(parseFloat(a.gasto) > 0)) continue; dias[d] = { pedidos: 0, faturamento: 0, unidades: 0, cancelados: 0, valor_cancelado: 0, devolvidos: 0, valor_devolvido: 0, liquido: 0, com_liquido: 0 }; }
+      dias[d].ads = a ? r2(a.gasto) : 0;
+      dias[d].ads_gmv = a ? r2(a.gmv_ads) : 0;
+    }
   }
   for (const d of Object.keys(dias)) if (d < corte) delete dias[d];
   await salvarEstado(mkt, conta, 'resumo', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, cursor: { dias }, registros: Object.keys(dias).length });
@@ -389,6 +468,7 @@ const ADAPTADORES = {
       return r.n;
     },
     taxas: enriquecerTaxasShopee,
+    adsCompleto: gravarAdsShopee,
     ads: gravarAds,
   },
   ml: {
@@ -468,9 +548,15 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
   if (Date.now() < prazo) {
     try {
       const estAds = estadoAtual?.ads || {};
-      const de = estAds.ultimo_sucesso ? t - 3 * DIA : t - DIAS_HISTORICO * DIA;
-      const n = await ad.ads(apiKey, shopId, de, t);
-      await salvarEstado(mkt, shopId, 'ads', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: n });
+      if (ad.adsCompleto) {
+        const r = await ad.adsCompleto(apiKey, shopId, estAds, t, prazo);
+        await salvarEstado(mkt, shopId, 'ads', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: r.n, cursor: r.cursor });
+      } else {
+        const de = estAds.ultimo_sucesso ? t - 3 * DIA : t - DIAS_HISTORICO * DIA;
+        const n = await ad.ads(apiKey, shopId, de, t);
+        // ML grava os 90 dias de uma vez na 1ª rodada — histórico de ADS completo desde então
+        await salvarEstado(mkt, shopId, 'ads', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: n, cursor: { hist_ate: estAds.cursor?.hist_ate || inicioDiaUnix(t) - DIAS_HISTORICO * DIA } });
+      }
     } catch (e) {
       await salvarEstado(mkt, shopId, 'ads', { ultimo_erro: String(e.message || e).slice(0, 500) }).catch(() => {});
     }

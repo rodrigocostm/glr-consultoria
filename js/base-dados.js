@@ -26,9 +26,10 @@ const BaseDados = (() => {
     if (!forcar && cache && Date.now() - cacheEm < TTL_MS) return cache;
     if (emAndamento) return emAndamento;
     emAndamento = (async () => {
-      const [res, ped] = await Promise.all([
+      const [res, ped, ads] = await Promise.all([
         _sb.from('glr_sync_estado').select('marketplace,conta_id,cursor,ultimo_sucesso').eq('recurso', 'resumo'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,cursor,ultimo_sucesso,ultimo_erro').eq('recurso', 'pedidos'),
+        _sb.from('glr_sync_estado').select('marketplace,conta_id,cursor,ultimo_sucesso').eq('recurso', 'ads'),
       ]);
       if (res.error) throw res.error;
       if (ped.error) throw ped.error;
@@ -42,6 +43,11 @@ const BaseDados = (() => {
         mapa[k].dias = e.cursor?.dias || {};
         mapa[k].resumoEm = e.ultimo_sucesso;
       }
+      // ADS: até onde o histórico diário (Shopee já com GMV Max) foi gravado
+      for (const e of (ads.data || [])) {
+        const k = `${e.marketplace}:${e.conta_id}`;
+        if (mapa[k] && e.ultimo_sucesso) mapa[k].adsHistAte = e.cursor?.hist_ate || null;
+      }
       cache = mapa; cacheEm = Date.now();
       return mapa;
     })().finally(() => { emAndamento = null; });
@@ -53,9 +59,14 @@ const BaseDados = (() => {
     return !!(info && info.historicoAte && info.resumoEm && info.historicoAte <= inicioDiaBRT(desdeIso));
   }
 
+  // O ADS por dia da loja (Shopee: ADS + GMV Max) cobre a partir de `desdeIso`?
+  function cobreAds(info, desdeIso) {
+    return !!(info && info.adsHistAte && info.resumoEm && info.adsHistAte <= inicioDiaBRT(desdeIso));
+  }
+
   // Soma o resumo diário de uma loja entre duas datas (inclusive).
   function somar(info, deIso, ateIso) {
-    const t = { pedidos: 0, faturamento: 0, unidades: 0, cancelados: 0, valor_cancelado: 0, devolvidos: 0, valor_devolvido: 0, liquido: 0, com_liquido: 0 };
+    const t = { pedidos: 0, faturamento: 0, unidades: 0, cancelados: 0, valor_cancelado: 0, devolvidos: 0, valor_devolvido: 0, liquido: 0, com_liquido: 0, ads: 0, ads_gmv: 0 };
     for (const [dia, v] of Object.entries(info?.dias || {})) {
       if (dia < deIso || dia > ateIso) continue;
       for (const c of Object.keys(t)) t[c] += parseFloat(v[c]) || 0;
@@ -77,7 +88,7 @@ const BaseDados = (() => {
       .subscribe();
   }
 
-  return { carregar, cobre, somar, invalidar, iniciarTempoReal, mktDe, chave };
+  return { carregar, cobre, cobreAds, somar, invalidar, iniciarTempoReal, mktDe, chave };
 })();
 window.BaseDados = BaseDados;
 BaseDados.iniciarTempoReal();
