@@ -17,9 +17,12 @@ const { waitUntil } = require('@vercel/functions');
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ORCAMENTO_MS = 270000;     // dentro do maxDuration (300s)
-const CONCORRENCIA = 3;          // contas em paralelo (dentro da conta é sequencial)
+const CONCORRENCIA = 8;          // lojas em paralelo (dentro da loja é sequencial)
 const DIAS_HISTORICO = 90;       // histórico inicial carregado aos poucos
+const DIAS_REPROCESSAR = 45;     // rede de segurança diária (cancelamento/devolução tardia)
+const TEMPO_FUNDO_POR_CONTA_MS = 60000; // histórico/reprocesso: no máx. 1 min por loja por rodada
 const SEG = 1000;
+const DIA = 86400;
 
 const sbHeaders = extra => ({ apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, ...extra });
 async function sbSelect(table, qs) {
@@ -64,9 +67,16 @@ const r2 = v => Math.round((parseFloat(v) || 0) * 100) / 100;
 const ddmmyyyy = unix => { const d = new Date((unix - 3 * 3600) * SEG); const p = n => String(n).padStart(2, '0'); return `${p(d.getUTCDate())}-${p(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`; };
 const dataBR = unix => { const d = new Date((unix - 3 * 3600) * SEG); const p = n => String(n).padStart(2, '0'); return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`; };
 
-// ── Contas a sincronizar: as vinculadas a clientes + as do piloto do Agente ──
-async function contasShopee() {
+// ── Contas a sincronizar: TODAS as lojas Shopee conectadas no conector +
+//    as vinculadas a clientes + as do piloto do Agente ──
+async function contasShopee(apiKey) {
   const ids = new Set();
+  try {
+    const r = await comRetry(() => mcpCall(apiKey, 'list_accounts', {}));
+    for (const c of (r.data?.accounts || r.accounts || [])) {
+      if (String(c.marketplace || '').toLowerCase() === 'shopee' && c.external_id) ids.add(String(c.param_to_use?.shopId || c.external_id));
+    }
+  } catch (e) { console.warn('[sync-dados] list_accounts falhou, seguindo só com os vínculos:', e.message); }
   const vinc = (await sbSelect('glr_storage', 'chave=eq.glr_mc_vinculos&select=dados'))[0]?.dados || {};
   for (const lista of Object.values(vinc)) {
     for (const c of (Array.isArray(lista) ? lista : [])) {
@@ -125,18 +135,23 @@ function mapearPedidoShopee(shopId, o) {
   };
 }
 
-async function gravarPedidos(apiKey, shopId, sns) {
-  const linhas = [];
+// Grava lote a lote (50 pedidos): o que já foi buscado fica salvo mesmo se o
+// tempo da rodada acabar no meio. Devolve { n, completo }.
+async function gravarPedidos(apiKey, shopId, sns, prazo) {
+  let n = 0;
   for (let i = 0; i < sns.length; i += 50) {
+    if (prazo && Date.now() > prazo) return { n, completo: false };
     const lote = sns.slice(i, i + 50);
     const r = await comRetry(() => mcpCall(apiKey, 'shopee_get_order_detail', { shopId, order_sn_list: lote, response_optional_fields: 'total_amount,item_list,order_status,update_time' }));
+    const linhas = [];
     for (const o of (r.data?.response?.order_list || r.response?.order_list || [])) {
       const linha = mapearPedidoShopee(shopId, o);
       if (linha) linhas.push(linha);
     }
+    if (linhas.length) await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id');
+    n += linhas.length;
   }
-  if (linhas.length) await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id');
-  return linhas.length;
+  return { n, completo: true };
 }
 
 async function gravarAds(apiKey, shopId, de, ate) {
@@ -160,69 +175,90 @@ async function salvarEstado(conta, recurso, campos) {
   await sbUpsert('glr_sync_estado', [{ marketplace: 'shopee', conta_id: conta, recurso, ultima_tentativa: new Date().toISOString(), ...campos }], 'marketplace,conta_id,recurso');
 }
 
-// ── Uma conta: incremental (o que mudou) + um pedaço do histórico por rodada ──
-async function sincronizarConta(apiKey, shopId, estadoAtual, modo, diasReprocessar, prazo) {
-  const cursor = estadoAtual?.cursor || {};
+// ── Uma conta por rodada:
+//  1) incremental por data de ATUALIZAÇÃO (venda nova, cancelamento, devolução);
+//  2) "fila de fundo" em blocos de 1 dia, com tempo máximo por loja: primeiro o
+//     histórico de 90 dias (voltando), depois o reprocesso diário dos últimos
+//     45 dias (rede de segurança). Cada dia concluído avança o cursor, então
+//     loja grande progride aos poucos e nenhuma trava a fila das outras;
+//  3) ADS por dia (90 dias na 1ª vez, depois os últimos 3).
+async function sincronizarConta(apiKey, shopId, estadoAtual, prazo) {
+  const cursor = { ...(estadoAtual?.cursor || {}) };
   const t = agora();
   let gravados = 0;
+  // Marca a tentativa já no início: a próxima rodada começa por quem está há
+  // mais tempo sem ser visitado, mesmo que esta aqui seja cortada no meio.
+  await salvarEstado(shopId, 'pedidos', {}).catch(() => {});
   try {
-    if (modo === 'reprocessar') {
-      // Reprocessa por data de criação: pega cancelamento/devolução tardia.
-      const inicio = t - diasReprocessar * 86400;
-      for (let de = inicio; de < t && Date.now() < prazo; de += 14 * 86400) {
-        gravados += await gravarPedidos(apiKey, shopId, await listarSns(apiKey, shopId, 'create_time', de, Math.min(de + 14 * 86400 - 1, t)));
-      }
-    } else {
-      // Incremental por data de ATUALIZAÇÃO: venda nova e mudança de status.
-      const desde = Math.max((cursor.ate_update || t - 2 * 86400) - 600, t - 14 * 86400);
-      gravados += await gravarPedidos(apiKey, shopId, await listarSns(apiKey, shopId, 'update_time', desde, t));
-      cursor.ate_update = t;
-      // Histórico: um bloco de 14 dias por rodada, voltando até 90 dias.
-      const limite = t - DIAS_HISTORICO * 86400;
+    const desde = Math.max((cursor.ate_update || t - 2 * DIA) - 600, t - 14 * DIA);
+    const inc = await gravarPedidos(apiKey, shopId, await listarSns(apiKey, shopId, 'update_time', desde, t), prazo);
+    gravados += inc.n;
+    if (inc.completo) cursor.ate_update = t;
+
+    // Reprocesso diário: começa uma vez por dia, depois das 03:00 (Brasília).
+    const hoje = dataBR(t);
+    const horaBRT = new Date((t - 3 * 3600) * SEG).getUTCHours();
+    if (horaBRT >= 3 && cursor.reproc_dia !== hoje) {
+      cursor.reproc_dia = hoje;
+      cursor.reproc_de = t - DIAS_REPROCESSAR * DIA;
+      cursor.reproc_ate = t;
+    }
+
+    const prazoConta = Math.min(prazo, Date.now() + TEMPO_FUNDO_POR_CONTA_MS);
+    const limite = t - DIAS_HISTORICO * DIA;
+    while (Date.now() < prazoConta) {
       const histAte = cursor.historico_ate || t;
-      if (histAte > limite && Date.now() < prazo - 60000) {
-        const de = Math.max(histAte - 14 * 86400, limite);
-        gravados += await gravarPedidos(apiKey, shopId, await listarSns(apiKey, shopId, 'create_time', de, histAte - 1));
-        cursor.historico_ate = de;
+      let de, ate, tipo;
+      if (histAte > limite) { de = Math.max(histAte - DIA, limite); ate = histAte - 1; tipo = 'hist'; }
+      else if (cursor.reproc_de && cursor.reproc_de < cursor.reproc_ate) { de = cursor.reproc_de; ate = Math.min(de + DIA, cursor.reproc_ate) - 1; tipo = 'reproc'; }
+      else break;
+      const r = await gravarPedidos(apiKey, shopId, await listarSns(apiKey, shopId, 'create_time', de, ate), prazoConta);
+      gravados += r.n;
+      if (!r.completo) break; // o dia é refeito na próxima rodada (gravar de novo não duplica)
+      if (tipo === 'hist') cursor.historico_ate = de;
+      else {
+        cursor.reproc_de = ate + 1;
+        if (cursor.reproc_de >= cursor.reproc_ate) { delete cursor.reproc_de; delete cursor.reproc_ate; }
       }
     }
     await salvarEstado(shopId, 'pedidos', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, cursor, registros: gravados });
   } catch (e) {
     await salvarEstado(shopId, 'pedidos', { ultimo_erro: String(e.message || e).slice(0, 500), cursor }).catch(() => {});
-    return { conta: shopId, erro: e.message };
   }
 
-  // ADS por dia: últimos 3 dias a cada rodada; na primeira vez, 90 dias.
-  try {
-    const estAds = estadoAtual?.ads || {};
-    const de = estAds.ultimo_sucesso ? t - 3 * 86400 : t - DIAS_HISTORICO * 86400;
-    const n = await gravarAds(apiKey, shopId, de, t);
-    await salvarEstado(shopId, 'ads', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: n });
-  } catch (e) {
-    await salvarEstado(shopId, 'ads', { ultimo_erro: String(e.message || e).slice(0, 500) }).catch(() => {});
+  // ADS é independente dos pedidos (loja autorizada só no app de Ads ainda tem ADS).
+  if (Date.now() < prazo) {
+    try {
+      const estAds = estadoAtual?.ads || {};
+      const de = estAds.ultimo_sucesso ? t - 3 * DIA : t - DIAS_HISTORICO * DIA;
+      const n = await gravarAds(apiKey, shopId, de, t);
+      await salvarEstado(shopId, 'ads', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: n });
+    } catch (e) {
+      await salvarEstado(shopId, 'ads', { ultimo_erro: String(e.message || e).slice(0, 500) }).catch(() => {});
+    }
   }
   return { conta: shopId, pedidos: gravados };
 }
 
-async function executar(apiKey, modo, diasReprocessar, soConta) {
+async function executar(apiKey, soConta) {
   const prazo = Date.now() + ORCAMENTO_MS;
-  const contas = soConta ? [String(soConta)] : await contasShopee();
-  const estados = await sbSelect('glr_sync_estado', 'marketplace=eq.shopee&select=conta_id,recurso,ultimo_sucesso,cursor');
+  const contas = soConta ? [String(soConta)] : await contasShopee(apiKey);
+  const estados = await sbSelect('glr_sync_estado', 'marketplace=eq.shopee&select=conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor');
   const porConta = {};
   for (const e of estados) {
     porConta[e.conta_id] = porConta[e.conta_id] || {};
     if (e.recurso === 'pedidos') Object.assign(porConta[e.conta_id], e);
     if (e.recurso === 'ads') porConta[e.conta_id].ads = e;
   }
-  // Quem está há mais tempo sem sincronizar vai primeiro (o que não couber
-  // no tempo desta rodada fica para a próxima, 15 min depois).
-  contas.sort((a, b) => String(porConta[a]?.ultimo_sucesso || '').localeCompare(String(porConta[b]?.ultimo_sucesso || '')));
+  // Fila justa: quem foi visitado há mais tempo (ou nunca) vai primeiro; o que
+  // não couber nesta rodada fica para a próxima, 15 min depois.
+  contas.sort((a, b) => String(porConta[a]?.ultima_tentativa || '').localeCompare(String(porConta[b]?.ultima_tentativa || '')));
   const resultados = [];
   let i = 0;
   const trabalhador = async () => {
-    while (i < contas.length && Date.now() < prazo - 30000) {
+    while (i < contas.length && Date.now() < prazo - 45000) {
       const conta = contas[i++];
-      resultados.push(await sincronizarConta(apiKey, conta, porConta[conta], modo, diasReprocessar, prazo));
+      resultados.push(await sincronizarConta(apiKey, conta, porConta[conta], prazo));
     }
   };
   await Promise.all(Array.from({ length: CONCORRENCIA }, trabalhador));
@@ -239,11 +275,14 @@ module.exports = async function handler(req, res) {
   const esperado = (await sbSelect('glr_config_privada', 'chave=eq.sync_token&select=valor').catch(() => []))[0]?.valor;
   if (!token || !esperado || token !== esperado) return res.status(401).json({ error: 'não autorizado' });
 
-  const { modo = 'incremental', dias = 45, conta = null } = req.body || {};
-  const diasRep = Math.min(Math.max(parseInt(dias) || 45, 1), 90);
+  const { modo = 'incremental', conta = null } = req.body || {};
+  // O reprocesso diário agora roda dentro das rodadas de 15 min (aos poucos,
+  // por loja). A chamada noturna antiga cai no mesmo horário de uma rodada
+  // normal — se rodasse junto, as duas disputariam as mesmas lojas.
+  if (modo === 'reprocessar') return res.status(202).json({ ok: true, modo, aviso: 'reprocesso agora acontece nas rodadas de 15 min' });
   // Responde já (o pg_net só espera 5 s) e continua trabalhando em segundo plano.
-  waitUntil(executar(apiKey, modo === 'reprocessar' ? 'reprocessar' : 'incremental', diasRep, conta)
-    .then(r => console.log('[sync-dados]', modo, JSON.stringify({ contas: r.contas, processadas: r.processadas, erros: r.resultados.filter(x => x.erro).length })))
+  waitUntil(executar(apiKey, conta)
+    .then(r => console.log('[sync-dados]', modo, JSON.stringify({ contas: r.contas, processadas: r.processadas })))
     .catch(e => console.error('[sync-dados] falhou', e)));
   return res.status(202).json({ ok: true, modo });
 };
