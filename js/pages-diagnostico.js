@@ -197,7 +197,7 @@ Router.register('diagnostico', async (params, el) => {
       const contasMC = lerJSON('glr_mc_contas', []);
       (Array.isArray(contasMC) ? contasMC : (contasMC?.accounts || [])).forEach(c => {
         const tag = (c.tags || []).find(t => t && typeof t === 'object' && t.name);
-        if (tag) nomes[String(c.external_id)] = String(tag.name).replace(/\s*[-–]\s*shopee\s*$/i, '').trim();
+        if (tag) nomes[String(c.external_id)] = String(tag.name).replace(/\s*[-–]\s*(shopee|ml|mercado livre)\s*$/i, '').trim();
       });
       const porConta = {};
       (estados || []).forEach(e => { (porConta[e.conta_id] = porConta[e.conta_id] || { marketplace: e.marketplace })[e.recurso] = e; });
@@ -217,12 +217,12 @@ Router.register('diagnostico', async (params, el) => {
           <div style="font-size:15px;font-weight:800;">🛰️ Saúde dos dados (sincronização automática)</div>
           <button class="btn-primary" style="padding:5px 12px;font-size:12px;" onclick="window._diagSaudeAtualizar && window._diagSaudeAtualizar()">🔄</button>
         </div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">O servidor busca sozinho, a cada 15 minutos, os pedidos novos ou alterados e o ADS de todas as lojas Shopee conectadas. O histórico de 90 dias entra aos poucos (até 1 min por loja a cada rodada) e, depois das 03:00, os últimos 45 dias são reconferidos. Pedidos no banco: <b>${(totalPedidos || 0).toLocaleString('pt-BR')}</b> · contas em dia: <b>${ok}/${contas.length}</b></div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">O servidor busca sozinho, a cada 15 minutos, os pedidos novos ou alterados e o ADS de todas as lojas Shopee e Mercado Livre conectadas. O histórico de 90 dias entra aos poucos (até 1 min por loja a cada rodada) e, depois das 03:00, os últimos 45 dias são reconferidos. Pedidos no banco: <b>${(totalPedidos || 0).toLocaleString('pt-BR')}</b> · contas em dia: <b>${ok}/${contas.length}</b></div>
         ${!contas.length ? '<div style="font-size:13px;color:var(--text-muted);">Nenhuma rodada ainda — a primeira acontece em até 15 minutos depois da publicação.</div>' : `
         <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">
           <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;"><th style="padding:6px;">Conta</th><th style="padding:6px;">Pedidos</th><th style="padding:6px;">ADS</th><th style="padding:6px;">Histórico carregado até</th></tr></thead>
           <tbody>${contas.map(c => `<tr style="border-top:1px solid var(--border);">
-            <td style="padding:6px;font-weight:600;">${nomes[c] || c} <span style="font-weight:400;color:var(--text-muted);font-size:11px;">${porConta[c].marketplace} · ${c}</span></td>
+            <td style="padding:6px;font-weight:600;">${nomes[c] || c} <span style="font-weight:400;color:var(--text-muted);font-size:11px;">${({ shopee: 'Shopee', ml: 'Mercado Livre' })[porConta[c].marketplace] || porConta[c].marketplace} · ${c}</span></td>
             <td style="padding:6px;">${cel(porConta[c].pedidos)}</td>
             <td style="padding:6px;">${cel(porConta[c].ads)}</td>
             <td style="padding:6px;color:var(--text-muted);">${porConta[c].pedidos?.cursor?.historico_ate ? new Date(porConta[c].pedidos.cursor.historico_ate * 1000).toLocaleDateString('pt-BR') : '—'}</td>
