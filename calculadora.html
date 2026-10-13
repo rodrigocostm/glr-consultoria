@@ -632,7 +632,7 @@
         document.getElementById('shopee-resumo').textContent =
           `Taxas aplicadas ao preço praticado ${fmtBRL(praticado)}: ${(comissaoP * 100).toFixed(1).replace('.', ',')}% + ${fmtBRL(taxafixaP)} de taxa fixa (faixa ${fP.label})` +
           (cpfP ? ' (CPF)' : '') + (campP ? ' (campanha destaque)' : '') +
-          (baseSugeridaTxt ? ` — ${baseSugeridaTxt.replace('taxas na faixa', 'o preço sugerido usa as taxas da faixa')}` : '');
+          (baseSugeridaTxt ? ` — ${baseSugeridaTxt.replace('taxas na faixa do preço sugerido:', 'o preço sugerido usa')}` : '');
       }
       precoBase = praticado; comissaoUsada = comissaoP; taxafixaUsada = taxafixaP;
       const custosTotais = (valor + custos + taxafixaP) + praticado * (comissaoP + ads + imposto + custofixo);
