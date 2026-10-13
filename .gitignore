@@ -1,2 +1,4 @@
 .vercel
 backups/
+
+node_modules/

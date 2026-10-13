@@ -805,15 +805,20 @@
       renderChatDrawer(true);
 
       try {
-        const resp = await fetch('/api/chat', {
+        // /api/agente-chat: o agente tem ferramentas de leitura e busca na hora
+        // o que precisar (outros períodos, mês contra mês, campanhas, histórico).
+        // Exige a sessão do usuário logado (lê dados de vendas de clientes).
+        const { data: sessao } = await _sb.auth.getSession();
+        const resp = await fetch('/api/agente-chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessao?.session?.access_token || ''}` },
           body: JSON.stringify({
+            conta_id: state.contaAbertaId,
             system: `Você é o Agente Autônomo de ADS da GLR Consultoria. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento/meta de ROAS diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Muitas campanhas individuais hoje em dia (modo GMV Max por produto, lance automático) são geridas pelo algoritmo da própria Shopee/TikTok — o papel do agente aí é ajustar o guardrail (meta de ROAS), não microgerenciar lance por lance. O agente só mexe em campanhas individuais — o GMV Max da Loja (campanha única, guarda-chuva, por conta inteira) está fora do escopo por decisão do analista, não monitorado nem ajustado. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Você também entende de curva ABC de vendas (A = produtos que somam ~80% da receita, B até 95%, C o resto): produto curva A que cresceu e projeta queda é prioridade de atenção, e nesses casos você levanta o alerta e propõe a ação junto com o analista (revisar anúncio, preço, estoque, ADS) em vez de decidir sozinho — use o bloco CURVA ABC do contexto quando existir. Use os dados de contexto abaixo (configuração, dados ao vivo, saúde do negócio, último relatório, log recente) pra responder — nunca invente números que não estão aí, nunca invente campaign_id que não apareça na lista "TODAS AS CAMPANHAS" do contexto (use os IDs exatos de lá, inclusive das pausadas).\n\nPEDIDOS EM LOTE (ex: "reativa as pausadas que valem a pena", "otimiza todas", "pausa as piores"): escolha as campanhas pelos critérios que o analista deu ou, se ele não deu, pela meta e pelos limites do contexto (ex.: pausada com ACOS dentro da meta vale reativar; ACOS acima do limite de pausa não). Responda em texto com a lista curta do que escolheu e por quê (uma linha por campanha, com o ACOS), e no bloco \`\`\`json inclua UMA sugestão por campanha escolhida, no máximo 20 por resposta, com "explicacao" de no máximo 15 palavras pra caber. Se houver mais de 20 candidatas, sugira as 20 mais importantes e diga que dá pra pedir o resto depois. Pra reativar E otimizar, use tipo \"retomar\" com valor_atual/valor_sugerido da meta de ROAS quando fizer sentido.\n\nQUANDO O ANALISTA PEDIR UMA MUDANÇA CONCRETA (ex: "aumenta o investimento", "pausa a campanha X", "sobe a meta de ROAS da campanha Y", "reduz orçamento de Z"): responda com no máximo 2 frases confirmando o que você está sugerindo e por quê, e termine a mensagem com um bloco \`\`\`json contendo um array de sugestões, uma por campanha, no formato exato: [{"campaign_id": <ID numérico exato do contexto>, "nome_campanha": "<nome curto>", "tipo": "pausar"|"orcamento"|"roas"|"retomar", "valor_atual": <número, omita se tipo=pausar>, "valor_sugerido": <número, omita se tipo=pausar>, "titulo": "<título curto pro card, ex: Aumentar orçamento — Nome da campanha>", "explicacao": "<1-2 frases explicando o motivo, com os números que embasam>"}]. Use tipo \"roas\" só pra campanha que already tem \"meta de ROAS atual\" no contexto (lance automático); use \"orcamento\" só pra campanha com orçamento fixo (budget > 0); nunca sugira os dois tipos pra mesma campanha na mesma resposta. Use tipo \"retomar\" só pra campanha que o contexto mostra como PAUSADA, quando o analista pedir pra reativar; se ele quiser reativar E mudar a meta de ROAS, use tipo \"retomar\" com valor_atual/valor_sugerido da meta de ROAS (o card faz as duas coisas ao aprovar). Nunca escreva no título/explicação que vai reativar uma campanha se o tipo não for \"retomar\" — o card só executa o que o tipo diz. NÃO execute nada você mesmo pelo chat — a sugestão vira um card na Fila de Atenção (Kanban) e só é aplicada de verdade quando o analista clicar em \"Aprovar\" ali. Se o pedido for só uma pergunta ou pedir explicação (\"por que caiu tal coisa\", \"como está a conta\"), responda em texto normal e NÃO inclua o bloco \`\`\`json. Se o analista pedir pra mudar uma regra/guardrail (meta TACOS, regra de pausa, etc — não uma campanha específica), explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
-            messages: state.chatMessages,
+            messages: state.chatMessages.map(m => ({ role: m.role, content: m.content })),
           }),
         });
-        const json = await resp.json();
+        const json = await resp.json().catch(() => ({ error: `Resposta inválida do servidor (HTTP ${resp.status}).` }));
         if (json.error) throw new Error(json.error);
         const respostaBruta = json.content || 'Sem resposta.';
         const { sugestoes, textoLimpo } = extrairSugestoes(respostaBruta);
@@ -822,7 +827,7 @@
           await criarSugestoesNoKanban(sugestoes);
           resposta = (resposta ? resposta + '\n\n' : '') + `📋 Criei ${sugestoes.length} sugestão${sugestoes.length > 1 ? 'ões' : ''} — veja em "Precisa de você", no topo da tela, pra aprovar ou rejeitar.`;
         }
-        state.chatMessages.push({ role: 'assistant', content: resposta || 'Sem resposta.' });
+        state.chatMessages.push({ role: 'assistant', content: resposta || 'Sem resposta.', ferramentas: json.ferramentas || [] });
         try {
           const cfg = configDaConta(state.contaAbertaId);
           await _sb.from('glr_agente_log').insert({
@@ -1952,8 +1957,8 @@
             <div>Eu vejo os indicadores, as campanhas, o que o agente fez e a curva ABC desta conta. Pedidos de mudança viram sugestões em "Precisa de você" — nada é executado sem o seu aprovar.</div>
             <div class="ag-chat-chips">${PERGUNTAS_RAPIDAS.map((p, i) => `<button onclick="window._agPerguntar(${i})">${h(p)}</button>`).join('')}</div>
           </div>` : ''}
-          ${state.chatMessages.map(m => `<div class="ag-chat-linha ${m.role === 'user' ? 'eu' : 'ag'}"><div class="ag-chat-balao">${mdLeve(m.content)}</div></div>`).join('')}
-          ${state.chatEnviando ? '<div class="ag-chat-linha ag"><div class="ag-chat-balao ag-chat-digitando"><span></span><span></span><span></span></div></div>' : ''}
+          ${state.chatMessages.map(m => `<div class="ag-chat-linha ${m.role === 'user' ? 'eu' : 'ag'}"><div class="ag-chat-balao">${mdLeve(m.content)}${m.ferramentas && m.ferramentas.length ? `<div class="ag-chat-fontes">🔎 Consultei: ${m.ferramentas.map(f => h(f.resumo) + (f.erro ? ' (falhou)' : '')).join(' · ')}</div>` : ''}</div></div>`).join('')}
+          ${state.chatEnviando ? '<div class="ag-chat-linha ag"><div class="ag-chat-balao"><div class="ag-chat-digitando" style="padding:0 0 6px;"><span></span><span></span><span></span></div><div class="ag-chat-fontes" style="margin:0;border:none;padding:0;">Consultando os dados da conta na Shopee… perguntas que comparam períodos podem levar até 1–2 minutos.</div></div></div>' : ''}
         </div>
         <div class="ag-chat-entrada">
           <textarea id="ag-chat-input" rows="1" placeholder="Pergunte sobre a conta ou peça uma ação…" aria-label="Mensagem para o agente"
@@ -2051,6 +2056,7 @@
         .ag-chat-chips { display:flex; flex-direction:column; gap:7px; margin-top:12px; }
         .ag-chat-chips button { text-align:left; padding:9px 12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card-hover,#f7f7fb); color:var(--text-primary,inherit); font-size:12.5px; cursor:pointer; }
         .ag-chat-chips button:hover { border-color:#6366f1; }
+        .ag-chat-fontes { margin-top:8px; padding-top:6px; border-top:1px dashed var(--border); font-size:11px; line-height:1.45; color:var(--text-muted); }
         .ag-chat-linha { display:flex; }
         .ag-chat-linha.eu { justify-content:flex-end; }
         .ag-chat-balao { max-width:90%; padding:9px 13px; border-radius:14px; font-size:13px; line-height:1.55; word-break:break-word; }
