@@ -88,7 +88,9 @@ function _dashVendasDiaCache() {
 
 function _dashVendasDiaTxt() {
   const c = _dashVendasDiaCache();
-  return c?.atualizadoEm ? `Atualizado em ${new Date(c.atualizadoEm).toLocaleString('pt-BR')}` : 'Nenhum dado ainda — clique em Atualizar';
+  if (!c?.atualizadoEm) return '⏳ Carregando da base automática...';
+  const fonte = c.lojasBase != null ? ` · ${c.lojasBase} loja${c.lojasBase !== 1 ? 's' : ''} da base automática${c.lojasAPI ? `, ${c.lojasAPI} pela API (histórico ainda carregando ou marketplace fora da base)` : ''}` : '';
+  return `Atualizado em ${new Date(c.atualizadoEm).toLocaleString('pt-BR')}${fonte}`;
 }
 
 async function _dashBuscarVendasPorDia() {
@@ -135,11 +137,38 @@ async function _dashBuscarVendasPorDia() {
   const clientesComConta = GLR.clientes.filter(c => (vinculos[String(c.id)]||[]).length > 0);
   let doneN = 0;
 
+  // Base sincronizada (Shopee/ML): resumo diário pronto — instantâneo, mesma
+  // regra (sem cancelados e sem devolução aceita). Loja cujo histórico ainda
+  // não cobre o começo do mês cai na busca antiga pela API, abaixo.
+  let base = null;
+  try { base = window.BaseDados ? await BaseDados.carregar() : null; } catch(e) { console.warn('[Dashboard] base indisponível:', e.message); }
+  let lojasBase = 0, lojasAPI = 0;
+
   await _mapLimit(clientesComConta, 3, async (c) => {
     const valorPorVenda = parseFloat(c.valorPorVenda) || 0;
     const contas = vinculos[String(c.id)] || [];
     await _mapLimit(contas, 3, async (conta) => {
       const mkt = (conta.marketplace||'').toLowerCase();
+      const infoBase = base && BaseDados.mktDe(mkt) ? base[BaseDados.chave(mkt, conta.param_to_use?.shopId || conta.param_to_use?.meliUserId || conta.external_id)] : null;
+      if (infoBase && BaseDados.cobre(infoBase, primeiroDia)) {
+        lojasBase++;
+        for (const [dia, v] of Object.entries(infoBase.dias || {})) {
+          if (dia < primeiroDia || dia > dataTo || !(v.pedidos > 0)) continue;
+          const [, mm, dd] = dia.split('-');
+          const dataStr = `${dd}/${mm}`;
+          if (!porDia[dataStr]) porDia[dataStr] = { pedidos: 0, comissao: 0, faturamento: 0 };
+          porDia[dataStr].pedidos += v.pedidos;
+          porDia[dataStr].comissao += (v.unidades || v.pedidos) * valorPorVenda;
+          porDia[dataStr].faturamento += v.faturamento || 0;
+          const canal = NOME_CANAL[mkt] || mkt;
+          if (!porCanal[canal]) porCanal[canal] = { pedidos: 0, comissao: 0, faturamento: 0 };
+          porCanal[canal].pedidos += v.pedidos;
+          porCanal[canal].comissao += (v.unidades || v.pedidos) * valorPorVenda;
+          porCanal[canal].faturamento += v.faturamento || 0;
+        }
+        return;
+      }
+      lojasAPI++;
       try {
         if (['meli','ml','mercadolivre'].includes(mkt)) {
           const meliId = conta.param_to_use?.meliUserId || conta.external_id;
@@ -237,14 +266,47 @@ async function _dashBuscarVendasPorDia() {
   const atualizadoEm = Date.now();
   const mesKey = `${ano}-${pad(mesN)}`;
   localStorage.setItem(STORAGE_VENDAS_DIA, JSON.stringify({
-    mesKey, atualizadoEm,
+    mesKey, atualizadoEm, lojasBase, lojasAPI,
     dias: dias.map(d => ({ data: d, pedidos: porDia[d].pedidos, comissao: porDia[d].comissao, faturamento: porDia[d].faturamento })),
     canais: Object.keys(porCanal).map(nome => ({ nome, pedidos: porCanal[nome].pedidos, comissao: porCanal[nome].comissao, faturamento: porCanal[nome].faturamento })),
   }));
 
   window._dashBuscandoVendasDia = false;
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Atualizar'; }
-  Router.resolve();
+  // Só redesenha se ainda estiver no Dashboard (a busca pode terminar depois
+  // que o usuário já foi para outra tela — não pode redesenhar a tela dele).
+  if (Router.currentPage === 'dashboard') Router.resolve();
+}
+
+// ── Atualização automática (sem clicar) ─────────────────────────────────────
+// Roda ao abrir o Dashboard, a cada minuto enquanto ele está aberto e quando o
+// servidor termina uma rodada de sincronização (aviso em tempo real). Lojas da
+// base são instantâneas; as que ainda dependem da API são refeitas no máximo a
+// cada 10 min. Controle por horário da última tentativa (não pela idade do
+// cache) para nunca entrar em laço de redesenho.
+async function _dashAutoAtualizar(motivo) {
+  if (Router.currentPage !== 'dashboard' || window._dashAtualizando || window._dashBuscandoVendasDia) return;
+  if (window._dashAutoDesligado && motivo === 'timer') return;
+  const agora = Date.now();
+  const vd = _dashVendasDiaCache();
+  const intervaloVD = vd?.lojasAPI ? 10 * 60e3 : 60e3;
+  const precisaVD = motivo === 'base' || !vd || agora - (window._dashUltVD || 0) >= intervaloVD;
+  const precisaExec = motivo === 'base' || agora - (window._dashUltExec || 0) >= 5 * 60e3;
+  if (!precisaVD && !precisaExec) return;
+  window._dashAtualizando = true;
+  try {
+    if (precisaExec && typeof window._analyticsBuscarExec === 'function') {
+      window._dashUltExec = agora;
+      await window._analyticsBuscarExec();
+    }
+  } catch(e) { console.warn('[Dashboard] atualização automática (painel):', e.message); }
+  window._dashAtualizando = false;
+  if (precisaVD) { window._dashUltVD = agora; await _dashBuscarVendasPorDia(); }
+  else if (Router.currentPage === 'dashboard') Router.resolve();
+}
+if (!window._dashOuvindoBase) {
+  window._dashOuvindoBase = true;
+  window.addEventListener('glr-base-atualizada', () => _dashAutoAtualizar('base'));
 }
 
 // Dashboard unificado: Visão Geral e Análises da Carteira (antigo Analytics —
@@ -355,7 +417,7 @@ Router.register('dashboard', (params, el) => {
 
   const atualizadoTxt = analyticsCache?.atualizadoEm
     ? `Atualizado em ${new Date(analyticsCache.atualizadoEm).toLocaleString('pt-BR')}`
-    : 'Nenhum dado do Analytics ainda — clique em Atualizar dados';
+    : '⏳ Carregando automaticamente…';
 
   contAba.innerHTML = `
     <div style="margin-bottom:20px;padding:16px 20px;background:linear-gradient(135deg,rgba(99,102,241,0.15),rgba(139,92,246,0.1));border:1px solid rgba(99,102,241,0.2);border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
@@ -367,9 +429,9 @@ Router.register('dashboard', (params, el) => {
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:12px;">
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none;">
-          <input type="checkbox" id="dash-auto-refresh" ${window._dashAutoRefreshOn ? 'checked' : ''} onchange="window._dashToggleAutoRefresh(this.checked)">
-          Auto-atualizar (5 min)
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none;" title="Atualiza sozinho quando o servidor sincroniza novas vendas (a cada 15 min) e a cada minuto enquanto o Dashboard está aberto">
+          <input type="checkbox" id="dash-auto-refresh" ${window._dashAutoDesligado ? '' : 'checked'} onchange="window._dashToggleAutoRefresh(this.checked)">
+          Atualização automática
         </label>
         <button class="btn btn-primary" id="btn-dash-atualizar" style="padding:8px 16px;">🔄 Atualizar dados</button>
       </div>
@@ -379,12 +441,12 @@ Router.register('dashboard', (params, el) => {
     <div class="kpi-grid">
       ${kpiCard('Clientes na Carteira', clientesTodos.length, `${comAPI} com dados reais`, comAPI > 0, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
       ${kpiCard('Meta Total', metaTotal>0?GLR.formatCurrency(metaTotal):'—', 'soma das metas', metaTotal>0, 'rgba(245,158,11,0.12)', '🎯', '#f59e0b')}
-      <div class="kpi-flash" data-kpi="fatAtual" data-kpi-val="${faturamentoAtual}">${kpiCard('Faturamento Atual', faturamentoAtual > 0 ? GLR.formatCurrency(faturamentoAtual) : '—', faturamentoAtual > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', faturamentoAtual > 0, 'rgba(99,102,241,0.15)', '💵', '#6366f1')}</div>
+      <div class="kpi-flash" data-kpi="fatAtual" data-kpi-val="${faturamentoAtual}">${kpiCard('Faturamento Atual', faturamentoAtual > 0 ? GLR.formatCurrency(faturamentoAtual) : '—', faturamentoAtual > 0 ? 'real, mês até agora' : 'carregando automaticamente…', faturamentoAtual > 0, 'rgba(99,102,241,0.15)', '💵', '#6366f1')}</div>
       ${kpiCard('Projeção de Faturamento', GLR.formatCurrency(faturamentoTotal), crescMedioAPI!=null?`${crescMedioAPI>=0?'+':''}${crescMedioAPI.toFixed(1)}% vs mês ant.`:(semAPI>0?'vincule contas p/ ver dados reais':''), true, 'rgba(99,102,241,0.12)', '🏆', '#6366f1', comAPI>0)}
-      <div class="kpi-flash" data-kpi="receitaGLR" data-kpi-val="${receitaGLR}">${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', receitaGLR > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', receitaGLR > 0, 'rgba(16,185,129,0.15)', '💰', '#10b981')}</div>
-      ${kpiCard('Projeção Receita GLR', projecaoReceitaGLR > 0 ? GLR.formatCurrency(projecaoReceitaGLR) : '—', projecaoReceitaGLR > 0 ? 'estimativa fim do mês' : 'clique em Atualizar no gráfico abaixo', projecaoReceitaGLR > 0, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
-      ${kpiCard('Ticket Médio Cliente GLR', ticketMedioGLR > 0 ? GLR.formatCurrency(ticketMedioGLR) : '—', ticketMedioGLR > 0 ? `projeção ÷ ${clientes.length} clientes` : 'clique em Atualizar no gráfico abaixo', ticketMedioGLR > 0, 'rgba(16,185,129,0.12)', '🎟️', '#10b981')}
-      <div class="kpi-flash" data-kpi="qtdPedidos" data-kpi-val="${qtdPedidosAtual}">${kpiCard('Quantidade de Pedidos', qtdPedidosAtual > 0 ? qtdPedidosAtual.toLocaleString('pt-BR') : '—', qtdPedidosAtual > 0 ? 'real, mês até agora' : 'clique em Atualizar no gráfico abaixo', qtdPedidosAtual > 0, 'rgba(6,182,212,0.15)', '📦', '#06b6d4')}</div>
+      <div class="kpi-flash" data-kpi="receitaGLR" data-kpi-val="${receitaGLR}">${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', receitaGLR > 0 ? 'real, mês até agora' : 'carregando automaticamente…', receitaGLR > 0, 'rgba(16,185,129,0.15)', '💰', '#10b981')}</div>
+      ${kpiCard('Projeção Receita GLR', projecaoReceitaGLR > 0 ? GLR.formatCurrency(projecaoReceitaGLR) : '—', projecaoReceitaGLR > 0 ? 'estimativa fim do mês' : 'carregando automaticamente…', projecaoReceitaGLR > 0, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
+      ${kpiCard('Ticket Médio Cliente GLR', ticketMedioGLR > 0 ? GLR.formatCurrency(ticketMedioGLR) : '—', ticketMedioGLR > 0 ? `projeção ÷ ${clientes.length} clientes` : 'carregando automaticamente…', ticketMedioGLR > 0, 'rgba(16,185,129,0.12)', '🎟️', '#10b981')}
+      <div class="kpi-flash" data-kpi="qtdPedidos" data-kpi-val="${qtdPedidosAtual}">${kpiCard('Quantidade de Pedidos', qtdPedidosAtual > 0 ? qtdPedidosAtual.toLocaleString('pt-BR') : '—', qtdPedidosAtual > 0 ? 'real, mês até agora' : 'carregando automaticamente…', qtdPedidosAtual > 0, 'rgba(6,182,212,0.15)', '📦', '#06b6d4')}</div>
       ${kpiCard('Em Crescimento', crescimento, `${clientes.length ? Math.round(crescimento/clientes.length*100) : 0}% da carteira`, true, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
       ${kpiCard('Em Risco / Queda', risco+queda, `${risco} em risco · ${queda} em queda`, (risco+queda)===0, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
       ${kpiCard('Tarefas Pendentes', tarefasPendentes, `${tasksAtras} atrasadas`, tarefasPendentes === 0, 'rgba(245,158,11,0.12)', '✅', '#f59e0b')}
@@ -649,33 +711,11 @@ Router.register('dashboard', (params, el) => {
   document.getElementById('btn-dash-atualizar')?.addEventListener('click', _dashAtualizarTudo);
   document.getElementById('btn-dash-vendas-dia')?.addEventListener('click', _dashBuscarVendasPorDia);
 
-  window._dashToggleAutoRefresh = (ligado) => {
-    window._dashAutoRefreshOn = ligado;
-    if (window._dashAutoRefreshTimer) { clearInterval(window._dashAutoRefreshTimer); window._dashAutoRefreshTimer = null; }
-    if (!ligado) return;
-    window._dashAutoRefreshTimer = setInterval(async () => {
-      // O router não avisa mudança de rota — se saiu do Dashboard, o próprio
-      // timer se desliga aqui em vez de continuar rodando escondido.
-      if (Router.currentPage !== 'dashboard') {
-        clearInterval(window._dashAutoRefreshTimer);
-        window._dashAutoRefreshTimer = null;
-        window._dashAutoRefreshOn = false;
-        return;
-      }
-      if (window._dashAtualizando) return; // busca anterior ainda rodando — pula o ciclo, não empilha
-      window._dashAtualizando = true;
-      try {
-        // Incremental: só refaz quem já venceu o TTL de 5 min (ver buscarDadosExecutivo
-        // em pages-analytics.js) — por isso dá pra rodar automático sem recalcular a
-        // carteira inteira a cada ciclo.
-        if (typeof window._analyticsBuscarExec === 'function') await window._analyticsBuscarExec();
-      } catch(e) { console.warn('[Dashboard] auto-refresh falhou:', e.message); }
-      window._dashAtualizando = false;
-      if (Router.currentPage === 'dashboard') Router.resolve();
-    }, 5 * 60 * 1000);
-  };
-  // Retoma sozinho se o usuário já tinha ligado antes de sair e voltar pra página
-  if (window._dashAutoRefreshOn && !window._dashAutoRefreshTimer) window._dashToggleAutoRefresh(true);
+  window._dashToggleAutoRefresh = (ligado) => { window._dashAutoDesligado = !ligado; if (ligado) _dashAutoAtualizar('timer'); };
+  // Um timer só, global: a cada minuto verifica se precisa atualizar (a função
+  // decide e sai na hora se não estiver no Dashboard).
+  if (!window._dashAutoTimer) window._dashAutoTimer = setInterval(() => _dashAutoAtualizar('timer'), 60 * 1000);
+  setTimeout(() => _dashAutoAtualizar('abrir'), 300);
 
   // Charts
   setTimeout(() => {
@@ -684,7 +724,7 @@ Router.register('dashboard', (params, el) => {
       const vd = _dashVendasDiaCache();
       const dias = vd?.dias || [];
       if (!dias.length) {
-        ctxVD.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">Sem dados ainda.<br>Clique em "Atualizar" pra somar as vendas de todos os clientes, dia a dia.</div>';
+        ctxVD.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">⏳ Carregando as vendas da carteira automaticamente…</div>';
       } else {
         new Chart(ctxVD, {
           data: {
@@ -721,7 +761,7 @@ Router.register('dashboard', (params, el) => {
       const vd = _dashVendasDiaCache();
       const canais = (vd?.canais || []).filter(c => c.faturamento > 0).sort((a,b) => b.faturamento - a.faturamento);
       if (!canais.length) {
-        ctxCanal.parentElement.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">Sem dados ainda.<br>Clique em "Atualizar" no gráfico "Vendas por Dia" acima.</div>';
+        ctxCanal.parentElement.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">⏳ Carregando automaticamente…</div>';
       } else {
         const coresCanal = { 'Mercado Livre':'#fbbf24', 'Shopee':'#f97316', 'Amazon':'#94a3b8', 'Magalu':'#0086ff' };
         const paletaExtra = ['#6366f1','#8b5cf6','#06b6d4','#10b981','#ec4899'];
@@ -785,7 +825,7 @@ Router.register('dashboard', (params, el) => {
       ].filter(d => d.total > 0);
 
       if (evolucao.length === 0) {
-        ctx1.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">Sem histórico ainda.<br>Clique em "Atualizar dados" pra buscar via API.</div>';
+        ctx1.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">⏳ Carregando o histórico automaticamente…</div>';
       } else {
         new Chart(ctx1, {
           type: 'line',

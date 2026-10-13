@@ -166,13 +166,26 @@ Router.register('analytics-conteudo', async (params, el) => {
     const chaveMesesAgora = `${m1.from.slice(0,7)}_${m2.from.slice(0,7)}`;
     const cacheMesesFechados = _lerCacheMesesFechados();
 
+    // Base sincronizada: faturamento do mês e dos 2 meses anteriores sai pronto
+    // do resumo diário (sem cancelados e sem devolução aceita, regra de Vendas).
+    // Loja com histórico ainda carregando continua pela API como antes.
+    let base = null;
+    try { base = window.BaseDados ? await BaseDados.carregar() : null; } catch(e) { console.warn('[Analytics] base indisponível:', e.message); }
+    const infoBase = conta => {
+      const mkt = (conta.marketplace||'').toLowerCase();
+      return base && BaseDados.mktDe(mkt) ? base[BaseDados.chave(mkt, conta.param_to_use?.shopId || conta.param_to_use?.meliUserId || conta.external_id)] : null;
+    };
+
     await _mapLimit(clientes, 3, async (c) => {
       const contasVinc = vinculos[String(c.id)] || [];
       let fatBase = 0, adsBase = 0, fatM1 = 0, fatM2 = 0;
       const canais = new Set();
 
       const entradaMeses = cacheMesesFechados[c.id];
-      const mesesFrescos = !!entradaMeses && entradaMeses.chave === chaveMesesAgora
+      // Cache dos meses fechados é a SOMA do cliente — se alguma loja já vem da
+      // base, não dá pra misturar (contaria duas vezes): recalcula por loja.
+      const algumaNaBase = contasVinc.some(cv => BaseDados.cobre(infoBase(cv), m2.from));
+      const mesesFrescos = !algumaNaBase && !!entradaMeses && entradaMeses.chave === chaveMesesAgora
         && (Date.now() - entradaMeses.atualizadoEm) < TTL_MESES_FECHADOS_MS;
       if (mesesFrescos) { fatM1 = entradaMeses.fatM1 || 0; fatM2 = entradaMeses.fatM2 || 0; }
 
@@ -187,8 +200,12 @@ Router.register('analytics-conteudo', async (params, el) => {
             // As 3 janelas de data (mês atual, M1, M2) e a paginação de ADS são
             // independentes entre si — rodar em paralelo em vez de uma esperar a
             // outra corta o tempo por conta de ~4x pra ~1x.
+            const info = infoBase(conta);
+            const baseMes = BaseDados.cobre(info, primeiroDia), baseMeses = BaseDados.cobre(info, m2.from);
+            if (baseMes) fatBase += BaseDados.somar(info, primeiroDia, dataTo).faturamento;
+            if (baseMeses) { fatM1 += BaseDados.somar(info, m1.from, m1.to).faturamento; fatM2 += BaseDados.somar(info, m2.from, m2.to).faturamento; }
             const tarefas = [
-              MarketplaceAPI.mlOrders(meliId, primeiroDia, dataTo).then(os => { fatBase += somaFat(os); }).catch(()=>{}),
+              baseMes ? Promise.resolve() : MarketplaceAPI.mlOrders(meliId, primeiroDia, dataTo).then(os => { fatBase += somaFat(os); }).catch(()=>{}),
               (async () => {
                 try {
                   let adsTotal = 0, off = 0;
@@ -203,7 +220,7 @@ Router.register('analytics-conteudo', async (params, el) => {
                 } catch(e) {}
               })(),
             ];
-            if (!mesesFrescos) {
+            if (!mesesFrescos && !baseMeses) {
               tarefas.push(MarketplaceAPI.mlOrders(meliId, m1.from, m1.to).then(os => { fatM1 += somaFat(os); }).catch(()=>{}));
               tarefas.push(MarketplaceAPI.mlOrders(meliId, m2.from, m2.to).then(os => { fatM2 += somaFat(os); }).catch(()=>{}));
             }
@@ -237,8 +254,12 @@ Router.register('analytics-conteudo', async (params, el) => {
               }
               return total;
             }
+            const info = infoBase(conta);
+            const baseMes = BaseDados.cobre(info, primeiroDia), baseMeses = BaseDados.cobre(info, m2.from);
+            if (baseMes) fatBase += BaseDados.somar(info, primeiroDia, dataTo).faturamento;
+            if (baseMeses) { fatM1 += BaseDados.somar(info, m1.from, m1.to).faturamento; fatM2 += BaseDados.somar(info, m2.from, m2.to).faturamento; }
             const tarefasShopee = [
-              subtotalShopeePeriodo(Math.floor(tsFrom/1000), Math.floor(tsTo/1000)).then(v => { fatBase += v; }).catch(()=>{}),
+              baseMes ? Promise.resolve() : subtotalShopeePeriodo(Math.floor(tsFrom/1000), Math.floor(tsTo/1000)).then(v => { fatBase += v; }).catch(()=>{}),
               (async () => {
                 try {
                   const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(primeiroDia), end_date: toShopeeDate(dataTo) });
@@ -254,7 +275,7 @@ Router.register('analytics-conteudo', async (params, el) => {
                 } catch(e) {}
               })(),
             ];
-            if (!mesesFrescos) {
+            if (!mesesFrescos && !baseMeses) {
               tarefasShopee.push(subtotalShopeePeriodo(Math.floor(new Date(`${m1.from}T00:00:00`).getTime()/1000), Math.floor(new Date(`${m1.to}T23:59:59`).getTime()/1000)).then(v => { fatM1 += v; }).catch(()=>{}));
               tarefasShopee.push(subtotalShopeePeriodo(Math.floor(new Date(`${m2.from}T00:00:00`).getTime()/1000), Math.floor(new Date(`${m2.to}T23:59:59`).getTime()/1000)).then(v => { fatM2 += v; }).catch(()=>{}));
             }
