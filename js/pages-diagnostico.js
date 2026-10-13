@@ -93,7 +93,8 @@ Router.register('diagnostico', async (params, el) => {
           <h1 style="font-size:20px;font-weight:800;margin:0;">🩺 Diagnóstico do Sistema</h1>
           <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Mostra o que já está salvo em cada área e testa a conexão com a API — não faz nenhuma busca de vendas sozinho.</div>
         </div>
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-primary" style="padding:8px 16px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.35);color:#818cf8;" id="btn-backup" title="Baixa um arquivo com tudo que está salvo no banco e neste navegador — use antes de qualquer mudança grande">💾 Baixar backup completo</button>
           <button class="btn-primary" style="padding:8px 16px;" id="btn-testar-api" ${testeApi==='carregando'?'disabled':''}>${testeApi==='carregando'?'⏳ Testando...':'🔄 Testar conexão'}</button>
           <button class="btn-primary" style="padding:8px 16px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#10b981;" id="btn-atualizar-tudo">⚡ Atualizar tudo</button>
         </div>
@@ -171,6 +172,51 @@ Router.register('diagnostico', async (params, el) => {
 
     document.getElementById('btn-testar-api')?.addEventListener('click', testarApi);
     document.getElementById('btn-atualizar-tudo')?.addEventListener('click', atualizarTudo);
+    document.getElementById('btn-backup')?.addEventListener('click', baixarBackup);
+  }
+
+  // Backup completo: tudo do glr_storage, as tabelas próprias e todas as
+  // chaves glr_* deste navegador (inclusive as que só existem localmente).
+  // Só leitura — não altera nada. Feito antes de mudanças grandes no sistema.
+  async function baixarBackup() {
+    const btn = document.getElementById('btn-backup');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando backup...'; }
+    const lerTudo = async (tabela) => {
+      const linhas = [];
+      for (let de = 0; ; de += 1000) {
+        const { data, error } = await _sb.from(tabela).select('*').range(de, de + 999);
+        if (error) return { erro: error.message, linhas };
+        linhas.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      return { linhas };
+    };
+    try {
+      const tabelas = {};
+      for (const t of ['glr_storage', 'glr_agente_config', 'glr_agente_log', 'glr_agente_relatorios', 'glr_agente_memoria', 'glr_ads_sugestoes', 'glr_leads']) {
+        tabelas[t] = await lerTudo(t);
+      }
+      const local = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('glr_') && k !== 'glr_mc_apikey') local[k] = localStorage.getItem(k);
+      }
+      const { data: sessao } = await _sb.auth.getSession();
+      const backup = { gerado_em: new Date().toISOString(), usuario: sessao?.session?.user?.email || null, versao: 1, tabelas, localStorage: local };
+      const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
+      const d = new Date(), p = n => String(n).padStart(2, '0');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `backup-glr-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      const resumo = Object.entries(tabelas).map(([t, r]) => `${t}: ${r.linhas.length}${r.erro ? ` (erro: ${r.erro})` : ''}`).join('\n');
+      alert(`Backup baixado (${(blob.size / 1024 / 1024).toFixed(1)} MB).\n\n${resumo}\nChaves deste navegador: ${Object.keys(local).length}\n\nGuarde o arquivo num lugar seguro (Drive). A chave de API do conector não vai no arquivo.`);
+    } catch (e) {
+      alert('Não consegui gerar o backup: ' + (e.message || e));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Baixar backup completo'; }
+    }
   }
 
   async function testarApi() {

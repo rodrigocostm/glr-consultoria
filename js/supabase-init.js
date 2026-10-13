@@ -20,6 +20,7 @@ const GLR_KEYS = [
   'glr_vendas_custo_catalogo', // custo unitário fixo por produto (SKU/itemId) — aplica a pedidos antigos e novos
   'glr_aliquotas',      // % de imposto padrão por conta
   'glr_vendas_linhas',  // linhas extras de custo/desconto lançadas no admin
+  'glr_fin_manual',     // lançamentos manuais do Financeiro (antes ficavam só no navegador de quem lançou)
   'glr_mc_apikey',      // API Key do Marketplace Connect — precisa funcionar em qualquer PC do admin
   'glr_vendas_cache',   // pedidos já buscados na página Vendas — evita rebuscar em outro PC
   'glr_fin_cache',      // pedidos + ADS já buscados no Financeiro — evita rebuscar em outro PC
@@ -58,10 +59,45 @@ localStorage.setItem = function(key, value) {
 // espera: string simples fica como está, objeto/array vira JSON.stringify
 const _paraLocalStorage = dados => typeof dados === 'string' ? dados : JSON.stringify(dados);
 
+const CHAVES_MESCLAR_NA_1A_SYNC = ['glr_fin_manual'];
+// União profunda: objetos juntam as chaves dos dois lados; listas juntam os
+// itens sem repetir; em valor simples conflitante fica o do banco.
+function _mesclarProfundo(remoto, local) {
+  const ehObj = v => v && typeof v === 'object' && !Array.isArray(v);
+  if (Array.isArray(remoto) && Array.isArray(local)) {
+    const vistos = new Set(remoto.map(x => JSON.stringify(x)));
+    return [...remoto, ...local.filter(x => !vistos.has(JSON.stringify(x)))];
+  }
+  if (ehObj(remoto) && ehObj(local)) {
+    const out = { ...local };
+    for (const k of Object.keys(remoto)) out[k] = k in local ? _mesclarProfundo(remoto[k], local[k]) : remoto[k];
+    return out;
+  }
+  return remoto !== undefined && remoto !== null ? remoto : local;
+}
+
 // ── Carrega todos os dados do Supabase para o localStorage local ──
 async function sincronizarDoSupabase() {
   const { data, error } = await _sb.from('glr_storage').select('chave, dados');
   if (error) { console.warn('[Supabase] Erro ao carregar:', error.message); return; }
+  // Chaves que antes viviam só em cada navegador: na 1ª sincronização deste
+  // navegador, MESCLA o que ele tinha com o que já está no banco (vindo de
+  // outros PCs) em vez de sobrescrever — senão um PC apagaria os lançamentos
+  // do outro. Roda uma vez por navegador.
+  const mesclarDepois = [];
+  for (const key of CHAVES_MESCLAR_NA_1A_SYNC) {
+    const flag = `glr_migrado_${key}`;
+    if (localStorage.getItem(flag)) continue;
+    const localBruto = localStorage.getItem(key);
+    const remoto = (data || []).find(r => r.chave === key);
+    if (localBruto != null && remoto) {
+      try {
+        remoto.dados = _mesclarProfundo(remoto.dados, JSON.parse(localBruto));
+        mesclarDepois.push(key);
+      } catch (e) { console.warn('[Supabase] Não mesclei', key, e.message); continue; }
+    }
+    _localSetItem(flag, '1');
+  }
   if (data?.length) {
     data.forEach(row => _localSetItem(row.chave, _paraLocalStorage(row.dados)));
     console.log(`[Supabase] ${data.length} coleções sincronizadas.`);
@@ -69,6 +105,8 @@ async function sincronizarDoSupabase() {
   // Chaves que já existiam localmente mas nunca foram salvas desde que entraram no
   // GLR_KEYS (ex: dado antigo cadastrado antes do sync existir) — empurra pro Supabase
   // uma única vez, re-chamando o setItem interceptado.
+  // Sobe a versão mesclada pro banco (dispara o interceptor do setItem).
+  mesclarDepois.forEach(key => localStorage.setItem(key, localStorage.getItem(key)));
   const chavesNoServidor = new Set((data||[]).map(r => r.chave));
   GLR_KEYS.forEach(key => {
     if (chavesNoServidor.has(key)) return;
