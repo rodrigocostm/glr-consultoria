@@ -100,6 +100,8 @@ Router.register('diagnostico', async (params, el) => {
         </div>
       </div>
 
+      <div id="diag-saude-dados" style="margin-bottom:24px;"></div>
+
       <div class="kpi-grid mb-24" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">
         <div class="kpi-card">
           <div class="kpi-icon" style="background:${apiKey?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.12)'};"><span style="font-size:18px;">🔑</span></div>
@@ -173,7 +175,58 @@ Router.register('diagnostico', async (params, el) => {
     document.getElementById('btn-testar-api')?.addEventListener('click', testarApi);
     document.getElementById('btn-atualizar-tudo')?.addEventListener('click', atualizarTudo);
     document.getElementById('btn-backup')?.addEventListener('click', baixarBackup);
+    renderSaudeDados();
   }
+
+  // Saúde dos dados: o que o motor de sincronização automático (a cada 15
+  // min, no servidor) já trouxe para o banco, conta por conta.
+  async function renderSaudeDados() {
+    const box = document.getElementById('diag-saude-dados');
+    if (!box) return;
+    box.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">⏳ Lendo a sincronização automática...</div>';
+    try {
+      const [{ data: estados, error }, { count: totalPedidos }] = await Promise.all([
+        _sb.from('glr_sync_estado').select('*').order('conta_id'),
+        _sb.from('glr_pedidos').select('pedido_id', { count: 'exact', head: true }),
+      ]);
+      if (error) throw error;
+      const nomes = {};
+      const vinc = lerJSON('glr_mc_vinculos', {});
+      Object.values(vinc).forEach(lista => (lista || []).forEach(c => { nomes[String(c.external_id)] = c.nickname || c.label || c.external_id; }));
+      const porConta = {};
+      (estados || []).forEach(e => { (porConta[e.conta_id] = porConta[e.conta_id] || { marketplace: e.marketplace })[e.recurso] = e; });
+      const quando = iso => {
+        if (!iso) return '—';
+        const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+        return min < 60 ? `há ${min} min` : min < 1440 ? `há ${Math.round(min / 60)} h` : new Date(iso).toLocaleString('pt-BR');
+      };
+      const cel = e => !e ? '<span style="color:var(--text-muted);">aguardando 1ª rodada</span>'
+        : e.ultimo_erro ? `<span style="color:#ef4444;" title="${String(e.ultimo_erro).replace(/"/g, '&quot;')}">⚠️ erro ${quando(e.ultima_tentativa)}</span>`
+        : `<span style="color:#10b981;">✔ ${quando(e.ultimo_sucesso)}</span> <span style="color:var(--text-muted);">· ${e.registros ?? 0} na última rodada</span>`;
+      const contas = Object.keys(porConta);
+      const ok = contas.filter(c => porConta[c].pedidos?.ultimo_sucesso && !porConta[c].pedidos?.ultimo_erro).length;
+      box.innerHTML = `<div class="card" style="padding:18px 20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px;">
+          <div style="font-size:15px;font-weight:800;">🛰️ Saúde dos dados (sincronização automática)</div>
+          <button class="btn-primary" style="padding:5px 12px;font-size:12px;" onclick="window._diagSaudeAtualizar && window._diagSaudeAtualizar()">🔄</button>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">O servidor busca sozinho, a cada 15 minutos, os pedidos novos ou alterados e o ADS de cada conta, e todo dia às 03:00 reprocessa os últimos 45 dias. O histórico de 90 dias entra aos poucos, um bloco por rodada. Pedidos no banco: <b>${(totalPedidos || 0).toLocaleString('pt-BR')}</b> · contas em dia: <b>${ok}/${contas.length}</b></div>
+        ${!contas.length ? '<div style="font-size:13px;color:var(--text-muted);">Nenhuma rodada ainda — a primeira acontece em até 15 minutos depois da publicação.</div>' : `
+        <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+          <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;"><th style="padding:6px;">Conta</th><th style="padding:6px;">Pedidos</th><th style="padding:6px;">ADS</th><th style="padding:6px;">Histórico carregado até</th></tr></thead>
+          <tbody>${contas.map(c => `<tr style="border-top:1px solid var(--border);">
+            <td style="padding:6px;font-weight:600;">${porConta[c].marketplace} · ${nomes[c] || c}</td>
+            <td style="padding:6px;">${cel(porConta[c].pedidos)}</td>
+            <td style="padding:6px;">${cel(porConta[c].ads)}</td>
+            <td style="padding:6px;color:var(--text-muted);">${porConta[c].pedidos?.cursor?.historico_ate ? new Date(porConta[c].pedidos.cursor.historico_ate * 1000).toLocaleDateString('pt-BR') : '—'}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>`}
+      </div>`;
+    } catch (e) {
+      box.innerHTML = `<div class="card" style="padding:14px 18px;font-size:12.5px;color:#ef4444;">⚠️ Não consegui ler a sincronização: ${e.message || e}</div>`;
+    }
+  }
+  window._diagSaudeAtualizar = renderSaudeDados;
 
   // Backup completo: tudo do glr_storage, as tabelas próprias e todas as
   // chaves glr_* deste navegador (inclusive as que só existem localmente).

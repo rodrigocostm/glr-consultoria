@@ -6,7 +6,8 @@
   "functions": {
     "api/generate-photo.js": { "maxDuration": 60 },
     "api/agente-cron.js": { "maxDuration": 60 },
-    "api/agente-chat.js": { "maxDuration": 300 }
+    "api/agente-chat.js": { "maxDuration": 300 },
+    "api/sync-dados.js": { "maxDuration": 300 }
   },
   "headers": [
     {

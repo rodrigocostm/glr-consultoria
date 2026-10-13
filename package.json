@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
+    "@vercel/functions": "^3.10.1",
     "web-push": "^3.6.7"
   }
 }
