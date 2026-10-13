@@ -535,6 +535,7 @@
     // custo digitado, e já deixa os campos "Auto" mostrando o valor final
     // usado no cálculo (evita o campo mostrar uma faixa e o resultado usar
     // outra, que era exatamente o bug reportado).
+    let baseSugeridaTxt = '';
     if (mpAtual === 'shopee' && valor > 0) {
       const cpf = document.querySelector('input[name="shopee-tipo"]:checked').value === 'cpf';
       const campanha = document.getElementById('shopee-campanha').checked;
@@ -545,8 +546,9 @@
       taxafixa = faixa.taxafixa + extras.cpfExtra;
       document.getElementById('f-comissao').value = faixa.comissao + extras.campanhaPct;
       document.getElementById('f-taxafixa').value = taxafixa;
+      baseSugeridaTxt = `taxas na faixa do preço sugerido: ${(comissao * 100).toFixed(1).replace('.', ',')}% + ${fmtBRL(taxafixa)} (${faixa.label})`;
       document.getElementById('shopee-resumo').textContent =
-        `Taxas aplicadas: ${(comissao*100).toFixed(1)}% + R$${taxafixa.toFixed(2)} taxa fixa (faixa pelo preço de venda: ${faixa.label})` +
+        `Taxas aplicadas: ${(comissao * 100).toFixed(1).replace('.', ',')}% + ${fmtBRL(taxafixa)} de taxa fixa (faixa pelo preço de venda sugerido: ${faixa.label})` +
         (cpf ? ' (CPF)' : '') + (campanha ? ' (campanha destaque)' : '');
     }
 
@@ -570,9 +572,9 @@
     document.getElementById('r-preco-minimo').textContent = precoMinimo != null ? fmtBRL(precoMinimo) : '—';
 
     document.getElementById('r-preco').textContent = fmtBRL(precoSugerido);
-    document.getElementById('r-preco-sub').textContent = margem > 0
-      ? `para atingir a margem desejada de ${(margem * 100).toFixed(1)}%`
-      : 'margem desejada em 0% — equivale ao preço mínimo acima';
+    document.getElementById('r-preco-sub').textContent = (margem > 0
+      ? `para atingir a margem desejada de ${(margem * 100).toFixed(1).replace('.', ',')}%`
+      : 'margem desejada em 0% — equivale ao preço mínimo acima') + (baseSugeridaTxt ? ` · ${baseSugeridaTxt}` : '');
 
     // Composição do preço — as 6 fatias somam exatamente o preço sugerido
     // (custoBase + preço*totalPercentual = preço, por construção da fórmula
@@ -622,6 +624,15 @@
         comissaoP = (fP.comissao + (campP ? 2.5 : 0)) / 100;
         taxafixaP = fP.taxafixa + (cpfP ? 3 : 0);
         notaTaxas = ` · taxas ${(comissaoP * 100).toFixed(1).replace('.', ',')}% + ${fmtBRL(taxafixaP)} (faixa ${fP.label})`;
+        // O preço praticado é o que você está trabalhando: os campos "Auto" e o
+        // aviso de taxas passam a mostrar a base dele (antes ficavam presos na
+        // faixa do preço sugerido, ex.: R$20 em vez de R$26 para R$259).
+        document.getElementById('f-comissao').value = fP.comissao + (campP ? 2.5 : 0);
+        document.getElementById('f-taxafixa').value = taxafixaP;
+        document.getElementById('shopee-resumo').textContent =
+          `Taxas aplicadas ao preço praticado ${fmtBRL(praticado)}: ${(comissaoP * 100).toFixed(1).replace('.', ',')}% + ${fmtBRL(taxafixaP)} de taxa fixa (faixa ${fP.label})` +
+          (cpfP ? ' (CPF)' : '') + (campP ? ' (campanha destaque)' : '') +
+          (baseSugeridaTxt ? ` — ${baseSugeridaTxt.replace('taxas na faixa', 'o preço sugerido usa as taxas da faixa')}` : '');
       }
       precoBase = praticado; comissaoUsada = comissaoP; taxafixaUsada = taxafixaP;
       const custosTotais = (valor + custos + taxafixaP) + praticado * (comissaoP + ads + imposto + custofixo);
