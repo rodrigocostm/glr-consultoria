@@ -864,6 +864,84 @@ Router.register('projecao', (params, el) => {
     return ((p - m) / m) * 100;
   }
 
+  // ── Base sincronizada (servidor, a cada 15 min) ───────────────────────────
+  // Faturamento/vendas do mês até a Data Base, ADS (Shopee já com GMV Max) e os
+  // 2 meses fechados anteriores saem prontos do resumo diário por loja — sem
+  // depender de "Buscar dados" nem do cache do Financeiro. Loja cujo histórico
+  // ainda não cobre o período continua pelo caminho antigo (API).
+  let baseProj = null;
+  const _padP = n => String(n).padStart(2, '0');
+  const idContaBase = c => String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.contaId || c.external_id);
+  function infoBaseDe(marketplace, contaId) {
+    if (!baseProj || !window.BaseDados || !contaId) return null;
+    const mkt = BaseDados.mktDe(String(marketplace || '').replace(/\s+/g, '')); // "Mercado Livre" → mercadolivre
+    return mkt ? baseProj[BaseDados.chave(mkt, String(contaId))] : null;
+  }
+  function mesFechadoIso(offset) {
+    const db = projecaoAtiva.dataBase ? new Date(projecaoAtiva.dataBase + 'T12:00:00') : _ontem;
+    const d = new Date(db.getFullYear(), db.getMonth() - offset, 1);
+    const fim = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return { from: `${d.getFullYear()}-${_padP(d.getMonth()+1)}-01`, to: `${fim.getFullYear()}-${_padP(fim.getMonth()+1)}-${_padP(fim.getDate())}` };
+  }
+  // { fat, vendas, ads|null } da base para uma linha (conta) — ou null se a base não cobre
+  function dadosBaseDaLinha(p) {
+    const info = infoBaseDe(p.marketplace || p._platNome, p.contaId);
+    const db = projecaoAtiva.dataBase;
+    if (!info || !db) return null;
+    const ini = db.slice(0, 8) + '01';
+    if (!BaseDados.cobre(info, ini)) return null;
+    const t = BaseDados.somar(info, ini, db);
+    return { fat: t.faturamento, vendas: t.unidades || t.pedidos, ads: BaseDados.cobreAds(info, ini) ? t.ads : null };
+  }
+  // Cria as linhas das contas vinculadas que ainda não existem e preenche os
+  // meses fechados (M1/M2) que estiverem vazios a partir da base.
+  function aplicarBase(forcarMeses = false) {
+    if (!baseProj) return false;
+    let vinculos = {};
+    try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) {}
+    const cid = parseInt(document.getElementById('sel-cliente')?.value) || clienteIdAtivo;
+    const contasVinc = vinculos[String(cid)] || [];
+    const platMap = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee' };
+    const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
+    let mudou = false;
+    projecaoAtiva.plataformas = projecaoAtiva.plataformas || [];
+    // Data Base segue ontem enquanto não for editada à mão
+    if (!projecaoAtiva._diasEditadosManualmente) {
+      const ontemIso = `${_ontem.getFullYear()}-${_padP(_ontem.getMonth()+1)}-${_padP(_ontem.getDate())}`;
+      if (projecaoAtiva.dataBase !== ontemIso) {
+        projecaoAtiva.dataBase = ontemIso; projecaoAtiva.diasDecorridos = _ontem.getDate(); projecaoAtiva.diasNoMes = _diasNoMesDe(ontemIso); mudou = true;
+      }
+    }
+    const m1 = mesFechadoIso(1), m2 = mesFechadoIso(2);
+    const lbl = off => _labelMesOffset(off);
+    for (const c of contasVinc) {
+      const info = infoBaseDe(c.marketplace, idContaBase(c));
+      if (!info) continue;
+      let linha = projecaoAtiva.plataformas.find(p => String(p.contaId) === String(c.external_id));
+      if (!linha) {
+        const tag = c.tags?.[0]?.name || '';
+        linha = { nome: nicks[c.external_id] || tag || c.nickname || c.external_id, contaId: c.external_id, marketplace: c.marketplace,
+          fatBase:'', adsBase:'', vendasBase:'', maio:'', abril:'', marco:'', _platNome: platMap[(c.marketplace||'').toLowerCase()] || c.marketplace };
+        projecaoAtiva.plataformas.push(linha); mudou = true;
+      }
+      if (BaseDados.cobre(info, m2.from)) {
+        if (forcarMeses || !linha.maio)  { const v = BaseDados.somar(info, m1.from, m1.to).faturamento; linha.maio  = v > 0 ? v.toFixed(2) : ''; mudou = true; }
+        if (forcarMeses || !linha.abril) { const v = BaseDados.somar(info, m2.from, m2.to).faturamento; linha.abril = v > 0 ? v.toFixed(2) : ''; mudou = true; }
+        projecaoAtiva.labelM1 = projecaoAtiva.labelM1 || lbl(1); projecaoAtiva.labelM2 = projecaoAtiva.labelM2 || lbl(2); projecaoAtiva.labelM3 = projecaoAtiva.labelM3 || lbl(3);
+      }
+    }
+    if (mudou) salvar();
+    return mudou;
+  }
+  async function carregarBaseProj(forcar = false) {
+    if (!window.BaseDados) return;
+    try { baseProj = await BaseDados.carregar(forcar); } catch(e) { console.warn('[Projeção] base indisponível:', e.message); return; }
+    if (Router.currentPage !== 'projecao') return;
+    aplicarBase();
+    renderTabela();
+    if (typeof atualizarGrafico === 'function') setTimeout(atualizarGrafico, 50);
+  }
+
   function fmtBRL(v) {
     const n = parseFloat(v) || 0;
     return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1014,11 +1092,19 @@ Router.register('projecao', (params, el) => {
         return total;
       }
 
+      try { baseProj = window.BaseDados ? await BaseDados.carregar(true) : null; } catch(e) { baseProj = null; }
+      const iniMesIso = primeiroDia;
       for (const conta of contasVinc) {
         idx++;
         const mkt = (conta.marketplace||'').toLowerCase();
         const label = conta.nickname || conta.external_id;
         if (btn) btn.textContent = `⏳ ${idx}/${totalContas}: ${label}`;
+        // Conta já coberta pela base (mês inteiro + ADS): nada a buscar na API
+        const infoB = infoBaseDe(conta.marketplace, idContaBase(conta));
+        if (infoB && BaseDados.cobre(infoB, iniMesIso) && BaseDados.cobreAds(infoB, iniMesIso)) {
+          adsPorConta[conta.external_id] = BaseDados.somar(infoB, iniMesIso, dataTo).ads;
+          continue;
+        }
 
         try {
           if (['meli','ml','mercadolivre'].includes(mkt)) {
@@ -1117,9 +1203,11 @@ Router.register('projecao', (params, el) => {
       // TODAS as contas em paralelo (limite 3 por vez) em vez de uma conta de cada vez
       // dentro do loop principal, que estava deixando a busca bem mais lenta.
       // Contas que já têm esses meses salvos não buscam de novo (a menos que "forçar").
-      const contasParaBuscarMeses = forcarMesesAnteriores
+      // Meses da base: M1/M2 prontos para quem a base cobre; M3 (fora dos 90 dias) ainda pela API
+      const contasParaBuscarMeses = (forcarMesesAnteriores
         ? contasVinc
-        : contasVinc.filter(c => !mesesJaSalvos[c.external_id]);
+        : contasVinc.filter(c => !mesesJaSalvos[c.external_id]))
+        .filter(c => { const ib = infoBaseDe(c.marketplace, idContaBase(c)); return !(ib && BaseDados.cobre(ib, m2.from) && mesesJaSalvos[c.external_id]?.marco); });
       if (btn) btn.textContent = `⏳ Buscando meses anteriores (${contasParaBuscarMeses.length}/${contasVinc.length} contas)...`;
       await _mapLimitAv(contasParaBuscarMeses, 3, async conta => {
         const mkt = (conta.marketplace||'').toLowerCase();
@@ -1182,6 +1270,16 @@ Router.register('projecao', (params, el) => {
         });
       });
 
+      // Contas cobertas pela base: M1/M2 vêm dela (mesma regra de Vendas)
+      if (baseProj) {
+        for (const p of projecaoAtiva.plataformas) {
+          const ib = infoBaseDe(p.marketplace, p.contaId);
+          if (ib && BaseDados.cobre(ib, m2.from)) {
+            const v1 = BaseDados.somar(ib, m1.from, m1.to).faturamento, v2 = BaseDados.somar(ib, m2.from, m2.to).faturamento;
+            p.maio = v1 > 0 ? v1.toFixed(2) : ''; p.abril = v2 > 0 ? v2.toFixed(2) : '';
+          }
+        }
+      }
       salvar(); // persiste dataBase/dias/ads buscados — importante pro refresh automático das 5h
       renderTabela();
     } catch(e) {
@@ -1275,14 +1373,20 @@ Router.register('projecao', (params, el) => {
     // p.contaId presente → filtra por conta específica; ausente → filtra por plataforma (legado)
     // ADS vem de p._adsAuto (buscado por conta em buscarDadosProjecao), não do
     // cache genérico do Financeiro — que não é por conta nem pelo período certo
+    let linhasDaBase = 0;
     const efetivos = plats.map(p => {
-      const cd = cacheParaPlat(cache, contasCliente, p._platNome || p.nome, p.contaId);
+      // Base sincronizada primeiro (até a Data Base); senão o cache antigo do Financeiro
+      const bd = dadosBaseDaLinha(p);
+      if (bd) linhasDaBase++;
+      const cd = bd ? null : cacheParaPlat(cache, contasCliente, p._platNome || p.nome, p.contaId);
       return {
-        fat:    p.fatBase    || (cd ? cd.fat.toFixed(2)    : ''),
-        ads:    p.adsBase    || (p._adsAuto != null ? p._adsAuto.toFixed(2) : ''),
-        vendas: p.vendasBase || (cd ? String(cd.vendas)    : ''),
+        fat:    p.fatBase    || (bd ? bd.fat.toFixed(2) : (cd ? cd.fat.toFixed(2) : '')),
+        ads:    p.adsBase    || (bd && bd.ads != null ? bd.ads.toFixed(2) : (p._adsAuto != null ? p._adsAuto.toFixed(2) : '')),
+        vendas: p.vendasBase || (bd ? String(bd.vendas) : (cd ? String(cd.vendas) : '')),
+        _base:  !!bd,
       };
     });
+    if (linhasDaBase === plats.filter(p => p.contaId).length && linhasDaBase > 0) diagMsg = '';
 
     // ── Totais ──────────────────────────────────────────────────────
     const totFatBase   = efetivos.reduce((s,e) => s + (parseFloat(e.fat)    || 0), 0);
@@ -1381,7 +1485,10 @@ Router.register('projecao', (params, el) => {
 
     document.getElementById('proj-tbody').innerHTML = linhas;
     const cacheBadge = document.getElementById('th-cache-badge');
-    if (cacheBadge) cacheBadge.style.display = temCache ? 'inline' : 'none';
+    if (cacheBadge) {
+      cacheBadge.textContent = linhasDaBase > 0 ? `⚡ base automática (${linhasDaBase})` : '↺ API auto';
+      cacheBadge.style.display = (linhasDaBase > 0 || temCache) ? 'inline' : 'none';
+    }
     const diagEl = document.getElementById('proj-diag');
     if (diagEl) { diagEl.innerHTML = diagMsg; diagEl.style.display = diagMsg ? 'block' : 'none'; }
     document.getElementById('proj-tfoot').innerHTML = `<tr style="background:rgba(99,102,241,0.08);">
@@ -2022,6 +2129,13 @@ Router.register('projecao', (params, el) => {
 
   renderTabela();
   setTimeout(atualizarGrafico, 50);
+  carregarBaseProj();
+  // Servidor terminou uma rodada de sincronização → recarrega a base e redesenha
+  window._projRecarregarBase = () => carregarBaseProj(true);
+  if (!window._projOuvindoBase) {
+    window._projOuvindoBase = true;
+    window.addEventListener('glr-base-atualizada', () => { if (Router.currentPage === 'projecao' && window._projRecarregarBase) window._projRecarregarBase(); });
+  }
 
   // ── Auto-refresh diário às 5h — fora disso só atualiza manualmente (botão) ──
   // Checa a cada 10 min se são 5h e se ainda não rodou hoje; evita popup de erro
