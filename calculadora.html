@@ -155,6 +155,15 @@
   .stat-card .valor { font-size: 24px; font-weight: 700; }
   .stat-card .sub { font-size: 11.5px; margin-top: 6px; opacity: .8; }
   .stat-card.lucro { background: var(--green-soft); border-color: rgba(45,212,167,0.25); color: var(--green); }
+  .extrato { margin-bottom: 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--panel); overflow: hidden; }
+  .extrato-final { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 16px 18px; border-bottom: 1px solid var(--border-soft); font-size: 13.5px; font-weight: 600; }
+  .extrato-final small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+  .extrato-final strong { font-size: 26px; font-weight: 800; }
+  .extrato-det summary { cursor: pointer; padding: 10px 18px; font-size: 12px; color: var(--muted); list-style: none; }
+  .extrato-det summary::-webkit-details-marker { display: none; }
+  .extrato-linha { display: flex; justify-content: space-between; gap: 12px; padding: 7px 18px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--border-soft); font-variant-numeric: tabular-nums; }
+  .extrato-linha.topo, .extrato-linha.total { color: var(--fg); font-weight: 700; }
+  .extrato-linha.total { background: rgba(255,255,255,0.03); }
   .stat-card.margem { background: rgba(48,171,232,0.08); border-color: rgba(48,171,232,0.2); color: var(--primary); }
 
   /* Barra de composição do preço — pra onde vai cada real, de relance,
@@ -369,6 +378,8 @@
             <div class="sub" id="r-margem-real-sub">sobre o preço sugerido</div>
           </div>
         </div>
+
+        <div class="extrato" id="r-extrato"></div>
 
         <div class="comp-bar-label"><span>Pra onde vai cada real</span></div>
         <div class="comp-bar" id="r-comp-bar"></div>
@@ -596,16 +607,56 @@
     // usa o Preço Sugerido — que por construção já embute a Margem Desejada,
     // então lucroReal cai exatamente em precoSugerido*margem nesse caso.
     let lucroReal, margemExibidaPct;
+    // Preço e taxas efetivamente usados no lucro (praticado, se informado).
+    let precoBase = precoSugerido, comissaoUsada = comissao, taxafixaUsada = taxafixa;
     if (praticado > 0) {
-      const custosTotais = custoBase + praticado * (comissao + ads + imposto + custofixo);
+      // Comissão e taxa fixa da Shopee dependem da faixa do PREÇO DE VENDA.
+      // O preço praticado pode cair numa faixa diferente da do preço sugerido
+      // (ex.: sugerido R$192 → taxa fixa R$20; praticado R$259 → R$26), então
+      // o lucro real usa as taxas da faixa do preço praticado, não as do sugerido.
+      let comissaoP = comissao, taxafixaP = taxafixa, notaTaxas = '';
+      if (mpAtual === 'shopee') {
+        const cpfP = document.querySelector('input[name="shopee-tipo"]:checked').value === 'cpf';
+        const campP = document.getElementById('shopee-campanha').checked;
+        const fP = shopeeFaixa(praticado);
+        comissaoP = (fP.comissao + (campP ? 2.5 : 0)) / 100;
+        taxafixaP = fP.taxafixa + (cpfP ? 3 : 0);
+        notaTaxas = ` · taxas ${(comissaoP * 100).toFixed(1).replace('.', ',')}% + ${fmtBRL(taxafixaP)} (faixa ${fP.label})`;
+      }
+      precoBase = praticado; comissaoUsada = comissaoP; taxafixaUsada = taxafixaP;
+      const custosTotais = (valor + custos + taxafixaP) + praticado * (comissaoP + ads + imposto + custofixo);
       lucroReal = praticado - custosTotais;
       margemExibidaPct = (lucroReal / praticado) * 100;
-      document.getElementById('r-margem-real-sub').textContent = `sobre o preço praticado (${fmtBRL(praticado)})`;
+      document.getElementById('r-margem-real-sub').textContent = `sobre o preço praticado (${fmtBRL(praticado)})${notaTaxas}`;
     } else {
       lucroReal = precoSugerido * margem;
       margemExibidaPct = margem * 100;
       document.getElementById('r-margem-real-sub').textContent = 'sobre o preço sugerido';
     }
+    // Extrato do preço: do valor de venda até o que sobra, linha a linha.
+    // "Repasse do marketplace" = preço − comissão − taxa fixa (o que cai na
+    // conta); "Sobra final" = depois de descontar absolutamente tudo.
+    const NOME_MP = { shopee: 'Shopee', ml: 'Mercado Livre', amazon: 'Amazon', tiktok: 'TikTok Shop', outro: 'marketplace' }[mpAtual] || 'marketplace';
+    const vComissao = precoBase * comissaoUsada;
+    const repasseMp = precoBase - vComissao - taxafixaUsada;
+    const sobraFinal = repasseMp - valor - custos - precoBase * (ads + imposto + custofixo);
+    const linhaExtrato = (rotulo, v, tipo, cor) => `<div class="extrato-linha ${tipo || ''}"><span>${rotulo}</span><span style="${cor ? 'color:' + cor + ';' : ''}">${tipo === 'sub' ? '− ' : ''}${fmtBRL(v)}</span></div>`;
+    const pc = x => (x * 100).toFixed(1).replace('.', ',') + '%';
+    document.getElementById('r-extrato').innerHTML = `
+      <div class="extrato-final"><span>💰 Sobra final no bolso <small>(descontando absolutamente tudo)</small></span><strong style="color:${sobraFinal >= 0 ? 'var(--green)' : 'var(--red)'};">${fmtBRL(sobraFinal)}</strong></div>
+      <details class="extrato-det" open>
+        <summary>Ver extrato completo · base: ${praticado > 0 ? 'preço praticado' : 'preço sugerido'} ${fmtBRL(precoBase)}</summary>
+        ${linhaExtrato('Preço de venda', precoBase, 'topo')}
+        ${linhaExtrato(`Comissão ${NOME_MP} (${pc(comissaoUsada)})`, vComissao, 'sub')}
+        ${linhaExtrato('Taxa fixa', taxafixaUsada, 'sub')}
+        ${linhaExtrato(`Repasse do ${NOME_MP} (cai na conta)`, repasseMp, 'total')}
+        ${linhaExtrato('Custo do produto', valor, 'sub')}
+        ${custos > 0 ? linhaExtrato('Custos adicionais', custos, 'sub') : ''}
+        ${ads > 0 ? linhaExtrato(`ADS (${pc(ads)})`, precoBase * ads, 'sub') : ''}
+        ${imposto > 0 ? linhaExtrato(`Imposto (${pc(imposto)})`, precoBase * imposto, 'sub') : ''}
+        ${custofixo > 0 ? linhaExtrato(`Custo fixo (${pc(custofixo)})`, precoBase * custofixo, 'sub') : ''}
+        ${linhaExtrato('Sobra final (lucro por unidade)', sobraFinal, 'total', sobraFinal >= 0 ? 'var(--green)' : 'var(--red)')}
+      </details>`;
     document.getElementById('r-lucro-unidade').textContent = fmtBRL(lucroReal);
     document.getElementById('r-margem-real-pct').textContent = margemExibidaPct.toFixed(1) + '%';
 
