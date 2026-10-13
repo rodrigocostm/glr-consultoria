@@ -1907,6 +1907,8 @@
     const PERGUNTAS_RAPIDAS = [
       'Quais campanhas pausadas valem ser reativadas? Sugira a reativação e como otimizar cada uma.',
       'Como está a conta hoje?',
+      'A conta está crescendo ou caindo contra o mês passado? Explique pelos produtos.',
+      'Como está o cliente inteiro (todas as lojas, Shopee e Mercado Livre)?',
       'O que o agente fez nos últimos dias e funcionou?',
       'Quais campanhas devo olhar primeiro?',
       'Tem produto curva A em risco neste mês?',
