@@ -368,6 +368,7 @@ Router.register('vendas', async (params, el) => {
   // título/preço, mesmo passando status:'active'. Paginação simples.
   // IMPORTANTE: o parâmetro é meliUserId — contaId é ignorado silenciosamente
   // pela API e sempre retorna a conta ML padrão, misturando dados de contas erradas
+  const _mlItemCache = {}; // id → anúncio (título, preço, estoque) já vindo da listagem
   async function _mlListarIdsAtivos(meliUserId) {
     let ids = [];
     let offset = 0;
@@ -377,7 +378,15 @@ Router.register('vendas', async (params, el) => {
       catch(e) { break; }
       const lote = r?.results || r?.data?.results || [];
       if (!Array.isArray(lote) || !lote.length) break;
-      ids = ids.concat(lote);
+      // O conector passou a devolver o anúncio inteiro ({code, body:{id,title,...}})
+      // em vez de só o id — aceita os dois formatos e guarda o detalhe que já veio
+      for (const e of lote) {
+        const b = e && typeof e === 'object' ? (e.body || e) : null;
+        const id = b ? b.id : e;
+        if (!id) continue;
+        if (b && b.title) _mlItemCache[id] = b;
+        ids.push(String(id));
+      }
       if (lote.length < 100) break;
       offset += 100;
     }
@@ -389,6 +398,7 @@ Router.register('vendas', async (params, el) => {
   // Precisa de meliUserId — com contaId a API retorna 403 pra cada item
   async function _mlDetalhesItens(meliUserId, ids) {
     const detalhes = {};
+    ids = ids.filter(id => { if (_mlItemCache[id]) { detalhes[id] = _mlItemCache[id]; return false; } return true; });
     for (let i=0; i<ids.length; i+=20) {
       const lote = ids.slice(i,i+20);
       try {
@@ -463,8 +473,10 @@ Router.register('vendas', async (params, el) => {
         const comVisita = [];
         await _mapLimit(semVenda, 6, async itemId => {
           try {
-            const rv = await MarketplaceAPI.call('ml_visits_item', { item_id: String(itemId), date_from: dataFrom, date_to: dataTo });
-            const visitas = rv?.data?.total_visits ?? rv?.total_visits ?? (Array.isArray(rv?.data?.results) ? rv.data.results.reduce((s,d)=>s+(d.total||0),0) : 0) ?? 0;
+            const rv = await MarketplaceAPI.call('ml_visits_item', { meliUserId: meliIdListagem, item_id: String(itemId), date_from: dataFrom, date_to: dataTo });
+            // formatos: {items:[{total_visits}]} (atual), {total_visits}, {results:[{total}]}
+            const it0 = (rv?.data?.items || rv?.items || [])[0];
+            const visitas = it0?.total_visits ?? rv?.data?.total_visits ?? rv?.total_visits ?? (Array.isArray(rv?.data?.results) ? rv.data.results.reduce((s,d)=>s+(d.total||0),0) : 0) ?? 0;
             if (visitas > 0) comVisita.push({ item_id: itemId, visitas });
           } catch(e) {}
         });
@@ -597,7 +609,7 @@ Router.register('vendas', async (params, el) => {
         const foraDeAdsIds = [];
         await _mapLimit(itemIds, 6, async itemId => {
           try {
-            const ra = await MarketplaceAPI.call('ml_ads_get_ad', { meliUserId: meliId, itemId: String(itemId) });
+            const ra = await MarketplaceAPI.call('ml_ads_get_ad', { meliUserId: meliId, item_id: String(itemId) });
             const ad = ra?.data || ra;
             const emAds = ad?.status === 'active' && parseInt(ad?.campaign_id) > 0;
             if (!emAds) foraDeAdsIds.push(itemId);
