@@ -143,8 +143,116 @@ Router.register('dre', (params, el) => {
     };
   }
 
+  // ── Base sincronizada (servidor, a cada 15 min) ───────────────────────────
+  // Pedidos com taxas reais (escrow Shopee / recebimento ML), ADS por conta (Shopee
+  // com GMV Max) — sem depender de sincronizar o Financeiro antes. Cada linha da
+  // Projeção é uma CONTA: o DRE dela usa só os pedidos e o ADS dela. Conta que a
+  // base ainda não cobre no mês inteiro segue pelo cache do Financeiro (antigo).
+  let baseDRE = null;          // { chave, porConta: { externalId: { mkt, pedidos, ads } } }
+  let carregandoBase = null;   // chave sendo carregada
+  let editadoManual = false;   // usuário digitou algo ainda não salvo
+  const pad2 = n => String(n).padStart(2, '0');
+  const idNaBase = c => String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id);
+
+  function contasDoCliente(clienteId) {
+    let vinculos = {};
+    try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) {}
+    return vinculos[String(clienteId)] || vinculos[clienteId] || [];
+  }
+
+  async function carregarBaseDRE(clienteId, mes, ano, forcar = false) {
+    const chave = `${clienteId}_${mes}_${ano}`;
+    if (!window.BaseDados || !clienteId || carregandoBase === chave || (!forcar && baseDRE?.chave === chave)) return;
+    carregandoBase = chave;
+    try {
+      const base = await BaseDados.carregar(forcar);
+      const ini = `${ano}-${pad2(mes + 1)}-01`;
+      const fimDia = new Date(ano, mes + 1, 0).getDate();
+      const fim = `${ano}-${pad2(mes + 1)}-${pad2(fimDia)}`;
+      const porConta = {};
+      for (const c of contasDoCliente(clienteId)) {
+        const mkt = BaseDados.mktDe(c.marketplace);
+        if (!mkt || !BaseDados.cobre(base[BaseDados.chave(mkt, idNaBase(c))], ini)) continue;
+        const id = idNaBase(c);
+        const pedidos = [];
+        for (let off = 0; off < 200000; off += 1000) {
+          const { data, error } = await _sb.from('glr_pedidos')
+            .select('pedido_id,situacao,valor_bruto,liquido,taxas,itens')
+            .eq('marketplace', mkt).eq('conta_id', id)
+            .gte('criado_em', new Date(`${ini}T00:00:00-03:00`).toISOString())
+            .lt('criado_em', new Date(new Date(`${fim}T00:00:00-03:00`).getTime() + 86400000).toISOString())
+            .order('pedido_id').range(off, off + 999);
+          if (error) throw error;
+          pedidos.push(...(data || []));
+          if (!data || data.length < 1000) break;
+        }
+        const { data: ads } = await _sb.from('glr_ads_diario').select('gasto').eq('marketplace', mkt).eq('conta_id', id).gte('data', ini).lte('data', fim);
+        porConta[String(c.external_id)] = { mkt, pedidos, ads: (ads || []).reduce((s, a) => s + (parseFloat(a.gasto) || 0), 0) };
+      }
+      if (carregandoBase !== chave) return;
+      baseDRE = { chave, porConta };
+    } catch(e) {
+      console.warn('[DRE] base indisponível, seguindo pelo cache do Financeiro:', e.message);
+      baseDRE = { chave, porConta: {} };
+    } finally {
+      if (carregandoBase === chave) carregandoBase = null;
+    }
+    // Redesenha se ainda estiver no mesmo DRE e sem digitação pendente
+    if (Router.currentPage === 'dre' && `${estado.clienteId}_${estado.mes}_${estado.ano}` === chave && !editadoManual) render();
+  }
+
+  // Quais contas uma "plataforma" do DRE representa: a linha da Projeção com esse
+  // nome (uma conta), ou todas as contas da plataforma / do cliente (Geral).
+  function contasDaPlataforma(clienteId, platName) {
+    const contas = contasDoCliente(clienteId);
+    if (platName === 'GERAL') return contas;
+    const proj = projecoes.find(p => parseInt(p.chave) === parseInt(clienteId));
+    const linha = proj?.plataformas?.find(p => p.nome === platName);
+    if (linha?.contaId) return contas.filter(c => String(c.external_id) === String(linha.contaId));
+    const plat = normalizaPlat(platName);
+    return contas.filter(c => normalizaPlat(c.marketplace) === plat);
+  }
+
+  function getBaseData(clienteId, platName, mes, ano) {
+    if (!baseDRE || baseDRE.chave !== `${clienteId}_${mes}_${ano}`) return null;
+    const contas = contasDaPlataforma(clienteId, platName);
+    if (!contas.length || !contas.every(c => baseDRE.porConta[String(c.external_id)])) return null;
+    let aliquotas = {}, custos = {};
+    try { aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas') || '{}'); } catch(e) {}
+    try { custos    = JSON.parse(localStorage.getItem('glr_vendas_custos') || '{}'); } catch(e) {}
+    let fat = 0, liq = 0, imposto = 0, custoProd = 0, qtd = 0, ads = 0, semTaxa = 0;
+    for (const c of contas) {
+      const d = baseDRE.porConta[String(c.external_id)];
+      ads += d.ads;
+      for (const p of d.pedidos) {
+        if (p.situacao !== 'valido') continue; // cancelado/devolvido fora (mesma regra de antes)
+        const valor = parseFloat(p.valor_bruto) || 0;
+        fat += valor;
+        // Mesma regra do Financeiro: sem taxa real ainda → Shopee líquido = valor; ML = valor − tarifa
+        if (p.liquido != null) liq += parseFloat(p.liquido);
+        else { liq += d.mkt === 'ml' ? valor - (parseFloat(p.taxas?.tarifa_venda) || 0) : valor; semTaxa++; }
+        const impAPI = d.mkt === 'shopee' && p.liquido != null ? parseFloat(p.taxas?.imposto) || 0 : 0;
+        const cst = custos[p.pedido_id] || {};
+        imposto += impAPI > 0 ? impAPI : valor * (parseFloat(cst.imposto) || parseFloat(aliquotas[c.external_id] || 0)) / 100;
+        custoProd += parseFloat(cst.custo) || 0;
+        qtd += (p.itens || []).reduce((s, i) => s + (parseInt(i.qtd) || 1), 0) || 1;
+      }
+    }
+    if (!fat && !ads) return null;
+    const cliente = clientes.find(c => c.id === parseInt(clienteId));
+    return {
+      faturamento: fat, comissaoFrete: Math.max(0, fat - liq), imposto, ads,
+      produtos: custoProd, produtosVendidos: qtd,
+      comissaoGLR: qtd * (parseFloat(cliente?.valorPorVenda) || 0),
+      juros: 0, custoFixo: 0,
+      _semTaxa: semTaxa,
+    };
+  }
+
   // GERAL via cache (quando não há DREs individuais salvos)
   function getGeralAutoData(clienteId, mes, ano) {
+    const daBase = getBaseData(clienteId, 'GERAL', mes, ano);
+    if (daBase) return daBase;
     const plats = getPlataformasDoCliente(clienteId);
     if (!plats.length) return null;
     let totalVals = null;
@@ -264,6 +372,9 @@ Router.register('dre', (params, el) => {
 
   // ── Render ────────────────────────────────────────────────────
   function render() {
+    // Base sincronizada do cliente/mês: carrega em segundo plano e redesenha ao chegar
+    editadoManual = false;
+    carregarBaseDRE(estado.clienteId, estado.mes, estado.ano);
     const plats      = getPlataformasDoCliente(estado.clienteId);
     const semProj    = !plats.length;
     const clienteNome = clientes.find(c=>c.id===estado.clienteId)?.nome || '—';
@@ -303,8 +414,9 @@ Router.register('dre', (params, el) => {
         if (autoGeral) { vals = autoGeral; modoAuto = true; }
       }
     } else if (!semProj && estado.plataforma) {
-      // 1ª opção: dados reais da API (cache do Financeiro)
-      const autoData = getAutoData(estado.clienteId, estado.plataforma, estado.mes, estado.ano);
+      // 1ª opção: base sincronizada (por conta); 2ª: cache do Financeiro
+      const autoData = getBaseData(estado.clienteId, estado.plataforma, estado.mes, estado.ano)
+                    || getAutoData(estado.clienteId, estado.plataforma, estado.mes, estado.ano);
       if (autoData) {
         vals = autoData;
         modoAuto = true;
@@ -473,9 +585,16 @@ Router.register('dre', (params, el) => {
       <div style="margin-bottom:16px;padding:10px 14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px;">
         <svg width="15" height="15" fill="none" stroke="#10b981" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
         <span style="font-size:13px;color:#10b981;">
-          <strong>Preenchido automaticamente da API</strong> — Faturamento, Comissão+Frete, ADS, Imposto e Comissão GLR vêm dos dados sincronizados no Financeiro.
+          ${vals._semTaxa != null
+            ? `<strong>⚡ Preenchido da base automática</strong> — pedidos com as taxas reais e ADS desta conta (Shopee com GMV Max), atualizado pelo servidor a cada 15 min.${vals._semTaxa ? ` ${vals._semTaxa} pedido${vals._semTaxa !== 1 ? 's' : ''} ainda sem taxa real (o servidor está buscando) — por ora entram com a estimativa.` : ''}`
+            : `<strong>Preenchido automaticamente da API</strong> — Faturamento, Comissão+Frete, ADS, Imposto e Comissão GLR vêm dos dados sincronizados no Financeiro.`}
           Campos manuais (Juros, Custo Fixo) ficam em aberto. Salve para fixar.
         </span>
+      </div>` : ''}
+
+      ${!modoAuto && !preenchidoGeral && carregandoBase === `${estado.clienteId}_${estado.mes}_${estado.ano}` ? `
+      <div style="margin-bottom:16px;padding:10px 14px;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.2);border-radius:var(--radius-sm);font-size:13px;color:var(--text-muted);">
+        ⏳ Lendo a base automática…
       </div>` : ''}
 
       ${preenchidoDaProjecao ? `
@@ -729,6 +848,7 @@ Router.register('dre', (params, el) => {
   };
 
   window.dreCalc = function() {
+    editadoManual = true; // não redesenhar por cima do que está sendo digitado
     const vals = lerInputs();
     const calc = calcular(vals, linhasCustom, ocultarGLR);
     const rc   = calc.resultado>=0?'var(--green)':'var(--red)';
@@ -807,4 +927,12 @@ Router.register('dre', (params, el) => {
   };
 
   render();
+
+  // Servidor terminou uma rodada de sincronização → recarrega a base deste DRE
+  // (só redesenha se ninguém estiver digitando por cima).
+  window._dreRecarregarBase = () => carregarBaseDRE(estado.clienteId, estado.mes, estado.ano, true);
+  if (!window._dreOuvindoBase) {
+    window._dreOuvindoBase = true;
+    window.addEventListener('glr-base-atualizada', () => { if (Router.currentPage === 'dre' && window._dreRecarregarBase) window._dreRecarregarBase(); });
+  }
 });
