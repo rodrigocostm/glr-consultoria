@@ -674,91 +674,233 @@ Router.register('vendas', async (params, el) => {
   }
   window.buscarForaDoAds = buscarForaDoAds;
 
-  // ── Comparativo Semanal: quebra o período filtrado em blocos de 7 dias e
-  // mostra quantidade vendida por produto em cada semana — usa os pedidos já
-  // buscados (sem chamada de API nova). Obs identifica, pra cada posição do
-  // ranking, quando um produto diferente passou a ocupá-la de uma semana pra outra.
+  // ── Comparativo Semanal = Curva ABC semana a semana ─────────────────────────
+  // Não depende do filtro de datas: usa SEMANAS FECHADAS de 7 dias terminando
+  // ontem (8 semanas, lidas da base automática), respeitando conta e plataforma.
+  //  • Curva ABC pelo faturamento das últimas 4 semanas (A = até 80% do
+  //    acumulado, B = até 95%, C = resto);
+  //  • tendência = última semana × média das 3 anteriores (queda/alta/parou/novo);
+  //  • produto = anúncio por conta (mesmo nome em lojas diferentes não se mistura).
+  const NSEM = 8, DIA_MS = 86400000;
+  let semanal = { chave: null, pedidos: null, carregando: false, erro: null, viaBase: true };
+  let semFiltro = 'atencao', semMetrica = 'un', semBusca = '', semLimite = 60;
+
+  async function carregarSemanal(chave) {
+    semanal = { chave, pedidos: null, carregando: true, erro: null, viaBase: true };
+    renderComparativoSemanal();
+    try {
+      const de = new Date(ontem); de.setDate(ontem.getDate() - NSEM * 7 + 1);
+      const alvo = filtroContasSel.size ? contas.filter(c => filtroContasSel.has(c.external_id)) : contas;
+      const r = await carregarBaseVendas(alvo, fmtDate(de), fmtDate(ontem));
+      if (r.cobertas.size) semanal.pedidos = r.pedidos;
+      else { semanal.pedidos = pedidos; semanal.viaBase = false; } // conta fora da base: usa o que já foi buscado
+    } catch (e) { semanal.erro = e.message; semanal.pedidos = pedidos; semanal.viaBase = false; }
+    semanal.carregando = false;
+    if (abaAtiva === 'semanal') renderComparativoSemanal();
+  }
+
+  function calcularCurvaSemanal(lista) {
+    const fimOntem = new Date(ontem); fimOntem.setHours(23, 59, 59, 999);
+    const fimTs = fimOntem.getTime();
+    const semDe = ts => Math.floor((fimTs - ts) / (7 * DIA_MS)); // 0 = últimos 7 dias
+    const prods = new Map();
+    for (const p of lista) {
+      if (isCanceladoVendas(p)) continue;
+      if (filtroPlat !== 'todas' && p.plataforma !== filtroPlat) continue;
+      if (filtroContasSel.size > 0 && !filtroContasSel.has(p.contaId)) continue;
+      const w = semDe(p.dataTs || 0);
+      if (w < 0 || w >= NSEM) continue;
+      const itens = (p.itens && p.itens.length) ? p.itens : [{ nome: p.produto, qtd: p.qtd || 1, preco: (p.valor || 0) / (p.qtd || 1) }];
+      for (const it of itens) {
+        const nome = it.nome || '—', k = `${p.contaId}|${nome}`;
+        const x = prods.get(k) || { k, nome, contaId: p.contaId, plataforma: p.plataforma, imagem: it.imagem || p.imagem || '', un: Array(NSEM).fill(0), rs: Array(NSEM).fill(0) };
+        const q = parseInt(it.qtd) || 1;
+        x.un[w] += q; x.rs[w] += (parseFloat(it.preco) || 0) * q;
+        if (!x.imagem && it.imagem) x.imagem = it.imagem;
+        prods.set(k, x);
+      }
+    }
+    const lista2 = [...prods.values()];
+    // Curva ABC — faturamento das últimas 4 semanas
+    for (const x of lista2) x.fat4 = x.rs.slice(0, 4).reduce((a, b) => a + b, 0);
+    const total4 = lista2.reduce((a, x) => a + x.fat4, 0) || 1;
+    let acum = 0;
+    for (const x of [...lista2].sort((a, b) => b.fat4 - a.fat4)) {
+      if (x.fat4 <= 0) { x.classe = '—'; continue; }
+      const antes = acum / total4; acum += x.fat4;
+      x.classe = antes < 0.8 ? 'A' : antes < 0.95 ? 'B' : 'C';
+      x.part = x.fat4 / total4 * 100;
+    }
+    // Tendência: última semana × média das 3 anteriores
+    for (const x of lista2) {
+      const ult = x.un[0], media = (x.un[1] + x.un[2] + x.un[3]) / 3;
+      const ultRs = x.rs[0], mediaRs = (x.rs[1] + x.rs[2] + x.rs[3]) / 3;
+      x.ult = ult; x.media = media; x.deltaRs = ultRs - mediaRs;
+      x.var = media > 0 ? (ult - media) / media * 100 : null;
+      const vendiaAntes = x.un.slice(1).some(v => v > 0);
+      if (ult > 0 && !vendiaAntes) x.tend = 'novo';
+      else if (ult === 0 && media >= 1) x.tend = 'parou';
+      else if (media < 1 && ult < 2) x.tend = 'baixo';
+      else if (x.var <= -40) x.tend = 'queda_forte';
+      else if (x.var <= -20) x.tend = 'queda';
+      else if (x.var >= 40) x.tend = 'alta_forte';
+      else if (x.var >= 20) x.tend = 'alta';
+      else x.tend = 'estavel';
+    }
+    return { prods: lista2, total4, fimTs };
+  }
+
   function renderComparativoSemanal() {
     const sec = document.getElementById('sec-semanal');
     if (!sec) return;
-
-    const lista = pedidosFiltrados();
-    if (!lista.length) {
-      sec.innerHTML = `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted);">Nenhum pedido no período filtrado. Ajuste o filtro de data ou busque dados na aba Dashboard.</div>`;
+    const chave = `${[...filtroContasSel].sort().join(',')}|${fmtDate(ontem)}|${contas.length}`;
+    if (semanal.chave !== chave && !semanal.carregando) { carregarSemanal(chave); return; }
+    if (semanal.carregando || !semanal.pedidos) {
+      sec.innerHTML = `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted);">⏳ Montando a curva ABC das últimas ${NSEM} semanas…</div>`;
       return;
     }
-
-    const { dataFrom, dataTo } = _periodoParaDatas();
-    const inicio = new Date(`${dataFrom}T00:00:00`);
-    const fim    = new Date(`${dataTo}T23:59:59`);
-    const totalDias = Math.max(1, Math.ceil((fim - inicio) / 86400000) + 1);
-    const nSemanas = Math.min(6, Math.max(1, Math.ceil(totalDias / 7)));
-
-    const semanaDoTs = ts => {
-      const dias = Math.floor((ts - inicio.getTime()) / 86400000);
-      return Math.min(nSemanas - 1, Math.max(0, Math.floor(dias / 7)));
+    const { prods, total4, fimTs } = calcularCurvaSemanal(semanal.pedidos);
+    if (!prods.length) {
+      sec.innerHTML = `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted);">Nenhuma venda nas últimas ${NSEM} semanas para o filtro escolhido.</div>`;
+      return;
+    }
+    const h = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const dm = ts => { const d = new Date(ts); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`; };
+    const faixa = w => `${dm(fimTs - (w * 7 + 6) * DIA_MS)}–${dm(fimTs - w * 7 * DIA_MS)}`;
+    const varTxt = v => v == null ? '—' : `${v > 0 ? '+' : ''}${Math.round(v)}%`;
+    const multiConta = new Set(prods.map(x => x.contaId)).size > 1;
+    const nomeConta = id => { const c = contas.find(c => c.external_id === id); return c ? contaNome(c) : id; };
+    const TEND = {
+      queda_forte: { t: '▼▼ Queda forte', c: '#dc2626' }, queda: { t: '▼ Queda', c: '#ea580c' },
+      parou: { t: '■ Parou de vender', c: '#dc2626' }, alta_forte: { t: '▲▲ Alta forte', c: '#16a34a' },
+      alta: { t: '▲ Alta', c: '#16a34a' }, novo: { t: '★ Novo', c: '#2a78d6' }, estavel: { t: '● Estável', c: '#64748b' }, baixo: { t: '· Pouco volume', c: '#94a3b8' },
     };
+    const caindo = x => ['queda', 'queda_forte', 'parou'].includes(x.tend);
+    const subindo = x => ['alta', 'alta_forte', 'novo'].includes(x.tend);
 
-    // Agrega quantidade por produto e por semana
-    const prodMap = {};
-    for (const p of lista) {
-      const sem = semanaDoTs(p.dataTs || 0);
-      const itens = (p.itens && p.itens.length) ? p.itens : [{ nome: p.produto, qtd: p.qtd || 1 }];
-      for (const it of itens) {
-        const nome = it.nome || '—';
-        if (!prodMap[nome]) prodMap[nome] = { nome, semanas: Array(nSemanas).fill(0), total: 0 };
-        const qtd = parseInt(it.qtd) || 1;
-        prodMap[nome].semanas[sem] += qtd;
-        prodMap[nome].total += qtd;
+    // Resumo
+    const A = prods.filter(x => x.classe === 'A');
+    const aCaindo = A.filter(caindo);
+    const perdaA = aCaindo.reduce((s, x) => s + Math.min(0, x.deltaRs), 0);
+    const sobem = prods.filter(x => subindo(x) && x.ult >= 2);
+    const ganho = sobem.reduce((s, x) => s + Math.max(0, x.deltaRs), 0);
+    const parados = prods.filter(x => x.tend === 'parou');
+    const fatA = A.reduce((s, x) => s + x.fat4, 0);
+    const card = (rot, val, sub, cor) => `<div class="cs-card" style="--c:${cor}"><div class="cs-rot">${rot}</div><div class="cs-val">${val}</div><div class="cs-sub">${sub}</div></div>`;
+
+    // O que olhar primeiro
+    const foco = [
+      ...aCaindo.sort((a, b) => a.deltaRs - b.deltaRs).slice(0, 4).map(x => ({ x, txt: `Curva A ${x.tend === 'parou' ? 'parou de vender' : 'em queda'}: ${x.ult} un. na última semana contra média de ${x.media.toFixed(1).replace('.', ',')} — ${R$(Math.abs(x.deltaRs))} a menos. Revisar estoque, preço, anúncio e ADS.`, cor: '#dc2626' })),
+      ...prods.filter(x => (x.classe === 'B' || x.classe === 'C') && ['alta', 'alta_forte'].includes(x.tend) && x.ult >= 3).sort((a, b) => b.deltaRs - a.deltaRs).slice(0, 3).map(x => ({ x, txt: `Curva ${x.classe} subindo (${varTxt(x.var)}): candidato a virar A — vale reforçar ADS e estoque.`, cor: '#16a34a' })),
+    ];
+
+    // Filtro / busca / ordenação
+    const filtros = [['atencao', 'Precisa de atenção'], ['todos', 'Todos'], ['A', 'Curva A'], ['B', 'Curva B'], ['C', 'Curva C'], ['queda', 'Em queda'], ['alta', 'Em alta'], ['parou', 'Parados']];
+    const passa = x => {
+      if (semBusca && !x.nome.toLowerCase().includes(semBusca.toLowerCase())) return false;
+      switch (semFiltro) {
+        case 'atencao': return (x.classe === 'A' && caindo(x)) || (x.classe !== 'A' && ['alta', 'alta_forte'].includes(x.tend) && x.ult >= 3) || (x.tend === 'parou' && x.classe !== 'C');
+        case 'A': case 'B': case 'C': return x.classe === semFiltro;
+        case 'queda': return ['queda', 'queda_forte'].includes(x.tend);
+        case 'alta': return ['alta', 'alta_forte', 'novo'].includes(x.tend);
+        case 'parou': return x.tend === 'parou';
+        default: return true;
       }
-    }
+    };
+    const ordemClasse = { A: 0, B: 1, C: 2, '—': 3 };
+    const visiveis = prods.filter(passa).sort((a, b) => semFiltro === 'atencao' || semFiltro === 'queda'
+      ? (ordemClasse[a.classe] - ordemClasse[b.classe]) || (a.deltaRs - b.deltaRs)
+      : (ordemClasse[a.classe] - ordemClasse[b.classe]) || (b.fat4 - a.fat4));
+    const mostrar = visiveis.slice(0, semLimite);
 
-    const produtos = Object.values(prodMap).sort((a,b) => b.total - a.total);
-
-    // Ranking independente por semana (quem vendeu mais NAQUELA semana)
-    const rankPorSemana = []; // rankPorSemana[sem] = [nomeProduto na posição 0, 1, 2...]
-    for (let s = 0; s < nSemanas; s++) {
-      rankPorSemana.push(
-        [...produtos].filter(p => p.semanas[s] > 0).sort((a,b) => b.semanas[s]-a.semanas[s]).map(p => p.nome)
-      );
-    }
-
-    // Obs por linha: se a posição geral desse produto foi ocupada por outro
-    // produto numa semana específica, sinaliza quem "assumiu" aquela posição
-    function obsDoProduto(nome, posicao) {
-      const notas = [];
-      for (let s = 1; s < nSemanas; s++) {
-        const ocupanteAtual  = rankPorSemana[s][posicao];
-        const ocupanteAntes  = rankPorSemana[s-1][posicao];
-        if (ocupanteAtual && ocupanteAtual !== nome && ocupanteAtual !== ocupanteAntes) {
-          notas.push(`semana ${s+1} subiu o ${ocupanteAtual}`);
-        }
-      }
-      return notas.join(' · ');
-    }
-
-    const linhas = produtos.map((p, i) => `
-      <tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:10px 12px;color:var(--text-primary);font-weight:600;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(p.nome||'').replace(/"/g,'&quot;')}">${p.nome}</td>
-        ${p.semanas.map(q => `<td style="padding:10px 12px;text-align:center;color:var(--text-secondary);">${q || '—'}</td>`).join('')}
-        <td style="padding:10px 12px;color:var(--text-muted);font-size:11px;font-style:italic;max-width:260px;">${obsDoProduto(p.nome, i)}</td>
-      </tr>`).join('');
+    const spark = x => {
+      const v = (semMetrica === 'rs' ? x.rs : x.un).slice().reverse(); // antiga → recente
+      const mx = Math.max(...v, 1), W = 8, G = 3, H = 26;
+      const corUlt = caindo(x) ? '#dc2626' : subindo(x) ? '#16a34a' : 'var(--text-secondary)';
+      return `<svg width="${NSEM * (W + G)}" height="${H}" aria-hidden="true">${v.map((q, i) => { const hh = q > 0 ? Math.max(2, q / mx * H) : 1; return `<rect x="${i * (W + G)}" y="${H - hh}" width="${W}" height="${hh}" rx="2" fill="${i === NSEM - 1 ? corUlt : 'var(--text-muted)'}" opacity="${i === NSEM - 1 ? 1 : 0.45}"/>`; }).join('')}</svg>`;
+    };
+    const cel = (x, w) => { const v = semMetrica === 'rs' ? x.rs[w] : x.un[w]; return v ? (semMetrica === 'rs' ? R$(v).replace(/,\d{2}$/, '') : v) : '<span class="cs-mut">—</span>'; };
+    const linhas = mostrar.map(x => {
+      const t = TEND[x.tend];
+      return `<tr>
+        <td><span class="cs-abc cs-${x.classe === '—' ? 'n' : x.classe}">${x.classe}</span></td>
+        <td class="cs-prod">${x.imagem ? `<img src="${h(x.imagem)}" alt="" loading="lazy">` : '<span class="cs-img"></span>'}<div><div class="cs-nome" title="${h(x.nome)}">${h(x.nome)}</div><div class="cs-mut">${multiConta ? h(nomeConta(x.contaId)) + ' · ' : ''}${h(x.plataforma)}${x.part ? ` · ${x.part.toFixed(1).replace('.', ',')}% do fat.` : ''}</div></div></td>
+        <td class="cs-num">${R$(x.fat4).replace(/,\d{2}$/, '')}</td>
+        <td>${spark(x)}</td>
+        ${[3, 2, 1, 0].map(w => `<td class="cs-num${w === 0 ? ' cs-ult' : ''}">${cel(x, w)}</td>`).join('')}
+        <td class="cs-num" style="color:${x.var == null ? 'inherit' : x.var < 0 ? '#dc2626' : x.var > 0 ? '#16a34a' : 'inherit'};font-weight:700;">${varTxt(x.var)}</td>
+        <td><span class="cs-tend" style="--c:${t.c}">${t.t}</span></td>
+      </tr>`;
+    }).join('');
 
     sec.innerHTML = `
-      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
-        ${produtos.length} produtos · ${dataFrom} a ${dataTo} · dividido em ${nSemanas} semana${nSemanas!==1?'s':''} de 7 dias
+      <div class="cs-topo">
+        <div class="cs-mut">Semanas fechadas de 7 dias até ontem (${dm(fimTs)}) · curva ABC pelo faturamento das últimas 4 semanas (${R$(total4).replace(/,\d{2}$/, '')}) · tendência = última semana × média das 3 anteriores${semanal.viaBase ? '' : ' · <b>conta fora da base: usando só os pedidos já buscados</b>'}</div>
+      </div>
+      <div class="cs-cards">
+        ${card('Curva A', `${A.length} produto${A.length === 1 ? '' : 's'}`, `${(fatA / total4 * 100).toFixed(0)}% do faturamento de 4 semanas`, '#2a78d6')}
+        ${card('Curva A em queda', `${aCaindo.length}`, aCaindo.length ? `${R$(Math.abs(perdaA)).replace(/,\d{2}$/, '')} a menos na última semana` : 'nenhum produto A caindo', aCaindo.length ? '#dc2626' : '#64748b')}
+        ${card('Em alta', `${sobem.length}`, sobem.length ? `+${R$(ganho).replace(/,\d{2}$/, '')} na última semana` : 'nenhum produto subindo', '#16a34a')}
+        ${card('Pararam de vender', `${parados.length}`, 'vendiam e zeraram na última semana', parados.length ? '#ea580c' : '#64748b')}
+      </div>
+      ${foco.length ? `<div class="card cs-foco"><div class="cs-foco-t">O que olhar primeiro</div>${foco.map(f => `<div class="cs-foco-i" style="--c:${f.cor}"><b>${h(f.x.nome)}</b>${multiConta ? ` <span class="cs-mut">(${h(nomeConta(f.x.contaId))})</span>` : ''}<div>${h(f.txt)}</div></div>`).join('')}</div>` : ''}
+      <div class="cs-ctrl">
+        <div class="cs-chips">${filtros.map(([v, r]) => `<button class="cs-chip${semFiltro === v ? ' on' : ''}" onclick="window._csFiltro('${v}')">${r}</button>`).join('')}</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input id="cs-busca" class="form-input" placeholder="Buscar produto…" value="${h(semBusca)}" style="width:200px;">
+          <div class="cs-chips"><button class="cs-chip${semMetrica === 'un' ? ' on' : ''}" onclick="window._csMetrica('un')">Unidades</button><button class="cs-chip${semMetrica === 'rs' ? ' on' : ''}" onclick="window._csMetrica('rs')">Faturamento</button></div>
+        </div>
       </div>
       <div class="card" style="padding:0;overflow:hidden;">
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
-          <thead><tr style="background:var(--bg-card-hover);">
-            <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Produto</th>
-            ${Array.from({length:nSemanas}, (_,i)=>`<th style="padding:10px 12px;text-align:center;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">${i+1}ª Semana</th>`).join('')}
-            <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Obs</th>
-          </tr></thead>
-          <tbody>${linhas}</tbody>
-        </table>
-      </div>`;
+        <div style="overflow-x:auto;">
+          <table class="cs-tab">
+            <thead><tr><th>ABC</th><th>Produto</th><th class="cs-num">Fat. 4 sem.</th><th>${NSEM} semanas</th>
+              ${[3, 2, 1, 0].map(w => `<th class="cs-num${w === 0 ? ' cs-ult' : ''}">${w === 0 ? 'Última' : `${w + 1}ª antes`}<div class="cs-faixa">${faixa(w)}</div></th>`).join('')}
+              <th class="cs-num">Últ. × média</th><th>Tendência</th></tr></thead>
+            <tbody>${linhas || `<tr><td colspan="10" style="padding:28px;text-align:center;color:var(--text-muted);">Nada neste filtro. ✅</td></tr>`}</tbody>
+          </table>
+        </div>
+        ${visiveis.length > mostrar.length ? `<div style="padding:12px;text-align:center;"><button class="cs-chip" onclick="window._csMais()">Mostrar mais (${visiveis.length - mostrar.length})</button></div>` : ''}
+      </div>
+      <style>
+        .cs-mut{color:var(--text-muted);font-size:11.5px;}
+        .cs-topo{margin-bottom:12px;}
+        .cs-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
+        @media (max-width:900px){.cs-cards{grid-template-columns:repeat(2,1fr);}}
+        .cs-card{background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:12px;padding:12px 14px;}
+        .cs-rot{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);}
+        .cs-val{font-size:22px;font-weight:800;color:var(--text-primary);font-variant-numeric:tabular-nums;}
+        .cs-sub{font-size:12px;color:var(--text-secondary);}
+        .cs-foco{padding:14px 18px;margin-bottom:14px;}
+        .cs-foco-t{font-weight:800;font-size:14px;margin-bottom:8px;color:var(--text-primary);}
+        .cs-foco-i{border-left:3px solid var(--c);padding:6px 10px;margin-bottom:6px;font-size:12.5px;color:var(--text-secondary);}
+        .cs-foco-i b{color:var(--text-primary);}
+        .cs-ctrl{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+        .cs-chips{display:flex;gap:6px;flex-wrap:wrap;}
+        .cs-chip{border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);border-radius:99px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;}
+        .cs-chip.on{background:#6366f1;border-color:#6366f1;color:#fff;}
+        .cs-tab{width:100%;border-collapse:collapse;font-size:12.5px;}
+        .cs-tab th{padding:9px 10px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
+        .cs-tab td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-secondary);vertical-align:middle;}
+        .cs-num{text-align:right !important;font-variant-numeric:tabular-nums;white-space:nowrap;}
+        .cs-ult{background:rgba(99,102,241,.06);color:var(--text-primary) !important;font-weight:700;}
+        .cs-faixa{font-size:10px;font-weight:500;text-transform:none;color:var(--text-muted);}
+        .cs-prod{display:flex;gap:10px;align-items:center;min-width:280px;max-width:420px;}
+        .cs-prod img,.cs-img{width:34px;height:34px;border-radius:6px;object-fit:cover;flex:none;background:var(--bg-card-hover);}
+        .cs-nome{color:var(--text-primary);font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+        .cs-abc{display:inline-flex;width:24px;height:24px;border-radius:6px;align-items:center;justify-content:center;font-weight:800;font-size:12px;}
+        .cs-A{background:rgba(42,120,214,.15);color:#2a78d6;} .cs-B{background:rgba(235,104,52,.15);color:#eb6834;} .cs-C{background:rgba(100,116,139,.15);color:#64748b;} .cs-n{color:var(--text-muted);}
+        .cs-tend{display:inline-block;font-size:11.5px;font-weight:700;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);padding:3px 9px;border-radius:99px;white-space:nowrap;}
+      </style>`;
+    const busca = document.getElementById('cs-busca');
+    if (busca) busca.addEventListener('input', e => {
+      semBusca = e.target.value; clearTimeout(window._csT);
+      window._csT = setTimeout(() => { renderComparativoSemanal(); const b = document.getElementById('cs-busca'); if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); } }, 250);
+    });
   }
+  window._csFiltro = v => { semFiltro = v; semLimite = 60; renderComparativoSemanal(); };
+  window._csMetrica = v => { semMetrica = v; renderComparativoSemanal(); };
+  window._csMais = () => { semLimite += 100; renderComparativoSemanal(); };
 
   function renderOportunidades() {
     const sec = document.getElementById('sec-oportunidades');
@@ -1395,6 +1537,7 @@ Router.register('vendas', async (params, el) => {
   // ── Render lista ─────────────────────────────────────────────
   function renderLista() {
     if (abaAtiva === 'dashboard') renderDashboard();
+    else if (abaAtiva === 'semanal') renderComparativoSemanal();
     else renderPedidos();
   }
 
@@ -2424,7 +2567,7 @@ Router.register('vendas', async (params, el) => {
       <button id="tab-dashboard" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:#6366f1;color:var(--text-primary);">📊 Dashboard</button>
       <button id="tab-pedidos"   style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">📋 Pedidos</button>
       <button id="tab-oportunidades" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">🎯 Oportunidades</button>
-      <button id="tab-semanal" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">📅 Comparativo Semanal</button>
+      <button id="tab-semanal" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">📅 Curva ABC Semanal</button>
     </div>
 
     <!-- Aba Dashboard -->
@@ -2547,6 +2690,7 @@ Router.register('vendas', async (params, el) => {
   // Base sincronizou (a cada 15 min) → atualiza a tela sozinha, sem clique
   const _vendasAoAtualizarBase = () => {
     if (!document.getElementById('vendas-lista')) { window.removeEventListener('glr-base-atualizada', _vendasAoAtualizarBase); return; }
+    semanal.chave = null; // curva semanal relê a base na próxima vez que for exibida
     buscarPedidos({ silencioso: true, soBase: true });
   };
   window.addEventListener('glr-base-atualizada', _vendasAoAtualizarBase);
