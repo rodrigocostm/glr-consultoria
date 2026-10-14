@@ -216,7 +216,7 @@ Router.register('agente-ml', (params, el) => {
   const semInstrucao = t => String(t || '').replace(/ ?Aplique no painel[\s\S]*$/, '');
   function renderSugestoes(id) {
     const lista = pendentes(id);
-    const rotAcao = { pausar: '⏸ Pausar campanha', orcamento: '💰 Orçamento', roas_target: '🎯 ROAS objetivo', acos_target: '🎯 Meta de ACOS', retirar_produto: '➖ Tirar produto', mover_produto: '↔ Mover produto', adicionar_produto: '➕ Colocar produto' };
+    const rotAcao = { pausar: '⏸ Pausar campanha', orcamento: '💰 Orçamento', roas_target: '🎯 ROAS objetivo', acos_target: '🎯 Meta de ACOS', retirar_produto: '➖ Tirar produto', mover_produto: '↔ Mover produto', adicionar_produto: '➕ Colocar produto', abc_queda: '📉 Curva A em queda' };
     const roasX = v => v ? `${(+v).toFixed(1).replace('.', ',')}x` : '—';
     const dePara = d => {
       if (d.acao === 'orcamento') return `${d.campanha ? h(d.campanha) + ': ' : ''}${R$(d.de)} → ${R$(d.para)}`;
@@ -225,6 +225,7 @@ Router.register('agente-ml', (params, el) => {
       if (d.acao === 'retirar_produto') return `${h(d.produto || '')} — sair de "${h(d.campanha || '')}"`;
       if (d.acao === 'mover_produto') return `${h(d.produto || '')}: "${h(d.campanha || '')}" → ${d.destino ? `"${h(d.destino)}"` : `nova campanha (ROAS ${roasX(d.para)})`}`;
       if (d.acao === 'adicionar_produto') return `${h(d.produto || '')} → "${h(d.destino || d.campanha || '')}"`;
+      if (d.acao === 'abc_queda') return `${h(d.produto || '')}: ${d.unidades_ultima} un. na última semana × média ${String(d.media_3_semanas ?? '—').replace('.', ',')}${d.variacao_pct != null ? ` (${d.variacao_pct > 0 ? '+' : ''}${d.variacao_pct}%)` : ''}`;
       return d.campanha ? h(d.campanha) : 'pausar campanha';
     };
     const anuncios = d => (d.item_ids || []).length ? `<div class="aml-sub" style="margin-top:2px;">Anúncios: ${(d.item_ids || []).slice(0, 8).map(h).join(', ')}${(d.item_ids || []).length > 8 ? '…' : ''}</div>` : '';
@@ -239,7 +240,7 @@ Router.register('agente-ml', (params, el) => {
               <div style="margin:4px 0;"><span class="aml-chip">${rotAcao[d.acao] || 'Ação'}</span> <b>${dePara(d)}</b></div>${anuncios(d)}
               <div class="aml-sub">${h(semInstrucao(l.explicacao))}</div></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
-              <button class="btn btn-primary btn-sm" ${state.processando ? 'disabled' : ''} onclick="window._amlMarcar('${l.id}','executado')">✓ Já apliquei</button>
+              <button class="btn btn-primary btn-sm" ${state.processando ? 'disabled' : ''} onclick="window._amlMarcar('${l.id}','executado')">${d.acao === 'abc_queda' ? '✓ Revisado' : '✓ Já apliquei'}</button>
               <button class="btn btn-secondary btn-sm" ${state.processando ? 'disabled' : ''} onclick="window._amlMarcar('${l.id}','descartado')">Descartar</button>
             </div>
           </div></div>`;

@@ -25,7 +25,8 @@
 // Arquivo com "_" na frente: não vira rota na Vercel; usado por agente-cron.js.
 // ============================================================
 
-const MAX_SUGESTOES = 12;
+const MAX_SUGESTOES = 15;
+const curvaABC = require('./_curva-abc');
 
 async function listarCampanhasML(mcpCall, apiKey, meliUserId, de, ate) {
   const todas = [];
@@ -140,6 +141,9 @@ async function processarContaML(cfg, mcApiKey, h) {
     const ocupadas = new Set(logs
       .filter(l => l.resultado === 'so_alerta' || (l.resultado === 'executado' && l.criado_em >= desde3d))
       .map(l => l.dados?.chave || (l.dados?.campaign_id != null ? `c:${l.dados.campaign_id}` : null)).filter(Boolean));
+    // Avisos da curva ABC: um por produto a cada 7 dias (mesmo se descartado)
+    const desde7d = new Date(Date.now() - 6.5 * 86400000).toISOString();
+    logs.filter(l => String(l.dados?.chave || '').startsWith('abc:') && l.criado_em >= desde7d).forEach(l => ocupadas.add(l.dados.chave));
     const livre = chave => !ocupadas.has(chave) && sugestoes.length < MAX_SUGESTOES;
     async function sugerir(chave, titulo, explicacao, dados) {
       if (!livre(chave)) return false;
@@ -289,7 +293,38 @@ async function processarContaML(cfg, mcApiKey, h) {
       }
     }
 
-    // ── 3) COLOCAR produtos que vendem na loja e não estão em campanha ativa ──
+    // ── 3) CURVA ABC semana a semana (mesma regra da aba Vendas) ──
+    //  • curva A em queda/parou → alerta com a situação no ADS (o analista decide junto);
+    //  • B/C subindo fora de campanha → colocar numa campanha dentro da meta;
+    //    dentro de campanha travada por verba → reforço já sai pela regra da campanha.
+    try {
+      if (baseCobre(base, isoMenos(ontem, curvaABC.NSEM * 7 - 1))) {
+        const curva = curvaABC.curvaSemanal(await curvaABC.lerPedidosCurva(sbSelect, 'ml', contaId, ontem), ontem);
+        const campDoItem = {};
+        for (const x of C) for (const a of x.anuncios) if (a.status === 'active') campDoItem[a.item_id] = x;
+        const linhaSemana = p => `${p.ult} un. na última semana contra média de ${curvaABC.n1(p.media)} nas 3 anteriores (${curvaABC.varTxt(p.var)}; ${R$(p.ultRs)} vs ${R$(p.mediaRs)})`;
+        const base1 = p => ({ produto: p.nome, item_ids: p.item_id ? [p.item_id] : [], classe: p.classe, tendencia: p.tend, unidades_ultima: p.ult, media_3_semanas: r1(p.media), variacao_pct: p.var == null ? null : Math.round(p.var) });
+        for (const p of curva.aCaindo.slice(0, 4)) {
+          const camp = campDoItem[p.item_id];
+          const ads = camp ? `Está na campanha "${camp.nome}" (ROAS objetivo ${roasTxt(camp.roasAlvo)}, ACOS da campanha ${pctTxt(camp.acos)}).` : 'Não está em nenhuma campanha ativa de Product Ads.';
+          await sugerir(`abc:${p.chave}`, `Curva A ${p.tend === 'parou' ? 'parou de vender' : 'em queda'} — ${p.nome.slice(0, 60)}`,
+            `Produto curva A (${curvaABC.n1(p.part)}% do faturamento das últimas 4 semanas): ${linhaSemana(p)}. ${ads} Vale revisar juntos: estoque, preço/concorrência, anúncio e ADS${camp ? '' : ' — se o resto estiver ok, colocar numa campanha ajuda a recuperar'}.`,
+            { ...base1(p), acao: 'abc_queda', ...(camp ? { campaign_id: camp.id, campanha: camp.nome } : {}) });
+        }
+        if (tacosOk && meta) {
+          const destino = C.filter(o => comFolga(o) && dentroMeta(o)).sort((a, b) => a.acos - b.acos)[0] || C.filter(o => dentroMeta(o)).sort((a, b) => a.acos - b.acos)[0];
+          for (const p of curva.sobeBC.slice(0, 4)) {
+            if (campDoItem[p.item_id] || !destino || !p.item_id) continue;
+            const ok = await sugerir(`p:${p.item_id}`, `Curva ${p.classe} subindo — colocar em campanha: ${p.nome.slice(0, 50)}`,
+              `Produto curva ${p.classe} em ${curvaABC.TEND_TXT[p.tend]}: ${linhaSemana(p)} — candidato a virar curva A e está fora de campanha. Colocar na campanha "${destino.nome}" (ACOS de ${pctTxt(destino.acos)}, dentro da meta${comFolga(destino) ? `, usando ${R$(destino.gastoDia)}/dia de ${R$(destino.budget)}` : ''}) para aproveitar a alta. Confira o estoque antes.`,
+              { ...base1(p), acao: 'adicionar_produto', destino_id: destino.id, destino: destino.nome, campaign_id: destino.id, campanha: destino.nome });
+            if (ok) ocupadas.add(`abc:${p.chave}`);
+          }
+        }
+      }
+    } catch (e) { /* curva ABC é bônus — não derruba a análise */ }
+
+    // ── 4) COLOCAR produtos que vendem na loja e não estão em campanha ativa ──
     let colocados = 0;
     if (tacosOk && meta) {
       const destino = C.filter(o => comFolga(o) && dentroMeta(o)).sort((a, b) => a.acos - b.acos)[0]

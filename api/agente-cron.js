@@ -39,6 +39,8 @@ const Anthropic = sdk.default || sdk;
 const { agoraBRT } = require('./_agenda-agente');
 // Agente do Mercado Livre (copiloto) — código separado do da Shopee
 const { processarContaML } = require('./_agente-ml');
+// Curva ABC semana a semana (mesma regra da aba Vendas) — alertas diários dos agentes
+const curvaABC = require('./_curva-abc');
 const ehML = cfg => String(cfg.marketplace || '').toLowerCase() === 'ml';
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
@@ -844,6 +846,77 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
         }
       }
     } catch (e) { /* saúde do negócio é bônus — não derruba a revisão diária se falhar */ }
+
+    // Regra 6 — Curva ABC semana a semana (pedido do analista): avisa quando um
+    // produto curva A cai (só alerta — pode ser estoque, preço, anúncio; o
+    // analista decide junto) e sugere reforçar ADS de produto B/C que está
+    // subindo. A sugestão só é aprovável quando o produto está numa campanha
+    // individual ativa dentro da meta (orçamento +20% ou ROAS objetivo −15%);
+    // sem campanha própria vira recomendação de criar uma. Um aviso por produto
+    // a cada 7 dias. Lê só a base — zero chamada nova à Shopee.
+    try {
+      if (baseCobre(base, isoMenos(ontem.iso, curvaABC.NSEM * 7 - 1))) {
+        const curva = curvaABC.curvaSemanal(await curvaABC.lerPedidosCurva(sbSelect, 'shopee', shopId, ontem.iso), ontem.iso);
+        const recentes = await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 6.5 * 86400000).toISOString())}&select=dados&limit=500`).catch(() => []);
+        const avisados = new Set(recentes.map(l => l.dados?.chave).filter(k => String(k || '').startsWith('abc:')));
+        // produto → campanha individual ativa que o anuncia
+        const campanhaDoItem = {};
+        for (const [id, st] of Object.entries(settingsPorId)) {
+          if ((st.campaign_status || '').toLowerCase() !== 'ongoing') continue;
+          for (const it of (st.item_id_list || [])) campanhaDoItem[String(it)] = { id: Number(id), st };
+        }
+        const acosDe = id => { const d = diarioPorId[id]; if (!d) return null; const g = d.gmv * (1 - taxaCancel); return g > 0 ? d.gasto / g * 100 : (d.gasto > 0 ? Infinity : null); };
+        const fmtAcos = a => a == null ? 'sem dados' : a === Infinity ? '∞' : `${a.toFixed(1)}%`;
+        const tacosFolga = tacosMes == null || !cfg.meta_acos || tacosMes <= cfg.meta_acos * 1.1;
+        const linhaSemana = x => `${x.ult} un. na última semana contra média de ${curvaABC.n1(x.media)} nas 3 anteriores (${curvaABC.varTxt(x.var)}; ${R$(x.ultRs)} vs ${R$(x.mediaRs)})`;
+
+        for (const x of curva.aCaindo.slice(0, 4)) {
+          const chave = `abc:${x.chave}`;
+          if (avisados.has(chave)) continue;
+          const camp = campanhaDoItem[x.item_id];
+          const ads = camp
+            ? `Está na campanha individual "${(camp.st.ad_name || camp.id).toString().slice(0, 60)}" (ACOS ${fmtAcos(acosDe(camp.id))} na janela).`
+            : 'Não está em campanha individual ativa — só aparece pelo GMV Max da Loja (se estiver ligado).';
+          const titulo = `Curva A ${x.tend === 'parou' ? 'parou de vender' : 'em queda'} — ${x.nome.slice(0, 60)}`;
+          await logar('alerta', titulo,
+            `Produto curva A (${curvaABC.n1(x.part)}% do faturamento das últimas 4 semanas): ${linhaSemana(x)}. ${ads} Vale revisar juntos: estoque, preço/concorrência, anúncio (fotos, avaliações) e ADS antes de mexer no orçamento.`,
+            { chave, origem_analise: 'curva_abc_semanal', produto_id: x.item_id, classe: x.classe, tendencia: x.tend, unidades_ultima: x.ult, media_3_semanas: Math.round(x.media * 10) / 10, variacao_pct: x.var == null ? null : Math.round(x.var), perda_semana: Math.round(x.deltaRs * 100) / 100, ...(camp ? { campanha_produto: camp.id } : {}) }, 'so_alerta');
+          alertas.push(titulo);
+        }
+
+        for (const x of curva.sobeBC.slice(0, 3)) {
+          const chave = `abc:${x.chave}`;
+          if (avisados.has(chave)) continue;
+          const camp = campanhaDoItem[x.item_id];
+          const titulo = `Curva ${x.classe} subindo — reforçar ${x.nome.slice(0, 55)}`;
+          const base0 = { chave, origem_analise: 'curva_abc_semanal', produto_id: x.item_id, classe: x.classe, tendencia: x.tend, unidades_ultima: x.ult, media_3_semanas: Math.round(x.media * 10) / 10, variacao_pct: x.var == null ? null : Math.round(x.var) };
+          if (camp && tacosFolga) {
+            const acos = acosDe(camp.id), nome = (camp.st.ad_name || `Campanha ${camp.id}`).slice(0, 70);
+            const budget = parseFloat(camp.st.campaign_budget) || 0, roasT = camp.st.roas_target;
+            if (acos != null && acos !== Infinity && (!cfg.meta_acos || acos <= cfg.meta_acos)) {
+              const dados = { ...base0, campaign_id: camp.id };
+              let acao = null;
+              if (budget === 0 && roasT) {
+                const novo = Math.round(Math.max(1, 100 / (cfg.meta_acos || 8), roasT * 0.85) * 10) / 10;
+                if (novo < roasT) { dados.roas_atual = roasT; dados.roas_sugerido = novo; acao = `baixar a meta de ROAS de ${roasT}x para ${novo}x`; }
+              } else if (budget > 0) {
+                const novo = Math.round(Math.min(cfg.orcamento_max || Infinity, budget * 1.2) * 100) / 100;
+                if (novo > budget) { dados.budget_atual = budget; dados.budget_sugerido = novo; acao = `subir o orçamento de ${R$(budget)} para ${R$(novo)}`; }
+              }
+              if (acao) {
+                await logar('alerta', titulo, `Produto curva ${x.classe} em ${curvaABC.TEND_TXT[x.tend]}: ${linhaSemana(x)} — candidato a virar curva A. A campanha "${nome}" está dentro da meta (ACOS ${fmtAcos(acos)})${tacosMes != null ? ` e o TACOS do mês está em ${tacosMes.toFixed(1)}%` : ''}: ${acao} para aproveitar a alta. Confira o estoque antes de aprovar.`, dados, 'so_alerta');
+                alertas.push(titulo);
+                continue;
+              }
+            }
+          }
+          if (!camp) {
+            await logar('alerta', titulo, `Produto curva ${x.classe} em ${curvaABC.TEND_TXT[x.tend]}: ${linhaSemana(x)} — candidato a virar curva A, mas não tem campanha individual (só o GMV Max da Loja). Vale criar uma campanha própria para ele${tacosFolga ? '' : ' quando o TACOS do mês voltar para a meta'}. Confira o estoque antes.`, base0, 'so_alerta');
+            alertas.push(titulo);
+          }
+        }
+      }
+    } catch (e) { /* curva ABC é bônus — não derruba a revisão diária */ }
 
     // Resumo de execução do dia (sempre grava, mesmo sem nenhuma ação — é o
     // registro de que o agente rodou e revisou a conta)

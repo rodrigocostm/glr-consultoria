@@ -348,6 +348,41 @@ async function produtosBase(ctx, { inicio, fim, escopo, limite }) {
   };
 }
 
+// Curva ABC semana a semana — mesma regra da aba Vendas e dos alertas diários do agente
+const curvaABC = require('./_curva-abc');
+async function curvaAbcSemanal(ctx, { escopo, filtro, limite }) {
+  const { lojas, cliente, aviso } = await lojasDoEscopo(ctx, escopo);
+  const ontem = somarDias(hojeBRT(), -1);
+  const nomeLoja = Object.fromEntries(lojas.map(l => [`${l.marketplace}:${l.conta_id}`, l.nome]));
+  const prods = [];
+  let total4 = 0;
+  for (const mkt of ['shopee', 'ml']) {
+    const ids = lojas.filter(l => l.marketplace === mkt).map(l => l.conta_id);
+    if (!ids.length) continue;
+    const c = curvaABC.curvaSemanal(await curvaABC.lerPedidosCurva(sbSelect, mkt, ids, ontem), ontem);
+    total4 += c.total4;
+    c.produtos.forEach(x => prods.push({ ...x, marketplace: NOME_MKT[mkt], loja: nomeLoja[`${mkt}:${x.conta_id}`] }));
+  }
+  // ABC conjunto quando o escopo junta lojas/marketplaces
+  let acum = 0;
+  for (const x of [...prods].sort((a, b) => b.fat4 - a.fat4)) { if (x.fat4 <= 0) { x.classe = '-'; continue; } const antes = acum / (total4 || 1); acum += x.fat4; x.classe = antes < 0.8 ? 'A' : antes < 0.95 ? 'B' : 'C'; x.part = x.fat4 / (total4 || 1) * 100; }
+  const caindo = x => ['queda', 'queda_forte', 'parou'].includes(x.tend), subindo = x => ['alta', 'alta_forte', 'novo'].includes(x.tend);
+  const f = filtro || 'atencao';
+  const sel = prods.filter(x => f === 'todos' ? true : f === 'A' || f === 'B' || f === 'C' ? x.classe === f : f === 'queda' ? caindo(x) : f === 'alta' ? subindo(x) && x.ult >= 2
+    : (x.classe === 'A' && caindo(x)) || ((x.classe === 'B' || x.classe === 'C') && ['alta', 'alta_forte'].includes(x.tend) && x.ult >= 3))
+    .sort((a, b) => f === 'alta' ? b.deltaRs - a.deltaRs : f === 'queda' || f === 'atencao' ? a.deltaRs - b.deltaRs : b.fat4 - a.fat4)
+    .slice(0, Math.min(Math.max(parseInt(limite) || 15, 5), 40));
+  return {
+    escopo: escopo === 'cliente' ? `cliente${cliente ? ` ${cliente}` : ''} (${lojas.length} lojas)` : 'esta loja',
+    semanas: `8 semanas fechadas de 7 dias até ${ontem} (semana 0 = últimos 7 dias)`,
+    faturamento_4_semanas: r2(total4),
+    resumo: { A: prods.filter(x => x.classe === 'A').length, B: prods.filter(x => x.classe === 'B').length, C: prods.filter(x => x.classe === 'C').length, a_em_queda: prods.filter(x => x.classe === 'A' && caindo(x)).length, subindo: prods.filter(x => subindo(x) && x.ult >= 2).length },
+    produtos: sel.map(x => ({ produto: x.nome, item_id: x.item_id, loja: x.loja, marketplace: x.marketplace, curva: x.classe, participacao_pct: r2(x.part || 0), tendencia: curvaABC.TEND_TXT[x.tend], unidades_por_semana_recente_primeiro: x.un, faturamento_por_semana_recente_primeiro: x.rs.map(r2), ultima_vs_media_3_pct: x.var == null ? null : r2(x.var), diferenca_rs_ultima_vs_media: r2(x.deltaRs) })),
+    avisos: [aviso, ...(await coberturaBase(lojas, somarDias(ontem, -55)))].filter(Boolean),
+    regra: 'Curva A/B/C pelo faturamento das últimas 4 semanas (A = até 80% do acumulado). Tendência = última semana × média das 3 anteriores: queda ≤ −20%, queda forte ≤ −40%, alta ≥ +20%, alta forte ≥ +40%, parou = vendia e zerou. Mesma regra da aba Vendas → Curva ABC Semanal.',
+  };
+}
+
 async function adsBase(ctx, { inicio, fim, escopo, agrupar }) {
   validarPeriodo(inicio, fim);
   const { lojas, cliente, aviso } = await lojasDoEscopo(ctx, escopo);
@@ -391,6 +426,11 @@ const FERRAMENTAS = [
     input_schema: { type: 'object', properties: { inicio: { type: 'string', description: 'AAAA-MM-DD' }, fim: { type: 'string', description: 'AAAA-MM-DD' }, escopo: ESCOPO, limite: { type: 'integer', description: 'itens por lista (5 a 40, padrão 15)' } }, required: ['inicio', 'fim'] },
   },
   {
+    name: 'curva_abc_semanal',
+    description: 'INSTANTÂNEO. Curva ABC semana a semana (8 semanas fechadas até ontem): classe A/B/C de cada produto, unidades e R$ por semana, tendência (queda, queda forte, parou, alta, alta forte, novo) e a diferença da última semana para a média das 3 anteriores. Use para "quais produtos curva A estão caindo", "o que está subindo", "por que a semana foi pior" e antes de sugerir reforço de ADS num produto. filtro: atencao (padrão: A caindo + B/C subindo forte), A, B, C, queda, alta, todos.',
+    input_schema: { type: 'object', properties: { escopo: ESCOPO, filtro: { type: 'string', enum: ['atencao', 'A', 'B', 'C', 'queda', 'alta', 'todos'] }, limite: { type: 'integer', description: 'produtos na lista (5 a 40, padrão 15)' } } },
+  },
+  {
     name: 'ads_base',
     description: 'INSTANTÂNEO. ADS por dia/semana/mês da base sincronizada cruzado com o faturamento: gasto, GMV atribuído, ACOS, ROAS, TACOS (sobre o faturamento sem cancelados, regra do Gestor Seller), por loja. Com escopo "cliente" inclui o ADS do Mercado Livre. Para detalhe por campanha use campanhas.',
     input_schema: { type: 'object', properties: { inicio: { type: 'string', description: 'AAAA-MM-DD' }, fim: { type: 'string', description: 'AAAA-MM-DD' }, escopo: ESCOPO, agrupar: { type: 'string', enum: ['dia', 'semana', 'mes'] } }, required: ['inicio', 'fim'] },
@@ -430,6 +470,7 @@ const FERRAMENTAS = [
 const EXECUTORES = {
   vendas_base: vendasBase,
   produtos_base: produtosBase,
+  curva_abc_semanal: curvaAbcSemanal,
   ads_base: adsBase,
   faturamento_loja: faturamentoLoja,
   desempenho_ads: desempenhoAds,
@@ -448,7 +489,7 @@ function resumoEntrada(nome, input) {
 }
 
 function guiaFerramentas(hoje, shopId, nome) {
-  return `\n\nFERRAMENTAS E DADOS AO VIVO\nHoje é ${hoje} (horário de Brasília). Conta Shopee ${shopId}${nome ? ` (${nome})` : ''}.\nO contexto acima é só um retrato rápido do período aberto na tela. Quando a pergunta precisar de qualquer dado que não esteja nele — outro período, mês atual contra mês passado, tendência semana a semana, uma campanha ou produto específico, o que o agente fez — BUSQUE com as ferramentas antes de responder. Nunca responda que não consegue confirmar algo que uma ferramenta pode buscar.\nComo analisar:\n- Compare períodos do mesmo tamanho. "Este mês vs mês passado" = do dia 1 até ontem deste mês contra os mesmos dias do mês anterior (e, se ajudar, também o mês passado inteiro e a média por dia).\n- Comece SEMPRE pela base sincronizada (vendas_base, produtos_base, ads_base): é instantânea e cobre todas as lojas do cliente na Shopee e no Mercado Livre (escopo \"cliente\"). Para dizer se a conta cresce ou cai, use o faturamento TOTAL (vendas_base), não só o ADS; explique a variação pelos produtos (produtos_base: curva A em queda, produtos novos) e separe o efeito do ADS (ads_base / campanhas) e de pausas/ajustes (registro_agente). TACOS = gasto de ADS ÷ faturamento total.\n- Olhe também o cliente inteiro quando fizer sentido: a queda desta loja pode ser compensada (ou agravada) por outra loja ou pelo Mercado Livre.\n- Respeite os avisos de cobertura das ferramentas da base: se o histórico de uma loja ainda está carregando, diga isso e complete com faturamento_loja (API, lenta).\n- Seja eficiente: as ferramentas da base são instantâneas; as da API levam segundos (até ~8 chamadas de API no total).\n- Na resposta, mostre os números e os períodos exatos que usou, e a conclusão em linguagem direta.\n- As ferramentas só leem. Mudanças continuam sendo propostas no bloco \`\`\`json do formato combinado, para o analista aprovar.`;
+  return `\n\nFERRAMENTAS E DADOS AO VIVO\nHoje é ${hoje} (horário de Brasília). Conta Shopee ${shopId}${nome ? ` (${nome})` : ''}.\nO contexto acima é só um retrato rápido do período aberto na tela. Quando a pergunta precisar de qualquer dado que não esteja nele — outro período, mês atual contra mês passado, tendência semana a semana, uma campanha ou produto específico, o que o agente fez — BUSQUE com as ferramentas antes de responder. Nunca responda que não consegue confirmar algo que uma ferramenta pode buscar.\nComo analisar:\n- Compare períodos do mesmo tamanho. "Este mês vs mês passado" = do dia 1 até ontem deste mês contra os mesmos dias do mês anterior (e, se ajudar, também o mês passado inteiro e a média por dia).\n- Comece SEMPRE pela base sincronizada (vendas_base, produtos_base, ads_base): é instantânea e cobre todas as lojas do cliente na Shopee e no Mercado Livre (escopo \"cliente\"). Para dizer se a conta cresce ou cai, use o faturamento TOTAL (vendas_base), não só o ADS; explique a variação pelos produtos (curva_abc_semanal para tendência semana a semana e curva A em queda; produtos_base para comparar dois períodos) e separe o efeito do ADS (ads_base / campanhas) e de pausas/ajustes (registro_agente). TACOS = gasto de ADS ÷ faturamento total.\n- Olhe também o cliente inteiro quando fizer sentido: a queda desta loja pode ser compensada (ou agravada) por outra loja ou pelo Mercado Livre.\n- Respeite os avisos de cobertura das ferramentas da base: se o histórico de uma loja ainda está carregando, diga isso e complete com faturamento_loja (API, lenta).\n- Seja eficiente: as ferramentas da base são instantâneas; as da API levam segundos (até ~8 chamadas de API no total).\n- Na resposta, mostre os números e os períodos exatos que usou, e a conclusão em linguagem direta.\n- As ferramentas só leem. Mudanças continuam sendo propostas no bloco \`\`\`json do formato combinado, para o analista aprovar.`;
 }
 
 module.exports = async function handler(req, res) {
