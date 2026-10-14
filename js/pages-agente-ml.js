@@ -22,7 +22,7 @@ Router.register('agente-ml', (params, el) => {
   const state = {
     carregando: true, contasML: [], configs: [], logs: [], base: null,
     aberta: (() => { try { return localStorage.getItem('glr_aml_conta') || null; } catch (e) { return null; } })(),
-    campanhas: {}, carregandoCamp: false, analisando: false, editando: false, salvando: false, processando: null,
+    campanhas: {}, carregandoCamp: false, aberto: null, produtos: {}, analisando: false, editando: false, salvando: false, processando: null,
   };
 
   const nomeConta = c => {
@@ -78,6 +78,36 @@ Router.register('agente-ml', (params, el) => {
       state.campanhas[id] = { lista: todas, em: Date.now() };
     } catch (e) { state.campanhas[id] = { erro: e.message || String(e) }; }
     state.carregandoCamp = false; render();
+  }
+
+  // Produtos dentro da campanha (mês atual), somando as variações por família
+  async function carregarProdutos(contaId, campId) {
+    const k = `${contaId}:${campId}`;
+    if (state.produtos[k] && !state.produtos[k].erro) return;
+    state.produtos[k] = { carregando: true }; render();
+    try {
+      const todos = [];
+      for (let offset = 0; offset < 1000; offset += 100) {
+        const r = await MarketplaceAPI.call('ml_ads_items', { meliUserId: contaId, campaign_id: String(campId), date_from: mesIni, date_to: hojeIso, limit: 100, offset });
+        const d = r.data || r;
+        const res = d.results || [];
+        todos.push(...res);
+        if (res.length < 100 || offset + 100 >= (parseInt(d.paging?.total) || 0)) break;
+      }
+      const fam = new Map();
+      for (const a of todos) {
+        const key = String(a.family_id || a.item_id), m = a.metrics || {};
+        const f = fam.get(key) || { chave: key, nome: a.family_name || a.title, itens: [], ativos: 0, gasto: 0, vendas: 0, unidades: 0, cliques: 0, recomendado: false, permalink: a.permalink, thumb: a.thumbnail };
+        f.itens.push({ id: a.item_id, status: a.status, titulo: a.title });
+        if (a.status === 'active') f.ativos++;
+        f.gasto += parseFloat(m.cost) || 0; f.vendas += parseFloat(m.total_amount) || 0;
+        f.unidades += parseInt(m.units_quantity) || 0; f.cliques += parseInt(m.clicks) || 0;
+        f.recomendado = f.recomendado || !!a.recommended;
+        fam.set(key, f);
+      }
+      state.produtos[k] = { lista: [...fam.values()].sort((a, b) => b.gasto - a.gasto) };
+    } catch (e) { state.produtos[k] = { erro: e.message || String(e) }; }
+    render();
   }
 
   async function analisarAgora() {
@@ -170,7 +200,7 @@ Router.register('agente-ml', (params, el) => {
       <div class="aml-sub" style="margin-bottom:12px;">As mesmas regras do agente da Shopee: TACOS do mês decide se dá pra acelerar; ACOS sem cancelados; pausar só quando gasta muito sem retorno.</div>
       ${!cfg ? `<label class="aml-campo"><span>Conta do Mercado Livre</span><div><select id="aml-conta" class="form-control"><option value="">Escolha…</option>${opcoes}</select></div></label>` : ''}
       <div class="aml-campos">
-        ${campo('aml-meta', 'Meta de TACOS / ACOS', c.meta_acos, 'Acima disso a campanha é contida; abaixo de 70% dela, dá pra acelerar.', '%')}
+        ${campo('aml-meta', 'Meta de TACOS / ACOS', c.meta_acos, 'Em ACOS (%). Ex.: 6% equivale a ROAS 16,7x. Acima disso o agente contém; abaixo de 70% dela, acelera.', '%')}
         ${campo('aml-forte', 'Contenção forte acima de ACOS', c.regra_pausa_acos, 'Com venda, aperta 25% em vez de 15% — não pausa.', '%')}
         ${campo('aml-janela', 'Janela de análise', c.regra_pausa_dias ?? 7, 'Dias olhados para gasto, vendas e ACOS de cada campanha.', 'dias')}
         ${campo('aml-mat', 'Maturação mínima', c.dias_maturacao_campanha ?? 7, 'Campanha mais nova que isso não recebe sugestão de conter/pausar.', 'dias')}
@@ -186,8 +216,18 @@ Router.register('agente-ml', (params, el) => {
   const semInstrucao = t => String(t || '').replace(/ ?Aplique no painel[\s\S]*$/, '');
   function renderSugestoes(id) {
     const lista = pendentes(id);
-    const rotAcao = { pausar: '⏸ Pausar', orcamento: '💰 Orçamento', acos_target: '🎯 Meta de ACOS' };
-    const dePara = d => d.acao === 'orcamento' ? `${R$(d.de)} → ${R$(d.para)}` : d.acao === 'acos_target' ? `${pct(d.de)} → ${pct(d.para)}` : 'pausar campanha';
+    const rotAcao = { pausar: '⏸ Pausar campanha', orcamento: '💰 Orçamento', roas_target: '🎯 ROAS objetivo', acos_target: '🎯 Meta de ACOS', retirar_produto: '➖ Tirar produto', mover_produto: '↔ Mover produto', adicionar_produto: '➕ Colocar produto' };
+    const roasX = v => v ? `${(+v).toFixed(1).replace('.', ',')}x` : '—';
+    const dePara = d => {
+      if (d.acao === 'orcamento') return `${d.campanha ? h(d.campanha) + ': ' : ''}${R$(d.de)} → ${R$(d.para)}`;
+      if (d.acao === 'roas_target') return `${d.campanha ? h(d.campanha) + ': ' : ''}${roasX(d.de)} → ${roasX(d.para)}`;
+      if (d.acao === 'acos_target') return `${pct(d.de)} → ${pct(d.para)}`;
+      if (d.acao === 'retirar_produto') return `${h(d.produto || '')} — sair de "${h(d.campanha || '')}"`;
+      if (d.acao === 'mover_produto') return `${h(d.produto || '')}: "${h(d.campanha || '')}" → ${d.destino ? `"${h(d.destino)}"` : `nova campanha (ROAS ${roasX(d.para)})`}`;
+      if (d.acao === 'adicionar_produto') return `${h(d.produto || '')} → "${h(d.destino || d.campanha || '')}"`;
+      return d.campanha ? h(d.campanha) : 'pausar campanha';
+    };
+    const anuncios = d => (d.item_ids || []).length ? `<div class="aml-sub" style="margin-top:2px;">Anúncios: ${(d.item_ids || []).slice(0, 8).map(h).join(', ')}${(d.item_ids || []).length > 8 ? '…' : ''}</div>` : '';
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="font-weight:800;font-size:15px;margin-bottom:4px;">📋 Sugestões para aplicar no Mercado Livre ${lista.length ? `<span class="aml-chip">${lista.length}</span>` : ''}</div>
       <div class="aml-sub" style="margin-bottom:12px;">O ML não libera alteração de anúncios patrocinados por integração. Aplique no painel do ML (Publicidade → Product Ads → campanha) e marque <b>Já apliquei</b>.</div>
@@ -196,7 +236,7 @@ Router.register('agente-ml', (params, el) => {
         return `<div class="aml-sug">
           <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start;">
             <div style="flex:1;min-width:220px;"><div style="font-weight:700;">${h(l.titulo)}</div>
-              <div style="margin:4px 0;"><span class="aml-chip">${rotAcao[d.acao] || 'Ação'}</span> <b>${h(dePara(d))}</b></div>
+              <div style="margin:4px 0;"><span class="aml-chip">${rotAcao[d.acao] || 'Ação'}</span> <b>${dePara(d)}</b></div>${anuncios(d)}
               <div class="aml-sub">${h(semInstrucao(l.explicacao))}</div></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <button class="btn btn-primary btn-sm" ${state.processando ? 'disabled' : ''} onclick="window._amlMarcar('${l.id}','executado')">✓ Já apliquei</button>
@@ -216,23 +256,44 @@ Router.register('agente-ml', (params, el) => {
     else {
       const pend = new Set(pendentes(id).map(l => String(l.dados?.campaign_id)));
       const linhas = [...c.lista].sort((a, b) => (parseFloat(b.metrics?.cost) || 0) - (parseFloat(a.metrics?.cost) || 0));
-      corpo = `<div style="overflow-x:auto;"><table class="aml-tab"><thead><tr><th>Campanha</th><th>Status</th><th>Estratégia</th><th>Orçamento</th><th>Meta ACOS</th><th>Gasto</th><th>Vendas (sem cancel.)</th><th>ACOS</th></tr></thead><tbody>
+      corpo = `<div style="overflow-x:auto;"><table class="aml-tab"><thead><tr><th>Campanha</th><th>Status</th><th>Estratégia</th><th>Orçamento</th><th>ROAS objetivo</th><th>Gasto</th><th>Vendas (sem cancel.)</th><th>ROAS</th><th>ACOS</th></tr></thead><tbody>
         ${linhas.map(x => {
           const mm = x.metrics || {}, g = parseFloat(mm.cost) || 0, v = (parseFloat(mm.total_amount) || 0) * (1 - tx);
           const acos = v > 0 ? g / v * 100 : (g > 0 ? Infinity : null);
           const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity || acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? '#dc2626' : acos > cfg.meta_acos ? '#d97706' : '#16a34a';
-          return `<tr><td>${h(x.name)}${pend.has(String(x.id)) ? ' <span class="aml-chip" title="Tem sugestão pendente">sugestão</span>' : ''}</td>
+          const roasAlvo = parseFloat(x.roas_target) || (x.acos_target ? 100 / x.acos_target : 0);
+          const aberta = state.aberto === String(x.id);
+          return `<tr class="aml-linha" onclick="window._amlProdutos('${x.id}')"><td><span class="aml-seta">${aberta ? '▾' : '▸'}</span> ${h(x.name)}${pend.has(String(x.id)) ? ' <span class="aml-chip" title="Tem sugestão pendente">sugestão</span>' : ''}</td>
             <td>${x.status === 'active' ? '🟢 ativa' : x.status === 'paused' ? '⏸ pausada' : h(x.status)}</td><td>${h({ PROFITABILITY: 'Rentabilidade', INCREASE: 'Crescimento', VISIBILITY: 'Visibilidade' }[x.strategy] || x.strategy || '—')}</td>
-            <td>${x.budget ? R$(x.budget) : '—'}</td><td>${x.acos_target ? pct(x.acos_target) : '—'}</td>
-            <td>${R$(g)}</td><td>${R$(v)}</td><td style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td></tr>`;
+            <td>${x.budget ? R$(x.budget) : '—'}</td><td>${roasAlvo ? roasX(roasAlvo) : '—'}</td>
+            <td>${R$(g)}</td><td>${R$(v)}</td><td>${g > 0 ? roasX(v / g) : '—'}</td><td style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td></tr>
+            ${aberta ? `<tr><td colspan="9" style="padding:0;white-space:normal;">${renderProdutos(id, x.id, tx, cfg)}</td></tr>` : ''}`;
         }).join('')}</tbody></table></div>`;
     }
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
         <div><div style="font-weight:800;font-size:15px;">📢 Campanhas de Product Ads — mês atual</div>
-        <div class="aml-sub">ACOS sem cancelados${tx > 0.005 ? ` (cancelamentos/devoluções da loja no mês: ${pct(tx * 100)})` : ''}.</div></div>
+        <div class="aml-sub">Clique numa campanha para ver os produtos dentro dela. ACOS sem cancelados${tx > 0.005 ? ` (cancelamentos/devoluções da loja no mês: ${pct(tx * 100)})` : ''}.</div></div>
         <button class="btn btn-secondary btn-sm" title="Atualizar" ${state.carregandoCamp ? 'disabled' : ''} onclick="window._amlCampanhas()">🔄</button>
       </div>${corpo}</div>`;
+  }
+  const roasX = v => v && isFinite(v) ? `${(+v).toFixed(1).replace('.', ',')}x` : '—';
+  function renderProdutos(contaId, campId, tx, cfg) {
+    const p = state.produtos[`${contaId}:${campId}`];
+    if (!p || p.carregando) return '<div class="aml-sub" style="padding:10px 14px;">⏳ Carregando produtos…</div>';
+    if (p.erro) return `<div class="aml-sub" style="padding:10px 14px;color:#dc2626;">Não consegui buscar os produtos: ${h(p.erro)}</div>`;
+    if (!p.lista.length) return '<div class="aml-sub" style="padding:10px 14px;">Nenhum produto nesta campanha.</div>';
+    const pend = new Set(pendentes(contaId).map(l => String(l.dados?.familia || '')).filter(Boolean));
+    const gastoCamp = p.lista.reduce((s, f) => s + f.gasto, 0) || 1;
+    return `<div class="aml-prods"><table class="aml-tab"><thead><tr><th>Produto (variações somadas)</th><th>Anúncios ativos</th><th>Gasto</th><th>% do gasto</th><th>Vendas (sem cancel.)</th><th>Un.</th><th>ROAS</th><th>ACOS</th></tr></thead><tbody>
+      ${p.lista.map(f => {
+        const v = f.vendas * (1 - tx), acos = v > 0 ? f.gasto / v * 100 : (f.gasto > 0 ? Infinity : null);
+        const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity ? '#dc2626' : acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? '#dc2626' : acos > cfg.meta_acos ? '#d97706' : '#16a34a';
+        const pausados = f.itens.length - f.ativos;
+        return `<tr><td style="white-space:normal;min-width:240px;">${f.permalink ? `<a href="${h(f.permalink)}" target="_blank" rel="noopener">${h(f.nome)}</a>` : h(f.nome)}${f.recomendado ? ' <span class="aml-chip" title="O ML recomenda anunciar">recomendado ML</span>' : ''}${pend.has(f.chave) ? ' <span class="aml-chip">sugestão</span>' : ''}</td>
+          <td>${f.ativos}/${f.itens.length}${pausados ? ` <span class="aml-sub">(${pausados} fora)</span>` : ''}</td><td>${R$(f.gasto)}</td><td>${Math.round(f.gasto / gastoCamp * 100)}%</td><td>${R$(v)}</td><td>${f.unidades}</td>
+          <td>${f.gasto > 0 ? roasX(v / f.gasto) : '—'}</td><td style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td></tr>`;
+      }).join('')}</tbody></table></div>`;
   }
   function renderHistorico(id) {
     const lista = state.logs.filter(l => String(l.conta_id) === String(id) && !(l.tipo === 'alerta' && l.resultado === 'so_alerta')).slice(0, 15);
@@ -284,7 +345,12 @@ Router.register('agente-ml', (params, el) => {
   window._amlAtivo = alternarAtivo;
   window._amlAnalisar = analisarAgora;
   window._amlMarcar = marcar;
-  window._amlCampanhas = () => carregarCampanhas(state.aberta, true);
+  window._amlCampanhas = () => { state.produtos = {}; carregarCampanhas(state.aberta, true); };
+  window._amlProdutos = campId => {
+    campId = String(campId);
+    state.aberto = state.aberto === campId ? null : campId; render();
+    if (state.aberto) carregarProdutos(state.aberta, campId);
+  };
 
   el.innerHTML = `<div class="page">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
@@ -313,6 +379,10 @@ Router.register('agente-ml', (params, el) => {
     .aml-campo{display:flex;flex-direction:column;gap:4px;font-size:12.5px;margin-bottom:8px;}
     .aml-campo > div{display:flex;align-items:center;gap:6px;} .aml-campo em{font-style:normal;color:var(--text-muted);font-size:12px;}
     .aml-campo small{color:var(--text-muted);font-size:11px;}
+    .aml-linha{cursor:pointer;} .aml-linha:hover td{background:rgba(99,102,241,.05);}
+    .aml-seta{display:inline-block;width:12px;color:var(--text-muted);}
+    .aml-prods{background:rgba(99,102,241,.04);padding:6px 10px 10px 26px;overflow-x:auto;}
+    .aml-prods a{color:inherit;text-decoration:underline;text-decoration-color:var(--border);}
     .aml-hist{padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
   </style>`;
   carregar();
