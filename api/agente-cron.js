@@ -579,6 +579,25 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     const rotuloTacos = tacosMes != null ? 'TACOS do mês' : 'TACOS da conta';
     const tacosDentroDaMeta = !cfg.meta_acos || tacosConta <= cfg.meta_acos * 1.1; // 10% de folga antes de travar aumento de orçamento
 
+    // ACOS sem cancelados: a Shopee atribui ao ADS pedidos que depois foram
+    // cancelados (na EAP, 24% do valor em out/2026), então o ACOS dela sai menor
+    // que o real. Desconta pela taxa de cancelamento da loja na janela (base).
+    let taxaCancel = 0, ticketRef = null;
+    if (baseCobre(base, inicioJanela.iso)) {
+      const t = somarBase(base, inicioJanela.iso, ontem.iso);
+      const b = t.faturamento + t.valor_cancelado + t.valor_devolvido;
+      taxaCancel = b > 0 ? Math.min(0.6, (t.valor_cancelado + t.valor_devolvido) / b) : 0;
+    }
+    const de30 = isoMenos(ontem.iso, 29);
+    if (baseCobre(base, de30)) { const t30 = somarBase(base, de30, ontem.iso); if (t30.pedidos > 0) ticketRef = t30.faturamento / t30.pedidos; }
+    // PAUSAR É ÚLTIMO RECURSO (orientação do analista): só quando a campanha
+    // GASTA MUITO SEM RETORNO. "Muito" = custo de ADS de 3 vendas no ticket médio
+    // da loja com a meta configurada (mín. R$ 50). ACOS alto com venda não pausa —
+    // contém o gasto (meta de ROAS / orçamento), porque pausar antes disso é
+    // ineficiente: tira do ar algo que vende.
+    const limitePausa = Math.round(Math.max(50, ticketRef && cfg.meta_acos ? ticketRef * (cfg.meta_acos / 100) * 3 : 0) * 100) / 100;
+    const explicaLimite = `limite de R$ ${limitePausa.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${ticketRef && cfg.meta_acos ? ` = custo de ADS de 3 vendas no ticket médio de ${R$(ticketRef)} com meta de ${cfg.meta_acos}%` : ' (mínimo)'}`;
+
     // Conta quantas das campanhas listadas estão realmente 'ongoing' — a
     // listagem bruta (campanhas.length) mistura campanhas ativas com anos de
     // histórico morto (closed/ended), então "campanhas revisadas" mostrando
@@ -595,32 +614,38 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       if (status !== 'ongoing') continue;
       campanhasAtivas++;
 
-      const acosJanela = diario.gmv > 0 ? diario.gasto / diario.gmv : (diario.gasto > 0 ? Infinity : null);
+      const gmvAj = diario.gmv * (1 - taxaCancel); // vendas via ADS sem cancelados (estimado)
+      const acosJanela = gmvAj > 0 ? diario.gasto / gmvAj : (diario.gasto > 0 ? Infinity : null);
+      const acosShopee = diario.gmv > 0 ? diario.gasto / diario.gmv : null;
+      const acosTxt = acosJanela == null || acosJanela === Infinity ? '∞' : `${(acosJanela * 100).toFixed(1)}%${taxaCancel > 0.005 && acosShopee != null ? ` (sem cancelados; ${(acosShopee * 100).toFixed(1)}% na Shopee)` : ''}`;
       const nome = settings.ad_name?.slice(0, 70) || `Campanha ${c.campaign_id}`;
       const inicioTs = settings.campaign_duration?.start_time || 0;
       const idadeDias = inicioTs ? (agoraTs - inicioTs) / 86400 : Infinity;
       const emMaturacao = idadeDias < diasMaturacao;
 
-      // Regra 1 e 2 (pausar por gasto sem venda / ACOS alto sustentado): uma
-      // campanha ainda em maturação não é pausada por isso — só registra que
-      // o critério bateu, mas está segurando pra dar tempo de amadurecer.
-      const bateuCriterioPausa =
-        (cfg.regra_pausa_acos && diario.diasComGasto >= Math.min(2, cfg.regra_pausa_dias || 3) && acosJanela === Infinity) ||
-        (cfg.regra_pausa_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > cfg.regra_pausa_acos && diario.diasComGasto >= (cfg.regra_pausa_dias || 3));
+      // Regras 1 e 2 — pausa SÓ por gasto alto sem retorno: gastou acima do
+      // limite na janela e (a) não vendeu nada ou (b) vendeu menos do que gastou
+      // (ROAS < 1, sem cancelados). Campanha em maturação não é pausada — só
+      // registra que o critério bateu.
+      const semVenda = diario.pedidos === 0 || gmvAj <= 0;
+      const bateuCriterioPausa = !!cfg.regra_pausa_acos
+        && diario.gasto >= limitePausa
+        && diario.diasComGasto >= Math.min(2, cfg.regra_pausa_dias || 3)
+        && (semVenda || gmvAj < diario.gasto);
 
       if (bateuCriterioPausa) {
         if (emMaturacao) {
           await logar('sistema', `Maturação segurando pausa — ${nome}`,
-            `Critério de pausa foi atingido (ACOS ${acosJanela === Infinity ? '∞' : (acosJanela * 100).toFixed(1) + '%'}, gasto ${R$(diario.gasto)}), mas a campanha tem só ${Math.floor(idadeDias)} dia(s) — abaixo dos ${diasMaturacao} dias mínimos de maturação configurados. Não pausada ainda.`,
+            `Critério de pausa foi atingido (gastou ${R$(diario.gasto)} ${semVenda ? 'sem nenhuma venda' : `e vendeu só ${R$(gmvAj)} sem cancelados`} — ${explicaLimite}), mas a campanha tem só ${Math.floor(idadeDias)} dia(s) — abaixo dos ${diasMaturacao} dias mínimos de maturação configurados. Não pausada ainda.`,
             { acos: acosJanela === Infinity ? null : acosJanela * 100, idade_dias: Math.floor(idadeDias) }, 'so_alerta');
-        } else if (acosJanela === Infinity) {
+        } else if (semVenda) {
           await executarPausa(c.campaign_id, nome,
-            `Gastou ${R$(diario.gasto)} em ${diario.diasComGasto} dia(s) nos últimos ${cfg.regra_pausa_dias || 3} dias sem gerar NENHUMA venda atribuída, já madura (${Math.floor(idadeDias)} dias). Pausada pra não continuar queimando orçamento.`,
-            { gasto: diario.gasto, gmv: 0, pedidos: 0 });
+            `Gastou ${R$(diario.gasto)} em ${diario.diasComGasto} dia(s) nos últimos ${cfg.regra_pausa_dias || 3} dias sem gerar NENHUMA venda atribuída — acima do ${explicaLimite}. Campanha já madura (${Math.floor(idadeDias)} dias). Pausada por gastar muito sem retorno.`,
+            { gasto: diario.gasto, gmv: 0, pedidos: 0, limite_pausa: limitePausa });
         } else {
           await executarPausa(c.campaign_id, nome,
-            `ACOS de ${(acosJanela * 100).toFixed(1)}% nos últimos ${cfg.regra_pausa_dias || 3} dias, acima do limite de pausa configurado (${cfg.regra_pausa_acos}%), campanha já madura (${Math.floor(idadeDias)} dias). Investimento: ${R$(diario.gasto)}, vendas atribuídas: ${R$(diario.gmv)}.`,
-            { acos: acosJanela * 100, gasto: diario.gasto, gmv: diario.gmv });
+            `Gastou ${R$(diario.gasto)} e vendeu só ${R$(gmvAj)} (sem cancelados; ${R$(diario.gmv)} na Shopee) nos últimos ${cfg.regra_pausa_dias || 3} dias — gasta mais do que vende (ROAS ${(gmvAj / diario.gasto).toFixed(2)}), acima do ${explicaLimite}. Campanha já madura (${Math.floor(idadeDias)} dias). Pausada por gastar muito sem retorno.`,
+            { acos: acosJanela * 100, gasto: diario.gasto, gmv: diario.gmv, gmv_sem_cancelados: gmvAj, limite_pausa: limitePausa });
         }
         continue;
       }
@@ -651,7 +676,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= cfg.meta_acos * 0.7 && (budgetAtual > 0 || temRoas)) {
         if (!tacosDentroDaMeta) {
           await logar('sistema', `Aumento represado por TACOS — ${nome}`,
-            `ACOS da campanha (${(acosJanela * 100).toFixed(1)}%) sugeriria acelerar a campanha, mas o ${rotuloTacos} (${tacosConta.toFixed(1)}%) já está acima da meta (${cfg.meta_acos}%) — não aumenta automaticamente enquanto isso não normalizar.`,
+            `ACOS da campanha (${acosTxt}) sugeriria acelerar a campanha, mas o ${rotuloTacos} (${tacosConta.toFixed(1)}%) já está acima da meta (${cfg.meta_acos}%) — não aumenta automaticamente enquanto isso não normalizar.`,
             { acos: acosJanela * 100, tacos_conta: tacosConta }, 'so_alerta');
           continue;
         }
@@ -664,7 +689,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           const novoRoas = Math.round(Math.max(1, metaRoasConta, roasAtual * 0.85) * 10) / 10;
           if (novoRoas < roasAtual) {
             const variacaoPct = Math.abs((novoRoas - roasAtual) / roasAtual) * 100;
-            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o ${rotuloTacos} (${tacosConta.toFixed(1)}%) ainda tem folga. ${budgetAtual > 0 && !orcamentoSaturado ? `O orçamento diário (${R$(budgetAtual)}) não está sendo consumido por completo (média de ${R$(gastoMedioDia)}/dia), então subir orçamento não ajudaria — o limitador é o lance.` : 'Campanha usa lance automático.'} Baixando a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais agressivo e captar mais volume.`;
+            const explicacao = `ACOS de ${acosTxt} está bem abaixo da meta, e o ${rotuloTacos} (${tacosConta.toFixed(1)}%) ainda tem folga. ${budgetAtual > 0 && !orcamentoSaturado ? `O orçamento diário (${R$(budgetAtual)}) não está sendo consumido por completo (média de ${R$(gastoMedioDia)}/dia), então subir orçamento não ajudaria — o limitador é o lance.` : 'Campanha usa lance automático.'} Baixando a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais agressivo e captar mais volume.`;
             if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
               await logar('alerta', `Sugestão de baixar meta de ROI — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, roas_atual: roasAtual, roas_sugerido: novoRoas, tacos_conta: tacosConta }, 'so_alerta');
               alertas.push(nome);
@@ -677,7 +702,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           if (tetoOk) {
             const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, budgetAtual * 1.2) * 100) / 100;
             const variacaoPct = ((novoBudget - budgetAtual) / budgetAtual) * 100;
-            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o ${rotuloTacos} (${tacosConta.toFixed(1)}%) ainda tem folga em relação à meta (${cfg.meta_acos}%). Orçamento atual ${R$(budgetAtual)}, proposto ${R$(novoBudget)} (+${variacaoPct.toFixed(0)}%).`;
+            const explicacao = `ACOS de ${acosTxt} está bem abaixo da meta, e o ${rotuloTacos} (${tacosConta.toFixed(1)}%) ainda tem folga em relação à meta (${cfg.meta_acos}%). Orçamento atual ${R$(budgetAtual)}, proposto ${R$(novoBudget)} (+${variacaoPct.toFixed(0)}%).`;
             if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
               await logar('alerta', `Sugestão de aumento de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: novoBudget, tacos_conta: tacosConta }, 'so_alerta');
               alertas.push(nome);
@@ -689,15 +714,19 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
         continue;
       }
 
-      // Regra 4: ACOS acima da meta mas abaixo do limite de pausa → reduz
-      // orçamento (ou sobe a meta de ROI, pra campanha automática) com
-      // moderação — corte é seguro independente do TACOS geral.
+      // Regra 4: ACOS acima da meta (com venda) → CONTÉM o gasto em vez de
+      // pausar: sobe a meta de ROI (lance automático) ou corta orçamento. Acima
+      // do "ACOS de contenção forte" (antigo limite de pausa) o passo é 25% em
+      // vez de 15%. Corte é seguro independente do TACOS geral.
       if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > cfg.meta_acos && !emMaturacao) {
+        const forte = !!cfg.regra_pausa_acos && acosJanela * 100 > cfg.regra_pausa_acos;
+        const passo = forte ? 0.25 : 0.15;
+        const motivoConter = forte ? `bem acima da meta (${cfg.meta_acos}%) e do limite de contenção forte (${cfg.regra_pausa_acos}%), mas a campanha vende — então contenho com mais força em vez de pausar` : `acima da meta (${cfg.meta_acos}%), mas a campanha vende — contenho o gasto em vez de pausar`;
         if (usarRoasConter) {
           const roasAtual = settings.roas_target;
-          const novoRoas = Math.min(SHOPEE_ROAS_TARGET_MAX, Math.round(roasAtual * 1.15 * 10) / 10);
+          const novoRoas = Math.min(SHOPEE_ROAS_TARGET_MAX, Math.round(roasAtual * (1 + passo) * 10) / 10);
           const variacaoPct = Math.abs((novoRoas - roasAtual) / roasAtual) * 100;
-          const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% acima da meta (${cfg.meta_acos}%), mas ainda longe do limite de pausa. Campanha usa lance automático — subindo a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais conservador e conter o gasto sem pausar.`;
+          const explicacao = `ACOS de ${acosTxt} ${motivoConter}. Campanha usa lance automático — subindo a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais conservador.`;
           if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
             await logar('alerta', `Sugestão de subir meta de ROI — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, roas_atual: roasAtual, roas_sugerido: novoRoas }, 'so_alerta');
             alertas.push(nome);
@@ -705,10 +734,10 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
             await executarRoasTarget(c.campaign_id, nome, novoRoas, explicacao, { acos: acosJanela * 100, roas_de: roasAtual, roas_para: novoRoas });
           }
         } else if (budgetAtual > (cfg.orcamento_min || 0)) {
-          const novoBudget = Math.max(cfg.orcamento_min || 0, Math.round(budgetAtual * 0.85 * 100) / 100);
+          const novoBudget = Math.max(cfg.orcamento_min || 0, Math.round(budgetAtual * (1 - passo) * 100) / 100);
           if (novoBudget < budgetAtual) {
             const variacaoPct = Math.abs((novoBudget - budgetAtual) / budgetAtual) * 100;
-            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% acima da meta (${cfg.meta_acos}%), mas ainda longe do limite de pausa. Reduzindo orçamento de ${R$(budgetAtual)} pra ${R$(novoBudget)} pra conter o gasto sem desligar a campanha.`;
+            const explicacao = `ACOS de ${acosTxt} ${motivoConter}. Reduzindo orçamento de ${R$(budgetAtual)} pra ${R$(novoBudget)} sem desligar a campanha.`;
             if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
               await logar('alerta', `Sugestão de corte de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: novoBudget }, 'so_alerta');
               alertas.push(nome);
@@ -768,8 +797,10 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           const settings = settingsPorId[c.campaign_id], diario = diarioPorId[c.campaign_id];
           if (!settings || !diario) continue;
           if ((settings.campaign_status || '').toLowerCase() !== 'ongoing') continue;
-          const acosC = diario.gmv > 0 ? (diario.gasto / diario.gmv) * 100 : (diario.gasto > 0 ? Infinity : null);
+          const gmvC = diario.gmv * (1 - taxaCancel); // sem cancelados
+          const acosC = gmvC > 0 ? (diario.gasto / gmvC) * 100 : (diario.gasto > 0 ? Infinity : null);
           if (acosC == null || acosC === Infinity) continue;
+          if (cfg.meta_acos && acosC > cfg.meta_acos) continue; // só reforça campanha dentro da meta
           if (!melhor || acosC < melhor.acos) melhor = { id: c.campaign_id, nome: (settings.ad_name || `Campanha ${c.campaign_id}`).slice(0, 70), acos: acosC, budget: parseFloat(settings.campaign_budget) || 0, roasTarget: settings.roas_target };
         }
         if (melhor) {
