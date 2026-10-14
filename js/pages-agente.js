@@ -2190,7 +2190,7 @@
 
     el.innerHTML = `<div class="page">
       <div class="ag-titulo-pagina">
-        <div class="ag-hero-title"><span class="ag-pulse-dot"></span><span>Agente Autônomo</span></div>
+        <div class="ag-hero-title"><span class="ag-pulse-dot"></span><span>Agente Shopee</span></div>
         <details class="ag-como">
           <summary title="Como o agente funciona">ⓘ Como funciona</summary>
           <div class="ag-como-corpo">Todo dia às 07:00 o agente revisa cada conta com o piloto ligado contra as regras da seção "Guardrails do piloto": pausa, reativa e ajusta orçamento ou meta de <abbr class="ag-sigla" title="Retorno sobre o investimento: quantos reais vendidos para cada R$ 1 gasto.">ROAS</abbr> sozinho quando a mudança está dentro da faixa combinada. O que passa do limite, ou que ele não pode decidir sozinho, aparece em "Precisa de você" pra você aprovar ou rejeitar.</div>
