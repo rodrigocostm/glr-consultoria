@@ -902,8 +902,133 @@ Router.register('vendas', async (params, el) => {
   window._csMetrica = v => { semMetrica = v; renderComparativoSemanal(); };
   window._csMais = () => { semLimite += 100; renderComparativoSemanal(); };
 
+  // ── Painel automático de oportunidades ──────────────────────────────────────
+  // Sem botão: lê o que a sincronização calcula 1x por dia por loja (produtos
+  // que VENDEM FORA do ADS, com visitas de 30 dias no ML) + a curva ABC
+  // semanal + as sugestões pendentes dos agentes. A busca detalhada antiga
+  // (visitas sem venda, varredura pela API) continua logo abaixo.
+  let opAuto = { carregando: false, em: 0, linhas: null, agentes: [], erro: null };
+  async function carregarOportunidadesAuto(forcar) {
+    if (opAuto.carregando || (!forcar && opAuto.linhas && Date.now() - opAuto.em < 5 * 60000)) return;
+    opAuto.carregando = true;
+    try {
+      const [st, lg] = await Promise.all([
+        _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,cursor').eq('recurso', 'oportunidades'),
+        _sb.from('glr_agente_log').select('id,conta_id,titulo,dados,criado_em').eq('tipo', 'alerta').eq('resultado', 'so_alerta').gte('criado_em', new Date(Date.now() - 14 * 86400000).toISOString()).order('criado_em', { ascending: false }).limit(300),
+      ]);
+      if (st.error) throw st.error;
+      opAuto.linhas = st.data || [];
+      opAuto.agentes = (lg.data || []).filter(l => l.dados?.origem_analise === 'curva_abc_semanal' || ['adicionar_produto', 'abc_queda'].includes(l.dados?.acao));
+      opAuto.erro = null; opAuto.em = Date.now();
+    } catch (e) { opAuto.erro = e.message || String(e); }
+    opAuto.carregando = false;
+    if (abaAtiva === 'oportunidades') renderOportunidadesAuto();
+  }
+
+  function renderOportunidadesAuto() {
+    const box = document.getElementById('op-auto');
+    if (!box) return;
+    if (!opAuto.linhas) { box.innerHTML = `<div class="card" style="padding:30px;text-align:center;color:var(--text-muted);">${opAuto.erro ? '⚠️ ' + opAuto.erro : '⏳ Carregando oportunidades…'}</div>`; return; }
+    const h = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    // conta da base → conta da tela
+    const contaDaBase = {};
+    contas.forEach(c => { const m = window.BaseDados ? BaseDados.mktDe(c.marketplace) : null; if (m) contaDaBase[`${m}:${idNaBase(c)}`] = c; });
+    const dentroFiltro = c => c && (filtroContasSel.size === 0 || filtroContasSel.has(c.external_id));
+    // curva ABC semanal (se já calculada) para classe/tendência
+    const abc = {};
+    if (semanal.pedidos && !semanal.carregando) calcularCurvaSemanal(semanal.pedidos).prods.forEach(x => { abc[`${x.contaId}|${x.nome}`] = x; });
+    else if (!semanal.carregando) { const ch = `${[...filtroContasSel].sort().join(',')}|${fmtDate(ontem)}|${contas.length}`; if (semanal.chave !== ch) carregarSemanal(ch).then(() => { if (abaAtiva === 'oportunidades') renderOportunidadesAuto(); }); }
+    const TEND = { queda_forte: '▼▼ queda forte', queda: '▼ queda', parou: '■ parou', alta_forte: '▲▲ alta forte', alta: '▲ alta', novo: '★ novo', estavel: '● estável', baixo: '· pouco volume' };
+    const corT = t => ['queda', 'queda_forte', 'parou'].includes(t) ? '#dc2626' : ['alta', 'alta_forte'].includes(t) ? '#16a34a' : t === 'novo' ? '#2a78d6' : '#64748b';
+
+    const itens = [];
+    let ultima = null, semDado = 0;
+    for (const r of opAuto.linhas) {
+      const c = contaDaBase[`${r.marketplace}:${r.conta_id}`];
+      if (!dentroFiltro(c)) continue;
+      const plat = r.marketplace === 'shopee' ? 'Shopee' : 'Mercado Livre';
+      if (filtroPlat !== 'todas' && filtroPlat !== plat) continue;
+      if (!r.cursor?.candidatos) { semDado++; continue; }
+      if (!ultima || r.ultimo_sucesso > ultima) ultima = r.ultimo_sucesso;
+      for (const v of r.cursor.candidatos) {
+        const x = abc[`${c.external_id}|${v.nome}`];
+        itens.push({ ...v, plat, conta: c, gmvLoja: r.cursor.gmv_loja, classe: x?.classe || null, tend: x?.tend || null, conv: v.visitas ? v.un / v.visitas * 100 : null });
+      }
+    }
+    // Prioridade: curva A/B e em alta primeiro, depois faturamento
+    const peso = it => (it.classe === 'A' ? 3 : it.classe === 'B' ? 2 : 1) * (['alta', 'alta_forte', 'novo'].includes(it.tend) ? 1.5 : 1) * it.rs;
+    itens.sort((a, b) => peso(b) - peso(a));
+    const multi = new Set(itens.map(i => i.conta.external_id)).size > 1;
+    const rsTot = itens.reduce((s, i) => s + i.rs, 0);
+    const nML = itens.filter(i => i.plat === 'Mercado Livre').length, nSh = itens.length - nML;
+    const ag = opAuto.agentes.filter(l => { const c = contas.find(c => idNaBase(c) === String(l.conta_id)); return !c || dentroFiltro(c); });
+    const link = it => it.plat === 'Shopee' ? `https://shopee.com.br/product/${idNaBase(it.conta)}/${it.item_id}` : `https://produto.mercadolivre.com.br/${String(it.item_id).replace(/^MLB/, 'MLB-')}`;
+    const acao = it => it.plat === 'Mercado Livre' ? 'Colocar numa campanha de Product Ads'
+      : it.gmvLoja ? 'Só no GMV Max da Loja — vale campanha individual' : 'Sem ADS — criar campanha individual (ou ligar o GMV Max da Loja)';
+    const card = (rot, val, sub, cor) => `<div class="op-card" style="--c:${cor}"><div class="op-rot">${rot}</div><div class="op-val">${val}</div><div class="op-sub">${sub}</div></div>`;
+
+    box.innerHTML = `
+      <div class="op-head">
+        <div><div class="op-tit">⚡ Vendendo fora do ADS</div>
+        <div class="op-sub">Produtos com 2+ vendas nos últimos 30 dias que não estão em campanha (ML: anúncio fora do Product Ads; Shopee: fora de campanha individual). Calculado sozinho 1x por dia pela sincronização${ultima ? ` · atualizado ${fmtAgo(Date.parse(ultima))}` : ''}${semDado ? ` · ${semDado} conta(s) ainda sem a 1ª leitura` : ''}.</div></div>
+      </div>
+      <div class="op-cards">
+        ${card('Produtos fora do ADS vendendo', itens.length, `${R$(rsTot).replace(/,\d{2}$/, '')} vendidos em 30 dias`, '#2a78d6')}
+        ${card('Mercado Livre', nML, 'anúncios fora do Product Ads', '#eb6834')}
+        ${card('Shopee', nSh, 'fora de campanha individual', '#1baf7a')}
+        ${card('Sugestões dos agentes', ag.length, 'curva ABC e “colocar em campanha”, pendentes', ag.length ? '#d97706' : '#64748b')}
+      </div>
+      ${ag.length ? `<details class="card op-ag"><summary>🤖 Sugestões pendentes dos agentes (${ag.length})</summary>${ag.slice(0, 12).map(l => {
+        const c = contas.find(c => idNaBase(c) === String(l.conta_id));
+        const ml = l.dados?.marketplace === 'ml';
+        return `<div class="op-ag-i"><b>${h(l.titulo)}</b>${c ? ` <span class="op-sub">· ${h(contaNome(c))}</span>` : ''} <a href="#" onclick="Router.navigate('${ml ? 'agente-ml' : 'agente'}');return false;">abrir no agente →</a></div>`;
+      }).join('')}</details>` : ''}
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:18px;">
+        <div style="overflow-x:auto;"><table class="op-tab">
+          <thead><tr><th>Produto</th><th>Curva / tendência</th><th class="op-n">Vendas 30d</th><th class="op-n">Faturado 30d</th><th class="op-n">Visitas 30d</th><th class="op-n">Conversão</th><th>Sugestão</th></tr></thead>
+          <tbody>${itens.length ? itens.slice(0, 120).map(it => `<tr>
+            <td style="min-width:260px;white-space:normal;"><a href="${link(it)}" target="_blank" rel="noopener" class="op-nome">${it.plat === 'Shopee' ? '🟠' : '🟡'} ${h(it.nome)}</a><div class="op-sub">${multi ? h(contaNome(it.conta)) + ' · ' : ''}${h(it.item_id)}</div></td>
+            <td>${it.classe ? `<b>${it.classe}</b>` : '<span class="op-sub">—</span>'}${it.tend ? ` <span style="color:${corT(it.tend)};font-weight:700;font-size:11.5px;">${TEND[it.tend]}</span>` : ''}</td>
+            <td class="op-n">${it.un} un.</td><td class="op-n">${R$(it.rs)}</td>
+            <td class="op-n">${it.visitas != null ? it.visitas.toLocaleString('pt-BR') : '<span class="op-sub">—</span>'}</td>
+            <td class="op-n">${it.conv != null ? it.conv.toFixed(1).replace('.', ',') + '%' : '<span class="op-sub">—</span>'}</td>
+            <td style="white-space:normal;font-size:12px;">${acao(it)}</td></tr>`).join('')
+            : `<tr><td colspan="7" style="padding:26px;text-align:center;color:var(--text-muted);">${semDado && !opAuto.linhas.some(r => r.cursor?.candidatos) ? 'A primeira leitura sai na próxima sincronização (a partir das 06:00).' : 'Nenhum produto vendendo fora do ADS neste filtro. ✅'}</td></tr>`}</tbody>
+        </table></div>
+      </div>
+      <style>
+        .op-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:12px;}
+        .op-tit{font-size:15px;font-weight:800;color:var(--text-primary);}
+        .op-sub{font-size:12px;color:var(--text-muted);line-height:1.5;}
+        .op-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
+        @media (max-width:900px){.op-cards{grid-template-columns:repeat(2,1fr);}}
+        .op-card{background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:12px;padding:12px 14px;}
+        .op-rot{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);}
+        .op-val{font-size:22px;font-weight:800;color:var(--text-primary);font-variant-numeric:tabular-nums;}
+        .op-ag{padding:12px 18px;margin-bottom:14px;} .op-ag summary{cursor:pointer;font-weight:700;color:var(--text-primary);}
+        .op-ag-i{padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-secondary);} .op-ag-i a{color:#6366f1;font-size:12px;}
+        .op-tab{width:100%;border-collapse:collapse;font-size:12.5px;}
+        .op-tab th{padding:9px 10px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
+        .op-tab td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-secondary);vertical-align:middle;}
+        .op-n{text-align:right !important;font-variant-numeric:tabular-nums;white-space:nowrap;}
+        .op-nome{color:var(--text-primary);font-weight:600;text-decoration:none;}
+      </style>`;
+  }
+
   function renderOportunidades() {
     const sec = document.getElementById('sec-oportunidades');
+    if (!sec) return;
+    if (!document.getElementById('op-auto')) {
+      sec.innerHTML = `<div id="op-auto"></div>
+        <details class="card" style="padding:12px 18px;" id="op-manual-wrap"><summary style="cursor:pointer;font-weight:700;color:var(--text-primary);">🔍 Busca detalhada pela API — visitas sem venda e produtos que nunca tiveram ADS</summary><div id="sec-oport-manual" style="margin-top:12px;"></div></details>`;
+    }
+    renderOportunidadesAuto();
+    renderOportunidadesManual();
+    carregarOportunidadesAuto();
+  }
+
+  function renderOportunidadesManual() {
+    const sec = document.getElementById('sec-oport-manual');
     if (!sec) return;
 
     if (oportunidades === null) {
@@ -1538,6 +1663,7 @@ Router.register('vendas', async (params, el) => {
   function renderLista() {
     if (abaAtiva === 'dashboard') renderDashboard();
     else if (abaAtiva === 'semanal') renderComparativoSemanal();
+    else if (abaAtiva === 'oportunidades') renderOportunidadesAuto();
     else renderPedidos();
   }
 

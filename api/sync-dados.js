@@ -476,6 +476,96 @@ async function atualizarResumo(mkt, conta, resumoAtual, t) {
 }
 
 // ── O que muda entre marketplaces fica aqui; o resto do motor é igual ──
+// ── Oportunidades de ADS (1x por dia por loja) ─────────────────────────────
+// Quais produtos estão no ADS e quais VENDEM FORA dele (últimos 30 dias da
+// base). A aba Vendas → Oportunidades lê daqui na hora (sem botão) e os
+// agentes usam o mesmo dado. ML: anúncio ativo em campanha de Product Ads +
+// visitas de 30 dias dos candidatos. Shopee: produto em campanha individual
+// ativa; se o GMV Max da Loja está ligado, o resto entra só por ele.
+const DIAS_OPORT = 30;
+async function atualizarOportunidades(apiKey, mkt, id, estAds, t, prazo) {
+  const emAds = {};      // item_id → campaign_id
+  const campanhas = {};  // campaign_id → nome
+  if (mkt === 'shopee') {
+    const r = await comRetry(() => mcpCall(apiKey, 'shopee_ads_campaigns', { shopId: id }));
+    const ids = (r.data?.response?.campaign_list || r.response?.campaign_list || []).map(c => c.campaign_id);
+    const lotes = [];
+    for (let i = 0; i < ids.length; i += 20) lotes.push(ids.slice(i, i + 20));
+    for (let i = 0; i < lotes.length; i += 5) {
+      if (Date.now() > prazo) return null; // não terminou: tenta na próxima rodada
+      await Promise.all(lotes.slice(i, i + 5).map(async lote => {
+        const rs = await comRetry(() => mcpCall(apiKey, 'shopee_ads_campaign_settings', { shopId: id, campaign_id_list: lote.join(',') }));
+        for (const c of (rs.data?.response?.campaign_list || rs.response?.campaign_list || [])) {
+          const ci = c.common_info || {};
+          if (String(ci.campaign_status || '').toLowerCase() !== 'ongoing') continue;
+          campanhas[c.campaign_id] = String(ci.ad_name || c.campaign_id).slice(0, 70);
+          for (const it of (ci.item_id_list || [])) emAds[String(it)] = c.campaign_id;
+        }
+      }));
+    }
+  } else {
+    let camps = [];
+    try {
+      for (let off = 0; off < 500; off += 50) {
+        const r = await comRetry(() => mcpCall(apiKey, 'ml_ads_campaigns', { meliUserId: id, limit: 50, offset: off, status: 'ALL' }));
+        const d = r.data || r, res = d.results || [];
+        camps.push(...res);
+        if (res.length < 50 || off + 50 >= (parseInt(d.paging?.total) || 0)) break;
+      }
+    } catch (e) {
+      if (!/anunciante|advertiser|product ads|not found|no encontr|não encontr|404/i.test(e.message)) throw e;
+      camps = []; // conta sem Product Ads: tudo está fora do ADS
+    }
+    const ate = dataBR(t), de = dataBR(t - 7 * DIA);
+    for (const c of camps.filter(c => String(c.status).toLowerCase() === 'active')) {
+      if (Date.now() > prazo) return null;
+      campanhas[c.id] = String(c.name || c.id).trim().slice(0, 70);
+      for (let off = 0; off < 1000; off += 100) {
+        const r = await comRetry(() => mcpCall(apiKey, 'ml_ads_items', { meliUserId: id, campaign_id: String(c.id), date_from: de, date_to: ate, limit: 100, offset: off }));
+        const d = r.data || r, res = d.results || [];
+        for (const a of res) if (a.status === 'active') emAds[String(a.item_id)] = c.id;
+        if (res.length < 100 || off + 100 >= (parseInt(d.paging?.total) || 0)) break;
+      }
+    }
+  }
+  // Vendas dos últimos 30 dias por produto (base)
+  const desde = new Date((t - DIAS_OPORT * DIA) * SEG).toISOString();
+  const vendas = new Map();
+  for (let off = 0; off < 50000; off += 1000) {
+    const rows = await sbSelect('glr_pedidos', `marketplace=eq.${mkt}&conta_id=eq.${encodeURIComponent(id)}&situacao=eq.valido&criado_em=gte.${encodeURIComponent(desde)}&select=itens&limit=1000&offset=${off}`);
+    for (const p of rows) for (const it of (p.itens || [])) {
+      if (!it.item_id) continue;
+      const k = String(it.item_id), q = parseInt(it.qtd) || 1;
+      const v = vendas.get(k) || { item_id: k, nome: String(it.nome || k).slice(0, 90), un: 0, rs: 0 };
+      v.un += q; v.rs += (parseFloat(it.preco) || 0) * q;
+      vendas.set(k, v);
+    }
+    if (rows.length < 1000) break;
+  }
+  const candidatos = [...vendas.values()].filter(v => !emAds[v.item_id] && v.un >= 2).sort((a, b) => b.rs - a.rs).slice(0, 40).map(v => ({ ...v, rs: r2(v.rs) }));
+  // ML: visitas dos últimos 30 dias dos candidatos (1 chamada por anúncio)
+  if (mkt === 'ml') {
+    for (let i = 0; i < Math.min(30, candidatos.length); i += 5) {
+      if (Date.now() > prazo) break;
+      await Promise.all(candidatos.slice(i, i + 5).map(async v => {
+        try {
+          const r = await mcpCall(apiKey, 'raw', { method: 'GET', path: `/items/${v.item_id}/visits/time_window?last=${DIAS_OPORT}&unit=day`, meliUserId: id });
+          const tv = parseInt((r.data || r).total_visits);
+          if (!isNaN(tv)) v.visitas = tv;
+        } catch (e) {}
+      }));
+    }
+  }
+  const vendidosEmAds = [...vendas.values()].filter(v => emAds[v.item_id]);
+  return {
+    dia: dataBR(t), gmv_loja: mkt === 'shopee' ? !!estAds?.cursor?.tem_gmv_max : null,
+    n_campanhas: Object.keys(campanhas).length, n_em_ads: Object.keys(emAds).length,
+    vendidos_30d: vendas.size, vendidos_em_ads: vendidosEmAds.length,
+    rs_fora_ads: r2(candidatos.reduce((s, v) => s + v.rs, 0)),
+    candidatos,
+  };
+}
+
 const ADAPTADORES = {
   shopee: {
     // Por data de ATUALIZAÇÃO: venda nova, cancelamento e devolução de qualquer data.
@@ -586,6 +676,16 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
       await salvarEstado(mkt, shopId, 'ads', { ultimo_erro: String(e.message || e).slice(0, 500) }).catch(() => {});
     }
   }
+  // Oportunidades de ADS — 1x por dia por loja, depois das 06:00 (Brasília), se sobrar tempo
+  const horaOp = new Date((t - 3 * 3600) * SEG).getUTCHours();
+  if (horaOp >= 6 && estadoAtual?.oport?.dia !== dataBR(t) && Date.now() < prazo - 20000) {
+    try {
+      const cur = await atualizarOportunidades(apiKey, mkt, shopId, estadoAtual?.ads, t, Math.min(prazo, Date.now() + 40000));
+      if (cur) await salvarEstado(mkt, shopId, 'oportunidades', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: cur.candidatos.length, cursor: cur });
+    } catch (e) {
+      await salvarEstado(mkt, shopId, 'oportunidades', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {});
+    }
+  }
   try { await atualizarResumo(mkt, shopId, estadoAtual?.resumo, t); }
   catch (e) { await salvarEstado(mkt, shopId, 'resumo', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
   return { mkt, conta: shopId, pedidos: gravados };
@@ -595,8 +695,11 @@ async function executar(apiKey, soConta) {
   const prazo = Date.now() + ORCAMENTO_MS;
   let contas = await contasParaSincronizar(apiKey);
   if (soConta) contas = contas.filter(c => c.id === String(soConta));
-  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor');
+  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor&recurso=neq.oportunidades');
+  // Oportunidades: só o dia da última atualização (o resto do cursor é grande e não precisa aqui)
+  const oports = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.oportunidades').catch(() => []);
   const porConta = {};
+  for (const o of oports) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].oport = { dia: o.dia }; }
   for (const e of estados) {
     const k = `${e.marketplace}:${e.conta_id}`;
     porConta[k] = porConta[k] || {};
