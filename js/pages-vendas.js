@@ -369,6 +369,17 @@ Router.register('vendas', async (params, el) => {
   // IMPORTANTE: o parâmetro é meliUserId — contaId é ignorado silenciosamente
   // pela API e sempre retorna a conta ML padrão, misturando dados de contas erradas
   const _mlItemCache = {}; // id → anúncio (título, preço, estoque) já vindo da listagem
+  // Chamada por anúncio com nova tentativa: a API recusa rajadas (limite de
+  // chamadas) e, sem isso, a falha virava "0 visitas" / "fora do ADS" calada.
+  async function _tentar(fn, n = 3) {
+    for (let i = 0; ; i++) {
+      try { return await fn(); }
+      catch (e) {
+        if (i >= n - 1 || /404|not.?found|no encontr|não encontr|inexist/i.test(e.message)) throw e;
+        await new Promise(r => setTimeout(r, 700 * (i + 1)));
+      }
+    }
+  }
   async function _mlListarIdsAtivos(meliUserId) {
     let ids = [];
     let offset = 0;
@@ -422,6 +433,7 @@ Router.register('vendas', async (params, el) => {
   let foraDoAds = null; // produtos ativos sem nenhuma campanha de ADS
   let buscandoForaDoAds = false;
   let oportAtualizadoEm = null, foraAdsAtualizadoEm = null;
+  let falhasOport = 0, falhasForaAds = 0; // anúncios que a API não respondeu na última busca
   // Carrega o último resultado salvo — evita ter que clicar em Buscar de novo
   // toda vez que a página é reaberta (não faz nenhuma chamada de API aqui).
   try {
@@ -454,6 +466,7 @@ Router.register('vendas', async (params, el) => {
     try {
       const { dataFrom, dataTo } = _periodoParaDatas();
       const achados = [];
+      falhasOport = 0;
 
       // ── Mercado Livre: visitas escopadas ao período selecionado ──
       // list_items só retorna uma lista de IDs (string) — nome/preço vêm de
@@ -471,14 +484,14 @@ Router.register('vendas', async (params, el) => {
         if (status) status.textContent = `Checando visitas: ${conta.nickname||conta.external_id} (${semVenda.length} anúncios sem venda)...`;
 
         const comVisita = [];
-        await _mapLimit(semVenda, 6, async itemId => {
+        await _mapLimit(semVenda, 4, async itemId => {
           try {
-            const rv = await MarketplaceAPI.call('ml_visits_item', { meliUserId: meliIdListagem, item_id: String(itemId), date_from: dataFrom, date_to: dataTo });
+            const rv = await _tentar(() => MarketplaceAPI.call('ml_visits_item', { meliUserId: meliIdListagem, item_id: String(itemId), date_from: dataFrom, date_to: dataTo }));
             // formatos: {items:[{total_visits}]} (atual), {total_visits}, {results:[{total}]}
             const it0 = (rv?.data?.items || rv?.items || [])[0];
             const visitas = it0?.total_visits ?? rv?.data?.total_visits ?? rv?.total_visits ?? (Array.isArray(rv?.data?.results) ? rv.data.results.reduce((s,d)=>s+(d.total||0),0) : 0) ?? 0;
             if (visitas > 0) comVisita.push({ item_id: itemId, visitas });
-          } catch(e) {}
+          } catch(e) { falhasOport++; }
         });
 
         if (status) status.textContent = `Buscando nome/preço (ML): ${conta.nickname||conta.external_id}...`;
@@ -598,6 +611,7 @@ Router.register('vendas', async (params, el) => {
 
     try {
       const achados = [];
+      falhasForaAds = 0;
 
       // ── Mercado Livre: um item por vez (não existe lista em lote) ──
       for (const conta of contasML) {
@@ -607,15 +621,21 @@ Router.register('vendas', async (params, el) => {
         if (status) status.textContent = `Checando ADS: ${conta.nickname||conta.external_id} (${itemIds.length} anúncios)...`;
 
         const foraDeAdsIds = [];
-        await _mapLimit(itemIds, 6, async itemId => {
+        const situacaoAds = {}; // itemId → texto da situação no Product Ads
+        await _mapLimit(itemIds, 4, async itemId => {
           try {
-            const ra = await MarketplaceAPI.call('ml_ads_get_ad', { meliUserId: meliId, item_id: String(itemId) });
+            const ra = await _tentar(() => MarketplaceAPI.call('ml_ads_get_ad', { meliUserId: meliId, item_id: String(itemId) }));
             const ad = ra?.data || ra;
-            const emAds = ad?.status === 'active' && parseInt(ad?.campaign_id) > 0;
-            if (!emAds) foraDeAdsIds.push(itemId);
-          } catch(e) {
-            // Sem anúncio de ads criado pra esse item = também está fora do ADS
+            const temCampanha = parseInt(ad?.campaign_id) > 0;
+            if (ad?.status === 'active' && temCampanha) return; // está no ADS
             foraDeAdsIds.push(itemId);
+            situacaoAds[itemId] = !temCampanha ? 'Sem campanha'
+              : ad?.status === 'hold' ? 'Na campanha, anúncio suspenso pelo ML'
+              : ad?.status === 'paused' ? 'Na campanha, anúncio pausado' : `Na campanha, anúncio ${ad?.status || 'inativo'}`;
+          } catch(e) {
+            // 404 = o anúncio nunca entrou no Product Ads; outro erro = não deu pra checar (fica de fora e é contado)
+            if (/404|not.?found|no encontr|não encontr|inexist/i.test(e.message)) { foraDeAdsIds.push(itemId); situacaoAds[itemId] = 'Sem campanha'; }
+            else falhasForaAds++;
           }
         });
 
@@ -625,7 +645,7 @@ Router.register('vendas', async (params, el) => {
           const d = detalhes[itemId] || {};
           achados.push({
             id: itemId, nome: d.title || `Item ${itemId}`, preco: d.price ?? 0,
-            estoque: d.available_quantity ?? 0, vendasTotal: d.sold_quantity ?? null,
+            estoque: d.available_quantity ?? 0, vendasTotal: d.sold_quantity ?? null, situacao: situacaoAds[itemId] || 'Sem campanha',
             contaId: conta.external_id, meliId, conta: contaNome(conta), mp: 'ML',
             link: `https://produto.mercadolivre.com.br/${String(itemId).replace('MLB','MLB-')}`,
           });
@@ -678,9 +698,9 @@ Router.register('vendas', async (params, el) => {
       // de 50) — a API não traz visitas confiáveis por anúncio. Vendas dos
       // últimos 30 dias vêm da base (sem chamada).
       if (status) status.textContent = `Buscando visitas e vendas de ${achados.length} anúncios...`;
-      await _mapLimit(achados.filter(o => o.mp === 'ML'), 8, async o => {
+      await _mapLimit(achados.filter(o => o.mp === 'ML'), 4, async o => {
         try {
-          const r = await MarketplaceAPI.call('raw', { method: 'GET', path: `/visits/items?ids=${o.id}`, meliUserId: o.meliId });
+          const r = await _tentar(() => MarketplaceAPI.call('raw', { method: 'GET', path: `/visits/items?ids=${o.id}`, meliUserId: o.meliId }));
           const v = parseInt((r?.data || r)?.[o.id]);
           if (!isNaN(v)) o.visitas = v;
         } catch (e) {}
@@ -1112,7 +1132,7 @@ Router.register('vendas', async (params, el) => {
 
     sec.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período ${oportAtualizadoEm?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(oportAtualizadoEm)}</span>`:''}</div>
+        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período ${oportAtualizadoEm?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(oportAtualizadoEm)}</span>`:''}${falhasOport ? `<div style="font-size:12px;font-weight:600;color:#dc2626;margin-top:3px;">⚠️ ${falhasOport} anúncio(s) não responderam à consulta de visitas (limite da API) — clique em Buscar de novo.</div>` : ''}</div>
         <button id="btn-buscar-oport" class="btn" onclick="buscarOportunidades()" style="padding:7px 14px;font-size:12px;">🔄 Buscar de novo</button>
       </div>
       ${oportunidades.length === 0 ? `
@@ -1173,6 +1193,7 @@ Router.register('vendas', async (params, el) => {
       <tr style="border-bottom:1px solid var(--border);">
         <td style="padding:10px 12px;color:var(--text-primary);max-width:340px;" title="${(o.nome||'').replace(/"/g,'&quot;')}"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.mp==='Shopee'?'🟠':'🟡'} ${o.nome||'—'}</div><div style="font-size:11px;color:var(--text-muted);">${o.conta} · ${o.id}</div></td>
         <td style="padding:10px 12px;"><span style="font-size:11.5px;font-weight:700;color:${pt.cor};white-space:nowrap;">${pt.t}</span></td>
+        <td style="padding:10px 12px;font-size:12px;color:${(o.situacao || 'Sem campanha') === 'Sem campanha' ? 'var(--text-secondary)' : '#d97706'};">${o.situacao || 'Sem campanha'}</td>
         ${td(o.mp === 'Shopee' ? '<span style="color:var(--text-muted);" title="A API da Shopee não informa visitas confiáveis por anúncio">—</span>' : num(o.visitas))}
         ${td(num(o.vendasTotal))}
         ${td(num(o.vendas30 ?? null), (o.vendas30 || 0) > 0)}
@@ -1186,6 +1207,7 @@ Router.register('vendas', async (params, el) => {
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 16px;gap:10px;flex-wrap:wrap;">
         <div style="font-size:13px;font-weight:700;color:var(--text-primary);">🚫 ${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS${nAlto ? ` · <span style="color:#16a34a;">${nAlto} com potencial alto</span>` : ''} ${foraAdsAtualizadoEm?`<span style="font-size:11px;font-weight:400;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(foraAdsAtualizadoEm)}</span>`:''}
+          ${falhasForaAds ? `<div style="font-size:12px;font-weight:600;color:#dc2626;margin-top:3px;">⚠️ ${falhasForaAds} anúncio(s) não responderam à checagem de ADS (limite da API) — clique em Buscar de novo.</div>` : ''}
           <div style="font-size:11.5px;font-weight:400;color:var(--text-muted);margin-top:3px;">Visitas e vendas totais = desde a criação do anúncio (ML). Vendas 30 dias = base automática. Potencial alto: 3+ vendas em 30 dias, ou 300+ visitas convertendo 1% ou mais.</div></div>
         <button id="btn-buscar-fora-ads" class="btn" style="padding:7px 14px;font-size:12px;">🔄 Buscar de novo</button>
       </div>
@@ -1195,7 +1217,7 @@ Router.register('vendas', async (params, el) => {
         <div class="card" style="padding:0;overflow:hidden;"><div style="overflow-x:auto;">
           <table style="width:100%;border-collapse:collapse;font-size:13px;">
             <thead><tr style="background:var(--bg-card-hover);">
-              ${th('Produto')}${th('Potencial')}${th('Visitas (total)', 'right')}${th('Vendas (total)', 'right')}${th('Vendas 30 dias', 'right')}${th('Conversão', 'right', 'vendas totais ÷ visitas totais')}${th('Preço', 'right')}${th('Estoque', 'right')}${th('', 'right')}
+              ${th('Produto')}${th('Potencial')}${th('Situação no ADS')}${th('Visitas (total)', 'right')}${th('Vendas (total)', 'right')}${th('Vendas 30 dias', 'right')}${th('Conversão', 'right', 'vendas totais ÷ visitas totais')}${th('Preço', 'right')}${th('Estoque', 'right')}${th('', 'right')}
             </tr></thead>
             <tbody>${linhas}</tbody>
           </table>
