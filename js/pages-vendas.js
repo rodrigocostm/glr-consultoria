@@ -29,6 +29,12 @@ Router.register('vendas', async (params, el) => {
   let customTo      = fmtDate(ontem); // ontem
   let expandido     = null;
   let abaAtiva      = 'dashboard'; // 'dashboard' | 'pedidos'
+  let _buscandoPedidos = false, _recarregarDepois = null, _timerFiltro = null;
+  // Filtro de empresa/conta: relê a base sozinho (leitura rápida), sem precisar clicar em Atualizar
+  function _filtroMudou() {
+    clearTimeout(_timerFiltro);
+    _timerFiltro = setTimeout(() => buscarPedidos({ silencioso: true, soBase: true }), 350);
+  }
 
   // Adota o período do último cache salvo (se existir) ANTES de montar a tela —
   // assim a página já abre mostrando o último dado buscado, sem precisar clicar
@@ -202,7 +208,8 @@ Router.register('vendas', async (params, el) => {
 
   function isCanceladoVendas(p) {
     const st = (p.status||'').toLowerCase();
-    return st.includes('cancel') || st === 'invalid' || st === 'cancelled_unpaid';
+    // devolvido = devolução aceita (marcada pela base) — também fica fora, igual ao Gestor Seller
+    return st.includes('cancel') || st === 'invalid' || st === 'cancelled_unpaid' || st === 'devolvido';
   }
 
   function pedidosFiltrados() {
@@ -261,6 +268,7 @@ Router.register('vendas', async (params, el) => {
           filtroContasSel = new Set();
         }
         renderFiltroEmpresaConta();
+        _filtroMudou();
       },
     });
 
@@ -268,7 +276,7 @@ Router.register('vendas', async (params, el) => {
       label: 'Conta', icon: '🏬',
       itens: contasFiltradas.map(c => ({ valor: c.external_id, label: contaNome(c) })),
       selecionados: filtroContasSel,
-      onChange: (novoSet) => { filtroContasSel = novoSet; renderFiltroEmpresaConta(); },
+      onChange: (novoSet) => { filtroContasSel = novoSet; renderFiltroEmpresaConta(); _filtroMudou(); },
     });
   }
 
@@ -864,6 +872,55 @@ Router.register('vendas', async (params, el) => {
   }
 
   // ── Dashboard ────────────────────────────────────────────────
+  // Gráfico de receitas (Chart.js): área suave, largura total, tooltip por dia.
+  // Cores: 3 primeiras do tema categórico validado (azul, laranja, verde-água) —
+  // distinguíveis também por quem tem daltonismo; texto sempre nas cores do tema.
+  function desenharGraficoReceitas(porDia) {
+    const cv = document.getElementById('vg-canvas');
+    if (!cv || !window.Chart) return;
+    const claro = document.body.classList.contains('light');
+    const cor = claro ? { fat: '#2a78d6', liq: '#eb6834', luc: '#1baf7a', texto: '#475569', grade: 'rgba(15,23,42,0.07)', fundo: '#ffffff', borda: 'rgba(15,23,42,0.12)', titulo: '#0f172a' }
+                      : { fat: '#3987e5', liq: '#d95926', luc: '#199e70', texto: '#94a3b8', grade: 'rgba(255,255,255,0.06)', fundo: '#111827', borda: 'rgba(255,255,255,0.12)', titulo: '#f1f5f9' };
+    // Eixo X = todos os dias do período filtrado
+    const { dataFrom, dataTo } = _periodoParaDatas();
+    const dias = [];
+    for (let d = new Date(`${dataFrom}T12:00:00`), fim = new Date(`${dataTo}T12:00:00`); d <= fim && dias.length < 400; d.setDate(d.getDate() + 1)) dias.push(d.toLocaleDateString('pt-BR'));
+    if (!dias.length) dias.push(...Object.keys(porDia));
+    const serie = k => dias.map(d => Math.round((porDia[d]?.[k] || 0) * 100) / 100);
+    const rotulo = d => { const [dd, mm] = d.split('/'); return `${dd}/${mm}`; };
+    const kfmt = v => Math.abs(v) >= 1000 ? `R$ ${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : `R$ ${Math.round(v).toLocaleString('pt-BR')}`;
+    const grad = (ctx, c, a) => { const { chartArea } = ctx.chart; if (!chartArea) return c + '00'; const g = ctx.chart.ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom); g.addColorStop(0, c + a); g.addColorStop(1, c + '00'); return g; };
+    const ds = (label, k, c, a) => ({ label, data: serie(k), borderColor: c, backgroundColor: ctx => grad(ctx, c, a), fill: 'origin', borderWidth: 2, tension: 0.35, cubicInterpolationMode: 'monotone', pointRadius: dias.length === 1 ? 4 : 0, pointHoverRadius: 5, pointHoverBorderWidth: 2, pointHoverBorderColor: cor.fundo, pointBackgroundColor: c });
+    const legenda = document.getElementById('vg-legenda');
+    if (legenda) legenda.innerHTML = [['Faturamento', cor.fat], ['Líquido MP', cor.liq], ['Lucro', cor.luc]].map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`).join('');
+    if (window._vendasGrafico) { try { window._vendasGrafico.destroy(); } catch (e) {} }
+    window._vendasGrafico = new Chart(cv, {
+      type: 'line',
+      data: { labels: dias.map(rotulo), datasets: [ds('Faturamento', 'fat', cor.fat, '40'), ds('Líquido MP', 'liq', cor.liq, '2e'), ds('Lucro', 'lucro', cor.luc, '38')] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 350 },
+        interaction: { mode: 'index', intersect: false },
+        layout: { padding: { top: 6, right: 6 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: cor.fundo, titleColor: cor.titulo, bodyColor: cor.texto, borderColor: cor.borda, borderWidth: 1,
+            padding: 12, cornerRadius: 10, boxPadding: 4, usePointStyle: true, titleFont: { weight: '700' },
+            callbacks: {
+              title: it => dias[it[0].dataIndex],
+              label: it => ` ${it.dataset.label}: ${R$(it.parsed.y)}`,
+              afterBody: it => { const d = porDia[dias[it[0].dataIndex]]; return d ? [`${d.n} venda${d.n === 1 ? '' : 's'}`] : ['Sem vendas']; },
+            },
+          },
+        },
+        scales: {
+          x: { grid: { display: false }, border: { display: false }, ticks: { color: cor.texto, font: { size: 11 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } },
+          y: { beginAtZero: true, grid: { color: cor.grade, drawTicks: false }, border: { display: false }, ticks: { color: cor.texto, font: { size: 11 }, padding: 8, maxTicksLimit: 5, callback: kfmt } },
+        },
+      },
+    });
+  }
+
   function renderDashboard() {
     const sec = document.getElementById('sec-dashboard');
     if (!sec) return;
@@ -909,22 +966,8 @@ Router.register('vendas', async (params, el) => {
     }
     const top15 = Object.values(prodMap).sort((a,b)=>b.fat-a.fat).slice(0,15);
 
-    // ── SVG chart — com fallback para 1 dia (mostra barra) ──
-    const W=800, H=160, PAD=8;
-    // Se só 1 dia, duplica com 0 para ter linha visível
-    let chartDias = dias.length > 0 ? dias : ['—'];
-    const singleDay = chartDias.length === 1;
-    if (singleDay) chartDias = ['', chartDias[0], ''];
-    const fatVals  = chartDias.map(d=>porDia[d]?.fat  ||0);
-    const liqVals  = chartDias.map(d=>porDia[d]?.liq  ||0);
-    const lucroVals= chartDias.map(d=>porDia[d]?.lucro||0);
-    const maxVal   = Math.max(1, ...fatVals, ...liqVals, ...lucroVals);
-    const n = chartDias.length;
-    const xOf = i => PAD + (i/(n-1)) * (W-PAD*2);
-    const yOf = v => H - PAD - ((v/maxVal)*(H-PAD*2));
-    const svgPath = vals => vals.map((v,i)=>`${i===0?'M':'L'}${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(' ');
-    const area = vals => `${svgPath(vals)} L${xOf(n-1).toFixed(1)},${(H-PAD).toFixed(1)} L${xOf(0).toFixed(1)},${(H-PAD).toFixed(1)} Z`;
-    const labStep = Math.max(1, Math.ceil((singleDay?dias:chartDias).length/7));
+    // ── Gráfico: todos os dias do período (dia sem venda = 0), desenhado depois do HTML ──
+    setTimeout(() => desenharGraficoReceitas(porDia), 0);
 
     // ADS busca em segundo plano (não trava o primeiro render) — atualiza os
     // cards quando terminar, ver bloco após sec.innerHTML mais abaixo
@@ -945,44 +988,15 @@ Router.register('vendas', async (params, el) => {
     </div>
 
     <!-- Gráfico -->
-    <div class="card" style="margin-bottom:20px;padding:20px;">
-      <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:16px;">📈 Resumo de Receitas</div>
-      <div style="display:flex;gap:16px;margin-bottom:12px;font-size:11px;">
-        <span style="display:flex;align-items:center;gap:4px;"><span style="width:12px;height:3px;background:#60a5fa;display:inline-block;border-radius:2px;"></span> Faturamento</span>
-        <span style="display:flex;align-items:center;gap:4px;"><span style="width:12px;height:3px;background:#a78bfa;display:inline-block;border-radius:2px;"></span> Líquido MP</span>
-        <span style="display:flex;align-items:center;gap:4px;"><span style="width:12px;height:3px;background:#34d399;display:inline-block;border-radius:2px;"></span> Lucro</span>
+    <div class="card vg-card" style="margin-bottom:20px;">
+      <div class="vg-topo">
+        <div>
+          <div class="vg-titulo">Resumo de Receitas</div>
+          <div class="vg-sub">Por dia, sem cancelados e devoluções</div>
+        </div>
+        <div class="vg-legenda" id="vg-legenda"></div>
       </div>
-      <div style="overflow-x:auto;background:linear-gradient(135deg,rgba(99,102,241,0.05) 0%,rgba(168,85,247,0.05) 100%);border-radius:12px;padding:16px;">
-        <svg viewBox="0 0 ${W} ${H+30}" style="width:100%;min-width:400px;height:${H+30}px;filter:drop-shadow(0 4px 6px rgba(0,0,0,0.1));">
-          <defs>
-            <linearGradient id="gFat"   x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3b82f6" stop-opacity=".4"/><stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/></linearGradient>
-            <linearGradient id="gLiq"   x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#8b5cf6" stop-opacity=".35"/><stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/></linearGradient>
-            <linearGradient id="gLucro" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10b981" stop-opacity=".4"/><stop offset="100%" stop-color="#10b981" stop-opacity="0"/></linearGradient>
-            <filter id="glow"><feGaussianBlur stdDeviation="1" result="coloredBlur"/><feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          </defs>
-          <!-- Background gradient -->
-          <rect x="${PAD}" y="${PAD}" width="${W-PAD*2}" height="${H-PAD*2}" fill="rgba(255,255,255,0.02)" rx="8"/>
-          <!-- Grid lines (subtle) -->
-          ${[0.25,0.5,0.75,1].map(f=>`<line x1="${PAD+4}" y1="${yOf(maxVal*f).toFixed(1)}" x2="${W-PAD-4}" y2="${yOf(maxVal*f).toFixed(1)}" stroke="rgba(255,255,255,0.08)" stroke-width="1" stroke-dasharray="4,4"/>`).join('')}
-          <!-- Areas with blur effect -->
-          <path d="${area(fatVals)}"   fill="url(#gFat)" filter="url(#glow)"/>
-          <path d="${area(liqVals)}"   fill="url(#gLiq)" filter="url(#glow)"/>
-          <path d="${area(lucroVals)}" fill="url(#gLucro)" filter="url(#glow)"/>
-          <!-- Lines (thicker, smoother) -->
-          <path d="${svgPath(fatVals)}"   fill="none" stroke="#3b82f6" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/>
-          <path d="${svgPath(liqVals)}"   fill="none" stroke="#8b5cf6" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/>
-          <path d="${svgPath(lucroVals)}" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/>
-          <!-- Dots with glow -->
-          ${fatVals.map((v,i)=>`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(v).toFixed(1)}" r="4" fill="#3b82f6" filter="url(#glow)" opacity="0.8"/>`).join('')}
-          ${liqVals.map((v,i)=>v>0?`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(v).toFixed(1)}" r="4" fill="#8b5cf6" filter="url(#glow)" opacity="0.8"/>`:'').join('')}
-          ${lucroVals.map((v,i)=>v!==0?`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(v).toFixed(1)}" r="3.5" fill="#10b981" filter="url(#glow)" opacity="0.85"/>`:'').join('')}
-          <!-- X labels -->
-          ${(singleDay?dias:chartDias).filter((_,i)=>i%labStep===0||i===(singleDay?dias:chartDias).length-1).map(d=>{
-            const i = chartDias.indexOf(d);
-            return i>=0&&d?`<text x="${xOf(i).toFixed(1)}" y="${H+18}" fill="#9ca3af" font-size="11" text-anchor="middle" font-weight="500">${d}</text>`:'';
-          }).join('')}
-        </svg>
-      </div>
+      <div class="vg-area"><canvas id="vg-canvas" role="img" aria-label="Faturamento, líquido do marketplace e lucro por dia"></canvas></div>
     </div>
 
     <!-- ADS, Lucro pós-ADS e Visitas/Pedidos/Faturamento — mesmo grid de 4 colunas e
@@ -1640,7 +1654,116 @@ Router.register('vendas', async (params, el) => {
 
 
   // ── Buscar pedidos ───────────────────────────────────────────
-  async function buscarPedidos() {
+  // ── Base sincronizada (servidor, a cada 15 min) ───────────────────────────
+  // Shopee e Mercado Livre vêm prontos da base (pedidos com taxas reais), sem
+  // chamar a API pedido a pedido — a tela abre em segundos, igual ao Gestor
+  // Seller. Conta só é lida da base se o histórico dela cobre o período; o resto
+  // (Amazon, Magalu, conta ainda sincronizando) segue pela busca antiga, na API.
+  const STORAGE_THUMBS = 'glr_vendas_thumbs'; // { itemId: url } — imagens já buscadas
+  let thumbs = (() => { try { return JSON.parse(localStorage.getItem(STORAGE_THUMBS) || '{}'); } catch (e) { return {}; } })();
+  const idNaBase = c => String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id);
+  const diaBR = ts => new Date(ts).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+  function pedidoDaBaseVendas(mkt, r, contaId) {
+    const valor = parseFloat(r.valor_bruto) || 0;
+    const status = r.situacao === 'devolvido' ? 'devolvido' : (r.status_original || '');
+    const ts = Date.parse(r.criado_em);
+    const liq = r.liquido != null ? parseFloat(r.liquido) : null;
+    const brutos = Array.isArray(r.itens) ? r.itens : [];
+    if (mkt === 'shopee') {
+      // Shopee: chave de produto = nome (igual à busca antiga — preserva custos já salvos)
+      const itens = brutos.map(i => ({ nome: i.nome || '—', qtd: parseInt(i.qtd) || 1, preco: parseFloat(i.preco) || 0, imagem: thumbs[`s:${i.item_id}`] || '', sku: i.sku || '', shopeeItemId: i.item_id }));
+      const taxas = liq != null && r.taxas ? { ...r.taxas, liquido: liq } : (r.situacao === 'valido' ? { liquido: valor, comissao: 0, taxaServico: 0, imposto: 0, frete: 0, voucher: 0 } : null);
+      const frete = parseFloat(r.frete) || 0;
+      return { id: r.pedido_id, plataforma: 'Shopee', contaId, shopId: r.conta_id, data: diaBR(ts), dataTs: ts,
+        produto: itens.length > 1 ? `${itens[0].nome} (+${itens.length - 1})` : (itens[0]?.nome || r.pedido_id), imagem: itens[0]?.imagem || '',
+        qtd: itens.reduce((t, i) => t + i.qtd, 0) || 1, valor, valorTotal: valor + frete, freteComprador: frete, status, itens, taxas, _base: true };
+    }
+    const tarifa = parseFloat(r.taxas?.tarifa_venda) || 0;
+    const itens = brutos.map(i => ({ nome: i.nome || '—', qtd: parseInt(i.qtd) || 1, preco: parseFloat(i.preco) || 0, imagem: thumbs[i.item_id] || '', itemId: i.item_id || '', sku: i.sku || '', saleFee: parseFloat(i.tarifa_venda) || 0 }));
+    return { id: r.pedido_id, plataforma: 'Mercado Livre', contaId, meliUserId: r.conta_id, data: diaBR(ts), dataTs: ts,
+      produto: itens[0]?.nome || '—', imagem: itens[0]?.imagem || '', qtd: itens.reduce((t, i) => t + i.qtd, 0), valor, status,
+      paymentId: r.taxas?.payment_id || null, itens,
+      // Sem recebimento ainda → líquido estimado = valor − tarifa (mesma regra da busca antiga e do Financeiro)
+      taxas: { liquido: liq != null ? liq : valor - tarifa, comissao: tarifa, taxaServico: 0, imposto: 0, frete: liq != null ? (parseFloat(r.frete) || 0) : null, voucher: 0 },
+      _base: true };
+  }
+
+  async function carregarBaseVendas(contasAlvo, dataFrom, dataTo) {
+    const out = { cobertas: new Set(), pedidos: [] };
+    if (!window.BaseDados || typeof _sb === 'undefined') return out;
+    const base = await BaseDados.carregar();
+    const ok = contasAlvo.filter(c => { const m = BaseDados.mktDe(c.marketplace); return m && BaseDados.cobre(base[BaseDados.chave(m, idNaBase(c))], dataFrom); });
+    if (!ok.length) return out;
+    const ini = new Date(`${dataFrom}T00:00:00-03:00`).toISOString();
+    const fim = new Date(new Date(`${dataTo}T00:00:00-03:00`).getTime() + 86400000).toISOString();
+    await Promise.all(['shopee', 'ml'].map(async mkt => {
+      const doMkt = ok.filter(c => BaseDados.mktDe(c.marketplace) === mkt);
+      if (!doMkt.length) return;
+      const contaDe = Object.fromEntries(doMkt.map(c => [idNaBase(c), c.external_id]));
+      for (let off = 0; off < 200000; off += 1000) {
+        const { data, error } = await _sb.from('glr_pedidos')
+          .select('conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto,frete,liquido,taxas,itens')
+          .eq('marketplace', mkt).in('conta_id', Object.keys(contaDe)).gte('criado_em', ini).lt('criado_em', fim)
+          .order('criado_em').order('pedido_id').range(off, off + 999);
+        if (error) throw error;
+        for (const r of (data || [])) out.pedidos.push(pedidoDaBaseVendas(mkt, r, contaDe[r.conta_id]));
+        if (!data || data.length < 1000) break;
+      }
+      doMkt.forEach(c => out.cobertas.add(c.external_id));
+    }));
+    return out;
+  }
+
+  // Imagens dos produtos vindos da base: busca em segundo plano só as que faltam
+  // (as mais vendidas primeiro) e guarda — na próxima abertura já aparecem na hora.
+  let _buscandoImagens = false;
+  async function completarImagens() {
+    if (_buscandoImagens) return;
+    const falta = new Map(); // chave → { mkt, conta, id, fat }
+    for (const p of pedidos) {
+      if (!p._base) continue;
+      for (const i of (p.itens || [])) {
+        const k = p.plataforma === 'Shopee' ? `s:${i.shopeeItemId}` : i.itemId;
+        if (!k || k === 's:undefined' || thumbs[k] !== undefined) continue;
+        const f = falta.get(k) || { mkt: p.plataforma, conta: p.plataforma === 'Shopee' ? p.shopId : p.meliUserId, id: p.plataforma === 'Shopee' ? i.shopeeItemId : i.itemId, fat: 0 };
+        f.fat += i.preco * i.qtd; falta.set(k, f);
+      }
+    }
+    if (!falta.size) return;
+    _buscandoImagens = true;
+    try {
+      const lista = [...falta.entries()].sort((a, b) => b[1].fat - a[1].fat).slice(0, 200);
+      const grupos = {};
+      for (const [k, f] of lista) (grupos[`${f.mkt}|${f.conta}`] = grupos[`${f.mkt}|${f.conta}`] || []).push([k, f]);
+      await _mapLimit(Object.entries(grupos), 4, async ([g, itens]) => {
+        const [mkt, conta] = g.split('|');
+        for (let i = 0; i < itens.length; i += mkt === 'Shopee' ? 50 : 20) {
+          const lote = itens.slice(i, i + (mkt === 'Shopee' ? 50 : 20));
+          try {
+            if (mkt === 'Shopee') {
+              const rd = await MarketplaceAPI.call('shopee_get_items_batch', { shopId: conta, item_id_list: lote.map(([, f]) => f.id) });
+              const det = rd?.data?.response?.item_list || rd?.data?.item_list || [];
+              const porId = Object.fromEntries(det.map(d => [String(d.item_id), d.image?.image_url_list?.[0] || '']));
+              lote.forEach(([k, f]) => { thumbs[k] = porId[String(f.id)] || ''; });
+            } else {
+              const det = await _mlDetalhesItens(conta, lote.map(([, f]) => f.id));
+              lote.forEach(([k, f]) => { const b = det[f.id]; thumbs[k] = (b?.secure_thumbnail || b?.thumbnail || '').replace(/^http:/, 'https:'); });
+            }
+          } catch (e) {}
+        }
+      });
+      try { localStorage.setItem(STORAGE_THUMBS, JSON.stringify(thumbs)); } catch (e) {}
+      for (const p of pedidos) {
+        if (!p._base) continue;
+        (p.itens || []).forEach(i => { const k = p.plataforma === 'Shopee' ? `s:${i.shopeeItemId}` : i.itemId; if (thumbs[k]) i.imagem = thumbs[k]; });
+        p.imagem = p.itens?.[0]?.imagem || p.imagem;
+      }
+      renderLista();
+    } finally { _buscandoImagens = false; }
+  }
+
+  async function buscarPedidos(opts = {}) {
     const apiKey = localStorage.getItem('glr_mc_apikey')||'';
     const statusEl = document.getElementById('vendas-status');
     const btnEl    = document.getElementById('btn-buscar');
@@ -1648,25 +1771,35 @@ Router.register('vendas', async (params, el) => {
     // Trava: não busca nada até o usuário escolher pelo menos uma conta.
     // Buscar "todas as contas" de uma vez empilha chamada em cima de chamada
     // e já causou bug de dados — melhor forçar a escolha explícita.
-    if (filtroContasSel.size === 0) {
-      if (statusEl) statusEl.innerHTML = '⚠️ Selecione ao menos uma <strong>conta</strong> no filtro acima para buscar os pedidos.';
-      pedidos = [];
-      renderLista();
-      return;
-    }
+    // Sem conta escolhida = todas as contas que já estão na base (leitura rápida).
+    // A busca pela API, conta a conta, continua exigindo escolha explícita.
+    if (_buscandoPedidos) { _recarregarDepois = opts; return; } // roda de novo ao terminar, com o filtro novo
+    _buscandoPedidos = true;
     if (btnEl)    { btnEl.disabled=true; btnEl.textContent='⏳ Buscando...'; }
-    if (statusEl) statusEl.textContent='Conectando...';
+    if (statusEl && !opts.silencioso) statusEl.textContent='Carregando da base...';
 
     try {
-      const r = await MarketplaceAPI.call('list_accounts');
-      contas  = r.data?.accounts||[];
-      renderFiltroEmpresaConta();
+      if (!contas.length) {
+        const r = await MarketplaceAPI.call('list_accounts');
+        contas  = r.data?.accounts||[];
+        renderFiltroEmpresaConta();
+      }
       const { dataFrom, dataTo } = _periodoParaDatas();
 
-      pedidos = [];
+      // 1º a base (Shopee/ML) — contas sem seleção = todas
+      const alvoBase = filtroContasSel.size ? contas.filter(c => filtroContasSel.has(c.external_id)) : contas;
+      let viaBase = { cobertas: new Set(), pedidos: [] };
+      try { viaBase = await carregarBaseVendas(alvoBase, dataFrom, dataTo); }
+      catch (e) { console.warn('[Vendas] base indisponível, seguindo pela API:', e.message); }
+      // Pedidos de contas fora da base (Amazon/Magalu, vindos da API/cache) são mantidos
+      const deFora = pedidos.filter(p => !p._base && !viaBase.cobertas.has(p.contaId));
+      pedidos = viaBase.pedidos;
 
-      // Respeita filtro de conta/empresa selecionado — só busca o que está no filtro
-      const contasParaBuscar = contas.filter(c => filtroContasSel.has(c.external_id));
+      // Respeita filtro de conta/empresa selecionado — só busca na API o que está no filtro e não veio da base
+      // soBase (abertura da tela / base atualizou): não dispara a API — mantém o que já havia das contas de fora
+      if (opts.soBase) pedidos.push(...deFora);
+      const contasParaBuscar = opts.soBase ? [] : contas.filter(c => filtroContasSel.has(c.external_id) && !viaBase.cobertas.has(c.external_id));
+      if (contasParaBuscar.length) { pedidos.sort((a,b)=>b.dataTs-a.dataTs); renderLista(); } // mostra a base já, enquanto o resto vem
 
       _diagMostrar('contas_para_buscar', 'lista', {
         filtroContasSel: [...filtroContasSel],
@@ -2106,16 +2239,22 @@ Router.register('vendas', async (params, el) => {
       }
 
       pedidos.sort((a,b)=>b.dataTs-a.dataTs);
-      salvarCache(dataFrom, dataTo);
+      if (pedidos.length <= 3000) salvarCache(dataFrom, dataTo); // volume grande vem da base em segundos — não vale lotar o navegador
       _backfillCatalogoCusto();
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
-      if (statusEl) statusEl.innerHTML=`${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 7px;border-radius:8px;">💾 salvo</span>`;
+      const selo = viaBase.cobertas.size && !contasParaBuscar.length
+        ? `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 7px;border-radius:8px;">⚡ base automática · atualiza sozinha</span>`
+        : `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 7px;border-radius:8px;">💾 salvo</span>`;
+      if (statusEl) statusEl.innerHTML=`${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;${selo}`;
       renderLista();
+      completarImagens();
 
     } catch(e) {
       if (statusEl) statusEl.textContent=`Erro: ${e.message}`;
     } finally {
+      _buscandoPedidos = false;
       if (btnEl){ btnEl.disabled=false; btnEl.textContent='🔄 Atualizar'; }
+      if (_recarregarDepois) { const o = _recarregarDepois; _recarregarDepois = null; buscarPedidos(o); }
     }
   }
 
@@ -2348,7 +2487,18 @@ Router.register('vendas', async (params, el) => {
         <div id="vendas-lista" style="padding:24px;text-align:center;color:var(--text-muted);">Carregando pedidos...</div>
       </div>
     </div>
-  </div>`;
+  </div>
+  <style>
+    .vg-card{padding:20px 22px 14px;}
+    .vg-topo{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
+    .vg-titulo{font-size:15px;font-weight:700;color:var(--text-primary);}
+    .vg-sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
+    .vg-legenda{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text-secondary);}
+    .vg-legenda span{display:flex;align-items:center;gap:6px;}
+    .vg-legenda i{width:14px;height:3px;border-radius:2px;display:inline-block;}
+    .vg-area{position:relative;height:280px;width:100%;}
+    @media (max-width:640px){.vg-area{height:220px;}}
+  </style>`;
 
   document.getElementById('sel-periodo').addEventListener('change', e => {
     filtroPeriodo=e.target.value;
@@ -2360,7 +2510,7 @@ Router.register('vendas', async (params, el) => {
   document.getElementById('sel-plat').addEventListener('change', e => { filtroPlat=e.target.value; renderLista(); });
   document.getElementById('inp-date-from').addEventListener('change', e => { customFrom=e.target.value; });
   document.getElementById('inp-date-to').addEventListener('change',   e => { customTo=e.target.value; });
-  document.getElementById('btn-buscar').addEventListener('click', buscarPedidos);
+  document.getElementById('btn-buscar').addEventListener('click', () => buscarPedidos());
   document.getElementById('tab-dashboard').addEventListener('click', () => setAba('dashboard'));
   document.getElementById('tab-pedidos').addEventListener('click',   () => setAba('pedidos'));
   document.getElementById('tab-oportunidades').addEventListener('click', () => setAba('oportunidades'));
@@ -2388,11 +2538,17 @@ Router.register('vendas', async (params, el) => {
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
       if (statusEl) statusEl.innerHTML = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;">📦 cache ${fmtAgo(at)}</span>`;
       renderLista();
-    } else {
-      // Sem cache: não busca nada sozinho — espera o usuário escolher a conta,
-      // evitando disparar chamada em cima de chamada pra todas as contas de uma vez
-      if (statusEl) statusEl.innerHTML = '⚠️ Selecione ao menos uma <strong>conta</strong> no filtro acima para buscar os pedidos.';
-      renderLista();
     }
+    // A base é leitura rápida (sem API pedido a pedido): já carrega ao abrir. Contas
+    // fora da base (Amazon/Magalu) só são buscadas na API quando escolhidas no filtro.
+    buscarPedidos({ silencioso: !!at, soBase: true });
   })();
+
+  // Base sincronizou (a cada 15 min) → atualiza a tela sozinha, sem clique
+  const _vendasAoAtualizarBase = () => {
+    if (!document.getElementById('vendas-lista')) { window.removeEventListener('glr-base-atualizada', _vendasAoAtualizarBase); return; }
+    buscarPedidos({ silencioso: true, soBase: true });
+  };
+  window.addEventListener('glr-base-atualizada', _vendasAoAtualizarBase);
+  if (window.BaseDados) BaseDados.iniciarTempoReal();
 });
