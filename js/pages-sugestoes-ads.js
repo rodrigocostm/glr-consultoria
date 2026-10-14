@@ -150,7 +150,8 @@ async function executarSugestao(s) {
     const novoValor = parseFloat(s.valor_sugerido_numero);
     if (!(novoValor > 0)) throw new Error('valor_sugerido_numero inválido pra orçamento');
     if (s.marketplace === 'shopee') {
-      await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId, campaign_id: campanhaIdShopee, campaign_budget: novoValor });
+      // Formato validado ao vivo (ver pages-agente.js): params.edit_action/budget/reference_id + campaign_id no nível de cima.
+      await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId, campaign_id: Number(campanhaIdShopee), params: { campaign_id: Number(campanhaIdShopee), budget: novoValor, edit_action: 'change_budget', reference_id: `glr-sug-${Date.now()}-${campanhaIdShopee}` } });
     } else {
       await MarketplaceAPI.call('ml_ads_update_campaign', { campaign_id: String(s.campanha_id), meliUserId: s.conta_id, budget: novoValor });
     }

@@ -1819,7 +1819,10 @@ window._adsSalvarOrcamento = async function() {
       const meliId = contaAtual?.param_to_use?.meliUserId || contaAtual?.external_id;
       await MarketplaceAPI.call('ml_ads_update_campaign', { campaign_id: String(_adsModalCampId), meliUserId: meliId, budget: novoValor });
     } else {
-      await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: _adsModalCampId, campaign_budget: novoValor });
+      // Formato validado ao vivo: passthrough de edit_manual_product_ads exige
+      // params.edit_action="change_budget", params.budget e params.reference_id;
+      // campaign_id também no nível de cima (o conector valida ali).
+      await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: Number(_adsModalCampId), params: { campaign_id: Number(_adsModalCampId), budget: novoValor, edit_action: 'change_budget', reference_id: `glr-ads-${Date.now()}-${_adsModalCampId}` } });
     }
     msg.textContent = '✅ Orçamento atualizado!'; msg.style.color = '#16a34a';
     setTimeout(() => { document.getElementById('ads-modal-orc').style.display = 'none'; buscarDados(true); }, 1200);

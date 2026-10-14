@@ -1012,8 +1012,12 @@
           // ="change_budget", params.budget (não campaign_budget) e um
           // params.reference_id único, confirmado ao vivo (sem isso a Shopee
           // rejeita com "Invalid param type" / "EditAction is required").
+          // campaign_id também no nível de cima: o conector passou a validar ali
+          // ("campaign_id obrigatorio", 14/10/2026) — dentro de params continua
+          // sendo o que vai pra Shopee.
           await MarketplaceAPI.call('shopee_ads_edit_campaign', {
             shopId: contaId,
+            campaign_id: Number(campaignId),
             params: {
               campaign_id: Number(campaignId),
               budget: valor,
@@ -1158,6 +1162,9 @@
       state.processandoAlertaId = logId;
       render();
       try {
+        if (tipoAcao === 'ads' && !Number.isFinite(Number(d.campaign_id))) {
+          throw new Error(`a sugestão não tem uma campanha válida (campaign_id "${d.campaign_id}"). Rejeite e peça de novo ao agente.`);
+        }
         if (tipoAcao === 'ads') {
           if (d.retomar === true) {
             // Reativar de verdade na Shopee; se a sugestão trouxe também uma
@@ -1173,6 +1180,7 @@
           } else {
             await MarketplaceAPI.call('shopee_ads_edit_campaign', {
               shopId: l.conta_id,
+              campaign_id: Number(d.campaign_id), // conector valida no nível de cima também
               params: { campaign_id: Number(d.campaign_id), budget: d.budget_sugerido, edit_action: 'change_budget', reference_id: `glr-aprovado-${Date.now()}-${d.campaign_id}` },
             });
           }
