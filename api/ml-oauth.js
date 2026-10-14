@@ -5,6 +5,7 @@
 // liberou escrita para integrações"). O app da GLR (5910746940823924) tem a
 // permissão "Publicidade de um produto: leitura e escrita". Esta rota:
 //   GET /api/ml-oauth                 → manda o vendedor autorizar o app no ML
+//                                       (com PKCE S256 — o app exige)
 //   GET /api/ml-oauth?code=…&state=…  → volta do ML: troca o código por token,
 //                                       guarda (só o servidor lê) e testa LEITURA
 //                                       de Product Ads na conta
@@ -44,6 +45,25 @@ async function sbLerPrivado(chave) {
   });
   if (!r.ok) return null;
   return (await r.json())[0]?.valor || null;
+}
+
+// PKCE (o app da GLR exige "PKCE necessário"): o code_verifier fica guardado no
+// servidor por 20 min, ligado a um nonce que vai no state — nunca passa pelo navegador.
+const b64url = buf => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+async function novoPkce() {
+  const nonce = b64url(crypto.randomBytes(12));
+  const verifier = b64url(crypto.randomBytes(48));
+  const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+  await sbUpsertPrivado(`ml_pkce:${nonce}`, JSON.stringify({ verifier, ts: Date.now() }));
+  return { nonce, challenge };
+}
+async function verifierDoNonce(nonce) {
+  const bruto = await sbLerPrivado(`ml_pkce:${nonce}`);
+  if (!bruto) return null;
+  const d = JSON.parse(bruto);
+  if (Date.now() - d.ts > 20 * 60 * 1000) return null;
+  await sbUpsertPrivado(`ml_pkce:${nonce}`, JSON.stringify({ usado: true, ts: 0 })); // uso único
+  return d.verifier || null;
 }
 
 async function trocarToken(params) {
@@ -160,11 +180,12 @@ module.exports = async function handler(req, res) {
 
     // 2) Volta do ML com o código de autorização
     if (q.code) {
-      const [ts, sig] = String(q.state || '').split('.');
-      if (!ts || !sig || assinar(`estado:${ts}`) !== sig || Date.now() - parseInt(ts, 10) > 20 * 60 * 1000) {
-        return res.status(403).send(pagina('Autorização inválida', '<p class="erro">O link de autorização venceu. Abra <a href="/api/ml-oauth">/api/ml-oauth</a> de novo.</p>'));
+      const [nonce, sig] = String(q.state || '').split('.');
+      const verifier = nonce && sig && assinar(`estado:${nonce}`) === sig ? await verifierDoNonce(nonce) : null;
+      if (!verifier) {
+        return res.status(403).send(pagina('Autorização inválida', '<p class="erro">O link de autorização venceu ou já foi usado. Abra <a href="/api/ml-oauth">/api/ml-oauth</a> de novo.</p>'));
       }
-      const t = await trocarToken({ grant_type: 'authorization_code', code: q.code, redirect_uri: REDIRECT_URI });
+      const t = await trocarToken({ grant_type: 'authorization_code', code: q.code, redirect_uri: REDIRECT_URI, code_verifier: verifier });
       const me = await chamarML(t.access_token, 'GET', '/users/me');
       const dados = await guardarToken(t, me.json?.nickname);
       const leitura = await testarLeitura(t.access_token);
@@ -186,9 +207,9 @@ module.exports = async function handler(req, res) {
     }
 
     // 1) Início: manda autorizar no ML
-    const ts = Date.now();
-    const state = `${ts}.${assinar(`estado:${ts}`)}`;
-    const url = `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${encodeURIComponent(APP_ID)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${encodeURIComponent(state)}`;
+    const { nonce, challenge } = await novoPkce();
+    const state = `${nonce}.${assinar(`estado:${nonce}`)}`;
+    const url = `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${encodeURIComponent(APP_ID)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(challenge)}&code_challenge_method=S256`;
     res.statusCode = 302;
     res.setHeader('Location', url);
     return res.end();
