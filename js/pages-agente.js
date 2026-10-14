@@ -39,7 +39,7 @@
       salvandoConfig: false,
       filtroLog: 'todos',
       dadosAoVivoPorConta: {}, carregandoDadosAoVivo: false,
-      negocioPorConta: {}, carregandoNegocio: false, negocioPeriodo: '7',
+      negocioPorConta: {}, carregandoNegocio: false, negocioPeriodo: 'mes', // a GLR se guia pelo mês (e projeção do mês)
       abcPorConta: {}, carregandoABC: false, abcProgresso: '',
       timelineFiltro: 'todos', timelineMostrar: 5,
       tabOrdem: { col: 'gasto', dir: -1 }, tabTodas: false, tabFiltro: 'todas',
@@ -54,7 +54,10 @@
     function render() { renderShell(); renderChatDrawer(); }
 
     // Servidor sincronizou (a cada 15 min) → atualiza o acompanhamento do GMV Max da Loja
-    window._agGmvRecarregar = () => { if (state.contaAbertaId && state.contaAbertaId !== '__novo__') carregarGmvLoja(state.contaAbertaId, true); };
+    window._agGmvRecarregar = () => {
+      state.baseMapa = null; // cards das contas (TACOS do mês) relêem a base
+      if (state.contaAbertaId && state.contaAbertaId !== '__novo__') carregarGmvLoja(state.contaAbertaId, true); else render();
+    };
     if (!window._agOuvindoBase) {
       window._agOuvindoBase = true;
       window.addEventListener('glr-base-atualizada', () => { if (Router.currentPage === 'agente' && window._agGmvRecarregar) window._agGmvRecarregar(); });
@@ -249,10 +252,15 @@
         let base = null;
         try { base = window.BaseDados ? await BaseDados.carregar(forcar) : null; } catch (e) {}
         const infoBase = base ? base[BaseDados.chave('shopee', shopId)] : null;
-        let atual, anterior, fonteFaturamento = 'api';
+        let atual, anterior, fonteFaturamento = 'api', taxaCancelAtual = null, taxaCancelAnterior = null;
+        // Parte do valor dos pedidos que foi cancelada/devolvida no período — usada
+        // pra tirar os cancelados das "vendas via ADS" da Shopee (que os incluem).
+        const taxaCancel = t => { const b = t.faturamento + t.valor_cancelado + t.valor_devolvido; return b > 0 ? (t.valor_cancelado + t.valor_devolvido) / b : 0; };
         if (infoBase && BaseDados.cobre(infoBase, janelas.anteriorDe)) {
-          atual = { total: BaseDados.somar(infoBase, janelas.atualDe, janelas.atualAte).faturamento, statusFalhou: [] };
-          anterior = { total: BaseDados.somar(infoBase, janelas.anteriorDe, janelas.anteriorAte).faturamento, statusFalhou: [] };
+          const ta = BaseDados.somar(infoBase, janelas.atualDe, janelas.atualAte), tp = BaseDados.somar(infoBase, janelas.anteriorDe, janelas.anteriorAte);
+          atual = { total: ta.faturamento, statusFalhou: [] };
+          anterior = { total: tp.faturamento, statusFalhou: [] };
+          taxaCancelAtual = taxaCancel(ta); taxaCancelAnterior = taxaCancel(tp);
           fonteFaturamento = 'base';
         } else {
           atual = await somaPeriodo(janelas.atualDe, janelas.atualAte);
@@ -282,7 +290,7 @@
 
         const semanaAtual = atual.total, semanaAnterior = anterior.total;
         return {
-          periodo, semanaAtual, semanaAnterior, fonteFaturamento,
+          periodo, semanaAtual, semanaAnterior, fonteFaturamento, taxaCancelAtual, taxaCancelAnterior,
           variacaoPct: semanaAnterior > 0 ? ((semanaAtual - semanaAnterior) / semanaAnterior) * 100 : (semanaAtual > 0 ? Infinity : 0),
           atualizadoEm: new Date().toISOString(),
           incompleto: falhas.length > 0,
@@ -867,11 +875,32 @@
       }
     }
 
+    // ── Mês da conta (base automática): faturamento sem cancelados, ADS, TACOS
+    // do mês até hoje e projeção do mês — a GLR se guia pelo mês projetado. ──
+    function mesDaConta(contaId) {
+      if (!state.baseMapa) {
+        if (!state.carregandoBaseMapa && window.BaseDados) {
+          state.carregandoBaseMapa = true;
+          BaseDados.carregar().then(m => { state.baseMapa = m; }).catch(() => { state.baseMapa = {}; }).finally(() => { state.carregandoBaseMapa = false; render(); });
+        }
+        return null;
+      }
+      const info = state.baseMapa[BaseDados.chave('shopee', String(contaId))];
+      const hoje = new Date(), pad = n => String(n).padStart(2, '0');
+      const ini = `${hoje.getFullYear()}-${pad(hoje.getMonth() + 1)}-01`, fim = `${hoje.getFullYear()}-${pad(hoje.getMonth() + 1)}-${pad(hoje.getDate())}`;
+      if (!BaseDados.cobre(info, ini)) return null;
+      const t = BaseDados.somar(info, ini, fim);
+      const diasMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+      const temAds = BaseDados.cobreAds(info, ini);
+      return { fat: t.faturamento, ads: temAds ? t.ads : null, tacos: temAds && t.faturamento > 0 ? t.ads / t.faturamento * 100 : null, projecao: t.faturamento / hoje.getDate() * diasMes };
+    }
+
     // ── Semáforo de saúde de uma conta: 🔴 alerta pendente há >2 dias OU
-    // TACOS > meta×1.3 | 🟡 TACOS > meta OU qualquer alerta pendente | 🟢 ok ──
+    // TACOS do mês > meta×1.3 | 🟡 TACOS do mês > meta OU qualquer alerta pendente | 🟢 ok ──
     function saudeDaConta(cfg) {
       const relatorio = state.relatorios.find(r => r.conta_id === cfg.conta_id);
-      const tacos = relatorio?.metricas?.tacos_conta;
+      const mes = mesDaConta(cfg.conta_id);
+      const tacos = mes?.tacos ?? relatorio?.metricas?.tacos_mes ?? relatorio?.metricas?.tacos_conta;
       const alertas = state.logs.filter(l => l.conta_id === cfg.conta_id && l.tipo === 'alerta' && l.resultado === 'so_alerta');
       const doisDiasAtras = Date.now() - 2 * 24 * 3600 * 1000;
       const alertaVelho = alertas.some(a => new Date(a.criado_em).getTime() < doisDiasAtras);
@@ -888,7 +917,8 @@
         ${state.contas.map(cfg => {
           const saude = saudeDaConta(cfg);
           const relatorio = state.relatorios.find(r => r.conta_id === cfg.conta_id);
-          const tacos = relatorio?.metricas?.tacos_conta;
+          const mes = mesDaConta(cfg.conta_id);
+          const tacos = mes?.tacos ?? relatorio?.metricas?.tacos_mes ?? relatorio?.metricas?.tacos_conta;
           const pendencias = state.logs.filter(l => l.conta_id === cfg.conta_id && l.tipo === 'alerta' && l.resultado === 'so_alerta').length;
           return `<div class="ag-hud-card" style="--ag-hud-accent:${saude.cor};cursor:pointer;" onclick="window._agAbrirConta('${esc(cfg.conta_id)}')">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
@@ -899,7 +929,8 @@
               <span style="font-size:20px;line-height:1;" title="${saude.label}">${saude.emoji}</span>
             </div>
             <div style="display:flex;gap:18px;margin-top:14px;">
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${tacos != null ? fmtPct(tacos) : '—'}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS mês</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:${tacos != null && cfg.meta_acos ? (tacos <= cfg.meta_acos ? '#16a34a' : tacos <= cfg.meta_acos * 1.3 ? '#d97706' : '#dc2626') : 'inherit'};">${tacos != null ? fmtPct(tacos) : '—'}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">Projeção mês</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${mes ? R$(mes.projecao).replace(/,\d{2}$/, '') : '—'}</div></div>
               <div><div class="ag-hud-label" style="margin-bottom:2px;">Fila</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:${pendencias ? '#d97706' : 'inherit'};">${pendencias}</div></div>
             </div>
           </div>`;
@@ -1719,7 +1750,10 @@
         corpo = `<div class="ag-aviso ag-aviso-erro">⚠️ Não consegui buscar os indicadores: ${h(n.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._agAtualizarTudo()">Tentar de novo</button></div>`;
       } else {
         const fat = n.semanaAtual, fatAnt = n.semanaAnterior, A = n.adsAtual, P = n.adsAnterior;
-        const cards = [kpiCard(n.fonteFaturamento === 'base' ? 'Faturamento (sem cancelados)' : 'Faturamento (sem cancelados, API)', R$(fat), `${varChip(n.variacaoPct)} vs ${R$(fatAnt)}`, '#6366f1')];
+        // Mês atual: projeção linear do mês (mesma conta da Projeção de Crescimento)
+        const hojeD = new Date(), diasMes = new Date(hojeD.getFullYear(), hojeD.getMonth() + 1, 0).getDate();
+        const fatorProj = p === 'mes' && hojeD.getDate() > 0 ? diasMes / hojeD.getDate() : null;
+        const cards = [kpiCard(n.fonteFaturamento === 'base' ? 'Faturamento (sem cancelados)' : 'Faturamento (sem cancelados, API)', R$(fat), `${varChip(n.variacaoPct)} vs ${R$(fatAnt)}${fatorProj ? ` · projeção do mês <b>${R$(fat * fatorProj)}</b>` : ''}`, '#6366f1')];
         let notas = '';
         if (A) {
           const tacos = fat > 0 ? A.gasto / fat * 100 : (A.gasto > 0 ? Infinity : 0);
@@ -1729,14 +1763,23 @@
           const larg = !meta || tacos === Infinity ? 100 : Math.min(100, tacos / (meta * 1.6) * 100);
           const veredito = !meta ? 'sem meta configurada' : tacos <= meta ? 'dentro da meta' : tacos <= meta * 1.3 ? 'um pouco acima da meta' : 'bem acima da meta';
           const medidor = meta ? `<div class="ag-meter"><div class="ag-meter-fill" style="width:${larg}%;background:${corTacos};"></div><div class="ag-meter-meta" style="left:${100 / 1.6}%;" title="Meta ${fmtPct(meta)}"></div></div>` : '';
-          cards.push(kpiCard(`${sigla('TACOS')} vs meta`, fmtPct(tacos), `${medidor}meta ${meta != null ? fmtPct(meta) : '—'} · ${veredito}${tacosAnt ? ` · ${varChip((tacos - tacosAnt) / tacosAnt * 100, true)}` : ''}`, corTacos, corTacos));
+          cards.push(kpiCard(`${sigla('TACOS')}${p === 'mes' ? ' do mês' : ''} vs meta`, fmtPct(tacos), `${medidor}meta ${meta != null ? fmtPct(meta) : '—'} · ${veredito}${tacosAnt ? ` · ${varChip((tacos - tacosAnt) / tacosAnt * 100, true)}` : ''}`, corTacos, corTacos));
           cards.push(kpiCard(`Investimento em ${sigla('ADS')}`, R$(A.gasto), `${P && P.gasto > 0 ? varChip((A.gasto - P.gasto) / P.gasto * 100, true) + ' ' : ''}vs ${R$(P ? P.gasto : 0)}`, '#0ea5e9'));
-          const gmvAcima = fat > 0 && A.gmv > fat;
-          cards.push(kpiCard(`Vendas via ${sigla('ADS')} (${sigla('GMV')})`, R$(A.gmv), `${P && P.gmv > 0 ? varChip((A.gmv - P.gmv) / P.gmv * 100) + ' ' : ''}vs ${R$(P ? P.gmv : 0)}${gmvAcima ? ' · ⚠️ acima do faturamento (veja a nota)' : ''}`, '#22d3ee'));
-          const acos = A.gmv > 0 ? A.gasto / A.gmv * 100 : (A.gasto > 0 ? Infinity : 0);
-          const acosAnt = P && P.gmv > 0 ? P.gasto / P.gmv * 100 : null;
-          cards.push(kpiCard(sigla('ACOS'), fmtPct(acos), `${acosAnt ? varChip((acos - acosAnt) / acosAnt * 100, true) + ' ' : ''}${acosAnt != null ? `vs ${fmtPct(acosAnt)}` : ''}`, '#d97706', corAcos(acos, cfg)));
-          if (gmvAcima) notas += `<div class="ag-nota">ℹ️ <b>Por que as vendas via ADS passam do faturamento?</b> O ${sigla('GMV')} é a atribuição da Shopee: conta compras de qualquer produto da loja feitas depois do clique no anúncio, antes de descontos e inclusive pedidos que depois foram cancelados. O faturamento soma só o que o comprador pagou. Por isso o primeiro pode superar o segundo — não é erro de janela (os dois usam o mesmo período).</div>`;
+          // A Shopee atribui ao ADS pedidos que depois foram CANCELADOS — por isso
+          // as vendas via ADS dela podem passar do faturamento e o ACOS sair menor
+          // que o TACOS (incoerente). Desconta os cancelados pela taxa de
+          // cancelamento da loja no período (estimativa; a Shopee não diz quais
+          // pedidos atribuídos foram cancelados).
+          const tx = n.taxaCancelAtual, txAnt = n.taxaCancelAnterior;
+          const gmvAj = tx != null ? A.gmv * (1 - tx) : A.gmv;
+          const gmvAjAnt = P ? (txAnt != null ? P.gmv * (1 - txAnt) : P.gmv) : 0;
+          cards.push(kpiCard(`Vendas via ${sigla('ADS')}${tx != null ? ' (sem cancelados)' : ` (${sigla('GMV')})`}`, R$(gmvAj), `${gmvAjAnt > 0 ? varChip((gmvAj - gmvAjAnt) / gmvAjAnt * 100) + ' ' : ''}vs ${R$(gmvAjAnt)}${tx != null ? `<br><span style="opacity:.8;">Shopee: ${R$(A.gmv)} (inclui ${fmtPct(tx * 100)} cancelado)</span>` : ''}`, '#22d3ee'));
+          const acos = gmvAj > 0 ? A.gasto / gmvAj * 100 : (A.gasto > 0 ? Infinity : 0);
+          const acosAnt = P && gmvAjAnt > 0 ? P.gasto / gmvAjAnt * 100 : null;
+          const acosShopee = A.gmv > 0 ? A.gasto / A.gmv * 100 : null;
+          cards.push(kpiCard(sigla('ACOS'), fmtPct(acos), `${acosAnt ? varChip((acos - acosAnt) / acosAnt * 100, true) + ' ' : ''}${acosAnt != null ? `vs ${fmtPct(acosAnt)}` : ''}${tx != null && acosShopee != null ? `<br><span style="opacity:.8;">na Shopee (com cancelados): ${fmtPct(acosShopee)}</span>` : ''}`, '#d97706', corAcos(acos, cfg)));
+          if (tx != null) notas += `<div class="ag-nota">ℹ️ <b>Vendas via ADS e ACOS sem cancelados.</b> A Shopee atribui ao anúncio pedidos que depois foram cancelados (nesta loja, ${fmtPct(tx * 100)} do valor dos pedidos do período foi cancelado ou devolvido). Sem descontar, as vendas via ADS passam do faturamento e o ${sigla('ACOS')} fica menor que o ${sigla('TACOS')}, o que não faz sentido. Aqui o valor da Shopee é reduzido pela taxa de cancelamento da loja (estimativa); o número original aparece embaixo de cada card.</div>`;
+          else if (fat > 0 && A.gmv > fat) notas += `<div class="ag-nota">ℹ️ As vendas via ADS da Shopee incluem pedidos que depois foram cancelados — por isso passam do faturamento. Quando a base automática cobrir este período, o valor aparece já sem os cancelados.</div>`;
         } else {
           cards.push(`<div class="ag-kpi" style="--ag-hud-accent:#dc2626;grid-column:span 4;"><div class="ag-hud-label">Dados de ADS</div><div class="ag-hud-sub">Não consegui buscar o investimento em ADS agora${n.adsErro ? ` (${h(n.adsErro)})` : ''}. <button class="btn btn-secondary btn-sm" onclick="window._agAtualizarTudo()">Tentar de novo</button></div></div>`);
         }
@@ -1946,9 +1989,18 @@
       const isoMenos = n => { const d = new Date(brt); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
       const soma = (obj, de, ate) => Object.entries(obj).reduce((s, [d, v]) => d >= de && d <= ate ? s + (parseFloat(v) || 0) : s, 0);
       const somaTot = (de, ate) => Object.entries(g.totais).reduce((s, [d, v]) => d >= de && d <= ate ? s + (parseFloat(v.ads) || 0) : s, 0);
-      const hoje = isoMenos(0), ontem = isoMenos(1), de7 = isoMenos(7), de14 = isoMenos(14), ate14 = isoMenos(8);
-      const g7 = soma(g.gasto, de7, ontem), v7 = soma(g.vendas, de7, ontem), gAnt = soma(g.gasto, de14, ate14), vAnt = soma(g.vendas, de14, ate14);
-      const tot7 = somaTot(de7, ontem);
+      // Mês até hoje (a GLR se guia pelo mês e pela projeção do mês) vs os
+      // mesmos dias do mês anterior.
+      const hoje = isoMenos(0), ontem = isoMenos(1);
+      const mesIni = hoje.slice(0, 8) + '01', diaHoje = parseInt(hoje.slice(8, 10));
+      const antIniD = new Date(`${mesIni}T12:00:00Z`); antIniD.setUTCMonth(antIniD.getUTCMonth() - 1);
+      const antIni = antIniD.toISOString().slice(0, 10);
+      const antFimD = new Date(antIniD); antFimD.setUTCDate(Math.min(diaHoje, new Date(antIniD.getUTCFullYear(), antIniD.getUTCMonth() + 1, 0).getDate()));
+      const antFim = antFimD.toISOString().slice(0, 10);
+      const diasMes = new Date(parseInt(hoje.slice(0, 4)), parseInt(hoje.slice(5, 7)), 0).getDate();
+      const g7 = soma(g.gasto, mesIni, hoje), v7 = soma(g.vendas, mesIni, hoje), gAnt = soma(g.gasto, antIni, antFim), vAnt = soma(g.vendas, antIni, antFim);
+      const tot7 = somaTot(mesIni, hoje);
+      const de14 = antIni;
       const roas = (v, gg) => gg > 0 ? (v / gg).toFixed(1).replace('.', ',') : '—';
       const varPct = (a, b) => b > 0 ? `${a >= b ? '▲' : '▼'} ${Math.abs((a - b) / b * 100).toFixed(0)}%` : '';
       const cor = (a, b) => b > 0 ? (a >= b ? '#10b981' : '#ef4444') : 'var(--text-muted)';
@@ -1959,10 +2011,10 @@
       return `<div class="card ag-gmv">
         <div class="ag-sec-head"><div class="ag-sec-titulo">🏪 GMV Max da Loja <span class="ag-sec-sub">acompanhamento — o agente só reporta, não ajusta esta campanha</span></div></div>
         <div class="ag-gmv-kpis">
-          ${kpi('Investimento 7 dias', R$(g7), histOk ? `<span style="color:${cor(gAnt, g7)};">${varPct(g7, gAnt)}</span> vs 7 anteriores` : 'histórico carregando')}
-          ${kpi('Vendas 7 dias', R$(v7), histOk ? `<span style="color:${cor(v7, vAnt)};">${varPct(v7, vAnt)}</span> vs 7 anteriores` : '')}
-          ${kpi('ROAS 7 dias', roas(v7, g7), histOk ? `antes: ${roas(vAnt, gAnt)}` : '')}
-          ${kpi('Parte do ADS da loja', tot7 > 0 ? `${(g7 / tot7 * 100).toFixed(0)}%` : '—', tot7 > 0 ? `de ${R$(tot7)} investidos` : '')}
+          ${kpi('Investimento no mês', R$(g7), `projeção do mês ${R$(g7 / diaHoje * diasMes)}${histOk ? ` · <span style="color:${cor(gAnt, g7)};">${varPct(g7, gAnt)}</span> vs mesmos dias do mês anterior` : ''}`)}
+          ${kpi('Vendas no mês', R$(v7), histOk ? `<span style="color:${cor(v7, vAnt)};">${varPct(v7, vAnt)}</span> vs mesmos dias do mês anterior` : 'comparação com o mês anterior: histórico carregando')}
+          ${kpi('ROAS do mês', roas(v7, g7), histOk ? `mês anterior (mesmos dias): ${roas(vAnt, gAnt)}` : '')}
+          ${kpi('Parte do ADS da loja no mês', tot7 > 0 ? `${(g7 / tot7 * 100).toFixed(0)}%` : '—', tot7 > 0 ? `de ${R$(tot7)} investidos` : '')}
           ${kpi('Ontem', R$(parseFloat(g.gasto[ontem]) || 0), `vendas ${R$(parseFloat(g.vendas[ontem]) || 0)} · ROAS ${roas(parseFloat(g.vendas[ontem]) || 0, parseFloat(g.gasto[ontem]) || 0)}`)}
           ${kpi('Hoje até agora', R$(parseFloat(g.gasto[hoje]) || 0), `vendas ${R$(parseFloat(g.vendas[hoje]) || 0)}`)}
         </div>

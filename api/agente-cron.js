@@ -565,7 +565,18 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // a GLR se baseia pra decisão, não ACOS isolado por campanha (esse mede
     // eficiência daquela campanha específica, útil pra comparar campanhas
     // entre si, mas não pra dizer se a conta como um todo está saudável).
-    const tacosConta = faturamentoTotalLoja > 0 ? (gastoTotalJanela / faturamentoTotalLoja) * 100 : (gastoTotalJanela > 0 ? Infinity : 0);
+    const tacosJanela = faturamentoTotalLoja > 0 ? (gastoTotalJanela / faturamentoTotalLoja) * 100 : (gastoTotalJanela > 0 ? Infinity : 0);
+    // A GLR se guia pelo MÊS (e projeção do mês), não por 3-5 dias: o TACOS que
+    // decide se a conta tem folga pra acelerar é o do mês até ontem (base). Sem
+    // cobertura da base no mês, usa o da janela, como antes.
+    const mesIniTacos = ontem.iso.slice(0, 8) + '01';
+    let tacosMes = null;
+    if (baseCobre(base, mesIniTacos) && baseCobreAds(base, mesIniTacos)) {
+      const sm = somarBase(base, mesIniTacos, ontem.iso);
+      if (sm.faturamento > 0) tacosMes = (sm.ads / sm.faturamento) * 100;
+    }
+    const tacosConta = tacosMes ?? tacosJanela;
+    const rotuloTacos = tacosMes != null ? 'TACOS do mês' : 'TACOS da conta';
     const tacosDentroDaMeta = !cfg.meta_acos || tacosConta <= cfg.meta_acos * 1.1; // 10% de folga antes de travar aumento de orçamento
 
     // Conta quantas das campanhas listadas estão realmente 'ongoing' — a
@@ -640,7 +651,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= cfg.meta_acos * 0.7 && (budgetAtual > 0 || temRoas)) {
         if (!tacosDentroDaMeta) {
           await logar('sistema', `Aumento represado por TACOS — ${nome}`,
-            `ACOS da campanha (${(acosJanela * 100).toFixed(1)}%) sugeriria acelerar a campanha, mas o TACOS da conta (${tacosConta.toFixed(1)}%) já está acima da meta (${cfg.meta_acos}%) — não aumenta automaticamente enquanto isso não normalizar.`,
+            `ACOS da campanha (${(acosJanela * 100).toFixed(1)}%) sugeriria acelerar a campanha, mas o ${rotuloTacos} (${tacosConta.toFixed(1)}%) já está acima da meta (${cfg.meta_acos}%) — não aumenta automaticamente enquanto isso não normalizar.`,
             { acos: acosJanela * 100, tacos_conta: tacosConta }, 'so_alerta');
           continue;
         }
@@ -653,7 +664,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           const novoRoas = Math.round(Math.max(1, metaRoasConta, roasAtual * 0.85) * 10) / 10;
           if (novoRoas < roasAtual) {
             const variacaoPct = Math.abs((novoRoas - roasAtual) / roasAtual) * 100;
-            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o TACOS da conta (${tacosConta.toFixed(1)}%) ainda tem folga. ${budgetAtual > 0 && !orcamentoSaturado ? `O orçamento diário (${R$(budgetAtual)}) não está sendo consumido por completo (média de ${R$(gastoMedioDia)}/dia), então subir orçamento não ajudaria — o limitador é o lance.` : 'Campanha usa lance automático.'} Baixando a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais agressivo e captar mais volume.`;
+            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o ${rotuloTacos} (${tacosConta.toFixed(1)}%) ainda tem folga. ${budgetAtual > 0 && !orcamentoSaturado ? `O orçamento diário (${R$(budgetAtual)}) não está sendo consumido por completo (média de ${R$(gastoMedioDia)}/dia), então subir orçamento não ajudaria — o limitador é o lance.` : 'Campanha usa lance automático.'} Baixando a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais agressivo e captar mais volume.`;
             if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
               await logar('alerta', `Sugestão de baixar meta de ROI — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, roas_atual: roasAtual, roas_sugerido: novoRoas, tacos_conta: tacosConta }, 'so_alerta');
               alertas.push(nome);
@@ -666,7 +677,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           if (tetoOk) {
             const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, budgetAtual * 1.2) * 100) / 100;
             const variacaoPct = ((novoBudget - budgetAtual) / budgetAtual) * 100;
-            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o TACOS da conta (${tacosConta.toFixed(1)}%) ainda tem folga em relação à meta (${cfg.meta_acos}%). Orçamento atual ${R$(budgetAtual)}, proposto ${R$(novoBudget)} (+${variacaoPct.toFixed(0)}%).`;
+            const explicacao = `ACOS de ${(acosJanela * 100).toFixed(1)}% está bem abaixo da meta, e o ${rotuloTacos} (${tacosConta.toFixed(1)}%) ainda tem folga em relação à meta (${cfg.meta_acos}%). Orçamento atual ${R$(budgetAtual)}, proposto ${R$(novoBudget)} (+${variacaoPct.toFixed(0)}%).`;
             if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
               await logar('alerta', `Sugestão de aumento de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: novoBudget, tacos_conta: tacosConta }, 'so_alerta');
               alertas.push(nome);
@@ -792,7 +803,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // Resumo de execução do dia (sempre grava, mesmo sem nenhuma ação — é o
     // registro de que o agente rodou e revisou a conta)
     await logar('sistema', `Revisão diária concluída — ${decisoes.length} ação(ões), ${alertas.length} alerta(s)`,
-      `Revisadas ${campanhasAtivas} campanhas ativas (de ${campanhas.length} listadas, incluindo histórico antigo). TACOS da conta: ${tacosConta === Infinity ? '∞' : tacosConta.toFixed(1) + '%'} (meta: ${cfg.meta_acos ?? '—'}%). ${decisoes.length} decisão(ões) executada(s) automaticamente, ${alertas.length} alerta(s) aguardando aprovação manual.`,
+      `Revisadas ${campanhasAtivas} campanhas ativas (de ${campanhas.length} listadas, incluindo histórico antigo). ${rotuloTacos}: ${tacosConta === Infinity ? '∞' : tacosConta.toFixed(1) + '%'} (meta: ${cfg.meta_acos ?? '—'}%). ${decisoes.length} decisão(ões) executada(s) automaticamente, ${alertas.length} alerta(s) aguardando aprovação manual.`,
       { campanhas: campanhasAtivas, campanhas_listadas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta }, 'executado');
 
     // 2) Relatório diário com IA
@@ -807,7 +818,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       contexto.mes = { atual: somarBase(base, mesIni, ontem.iso).faturamento, anterior: somarBase(base, antIni, antFim).faturamento };
       contexto.mes.var = variacao(contexto.mes.atual, contexto.mes.anterior);
     }
-    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, gmv_max_janela: gmvMaxJanela, gmv_max_vendas_janela: gmvMaxVendasJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhasAtivas, campanhas_listadas: campanhas.length, fonte_faturamento: fonteFaturamento, fonte_ads: fonteAds, contexto };
+    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, gmv_max_janela: gmvMaxJanela, gmv_max_vendas_janela: gmvMaxVendasJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, tacos_mes: tacosMes, tacos_janela: tacosJanela === Infinity ? null : tacosJanela, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhasAtivas, campanhas_listadas: campanhas.length, fonte_faturamento: fonteFaturamento, fonte_ads: fonteAds, contexto };
     const resumo = await gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem);
     await sbUpsert('glr_agente_relatorios', { data: ontem.iso, conta_id: shopId, cliente_nome: cfg.cliente_nome || null, resumo, metricas }, 'data,conta_id');
 
@@ -846,7 +857,12 @@ async function processarAcompanhamento(cfg, mcApiKey) {
     // Referência dos últimos 7 dias (base): TACOS e ticket médio
     const base = await lerBase('shopee', shopId);
     const s7 = baseCobre(base, isoMenos(ontemIso, 6)) ? somarBase(base, isoMenos(ontemIso, 6), ontemIso) : null;
-    const tacos7 = s7 && s7.faturamento > 0 ? (s7.ads / s7.faturamento) * 100 : null;
+    // TACOS de referência = o do MÊS até ontem (a GLR se guia pelo mês); no dia 1
+    // (mês ainda sem dia fechado) ou sem base no mês, usa os últimos 7 dias.
+    const mesIniA = hojeIso.slice(0, 8) + '01';
+    const sMes = ontemIso >= mesIniA && baseCobre(base, mesIniA) && baseCobreAds(base, mesIniA) ? somarBase(base, mesIniA, ontemIso) : null;
+    const tacos7 = sMes && sMes.faturamento > 0 ? (sMes.ads / sMes.faturamento) * 100 : (s7 && s7.faturamento > 0 ? (s7.ads / s7.faturamento) * 100 : null);
+    const rotuloTacosA = sMes && sMes.faturamento > 0 ? 'TACOS do mês' : 'TACOS dos últimos 7 dias';
     const ticket7 = s7 && s7.pedidos > 0 ? s7.faturamento / s7.pedidos : null;
     const tacosOk = tacos7 == null || !cfg.meta_acos || tacos7 <= cfg.meta_acos * 1.1;
 
@@ -885,11 +901,11 @@ async function processarAcompanhamento(cfg, mcApiKey) {
       if (budget > 0 && hora < 18 && h.gasto >= budget * 0.9 && acosHoje != null && cfg.meta_acos && acosHoje <= cfg.meta_acos * 0.8) {
         if (!tacosOk) {
           const titulo = `Orçamento esgotando, aumento represado por TACOS — ${nome}`;
-          if (!titulosHoje.has(titulo)) await logar('sistema', titulo, `Já gastou ${R$(h.gasto)} de ${R$(budget)} até as ${hora}h com ACOS de ${acosHoje.toFixed(1)}% hoje, mas o TACOS dos últimos 7 dias (${tacos7.toFixed(1)}%) está acima da meta (${cfg.meta_acos}%). Não aumentei.`, { campaign_id: id, gasto_hoje: h.gasto, budget, tacos_7d: tacos7 }, 'so_alerta');
+          if (!titulosHoje.has(titulo)) await logar('sistema', titulo, `Já gastou ${R$(h.gasto)} de ${R$(budget)} até as ${hora}h com ACOS de ${acosHoje.toFixed(1)}% hoje, mas o ${rotuloTacosA} (${tacos7.toFixed(1)}%) está acima da meta (${cfg.meta_acos}%). Não aumentei.`, { campaign_id: id, gasto_hoje: h.gasto, budget, tacos_7d: tacos7 }, 'so_alerta');
         } else if (!cfg.orcamento_max || budget < cfg.orcamento_max) {
           const novo = Math.round(Math.min(cfg.orcamento_max || Infinity, budget * 1.2) * 100) / 100;
           const varPct = ((novo - budget) / budget) * 100;
-          const explicacao = `Até as ${hora}h já gastou ${R$(h.gasto)} de ${R$(budget)} (${Math.round(h.gasto / budget * 100)}% do orçamento) com ACOS de ${acosHoje.toFixed(1)}% hoje, bem abaixo da meta (${cfg.meta_acos}%)${tacos7 != null ? `, e o TACOS dos últimos 7 dias está em ${tacos7.toFixed(1)}%` : ''}. Sem aumento, a campanha sai do ar antes do fim do dia. Orçamento ${R$(budget)} → ${R$(novo)}.`;
+          const explicacao = `Até as ${hora}h já gastou ${R$(h.gasto)} de ${R$(budget)} (${Math.round(h.gasto / budget * 100)}% do orçamento) com ACOS de ${acosHoje.toFixed(1)}% hoje, bem abaixo da meta (${cfg.meta_acos}%)${tacos7 != null ? `, e o ${rotuloTacosA} está em ${tacos7.toFixed(1)}%` : ''}. Sem aumento, a campanha sai do ar antes do fim do dia. Orçamento ${R$(budget)} → ${R$(novo)}.`;
           if (cfg.alerta_variacao_pct && varPct > cfg.alerta_variacao_pct) {
             await logar('alerta', `Sugestão de aumento de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: id, budget_atual: budget, budget_sugerido: novo }, 'so_alerta');
             alertas.push(nome);
@@ -946,7 +962,7 @@ async function processarAcompanhamento(cfg, mcApiKey) {
     const gmvLojaVendasHoje = parseFloat(base.gmvMaxVendas?.[hojeIso]) || 0;
     const gmvTxt = !isNaN(gmvLojaHoje) ? ` GMV Max da Loja hoje: ${R$(gmvLojaHoje)} investidos, ${R$(gmvLojaVendasHoje)} em vendas (ROAS ${gmvLojaHoje > 0 ? (gmvLojaVendasHoje / gmvLojaHoje).toFixed(1) : '—'}).` : '';
     await logar('sistema', `Acompanhamento das ${hora}h — ${decisoes.length} ação(ões), ${alertas.length} alerta(s)`,
-      `Acompanhamento do dia: ${ativas.length} campanhas individuais ativas, ADS gasto hoje nelas ${R$(gastoHojeTotal)}.${gmvTxt}${ritmoTxt}${tacos7 != null ? ` TACOS 7 dias: ${tacos7.toFixed(1)}%.` : ''}`,
+      `Acompanhamento do dia: ${ativas.length} campanhas individuais ativas, ADS gasto hoje nelas ${R$(gastoHojeTotal)}.${gmvTxt}${ritmoTxt}${tacos7 != null ? ` ${rotuloTacosA}: ${tacos7.toFixed(1)}%.` : ''}`,
       { rodada: `${hora}h`, campanhas: ativas.length, gasto_hoje: gastoHojeTotal, gmv_loja_hoje: isNaN(gmvLojaHoje) ? null : gmvLojaHoje, gmv_loja_vendas_hoje: gmvLojaVendasHoje, ritmo, tacos_7d: tacos7, decisoes: decisoes.length, alertas: alertas.length }, 'executado');
     return { conta_id: shopId, rodada: `${hora}h`, decisoes: decisoes.length, alertas: alertas.length, ritmo };
   } catch (e) {
