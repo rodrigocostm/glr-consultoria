@@ -625,8 +625,8 @@ Router.register('vendas', async (params, el) => {
           const d = detalhes[itemId] || {};
           achados.push({
             id: itemId, nome: d.title || `Item ${itemId}`, preco: d.price ?? 0,
-            estoque: d.available_quantity ?? 0,
-            conta: conta.nickname || conta.external_id, mp: 'ML',
+            estoque: d.available_quantity ?? 0, vendasTotal: d.sold_quantity ?? null,
+            contaId: conta.external_id, meliId, conta: contaNome(conta), mp: 'ML',
             link: `https://produto.mercadolivre.com.br/${String(itemId).replace('MLB','MLB-')}`,
           });
         }
@@ -657,20 +657,56 @@ Router.register('vendas', async (params, el) => {
                 achados.push({
                   id: it.item_id, nome: d.item_name || `Item ${it.item_id}`,
                   preco: d.price_min ?? d.price_max ?? 0, estoque: d.total_stock ?? 0,
-                  conta: conta.nickname || conta.external_id, mp: 'Shopee',
+                  contaId: conta.external_id, conta: contaNome(conta), mp: 'Shopee',
                   link: `https://shopee.com.br/product/${conta.external_id}/${it.item_id}`,
                 });
               }
             } catch(e) {
               lote.forEach(it => achados.push({
                 id: it.item_id, nome: `Item ${it.item_id}`, preco: 0, estoque: 0,
-                conta: conta.nickname || conta.external_id, mp: 'Shopee',
+                contaId: conta.external_id, conta: contaNome(conta), mp: 'Shopee',
                 link: `https://shopee.com.br/product/${conta.external_id}/${it.item_id}`,
               }));
             }
           }
         } catch(e) {}
       }
+
+      // ── Potencial de cada anúncio: visitas e vendas ──
+      // ML: visitas desde sempre (1 chamada por anúncio) + vendas desde sempre
+      // (já vêm na listagem). Shopee: vendas desde sempre (get_extra_info, lote
+      // de 50) — a API não traz visitas confiáveis por anúncio. Vendas dos
+      // últimos 30 dias vêm da base (sem chamada).
+      if (status) status.textContent = `Buscando visitas e vendas de ${achados.length} anúncios...`;
+      await _mapLimit(achados.filter(o => o.mp === 'ML'), 8, async o => {
+        try {
+          const r = await MarketplaceAPI.call('raw', { method: 'GET', path: `/visits/items?ids=${o.id}`, meliUserId: o.meliId });
+          const v = parseInt((r?.data || r)?.[o.id]);
+          if (!isNaN(v)) o.visitas = v;
+        } catch (e) {}
+      });
+      const porLojaSh = {};
+      achados.filter(o => o.mp === 'Shopee').forEach(o => (porLojaSh[o.contaId] = porLojaSh[o.contaId] || []).push(o));
+      for (const [shopId, lista] of Object.entries(porLojaSh)) {
+        for (let i = 0; i < lista.length; i += 50) {
+          const lote = lista.slice(i, i + 50);
+          try {
+            const r = await MarketplaceAPI.call('shopee_get_extra_info', { shopId, item_id_list: lote.map(o => o.id).join(',') });
+            const info = Object.fromEntries((r?.data?.response?.item_list || r?.response?.item_list || []).map(x => [String(x.item_id), x]));
+            lote.forEach(o => { const x = info[String(o.id)]; if (x) o.vendasTotal = x.sale ?? null; });
+          } catch (e) {}
+        }
+      }
+      try {
+        const de30 = new Date(ontem); de30.setDate(ontem.getDate() - 29);
+        const vb = await carregarBaseVendas(contas.filter(c => achados.some(o => o.contaId === c.external_id)), fmtDate(de30), fmtDate(ontem));
+        const v30 = {};
+        for (const p of vb.pedidos) {
+          if (isCanceladoVendas(p)) continue;
+          for (const i of (p.itens || [])) { const k = `${p.contaId}|${p.plataforma === 'Shopee' ? i.shopeeItemId : i.itemId}`; v30[k] = (v30[k] || 0) + (parseInt(i.qtd) || 1); }
+        }
+        achados.forEach(o => { o.vendas30 = v30[`${o.contaId}|${o.id}`] || 0; });
+      } catch (e) {}
 
       foraDoAds = achados;
       foraAdsAtualizadoEm = Date.now();
@@ -1118,35 +1154,52 @@ Router.register('vendas', async (params, el) => {
         </div>`;
     }
 
-    const linhas = foraDoAds.map(o => `
+    // Potencial para campanha: vendeu recentemente e/ou tem tráfego que converte
+    const conv = o => o.visitas > 0 && o.vendasTotal != null ? o.vendasTotal / o.visitas * 100 : null;
+    const potencial = o => {
+      const c = conv(o), v30 = o.vendas30 || 0;
+      if (v30 >= 3 || (o.visitas >= 300 && c >= 1)) return { t: '🔥 Alto', cor: '#16a34a', n: 3 };
+      if (v30 >= 1 || (o.vendasTotal || 0) >= 5 || o.visitas >= 150) return { t: '▲ Médio', cor: '#d97706', n: 2 };
+      return { t: '· Baixo', cor: '#94a3b8', n: 1 };
+    };
+    const lista = [...foraDoAds].sort((a, b) => potencial(b).n - potencial(a).n || (b.vendas30 || 0) - (a.vendas30 || 0) || (b.vendasTotal || 0) - (a.vendasTotal || 0) || (b.visitas || 0) - (a.visitas || 0));
+    const nAlto = lista.filter(o => potencial(o).n === 3).length;
+    const th = (t, dir, tip) => `<th style="padding:10px 12px;text-align:${dir || 'left'};color:var(--text-secondary);font-size:11px;text-transform:uppercase;white-space:nowrap;"${tip ? ` title="${tip}"` : ''}>${t}</th>`;
+    const td = (v, forte) => `<td style="padding:10px 12px;text-align:right;color:${forte ? 'var(--text-primary)' : 'var(--text-secondary)'};${forte ? 'font-weight:700;' : ''}font-variant-numeric:tabular-nums;white-space:nowrap;">${v}</td>`;
+    const num = v => v == null ? '<span style="color:var(--text-muted);">—</span>' : Number(v).toLocaleString('pt-BR');
+    const linhas = lista.map(o => {
+      const pt = potencial(o), c = conv(o);
+      return `
       <tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:10px 12px;color:var(--text-primary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(o.nome||'').replace(/"/g,'&quot;')}">${o.mp==='Shopee'?'🟠':'🟡'} ${o.nome||'—'}</td>
-        <td style="padding:10px 12px;color:var(--text-secondary);">${o.conta}</td>
-        <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${o.preco ? R$(o.preco) : '—'}</td>
-        <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${o.estoque || '—'}</td>
-        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:#6366f1;font-size:12px;">Ver anúncio ↗</a>` : ''}</td>
-      </tr>`).join('');
+        <td style="padding:10px 12px;color:var(--text-primary);max-width:340px;" title="${(o.nome||'').replace(/"/g,'&quot;')}"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.mp==='Shopee'?'🟠':'🟡'} ${o.nome||'—'}</div><div style="font-size:11px;color:var(--text-muted);">${o.conta} · ${o.id}</div></td>
+        <td style="padding:10px 12px;"><span style="font-size:11.5px;font-weight:700;color:${pt.cor};white-space:nowrap;">${pt.t}</span></td>
+        ${td(o.mp === 'Shopee' ? '<span style="color:var(--text-muted);" title="A API da Shopee não informa visitas confiáveis por anúncio">—</span>' : num(o.visitas))}
+        ${td(num(o.vendasTotal))}
+        ${td(num(o.vendas30 ?? null), (o.vendas30 || 0) > 0)}
+        ${td(c != null ? c.toFixed(1).replace('.', ',') + '%' : '<span style="color:var(--text-muted);">—</span>')}
+        ${td(o.preco ? R$(o.preco) : '—')}
+        ${td(o.estoque || '—')}
+        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:#6366f1;font-size:12px;white-space:nowrap;">Ver anúncio ↗</a>` : ''}</td>
+      </tr>`;
+    }).join('');
 
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 16px;">
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary);">🚫 ${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS ${foraAdsAtualizadoEm?`<span style="font-size:11px;font-weight:400;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(foraAdsAtualizadoEm)}</span>`:''}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 16px;gap:10px;flex-wrap:wrap;">
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary);">🚫 ${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS${nAlto ? ` · <span style="color:#16a34a;">${nAlto} com potencial alto</span>` : ''} ${foraAdsAtualizadoEm?`<span style="font-size:11px;font-weight:400;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(foraAdsAtualizadoEm)}</span>`:''}
+          <div style="font-size:11.5px;font-weight:400;color:var(--text-muted);margin-top:3px;">Visitas e vendas totais = desde a criação do anúncio (ML). Vendas 30 dias = base automática. Potencial alto: 3+ vendas em 30 dias, ou 300+ visitas convertendo 1% ou mais.</div></div>
         <button id="btn-buscar-fora-ads" class="btn" style="padding:7px 14px;font-size:12px;">🔄 Buscar de novo</button>
       </div>
       ${foraDoAds.length === 0 ? `
         <div class="card" style="padding:32px;text-align:center;color:var(--text-muted);">Todos os anúncios ativos já têm alguma campanha de ADS.</div>
       ` : `
-        <div class="card" style="padding:0;overflow:hidden;">
+        <div class="card" style="padding:0;overflow:hidden;"><div style="overflow-x:auto;">
           <table style="width:100%;border-collapse:collapse;font-size:13px;">
             <thead><tr style="background:var(--bg-card-hover);">
-              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Produto</th>
-              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Conta</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Preço</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Estoque</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;"></th>
+              ${th('Produto')}${th('Potencial')}${th('Visitas (total)', 'right')}${th('Vendas (total)', 'right')}${th('Vendas 30 dias', 'right')}${th('Conversão', 'right', 'vendas totais ÷ visitas totais')}${th('Preço', 'right')}${th('Estoque', 'right')}${th('', 'right')}
             </tr></thead>
             <tbody>${linhas}</tbody>
           </table>
-        </div>
+        </div></div>
       `}`;
   }
 
