@@ -9,6 +9,7 @@
 //   GET /api/ml-oauth?code=…&state=…  → volta do ML: troca o código por token,
 //                                       guarda (só o servidor lê) e testa LEITURA
 //                                       de Product Ads na conta
+//   POST /api/ml-oauth                → avisos do ML (notificações): responde 200
 //   GET /api/ml-oauth?acao=teste-escrita&user=…&sig=… → teste NEUTRO de escrita:
 //                                       regrava o MESMO orçamento de 1 campanha
 // O teste mostra a resposta exata do ML — a documentação de Product Ads mudou
@@ -155,6 +156,13 @@ table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px
 const tabelaPassos = passos => `<table><tr><th>Chamada</th><th>Resposta do ML</th></tr>${passos.map(p => `<tr><td><code>${esc(p.metodo)} ${esc(p.caminho)}</code>${p.versao ? `<br><small>api-version ${esc(p.versao)}</small>` : ''}</td><td class="${p.ok ? 'ok' : 'erro'}"><b>HTTP ${p.status}</b><pre>${esc(p.texto)}</pre></td></tr>`).join('')}</table>`;
 
 module.exports = async function handler(req, res) {
+  // Avisos do ML (URL de notificação do app aponta pra cá): o ML manda POST a cada
+  // pedido/anúncio alterado. Por enquanto só confirma o recebimento (o ML exige
+  // resposta 200 rápida) — o motor de dados já sincroniza a cada 15 min.
+  if (req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).send(JSON.stringify({ ok: true }));
+  }
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   if (!APP_SECRET || !SUPABASE_KEY) {
