@@ -434,6 +434,7 @@ Router.register('vendas', async (params, el) => {
   let buscandoForaDoAds = false;
   let oportAtualizadoEm = null, foraAdsAtualizadoEm = null;
   let falhasOport = 0, falhasForaAds = 0; // anúncios que a API não respondeu na última busca
+  let diagOport = null; // resumo da última busca de visitas sem venda (pra explicar um resultado vazio)
   // Carrega o último resultado salvo — evita ter que clicar em Buscar de novo
   // toda vez que a página é reaberta (não faz nenhuma chamada de API aqui).
   try {
@@ -467,6 +468,7 @@ Router.register('vendas', async (params, el) => {
       const { dataFrom, dataTo } = _periodoParaDatas();
       const achados = [];
       falhasOport = 0;
+      diagOport = { ativos: 0, vendidos: 0, checados: 0, comVisita: 0, exemplo: null, erro: null };
 
       // ── Mercado Livre: visitas escopadas ao período selecionado ──
       // list_items só retorna uma lista de IDs (string) — nome/preço vêm de
@@ -481,6 +483,7 @@ Router.register('vendas', async (params, el) => {
         const itemIds = await _mlListarIdsAtivos(meliIdListagem);
         // Só checa visita de quem NÃO vendeu no período — reduz drasticamente as chamadas
         const semVenda = itemIds.filter(id => !idsVendidosML.has(String(id)));
+        diagOport.ativos += itemIds.length; diagOport.vendidos += itemIds.length - semVenda.length;
         if (status) status.textContent = `Checando visitas: ${conta.nickname||conta.external_id} (${semVenda.length} anúncios sem venda)...`;
 
         const comVisita = [];
@@ -488,10 +491,13 @@ Router.register('vendas', async (params, el) => {
           try {
             const rv = await _tentar(() => MarketplaceAPI.call('ml_visits_item', { meliUserId: meliIdListagem, item_id: String(itemId), date_from: dataFrom, date_to: dataTo }));
             // formatos: {items:[{total_visits}]} (atual), {total_visits}, {results:[{total}]}
-            const it0 = (rv?.data?.items || rv?.items || [])[0];
-            const visitas = it0?.total_visits ?? rv?.data?.total_visits ?? rv?.total_visits ?? (Array.isArray(rv?.data?.results) ? rv.data.results.reduce((s,d)=>s+(d.total||0),0) : 0) ?? 0;
-            if (visitas > 0) comVisita.push({ item_id: itemId, visitas });
-          } catch(e) { falhasOport++; }
+            // Lê total_visits em qualquer formato que o conector devolver (objeto, lista, aninhado)
+            const m = JSON.stringify(rv || {}).match(/"total_visits"\s*:\s*"?(\d+)/);
+            const visitas = m ? parseInt(m[1]) : (Array.isArray(rv?.data?.results) ? rv.data.results.reduce((s,d)=>s+(parseInt(d.total)||0),0) : 0);
+            diagOport.checados++;
+            if (visitas > 0) { diagOport.comVisita++; comVisita.push({ item_id: itemId, visitas }); }
+            else if (!m && !diagOport.exemplo) diagOport.exemplo = JSON.stringify(rv || {}).slice(0, 160);
+          } catch(e) { falhasOport++; if (!diagOport.erro) diagOport.erro = String(e.message || e).slice(0, 120); }
         });
 
         if (status) status.textContent = `Buscando nome/preço (ML): ${conta.nickname||conta.external_id}...`;
@@ -631,7 +637,8 @@ Router.register('vendas', async (params, el) => {
             foraDeAdsIds.push(itemId);
             situacaoAds[itemId] = !temCampanha ? 'Sem campanha'
               : ad?.status === 'hold' ? 'Na campanha, anúncio suspenso pelo ML'
-              : ad?.status === 'paused' ? 'Na campanha, anúncio pausado' : `Na campanha, anúncio ${ad?.status || 'inativo'}`;
+              : ad?.status === 'paused' ? 'Na campanha, anúncio pausado'
+              : ad?.status === 'idle' ? 'Na campanha, anúncio parado (sem entrega)' : `Na campanha, anúncio ${ad?.status || 'inativo'}`;
           } catch(e) {
             // 404 = o anúncio nunca entrou no Product Ads; outro erro = não deu pra checar (fica de fora e é contado)
             if (/404|not.?found|no encontr|não encontr|inexist/i.test(e.message)) { foraDeAdsIds.push(itemId); situacaoAds[itemId] = 'Sem campanha'; }
@@ -1132,7 +1139,7 @@ Router.register('vendas', async (params, el) => {
 
     sec.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período ${oportAtualizadoEm?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(oportAtualizadoEm)}</span>`:''}${falhasOport ? `<div style="font-size:12px;font-weight:600;color:#dc2626;margin-top:3px;">⚠️ ${falhasOport} anúncio(s) não responderam à consulta de visitas (limite da API) — clique em Buscar de novo.</div>` : ''}</div>
+        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período ${oportAtualizadoEm?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(oportAtualizadoEm)}</span>`:''}${falhasOport ? `<div style="font-size:12px;font-weight:600;color:#dc2626;margin-top:3px;">⚠️ ${falhasOport} anúncio(s) não responderam à consulta de visitas (limite da API) — clique em Buscar de novo.</div>` : ''}${diagOport ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">ML: ${diagOport.ativos} anúncios ativos · ${diagOport.vendidos} venderam no período · ${diagOport.checados} sem venda checados · ${diagOport.comVisita} com visita${diagOport.erro ? ` · erro: ${diagOport.erro.replace(/</g,'&lt;')}` : ''}${!diagOport.comVisita && diagOport.exemplo ? ` · resposta da API: <code>${diagOport.exemplo.replace(/</g,'&lt;')}</code>` : ''}</div>` : ''}</div>
         <button id="btn-buscar-oport" class="btn" onclick="buscarOportunidades()" style="padding:7px 14px;font-size:12px;">🔄 Buscar de novo</button>
       </div>
       ${oportunidades.length === 0 ? `
