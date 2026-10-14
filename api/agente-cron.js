@@ -206,7 +206,7 @@ function somarBase(b, de, ate) {
     if (dia < de || dia > ate) continue;
     for (const c of Object.keys(t)) t[c] += parseFloat(v[c]) || 0;
   }
-  t.bruto = t.faturamento + t.valor_cancelado + t.valor_devolvido; // base do TACOS (inclui cancelados, como sempre foi)
+  t.bruto = t.faturamento + t.valor_cancelado + t.valor_devolvido; // com cancelados — só referência; o TACOS usa t.faturamento (sem cancelados)
   return t;
 }
 const variacao = (a, b) => b > 0 ? ((a - b) / b) * 100 : null;
@@ -495,25 +495,24 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     }));
 
     // Faturamento TOTAL da loja na mesma janela (não só o atribuído ao ADS) —
-    // é a base do TACOS. Mesmos status usados no resto do app (shopeeFaturamento
-    // em marketplace-api.js): COMPLETED + READY_TO_SHIP + PROCESSED + SHIPPED +
-    // CANCELLED. Bruto de propósito (inclui CANCELLED): é o que bate com o
-    // "Gestor Seller" (ferramenta terceira que a GLR usa de referência) —
-    // confirmado ao vivo que excluir CANCELLED deixava o número ~40% menor
-    // que a referência real da conta.
+    // é a base do TACOS (regra atual logo abaixo: sem cancelados).
     // Sequencial, NUNCA em paralelo — confirmado ao vivo que disparar as chamadas
     // de status ao mesmo tempo faz o conector devolver dado incompleto pra
     // algumas delas (sem erro, só um total_revenue menor). Mais lento, mas o
     // único jeito confirmado de pegar o valor certo.
-    // Base sincronizada primeiro (instantâneo, mesmo motor das telas). Bruto =
-    // válido + cancelado + devolvido — a mesma base de antes.
+    // Faturamento da loja SEM cancelados (e sem devolução aceita), valor dos
+    // produtos — a mesma regra de Vendas e do Gestor Seller. Corrigido em
+    // 14/10/2026: antes era bruto COM cancelados ("bate com o Gestor Seller"),
+    // mas conferindo na EAP o Gestor Seller exclui os cancelados (R$ 142,9 mil
+    // vs R$ 193,9 mil com cancelados) — o TACOS saía menor que o real.
+    // Base sincronizada primeiro (instantâneo); sem cobertura, API sem CANCELLED.
     const base = await lerBase('shopee', shopId);
     let faturamentoTotalLoja = 0, fonteFaturamento = 'api';
     if (baseCobre(base, inicioJanela.iso)) {
-      faturamentoTotalLoja = somarBase(base, inicioJanela.iso, ontem.iso).bruto;
+      faturamentoTotalLoja = somarBase(base, inicioJanela.iso, ontem.iso).faturamento;
       fonteFaturamento = 'base';
     } else {
-      for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
+      for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED']) {
         try {
           faturamentoTotalLoja += await shopeeFaturamentoPeriodo(mcApiKey, shopId, inicioJanela.iso, ontem.iso, st);
         } catch (e) {}
@@ -847,7 +846,7 @@ async function processarAcompanhamento(cfg, mcApiKey) {
     // Referência dos últimos 7 dias (base): TACOS e ticket médio
     const base = await lerBase('shopee', shopId);
     const s7 = baseCobre(base, isoMenos(ontemIso, 6)) ? somarBase(base, isoMenos(ontemIso, 6), ontemIso) : null;
-    const tacos7 = s7 && s7.bruto > 0 ? (s7.ads / s7.bruto) * 100 : null;
+    const tacos7 = s7 && s7.faturamento > 0 ? (s7.ads / s7.faturamento) * 100 : null;
     const ticket7 = s7 && s7.pedidos > 0 ? s7.faturamento / s7.pedidos : null;
     const tacosOk = tacos7 == null || !cfg.meta_acos || tacos7 <= cfg.meta_acos * 1.1;
 

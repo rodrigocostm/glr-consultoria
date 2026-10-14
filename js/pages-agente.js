@@ -231,9 +231,14 @@
         // limpo como se fosse completo — marca "incompleto" e mostra na tela.
         // Sequencial, NUNCA em paralelo: confirmado ao vivo que disparar as
         // chamadas de status juntas faz o conector devolver dado incompleto.
+        // Faturamento = SEM cancelados (e sem devolução aceita), valor dos produtos
+        // — a mesma regra da tela de Vendas e do Gestor Seller (conferido em
+        // 14/10/2026 na EAP: o número antigo incluía 150 pedidos cancelados,
+        // R$ 46 mil, e deixava o TACOS menor que o real).
+        // 1º a base automática (instantâneo); sem cobertura, a API sem CANCELLED.
         const somaPeriodo = async (inicioISO, fimISO) => {
           let total = 0, statusFalhou = [];
-          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
+          for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED']) {
             try {
               total += await shopeeFaturamentoPeriodo(shopId, inicioISO, fimISO, st);
             } catch (e) { statusFalhou.push(st); }
@@ -241,13 +246,22 @@
           return { total, statusFalhou };
         };
         const janelas = janelasNegocio(periodo);
-        const atual = await somaPeriodo(janelas.atualDe, janelas.atualAte);
-        const anterior = await somaPeriodo(janelas.anteriorDe, janelas.anteriorAte);
+        let base = null;
+        try { base = window.BaseDados ? await BaseDados.carregar(forcar) : null; } catch (e) {}
+        const infoBase = base ? base[BaseDados.chave('shopee', shopId)] : null;
+        let atual, anterior, fonteFaturamento = 'api';
+        if (infoBase && BaseDados.cobre(infoBase, janelas.anteriorDe)) {
+          atual = { total: BaseDados.somar(infoBase, janelas.atualDe, janelas.atualAte).faturamento, statusFalhou: [] };
+          anterior = { total: BaseDados.somar(infoBase, janelas.anteriorDe, janelas.anteriorAte).faturamento, statusFalhou: [] };
+          fonteFaturamento = 'base';
+        } else {
+          atual = await somaPeriodo(janelas.atualDe, janelas.atualAte);
+          anterior = await somaPeriodo(janelas.anteriorDe, janelas.anteriorAte);
+        }
         const falhas = [...atual.statusFalhou, ...anterior.statusFalhou];
 
-        // Gasto/GMV de ADS: performance diária da loja inteira (campanhas
-        // individuais, inclusive GMV Max por produto). O GMV Max da Loja fica
-        // de fora por decisão do analista (o agente não consegue agir nele).
+        // Gasto/GMV de ADS: performance diária da loja inteira — já soma as
+        // campanhas em grupo/individuais E o GMV Max da Loja (conferido 14/10/2026).
         const somaAds = async (deISO, ateISO) => {
           const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: isoParaBR(deISO), end_date: isoParaBR(ateISO) });
           const dias = r.data?.response || r.response || [];
@@ -268,7 +282,7 @@
 
         const semanaAtual = atual.total, semanaAnterior = anterior.total;
         return {
-          periodo, semanaAtual, semanaAnterior,
+          periodo, semanaAtual, semanaAnterior, fonteFaturamento,
           variacaoPct: semanaAnterior > 0 ? ((semanaAtual - semanaAnterior) / semanaAnterior) * 100 : (semanaAtual > 0 ? Infinity : 0),
           atualizadoEm: new Date().toISOString(),
           incompleto: falhas.length > 0,
@@ -1697,12 +1711,15 @@
       if (!n && state.carregandoNegocio) {
         corpo = `<div class="ag-kpi-grid">${'<div class="ag-kpi ag-skel"></div>'.repeat(5)}</div>`;
       } else if (!n) {
-        corpo = '<div class="ag-vazio">Ainda sem dados. <button class="btn btn-secondary btn-sm" onclick="window._agAtualizarTudo()">Carregar</button></div>';
+        // Carrega sozinho (uma vez por conta+período), sem precisar clicar
+        state.autoNegocio = state.autoNegocio || {};
+        if (!state.autoNegocio[contaId + ':' + p]) { state.autoNegocio[contaId + ':' + p] = true; setTimeout(() => buscarNegocio(contaId, p), 0); }
+        corpo = `<div class="ag-kpi-grid">${'<div class="ag-kpi ag-skel"></div>'.repeat(5)}</div>`;
       } else if (n.erro) {
         corpo = `<div class="ag-aviso ag-aviso-erro">⚠️ Não consegui buscar os indicadores: ${h(n.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._agAtualizarTudo()">Tentar de novo</button></div>`;
       } else {
         const fat = n.semanaAtual, fatAnt = n.semanaAnterior, A = n.adsAtual, P = n.adsAnterior;
-        const cards = [kpiCard('Faturamento total', R$(fat), `${varChip(n.variacaoPct)} vs ${R$(fatAnt)}`, '#6366f1')];
+        const cards = [kpiCard(n.fonteFaturamento === 'base' ? 'Faturamento (sem cancelados)' : 'Faturamento (sem cancelados, API)', R$(fat), `${varChip(n.variacaoPct)} vs ${R$(fatAnt)}`, '#6366f1')];
         let notas = '';
         if (A) {
           const tacos = fat > 0 ? A.gasto / fat * 100 : (A.gasto > 0 ? Infinity : 0);
@@ -1812,7 +1829,12 @@
         <button class="btn btn-secondary btn-sm" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">🔄 Atualizar</button>
       </div>`;
       if (!d && state.carregandoDadosAoVivo) return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}<div class="ag-skel" style="height:180px;border-radius:10px;"></div></div>`;
-      if (!d) return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}<div class="ag-vazio">Ainda sem dados. <button class="btn btn-secondary btn-sm" onclick="window._agAtualizarDados()">Carregar</button></div></div>`;
+      if (!d) {
+        // Carrega sozinho (uma vez por conta), sem precisar clicar
+        state.autoCampanhas = state.autoCampanhas || {};
+        if (!state.autoCampanhas[contaId] && !state.carregandoDadosAoVivo) { state.autoCampanhas[contaId] = true; setTimeout(() => buscarDadosAoVivo(contaId, state.negocioPeriodo), 0); }
+        return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}<div class="ag-vazio">⏳ Carregando as campanhas da Shopee…</div></div>`;
+      }
       if (d.erro) return `<div class="ag-hud-card" style="--ag-hud-accent:#d97706;margin-bottom:20px;">${cab}<div class="ag-aviso ag-aviso-erro">⚠️ ${h(d.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._agAtualizarDados()">Tentar de novo</button></div></div>`;
       if (!d.todasCampanhas?.length) return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}<div class="ag-vazio">Nenhuma campanha com atividade em ${periodoLabel(state.negocioPeriodo)}.</div></div>`;
 

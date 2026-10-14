@@ -116,7 +116,7 @@ async function faturamentoLoja(ctx, { inicio, fim }) {
     media_por_dia: r2(total / diasEntre(inicio, fim)),
     por_status: porStatus,
     falhas,
-    observacao: falhas.length ? 'ATENÇÃO: algum status falhou — o total está subestimado; diga isso ao analista.' : 'Bruto inclui cancelados (é a base usada no TACOS da GLR); use sem_cancelados para receita efetiva.',
+    observacao: falhas.length ? 'ATENÇÃO: algum status falhou — o total está subestimado; diga isso ao analista.' : 'Use faturamento_sem_cancelados: é a receita efetiva e a base do TACOS da GLR (mesma regra do Gestor Seller). O bruto inclui pedidos cancelados e o frete do comprador.',
   };
 }
 
@@ -304,7 +304,7 @@ async function vendasBase(ctx, { inicio, fim, escopo, agrupar }) {
     por_loja: porLoja,
     serie: agruparSerie(linhas, 'dia', modoSerie(n, agrupar), ['faturamento_valido', 'pedidos_validos', 'cancelado']),
     avisos,
-    regra: 'Faturamento válido = sem cancelados (mesma regra da tela de Vendas). Bruto inclui cancelados (base do TACOS do agente).',
+    regra: 'Faturamento válido = sem cancelados e sem devolução aceita, valor dos produtos (mesma regra da tela de Vendas e do Gestor Seller) — é a base do TACOS. Bruto inclui cancelados.',
   };
 }
 
@@ -364,15 +364,15 @@ async function adsBase(ctx, { inicio, fim, escopo, agrupar }) {
   const sVen = Object.fromEntries(agruparSerie(v, 'dia', modo, ['faturamento_valido', 'faturamento_bruto']).map(x => [x.periodo, x]));
   const porLoja = lojas.map(l => {
     const fa = a.filter(r => r.marketplace === l.marketplace && r.conta_id === l.conta_id), fvv = v.filter(r => r.marketplace === l.marketplace && r.conta_id === l.conta_id);
-    const g = soma(fa, 'gasto'), b = soma(fvv, 'faturamento_bruto');
-    return { loja: l.nome, marketplace: NOME_MKT[l.marketplace], gasto: r2(g), gmv_ads: r2(soma(fa, 'gmv_ads')), tacos_bruto_pct: b > 0 ? r2(g / b * 100) : null };
+    const g = soma(fa, 'gasto'), v = soma(fvv, 'faturamento_valido');
+    return { loja: l.nome, marketplace: NOME_MKT[l.marketplace], gasto: r2(g), gmv_ads: r2(soma(fa, 'gmv_ads')), tacos_pct: v > 0 ? r2(g / v * 100) : null };
   });
   return {
     escopo: escopo === 'cliente' ? `cliente${cliente ? ` ${cliente}` : ''} (${lojas.length} lojas)` : 'esta loja',
     periodo: { inicio, fim, dias: n },
-    total: { gasto_ads: r2(gasto), gmv_ads: r2(gmv), acos_pct: gmv > 0 ? r2(gasto / gmv * 100) : null, roas: gasto > 0 ? r2(gmv / gasto) : null, faturamento_valido: r2(fv), faturamento_bruto: r2(fb), tacos_bruto_pct: fb > 0 ? r2(gasto / fb * 100) : null, tacos_valido_pct: fv > 0 ? r2(gasto / fv * 100) : null },
+    total: { gasto_ads: r2(gasto), gmv_ads: r2(gmv), acos_pct: gmv > 0 ? r2(gasto / gmv * 100) : null, roas: gasto > 0 ? r2(gmv / gasto) : null, faturamento_valido: r2(fv), faturamento_bruto: r2(fb), tacos_pct: fv > 0 ? r2(gasto / fv * 100) : null },
     por_loja: porLoja,
-    serie: sAds.map(x => ({ ...x, faturamento_valido: sVen[x.periodo]?.faturamento_valido ?? 0, tacos_bruto_pct: sVen[x.periodo]?.faturamento_bruto > 0 ? r2(x.gasto / sVen[x.periodo].faturamento_bruto * 100) : null })),
+    serie: sAds.map(x => ({ ...x, faturamento_valido: sVen[x.periodo]?.faturamento_valido ?? 0, tacos_pct: sVen[x.periodo]?.faturamento_valido > 0 ? r2(x.gasto / sVen[x.periodo].faturamento_valido * 100) : null })),
     avisos: [aviso, ...(await coberturaBase(lojas, inicio))].filter(Boolean),
     regra: 'GMV de ADS é a atribuição da plataforma (pode passar do faturamento). Na Shopee o gasto já inclui o GMV Max (campanha de loja). TACOS = gasto ÷ faturamento total da loja. No ML, pedidos_ads = unidades vendidas via ADS.',
   };
@@ -392,7 +392,7 @@ const FERRAMENTAS = [
   },
   {
     name: 'ads_base',
-    description: 'INSTANTÂNEO. ADS por dia/semana/mês da base sincronizada cruzado com o faturamento: gasto, GMV atribuído, ACOS, ROAS, TACOS bruto e válido, por loja. Com escopo "cliente" inclui o ADS do Mercado Livre. Para detalhe por campanha use campanhas.',
+    description: 'INSTANTÂNEO. ADS por dia/semana/mês da base sincronizada cruzado com o faturamento: gasto, GMV atribuído, ACOS, ROAS, TACOS (sobre o faturamento sem cancelados, regra do Gestor Seller), por loja. Com escopo "cliente" inclui o ADS do Mercado Livre. Para detalhe por campanha use campanhas.',
     input_schema: { type: 'object', properties: { inicio: { type: 'string', description: 'AAAA-MM-DD' }, fim: { type: 'string', description: 'AAAA-MM-DD' }, escopo: ESCOPO, agrupar: { type: 'string', enum: ['dia', 'semana', 'mes'] } }, required: ['inicio', 'fim'] },
   },
   {
