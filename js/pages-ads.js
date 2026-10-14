@@ -634,10 +634,11 @@ async function buscarDados(forcar = false) {
         }).filter(c => c.ativa);
       }
 
-      // GMV Max (loja) — campanha automática única por loja, API separada do Product
-      // Ads. Some resposta sem erro e com campaign_id = tem campanha ativa; entra como
-      // linha somente-leitura (pausar/orçamento/ROAS dessa campanha usam outro fluxo
-      // da Shopee, ainda não integrado aqui) e soma no resumo geral de investimento.
+      // GMV Max da Loja — campanha automática única por loja (anuncia os produtos que
+      // não estão nas campanhas individuais), API separada. Entra como linha
+      // somente-leitura. NÃO soma no resumo geral: o total diário (daily_performance)
+      // já inclui o GMV Max da Loja (conferido em 14/10/2026) — somar contava 2x.
+      // Só soma se o diário não veio (aí o resumo ficaria sem ele).
       if (gmvMaxResp.status === 'fulfilled') {
         const g = gmvMaxResp.value;
         const rep = g?.data?.response?.report || g?.response?.report;
@@ -685,11 +686,13 @@ async function buscarDados(forcar = false) {
             orcamento: 0, orcamentoLabel: 'Automático', roasTarget: null, bidding: 'gmv_max',
             gasto, cliques, impressoes, pedidos, receita, itensGmvMax,
           });
-          resultado.resumo.investimento += gasto;
-          resultado.resumo.cliques      += cliques;
-          resultado.resumo.impressoes   += impressoes;
-          resultado.resumo.pedidos      += pedidos;
-          resultado.resumo.receita      += receita;
+          if (!resultado.diario?.length) {
+            resultado.resumo.investimento += gasto;
+            resultado.resumo.cliques      += cliques;
+            resultado.resumo.impressoes   += impressoes;
+            resultado.resumo.pedidos      += pedidos;
+            resultado.resumo.receita      += receita;
+          }
         }
       }
 

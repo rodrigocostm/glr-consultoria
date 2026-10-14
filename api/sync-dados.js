@@ -178,71 +178,84 @@ async function gravarPedidos(apiKey, shopId, sns, prazo) {
   return { n, completo: true };
 }
 
-// ── Shopee GMV Max: campanha de loja com API própria. NÃO entra no
-//    shopee_ads_daily_performance, então soma no ADS do dia (gasto, vendas
-//    atribuídas, pedidos, cliques, impressões). A API só devolve o total do
-//    período pedido — por isso é consultado dia a dia. ──
+// ── Shopee ADS por dia ─────────────────────────────────────────────────────
+// Dois tipos de campanha na Shopee:
+//   • anúncios em grupo / individuais (inclusive os "GMV Max - Meta de ROAS"
+//     por produto) — o agente gerencia campanha por campanha;
+//   • GMV Max da Loja — campanha única que anuncia os produtos da loja que NÃO
+//     estão nas individuais (manutenção do resto do catálogo).
+// shopee_ads_daily_performance JÁ SOMA OS DOIS (conferido em 14/10/2026 na Mega
+// Fácil, 01–10/10: 160 campanhas R$ 15.628,81 + GMV Max da Loja R$ 4.630,71 =
+// R$ 20.259,53 do total diário). Então o total do dia é gravado como vem; o
+// GMV Max da Loja é guardado à parte (cursor.gmv_max / gmv_max_vendas) só para
+// separar "individuais" de "loja" nas análises — nunca somado de novo.
 const inicioDiaUnix = unix => Math.floor((unix - 3 * 3600) / DIA) * DIA + 3 * 3600; // 00:00 de Brasília
 async function gmvMaxDia(apiKey, shopId, diaUnix) {
   const d = ddmmyyyy(diaUnix);
   const r = await comRetry(() => mcpCall(apiKey, 'shopee_ads_gms_performance', { shopId, start_date: d, end_date: d }));
   const resp = r.data?.response || r.response || {};
   const rep = resp.report;
-  if (!resp.campaign_id || !rep) return null; // loja sem GMV Max
-  return { gasto: r2(rep.expense), gmv: r2(rep.broad_gmv), pedidos: parseInt(rep.broad_order) || 0, impressoes: parseInt(rep.impression) || 0, cliques: parseInt(rep.clicks) || 0 };
+  if (!resp.campaign_id || !rep) return null; // loja sem GMV Max da Loja
+  return { gasto: r2(rep.expense), gmv: r2(rep.broad_gmv), campanha: resp.campaign_id };
 }
-// Grava os dias [de..ate] (máx. 30): ADS normal numa chamada + GMV Max dia a dia.
-// Só grava se conseguiu os dois — dia pela metade seria pior que dia velho.
-async function gravarDiasAdsShopee(apiKey, shopId, de, ate, comGmv, gmvPorDia, prazo) {
-  const r = await comRetry(() => mcpCall(apiKey, 'shopee_ads_daily_performance', { shopId, start_date: ddmmyyyy(de), end_date: ddmmyyyy(ate) }));
-  const porDia = {};
-  for (let u = de; u <= ate; u += DIA) porDia[dataBR(u)] = { marketplace: 'shopee', conta_id: String(shopId), data: dataBR(u), gasto: 0, gmv_ads: 0, pedidos_ads: 0, impressoes: 0, cliques: 0 };
-  for (const d of (r.data?.response || r.response || [])) {
-    const [dd, mm, aa] = String(d.date || '').split('-');
-    const l = porDia[`${aa}-${mm}-${dd}`];
-    if (!l) continue;
-    l.gasto = r2(d.expense); l.gmv_ads = r2(d.broad_gmv); l.pedidos_ads = parseInt(d.broad_order) || 0; l.impressoes = parseInt(d.impression) || 0; l.cliques = parseInt(d.clicks) || 0;
-  }
-  if (comGmv) {
-    for (let u = de; u <= ate; u += DIA) {
-      if (Date.now() > prazo) return { n: 0, completo: false };
-      const g = await gmvMaxDia(apiKey, shopId, u);
-      const l = porDia[dataBR(u)];
-      gmvPorDia[dataBR(u)] = g ? g.gasto : 0;
-      if (!g) continue;
-      l.gasto = r2(l.gasto + g.gasto); l.gmv_ads = r2(l.gmv_ads + g.gmv); l.pedidos_ads += g.pedidos; l.impressoes += g.impressoes; l.cliques += g.cliques;
+// Total do dia (os dois tipos), direto da Shopee — até 30 dias por chamada.
+async function gravarTotaisAdsShopee(apiKey, shopId, de, ate) {
+  let n = 0;
+  for (let ini = de; ini <= ate; ini += 30 * DIA) {
+    const fim = Math.min(ini + 29 * DIA, ate);
+    const r = await comRetry(() => mcpCall(apiKey, 'shopee_ads_daily_performance', { shopId, start_date: ddmmyyyy(ini), end_date: ddmmyyyy(fim) }));
+    const porDia = {};
+    for (let u = ini; u <= fim; u += DIA) porDia[dataBR(u)] = { marketplace: 'shopee', conta_id: String(shopId), data: dataBR(u), gasto: 0, gmv_ads: 0, pedidos_ads: 0, impressoes: 0, cliques: 0 };
+    for (const d of (r.data?.response || r.response || [])) {
+      const [dd, mm, aa] = String(d.date || '').split('-');
+      const l = porDia[`${aa}-${mm}-${dd}`];
+      if (!l) continue;
+      l.gasto = r2(d.expense); l.gmv_ads = r2(d.broad_gmv); l.pedidos_ads = parseInt(d.broad_order) || 0; l.impressoes = parseInt(d.impression) || 0; l.cliques = parseInt(d.clicks) || 0;
     }
+    const linhas = Object.values(porDia).map(l => ({ ...l, sincronizado_em: new Date().toISOString() }));
+    if (linhas.length) await sbUpsert('glr_ads_diario', linhas, 'marketplace,conta_id,data');
+    n += linhas.length;
   }
-  const linhas = Object.values(porDia).map(l => ({ ...l, sincronizado_em: new Date().toISOString() }));
-  if (linhas.length) await sbUpsert('glr_ads_diario', linhas, 'marketplace,conta_id,data');
-  return { n: linhas.length, completo: true };
+  return n;
 }
-// Cada rodada: últimos 3 dias + um bloco de 10 dias do histórico (até 90),
-// regravando com o GMV Max incluído.
+// Cada rodada: totais dos últimos 3 dias + GMV Max da Loja dia a dia (à parte).
+// versão 2 (14/10/2026): regrava os 90 dias de uma vez — a versão anterior
+// somava o GMV Max da Loja por cima do total (contava duas vezes).
 async function gravarAdsShopee(apiKey, shopId, estAds, t, prazo) {
   const cursor = { ...(estAds?.cursor || {}) };
-  const gmvPorDia = { ...(cursor.gmv_max || {}) };
   const hoje0 = inicioDiaUnix(t);
-  // Tem GMV Max? Confere uma vez por dia (consulta de ontem).
+  const limite = hoje0 - DIAS_HISTORICO * DIA;
+  let n = 0;
+  if (cursor.versao !== 2) {
+    n += await gravarTotaisAdsShopee(apiKey, shopId, limite, hoje0);
+    cursor.versao = 2; cursor.hist_ate = limite;
+    cursor.gmv_max = {}; cursor.gmv_max_vendas = {}; delete cursor.gmv_hist_ate;
+  } else {
+    n += await gravarTotaisAdsShopee(apiKey, shopId, hoje0 - 2 * DIA, hoje0);
+  }
+  // GMV Max da Loja à parte: tem? (confere 1x/dia) → últimos 3 dias + 10 dias de histórico por rodada
   if (cursor.gmv_verificado !== dataBR(t)) {
     cursor.tem_gmv_max = !!(await gmvMaxDia(apiKey, shopId, hoje0 - DIA).catch(() => null));
     cursor.gmv_verificado = dataBR(t);
   }
-  const comGmv = !!cursor.tem_gmv_max;
-  let n = 0;
-  const rec = await gravarDiasAdsShopee(apiKey, shopId, hoje0 - 2 * DIA, hoje0, comGmv, gmvPorDia, prazo);
-  n += rec.n;
-  const limite = hoje0 - DIAS_HISTORICO * DIA;
-  const histAte = cursor.hist_ate || hoje0 - 2 * DIA; // tudo antes disso ainda precisa (re)gravar
-  if (rec.completo && histAte > limite && Date.now() < prazo) {
-    const de = Math.max(histAte - 10 * DIA, limite);
-    const r = await gravarDiasAdsShopee(apiKey, shopId, de, histAte - DIA, comGmv, gmvPorDia, prazo);
-    n += r.n;
-    if (r.completo) cursor.hist_ate = de;
+  if (cursor.tem_gmv_max) {
+    const gasto = { ...(cursor.gmv_max || {}) }, vendas = { ...(cursor.gmv_max_vendas || {}) };
+    const dias = [hoje0 - 2 * DIA, hoje0 - DIA, hoje0];
+    const histAte = cursor.gmv_hist_ate || hoje0 - 2 * DIA;
+    for (let u = histAte - DIA, k = 0; u >= limite && k < 10; u -= DIA, k++) dias.push(u);
+    let menor = histAte;
+    for (const u of dias) {
+      if (Date.now() > prazo) break;
+      const g = await gmvMaxDia(apiKey, shopId, u).catch(() => undefined);
+      if (g === undefined) break;
+      gasto[dataBR(u)] = g ? g.gasto : 0; vendas[dataBR(u)] = g ? g.gmv : 0;
+      if (u < hoje0 - 2 * DIA) menor = Math.min(menor, u);
+    }
+    cursor.gmv_hist_ate = menor;
+    const corte = dataBR(t - DIAS_RESUMO * DIA);
+    for (const d of Object.keys(gasto)) if (d < corte) { delete gasto[d]; delete vendas[d]; }
+    cursor.gmv_max = gasto; cursor.gmv_max_vendas = vendas;
   }
-  const corte = dataBR(t - DIAS_RESUMO * DIA);
-  for (const d of Object.keys(gmvPorDia)) if (d < corte) delete gmvPorDia[d];
-  cursor.gmv_max = gmvPorDia;
   return { n, cursor };
 }
 

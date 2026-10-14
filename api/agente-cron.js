@@ -193,7 +193,9 @@ async function lerBase(mkt, contaId) {
     dias: por.resumo?.cursor?.dias || {},
     pedidosDesde: ok ? por.pedidos?.cursor?.historico_ate || null : null,
     adsDesde: ok && por.ads?.ultimo_sucesso ? por.ads?.cursor?.hist_ate || null : null,
-    gmvMax: por.ads?.cursor?.gmv_max || {},
+    // GMV Max da Loja à parte (já está DENTRO do total diário de ADS — só separa)
+    gmvMax: por.ads?.cursor?.versao === 2 ? por.ads?.cursor?.gmv_max || {} : {},
+    gmvMaxVendas: por.ads?.cursor?.versao === 2 ? por.ads?.cursor?.gmv_max_vendas || {} : {},
   };
 }
 const baseCobre = (b, iso) => !!(b?.pedidosDesde && b.pedidosDesde <= inicioDiaUnix(iso));
@@ -518,24 +520,23 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       }
     }
 
-    // Escopo do agente é só campanhas individuais (inclusive as em modo
-    // "GMV Max - Meta de ROAS", que é um bidding automático DENTRO de uma
-    // campanha individual — bem diferente do GMV Max da Loja, que é uma
-    // campanha guarda-chuva separada por conta inteira). GMV Max da Loja foi
-    // tirado do escopo por decisão do usuário: como o formato de escrita
-    // (edit_gms_product_campaign) nunca foi validado com segurança, o agente
-    // nunca conseguia agir nele mesmo — só gerava alerta que ninguém ia
-    // resolver. Total vem de shopee_ads_daily_performance (agregado da loja
-    // inteira), não da lista de campanhas — confirmado ao vivo: a lista de
-    // campanhas às vezes devolve só campanhas antigas encerradas enquanto o
-    // painel da Shopee mostra investimento ativo real.
-    let gastoTotalOntem = 0, gmvTotalJanela = 0, gastoTotalJanela = 0, gmvMaxJanela = 0, fonteAds = 'api';
+    // O agente AJUSTA só campanhas em grupo/individuais (inclusive as em modo
+    // "GMV Max - Meta de ROAS", que é lance automático DENTRO de uma campanha
+    // individual). O GMV Max da Loja (campanha única que anuncia os produtos que
+    // não estão nas individuais) fica fora dos ajustes — formato de escrita
+    // nunca validado —, mas o gasto dele ENTRA no TACOS: o total de
+    // shopee_ads_daily_performance já soma individuais + GMV Max da Loja
+    // (conferido em 14/10/2026 na Mega Fácil, centavo a centavo).
+    // Total de ADS da loja = campanhas individuais/grupo + GMV Max da Loja (o
+    // relatório diário da Shopee já vem somado). O GMV Max da Loja é separado só
+    // pra mostrar quanto foi de cada tipo — o agente não ajusta essa campanha.
+    let gastoTotalOntem = 0, gmvTotalJanela = 0, gastoTotalJanela = 0, gmvMaxJanela = 0, gmvMaxVendasJanela = 0, fonteAds = 'api';
     if (baseCobreAds(base, inicioJanela.iso)) {
-      // Base já soma o GMV Max da loja ao ADS do dia — TACOS com TODO o investimento em ADS
       const s = somarBase(base, inicioJanela.iso, ontem.iso);
       gastoTotalJanela = s.ads; gmvTotalJanela = s.ads_gmv;
       gastoTotalOntem = parseFloat(base.dias[ontem.iso]?.ads) || 0;
       for (const [d, v] of Object.entries(base.gmvMax)) if (d >= inicioJanela.iso && d <= ontem.iso) gmvMaxJanela += parseFloat(v) || 0;
+      for (const [d, v] of Object.entries(base.gmvMaxVendas)) if (d >= inicioJanela.iso && d <= ontem.iso) gmvMaxVendasJanela += parseFloat(v) || 0;
       fonteAds = 'base';
     } else try {
       const perfDiario = await mcpCall(mcApiKey, 'shopee_ads_daily_performance', { shopId, start_date: inicioJanela.ddmmyyyy, end_date: ontem.ddmmyyyy });
@@ -804,7 +805,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       contexto.mes = { atual: somarBase(base, mesIni, ontem.iso).faturamento, anterior: somarBase(base, antIni, antFim).faturamento };
       contexto.mes.var = variacao(contexto.mes.atual, contexto.mes.anterior);
     }
-    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, gmv_max_janela: gmvMaxJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhasAtivas, campanhas_listadas: campanhas.length, fonte_faturamento: fonteFaturamento, fonte_ads: fonteAds, contexto };
+    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, gmv_max_janela: gmvMaxJanela, gmv_max_vendas_janela: gmvMaxVendasJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhasAtivas, campanhas_listadas: campanhas.length, fonte_faturamento: fonteFaturamento, fonte_ads: fonteAds, contexto };
     const resumo = await gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem);
     await sbUpsert('glr_agente_relatorios', { data: ontem.iso, conta_id: shopId, cliente_nome: cfg.cliente_nome || null, resumo, metricas }, 'data,conta_id');
 
@@ -960,7 +961,7 @@ function textoContexto(ctx) {
 
 async function gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem) {
   const base = `Resumo do dia ${ontem.iso} para a conta ${cfg.cliente_nome || cfg.conta_id}: `
-    + `investimento em ADS ${R$(metricas.gasto_janela)} na janela avaliada${metricas.gmv_max_janela ? ` (inclui ${R$(metricas.gmv_max_janela)} de GMV Max da loja)` : ''}, vendas atribuídas ao ADS ${R$(metricas.gmv_janela)}, faturamento TOTAL da loja no período ${R$(metricas.faturamento_total_loja)}. `
+    + `investimento total em ADS ${R$(metricas.gasto_janela)} na janela avaliada${metricas.gmv_max_janela ? ` — ${R$(metricas.gasto_janela - metricas.gmv_max_janela)} nas campanhas em grupo/individuais (que o agente gerencia) e ${R$(metricas.gmv_max_janela)} no GMV Max da Loja (campanha de manutenção que anuncia os produtos fora das individuais; vendas ${R$(metricas.gmv_max_vendas_janela)}, ROAS ${metricas.gmv_max_janela > 0 ? (metricas.gmv_max_vendas_janela / metricas.gmv_max_janela).toFixed(1) : '—'}; o agente só acompanha, não ajusta)` : ''}, vendas atribuídas ao ADS ${R$(metricas.gmv_janela)}, faturamento TOTAL da loja no período ${R$(metricas.faturamento_total_loja)}. `
     + `TACOS da conta (investimento ADS ÷ faturamento total): ${metricas.tacos_conta == null ? '∞' : metricas.tacos_conta.toFixed(1) + '%'} (meta: ${cfg.meta_acos || '—'}%) — essa é a métrica principal usada pra decisão, não o ACOS isolado por campanha. `
     + `${metricas.decisoes} ação(ões) executada(s): ${decisoes.join(', ') || 'nenhuma'}. `
     + `${metricas.alertas} alerta(s) aguardando aprovação: ${alertas.join(', ') || 'nenhum'}. `
