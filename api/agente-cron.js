@@ -527,6 +527,9 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // nunca validado —, mas o gasto dele ENTRA no TACOS: o total de
     // shopee_ads_daily_performance já soma individuais + GMV Max da Loja
     // (conferido em 14/10/2026 na Mega Fácil, centavo a centavo).
+    // Regra da Shopee (confirmada pelo analista): PAUSAR campanha individual só
+    // pausa — o produto fica sem anúncio; só ENCERRAR faz o produto cair no GMV
+    // Max da Loja. O agente pausa (Regras 1-2); encerrar fica com o analista.
     // Total de ADS da loja = campanhas individuais/grupo + GMV Max da Loja (o
     // relatório diário da Shopee já vem somado). O GMV Max da Loja é separado só
     // pra mostrar quanto foi de cada tipo — o agente não ajusta essa campanha.
@@ -939,9 +942,13 @@ async function processarAcompanhamento(cfg, mcApiKey) {
     }
 
     const ritmoTxt = ritmo ? ` Vendas até agora: ${ritmo.hoje} pedido(s) vs média de ${ritmo.media} no mesmo horário (${ritmo.var == null ? '—' : `${ritmo.var >= 0 ? '+' : ''}${ritmo.var.toFixed(0)}%`}).` : '';
+    // GMV Max da Loja hoje (base; só reporta — o agente não ajusta essa campanha)
+    const gmvLojaHoje = parseFloat(base.gmvMax?.[hojeIso]);
+    const gmvLojaVendasHoje = parseFloat(base.gmvMaxVendas?.[hojeIso]) || 0;
+    const gmvTxt = !isNaN(gmvLojaHoje) ? ` GMV Max da Loja hoje: ${R$(gmvLojaHoje)} investidos, ${R$(gmvLojaVendasHoje)} em vendas (ROAS ${gmvLojaHoje > 0 ? (gmvLojaVendasHoje / gmvLojaHoje).toFixed(1) : '—'}).` : '';
     await logar('sistema', `Acompanhamento das ${hora}h — ${decisoes.length} ação(ões), ${alertas.length} alerta(s)`,
-      `Acompanhamento do dia: ${ativas.length} campanhas ativas, ADS gasto hoje ${R$(gastoHojeTotal)}.${ritmoTxt}${tacos7 != null ? ` TACOS 7 dias: ${tacos7.toFixed(1)}%.` : ''}`,
-      { rodada: `${hora}h`, campanhas: ativas.length, gasto_hoje: gastoHojeTotal, ritmo, tacos_7d: tacos7, decisoes: decisoes.length, alertas: alertas.length }, 'executado');
+      `Acompanhamento do dia: ${ativas.length} campanhas individuais ativas, ADS gasto hoje nelas ${R$(gastoHojeTotal)}.${gmvTxt}${ritmoTxt}${tacos7 != null ? ` TACOS 7 dias: ${tacos7.toFixed(1)}%.` : ''}`,
+      { rodada: `${hora}h`, campanhas: ativas.length, gasto_hoje: gastoHojeTotal, gmv_loja_hoje: isNaN(gmvLojaHoje) ? null : gmvLojaHoje, gmv_loja_vendas_hoje: gmvLojaVendasHoje, ritmo, tacos_7d: tacos7, decisoes: decisoes.length, alertas: alertas.length }, 'executado');
     return { conta_id: shopId, rodada: `${hora}h`, decisoes: decisoes.length, alertas: alertas.length, ritmo };
   } catch (e) {
     await logar('sistema', `Erro no acompanhamento das ${hora}h`, e.message || String(e), {}, 'erro');

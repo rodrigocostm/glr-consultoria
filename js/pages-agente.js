@@ -48,9 +48,17 @@
       executandoAcaoManual: false,
       rodandoAgente: false, resultadoRodada: null,
       processandoAlertaId: null,
+      gmvLojaPorConta: {}, carregandoGmvLoja: {}, // acompanhamento do GMV Max da Loja (base sincronizada)
     };
 
     function render() { renderShell(); renderChatDrawer(); }
+
+    // Servidor sincronizou (a cada 15 min) → atualiza o acompanhamento do GMV Max da Loja
+    window._agGmvRecarregar = () => { if (state.contaAbertaId && state.contaAbertaId !== '__novo__') carregarGmvLoja(state.contaAbertaId, true); };
+    if (!window._agOuvindoBase) {
+      window._agOuvindoBase = true;
+      window.addEventListener('glr-base-atualizada', () => { if (Router.currentPage === 'agente' && window._agGmvRecarregar) window._agGmvRecarregar(); });
+    }
 
     function configDaConta(id) { return state.contas.find(c => c.conta_id === id) || null; }
 
@@ -814,7 +822,7 @@
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessao?.session?.access_token || ''}` },
           body: JSON.stringify({
             conta_id: state.contaAbertaId,
-            system: `Você é o Agente Autônomo de ADS da GLR Consultoria. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento/meta de ROAS diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Muitas campanhas individuais hoje em dia (modo GMV Max por produto, lance automático) são geridas pelo algoritmo da própria Shopee/TikTok — o papel do agente aí é ajustar o guardrail (meta de ROAS), não microgerenciar lance por lance. Na Shopee existem dois tipos de campanha: (1) anúncios em grupo/individuais — produtos escolhidos pelo analista, inclusive os em modo "GMV Max - Meta de ROAS"; é nelas que o agente mexe; (2) o GMV Max da Loja — campanha única de manutenção que anuncia automaticamente todos os produtos da loja que NÃO estão nas individuais. O agente não ajusta o GMV Max da Loja, mas o gasto dele entra no TACOS (o investimento total da loja já soma os dois tipos) e você deve considerá-lo ao analisar: ex.: tirar um produto das individuais pode fazer ele passar a ser anunciado pelo GMV Max da Loja. Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Você também entende de curva ABC de vendas (A = produtos que somam ~80% da receita, B até 95%, C o resto): produto curva A que cresceu e projeta queda é prioridade de atenção, e nesses casos você levanta o alerta e propõe a ação junto com o analista (revisar anúncio, preço, estoque, ADS) em vez de decidir sozinho — use o bloco CURVA ABC do contexto quando existir. Use os dados de contexto abaixo (configuração, dados ao vivo, saúde do negócio, último relatório, log recente) pra responder — nunca invente números que não estão aí, nunca invente campaign_id que não apareça na lista "TODAS AS CAMPANHAS" do contexto (use os IDs exatos de lá, inclusive das pausadas).\n\nPEDIDOS EM LOTE (ex: "reativa as pausadas que valem a pena", "otimiza todas", "pausa as piores"): escolha as campanhas pelos critérios que o analista deu ou, se ele não deu, pela meta e pelos limites do contexto (ex.: pausada com ACOS dentro da meta vale reativar; ACOS acima do limite de pausa não). Responda em texto com a lista curta do que escolheu e por quê (uma linha por campanha, com o ACOS), e no bloco \`\`\`json inclua UMA sugestão por campanha escolhida, no máximo 20 por resposta, com "explicacao" de no máximo 15 palavras pra caber. Se houver mais de 20 candidatas, sugira as 20 mais importantes e diga que dá pra pedir o resto depois. Pra reativar E otimizar, use tipo \"retomar\" com valor_atual/valor_sugerido da meta de ROAS quando fizer sentido.\n\nQUANDO O ANALISTA PEDIR UMA MUDANÇA CONCRETA (ex: "aumenta o investimento", "pausa a campanha X", "sobe a meta de ROAS da campanha Y", "reduz orçamento de Z"): responda com no máximo 2 frases confirmando o que você está sugerindo e por quê, e termine a mensagem com um bloco \`\`\`json contendo um array de sugestões, uma por campanha, no formato exato: [{"campaign_id": <ID numérico exato do contexto>, "nome_campanha": "<nome curto>", "tipo": "pausar"|"orcamento"|"roas"|"retomar", "valor_atual": <número, omita se tipo=pausar>, "valor_sugerido": <número, omita se tipo=pausar>, "titulo": "<título curto pro card, ex: Aumentar orçamento — Nome da campanha>", "explicacao": "<1-2 frases explicando o motivo, com os números que embasam>"}]. Use tipo \"roas\" só pra campanha que already tem \"meta de ROAS atual\" no contexto (lance automático); use \"orcamento\" só pra campanha com orçamento fixo (budget > 0); nunca sugira os dois tipos pra mesma campanha na mesma resposta. Use tipo \"retomar\" só pra campanha que o contexto mostra como PAUSADA, quando o analista pedir pra reativar; se ele quiser reativar E mudar a meta de ROAS, use tipo \"retomar\" com valor_atual/valor_sugerido da meta de ROAS (o card faz as duas coisas ao aprovar). Nunca escreva no título/explicação que vai reativar uma campanha se o tipo não for \"retomar\" — o card só executa o que o tipo diz. NÃO execute nada você mesmo pelo chat — a sugestão vira um card na Fila de Atenção (Kanban) e só é aplicada de verdade quando o analista clicar em \"Aprovar\" ali. Se o pedido for só uma pergunta ou pedir explicação (\"por que caiu tal coisa\", \"como está a conta\"), responda em texto normal e NÃO inclua o bloco \`\`\`json. Se o analista pedir pra mudar uma regra/guardrail (meta TACOS, regra de pausa, etc — não uma campanha específica), explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
+            system: `Você é o Agente Autônomo de ADS da GLR Consultoria. Você mesmo decide pausar campanha, retomar campanha e ajustar orçamento/meta de ROAS diariamente com base nas regras configuradas pelo analista — sem precisar de aprovação manual, exceto quando a variação proposta passa do limite de alerta configurado. A métrica principal pra julgar a saúde da conta é o TACOS (investimento em ADS dividido pelo faturamento TOTAL da loja, não só a venda atribuída ao ADS) — NUNCA trate ACOS isolado de uma campanha como veredito sobre a conta inteira, ele só serve pra comparar campanhas entre si. Campanhas novas (dentro do período de maturação configurado) não são pausadas por ACOS ruim ainda, mesmo que o critério tenha sido tecnicamente atingido — dá tempo delas amadurecerem primeiro. Muitas campanhas individuais hoje em dia (modo GMV Max por produto, lance automático) são geridas pelo algoritmo da própria Shopee/TikTok — o papel do agente aí é ajustar o guardrail (meta de ROAS), não microgerenciar lance por lance. Na Shopee existem dois tipos de campanha: (1) anúncios em grupo/individuais — produtos escolhidos pelo analista, inclusive os em modo "GMV Max - Meta de ROAS"; é nelas que o agente mexe; (2) o GMV Max da Loja — campanha única de manutenção que anuncia automaticamente todos os produtos da loja que NÃO estão nas individuais. O agente não ajusta o GMV Max da Loja, mas o gasto dele entra no TACOS (o investimento total da loja já soma os dois tipos) e você deve considerá-lo ao analisar. Regra da Shopee: PAUSAR uma campanha individual só pausa — o produto fica sem anúncio e NÃO vai para o GMV Max da Loja; só ENCERRAR a campanha individual faz o produto cair no GMV Max da Loja. Então, quando um produto não vale campanha própria mas ainda deve ser anunciado, a alternativa a pausar é encerrar (o analista decide; você só sugere em texto, não existe tipo de sugestão \"encerrar\"). Converse em português, direto, como um analista sênior explicando decisões pra outro analista. Você também entende de curva ABC de vendas (A = produtos que somam ~80% da receita, B até 95%, C o resto): produto curva A que cresceu e projeta queda é prioridade de atenção, e nesses casos você levanta o alerta e propõe a ação junto com o analista (revisar anúncio, preço, estoque, ADS) em vez de decidir sozinho — use o bloco CURVA ABC do contexto quando existir. Use os dados de contexto abaixo (configuração, dados ao vivo, saúde do negócio, último relatório, log recente) pra responder — nunca invente números que não estão aí, nunca invente campaign_id que não apareça na lista "TODAS AS CAMPANHAS" do contexto (use os IDs exatos de lá, inclusive das pausadas).\n\nPEDIDOS EM LOTE (ex: "reativa as pausadas que valem a pena", "otimiza todas", "pausa as piores"): escolha as campanhas pelos critérios que o analista deu ou, se ele não deu, pela meta e pelos limites do contexto (ex.: pausada com ACOS dentro da meta vale reativar; ACOS acima do limite de pausa não). Responda em texto com a lista curta do que escolheu e por quê (uma linha por campanha, com o ACOS), e no bloco \`\`\`json inclua UMA sugestão por campanha escolhida, no máximo 20 por resposta, com "explicacao" de no máximo 15 palavras pra caber. Se houver mais de 20 candidatas, sugira as 20 mais importantes e diga que dá pra pedir o resto depois. Pra reativar E otimizar, use tipo \"retomar\" com valor_atual/valor_sugerido da meta de ROAS quando fizer sentido.\n\nQUANDO O ANALISTA PEDIR UMA MUDANÇA CONCRETA (ex: "aumenta o investimento", "pausa a campanha X", "sobe a meta de ROAS da campanha Y", "reduz orçamento de Z"): responda com no máximo 2 frases confirmando o que você está sugerindo e por quê, e termine a mensagem com um bloco \`\`\`json contendo um array de sugestões, uma por campanha, no formato exato: [{"campaign_id": <ID numérico exato do contexto>, "nome_campanha": "<nome curto>", "tipo": "pausar"|"orcamento"|"roas"|"retomar", "valor_atual": <número, omita se tipo=pausar>, "valor_sugerido": <número, omita se tipo=pausar>, "titulo": "<título curto pro card, ex: Aumentar orçamento — Nome da campanha>", "explicacao": "<1-2 frases explicando o motivo, com os números que embasam>"}]. Use tipo \"roas\" só pra campanha que already tem \"meta de ROAS atual\" no contexto (lance automático); use \"orcamento\" só pra campanha com orçamento fixo (budget > 0); nunca sugira os dois tipos pra mesma campanha na mesma resposta. Use tipo \"retomar\" só pra campanha que o contexto mostra como PAUSADA, quando o analista pedir pra reativar; se ele quiser reativar E mudar a meta de ROAS, use tipo \"retomar\" com valor_atual/valor_sugerido da meta de ROAS (o card faz as duas coisas ao aprovar). Nunca escreva no título/explicação que vai reativar uma campanha se o tipo não for \"retomar\" — o card só executa o que o tipo diz. NÃO execute nada você mesmo pelo chat — a sugestão vira um card na Fila de Atenção (Kanban) e só é aplicada de verdade quando o analista clicar em \"Aprovar\" ali. Se o pedido for só uma pergunta ou pedir explicação (\"por que caiu tal coisa\", \"como está a conta\"), responda em texto normal e NÃO inclua o bloco \`\`\`json. Se o analista pedir pra mudar uma regra/guardrail (meta TACOS, regra de pausa, etc — não uma campanha específica), explique que isso se edita no painel de configuração da aba, você não altera a config pelo chat.\n\n${contextoAgente()}`,
             messages: state.chatMessages.map(m => ({ role: m.role, content: m.content })),
           }),
         });
@@ -1883,6 +1891,68 @@
       return secaoColapsavel('abc', `🅰️ Curva ABC de vendas${a && !a.erro && a.alertas.length ? ` <span class="ag-contagem">${a.alertas.length} alerta(s)</span>` : ''}`, renderCurvaABC(contaId));
     }
 
+    // ── GMV Max da Loja: acompanhamento (só leitura) ─────────────────────────
+    // Campanha única de manutenção da Shopee que anuncia os produtos da loja que
+    // NÃO estão nas campanhas em grupo/individuais. Produto de campanha individual
+    // só cai nela quando a campanha é ENCERRADA (pausar não move). O agente não
+    // ajusta essa campanha — só acompanha e reporta. Dados do motor de dados
+    // (glr_sync_estado ads: gmv_max / gmv_max_vendas por dia; total de ADS no resumo).
+    async function carregarGmvLoja(contaId, forcar = false) {
+      if (state.carregandoGmvLoja[contaId] || (!forcar && state.gmvLojaPorConta[contaId])) return;
+      state.carregandoGmvLoja[contaId] = true;
+      try {
+        const { data, error } = await _sb.from('glr_sync_estado').select('recurso,cursor,ultimo_sucesso')
+          .eq('marketplace', 'shopee').eq('conta_id', String(contaId)).in('recurso', ['ads', 'resumo']);
+        if (error) throw error;
+        const ads = (data || []).find(r => r.recurso === 'ads'), res = (data || []).find(r => r.recurso === 'resumo');
+        state.gmvLojaPorConta[contaId] = {
+          ok: ads?.cursor?.versao === 2, tem: !!ads?.cursor?.tem_gmv_max,
+          gasto: ads?.cursor?.gmv_max || {}, vendas: ads?.cursor?.gmv_max_vendas || {},
+          desde: ads?.cursor?.gmv_hist_ate || null, totais: res?.cursor?.dias || {}, em: ads?.ultimo_sucesso,
+        };
+      } catch(e) { state.gmvLojaPorConta[contaId] = { erro: e.message || String(e) }; }
+      state.carregandoGmvLoja[contaId] = false;
+      if (state.contaAbertaId === contaId) render();
+    }
+    function renderGmvLoja(contaId) {
+      const g = state.gmvLojaPorConta[contaId];
+      if (!g) { carregarGmvLoja(contaId); return `<div class="ag-sec ag-linha-abc">🏪 <b>GMV Max da Loja</b> <span class="ag-sec-sub">⏳ carregando…</span></div>`; }
+      if (g.erro) return `<div class="ag-sec ag-linha-abc">🏪 <b>GMV Max da Loja</b> <span class="ag-sec-sub">não consegui ler: ${h(g.erro)}</span></div>`;
+      if (!g.ok) return `<div class="ag-sec ag-linha-abc">🏪 <b>GMV Max da Loja</b> <span class="ag-sec-sub">o servidor ainda está montando o histórico desta loja — aparece em alguns minutos.</span></div>`;
+      if (!g.tem) return `<div class="ag-sec ag-linha-abc">🏪 <b>GMV Max da Loja</b> <span class="ag-sec-sub">esta loja não tem GMV Max da Loja ativo.</span></div>`;
+      const brt = new Date(Date.now() - 3 * 3600 * 1000);
+      const isoMenos = n => { const d = new Date(brt); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+      const soma = (obj, de, ate) => Object.entries(obj).reduce((s, [d, v]) => d >= de && d <= ate ? s + (parseFloat(v) || 0) : s, 0);
+      const somaTot = (de, ate) => Object.entries(g.totais).reduce((s, [d, v]) => d >= de && d <= ate ? s + (parseFloat(v.ads) || 0) : s, 0);
+      const hoje = isoMenos(0), ontem = isoMenos(1), de7 = isoMenos(7), de14 = isoMenos(14), ate14 = isoMenos(8);
+      const g7 = soma(g.gasto, de7, ontem), v7 = soma(g.vendas, de7, ontem), gAnt = soma(g.gasto, de14, ate14), vAnt = soma(g.vendas, de14, ate14);
+      const tot7 = somaTot(de7, ontem);
+      const roas = (v, gg) => gg > 0 ? (v / gg).toFixed(1).replace('.', ',') : '—';
+      const varPct = (a, b) => b > 0 ? `${a >= b ? '▲' : '▼'} ${Math.abs((a - b) / b * 100).toFixed(0)}%` : '';
+      const cor = (a, b) => b > 0 ? (a >= b ? '#10b981' : '#ef4444') : 'var(--text-muted)';
+      const histOk = g.desde && g.desde <= Math.floor(new Date(`${de14}T00:00:00-03:00`).getTime() / 1000);
+      const dias = [];
+      for (let k = 7; k >= 0; k--) { const d = isoMenos(k); dias.push({ d, gasto: parseFloat(g.gasto[d]) || 0, vendas: parseFloat(g.vendas[d]) || 0 }); }
+      const kpi = (rot, val, sub) => `<div class="ag-gmv-kpi"><div class="ag-gmv-rot">${rot}</div><div class="ag-gmv-val">${val}</div>${sub ? `<div class="ag-gmv-sub">${sub}</div>` : ''}</div>`;
+      return `<div class="card ag-gmv">
+        <div class="ag-sec-head"><div class="ag-sec-titulo">🏪 GMV Max da Loja <span class="ag-sec-sub">acompanhamento — o agente só reporta, não ajusta esta campanha</span></div></div>
+        <div class="ag-gmv-kpis">
+          ${kpi('Investimento 7 dias', R$(g7), histOk ? `<span style="color:${cor(gAnt, g7)};">${varPct(g7, gAnt)}</span> vs 7 anteriores` : 'histórico carregando')}
+          ${kpi('Vendas 7 dias', R$(v7), histOk ? `<span style="color:${cor(v7, vAnt)};">${varPct(v7, vAnt)}</span> vs 7 anteriores` : '')}
+          ${kpi('ROAS 7 dias', roas(v7, g7), histOk ? `antes: ${roas(vAnt, gAnt)}` : '')}
+          ${kpi('Parte do ADS da loja', tot7 > 0 ? `${(g7 / tot7 * 100).toFixed(0)}%` : '—', tot7 > 0 ? `de ${R$(tot7)} investidos` : '')}
+          ${kpi('Ontem', R$(parseFloat(g.gasto[ontem]) || 0), `vendas ${R$(parseFloat(g.vendas[ontem]) || 0)} · ROAS ${roas(parseFloat(g.vendas[ontem]) || 0, parseFloat(g.gasto[ontem]) || 0)}`)}
+          ${kpi('Hoje até agora', R$(parseFloat(g.gasto[hoje]) || 0), `vendas ${R$(parseFloat(g.vendas[hoje]) || 0)}`)}
+        </div>
+        <div class="ag-gmv-serie" style="overflow-x:auto;"><table class="ag-gmv-tab"><thead><tr><th>Dia</th>${dias.map(x => `<th>${x.d.slice(8, 10)}/${x.d.slice(5, 7)}</th>`).join('')}</tr></thead><tbody>
+          <tr><td>Investimento</td>${dias.map(x => `<td>${x.gasto ? R$(x.gasto) : '—'}</td>`).join('')}</tr>
+          <tr><td>Vendas</td>${dias.map(x => `<td>${x.vendas ? R$(x.vendas) : '—'}</td>`).join('')}</tr>
+          <tr><td>ROAS</td>${dias.map(x => `<td>${roas(x.vendas, x.gasto)}</td>`).join('')}</tr>
+        </tbody></table></div>
+        <div class="ag-nota">Campanha de manutenção: anuncia sozinha os produtos que <b>não</b> estão nas campanhas em grupo/individuais. Pausar uma campanha individual <b>não</b> manda o produto pra cá — só encerrando. O investimento dela já está dentro do ADS total e do ${sigla('TACOS')} da loja. Fonte: base automática${g.em ? `, atualizada ${quandoCurto(g.em)}` : ''}.</div>
+      </div>`;
+    }
+
     // ── Decisões automáticas (histórico, colapsado) ──
     // ── Relatórios diários ────────────────────────────────────
     function renderRelatorios(contaId) {
@@ -2020,6 +2090,7 @@
         ${renderCabecalho(cfg)}
         ${renderPrecisaDeVoce(cfg.conta_id)}
         ${renderKPIs(cfg)}
+        ${renderGmvLoja(cfg.conta_id)}
         ${renderRegras(cfg)}
         ${renderTimeline(cfg.conta_id)}
         ${renderTabelaCampanhas(cfg)}
@@ -2181,6 +2252,15 @@
         .ag-log-origem { font-size:11px; color:var(--text-muted); }
         .ag-log-corpo { padding:2px 14px 12px 56px; font-size:12.5px; line-height:1.6; color:var(--text-secondary,inherit); }
         .ag-secundarias { margin-bottom:20px; }
+        .ag-gmv { padding:16px 18px; margin-bottom:20px; }
+        .ag-gmv-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:10px 0 12px; }
+        .ag-gmv-kpi { background:var(--bg-surface); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+        .ag-gmv-rot { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.4px; }
+        .ag-gmv-val { font-size:17px; font-weight:800; margin-top:2px; font-variant-numeric:tabular-nums; }
+        .ag-gmv-sub { font-size:11.5px; color:var(--text-muted); margin-top:2px; }
+        .ag-gmv-tab { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric:tabular-nums; }
+        .ag-gmv-tab th, .ag-gmv-tab td { padding:5px 8px; text-align:right; border-bottom:1px solid var(--border); white-space:nowrap; }
+        .ag-gmv-tab th:first-child, .ag-gmv-tab td:first-child { text-align:left; color:var(--text-muted); }
         .ag-sec { margin-bottom:10px; }
         .ag-sec > summary { cursor:pointer; font-size:13px; font-weight:700; color:var(--text-muted); padding:6px 0; }
         .ag-sec-corpo { margin-top:8px; }
