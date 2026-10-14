@@ -13,6 +13,18 @@
 // pago (UNPAID) não entra — Vendas também não conta.
 // ============================================================
 const { waitUntil } = require('@vercel/functions');
+const { AGENDA_AGENTE, agoraBRT } = require('./_agenda-agente');
+
+// Dispara a rodada do Agente nos horários da agenda (o próprio agente trava
+// pelo horário, então disparo repetido não roda duas vezes).
+async function dispararAgente(req, tipo) {
+  try {
+    const host = req.headers['x-forwarded-host'] || req.headers.host || 'consultoriaglr.com.br';
+    const headers = process.env.CRON_SECRET ? { Authorization: `Bearer ${process.env.CRON_SECRET}` } : {};
+    const r = await fetch(`https://${host}/api/agente-cron?rodada=${tipo}`, { headers, signal: AbortSignal.timeout(25000) });
+    console.log('[sync-dados] agente', tipo, r.status, await r.text().catch(() => ''));
+  } catch (e) { console.warn('[sync-dados] não consegui disparar o agente:', e.message); }
+}
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -606,6 +618,11 @@ module.exports = async function handler(req, res) {
   if (!token || !esperado || token !== esperado) return res.status(401).json({ error: 'não autorizado' });
 
   const { modo = 'incremental', conta = null } = req.body || {};
+  // Agenda do Agente (07h completa; 12h, 16h, 20h acompanhamento): na primeira
+  // meia hora de cada horário, dispara a rodada — sem depender da cron da Vercel.
+  const { hora, minuto } = agoraBRT();
+  const naAgenda = AGENDA_AGENTE.find(a => a.hora === hora);
+  if (naAgenda && minuto < 30 && !conta) waitUntil(dispararAgente(req, naAgenda.tipo));
   // O reprocesso diário agora roda dentro das rodadas de 15 min (aos poucos,
   // por loja). A chamada noturna antiga cai no mesmo horário de uma rodada
   // normal — se rodasse junto, as duas disputariam as mesmas lojas.

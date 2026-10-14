@@ -1,7 +1,7 @@
 // ============================================================
 // GLR Consultoria — Agente Autônomo de ADS (Central de Comando)
 // Portfólio de contas Shopee com piloto configurado (o cron em
-// api/agente-cron.js roda 1x/dia às 07:00 BRT em TODAS as contas ativas,
+// api/agente-cron.js roda 4x/dia (07h revisão completa; 12h/16h/20h acompanhamento) em TODAS as contas ativas,
 // avalia as campanhas contra as metas daqui e executa pausar/retomar/
 // ajustar orçamento sozinho), com fila de atenção (só o que precisa de
 // humano), saúde do negócio (faturamento + SKUs), log completo, relatórios
@@ -1289,7 +1289,7 @@
     // Formulário de conta nova (sem conta aberta ainda)
     function renderConfig() {
       return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
-        <div class="ag-sec-head"><div class="ag-sec-titulo">🛡️ Guardrails do piloto <span class="ag-sec-sub">Defina as regras que o agente vai seguir nesta conta. O cron avalia todas as contas com o piloto ligado todo dia às 07:00.</span></div></div>
+        <div class="ag-sec-head"><div class="ag-sec-titulo">🛡️ Guardrails do piloto <span class="ag-sec-sub">Defina as regras que o agente vai seguir nesta conta. O agente avalia todas as contas com o piloto ligado 4 vezes por dia: 07:00 (revisão completa do dia anterior) e 12:00, 16:00 e 20:00 (acompanhamento do dia: orçamento esgotando, gasto sem venda, ritmo de vendas).</span></div></div>
         ${formRegras({}, true)}
       </div>`;
     }
@@ -1445,13 +1445,14 @@
       return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' + hm;
     }
 
-    // O cron roda 07:00 de Brasília (10:00 UTC).
+    // Agenda das rodadas (Brasília) — a mesma de api/_agenda-agente.js:
+    // 07h revisão completa do dia anterior; 12h, 16h e 20h acompanhamento do dia.
+    const AGENDA_AGENTE = [{ hora: 7, tipo: 'revisão completa' }, { hora: 12, tipo: 'acompanhamento' }, { hora: 16, tipo: 'acompanhamento' }, { hora: 20, tipo: 'acompanhamento' }];
     function proximaExecucao() {
-      const agora = new Date();
-      const prox = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), agora.getUTCDate(), 10, 0, 0));
-      if (prox <= agora) prox.setUTCDate(prox.getUTCDate() + 1);
-      const mesmoDia = prox.getDate() === agora.getDate() && prox.getMonth() === agora.getMonth();
-      return `${mesmoDia ? 'hoje' : 'amanhã'} 07:00`;
+      const brt = new Date(Date.now() - 3 * 3600 * 1000);
+      const horaAgora = brt.getUTCHours() + brt.getUTCMinutes() / 60;
+      const prox = AGENDA_AGENTE.find(a => a.hora > horaAgora);
+      return prox ? `hoje ${String(prox.hora).padStart(2, '0')}:00 (${prox.tipo})` : `amanhã 07:00 (${AGENDA_AGENTE[0].tipo})`;
     }
 
     function logsDaConta(contaId) { return state.logs.filter(l => l.conta_id === contaId); }

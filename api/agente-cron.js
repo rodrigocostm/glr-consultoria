@@ -1,4 +1,11 @@
-// Cron do Agente Autônomo de ADS — roda 1x/dia às 07:00 BRT (vercel.json).
+// Cron do Agente Autônomo de ADS — rodadas automáticas várias vezes por dia
+// (agenda em api/_agenda-agente.js, disparadas por api/sync-dados.js a cada
+// 15 min; a cron da Vercel ficou como reserva da revisão completa):
+//   07:00  revisão completa do dia anterior (regras 1-5 + relatório com IA)
+//   12/16/20h acompanhamento do dia em andamento (processarAcompanhamento)
+// Números de faturamento/ADS vêm da base sincronizada (glr_sync_estado resumo,
+// mesmo motor das telas) quando ela cobre o período — antes eram 5 consultas
+// lentas e sequenciais à API por conta. Sem cobertura, cai na API como antes.
 // Para cada conta marcada como piloto (glr_agente_config.ativo=true — pode
 // ser 1 ou várias ao mesmo tempo, o loop abaixo já processa todas), avalia as campanhas
 // Shopee do dia anterior contra as metas configuradas, executa pausar/retomar/
@@ -25,6 +32,11 @@
 // Meta de ROAS máxima aceita pela Shopee pra campanha individual em lance
 // automático — nunca propor um valor acima disso.
 const SHOPEE_ROAS_TARGET_MAX = 50;
+
+const { waitUntil } = require('@vercel/functions');
+const sdk = require('@anthropic-ai/sdk');
+const Anthropic = sdk.default || sdk;
+const { agoraBRT } = require('./_agenda-agente');
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -169,6 +181,118 @@ function chunk(arr, n) {
 
 const R$ = v => 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// ── Base sincronizada (motor de dados, a cada 15 min) ──────────────────────
+const inicioDiaUnix = iso => Math.floor(new Date(`${iso}T00:00:00-03:00`).getTime() / 1000);
+const isoMenos = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+const mktDe = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : null; };
+async function lerBase(mkt, contaId) {
+  const rows = await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${encodeURIComponent(contaId)}&select=recurso,cursor,ultimo_sucesso`).catch(() => []);
+  const por = Object.fromEntries(rows.map(r => [r.recurso, r]));
+  const ok = !!(por.resumo?.ultimo_sucesso && por.pedidos?.ultimo_sucesso);
+  return {
+    dias: por.resumo?.cursor?.dias || {},
+    pedidosDesde: ok ? por.pedidos?.cursor?.historico_ate || null : null,
+    adsDesde: ok && por.ads?.ultimo_sucesso ? por.ads?.cursor?.hist_ate || null : null,
+    gmvMax: por.ads?.cursor?.gmv_max || {},
+  };
+}
+const baseCobre = (b, iso) => !!(b?.pedidosDesde && b.pedidosDesde <= inicioDiaUnix(iso));
+const baseCobreAds = (b, iso) => !!(b?.adsDesde && b.adsDesde <= inicioDiaUnix(iso));
+function somarBase(b, de, ate) {
+  const t = { pedidos: 0, faturamento: 0, unidades: 0, valor_cancelado: 0, valor_devolvido: 0, ads: 0, ads_gmv: 0 };
+  for (const [dia, v] of Object.entries(b?.dias || {})) {
+    if (dia < de || dia > ate) continue;
+    for (const c of Object.keys(t)) t[c] += parseFloat(v[c]) || 0;
+  }
+  t.bruto = t.faturamento + t.valor_cancelado + t.valor_devolvido; // base do TACOS (inclui cancelados, como sempre foi)
+  return t;
+}
+const variacao = (a, b) => b > 0 ? ((a - b) / b) * 100 : null;
+async function sbCount(table, qs) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${qs}&select=pedido_id&limit=1`, {
+    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, Prefer: 'count=exact' },
+  });
+  if (!r.ok) throw new Error(`Supabase count ${table}: HTTP ${r.status}`);
+  return parseInt(String(r.headers.get('content-range') || '').split('/')[1]) || 0;
+}
+async function lerStorage(chave) {
+  return (await sbSelect('glr_storage', `chave=eq.${chave}&select=dados`).catch(() => []))[0]?.dados;
+}
+
+// Contexto de negócio que só a base dá: o cliente inteiro (todas as lojas,
+// Shopee + ML) e os produtos que mais caíram/subiram — 7 dias vs 7 anteriores.
+async function contextoNegocio(shopId, ontemIso) {
+  const ctx = {};
+  const de7 = isoMenos(ontemIso, 6), de14 = isoMenos(ontemIso, 13), ate14 = isoMenos(ontemIso, 7);
+  try {
+    const vinc = (await lerStorage('glr_mc_vinculos')) || {};
+    const clientes = (await lerStorage('glr_clientes')) || [];
+    const contas = (await lerStorage('glr_mc_contas')) || [];
+    const nomes = {};
+    for (const c of (Array.isArray(contas) ? contas : [])) {
+      const tag = (c.tags || []).find(t => t && typeof t === 'object' && t.name);
+      if (tag) nomes[String(c.external_id)] = String(tag.name).replace(/\s*[-–]\s*(shopee|ml|mercado livre)\s*$/i, '').trim();
+    }
+    for (const [cid, lista] of Object.entries(vinc)) {
+      if (!(lista || []).some(c => String(c.external_id) === String(shopId))) continue;
+      const lojas = [];
+      for (const c of lista) {
+        const mkt = mktDe(c.marketplace);
+        if (!mkt) continue;
+        const b = await lerBase(mkt, String(c.external_id));
+        if (!baseCobre(b, de14)) continue;
+        const a = somarBase(b, de7, ontemIso), p = somarBase(b, de14, ate14);
+        lojas.push({ loja: nomes[String(c.external_id)] || c.nickname || c.external_id, mkt, fat7: a.faturamento, fatAnt: p.faturamento, var: variacao(a.faturamento, p.faturamento), ads7: a.ads });
+      }
+      if (lojas.length) {
+        const f7 = lojas.reduce((s, l) => s + l.fat7, 0), fa = lojas.reduce((s, l) => s + l.fatAnt, 0);
+        ctx.cliente = { nome: (Array.isArray(clientes) ? clientes : []).find(x => String(x.id) === String(cid))?.nome || null, lojas, fat7: f7, fatAnt: fa, var: variacao(f7, fa) };
+      }
+      break;
+    }
+  } catch (e) { /* contexto é bônus */ }
+  try {
+    const desde = new Date(`${de14}T00:00:00-03:00`).toISOString();
+    const limite7 = new Date(`${de7}T00:00:00-03:00`).getTime();
+    const ate = new Date(new Date(`${ontemIso}T00:00:00-03:00`).getTime() + 86400000).toISOString();
+    const mapa = new Map();
+    for (let off = 0; off < 30000; off += 1000) {
+      const rows = await sbSelect('glr_pedidos', `marketplace=eq.shopee&conta_id=eq.${encodeURIComponent(shopId)}&situacao=eq.valido&criado_em=gte.${encodeURIComponent(desde)}&criado_em=lt.${encodeURIComponent(ate)}&select=criado_em,itens&limit=1000&offset=${off}`);
+      for (const r of rows) {
+        const lado = new Date(r.criado_em).getTime() >= limite7 ? 'a' : 'p';
+        for (const it of (r.itens || [])) {
+          const k = String(it.item_id || it.sku || it.nome);
+          const acc = mapa.get(k) || { nome: String(it.nome || k).slice(0, 60), a: 0, p: 0 };
+          acc[lado] += (parseFloat(it.preco) || 0) * (parseInt(it.qtd) || 1);
+          mapa.set(k, acc);
+        }
+      }
+      if (rows.length < 1000) break;
+    }
+    const lista = [...mapa.values()];
+    const total = lista.reduce((s, x) => s + x.a, 0);
+    let acum = 0;
+    const curvaA = new Set();
+    for (const x of [...lista].sort((m, n) => n.a - m.a)) { acum += x.a; curvaA.add(x.nome); if (total && acum / total >= 0.8) break; }
+    ctx.quedas = lista.filter(x => x.p - x.a > 0).sort((m, n) => (n.p - n.a) - (m.p - m.a)).slice(0, 3).map(x => ({ ...x, curvaA: curvaA.has(x.nome) }));
+    ctx.altas = lista.filter(x => x.a - x.p > 0).sort((m, n) => (n.a - n.p) - (m.a - m.p)).slice(0, 3);
+  } catch (e) { /* idem */ }
+  return ctx;
+}
+
+// Trava de rodada agendada: a mesma rodada (dia + horário) roda uma vez só,
+// mesmo que o disparo chegue duas vezes (agendador do Supabase + reserva da Vercel).
+async function reservarRodada(slot) {
+  const rows = await sbSelect('glr_sync_estado', 'marketplace=eq.sistema&conta_id=eq.agente&recurso=eq.agenda&select=cursor').catch(() => []);
+  const feitas = { ...(rows[0]?.cursor?.rodadas || {}) };
+  if (feitas[slot]) return false;
+  feitas[slot] = new Date().toISOString();
+  const ultimas = Object.fromEntries(Object.keys(feitas).sort().slice(-60).map(k => [k, feitas[k]]));
+  const agoraIso = new Date().toISOString();
+  await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: 'agente', recurso: 'agenda', ultima_tentativa: agoraIso, ultimo_sucesso: agoraIso, cursor: { rodadas: ultimas } }, 'marketplace,conta_id,recurso');
+  return true;
+}
+
 module.exports = async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers['authorization'];
@@ -208,12 +332,34 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  // Rodada agendada (?rodada=completa|acompanhamento, ou a cron da Vercel =
+  // completa): trava pelo horário, responde na hora e trabalha em segundo plano.
+  const contaIdFiltro = req.query?.conta_id;
+  const rodada = ['completa', 'acompanhamento'].includes(req.query?.rodada) ? req.query.rodada : (isVercelCron ? 'completa' : null);
+  if (rodada && !contaIdFiltro) {
+    try {
+      const { dia, hora } = agoraBRT();
+      const slot = rodada === 'completa' ? `${dia}-completa` : `${dia}-${String(hora).padStart(2, '0')}h`;
+      if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      const configs = await sbSelect('glr_agente_config', 'ativo=eq.true');
+      const ontem = dataBRT(1);
+      waitUntil(Promise.all(configs.map(cfg => rodada === 'completa'
+        ? processarConta(cfg, mcApiKey, anthropicKey, ontem, dataBRT(Math.max(1, cfg.regra_pausa_dias || 3)))
+        : processarAcompanhamento(cfg, mcApiKey)))
+        .then(r => console.log('[agente]', slot, JSON.stringify(r)))
+        .catch(e => console.error('[agente] rodada falhou', slot, e)));
+      return res.status(202).json({ ok: true, rodada, slot, contas: configs.length });
+    } catch (e) {
+      return res.status(500).json({ error: e.message || String(e) });
+    }
+  }
+
   try {
     // ?conta_id=X — disparo manual pra 1 conta só ("Rodar agente agora" no
     // painel), roda mesmo que o piloto esteja desligado (o analista decidiu
     // rodar agora, não precisa estar em modo automático pra isso). Sem esse
     // parâmetro, comportamento normal do cron: todas as contas ativo=true.
-    const contaIdFiltro = req.query?.conta_id;
+    // ?conta_id=X&rodada=acompanhamento roda só o acompanhamento do dia.
     const configs = contaIdFiltro
       ? await sbSelect('glr_agente_config', `conta_id=eq.${encodeURIComponent(contaIdFiltro)}`)
       : await sbSelect('glr_agente_config', 'ativo=eq.true');
@@ -226,6 +372,7 @@ module.exports = async function handler(req, res) {
     // Contas em paralelo — sequencial estourava os 60s do plano com mais de
     // 1 conta ativa (cada conta já faz vários round-trips pra Tiops).
     const resultados = await Promise.all(configs.map(cfg => {
+      if (req.query?.rodada === 'acompanhamento') return processarAcompanhamento(cfg, mcApiKey);
       const inicioJanela = dataBRT(Math.max(1, cfg.regra_pausa_dias || 3));
       return processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela);
     }));
@@ -356,11 +503,19 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // de status ao mesmo tempo faz o conector devolver dado incompleto pra
     // algumas delas (sem erro, só um total_revenue menor). Mais lento, mas o
     // único jeito confirmado de pegar o valor certo.
-    let faturamentoTotalLoja = 0;
-    for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
-      try {
-        faturamentoTotalLoja += await shopeeFaturamentoPeriodo(mcApiKey, shopId, inicioJanela.iso, ontem.iso, st);
-      } catch (e) {}
+    // Base sincronizada primeiro (instantâneo, mesmo motor das telas). Bruto =
+    // válido + cancelado + devolvido — a mesma base de antes.
+    const base = await lerBase('shopee', shopId);
+    let faturamentoTotalLoja = 0, fonteFaturamento = 'api';
+    if (baseCobre(base, inicioJanela.iso)) {
+      faturamentoTotalLoja = somarBase(base, inicioJanela.iso, ontem.iso).bruto;
+      fonteFaturamento = 'base';
+    } else {
+      for (const st of ['COMPLETED', 'READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'CANCELLED']) {
+        try {
+          faturamentoTotalLoja += await shopeeFaturamentoPeriodo(mcApiKey, shopId, inicioJanela.iso, ontem.iso, st);
+        } catch (e) {}
+      }
     }
 
     // Escopo do agente é só campanhas individuais (inclusive as em modo
@@ -374,8 +529,15 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // inteira), não da lista de campanhas — confirmado ao vivo: a lista de
     // campanhas às vezes devolve só campanhas antigas encerradas enquanto o
     // painel da Shopee mostra investimento ativo real.
-    let gastoTotalOntem = 0, gmvTotalJanela = 0, gastoTotalJanela = 0;
-    try {
+    let gastoTotalOntem = 0, gmvTotalJanela = 0, gastoTotalJanela = 0, gmvMaxJanela = 0, fonteAds = 'api';
+    if (baseCobreAds(base, inicioJanela.iso)) {
+      // Base já soma o GMV Max da loja ao ADS do dia — TACOS com TODO o investimento em ADS
+      const s = somarBase(base, inicioJanela.iso, ontem.iso);
+      gastoTotalJanela = s.ads; gmvTotalJanela = s.ads_gmv;
+      gastoTotalOntem = parseFloat(base.dias[ontem.iso]?.ads) || 0;
+      for (const [d, v] of Object.entries(base.gmvMax)) if (d >= inicioJanela.iso && d <= ontem.iso) gmvMaxJanela += parseFloat(v) || 0;
+      fonteAds = 'base';
+    } else try {
       const perfDiario = await mcpCall(mcApiKey, 'shopee_ads_daily_performance', { shopId, start_date: inicioJanela.ddmmyyyy, end_date: ontem.ddmmyyyy });
       const dias = perfDiario.data?.response || perfDiario.response || [];
       for (const d of dias) {
@@ -389,6 +551,11 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
 
     const diasMaturacao = cfg.dias_maturacao_campanha ?? 7;
     const agoraTs = Date.now() / 1000;
+    // Carência: campanha com orçamento/ROAS ajustado nas últimas 12h (ex.: no
+    // acompanhamento do dia ou num "Rodar agora" anterior) não é ajustada de novo.
+    const desde12h = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
+    const recentes = await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.decisao&resultado=eq.executado&criado_em=gte.${encodeURIComponent(desde12h)}&select=dados&limit=300`).catch(() => []);
+    const ajustadasRecentes = new Set(recentes.filter(l => l.dados?.campaign_id != null && (l.dados.budget_para != null || l.dados.roas_para != null)).map(l => String(l.dados.campaign_id)));
 
     // TACOS da conta = investimento total em ADS ÷ faturamento TOTAL da loja
     // (não só a venda atribuída ao ADS) — é o critério principal, do jeito que
@@ -443,6 +610,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
         }
         continue;
       }
+      if (ajustadasRecentes.has(String(c.campaign_id))) continue; // ajustada há menos de 12h
 
       // Campanha de lance automático tem DUAS alavancas ao mesmo tempo: orçamento
       // diário (teto de gasto) e meta de ROAS (agressividade do lance). Antes só
@@ -559,11 +727,21 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       // (inicioJanela..ontem) — compara com o mesmo campo já salvo no
       // relatório de exatamente 1 janela atrás (glr_agente_relatorios),
       // puramente uma leitura no Supabase, sem custo de API externa.
-      const diasJanela = Math.max(1, cfg.regra_pausa_dias || 3);
-      const dataRelatorioAnterior = dataBRT(1 + diasJanela).iso;
-      const relatorioAnterior = await sbSelect('glr_agente_relatorios', `conta_id=eq.${encodeURIComponent(shopId)}&data=eq.${dataRelatorioAnterior}&select=metricas&limit=1`).catch(() => []);
-      const faturamentoSaudeAnterior = relatorioAnterior[0]?.metricas?.faturamento_total_loja;
-      const variacaoSaude = faturamentoSaudeAnterior > 0 ? ((faturamentoTotalLoja - faturamentoSaudeAnterior) / faturamentoSaudeAnterior) * 100 : null;
+      // Com a base: últimos 7 dias vs os 7 anteriores, faturamento válido (sem
+      // cancelados), direto do resumo diário. Sem a base: o jeito antigo
+      // (relatório gravado 1 janela atrás).
+      let diasJanela = Math.max(1, cfg.regra_pausa_dias || 3);
+      let faturamentoSaudeAtual = faturamentoTotalLoja, faturamentoSaudeAnterior = null;
+      if (baseCobre(base, isoMenos(ontem.iso, 13))) {
+        diasJanela = 7;
+        faturamentoSaudeAtual = somarBase(base, isoMenos(ontem.iso, 6), ontem.iso).faturamento;
+        faturamentoSaudeAnterior = somarBase(base, isoMenos(ontem.iso, 13), isoMenos(ontem.iso, 7)).faturamento;
+      } else {
+        const dataRelatorioAnterior = dataBRT(1 + diasJanela).iso;
+        const relatorioAnterior = await sbSelect('glr_agente_relatorios', `conta_id=eq.${encodeURIComponent(shopId)}&data=eq.${dataRelatorioAnterior}&select=metricas&limit=1`).catch(() => []);
+        faturamentoSaudeAnterior = relatorioAnterior[0]?.metricas?.faturamento_total_loja;
+      }
+      const variacaoSaude = faturamentoSaudeAnterior > 0 ? ((faturamentoSaudeAtual - faturamentoSaudeAnterior) / faturamentoSaudeAnterior) * 100 : null;
 
       // Evita empilhar o mesmo alerta toda vez que o agente roda (cron diário
       // + cliques manuais no mesmo dia) — só sugere de novo se a pendência
@@ -590,14 +768,14 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
             if (novoRoas < melhor.roasTarget) {
               dadosSug.roas_atual = melhor.roasTarget; dadosSug.roas_sugerido = novoRoas;
               titulo = `Queda de faturamento — reforçar ${melhor.nome}`;
-              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% na janela de ${diasJanela} dia(s) vs a janela anterior equivalente (${R$(faturamentoTotalLoja)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — baixando meta de ROAS de ${melhor.roasTarget}x pra ${novoRoas}x pra tentar puxar mais volume e ajudar a reverter a queda.`;
+              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% na janela de ${diasJanela} dia(s) vs a janela anterior equivalente (${R$(faturamentoSaudeAtual)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — baixando meta de ROAS de ${melhor.roasTarget}x pra ${novoRoas}x pra tentar puxar mais volume e ajudar a reverter a queda.`;
             }
           } else if (melhor.budget > 0) {
             const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, melhor.budget * 1.2) * 100) / 100;
             if (novoBudget > melhor.budget) {
               dadosSug.budget_atual = melhor.budget; dadosSug.budget_sugerido = novoBudget;
               titulo = `Queda de faturamento — reforçar ${melhor.nome}`;
-              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% na janela de ${diasJanela} dia(s) vs a janela anterior equivalente (${R$(faturamentoTotalLoja)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — subindo orçamento de ${R$(melhor.budget)} pra ${R$(novoBudget)} pra tentar puxar mais volume e ajudar a reverter a queda.`;
+              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% na janela de ${diasJanela} dia(s) vs a janela anterior equivalente (${R$(faturamentoSaudeAtual)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — subindo orçamento de ${R$(melhor.budget)} pra ${R$(novoBudget)} pra tentar puxar mais volume e ajudar a reverter a queda.`;
             }
           }
           if (titulo) {
@@ -615,7 +793,18 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       { campanhas: campanhasAtivas, campanhas_listadas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta }, 'executado');
 
     // 2) Relatório diário com IA
-    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhasAtivas, campanhas_listadas: campanhas.length };
+    const contexto = await contextoNegocio(shopId, ontem.iso).catch(() => ({}));
+    const mesIni = ontem.iso.slice(0, 8) + '01';
+    if (baseCobre(base, isoMenos(mesIni, 31))) {
+      // Mês até ontem vs os mesmos dias do mês anterior
+      const d = parseInt(ontem.iso.slice(8, 10));
+      const ini = new Date(`${mesIni}T12:00:00Z`); ini.setUTCMonth(ini.getUTCMonth() - 1);
+      const antIni = ini.toISOString().slice(0, 10);
+      const antFim = isoMenos(antIni, -(d - 1));
+      contexto.mes = { atual: somarBase(base, mesIni, ontem.iso).faturamento, anterior: somarBase(base, antIni, antFim).faturamento };
+      contexto.mes.var = variacao(contexto.mes.atual, contexto.mes.anterior);
+    }
+    const metricas = { gasto_ontem: gastoTotalOntem, gmv_janela: gmvTotalJanela, gasto_janela: gastoTotalJanela, gmv_max_janela: gmvMaxJanela, faturamento_total_loja: faturamentoTotalLoja, tacos_conta: tacosConta === Infinity ? null : tacosConta, acos_janela: gastoTotalJanela > 0 ? (gastoTotalJanela / (gmvTotalJanela || 1)) * 100 : 0, decisoes: decisoes.length, alertas: alertas.length, campanhas_revisadas: campanhasAtivas, campanhas_listadas: campanhas.length, fonte_faturamento: fonteFaturamento, fonte_ads: fonteAds, contexto };
     const resumo = await gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem);
     await sbUpsert('glr_agente_relatorios', { data: ontem.iso, conta_id: shopId, cliente_nome: cfg.cliente_nome || null, resumo, metricas }, 'data,conta_id');
 
@@ -626,28 +815,168 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
   }
 }
 
+// ── Acompanhamento do dia em andamento (12h, 16h, 20h) ─────────────────────
+// Não refaz as Regras 1-5 da manhã (mesmos dados de ontem = mesma conclusão).
+// Olha só o que muda DURANTE o dia:
+//   A) campanha eficiente com orçamento quase esgotado cedo → sobe orçamento
+//      (dentro dos guardrails; acima do limite de variação vira aprovação)
+//   B) campanha gastando sem vender hoje → ALERTA com sugestão de pausa
+//      (nunca pausa sozinho no meio do dia)
+//   C) vendas da loja hoje vs o mesmo horário dos 7 dias anteriores (base)
+// Campanha já ajustada hoje não é mexida de novo.
+async function processarAcompanhamento(cfg, mcApiKey) {
+  const shopId = cfg.conta_id;
+  const { dia: hojeIso, hora } = agoraBRT();
+  const hoje = dataBRT(0), ontemIso = dataBRT(1).iso;
+  const decisoes = [], alertas = [];
+  async function logar(tipo, titulo, explicacao, dados, resultado) {
+    try {
+      await sbInsert('glr_agente_log', { conta_id: shopId, cliente_nome: cfg.cliente_nome || null, tipo, titulo, explicacao, dados: dados || {}, resultado: resultado || 'executado', origem: 'cron' });
+    } catch (e) {}
+  }
+  try {
+    const inicioHoje = new Date(`${hojeIso}T00:00:00-03:00`).toISOString();
+    const logsHoje = await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&criado_em=gte.${encodeURIComponent(inicioHoje)}&select=tipo,titulo,resultado,dados&limit=500`).catch(() => []);
+    const mexidasHoje = new Set(logsHoje.filter(l => l.tipo === 'decisao' && l.resultado === 'executado' && l.dados?.campaign_id != null).map(l => String(l.dados.campaign_id)));
+    const titulosHoje = new Set(logsHoje.map(l => l.titulo));
+
+    // Referência dos últimos 7 dias (base): TACOS e ticket médio
+    const base = await lerBase('shopee', shopId);
+    const s7 = baseCobre(base, isoMenos(ontemIso, 6)) ? somarBase(base, isoMenos(ontemIso, 6), ontemIso) : null;
+    const tacos7 = s7 && s7.bruto > 0 ? (s7.ads / s7.bruto) * 100 : null;
+    const ticket7 = s7 && s7.pedidos > 0 ? s7.faturamento / s7.pedidos : null;
+    const tacosOk = tacos7 == null || !cfg.meta_acos || tacos7 <= cfg.meta_acos * 1.1;
+
+    // Campanhas ativas + desempenho de HOJE (parcial)
+    const campanhas = await listarTodasCampanhas(mcApiKey, shopId);
+    const settingsPorId = {};
+    await Promise.all(chunk(campanhas.map(c => c.campaign_id), 20).map(async lote => {
+      const r = await mcpCall(mcApiKey, 'shopee_ads_campaign_settings', { shopId, campaign_id_list: lote.join(',') }).catch(() => null);
+      (r?.data?.response?.campaign_list || r?.response?.campaign_list || []).forEach(c => { settingsPorId[c.campaign_id] = { ...(c.common_info || {}), roas_target: c.auto_bidding_info?.roas_target ?? null }; });
+    }));
+    const ativas = campanhas.map(c => c.campaign_id).filter(id => (settingsPorId[id]?.campaign_status || '').toLowerCase() === 'ongoing');
+    const hojePorId = {};
+    await Promise.all(chunk(ativas, 20).map(async lote => {
+      const r = await mcpCall(mcApiKey, 'shopee_ads_campaign_daily', { shopId, campaign_id_list: lote.join(','), start_date: hoje.ddmmyyyy, end_date: hoje.ddmmyyyy }).catch(() => null);
+      (r?.data?.response?.campaign_list || r?.response?.campaign_list || []).forEach(c => {
+        const d = (c.metrics_list || []).find(x => x.date === hoje.ddmmyyyy) || {};
+        hojePorId[c.campaign_id] = { gasto: parseFloat(d.expense) || 0, gmv: parseFloat(d.broad_gmv) || 0, pedidos: parseInt(d.broad_order) || 0 };
+      });
+    }));
+
+    const diasMaturacao = cfg.dias_maturacao_campanha ?? 7;
+    const agoraTs = Date.now() / 1000;
+    let gastoHojeTotal = 0;
+    for (const id of ativas) {
+      const st = settingsPorId[id], h = hojePorId[id];
+      if (!st || !h) continue;
+      gastoHojeTotal += h.gasto;
+      if (mexidasHoje.has(String(id))) continue;
+      const nome = (st.ad_name || `Campanha ${id}`).slice(0, 70);
+      const budget = parseFloat(st.campaign_budget) || 0;
+      const acosHoje = h.gmv > 0 ? (h.gasto / h.gmv) * 100 : null;
+      const inicioTs = st.campaign_duration?.start_time || 0;
+      const emMaturacao = inicioTs ? (agoraTs - inicioTs) / 86400 < diasMaturacao : false;
+
+      // A) orçamento quase esgotado antes das 18h, campanha eficiente hoje
+      if (budget > 0 && hora < 18 && h.gasto >= budget * 0.9 && acosHoje != null && cfg.meta_acos && acosHoje <= cfg.meta_acos * 0.8) {
+        if (!tacosOk) {
+          const titulo = `Orçamento esgotando, aumento represado por TACOS — ${nome}`;
+          if (!titulosHoje.has(titulo)) await logar('sistema', titulo, `Já gastou ${R$(h.gasto)} de ${R$(budget)} até as ${hora}h com ACOS de ${acosHoje.toFixed(1)}% hoje, mas o TACOS dos últimos 7 dias (${tacos7.toFixed(1)}%) está acima da meta (${cfg.meta_acos}%). Não aumentei.`, { campaign_id: id, gasto_hoje: h.gasto, budget, tacos_7d: tacos7 }, 'so_alerta');
+        } else if (!cfg.orcamento_max || budget < cfg.orcamento_max) {
+          const novo = Math.round(Math.min(cfg.orcamento_max || Infinity, budget * 1.2) * 100) / 100;
+          const varPct = ((novo - budget) / budget) * 100;
+          const explicacao = `Até as ${hora}h já gastou ${R$(h.gasto)} de ${R$(budget)} (${Math.round(h.gasto / budget * 100)}% do orçamento) com ACOS de ${acosHoje.toFixed(1)}% hoje, bem abaixo da meta (${cfg.meta_acos}%)${tacos7 != null ? `, e o TACOS dos últimos 7 dias está em ${tacos7.toFixed(1)}%` : ''}. Sem aumento, a campanha sai do ar antes do fim do dia. Orçamento ${R$(budget)} → ${R$(novo)}.`;
+          if (cfg.alerta_variacao_pct && varPct > cfg.alerta_variacao_pct) {
+            await logar('alerta', `Sugestão de aumento de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: id, budget_atual: budget, budget_sugerido: novo }, 'so_alerta');
+            alertas.push(nome);
+          } else if (novo > budget) {
+            try {
+              await mcpCall(mcApiKey, 'shopee_ads_edit_campaign', { shopId, params: { campaign_id: Number(id), budget: novo, edit_action: 'change_budget', reference_id: `glr-agente-${Date.now()}-${id}` } });
+              await logar('decisao', `Orçamento ajustado — ${nome}`, explicacao, { campaign_id: Number(id), budget_de: budget, budget_para: novo, gasto_hoje: h.gasto, acos_hoje: acosHoje, rodada: `${hora}h` }, 'executado');
+              decisoes.push(nome);
+            } catch (e) {
+              await logar('decisao', `Falha ao ajustar orçamento — ${nome}`, `Tentei ajustar por: ${explicacao} — mas deu erro: ${e.message}`, { campaign_id: Number(id) }, 'erro');
+            }
+          }
+        }
+        continue;
+      }
+
+      // B) gastando sem vender hoje — só alerta (pausa precisa de aprovação)
+      const limiteSemVenda = Math.max(20, ticket7 && cfg.meta_acos ? ticket7 * (cfg.meta_acos / 100) * 2 : 0);
+      if (!emMaturacao && h.pedidos === 0 && h.gmv === 0 && h.gasto >= limiteSemVenda) {
+        const titulo = `Gastando sem vender hoje — ${nome}`;
+        if (!titulosHoje.has(titulo)) {
+          await logar('alerta', titulo, `Até as ${hora}h gastou ${R$(h.gasto)} hoje sem nenhuma venda atribuída — acima de ${R$(limiteSemVenda)} (o custo de ADS de 2 vendas no ticket médio de ${ticket7 ? R$(ticket7) : '—'} com a meta de ${cfg.meta_acos ?? '—'}%). Sugestão: pausar e revisar; aprove se concordar.`, { campaign_id: Number(id), pausar: true, gasto_hoje: h.gasto }, 'so_alerta');
+          alertas.push(nome);
+        }
+      }
+    }
+
+    // C) ritmo de vendas da loja hoje vs o mesmo horário dos 7 dias anteriores
+    let ritmo = null;
+    if (baseCobre(base, isoMenos(hojeIso, 7))) {
+      const agoraMs = Date.now();
+      const decorridoMs = agoraMs - new Date(`${hojeIso}T00:00:00-03:00`).getTime();
+      const contar = async diaIso => {
+        const ini = new Date(`${diaIso}T00:00:00-03:00`).getTime();
+        return sbCount('glr_pedidos', `marketplace=eq.shopee&conta_id=eq.${encodeURIComponent(shopId)}&situacao=eq.valido&criado_em=gte.${encodeURIComponent(new Date(ini).toISOString())}&criado_em=lt.${encodeURIComponent(new Date(ini + decorridoMs).toISOString())}`);
+      };
+      const hojeN = await contar(hojeIso);
+      const anteriores = [];
+      for (let k = 1; k <= 7; k++) anteriores.push(await contar(isoMenos(hojeIso, k)));
+      const media = anteriores.reduce((a, b) => a + b, 0) / anteriores.length;
+      ritmo = { hoje: hojeN, media: Math.round(media * 10) / 10, var: variacao(hojeN, media) };
+      if (media >= 5 && hojeN <= media * 0.7) {
+        const titulo = `Vendas de hoje abaixo do ritmo (${hora}h)`;
+        if (![...titulosHoje].some(t => t.startsWith('Vendas de hoje abaixo do ritmo'))) {
+          await logar('alerta', titulo, `Até as ${hora}h a loja teve ${hojeN} pedido(s) válidos, contra média de ${ritmo.media} no mesmo horário dos últimos 7 dias (${ritmo.var.toFixed(0)}%). ADS gasto hoje até agora: ${R$(gastoHojeTotal)}. Vale olhar estoque, preço e campanhas principais antes do fim do dia.`, { pedidos_hoje: hojeN, media_7d: ritmo.media, gasto_ads_hoje: gastoHojeTotal }, 'so_alerta');
+          alertas.push(titulo);
+        }
+      }
+    }
+
+    const ritmoTxt = ritmo ? ` Vendas até agora: ${ritmo.hoje} pedido(s) vs média de ${ritmo.media} no mesmo horário (${ritmo.var == null ? '—' : `${ritmo.var >= 0 ? '+' : ''}${ritmo.var.toFixed(0)}%`}).` : '';
+    await logar('sistema', `Acompanhamento das ${hora}h — ${decisoes.length} ação(ões), ${alertas.length} alerta(s)`,
+      `Acompanhamento do dia: ${ativas.length} campanhas ativas, ADS gasto hoje ${R$(gastoHojeTotal)}.${ritmoTxt}${tacos7 != null ? ` TACOS 7 dias: ${tacos7.toFixed(1)}%.` : ''}`,
+      { rodada: `${hora}h`, campanhas: ativas.length, gasto_hoje: gastoHojeTotal, ritmo, tacos_7d: tacos7, decisoes: decisoes.length, alertas: alertas.length }, 'executado');
+    return { conta_id: shopId, rodada: `${hora}h`, decisoes: decisoes.length, alertas: alertas.length, ritmo };
+  } catch (e) {
+    await logar('sistema', `Erro no acompanhamento das ${hora}h`, e.message || String(e), {}, 'erro');
+    return { conta_id: shopId, erro: e.message };
+  }
+}
+
+function textoContexto(ctx) {
+  const pct = v => v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+  const partes = [];
+  if (ctx?.mes) partes.push(`Mês até ontem: ${R$(ctx.mes.atual)} vs ${R$(ctx.mes.anterior)} nos mesmos dias do mês anterior (${pct(ctx.mes.var)}).`);
+  if (ctx?.cliente) partes.push(`Cliente${ctx.cliente.nome ? ` ${ctx.cliente.nome}` : ''} inteiro (${ctx.cliente.lojas.length} lojas): ${R$(ctx.cliente.fat7)} nos últimos 7 dias vs ${R$(ctx.cliente.fatAnt)} nos 7 anteriores (${pct(ctx.cliente.var)}). Por loja: ${ctx.cliente.lojas.map(l => `${l.loja} (${l.mkt === 'ml' ? 'Mercado Livre' : 'Shopee'}) ${pct(l.var)}`).join('; ')}.`);
+  if (ctx?.quedas?.length) partes.push(`Produtos que mais caíram (7 dias vs 7 anteriores): ${ctx.quedas.map(q => `${q.nome}${q.curvaA ? ' [curva A]' : ''} ${R$(q.p)} → ${R$(q.a)}`).join('; ')}.`);
+  if (ctx?.altas?.length) partes.push(`Produtos que mais subiram: ${ctx.altas.map(q => `${q.nome} ${R$(q.p)} → ${R$(q.a)}`).join('; ')}.`);
+  return partes.join(' ');
+}
+
 async function gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, ontem) {
   const base = `Resumo do dia ${ontem.iso} para a conta ${cfg.cliente_nome || cfg.conta_id}: `
-    + `investimento em ADS ${R$(metricas.gasto_janela)} na janela avaliada, vendas atribuídas ao ADS ${R$(metricas.gmv_janela)}, faturamento TOTAL da loja no período ${R$(metricas.faturamento_total_loja)}. `
+    + `investimento em ADS ${R$(metricas.gasto_janela)} na janela avaliada${metricas.gmv_max_janela ? ` (inclui ${R$(metricas.gmv_max_janela)} de GMV Max da loja)` : ''}, vendas atribuídas ao ADS ${R$(metricas.gmv_janela)}, faturamento TOTAL da loja no período ${R$(metricas.faturamento_total_loja)}. `
     + `TACOS da conta (investimento ADS ÷ faturamento total): ${metricas.tacos_conta == null ? '∞' : metricas.tacos_conta.toFixed(1) + '%'} (meta: ${cfg.meta_acos || '—'}%) — essa é a métrica principal usada pra decisão, não o ACOS isolado por campanha. `
     + `${metricas.decisoes} ação(ões) executada(s): ${decisoes.join(', ') || 'nenhuma'}. `
-    + `${metricas.alertas} alerta(s) aguardando aprovação: ${alertas.join(', ') || 'nenhum'}.`;
+    + `${metricas.alertas} alerta(s) aguardando aprovação: ${alertas.join(', ') || 'nenhum'}. `
+    + textoContexto(metricas.contexto);
 
   if (!anthropicKey) return base;
 
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 700,
-        system: 'Você escreve relatórios diários curtos e diretos pra um analista de e-commerce sobre um agente autônomo de ADS na Shopee. Português do Brasil, tom objetivo e prático, sem enrolação. A métrica principal de saúde da conta é o TACOS (investimento ADS sobre faturamento TOTAL da loja), não ACOS isolado por campanha — trate ACOS como detalhe de eficiência de campanha individual, não como veredito sobre a conta. Formato: 1 parágrafo de visão geral, depois bullets pras ações tomadas (se houver) e alertas pendentes (se houver). Nunca invente números — use só os dados fornecidos.',
-        messages: [{ role: 'user', content: base }],
-      }),
+    const client = new Anthropic({ apiKey: anthropicKey });
+    const r = await client.messages.create({
+      model: 'claude-haiku-5-5',
+      max_tokens: 900,
+      system: 'Você escreve relatórios diários curtos e diretos pra um analista de e-commerce sobre um agente autônomo de ADS na Shopee. Português do Brasil, tom objetivo e prático, sem enrolação. A métrica principal de saúde da conta é o TACOS (investimento ADS sobre faturamento TOTAL da loja), não ACOS isolado por campanha — trate ACOS como detalhe de eficiência de campanha individual, não como veredito sobre a conta. Quando houver contexto do negócio (mês contra mês anterior, cliente inteiro com todas as lojas, produtos que caíram/subiram), use-o para dizer se a conta está crescendo ou caindo e por quê — destaque produto curva A em queda. Formato: 1 parágrafo de visão geral, depois bullets pras ações tomadas (se houver) e alertas pendentes (se houver). Nunca invente números — use só os dados fornecidos.',
+      messages: [{ role: 'user', content: base }],
     });
-    const json = await r.json();
-    return json.content?.[0]?.text || base;
+    return r.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || base;
   } catch (e) {
     return base;
   }

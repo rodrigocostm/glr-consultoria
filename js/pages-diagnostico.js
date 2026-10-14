@@ -200,7 +200,7 @@ Router.register('diagnostico', async (params, el) => {
         if (tag) nomes[String(c.external_id)] = String(tag.name).replace(/\s*[-–]\s*(shopee|ml|mercado livre)\s*$/i, '').trim();
       });
       const porConta = {};
-      (estados || []).forEach(e => { (porConta[e.conta_id] = porConta[e.conta_id] || { marketplace: e.marketplace })[e.recurso] = e; });
+      (estados || []).filter(e => e.marketplace !== 'sistema').forEach(e => { (porConta[e.conta_id] = porConta[e.conta_id] || { marketplace: e.marketplace })[e.recurso] = e; });
       const quando = iso => {
         if (!iso) return '—';
         const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
