@@ -1,0 +1,319 @@
+// ============================================================
+// GLR Consultoria — Agente Mercado Livre (aba própria, modo COPILOTO)
+// ------------------------------------------------------------
+// Separado do Agente da Shopee (pages-agente.js) a pedido do analista.
+// O ML não libera alteração de Product Ads por integração (401 testado em
+// 14/10/2026 pelo Tiops e pelo app próprio da GLR) — então o agente analisa
+// (às 07:00 ou em "Analisar agora") e SUGERE; o analista aplica no painel do
+// ML e marca "Já apliquei". Regras em api/_agente-ml.js.
+// Config: glr_agente_config (marketplace='ml'); sugestões e registro:
+// glr_agente_log (dados.marketplace='ml'); números do mês: base automática.
+// ============================================================
+Router.register('agente-ml', (params, el) => {
+  const R$ = v => 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pct = v => v == null || !isFinite(v) ? '—' : `${(+v).toFixed(1).replace('.', ',')}%`;
+  const h = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const pad = n => String(n).padStart(2, '0');
+  const hoje = new Date();
+  const hojeIso = `${hoje.getFullYear()}-${pad(hoje.getMonth() + 1)}-${pad(hoje.getDate())}`;
+  const mesIni = hojeIso.slice(0, 8) + '01';
+  const diasMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+
+  const state = {
+    carregando: true, contasML: [], configs: [], logs: [], base: null,
+    aberta: (() => { try { return localStorage.getItem('glr_aml_conta') || null; } catch (e) { return null; } })(),
+    campanhas: {}, carregandoCamp: false, analisando: false, editando: false, salvando: false, processando: null,
+  };
+
+  const nomeConta = c => {
+    const tag = (c?.tags || []).find(t => t && typeof t === 'object' && t.name);
+    return tag ? String(tag.name).replace(/\s*[-–]\s*(ml|mercado livre)\s*$/i, '').trim() : (c?.nickname || c?.external_id || '');
+  };
+  const idConta = c => String(c.param_to_use?.meliUserId || c.external_id);
+  const cfgDe = id => state.configs.find(c => String(c.conta_id) === String(id)) || null;
+  const nomeDe = id => { const c = state.contasML.find(x => idConta(x) === String(id)); return c ? nomeConta(c) : (cfgDe(id)?.cliente_nome || id); };
+  const pendentes = id => state.logs.filter(l => String(l.conta_id) === String(id) && l.tipo === 'alerta' && l.resultado === 'so_alerta');
+
+  async function carregar() {
+    state.carregando = true; render();
+    try {
+      const [contas, cfg, logs] = await Promise.all([
+        MarketplaceAPI.listAccounts().catch(() => []),
+        _sb.from('glr_agente_config').select('*').eq('marketplace', 'ml'),
+        _sb.from('glr_agente_log').select('*').eq('dados->>marketplace', 'ml').order('criado_em', { ascending: false }).limit(400),
+      ]);
+      state.contasML = (contas || []).filter(c => ['meli', 'ml', 'mercadolivre'].includes(String(c.marketplace || '').toLowerCase()));
+      state.configs = cfg.data || [];
+      state.logs = logs.data || [];
+      try { state.base = window.BaseDados ? await BaseDados.carregar() : null; } catch (e) { state.base = null; }
+      if (state.aberta && !cfgDe(state.aberta) && state.aberta !== '__novo__') state.aberta = null;
+      if (!state.aberta && state.configs.length === 1) state.aberta = String(state.configs[0].conta_id);
+    } catch (e) { console.warn('[Agente ML]', e); }
+    state.carregando = false; render();
+    if (state.aberta && state.aberta !== '__novo__') carregarCampanhas(state.aberta);
+  }
+
+  // Mês da conta pela base automática (faturamento sem cancelados, ADS, TACOS, projeção)
+  function mesDe(id) {
+    const info = state.base ? state.base[BaseDados.chave('ml', String(id))] : null;
+    if (!info || !BaseDados.cobre(info, mesIni)) return null;
+    const t = BaseDados.somar(info, mesIni, hojeIso);
+    const b = t.faturamento + t.valor_cancelado + t.valor_devolvido;
+    const temAds = BaseDados.cobreAds(info, mesIni);
+    return { fat: t.faturamento, proj: t.faturamento / hoje.getDate() * diasMes, ads: temAds ? t.ads : null, tacos: temAds && t.faturamento > 0 ? t.ads / t.faturamento * 100 : null, taxaCancel: b > 0 ? (t.valor_cancelado + t.valor_devolvido) / b : 0 };
+  }
+
+  async function carregarCampanhas(id, forcar) {
+    if (state.carregandoCamp || (!forcar && state.campanhas[id])) return;
+    state.carregandoCamp = true; render();
+    try {
+      const todas = [];
+      for (let offset = 0; offset < 500; offset += 50) {
+        const r = await MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: id, date_from: mesIni, date_to: hojeIso, limit: 50, offset, status: 'ALL' });
+        const d = r.data || r;
+        const res = d.results || [];
+        todas.push(...res);
+        if (res.length < 50 || offset + 50 >= (parseInt(d.paging?.total) || 0)) break;
+      }
+      state.campanhas[id] = { lista: todas, em: Date.now() };
+    } catch (e) { state.campanhas[id] = { erro: e.message || String(e) }; }
+    state.carregandoCamp = false; render();
+  }
+
+  async function analisarAgora() {
+    const id = state.aberta; if (!id) return;
+    state.analisando = true; render();
+    try {
+      const r = await fetch(`/api/agente-cron?conta_id=${encodeURIComponent(id)}`);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    } catch (e) { alert('Não consegui analisar agora: ' + (e.message || e)); }
+    state.analisando = false;
+    state.campanhas[id] = null;
+    await carregar();
+  }
+
+  async function marcar(logId, resultado) {
+    const l = state.logs.find(x => String(x.id) === String(logId)); if (!l) return;
+    state.processando = logId; render();
+    try {
+      const dados = { ...(l.dados || {}), [resultado === 'executado' ? 'aplicado_em' : 'descartado_em']: new Date().toISOString() };
+      const { error } = await _sb.from('glr_agente_log').update({ resultado, dados }).eq('id', l.id);
+      if (error) throw error;
+      l.resultado = resultado; l.dados = dados;
+    } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
+    state.processando = null; render();
+  }
+
+  async function salvarConfig() {
+    const v = id => document.getElementById(id)?.value?.trim();
+    const contaId = state.aberta === '__novo__' ? v('aml-conta') : state.aberta;
+    if (!contaId) { alert('Escolha a conta do Mercado Livre.'); return; }
+    const num = id => { const x = parseFloat(String(v(id) || '').replace(',', '.')); return isNaN(x) ? null : x; };
+    const row = {
+      conta_id: String(contaId), marketplace: 'ml', cliente_nome: nomeDe(contaId),
+      ativo: document.getElementById('aml-ativo')?.checked ?? !!cfgDe(contaId)?.ativo,
+      meta_acos: num('aml-meta'), regra_pausa_acos: num('aml-forte'),
+      regra_pausa_dias: parseInt(v('aml-janela'), 10) || 7, dias_maturacao_campanha: parseInt(v('aml-mat'), 10) || 7,
+      orcamento_min: num('aml-omin'), orcamento_max: num('aml-omax'),
+      alerta_variacao_pct: 30, janela_decisao_dias: 1, notas: v('aml-notas') || '',
+      atualizado_em: new Date().toISOString(),
+    };
+    if (row.meta_acos == null) { alert('Defina a meta de TACOS/ACOS — é ela que guia as sugestões.'); return; }
+    state.salvando = true; render();
+    try {
+      const { error } = await _sb.from('glr_agente_config').upsert(row, { onConflict: 'conta_id' });
+      if (error) throw error;
+      state.aberta = String(contaId); state.editando = false;
+      try { localStorage.setItem('glr_aml_conta', state.aberta); } catch (e) {}
+    } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
+    state.salvando = false;
+    await carregar();
+  }
+
+  async function alternarAtivo(ligado) {
+    const cfg = cfgDe(state.aberta); if (!cfg) return;
+    const { error } = await _sb.from('glr_agente_config').update({ ativo: ligado, atualizado_em: new Date().toISOString() }).eq('conta_id', cfg.conta_id);
+    if (error) { alert('Não consegui salvar: ' + error.message); return; }
+    cfg.ativo = ligado; render();
+  }
+
+  // ── Render ──
+  const corTacos = (tacos, meta) => tacos != null && meta ? (tacos <= meta ? '#16a34a' : tacos <= meta * 1.3 ? '#d97706' : '#dc2626') : '#64748b';
+  function kpi(rot, val, sub, cor) {
+    return `<div class="aml-kpi" style="--c:${cor || '#6366f1'}"><div class="aml-rot">${rot}</div><div class="aml-val">${val}</div>${sub ? `<div class="aml-sub">${sub}</div>` : ''}</div>`;
+  }
+  function renderPortfolio() {
+    return `<div class="aml-grid">
+      ${state.configs.map(cfg => {
+        const id = String(cfg.conta_id), m = mesDe(id), fila = pendentes(id).length;
+        const cor = corTacos(m?.tacos, cfg.meta_acos);
+        return `<div class="card aml-card" style="--c:${cor}" onclick="window._amlAbrir('${h(id)}')">
+          <div style="font-weight:800;font-size:15px;">${h(nomeDe(id))}</div>
+          <div class="aml-sub">Mercado Livre · ${cfg.ativo ? 'análise diária ligada' : 'análise diária desligada'}</div>
+          <div style="display:flex;gap:18px;margin-top:12px;flex-wrap:wrap;">
+            <div><div class="aml-rot">TACOS mês</div><div class="aml-val" style="font-size:18px;color:${cor};">${pct(m?.tacos)}</div></div>
+            <div><div class="aml-rot">Projeção mês</div><div class="aml-val" style="font-size:18px;">${m ? R$(m.proj).replace(/,\d{2}$/, '') : '—'}</div></div>
+            <div><div class="aml-rot">Sugestões</div><div class="aml-val" style="font-size:18px;color:${fila ? '#d97706' : 'inherit'};">${fila}</div></div>
+          </div>
+        </div>`;
+      }).join('')}
+      <div class="card aml-card aml-novo" onclick="window._amlAbrir('__novo__')">+ Adicionar conta do Mercado Livre</div>
+    </div>`;
+  }
+  function renderConfig(cfg) {
+    const c = cfg || {};
+    const opcoes = state.contasML.filter(x => !cfgDe(idConta(x))).map(x => `<option value="${h(idConta(x))}">${h(nomeConta(x))} (${h(idConta(x))})</option>`).join('');
+    const campo = (id, rot, val, dica, suf) => `<label class="aml-campo"><span>${rot}</span><div><input id="${id}" class="form-control" value="${val ?? ''}" inputmode="decimal">${suf ? `<em>${suf}</em>` : ''}</div>${dica ? `<small>${dica}</small>` : ''}</label>`;
+    return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
+      <div style="font-weight:800;font-size:15px;margin-bottom:4px;">🛡️ Guardrails do copiloto</div>
+      <div class="aml-sub" style="margin-bottom:12px;">As mesmas regras do agente da Shopee: TACOS do mês decide se dá pra acelerar; ACOS sem cancelados; pausar só quando gasta muito sem retorno.</div>
+      ${!cfg ? `<label class="aml-campo"><span>Conta do Mercado Livre</span><div><select id="aml-conta" class="form-control"><option value="">Escolha…</option>${opcoes}</select></div></label>` : ''}
+      <div class="aml-campos">
+        ${campo('aml-meta', 'Meta de TACOS / ACOS', c.meta_acos, 'Acima disso a campanha é contida; abaixo de 70% dela, dá pra acelerar.', '%')}
+        ${campo('aml-forte', 'Contenção forte acima de ACOS', c.regra_pausa_acos, 'Com venda, aperta 25% em vez de 15% — não pausa.', '%')}
+        ${campo('aml-janela', 'Janela de análise', c.regra_pausa_dias ?? 7, 'Dias olhados para gasto, vendas e ACOS de cada campanha.', 'dias')}
+        ${campo('aml-mat', 'Maturação mínima', c.dias_maturacao_campanha ?? 7, 'Campanha mais nova que isso não recebe sugestão de conter/pausar.', 'dias')}
+        ${campo('aml-omin', 'Orçamento mínimo', c.orcamento_min, '', 'R$/dia')}
+        ${campo('aml-omax', 'Orçamento máximo', c.orcamento_max, '', 'R$/dia')}
+      </div>
+      <label class="aml-campo"><span>Notas para o agente</span><div><input id="aml-notas" class="form-control" value="${h(c.notas || '')}"></div></label>
+      <label style="display:flex;gap:8px;align-items:center;margin:8px 0 14px;font-size:13px;"><input type="checkbox" id="aml-ativo" ${c.ativo || !cfg ? 'checked' : ''}> Analisar sozinho todo dia às 07:00</label>
+      <div style="display:flex;gap:8px;"><button class="btn btn-primary" ${state.salvando ? 'disabled' : ''} onclick="window._amlSalvar()">${state.salvando ? 'Salvando…' : 'Salvar'}</button>
+      ${cfg ? '<button class="btn btn-secondary" onclick="window._amlEditar(false)">Cancelar</button>' : ''}</div>
+    </div>`;
+  }
+  const semInstrucao = t => String(t || '').replace(/ ?Aplique no painel[\s\S]*$/, '');
+  function renderSugestoes(id) {
+    const lista = pendentes(id);
+    const rotAcao = { pausar: '⏸ Pausar', orcamento: '💰 Orçamento', acos_target: '🎯 Meta de ACOS' };
+    const dePara = d => d.acao === 'orcamento' ? `${R$(d.de)} → ${R$(d.para)}` : d.acao === 'acos_target' ? `${pct(d.de)} → ${pct(d.para)}` : 'pausar campanha';
+    return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
+      <div style="font-weight:800;font-size:15px;margin-bottom:4px;">📋 Sugestões para aplicar no Mercado Livre ${lista.length ? `<span class="aml-chip">${lista.length}</span>` : ''}</div>
+      <div class="aml-sub" style="margin-bottom:12px;">O ML não libera alteração de anúncios patrocinados por integração. Aplique no painel do ML (Publicidade → Product Ads → campanha) e marque <b>Já apliquei</b>.</div>
+      ${lista.length ? lista.map(l => {
+        const d = l.dados || {};
+        return `<div class="aml-sug">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start;">
+            <div style="flex:1;min-width:220px;"><div style="font-weight:700;">${h(l.titulo)}</div>
+              <div style="margin:4px 0;"><span class="aml-chip">${rotAcao[d.acao] || 'Ação'}</span> <b>${h(dePara(d))}</b></div>
+              <div class="aml-sub">${h(semInstrucao(l.explicacao))}</div></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="btn btn-primary btn-sm" ${state.processando ? 'disabled' : ''} onclick="window._amlMarcar('${l.id}','executado')">✓ Já apliquei</button>
+              <button class="btn btn-secondary btn-sm" ${state.processando ? 'disabled' : ''} onclick="window._amlMarcar('${l.id}','descartado')">Descartar</button>
+            </div>
+          </div></div>`;
+      }).join('') : '<div class="aml-sub">Nada pendente agora. ✅</div>'}
+    </div>`;
+  }
+  function renderCampanhas(id) {
+    const c = state.campanhas[id], m = mesDe(id), cfg = cfgDe(id);
+    const tx = m?.taxaCancel || 0;
+    let corpo;
+    if (!c) corpo = '<div class="aml-sub">⏳ Carregando campanhas…</div>';
+    else if (c.erro) corpo = `<div class="aml-sub" style="color:#dc2626;">Não consegui buscar as campanhas: ${h(c.erro)}</div>`;
+    else if (!c.lista.length) corpo = '<div class="aml-sub">Nenhuma campanha de Product Ads nesta conta.</div>';
+    else {
+      const pend = new Set(pendentes(id).map(l => String(l.dados?.campaign_id)));
+      const linhas = [...c.lista].sort((a, b) => (parseFloat(b.metrics?.cost) || 0) - (parseFloat(a.metrics?.cost) || 0));
+      corpo = `<div style="overflow-x:auto;"><table class="aml-tab"><thead><tr><th>Campanha</th><th>Status</th><th>Estratégia</th><th>Orçamento</th><th>Meta ACOS</th><th>Gasto</th><th>Vendas (sem cancel.)</th><th>ACOS</th></tr></thead><tbody>
+        ${linhas.map(x => {
+          const mm = x.metrics || {}, g = parseFloat(mm.cost) || 0, v = (parseFloat(mm.total_amount) || 0) * (1 - tx);
+          const acos = v > 0 ? g / v * 100 : (g > 0 ? Infinity : null);
+          const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity || acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? '#dc2626' : acos > cfg.meta_acos ? '#d97706' : '#16a34a';
+          return `<tr><td>${h(x.name)}${pend.has(String(x.id)) ? ' <span class="aml-chip" title="Tem sugestão pendente">sugestão</span>' : ''}</td>
+            <td>${x.status === 'active' ? '🟢 ativa' : x.status === 'paused' ? '⏸ pausada' : h(x.status)}</td><td>${h({ PROFITABILITY: 'Rentabilidade', INCREASE: 'Crescimento', VISIBILITY: 'Visibilidade' }[x.strategy] || x.strategy || '—')}</td>
+            <td>${x.budget ? R$(x.budget) : '—'}</td><td>${x.acos_target ? pct(x.acos_target) : '—'}</td>
+            <td>${R$(g)}</td><td>${R$(v)}</td><td style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td></tr>`;
+        }).join('')}</tbody></table></div>`;
+    }
+    return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+        <div><div style="font-weight:800;font-size:15px;">📢 Campanhas de Product Ads — mês atual</div>
+        <div class="aml-sub">ACOS sem cancelados${tx > 0.005 ? ` (cancelamentos/devoluções da loja no mês: ${pct(tx * 100)})` : ''}.</div></div>
+        <button class="btn btn-secondary btn-sm" title="Atualizar" ${state.carregandoCamp ? 'disabled' : ''} onclick="window._amlCampanhas()">🔄</button>
+      </div>${corpo}</div>`;
+  }
+  function renderHistorico(id) {
+    const lista = state.logs.filter(l => String(l.conta_id) === String(id) && !(l.tipo === 'alerta' && l.resultado === 'so_alerta')).slice(0, 15);
+    const quando = s => new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const rot = l => l.tipo === 'sistema' ? '🧠' : l.resultado === 'executado' ? '✅ aplicada' : l.resultado === 'descartado' ? '✖ descartada' : '';
+    return `<details class="card" style="padding:14px 20px;margin-bottom:18px;"><summary style="cursor:pointer;font-weight:800;">🕘 Registro</summary>
+      ${lista.length ? lista.map(l => `<div class="aml-hist"><span class="aml-sub">${quando(l.criado_em)}</span> ${rot(l)} <b>${h(l.titulo)}</b><div class="aml-sub">${h(semInstrucao(l.explicacao).slice(0, 260))}</div></div>`).join('') : '<div class="aml-sub" style="margin-top:8px;">Nada registrado ainda.</div>'}
+    </details>`;
+  }
+
+  function render() {
+    const root = document.getElementById('aml-root'); if (!root) return;
+    if (state.carregando) { root.innerHTML = '<div class="aml-sub" style="padding:30px;">⏳ Carregando…</div>'; return; }
+    if (!state.aberta) { root.innerHTML = renderPortfolio(); return; }
+    if (state.aberta === '__novo__') { root.innerHTML = `<button class="btn btn-secondary btn-sm" style="margin-bottom:14px;" onclick="window._amlAbrir(null)">← Voltar</button>${renderConfig(null)}`; return; }
+    const id = state.aberta, cfg = cfgDe(id), m = mesDe(id);
+    const ultima = state.logs.find(l => String(l.conta_id) === String(id) && l.tipo === 'sistema');
+    root.innerHTML = `
+      <div class="card aml-topo">
+        <button class="btn btn-secondary btn-sm" onclick="window._amlAbrir(null)" title="Todas as contas">←</button>
+        <select class="form-control" style="max-width:260px;" onchange="window._amlAbrir(this.value)">
+          ${state.configs.map(c => `<option value="${h(c.conta_id)}" ${String(c.conta_id) === id ? 'selected' : ''}>${h(nomeDe(c.conta_id))}</option>`).join('')}
+          <option value="__novo__">+ Adicionar conta</option>
+        </select>
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px;"><input type="checkbox" ${cfg?.ativo ? 'checked' : ''} onchange="window._amlAtivo(this.checked)"> Análise diária 07:00</label>
+        <span class="aml-sub" style="flex:1;">${ultima ? `Última análise: ${new Date(ultima.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : 'Ainda não analisou'}</span>
+        <button class="btn btn-secondary btn-sm" onclick="window._amlEditar(${state.editando ? 'false' : 'true'})">⚙️ Guardrails</button>
+        <button class="btn btn-primary btn-sm" ${state.analisando ? 'disabled' : ''} onclick="window._amlAnalisar()">${state.analisando ? '⏳ Analisando…' : '🔎 Analisar agora'}</button>
+      </div>
+      ${state.editando ? renderConfig(cfg) : ''}
+      <div class="aml-kpis">
+        ${kpi('Faturamento do mês (sem cancelados)', m ? R$(m.fat) : '—', m ? `projeção do mês <b>${R$(m.proj)}</b>` : 'a base automática ainda não cobre o mês desta conta')}
+        ${kpi('Investimento em ADS no mês', m?.ads != null ? R$(m.ads) : '—', '', '#0ea5e9')}
+        ${kpi('TACOS do mês vs meta', pct(m?.tacos), `meta ${pct(cfg?.meta_acos)}`, corTacos(m?.tacos, cfg?.meta_acos))}
+      </div>
+      ${renderSugestoes(id)}
+      ${renderCampanhas(id)}
+      ${renderHistorico(id)}`;
+  }
+
+  window._amlAbrir = id => {
+    state.aberta = id || null; state.editando = false;
+    try { if (id && id !== '__novo__') localStorage.setItem('glr_aml_conta', id); else localStorage.removeItem('glr_aml_conta'); } catch (e) {}
+    render();
+    if (id && id !== '__novo__') carregarCampanhas(id);
+  };
+  window._amlEditar = on => { state.editando = !!on; render(); };
+  window._amlSalvar = salvarConfig;
+  window._amlAtivo = alternarAtivo;
+  window._amlAnalisar = analisarAgora;
+  window._amlMarcar = marcar;
+  window._amlCampanhas = () => carregarCampanhas(state.aberta, true);
+
+  el.innerHTML = `<div class="page">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+      <div style="font-size:22px;font-weight:800;">🤝 Agente Mercado Livre</div>
+      <span class="aml-chip" title="Analisa e sugere; você aplica no painel do ML">Copiloto</span>
+    </div>
+    <div class="aml-sub" style="margin-bottom:18px;max-width:900px;">Analisa os anúncios patrocinados (Product Ads) de cada conta com as mesmas regras do agente da Shopee e sugere o que ajustar. O Mercado Livre não libera alteração de campanhas por integração — então você aplica no painel do ML e marca aqui. Quando o ML liberar, ele passa a executar sozinho.</div>
+    <div id="aml-root"></div>
+  </div>
+  <style>
+    .aml-sub{font-size:12.5px;color:var(--text-muted);line-height:1.5;}
+    .aml-chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(99,102,241,.12);color:#6366f1;vertical-align:middle;}
+    .aml-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
+    .aml-card{padding:16px 18px;cursor:pointer;border-left:4px solid var(--c,#64748b);}
+    .aml-novo{display:flex;align-items:center;justify-content:center;min-height:110px;color:var(--text-muted);font-weight:600;border-style:dashed;}
+    .aml-rot{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);}
+    .aml-val{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;}
+    .aml-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:18px;}
+    .aml-kpi{background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:12px;padding:12px 14px;}
+    .aml-topo{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin-bottom:18px;}
+    .aml-sug{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;}
+    .aml-tab{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums;}
+    .aml-tab th,.aml-tab td{padding:7px 8px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;}
+    .aml-tab th{font-size:11px;color:var(--text-muted);text-transform:uppercase;}
+    .aml-campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 16px;}
+    .aml-campo{display:flex;flex-direction:column;gap:4px;font-size:12.5px;margin-bottom:8px;}
+    .aml-campo > div{display:flex;align-items:center;gap:6px;} .aml-campo em{font-style:normal;color:var(--text-muted);font-size:12px;}
+    .aml-campo small{color:var(--text-muted);font-size:11px;}
+    .aml-hist{padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  </style>`;
+  carregar();
+});

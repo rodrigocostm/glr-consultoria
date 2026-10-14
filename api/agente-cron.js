@@ -37,6 +37,9 @@ const { waitUntil } = require('@vercel/functions');
 const sdk = require('@anthropic-ai/sdk');
 const Anthropic = sdk.default || sdk;
 const { agoraBRT } = require('./_agenda-agente');
+// Agente do Mercado Livre (copiloto) — código separado do da Shopee
+const { processarContaML } = require('./_agente-ml');
+const ehML = cfg => String(cfg.marketplace || '').toLowerCase() === 'ml';
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -282,6 +285,11 @@ async function contextoNegocio(shopId, ontemIso) {
   return ctx;
 }
 
+// Ferramentas compartilhadas que o agente do ML (api/_agente-ml.js) usa.
+function ajudantesML() {
+  return { sbSelect, sbInsert, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall };
+}
+
 // Trava de rodada agendada: a mesma rodada (dia + horário) roda uma vez só,
 // mesmo que o disparo chegue duas vezes (agendador do Supabase + reserva da Vercel).
 async function reservarRodada(slot) {
@@ -343,11 +351,15 @@ module.exports = async function handler(req, res) {
       const { dia, hora } = agoraBRT();
       const slot = rodada === 'completa' ? `${dia}-completa` : `${dia}-${String(hora).padStart(2, '0')}h`;
       if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
-      const configs = await sbSelect('glr_agente_config', 'ativo=eq.true');
+      const todas = await sbSelect('glr_agente_config', 'ativo=eq.true');
+      // ML (copiloto) só na revisão completa das 07h; acompanhamentos são da Shopee
+      const configs = todas.filter(cfg => rodada === 'completa' || !ehML(cfg));
       const ontem = dataBRT(1);
-      waitUntil(Promise.all(configs.map(cfg => rodada === 'completa'
-        ? processarConta(cfg, mcApiKey, anthropicKey, ontem, dataBRT(Math.max(1, cfg.regra_pausa_dias || 3)))
-        : processarAcompanhamento(cfg, mcApiKey)))
+      waitUntil(Promise.all(configs.map(cfg => ehML(cfg)
+        ? processarContaML(cfg, mcApiKey, ajudantesML())
+        : rodada === 'completa'
+          ? processarConta(cfg, mcApiKey, anthropicKey, ontem, dataBRT(Math.max(1, cfg.regra_pausa_dias || 3)))
+          : processarAcompanhamento(cfg, mcApiKey)))
         .then(r => console.log('[agente]', slot, JSON.stringify(r)))
         .catch(e => console.error('[agente] rodada falhou', slot, e)));
       return res.status(202).json({ ok: true, rodada, slot, contas: configs.length });
@@ -374,6 +386,7 @@ module.exports = async function handler(req, res) {
     // Contas em paralelo — sequencial estourava os 60s do plano com mais de
     // 1 conta ativa (cada conta já faz vários round-trips pra Tiops).
     const resultados = await Promise.all(configs.map(cfg => {
+      if (ehML(cfg)) return processarContaML(cfg, mcApiKey, ajudantesML());
       if (req.query?.rodada === 'acompanhamento') return processarAcompanhamento(cfg, mcApiKey);
       const inicioJanela = dataBRT(Math.max(1, cfg.regra_pausa_dias || 3));
       return processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela);

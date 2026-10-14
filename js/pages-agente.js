@@ -76,7 +76,8 @@
           _sb.from('glr_agente_relatorios').select('*').order('data', { ascending: false }).limit(60),
         ]);
         state.contasShopee = (contas || []).filter(c => (c.marketplace || '').toLowerCase() === 'shopee');
-        state.contas = cfgResp.data || [];
+        // Só contas da Shopee — o Mercado Livre tem aba própria (pages-agente-ml.js)
+        state.contas = (cfgResp.data || []).filter(c => !c.marketplace || String(c.marketplace).toLowerCase() === 'shopee');
         state.logs = logsResp.data || [];
         state.relatorios = relResp.data || [];
         // Só 1 conta configurada (ou nenhuma) → abre direto no detalhe, sem
