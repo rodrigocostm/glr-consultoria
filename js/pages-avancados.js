@@ -1432,7 +1432,6 @@ Router.register('projecao', (params, el) => {
 
       <div class="pn-kpis">
         <div class="pn-kpi"><div class="pn-rot">Vendas projetadas</div><div class="pn-val">${Math.round(tot.vendasProj).toLocaleString('pt-BR')}</div><div class="pn-sub">${Math.round(tot.vendas).toLocaleString('pt-BR')} até agora${tot.ticket ? ` · ticket ${_pnFmt0(tot.ticket)}` : ''}</div></div>
-        <div class="pn-kpi" id="kpi-glr-card" style="${ocultarGLR ? 'display:none' : ''}"><div class="pn-rot">Receita GLR</div><div class="pn-val" style="color:var(--pn-bom)">${tot.receitaGLR > 0 ? _pnFmt0(tot.receitaGLR) : '—'}</div><div class="pn-sub">${r.valorVenda ? `vendas × R$ ${r.valorVenda.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'cadastre o valor por venda'}</div></div>
         <div class="pn-kpi"><div class="pn-rot">ADS projetado</div><div class="pn-val">${tot.adsProj > 0 ? _pnFmt0(tot.adsProj) : '—'}</div><div class="pn-sub">${tot.ads > 0 ? `${_pnFmt0(tot.ads)} investidos até agora` : 'sem ADS no período'}</div></div>
         <div class="pn-kpi"><div class="pn-rot">TACOS</div><div class="pn-val">${tot.tacos != null ? tot.tacos.toFixed(1).replace('.', ',') + '%' : '—'}</div><div class="pn-sub">ADS ÷ faturamento</div></div>
       </div>
@@ -1480,7 +1479,6 @@ Router.register('projecao', (params, el) => {
       </div>
       <div class="pn-head-r">
         <button class="pn-btn" onclick="abrirVinculoProjecao()">🔗 Vincular contas</button>
-        <button id="btn-toggle-glr" class="pn-btn" onclick="toggleGLRProjecao()">${ocultarGLR ? '🙈 GLR oculta' : '👁 Ocultar GLR'}</button>
         <details class="pn-mais"><summary class="pn-btn">⋯ Mais</summary>
           <div class="pn-menu">
             <button id="btn-buscar-proj" onclick="buscarDadosProjecao()">🔄 Buscar dados pela API <small>contas fora da base</small></button>
@@ -1549,8 +1547,8 @@ Router.register('projecao', (params, el) => {
       .pn-barra-leg span{display:flex;align-items:center;gap:6px;}
       .pn-barra-leg i{width:10px;height:10px;border-radius:3px;display:inline-block;}
       .pn-barra-leg .pn-tick{width:2px;height:12px;background:var(--text-primary);opacity:.55;border-radius:1px;}
-      .pn-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
-      @media (max-width:900px){.pn-kpis{grid-template-columns:repeat(2,1fr);}.pn-big{font-size:32px;}}
+      .pn-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px;}
+      @media (max-width:900px){.pn-kpis{grid-template-columns:1fr;}.pn-big{font-size:32px;}}
       .pn-kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;}
       .pn-val{font-size:21px;font-weight:800;color:var(--text-primary);font-variant-numeric:tabular-nums;margin:2px 0;}
       .pn-graficos{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:18px;}
@@ -1562,18 +1560,22 @@ Router.register('projecao', (params, el) => {
       .pn-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--text-secondary);margin-top:6px;}
       .pn-leg span{display:flex;align-items:center;gap:6px;} .pn-leg i{width:16px;height:0;border-top:2px solid;display:inline-block;}
       .pn-sec-t{font-size:15px;font-weight:800;color:var(--text-primary);margin:4px 0 10px;}
-      .pn-contas{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;}
-      .pn-conta{padding:14px 16px;border-top:3px solid var(--m);}
+      .pn-contas{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:14px;}
+      .pn-conta{padding:20px 22px;border-top:4px solid var(--m);}
       .pn-conta-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:8px;}
-      .pn-conta-nome{font-weight:800;color:var(--text-primary);font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+      .pn-conta-nome{font-weight:800;color:var(--text-primary);font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
       .pn-mkt{color:var(--m);font-weight:700;}
+      .pn-conta .pn-sub{font-size:13px;}
       .pn-x{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:6px;} .pn-x:hover{color:#dc2626;background:rgba(220,38,38,.08);}
-      .pn-conta-num{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;margin-bottom:10px;}
-      .pn-conta-num .pn-chip{font-size:13px;padding:5px 9px;}
-      .pn-conta-grid,.pn-conta-meses{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:12px;}
-      .pn-conta-meses{grid-template-columns:repeat(3,1fr);border-top:1px solid var(--border);padding-top:8px;margin-top:8px;}
-      .pn-conta-grid span,.pn-conta-meses span{display:block;color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;}
-      .pn-conta-grid b,.pn-conta-meses b{color:var(--text-primary);font-variant-numeric:tabular-nums;font-size:12.5px;}
+      .pn-conta-num{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;margin:6px 0 16px;}
+      .pn-conta-num .pn-val{font-size:30px;letter-spacing:-.5px;}
+      .pn-conta-num .pn-chip{font-size:15px;padding:7px 11px;}
+      .pn-conta-grid,.pn-conta-meses{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+      .pn-conta-meses{grid-template-columns:repeat(3,1fr);border-top:1px solid var(--border);padding-top:14px;margin-top:14px;}
+      .pn-conta-grid>div,.pn-conta-meses>div{background:var(--bg-card-hover);border-radius:10px;padding:9px 11px;}
+      .pn-conta-grid span,.pn-conta-meses span{display:block;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;}
+      .pn-conta-grid b,.pn-conta-meses b{color:var(--text-primary);font-variant-numeric:tabular-nums;font-size:16px;}
+      @media (max-width:520px){.pn-conta-grid{grid-template-columns:repeat(2,1fr);}}
       .pn-inp{width:100%;background:var(--bg-card-hover);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);padding:3px 6px;font-size:12px;font-weight:600;}
       .pn-vazio{padding:28px;text-align:center;color:var(--text-muted);grid-column:1/-1;}
     `;
