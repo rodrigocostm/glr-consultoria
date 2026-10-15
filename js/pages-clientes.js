@@ -309,7 +309,6 @@ Router.register('cliente-perfil', (params, el) => {
     if (!c) return;
 
     const acoes        = GLR.acoes.filter(a => a.clienteId === c.id);
-    const oportunidades = GLR.oportunidades.filter(o => o.clienteId === c.id);
     const tarefas      = GLR.tarefas.filter(t => t.clienteId === c.id);
 
     const tabContent = document.getElementById('tab-content');
@@ -420,19 +419,6 @@ Router.register('cliente-perfil', (params, el) => {
               `).join('')
               : '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">Nenhuma tarefa ativa</div>'}
             <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="openModalNovaTarefa(${c.id})">+ Nova tarefa</button>
-          </div>
-          <div class="card">
-            <div class="section-title mb-16">💡 Oportunidades</div>
-            ${oportunidades.length
-              ? oportunidades.map(o => `
-                <div style="padding:10px 12px;background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.2);border-radius:var(--radius-sm);margin-bottom:8px;">
-                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                    <div style="font-size:13px;font-weight:600;">${o.titulo}</div>
-                    <div style="font-size:14px;font-weight:800;color:var(--green);">${GLR.formatCurrency(o.impacto)}/mês</div>
-                  </div>
-                </div>
-              `).join('')
-              : '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">Nenhuma oportunidade registrada</div>'}
           </div>
         </div>
       `;
