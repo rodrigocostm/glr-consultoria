@@ -123,6 +123,22 @@ const PM = (() => {
   const lerJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || '') ?? d; } catch (e) { return d; } };
   const meliDe = c => String(c.param_to_use?.meliUserId || c.external_id);
   const margemMin = () => { const v = parseFloat(lerJSON('glr_promo_margem_min', {})[contaAtual?.external_id]); return isNaN(v) ? 15 : v; };
+  // % de ADS sobre o preço (por conta) — a margem mostrada e o "bate a margem" são pós-ADS
+  const adsPct = () => { const v = parseFloat(lerJSON('glr_promo_ads_pct', {})[contaAtual?.external_id]); return isNaN(v) ? 0 : v; };
+  // TACOS do mês da conta (base automática), sugerido para preencher o ADS %
+  let tacosSug = null;
+  async function carregarTacos() {
+    tacosSug = null;
+    try {
+      if (!window.BaseDados) return;
+      const base = await BaseDados.carregar();
+      const info = base[BaseDados.chave('ml', st.meli)];
+      const hoje = new Date(), pad = n => String(n).padStart(2, '0');
+      const ini = `${hoje.getFullYear()}-${pad(hoje.getMonth() + 1)}-01`, ate = `${hoje.getFullYear()}-${pad(hoje.getMonth() + 1)}-${pad(hoje.getDate())}`;
+      if (info && BaseDados.cobre(info, ini) && BaseDados.cobreAds(info, ini)) { const t = BaseDados.somar(info, ini, ate); if (t.faturamento > 0) tacosSug = t.ads / t.faturamento * 100; }
+    } catch (e) {}
+    render();
+  }
 
   async function tentar(fn, n = 3) {
     for (let i = 0; ; i++) {
@@ -165,7 +181,7 @@ const PM = (() => {
     const aliq = parseFloat(lerJSON('glr_aliquotas', {})[contaAtual.external_id]) || 0;
     let pct = 0, fixo = 0;
     for (const l of lerJSON('glr_vendas_linhas', [])) { if (l.tipo === 'pct') pct += parseFloat(l.valor) || 0; else fixo += parseFloat(l.valor) || 0; }
-    return { imp: aliq, extraPct: pct, extraFixo: fixo };
+    return { imp: aliq, extraPct: pct, extraFixo: fixo, ads: adsPct() };
   }
   function custoDe(id) { const v = parseFloat(lerJSON('glr_vendas_custo_catalogo', {})[id]); return v > 0 ? v : null; }
 
@@ -175,9 +191,11 @@ const PM = (() => {
     const recebe = preco - tarifa - frete;
     const d = despesas();
     const custo = custoDe(it.id);
-    if (custo == null) return { preco, tarifa, frete, recebe, custo: null, lucro: null, margem: null };
-    const lucro = recebe - custo - preco * (d.imp + d.extraPct) / 100 - d.extraFixo;
-    return { preco, tarifa, frete, recebe, custo, lucro, margem: preco > 0 ? lucro / preco * 100 : null };
+    if (custo == null) return { preco, tarifa, frete, recebe, custo: null, lucro: null, margem: null, margemAntesAds: null, adsValor: 0 };
+    const lucroAntesAds = recebe - custo - preco * (d.imp + d.extraPct) / 100 - d.extraFixo;
+    const adsValor = preco * d.ads / 100;
+    const lucro = lucroAntesAds - adsValor;
+    return { preco, tarifa, frete, recebe, custo, lucro, adsValor, margem: preco > 0 ? lucro / preco * 100 : null, margemAntesAds: preco > 0 ? lucroAntesAds / preco * 100 : null };
   }
   // Menor preço que bate a margem m, com a tarifa e o frete DAQUELE preço:
   // resolve, consulta tarifa/frete no novo preço e repete até estabilizar.
@@ -187,7 +205,7 @@ const PM = (() => {
     let preco = inicial;
     for (let i = 0; i < 5; i++) {
       const { tx, fr } = await custosNoPreco(it, preco);
-      const den = 1 - (tx.pct + d.imp + d.extraPct + m) / 100;
+      const den = 1 - (tx.pct + d.imp + d.extraPct + d.ads + m) / 100;
       if (den <= 0) return Infinity;
       const novo = Math.ceil((custo + fr + tx.fixo + d.extraFixo) / den * 100) / 100;
       if (Math.abs(novo - preco) < 0.01) return novo;
@@ -244,6 +262,7 @@ const PM = (() => {
       const c = lerJSON(chave, null);
       if (c && Date.now() - c.em < 30 * 60000 && st.conta !== meli) {
         Object.assign(st, { conta: meli, meli, itens: c.itens, erro: null, escolha: {}, resultado: {} });
+        carregarTacos();
         Object.assign(taxaCache, c.taxas || {}); Object.assign(freteCache, c.fretes || {});
         await mapLimit(st.itens, 4, async it => { try { await avaliar(it); } catch (e) { it.erroPromo = e.message; it.opcoes = []; } });
         render(); return;
@@ -251,6 +270,7 @@ const PM = (() => {
     }
     Object.assign(st, { conta: meli, meli, carregando: true, erro: null, itens: [], escolha: {}, resultado: {}, progresso: 'listando anúncios ativos…' });
     render();
+    carregarTacos();
     try {
       // 1) anúncios ativos (corpo completo: categoria, tipo, frete, foto, estoque)
       const anuncios = [];
@@ -354,8 +374,9 @@ const PM = (() => {
     box.innerHTML = `
       <div class="pm-config card">
         <label>Margem mínima <input id="pm-mmin" type="number" step="0.5" value="${m}" onchange="window._pmMargem(this.value)">%</label>
+        <label title="Investimento em ADS como % do preço — entra na margem (margem pós-ADS)">ADS <input id="pm-ads" type="number" step="0.1" min="0" value="${d.ads || ''}" placeholder="0" onchange="window._pmAds(this.value)">%${tacosSug != null ? ` <button class="pm-link" type="button" onclick="window._pmAds('${tacosSug.toFixed(1)}')" title="TACOS do mês desta conta (base automática)">usar TACOS do mês (${tacosSug.toFixed(1).replace('.', ',')}%)</button>` : ''}</label>
         <span class="pm-mut">Imposto da conta: <b>${d.imp ? d.imp.toString().replace('.', ',') + '%' : 'não definido'}</b>${d.extraPct || d.extraFixo ? ` · despesas extras de Vendas: ${d.extraPct ? d.extraPct + '%' : ''}${d.extraPct && d.extraFixo ? ' + ' : ''}${d.extraFixo ? R(d.extraFixo) + '/pedido' : ''}` : ''}</span>
-        <span class="pm-mut" style="flex:1">Margem = (preço − tarifa ML − frete do ML naquele preço − custo − imposto − despesas) ÷ preço</span>
+        <span class="pm-mut" style="flex:1">Margem${d.ads ? ' pós-ADS' : ''} = (preço − tarifa ML − frete do ML naquele preço − custo − imposto − despesas${d.ads ? ' − ADS' : ''}) ÷ preço</span>
         <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._pmAtualizar()">🔄 Atualizar</button>
       </div>
       ${st.carregando || st.emLote ? `<div class="pm-prog">⏳ ${h(st.progresso)}</div>` : ''}
@@ -373,7 +394,7 @@ const PM = (() => {
       </div>
       <div class="card" style="padding:0;overflow:hidden;"><div style="overflow-x:auto;">
         <table class="pm-tab">
-          <thead><tr><th>Anúncio</th><th>Custo do produto</th><th>Em vigor</th><th>Promoção (preço recomendado)</th><th class="pm-n">Você recebe</th><th class="pm-n">Margem</th><th></th></tr></thead>
+          <thead><tr><th>Anúncio</th><th>Custo do produto</th><th>Em vigor</th><th>Promoção (preço recomendado)</th><th class="pm-n">Você recebe</th><th class="pm-n">${d.ads ? 'Margem pós-ADS' : 'Margem'}</th><th></th></tr></thead>
           <tbody>${lista.map(it => {
             const custo = custoDe(it.id), op = it.opcoes?.[st.escolha[it.id]], res = st.resultado[it.id];
             return `<tr>
@@ -386,7 +407,7 @@ const PM = (() => {
               <td>${it.ativa ? `<div class="pm-mut">${h(TIPO[it.ativa.promo.type] || it.ativa.promo.type)}</div><b>${R(it.ativa.preco)}</b> ${chipM(it.ativa.margem)}` : '<span class="pm-mut">—</span>'}</td>
               <td>${it.erroPromo ? `<span class="pm-mut" style="color:#dc2626">erro ao buscar: ${h(it.erroPromo)}</span>` : it.opcoes?.length ? `<select class="pm-sel" onchange="window._pmEscolha('${it.id}',this.value)">${it.opcoes.map((o, i) => `<option value="${i}" ${i === st.escolha[it.id] ? 'selected' : ''}>${o.bate ? '✅' : o.margem == null ? '•' : '⚠️'} ${h(TIPO[o.promo.type] || o.promo.type)}${o.promo.name ? ' · ' + h(o.promo.name) : ''} — ${R(o.preco)} (−${o.desconto.toFixed(0)}%)</option>`).join('')}</select>${op ? `<div class="pm-mut">${h(op.motivo)}${op.promo.finish_date ? ` · até ${new Date(op.promo.finish_date).toLocaleDateString('pt-BR')}` : ''}</div>` : ''}` : '<span class="pm-mut">sem promoção disponível</span>'}</td>
               <td class="pm-n">${op ? `<b>${R(op.recebe)}</b><div class="pm-mut">tarifa ${R(op.tarifa)}${op.frete ? ` · frete ${R(op.frete)}` : ''}</div>` : '—'}</td>
-              <td class="pm-n">${op ? chipM(op.margem) + (op.lucro != null ? `<div class="pm-mut">lucro ${R(op.lucro)}</div>` : '') : '—'}</td>
+              <td class="pm-n">${op ? chipM(op.margem) + (op.lucro != null ? `<div class="pm-mut">lucro ${R(op.lucro)}</div>${d.ads ? `<div class="pm-mut">ADS ${R(op.adsValor)} · antes do ADS ${op.margemAntesAds.toFixed(1).replace('.', ',')}%</div>` : ''}` : '') : '—'}</td>
               <td>${op ? `<button class="btn btn-sm ${op.bate ? 'btn-primary' : 'btn-secondary'}" ${st.aplicando[it.id] || st.emLote ? 'disabled' : ''} onclick="window._pmAplicar('${it.id}')" title="${op.bate ? 'Bate a margem mínima' : 'Fica abaixo da margem mínima'}">${st.aplicando[it.id] ? '⏳' : 'Aplicar'}</button>` : ''}
                 ${res ? `<div class="pm-res" style="color:${res.ok ? '#16a34a' : '#dc2626'}">${h(res.txt)}</div>` : ''}</td>
             </tr>`;
@@ -422,6 +443,7 @@ const PM = (() => {
         .pm-lapis{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;}
         .pm-sel{max-width:330px;background:var(--bg-card-hover);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);padding:6px 8px;font-size:12px;}
         .pm-res{font-size:11.5px;margin-top:4px;max-width:200px;}
+        .pm-link{background:none;border:none;color:#2a78d6;font-size:12px;font-weight:600;cursor:pointer;padding:0 0 0 4px;text-decoration:underline;}
       </style>`;
   }
 
@@ -445,6 +467,12 @@ const PM = (() => {
   window._pmAplicarLote = aplicarLote;
   window._pmCusto = (id, v) => salvarCusto(id, v);
   window._pmEditarCusto = id => { const atual = custoDe(id); const v = prompt('Custo do produto (R$) — salva também em Vendas:', atual != null ? String(atual).replace('.', ',') : ''); if (v != null) salvarCusto(id, v); };
+  window._pmAds = v => {
+    const mm = lerJSON('glr_promo_ads_pct', {}); mm[contaAtual.external_id] = Math.max(0, parseFloat(String(v).replace(',', '.')) || 0);
+    localStorage.setItem('glr_promo_ads_pct', JSON.stringify(mm));
+    mapLimit(st.itens, 4, it => avaliar(it).catch(e => { it.erroPromo = e.message; })).then(render);
+    render();
+  };
   window._pmMargem = v => {
     const mm = lerJSON('glr_promo_margem_min', {}); mm[contaAtual.external_id] = parseFloat(String(v).replace(',', '.')) || 0;
     localStorage.setItem('glr_promo_margem_min', JSON.stringify(mm));
