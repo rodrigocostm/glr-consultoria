@@ -822,6 +822,14 @@ Router.register('projecao', (params, el) => {
   }
   const _labelM1Default = _labelMesOffset(1), _labelM2Default = _labelMesOffset(2), _labelM3Default = _labelMesOffset(3);
 
+  // Rótulos do mês (e dos 3 meses fechados) sempre derivados da Data Base — antes
+  // ficavam gravados na projeção e mostravam "Junho 2026" meses depois.
+  function _rotulosDaDataBase(proj) {
+    const db = proj.dataBase ? new Date(proj.dataBase + 'T12:00:00') : _ontem;
+    const lbl = off => { const d = new Date(db.getFullYear(), db.getMonth() - off, 1); return `${_mesesNomesProj[d.getMonth()]} ${d.getFullYear()}`; };
+    proj.mes = lbl(0); proj.labelM1 = lbl(1); proj.labelM2 = lbl(2); proj.labelM3 = lbl(3);
+  }
+
   if (!projecaoAtiva) {
     const clienteObj = GLR.clientes.find(c => c.id === clienteIdAtivo);
     projecaoAtiva = {
@@ -844,7 +852,15 @@ Router.register('projecao', (params, el) => {
     }
   }
 
+  // Data Base segue ontem enquanto não for escolhida à mão
+  if (!projecaoAtiva._diasEditadosManualmente) {
+    const ontemIso = `${_ontem.getFullYear()}-${String(_ontem.getMonth()+1).padStart(2,'0')}-${String(_ontem.getDate()).padStart(2,'0')}`;
+    if (projecaoAtiva.dataBase !== ontemIso) { projecaoAtiva.dataBase = ontemIso; projecaoAtiva.diasDecorridos = _ontem.getDate(); projecaoAtiva.diasNoMes = _diasNoMesDe(ontemIso); }
+  }
+  _rotulosDaDataBase(projecaoAtiva);
+
   function salvar() {
+    _rotulosDaDataBase(projecaoAtiva);
     const idx = projecoes.findIndex(p => parseInt(p.chave) === clienteIdAtivo);
     if (idx >= 0) projecoes[idx] = projecaoAtiva;
     else projecoes.push(projecaoAtiva);
@@ -924,11 +940,12 @@ Router.register('projecao', (params, el) => {
           fatBase:'', adsBase:'', vendasBase:'', maio:'', abril:'', marco:'', _platNome: platMap[(c.marketplace||'').toLowerCase()] || c.marketplace };
         projecaoAtiva.plataformas.push(linha); mudou = true;
       }
-      if (BaseDados.cobre(info, m2.from)) {
-        if (forcarMeses || !linha.maio)  { const v = BaseDados.somar(info, m1.from, m1.to).faturamento; linha.maio  = v > 0 ? v.toFixed(2) : ''; mudou = true; }
-        if (forcarMeses || !linha.abril) { const v = BaseDados.somar(info, m2.from, m2.to).faturamento; linha.abril = v > 0 ? v.toFixed(2) : ''; mudou = true; }
-        projecaoAtiva.labelM1 = projecaoAtiva.labelM1 || lbl(1); projecaoAtiva.labelM2 = projecaoAtiva.labelM2 || lbl(2); projecaoAtiva.labelM3 = projecaoAtiva.labelM3 || lbl(3);
-      }
+      // Meses fechados vêm SEMPRE da base quando ela cobre o mês (antes só preenchia
+      // se estivesse vazio — e o valor antigo ficava na coluna errada quando o mês virava)
+      const m3 = mesFechadoIso(3);
+      const setMes = (campo, per) => { if (!BaseDados.cobre(info, per.from)) return; const v = BaseDados.somar(info, per.from, per.to).faturamento; const novo = v > 0 ? v.toFixed(2) : ''; if (linha[campo] !== novo) { linha[campo] = novo; mudou = true; } };
+      setMes('maio', m1); setMes('abril', m2); setMes('marco', m3);
+      linha._base = true;
     }
     if (mudou) salvar();
     return mudou;
@@ -1319,356 +1336,246 @@ Router.register('projecao', (params, el) => {
     return fat > 0 ? { fat, ads, vendas: qtd } : null;
   }
 
-  function renderTabela() {
-    const plats = projecaoAtiva.plataformas;
+  // ── Painel da projeção ─────────────────────────────────────────────────────
+  // Valores efetivos por conta: base automática primeiro (até a Data Base); conta
+  // fora da base usa o que foi digitado / buscado pela API (fonte manual).
+  const _pnFmt0 = v => 'R$ ' + Math.round(parseFloat(v) || 0).toLocaleString('pt-BR');
+  const _pnPct = v => v == null || !isFinite(v) ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1).replace('.', ',')}%`;
+  const _pnEsc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  let _pnUltimo = null; // números do último render (usados pelos gráficos)
+
+  function calcularPainel() {
+    const plats = projecaoAtiva.plataformas || [];
     const dd = parseInt(document.getElementById('inp-dias-dec')?.value) || projecaoAtiva.diasDecorridos;
     const dm = parseInt(document.getElementById('inp-dias-mes')?.value) || projecaoAtiva.diasNoMes;
-
-    // Dados reais da API para auto-preenchimento
     const cache = lerCacheAtual();
     let vinculos = {};
-    try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
-    // Tenta pelo clienteIdAtivo atual (pode ter mudado via dropdown)
-    const cidAtivo = parseInt(document.getElementById('sel-cliente')?.value) || clienteIdAtivo;
-    const contasVinc = vinculos[String(cidAtivo)] || vinculos[cidAtivo] || [];
-    const contasCliente = contasVinc.map(c => c.external_id);
-    const temCache = !!cache;
-
-    // Limpa linhas órfãs do template antigo ("Shopee"/"Mercado Livre" genéricas,
-    // sem conta vinculada e sem nada digitado nelas) — evitam duplicar o total
-    // junto com as linhas por conta. Não mexe em linhas manuais reais do usuário.
-    if (contasVinc.length > 0) {
-      const antes = projecaoAtiva.plataformas.length;
-      projecaoAtiva.plataformas = projecaoAtiva.plataformas.filter(p =>
-        p.contaId || !['Shopee','Mercado Livre'].includes(p.nome) || p.fatBase || p.adsBase || p.vendasBase
-      );
-      if (projecaoAtiva.plataformas.length !== antes) salvar();
-    }
-
-    // Diagnóstico inline — mostra estado do auto-fill no rodapé da tabela
-    const pad2 = n => String(n).padStart(2,'0');
-    const hoje = new Date();
-    const keyAtual = `${hoje.getFullYear()}-${pad2(hoje.getMonth()+1)}`;
-    let diagMsg = '';
-    if (!cache) {
-      diagMsg = `⚠️ Cache não encontrado para ${keyAtual}. Sincronize <strong>Financeiro</strong> neste mês primeiro.`;
-    } else if (!contasCliente.length) {
-      diagMsg = `⚠️ Nenhuma conta vinculada (cliente ID ${cidAtivo}). Vincule em <strong>Integrações</strong>.`;
-    } else {
-      const todosContaIds = [...new Set((cache.pedidos||[]).map(p => p.contaId))];
-      const totalPeds = (cache.pedidos||[]).filter(p => contasCliente.includes(p.contaId)).length;
-      if (totalPeds === 0) {
-        diagMsg = `⚠️ Cache OK | IDs vinculados ao cliente: <code>${contasCliente.join(', ')}</code> | IDs no cache: <code>${todosContaIds.join(', ')}</code> — não batem. Verifique o vínculo em Integrações.`;
-      }
-    }
-    // Log de diagnóstico no console para debug
-    console.log('[Proj diag] cidAtivo:', cidAtivo, '| contasCliente:', contasCliente, '| cache mesKey:', cache?.mesKey, '| pedidos no cache:', (cache?.pedidos||[]).length, '| contaIds no cache:', [...new Set((cache?.pedidos||[]).map(p=>p.contaId))]);
-
-    // ── Valores efetivos (manual salvo OU API) — usados em totais e linhas ──
-    // p.contaId presente → filtra por conta específica; ausente → filtra por plataforma (legado)
-    // ADS vem de p._adsAuto (buscado por conta em buscarDadosProjecao), não do
-    // cache genérico do Financeiro — que não é por conta nem pelo período certo
-    let linhasDaBase = 0;
-    const efetivos = plats.map(p => {
-      // Base sincronizada primeiro (até a Data Base); senão o cache antigo do Financeiro
-      const bd = dadosBaseDaLinha(p);
-      if (bd) linhasDaBase++;
-      const cd = bd ? null : cacheParaPlat(cache, contasCliente, p._platNome || p.nome, p.contaId);
-      return {
-        fat:    p.fatBase    || (bd ? bd.fat.toFixed(2) : (cd ? cd.fat.toFixed(2) : '')),
-        ads:    p.adsBase    || (bd && bd.ads != null ? bd.ads.toFixed(2) : (p._adsAuto != null ? p._adsAuto.toFixed(2) : '')),
-        vendas: p.vendasBase || (bd ? String(bd.vendas) : (cd ? String(cd.vendas) : '')),
-        _base:  !!bd,
-      };
-    });
-    if (linhasDaBase === plats.filter(p => p.contaId).length && linhasDaBase > 0) diagMsg = '';
-
-    // ── Totais ──────────────────────────────────────────────────────
-    const totFatBase   = efetivos.reduce((s,e) => s + (parseFloat(e.fat)    || 0), 0);
-    const totProj      = efetivos.reduce((s,e) => s + calcProjecao(e.fat,   dd, dm), 0);
-    const totVendasBase= efetivos.reduce((s,e) => s + (parseFloat(e.vendas) || 0), 0);
-    const totVendasProj= efetivos.reduce((s,e) => s + calcProjecao(e.vendas,dd, dm), 0);
-    const totAdsBase   = efetivos.reduce((s,e) => s + (parseFloat(e.ads)    || 0), 0);
-    const totAdsProj   = efetivos.reduce((s,e) => s + calcProjecao(e.ads,   dd, dm), 0);
-    const totPctAds    = totProj > 0 && totAdsProj > 0 ? (totAdsProj / totProj * 100) : 0;
-    const totMaio      = plats.reduce((s,p) => s + (parseFloat(p.maio)  || 0), 0);
-    const totAbril     = plats.reduce((s,p) => s + (parseFloat(p.abril) || 0), 0);
-    const totMarco     = plats.reduce((s,p) => s + (parseFloat(p.marco) || 0), 0);
-    const totEvo       = calcEvolucao(totProj, totMaio);
-
-    // Receita GLR = vendas projetadas × valor por venda do cliente
-    const selEl        = document.getElementById('sel-cliente');
-    const cidSel       = selEl ? parseInt(selEl.value) : clienteIdAtivo;
-    let clientes = []; try { clientes = JSON.parse(localStorage.getItem('glr_clientes')||'[]'); } catch(e){}
-    const cliAtual     = clientes.find(c => c.id === cidSel);
-    const valorVenda   = parseFloat(cliAtual?.valorPorVenda) || 0;
-    const receitaGLR   = Math.round(totVendasProj) * valorVenda;
-
+    try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
+    const cid = parseInt(document.getElementById('sel-cliente')?.value) || clienteIdAtivo;
+    const contasCliente = (vinculos[String(cid)] || vinculos[cid] || []).map(c => c.external_id);
+    let mudou = false;
     const linhas = plats.map((p, i) => {
-      const fatBaseEfetivo    = efetivos[i].fat;
-      const adsBaseEfetivo    = efetivos[i].ads;
-      const vendasBaseEfetivo = efetivos[i].vendas;
-      const cd = cacheParaPlat(cache, contasCliente, p.nome, p.contaId);
-      const autoFat = !p.fatBase && cd;
-      const autoAds = !p.adsBase && p._adsAuto != null;
-      // Ícone de plataforma para linhas por conta
-      const platIcon = { shopee:'🟠', mercadolivre:'🟡', ml:'🟡', meli:'🟡', bling:'🔵' };
-      const mktIcon = p.marketplace ? (platIcon[(p.marketplace||'').toLowerCase()] || '⚫') : '';
-
-      const proj       = calcProjecao(fatBaseEfetivo,    dd, dm);
-      const vendasProj = calcProjecao(vendasBaseEfetivo, dd, dm);
-      const adsProj    = calcProjecao(adsBaseEfetivo,    dd, dm);
-      const pctAds     = proj > 0 && adsProj > 0 ? (adsProj / proj * 100) : 0;
-      const evo        = calcEvolucao(proj, p.maio);
-      const fmtInt     = v => Math.round(parseFloat(v)||0).toLocaleString('pt-BR');
-
-      return `<tr data-idx="${i}">
-        <td style="min-width:160px;">
-          ${p.contaId
-            ? `<div style="display:flex;flex-direction:column;gap:2px;">
-                <div style="display:flex;align-items:center;gap:5px;font-weight:600;font-size:13px;">${mktIcon} <span>${p.nome}</span></div>
-                <div style="font-size:10px;color:var(--text-muted);font-family:monospace;">ID: ${p.contaId}</div>
-               </div>`
-            : `<input class="proj-input" style="font-weight:600;font-size:13px;text-align:left;" value="${p.nome}" onchange="updatePlat(${i},'nome',this.value)" placeholder="Plataforma">`
-          }
-        </td>
-        <td style="text-align:right;position:relative;">
-          <input class="proj-input money${autoFat?' proj-auto':''}" value="${fatBaseEfetivo}" onchange="updatePlat(${i},'fatBase',this.value)" placeholder="0,00">
-          ${autoFat ? `<span style="position:absolute;top:2px;right:4px;font-size:8px;color:#818cf8;font-weight:700;">API</span>` : ''}
-        </td>
-        <td style="background:rgba(99,102,241,0.07);text-align:right;white-space:nowrap;">
-          <strong style="color:var(--accent-light);">R$ ${fmtBRL(proj)}</strong>
-        </td>
-        <td style="text-align:right;background:rgba(16,185,129,0.05);">
-          <input class="proj-input" value="${vendasBaseEfetivo}" onchange="updatePlat(${i},'vendasBase',this.value)" placeholder="0" style="text-align:right;">
-        </td>
-        <td style="background:rgba(16,185,129,0.1);text-align:right;white-space:nowrap;">
-          <strong style="color:var(--green);">${fmtInt(vendasProj)}</strong>
-          ${!ocultarGLR && valorVenda > 0 ? `<div style="font-size:10px;color:var(--green);opacity:0.7;">GLR: R$ ${fmtBRL(Math.round(vendasProj)*valorVenda)}</div>` : ''}
-        </td>
-        <td style="text-align:right;background:rgba(245,158,11,0.05);position:relative;">
-          <input class="proj-input money${autoAds?' proj-auto':''}" value="${adsBaseEfetivo}" onchange="updatePlat(${i},'adsBase',this.value)" placeholder="0,00">
-          ${autoAds ? `<span style="position:absolute;top:2px;right:4px;font-size:8px;color:#818cf8;font-weight:700;">API</span>` : ''}
-        </td>
-        <td style="background:rgba(245,158,11,0.08);text-align:right;white-space:nowrap;">
-          <strong style="color:#f59e0b;">R$ ${fmtBRL(adsProj)}</strong>
-        </td>
-        <td style="text-align:center;">
-          <span style="color:var(--text-secondary);">${pctAds > 0 ? pctAds.toFixed(2)+'%' : '—'}</span>
-        </td>
-        <td style="text-align:center;">
-          <span style="font-weight:700;color:${evoCor(evo)};">${fmtPct(evo)}</span>
-        </td>
-        <td style="text-align:right;">
-          <input class="proj-input money" value="${p.maio||''}"  onchange="updatePlat(${i},'maio',this.value)"  placeholder="0,00">
-        </td>
-        <td style="text-align:right;">
-          <input class="proj-input money" value="${p.abril||''}" onchange="updatePlat(${i},'abril',this.value)" placeholder="0,00">
-        </td>
-        <td style="text-align:right;">
-          <input class="proj-input money" value="${p.marco||''}" onchange="updatePlat(${i},'marco',this.value)" placeholder="0,00">
-        </td>
-        <td>
-          <button class="btn btn-ghost btn-sm" style="color:var(--red);padding:4px 8px;" onclick="removePlat(${i})" title="Remover">✕</button>
-        </td>
-      </tr>`;
-    }).join('');
-
-    const totEvoHtml = totEvo !== null
-      ? `<span style="font-weight:800;color:${evoCor(totEvo)};">${fmtPct(totEvo)}</span>`
-      : '—';
-
-    document.getElementById('proj-tbody').innerHTML = linhas;
-    const cacheBadge = document.getElementById('th-cache-badge');
-    if (cacheBadge) {
-      cacheBadge.textContent = linhasDaBase > 0 ? `⚡ base automática (${linhasDaBase})` : '↺ API auto';
-      cacheBadge.style.display = (linhasDaBase > 0 || temCache) ? 'inline' : 'none';
-    }
-    const diagEl = document.getElementById('proj-diag');
-    if (diagEl) { diagEl.innerHTML = diagMsg; diagEl.style.display = diagMsg ? 'block' : 'none'; }
-    document.getElementById('proj-tfoot').innerHTML = `<tr style="background:rgba(99,102,241,0.08);">
-      <td style="font-weight:800;color:var(--text-primary);font-size:13.5px;">Total</td>
-      <td style="font-weight:700;text-align:right;">R$ ${fmtBRL(totFatBase)}</td>
-      <td style="background:rgba(99,102,241,0.15);font-weight:800;color:var(--accent-light);font-size:14px;text-align:right;">R$ ${fmtBRL(totProj)}</td>
-      <td style="text-align:right;background:rgba(16,185,129,0.07);font-weight:700;">${Math.round(totVendasBase).toLocaleString('pt-BR')}</td>
-      <td style="background:rgba(16,185,129,0.14);font-weight:800;color:var(--green);font-size:14px;text-align:right;">
-        ${Math.round(totVendasProj).toLocaleString('pt-BR')}
-        ${!ocultarGLR && valorVenda > 0 ? `<div style="font-size:11px;color:var(--green);opacity:0.8;">GLR: R$ ${fmtBRL(receitaGLR)}</div>` : ''}
-      </td>
-      <td style="font-weight:700;text-align:right;background:rgba(245,158,11,0.07);">R$ ${fmtBRL(totAdsBase)}</td>
-      <td style="background:rgba(245,158,11,0.12);font-weight:800;color:#f59e0b;font-size:14px;text-align:right;">R$ ${fmtBRL(totAdsProj)}</td>
-      <td style="text-align:center;font-weight:700;">${totPctAds > 0 ? totPctAds.toFixed(2)+'%' : '—'}</td>
-      <td style="text-align:center;">${totEvoHtml}</td>
-      <td style="font-weight:700;text-align:right;">R$ ${fmtBRL(totMaio)}</td>
-      <td style="font-weight:700;text-align:right;">R$ ${fmtBRL(totAbril)}</td>
-      <td style="font-weight:700;text-align:right;">R$ ${fmtBRL(totMarco)}</td>
-      <td></td>
-    </tr>`;
-
-    // ── KPIs ────────────────────────────────────────────────────────
-    const el_proj = document.getElementById('kpi-projecao');
-    const el_vendas = document.getElementById('kpi-vendas');
-    const el_glr = document.getElementById('kpi-receita-glr');
-    const el_ads = document.getElementById('kpi-ads');
-    const el_pctads = document.getElementById('kpi-pct-ads');
-    const el_evo = document.getElementById('kpi-evo');
-
-    if (el_proj)   el_proj.textContent   = 'R$ ' + fmtBRL(totProj);
-    if (el_vendas) el_vendas.textContent = Math.round(totVendasProj).toLocaleString('pt-BR');
-    if (el_glr) {
-      el_glr.textContent = receitaGLR > 0 ? 'R$ ' + fmtBRL(receitaGLR) : '—';
-      el_glr.style.color = receitaGLR > 0 ? 'var(--green)' : '';
-    }
-    if (el_ads)    el_ads.textContent    = 'R$ ' + fmtBRL(totAdsProj);
-    if (el_pctads) el_pctads.textContent = totPctAds > 0 ? totPctAds.toFixed(2)+'%' : '—';
-    if (el_evo)  { el_evo.textContent    = fmtPct(totEvo); el_evo.style.color = evoCor(totEvo); }
+      const bd = dadosBaseDaLinha(p);
+      let fat, ads, vendas;
+      if (bd) {
+        fat = bd.fat; vendas = bd.vendas; ads = bd.ads != null ? bd.ads : (parseFloat(p.adsBase) || 0);
+        // grava o valor da base na linha (Gestores, Carteira e relatório leem daqui)
+        const f = fat.toFixed(2), v = String(vendas), a = bd.ads != null ? bd.ads.toFixed(2) : p.adsBase;
+        if (p.fatBase !== f || p.vendasBase !== v || p.adsBase !== a) { p.fatBase = f; p.vendasBase = v; p.adsBase = a; mudou = true; }
+      } else {
+        const cd = cacheParaPlat(cache, contasCliente, p._platNome || p.nome, p.contaId);
+        fat = parseFloat(p.fatBase) || (cd ? cd.fat : 0);
+        vendas = parseFloat(p.vendasBase) || (cd ? cd.vendas : 0);
+        ads = parseFloat(p.adsBase) || (p._adsAuto != null ? p._adsAuto : 0);
+      }
+      const proj = calcProjecao(fat, dd, dm), adsProj = calcProjecao(ads, dd, dm), vendasProj = calcProjecao(vendas, dd, dm);
+      const m1 = parseFloat(p.maio) || 0, m2 = parseFloat(p.abril) || 0, m3 = parseFloat(p.marco) || 0;
+      return { p, i, base: !!bd, fat, ads, vendas, proj, adsProj, vendasProj, m1, m2, m3, evo: calcEvolucao(proj, m1), tacos: proj > 0 && adsProj > 0 ? adsProj / proj * 100 : null };
+    });
+    if (mudou) salvar();
+    const soma = k => linhas.reduce((s, l) => s + (l[k] || 0), 0);
+    const tot = { fat: soma('fat'), ads: soma('ads'), vendas: soma('vendas'), proj: soma('proj'), adsProj: soma('adsProj'), vendasProj: soma('vendasProj'), m1: soma('m1'), m2: soma('m2'), m3: soma('m3') };
+    tot.evo = calcEvolucao(tot.proj, tot.m1);
+    const mediaMeses = [tot.m1, tot.m2, tot.m3].filter(v => v > 0);
+    tot.media3 = mediaMeses.length ? mediaMeses.reduce((a, b) => a + b, 0) / mediaMeses.length : 0;
+    tot.vsMedia = tot.media3 > 0 ? (tot.proj - tot.media3) / tot.media3 * 100 : null;
+    tot.tacos = tot.proj > 0 && tot.adsProj > 0 ? tot.adsProj / tot.proj * 100 : null;
+    tot.ticket = tot.vendas > 0 ? tot.fat / tot.vendas : null;
+    let clientes = []; try { clientes = JSON.parse(localStorage.getItem('glr_clientes') || '[]'); } catch (e) {}
+    const cli = clientes.find(c => c.id === cid);
+    const valorVenda = parseFloat(cli?.valorPorVenda) || 0;
+    tot.receitaGLR = Math.round(tot.vendasProj) * valorVenda;
+    let metas = {}; try { metas = JSON.parse(localStorage.getItem('glr_metas') || '{}'); } catch (e) {}
+    tot.meta = metas[cid] ? parseFloat(metas[cid]) : null;
+    return { linhas, tot, dd, dm, valorVenda, nBase: linhas.filter(l => l.base).length, nContas: linhas.filter(l => l.p.contaId).length };
   }
 
-  el.innerHTML = `<div class="page">
+  function renderTabela() {
+    const box = document.getElementById('pn-conteudo');
+    if (!box) return;
+    const r = calcularPainel(); _pnUltimo = r;
+    const { linhas, tot, dd, dm } = r;
+    const mesNome = (projecaoAtiva.mes || '').split(' ')[0];
+    const m1Nome = (projecaoAtiva.labelM1 || _labelM1Default).split(' ')[0];
+    const pctMes = dm ? Math.min(100, dd / dm * 100) : 0;
+    const pctFat = tot.proj > 0 ? Math.min(100, tot.fat / tot.proj * 100) : 0;
+    const corEvo = v => v == null ? 'var(--text-muted)' : v >= 0 ? 'var(--pn-bom)' : 'var(--pn-ruim)';
+    const chip = (rot, v) => `<span class="pn-chip" style="--c:${corEvo(v)}">${v == null ? '—' : (v >= 0 ? '▲ ' : '▼ ') + _pnPct(v).replace(/^[+-]/, '')}<em>${rot}</em></span>`;
+    const metaPct = tot.meta > 0 ? tot.proj / tot.meta * 100 : null;
+    const tagMes = document.getElementById('pn-mes'); if (tagMes) tagMes.textContent = projecaoAtiva.mes;
+    const inpDb = document.getElementById('inp-data-base'); if (inpDb && projecaoAtiva.dataBase && inpDb.value !== projecaoAtiva.dataBase) inpDb.value = projecaoAtiva.dataBase;
+    const badge = document.getElementById('pn-fonte');
+    if (badge) badge.innerHTML = r.nBase ? `⚡ base automática · ${r.nBase} conta${r.nBase === 1 ? '' : 's'}` : (r.nContas ? 'contas sem base — use Buscar dados' : 'nenhuma conta vinculada');
+    const mkt = l => { const m = String(l.p.marketplace || l.p._platNome || '').toLowerCase(); return m.includes('shopee') ? { t: 'Shopee', c: '#eb6834' } : (m.includes('ml') || m.includes('meli') || m.includes('mercado')) ? { t: 'Mercado Livre', c: '#d9a400' } : { t: l.p.contaId ? 'Conta' : 'Manual', c: '#64748b' }; };
+    const inp = (i, campo, v, ph) => `<input class="pn-inp" value="${v ?? ''}" placeholder="${ph || '0'}" onchange="updatePlat(${i},'${campo}',this.value)">`;
 
-    <!-- Cabeçalho estilo planilha -->
-    <div style="background:linear-gradient(135deg,#0d2144,#1a3a6e);border-radius:var(--radius);padding:0;margin-bottom:20px;overflow:hidden;">
-      <div style="background:rgba(255,255,255,0.06);padding:16px 24px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.1);">
+    box.innerHTML = `
+      <div class="pn-hero card">
+        <div class="pn-hero-top">
+          <div>
+            <div class="pn-rot">Projeção de ${_pnEsc(mesNome)}</div>
+            <div class="pn-big">${_pnFmt0(tot.proj)}</div>
+            <div class="pn-sub">Faturado até ${projecaoAtiva.dataBase ? new Date(projecaoAtiva.dataBase + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) : '—'}: <b>${_pnFmt0(tot.fat)}</b> · dia ${dd} de ${dm}</div>
+          </div>
+          <div class="pn-chips">
+            ${chip(`vs ${_pnEsc(m1Nome)} (${_pnFmt0(tot.m1)})`, tot.evo)}
+            ${chip(`vs média de 3 meses (${_pnFmt0(tot.media3)})`, tot.vsMedia)}
+            ${metaPct != null ? `<span class="pn-chip" style="--c:${metaPct >= 100 ? 'var(--pn-bom)' : metaPct >= 85 ? '#d97706' : 'var(--pn-ruim)'}">${metaPct.toFixed(0)}%<em>da meta de ${_pnFmt0(tot.meta)}</em></span>` : ''}
+          </div>
+        </div>
+        <div class="pn-barra" title="Faturado até a data base sobre a projeção do mês">
+          <div class="pn-barra-fat" style="width:${pctFat}%"></div>
+          <div class="pn-barra-dia" style="left:${pctMes}%" title="Dia ${dd} de ${dm}"></div>
+        </div>
+        <div class="pn-barra-leg"><span><i style="background:var(--pn-azul)"></i>Faturado ${pctFat.toFixed(0)}% da projeção</span><span><i class="pn-tick"></i>${pctMes.toFixed(0)}% do mês passado</span></div>
+      </div>
+
+      <div class="pn-kpis">
+        <div class="pn-kpi"><div class="pn-rot">Vendas projetadas</div><div class="pn-val">${Math.round(tot.vendasProj).toLocaleString('pt-BR')}</div><div class="pn-sub">${Math.round(tot.vendas).toLocaleString('pt-BR')} até agora${tot.ticket ? ` · ticket ${_pnFmt0(tot.ticket)}` : ''}</div></div>
+        <div class="pn-kpi" id="kpi-glr-card" style="${ocultarGLR ? 'display:none' : ''}"><div class="pn-rot">Receita GLR</div><div class="pn-val" style="color:var(--pn-bom)">${tot.receitaGLR > 0 ? _pnFmt0(tot.receitaGLR) : '—'}</div><div class="pn-sub">${r.valorVenda ? `vendas × R$ ${r.valorVenda.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'cadastre o valor por venda'}</div></div>
+        <div class="pn-kpi"><div class="pn-rot">ADS projetado</div><div class="pn-val">${tot.adsProj > 0 ? _pnFmt0(tot.adsProj) : '—'}</div><div class="pn-sub">${tot.ads > 0 ? `${_pnFmt0(tot.ads)} investidos até agora` : 'sem ADS no período'}</div></div>
+        <div class="pn-kpi"><div class="pn-rot">TACOS</div><div class="pn-val">${tot.tacos != null ? tot.tacos.toFixed(1).replace('.', ',') + '%' : '—'}</div><div class="pn-sub">ADS ÷ faturamento</div></div>
+      </div>
+
+      <div class="pn-graficos">
+        <div class="card pn-graf"><div class="pn-graf-t">Ritmo do mês</div><div class="pn-sub">Faturamento acumulado dia a dia × ${_pnEsc(m1Nome)}, com a linha da projeção</div><div class="pn-graf-area"><canvas id="pn-chart-ritmo"></canvas></div><div class="pn-leg" id="pn-leg-ritmo"></div></div>
+        <div class="card pn-graf"><div class="pn-graf-t">Últimos meses</div><div class="pn-sub">Meses fechados e a projeção de ${_pnEsc(mesNome)}</div><div class="pn-graf-area"><canvas id="pn-chart-meses"></canvas></div></div>
+      </div>
+
+      <div class="pn-sec-t">Por conta</div>
+      <div class="pn-contas">
+        ${linhas.map(l => { const m = mkt(l); return `
+          <div class="card pn-conta" style="--m:${m.c}">
+            <div class="pn-conta-top">
+              <div style="min-width:0"><div class="pn-conta-nome">${l.p.contaId ? _pnEsc(l.p.nome) : inp(l.i, 'nome', _pnEsc(l.p.nome), 'Nome da fonte')}</div>
+              <div class="pn-sub"><span class="pn-mkt">${m.t}</span>${l.base ? ' · ⚡ base automática' : l.p.contaId ? ' · fora da base' : ' · digitado'}</div></div>
+              ${l.p.contaId ? '' : `<button class="pn-x" onclick="removePlat(${l.i})" title="Remover esta fonte">✕</button>`}
+            </div>
+            <div class="pn-conta-num"><div><div class="pn-rot">Projeção</div><div class="pn-val">${_pnFmt0(l.proj)}</div></div><div style="text-align:right">${chip(`vs ${_pnEsc(m1Nome)}`, l.evo)}</div></div>
+            <div class="pn-conta-grid">
+              <div><span>Até agora</span><b>${l.base ? _pnFmt0(l.fat) : inp(l.i, 'fatBase', l.p.fatBase, '0,00')}</b></div>
+              <div><span>Vendas</span><b>${l.base ? Math.round(l.vendas).toLocaleString('pt-BR') : inp(l.i, 'vendasBase', l.p.vendasBase)}</b></div>
+              <div><span>ADS</span><b>${l.base && l.ads ? _pnFmt0(l.ads) : l.base ? '—' : inp(l.i, 'adsBase', l.p.adsBase, '0,00')}</b></div>
+              <div><span>TACOS</span><b>${l.tacos != null ? l.tacos.toFixed(1).replace('.', ',') + '%' : '—'}</b></div>
+            </div>
+            <div class="pn-conta-meses">${[['marco', l.m3, projecaoAtiva.labelM3 || _labelM3Default], ['abril', l.m2, projecaoAtiva.labelM2 || _labelM2Default], ['maio', l.m1, projecaoAtiva.labelM1 || _labelM1Default]].map(([campo, v, lb]) => `<div><span>${_pnEsc(lb.split(' ')[0].slice(0, 3))}</span>${l.base ? `<b>${v ? _pnFmt0(v) : '—'}</b>` : inp(l.i, campo, l.p[campo], '0,00')}</div>`).join('')}</div>
+          </div>`; }).join('') || '<div class="card pn-vazio">Nenhuma conta nesta projeção. Use <b>🔗 Vincular contas</b> para puxar os números da base automática.</div>'}
+      </div>`;
+    setTimeout(atualizarGrafico, 0);
+  }
+
+  el.innerHTML = `<div class="page pn">
+    <div class="pn-head">
+      <div class="pn-head-l">
         ${GLR.clientes.length === 0
-          ? `<div style="color:rgba(255,255,255,0.6);font-size:13px;margin-bottom:6px;">Nenhum cliente cadastrado</div>
-             <div style="font-size:20px;font-weight:800;color:white;font-style:italic;">${projecaoAtiva.nomeCliente || 'Projeção'}</div>`
-          : `<select id="sel-cliente" onchange="trocarCliente(parseInt(this.value))"
-               style="background:transparent;border:none;color:white;font-size:22px;font-weight:800;font-style:italic;cursor:pointer;outline:none;text-align:center;max-width:500px;">
-               ${GLR.clientes.map(c =>
-                 `<option value="${c.id}" ${c.id === clienteIdAtivo ? 'selected' : ''}
-                   style="background:#0d2144;font-style:normal;font-size:14px;">${c.nome}</option>`
-               ).join('')}
-             </select>`
-        }
+          ? `<div class="pn-cliente-txt">${_pnEsc(projecaoAtiva.nomeCliente || 'Projeção')}</div>`
+          : `<select id="sel-cliente" class="pn-cliente" onchange="trocarCliente(parseInt(this.value))">
+               ${GLR.clientes.map(c => `<option value="${c.id}" ${c.id === clienteIdAtivo ? 'selected' : ''}>${_pnEsc(c.nome)}</option>`).join('')}
+             </select>`}
+        <div class="pn-head-info">
+          <span class="pn-tag" id="pn-mes">${_pnEsc(projecaoAtiva.mes)}</span>
+          <span class="pn-tag pn-tag-fonte" id="pn-fonte">…</span>
+          <span id="lbl-atualizado" class="pn-mut">${projecaoAtiva.atualizadoEm ? 'Salvo ' + new Date(projecaoAtiva.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</span>
+        </div>
       </div>
-      <div style="padding:10px 24px;text-align:center;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
-        <input id="inp-mes-label" value="${projecaoAtiva.mes}"
-          onchange="projecaoAtiva.mes=this.value;document.querySelectorAll('.mes-label').forEach(e=>e.textContent=this.value)"
-          style="background:transparent;border:none;color:rgba(255,255,255,0.85);font-size:16px;font-weight:700;font-style:italic;outline:none;text-align:center;width:200px;">
-        <button onclick="abrirVinculoProjecao()" style="background:rgba(99,102,241,0.25);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;">🔗 Vincular conta</button>
-        <span id="lbl-atualizado" style="font-size:11px;color:rgba(255,255,255,0.55);background:rgba(255,255,255,0.08);padding:2px 10px;border-radius:99px;">${projecaoAtiva.atualizadoEm ? '🕓 Atualizado: ' + new Date(projecaoAtiva.atualizadoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '🕓 Nunca salvo'}</span>
-      </div>
-    </div>
-
-
-    <!-- Controles de período -->
-    <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <label style="font-size:12px;color:var(--text-muted);white-space:nowrap;">Faturamento Data Base</label>
-        <input id="inp-data-base" class="form-input" type="date" value="${projecaoAtiva.dataBase || (() => { const h=new Date(); return `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`; })()}" style="width:140px;padding:6px 10px;font-size:12px;" onchange="updateDataBase(this.value)">
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <label style="font-size:12px;color:var(--text-muted);">Dias decorridos</label>
-        <input id="inp-dias-dec" class="form-input" type="number" value="${projecaoAtiva.diasDecorridos}" min="1" max="31" style="width:70px;padding:6px 10px;font-size:12px;" oninput="updateDias()">
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <label style="font-size:12px;color:var(--text-muted);">Dias no mês</label>
-        <input id="inp-dias-mes" class="form-input" type="number" value="${projecaoAtiva.diasNoMes}" min="28" max="31" style="width:70px;padding:6px 10px;font-size:12px;" oninput="updateDias()">
-      </div>
-      <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-        <button id="btn-toggle-glr" onclick="toggleGLRProjecao()"
-          style="padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;
-                 border:1px solid var(--border);background:var(--bg-surface);color:var(--text-muted);display:flex;align-items:center;gap:5px;">
-          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          Ocultar GLR
-        </button>
-        <button id="btn-buscar-proj" class="btn btn-sm" style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);color:#4ade80;" onclick="buscarDadosProjecao()" title="Busca o mês atual sempre; meses fechados (${projecaoAtiva.labelM1 || _labelM1Default}/${projecaoAtiva.labelM2 || _labelM2Default}/${projecaoAtiva.labelM3 || _labelM3Default}) só na primeira vez">🔄 Buscar dados</button>
-        <button id="btn-forcar-meses-proj" class="btn btn-sm" style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;" onclick="buscarDadosProjecao(false, true)" title="Ignora o que já está salvo e busca os meses fechados (${projecaoAtiva.labelM1 || _labelM1Default}/${projecaoAtiva.labelM2 || _labelM2Default}/${projecaoAtiva.labelM3 || _labelM3Default}) de novo, na força">↺ Forçar meses anteriores</button>
-        <button class="btn btn-secondary btn-sm" onclick="adicionarPlat()">+ Plataforma</button>
-        <button class="btn btn-sm" style="background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);color:#f87171;" onclick="limparDadosManuais()" title="Apaga fatBase, adsBase, vendasBase e histórico inseridos à mão — mantém só dados da API">🗑️ Limpar manuais</button>
-        <button class="btn btn-primary btn-sm" onclick="salvarProjecao(this)">💾 Salvar</button>
-        <button class="btn btn-ghost btn-sm" onclick="exportarProjecao()">📄 Exportar</button>
+      <div class="pn-head-r">
+        <button class="pn-btn" onclick="abrirVinculoProjecao()">🔗 Vincular contas</button>
+        <button id="btn-toggle-glr" class="pn-btn" onclick="toggleGLRProjecao()">${ocultarGLR ? '🙈 GLR oculta' : '👁 Ocultar GLR'}</button>
+        <details class="pn-mais"><summary class="pn-btn">⋯ Mais</summary>
+          <div class="pn-menu">
+            <button id="btn-buscar-proj" onclick="buscarDadosProjecao()">🔄 Buscar dados pela API <small>contas fora da base</small></button>
+            <button id="btn-forcar-meses-proj" onclick="buscarDadosProjecao(false, true)">↺ Buscar meses anteriores de novo</button>
+            <button onclick="adicionarPlat()">+ Fonte manual <small>ex.: Amazon, loja própria</small></button>
+            <button onclick="exportarProjecao()">📄 Exportar CSV</button>
+            <button onclick="limparDadosManuais()" style="color:#dc2626">🗑️ Limpar valores digitados</button>
+          </div>
+        </details>
+        <button class="pn-btn pn-btn-p" onclick="salvarProjecao(this)">💾 Salvar</button>
       </div>
     </div>
-
-    <!-- KPIs resumo -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:20px;">
-      <div class="kpi-card" style="padding:14px;">
-        <div class="kpi-label">Projeção Faturamento</div>
-        <div class="kpi-value" id="kpi-projecao" style="font-size:18px;">R$ —</div>
-      </div>
-      <div class="kpi-card" style="padding:14px;border-color:rgba(16,185,129,0.3);">
-        <div class="kpi-label">Projeção de Vendas</div>
-        <div class="kpi-value" id="kpi-vendas" style="font-size:22px;color:var(--green);">—</div>
-        <div style="font-size:11px;color:var(--text-muted);">unidades projetadas</div>
-      </div>
-      <div id="kpi-glr-card" class="kpi-card" style="padding:14px;border-color:rgba(16,185,129,0.4);background:rgba(16,185,129,0.05);">
-        <div class="kpi-label">💰 Receita GLR</div>
-        <div class="kpi-value" id="kpi-receita-glr" style="font-size:18px;">—</div>
-        <div style="font-size:11px;color:var(--text-muted);">vendas × valor por venda</div>
-      </div>
-      <div class="kpi-card" style="padding:14px;">
-        <div class="kpi-label">Projeção ADS</div>
-        <div class="kpi-value" id="kpi-ads" style="font-size:18px;color:#f59e0b;">R$ —</div>
-      </div>
-      <div class="kpi-card" style="padding:14px;">
-        <div class="kpi-label">% ADS / Fat.</div>
-        <div class="kpi-value" id="kpi-pct-ads" style="font-size:18px;">—</div>
-      </div>
-      <div class="kpi-card" style="padding:14px;">
-        <div class="kpi-label">Evolução vs Mês Ant.</div>
-        <div class="kpi-value" id="kpi-evo" style="font-size:18px;">—</div>
-      </div>
+    <div class="pn-periodo">
+      <label>Data base <input id="inp-data-base" type="date" class="pn-date" value="${projecaoAtiva.dataBase || ''}" onchange="updateDataBase(this.value)"></label>
+      <span class="pn-mut">dia <input id="inp-dias-dec" type="number" class="pn-dia" value="${projecaoAtiva.diasDecorridos}" min="1" max="31" oninput="updateDias()"> de <input id="inp-dias-mes" type="number" class="pn-dia" value="${projecaoAtiva.diasNoMes}" min="28" max="31" oninput="updateDias()"></span>
+      <span class="pn-mut">Projeção = faturado até a data base ÷ dias decorridos × dias do mês</span>
     </div>
-
-    <!-- Tabela principal -->
-    <div class="card" style="padding:0;overflow:hidden;">
-      <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
-          <thead>
-            <tr style="background:linear-gradient(135deg,#0d2144,#1a3a6e);">
-              <th style="padding:12px 14px;text-align:left;color:white;font-weight:700;white-space:nowrap;min-width:150px;">Plataformas</th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:120px;">Fat. Data Base<br><span style="font-weight:400;opacity:0.8;font-size:10px;" id="th-data-base">${projecaoAtiva.dataBase ? new Date(projecaoAtiva.dataBase+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</span><br><span id="th-cache-badge" style="font-size:9px;color:#818cf8;display:none;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
-              <th style="padding:12px 14px;color:#a5f3fc;font-weight:800;white-space:nowrap;text-align:right;background:rgba(99,102,241,0.35);min-width:130px;">Projeção Fat.<br><span style="font-weight:400;font-size:10px;color:rgba(255,255,255,0.7);" class="mes-label">${projecaoAtiva.mes}</span></th>
-              <th style="padding:12px 14px;color:#6ee7b7;font-weight:700;white-space:nowrap;text-align:right;background:rgba(16,185,129,0.15);min-width:110px;">Qtd. Vendas<br><span style="font-weight:400;opacity:0.8;font-size:10px;">Data Base</span></th>
-              <th style="padding:12px 14px;color:#34d399;font-weight:800;white-space:nowrap;text-align:right;background:rgba(16,185,129,0.28);min-width:120px;">Proj. Vendas<br><span style="font-weight:400;font-size:10px;color:rgba(255,255,255,0.7);" class="mes-label">${projecaoAtiva.mes}</span></th>
-              <th style="padding:12px 14px;color:#fde68a;font-weight:700;white-space:nowrap;text-align:right;background:rgba(245,158,11,0.15);min-width:110px;">ADS Investido<br><span style="font-weight:400;opacity:0.8;font-size:10px;">Data Base</span></th>
-              <th style="padding:12px 14px;color:#fcd34d;font-weight:800;white-space:nowrap;text-align:right;background:rgba(245,158,11,0.25);min-width:120px;">Projeção ADS<br><span style="font-weight:400;font-size:10px;color:rgba(255,255,255,0.7);" class="mes-label">${projecaoAtiva.mes}</span></th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:center;min-width:80px;">% ADS<br>s/ Fat.</th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:center;min-width:100px;">Evolução<br>vs Mês Ant.</th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. ${projecaoAtiva.labelM1 || _labelM1Default}<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. ${projecaoAtiva.labelM2 || _labelM2Default}<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
-              <th style="padding:12px 14px;color:white;font-weight:700;white-space:nowrap;text-align:right;min-width:110px;">Fat. ${projecaoAtiva.labelM3 || _labelM3Default}<br><span style="font-weight:400;font-size:9px;color:#818cf8;background:rgba(99,102,241,0.25);border-radius:3px;padding:1px 4px;">↺ API auto</span></th>
-              <th style="padding:12px 14px;width:36px;"></th>
-            </tr>
-          </thead>
-          <tbody id="proj-tbody"></tbody>
-          <tfoot id="proj-tfoot" style="border-top:2px solid rgba(99,102,241,0.4);"></tfoot>
-        </table>
-      </div>
-      <div id="proj-diag" style="display:none;padding:10px 16px;font-size:12px;color:#f59e0b;border-top:1px solid rgba(245,158,11,0.2);"></div>
-    </div>
-
-    <!-- Gráfico evolução -->
-    <div class="card" style="margin-top:20px;">
-      <div class="section-header">
-        <div class="section-title">📈 Evolução Histórica de Faturamento</div>
-        <div class="section-subtitle">Últimos 3 meses + projeção atual</div>
-      </div>
-      <div class="chart-wrapper">
-        <canvas id="chart-projecao-hist"></canvas>
-      </div>
-    </div>
-
-    <!-- Observações -->
-    <div class="card" style="margin-top:20px;">
-      <div class="section-title mb-8">📝 Observações</div>
-      <textarea id="proj-obs" class="form-textarea" placeholder="Notas sobre esta projeção, contexto de mercado, eventos especiais..." style="min-height:80px;">${projecaoAtiva.obs || ''}</textarea>
+    <div id="pn-conteudo"></div>
+    <div class="card" style="margin-top:18px;padding:16px 18px;">
+      <div class="pn-graf-t" style="margin-bottom:8px;">📝 Observações</div>
+      <textarea id="proj-obs" class="form-textarea" placeholder="Contexto do mês, eventos, campanhas, rupturas de estoque…" style="min-height:70px;">${_pnEsc(projecaoAtiva.obs || '')}</textarea>
     </div>
   </div>`;
 
-  // ---- Estilos dos inputs da tabela ----
-  if (!document.getElementById('proj-styles')) {
+  if (!document.getElementById('pn-styles')) {
     const st = document.createElement('style');
-    st.id = 'proj-styles';
+    st.id = 'pn-styles';
     st.textContent = `
-      .proj-input { background:transparent; border:none; outline:none; color:var(--text-primary); font-size:13px; width:100%; min-width:80px; padding:2px 4px; text-align:right; }
-      .proj-input:focus { background:rgba(99,102,241,0.1); border-radius:4px; }
-      .proj-input:not(.money) { text-align:left; }
-      .proj-auto { color:#818cf8 !important; }
-      #proj-tbody td, #proj-tfoot td { padding:10px 14px; border-bottom:1px solid var(--border); vertical-align:middle; }
-      #proj-tbody tr:hover { background:rgba(255,255,255,0.02); }
-      #proj-tfoot td { padding:12px 14px; font-size:13.5px; color:var(--text-primary); }
+      .pn{--pn-azul:#2a78d6;--pn-cinza:#94a3b8;--pn-bom:#16a34a;--pn-ruim:#dc2626;}
+      .pn-mut{font-size:12px;color:var(--text-muted);}
+      .pn-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:10px;}
+      .pn-head-l{min-width:0;}
+      .pn-cliente{appearance:none;-webkit-appearance:none;background:transparent;border:none;font-size:26px;font-weight:800;color:var(--text-primary);cursor:pointer;outline:none;padding:0 22px 0 0;max-width:100%;
+        background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 9px) 55%,calc(100% - 4px) 55%;background-size:5px 5px;background-repeat:no-repeat;}
+      .pn-cliente option{font-size:14px;color:#111;}
+      .pn-cliente-txt{font-size:26px;font-weight:800;color:var(--text-primary);}
+      .pn-head-info{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px;}
+      .pn-tag{font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;background:rgba(42,120,214,.12);color:var(--pn-azul);}
+      .pn-tag-fonte{background:rgba(22,163,74,.12);color:var(--pn-bom);}
+      .pn-head-r{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+      .pn-btn{border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;list-style:none;}
+      .pn-btn::-webkit-details-marker{display:none;}
+      .pn-btn:hover{border-color:var(--pn-azul);}
+      .pn-btn-p{background:var(--pn-azul);border-color:var(--pn-azul);color:#fff;}
+      .pn-mais{position:relative;}
+      .pn-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:6px;min-width:250px;box-shadow:0 12px 30px rgba(0,0,0,.18);}
+      .pn-menu button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--text-primary);padding:9px 10px;border-radius:8px;font-size:13px;cursor:pointer;}
+      .pn-menu button:hover{background:var(--bg-card-hover);}
+      .pn-menu small{display:block;color:var(--text-muted);font-size:11px;}
+      .pn-periodo{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:16px;font-size:12.5px;color:var(--text-secondary);}
+      .pn-date,.pn-dia{background:var(--bg-card);border:1px solid var(--border);border-radius:7px;color:var(--text-primary);padding:4px 7px;font-size:12px;margin-left:4px;}
+      .pn-dia{width:48px;margin:0 2px;}
+      .pn-hero{padding:22px 24px 18px;margin-bottom:14px;}
+      .pn-hero-top{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;}
+      .pn-rot{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);font-weight:600;}
+      .pn-big{font-size:40px;font-weight:800;color:var(--text-primary);letter-spacing:-1px;font-variant-numeric:tabular-nums;line-height:1.1;margin:2px 0 4px;}
+      .pn-sub{font-size:12.5px;color:var(--text-muted);}
+      .pn-sub b{color:var(--text-primary);}
+      .pn-chips{display:flex;gap:8px;flex-wrap:wrap;}
+      .pn-chip{display:inline-flex;flex-direction:column;gap:1px;font-weight:800;font-size:15px;color:var(--c);background:color-mix(in srgb,var(--c) 10%,transparent);border-radius:10px;padding:7px 12px;font-variant-numeric:tabular-nums;}
+      .pn-chip em{font-style:normal;font-weight:500;font-size:11px;color:var(--text-muted);}
+      .pn-barra{position:relative;height:12px;background:var(--bg-card-hover);border-radius:99px;overflow:visible;}
+      .pn-barra-fat{height:100%;background:var(--pn-azul);border-radius:99px;transition:width .4s;}
+      .pn-barra-dia{position:absolute;top:-4px;width:2px;height:20px;background:var(--text-primary);opacity:.55;border-radius:2px;}
+      .pn-barra-leg{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--text-muted);margin-top:8px;}
+      .pn-barra-leg span{display:flex;align-items:center;gap:6px;}
+      .pn-barra-leg i{width:10px;height:10px;border-radius:3px;display:inline-block;}
+      .pn-barra-leg .pn-tick{width:2px;height:12px;background:var(--text-primary);opacity:.55;border-radius:1px;}
+      .pn-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
+      @media (max-width:900px){.pn-kpis{grid-template-columns:repeat(2,1fr);}.pn-big{font-size:32px;}}
+      .pn-kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;}
+      .pn-val{font-size:21px;font-weight:800;color:var(--text-primary);font-variant-numeric:tabular-nums;margin:2px 0;}
+      .pn-graficos{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:18px;}
+      @media (max-width:1000px){.pn-graficos{grid-template-columns:1fr;}}
+      .pn-graf{padding:16px 18px 12px;min-width:0;}
+      .pn-graficos>*,.pn-kpis>*,.pn-contas>*{min-width:0;}
+      .pn-graf-t{font-size:14.5px;font-weight:800;color:var(--text-primary);}
+      .pn-graf-area{position:relative;height:250px;margin-top:10px;}
+      .pn-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--text-secondary);margin-top:6px;}
+      .pn-leg span{display:flex;align-items:center;gap:6px;} .pn-leg i{width:16px;height:0;border-top:2px solid;display:inline-block;}
+      .pn-sec-t{font-size:15px;font-weight:800;color:var(--text-primary);margin:4px 0 10px;}
+      .pn-contas{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;}
+      .pn-conta{padding:14px 16px;border-top:3px solid var(--m);}
+      .pn-conta-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:8px;}
+      .pn-conta-nome{font-weight:800;color:var(--text-primary);font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+      .pn-mkt{color:var(--m);font-weight:700;}
+      .pn-x{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:6px;} .pn-x:hover{color:#dc2626;background:rgba(220,38,38,.08);}
+      .pn-conta-num{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;margin-bottom:10px;}
+      .pn-conta-num .pn-chip{font-size:13px;padding:5px 9px;}
+      .pn-conta-grid,.pn-conta-meses{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:12px;}
+      .pn-conta-meses{grid-template-columns:repeat(3,1fr);border-top:1px solid var(--border);padding-top:8px;margin-top:8px;}
+      .pn-conta-grid span,.pn-conta-meses span{display:block;color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;}
+      .pn-conta-grid b,.pn-conta-meses b{color:var(--text-primary);font-variant-numeric:tabular-nums;font-size:12.5px;}
+      .pn-inp{width:100%;background:var(--bg-card-hover);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);padding:3px 6px;font-size:12px;font-weight:600;}
+      .pn-vazio{padding:28px;text-align:center;color:var(--text-muted);grid-column:1/-1;}
     `;
     document.head.appendChild(st);
   }
@@ -1676,11 +1583,13 @@ Router.register('projecao', (params, el) => {
   // ---- Handlers ----
   window.limparDadosManuais = () => {
     if (!confirm('Limpar todos os dados inseridos manualmente (faturamento base, ADS, vendas e histórico)? Os dados da API continuam visíveis automaticamente.')) return;
+    // Mantém a ligação de cada linha com a conta (contaId/marketplace) — só zera os valores
     projecaoAtiva.plataformas = projecaoAtiva.plataformas.map(p => ({
-      nome: p.nome,
+      ...p,
       fatBase: '', adsBase: '', vendasBase: '',
       maio: '', abril: '', marco: '',
     }));
+    aplicarBase(true);
     salvar();
     renderTabela();
     atualizarGrafico();
@@ -1694,40 +1603,26 @@ Router.register('projecao', (params, el) => {
   };
 
   window.removePlat = (i) => {
-    if (projecaoAtiva.plataformas.length <= 1) return;
+    const pl = projecaoAtiva.plataformas[i];
+    if (!pl || !confirm(`Remover a fonte "${pl.nome}" desta projeção?`)) return;
     projecaoAtiva.plataformas.splice(i, 1);
+    salvar();
     renderTabela();
     atualizarGrafico();
   };
 
   window.toggleGLRProjecao = () => {
     ocultarGLR = !ocultarGLR;
-    // Atualiza o botão
     const btn = document.getElementById('btn-toggle-glr');
-    if (btn) {
-      if (ocultarGLR) {
-        btn.innerHTML = `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg> GLR oculta`;
-        btn.style.borderColor = 'rgba(251,191,36,.5)';
-        btn.style.background  = 'rgba(251,191,36,.12)';
-        btn.style.color       = '#fbbf24';
-      } else {
-        btn.innerHTML = `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Ocultar GLR`;
-        btn.style.borderColor = '';
-        btn.style.background  = '';
-        btn.style.color       = '';
-      }
-    }
-    // Oculta/mostra o KPI card
-    const kpiCard = document.getElementById('kpi-glr-card');
-    if (kpiCard) kpiCard.style.display = ocultarGLR ? 'none' : '';
-    // Re-renderiza a tabela (inclui os sub-labels GLR nas linhas e no footer)
+    if (btn) btn.textContent = ocultarGLR ? '🙈 GLR oculta' : '👁 Ocultar GLR';
     renderTabela();
   };
 
   window.buscarDadosProjecao = buscarDadosProjecao;
 
   window.adicionarPlat = () => {
-    projecaoAtiva.plataformas.push({ nome: 'Nova Plataforma', fatBase: '', ads: '', maio: '', abril: '', marco: '' });
+    projecaoAtiva.plataformas.push({ nome: 'Nova fonte', fatBase: '', adsBase: '', vendasBase: '', maio: '', abril: '', marco: '' });
+    salvar();
     renderTabela();
   };
 
@@ -1755,18 +1650,16 @@ Router.register('projecao', (params, el) => {
     document.getElementById('inp-dias-dec').value = dia;
     const inpDm = document.getElementById('inp-dias-mes');
     if (inpDm) inpDm.value = projecaoAtiva.diasNoMes;
-    const thdb = document.getElementById('th-data-base');
-    if (thdb) thdb.textContent = d.toLocaleDateString('pt-BR');
-    salvar();
+    salvar(); // atualiza também os rótulos de mês
+    aplicarBase(true);
     renderTabela();
-    atualizarGrafico();
   };
 
   window.salvarProjecao = (btn) => {
     projecaoAtiva.obs = document.getElementById('proj-obs')?.value || '';
     projecaoAtiva.atualizadoEm = new Date().toISOString();
     const lblAtt = document.getElementById('lbl-atualizado');
-    if (lblAtt) lblAtt.textContent = '🕓 Atualizado: ' + new Date().toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    if (lblAtt) lblAtt.textContent = 'Salvo ' + new Date().toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
 
     // ── Lê diasDecorridos/diasNoMes dos campos ao vivo ──────────────
     const dd = parseInt(document.getElementById('inp-dias-dec')?.value) || projecaoAtiva.diasDecorridos || 2;
@@ -1789,7 +1682,8 @@ Router.register('projecao', (params, el) => {
     const crescimento = fatMaio > 0
       ? parseFloat(((fatProj - fatMaio) / fatMaio * 100).toFixed(1))
       : 0;
-    const mesLabel = projecaoAtiva.mes || 'Junho 2026';
+    _rotulosDaDataBase(projecaoAtiva);
+    const mesLabel = projecaoAtiva.mes;
 
     // ── Sincroniza com GLR.clientes (lê e salva no localStorage) ────
     if (cidAtual && !isNaN(cidAtual)) {
@@ -1911,14 +1805,12 @@ Router.register('projecao', (params, el) => {
       projecaoAtiva = {
         chave:          String(clienteIdAtivo),
         nomeCliente:    clienteObj?.nome || '',
-        mes:            'Junho 2026',
-        diasNoMes:      30,
-        diasDecorridos: 2,
+        mes:            _mesLabel,
+        dataBase:       `${_ontem.getFullYear()}-${String(_ontem.getMonth()+1).padStart(2,'0')}-${String(_ontem.getDate()).padStart(2,'0')}`,
+        diasNoMes:      _diasNoMes,
+        diasDecorridos: _ontem.getDate(),
         obs:            '',
-        plataformas: [
-          { nome: 'Shopee',        fatBase: '', adsBase: '', vendasBase: '', maio: '', abril: '', marco: '' },
-          { nome: 'Mercado Livre', fatBase: '', adsBase: '', vendasBase: '', maio: '', abril: '', marco: '' },
-        ]
+        plataformas: []
       };
     }
 
@@ -2079,7 +1971,7 @@ Router.register('projecao', (params, el) => {
     if (!nome) return;
     const chave = 'proj_' + Date.now();
     const nova = {
-      chave, nomeCliente: nome.trim(), mes: 'Junho 2026',
+      chave, nomeCliente: nome.trim(), mes: _mesLabel,
       diasNoMes: 30, diasDecorridos: 2, obs: '',
       plataformas: [
         { nome: 'Shopee',        fatBase: '', ads: '', maio: '', abril: '', marco: '' },
@@ -2091,35 +1983,64 @@ Router.register('projecao', (params, el) => {
     Router.navigate('projecao', { clienteId: chave });
   };
 
+  // Gráficos (Chart.js): ritmo do mês (acumulado diário × mês anterior + linha
+  // da projeção) e últimos meses × projeção. Cores do tema categórico validado.
   function atualizarGrafico() {
-    const dd = projecaoAtiva.diasDecorridos;
-    const dm = projecaoAtiva.diasNoMes;
-    const plats = projecaoAtiva.plataformas;
-    const totMaio = plats.reduce((s,p) => s+(parseFloat(p.maio)||0),0);
-    const totAbril = plats.reduce((s,p) => s+(parseFloat(p.abril)||0),0);
-    const totMarco = plats.reduce((s,p) => s+(parseFloat(p.marco)||0),0);
-    const totProj = plats.reduce((s,p) => s+calcProjecao(p.fatBase,dd,dm),0);
-
-    const ctx = document.getElementById('chart-projecao-hist');
-    if (!ctx) return;
-    if (window._chartProjecao) { window._chartProjecao.destroy(); }
-    window._chartProjecao = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: ['Março', 'Abril', 'Maio', `Projeção ${projecaoAtiva.mes}`],
-        datasets: [{
-          data: [totMarco, totAbril, totMaio, totProj],
-          backgroundColor: ['rgba(99,102,241,0.4)','rgba(99,102,241,0.5)','rgba(99,102,241,0.65)','rgba(99,102,241,0.9)'],
-          borderColor: ['#6366f1','#6366f1','#6366f1','#818cf8'],
-          borderWidth: 1,
-          borderRadius: 6,
-        }]
-      },
-      options: {
-        ...chartDefaults(),
-        plugins: { legend: { display: false }, tooltip: tooltipStyle() }
-      }
-    });
+    const r = _pnUltimo;
+    if (!r || !window.Chart) return;
+    const claro = document.body.classList.contains('light');
+    const C = { azul: claro ? '#2a78d6' : '#3987e5', cinza: claro ? '#94a3b8' : '#64748b', texto: claro ? '#475569' : '#94a3b8', grade: claro ? 'rgba(15,23,42,.07)' : 'rgba(255,255,255,.06)', fundo: claro ? '#fff' : '#111827', titulo: claro ? '#0f172a' : '#f1f5f9', borda: claro ? 'rgba(15,23,42,.12)' : 'rgba(255,255,255,.12)' };
+    const kfmt = v => Math.abs(v) >= 1000 ? `R$ ${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} mil` : `R$ ${Math.round(v)}`;
+    const tip = { backgroundColor: C.fundo, titleColor: C.titulo, bodyColor: C.texto, borderColor: C.borda, borderWidth: 1, padding: 11, cornerRadius: 10, boxPadding: 4, usePointStyle: true };
+    const eixos = { x: { grid: { display: false }, border: { display: false }, ticks: { color: C.texto, font: { size: 11 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 11 } }, y: { beginAtZero: true, grid: { color: C.grade, drawTicks: false }, border: { display: false }, ticks: { color: C.texto, font: { size: 11 }, padding: 8, maxTicksLimit: 5, callback: kfmt } } };
+    const { dd, dm, tot } = r;
+    const db = projecaoAtiva.dataBase ? new Date(projecaoAtiva.dataBase + 'T12:00:00') : _ontem;
+    const pad = n => String(n).padStart(2, '0');
+    const isoDe = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+    // Faturamento por dia das contas na base (mês atual e anterior)
+    const ano = db.getFullYear(), mes = db.getMonth();
+    const ant = new Date(ano, mes - 1, 1), dmAnt = new Date(ano, mes, 0).getDate();
+    const diaAtual = Array(dm).fill(0), diaAnt = Array(Math.max(dm, dmAnt)).fill(0);
+    let temDiario = false;
+    for (const l of r.linhas) {
+      if (!l.base) continue;
+      const info = infoBaseDe(l.p.marketplace || l.p._platNome, l.p.contaId);
+      const dias = info?.dias || {};
+      for (let d = 1; d <= dd; d++) { const v = parseFloat(dias[isoDe(ano, mes, d)]?.faturamento) || 0; diaAtual[d - 1] += v; if (v) temDiario = true; }
+      for (let d = 1; d <= dmAnt; d++) diaAnt[d - 1] += parseFloat(dias[isoDe(ant.getFullYear(), ant.getMonth(), d)]?.faturamento) || 0;
+    }
+    const labels = Array.from({ length: dm }, (_, i) => String(i + 1));
+    const acum = arr => { let s = 0; return arr.map(v => (s += v)); };
+    const acAtual = acum(diaAtual).map((v, i) => i < dd ? v : null);
+    const acAnt = acum(diaAnt).slice(0, dm);
+    const fatAte = temDiario ? acAtual[dd - 1] : tot.fat;
+    const linhaProj = labels.map((_, i) => i < dd - 1 ? null : fatAte + (tot.proj - fatAte) * ((i + 1 - dd) / Math.max(1, dm - dd)));
+    const m1Nome = (projecaoAtiva.labelM1 || _labelM1Default).split(' ')[0], mesNome = (projecaoAtiva.mes || '').split(' ')[0];
+    const cv1 = document.getElementById('pn-chart-ritmo');
+    if (cv1) {
+      if (window._pnChartRitmo) window._pnChartRitmo.destroy();
+      const ds = [];
+      if (temDiario) ds.push({ label: mesNome, data: acAtual, borderColor: C.azul, backgroundColor: ctx => { const a = ctx.chart.chartArea; if (!a) return C.azul + '00'; const g = ctx.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, C.azul + '38'); g.addColorStop(1, C.azul + '00'); return g; }, fill: 'origin', borderWidth: 2.5, tension: .3, pointRadius: 0, pointHoverRadius: 5 });
+      ds.push({ label: `Projeção de ${mesNome}`, data: linhaProj, borderColor: C.azul, borderDash: [6, 5], borderWidth: 2, pointRadius: labels.map((_, i) => i === dm - 1 ? 4 : 0), pointBackgroundColor: C.azul, fill: false, tension: 0 });
+      if (acAnt.some(v => v > 0)) ds.push({ label: m1Nome, data: acAnt, borderColor: C.cinza, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, fill: false, tension: .3 });
+      window._pnChartRitmo = new Chart(cv1, { type: 'line', data: { labels, datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: { duration: 300 }, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { title: it => `Dia ${it[0].label}`, label: it => it.parsed.y == null ? null : ` ${it.dataset.label}: R$ ${Math.round(it.parsed.y).toLocaleString('pt-BR')}` } } }, scales: eixos } });
+      const leg = document.getElementById('pn-leg-ritmo');
+      if (leg) leg.innerHTML = `${temDiario ? `<span><i style="border-color:${C.azul}"></i>${mesNome} (acumulado)</span>` : ''}<span><i style="border-color:${C.azul};border-top-style:dashed"></i>Projeção até o fim do mês</span>${acAnt.some(v => v > 0) ? `<span><i style="border-color:${C.cinza}"></i>${m1Nome}</span>` : ''}${temDiario ? '' : '<span>· sem dados diários (contas fora da base)</span>'}`;
+    }
+    const cv2 = document.getElementById('pn-chart-meses');
+    if (cv2) {
+      if (window._pnChartMeses) window._pnChartMeses.destroy();
+      const lb = [projecaoAtiva.labelM3 || _labelM3Default, projecaoAtiva.labelM2 || _labelM2Default, projecaoAtiva.labelM1 || _labelM1Default].map(x => x.split(' ')[0].slice(0, 3));
+      const vals = [tot.m3, tot.m2, tot.m1, tot.proj];
+      window._pnChartMeses = new Chart(cv2, {
+        type: 'bar',
+        data: { labels: [...lb, `${mesNome.slice(0, 3)} (proj.)`], datasets: [
+          { label: 'Faturamento', data: vals, backgroundColor: [C.cinza + '99', C.cinza + '99', C.cinza + 'cc', C.azul + '40'], borderColor: [C.cinza, C.cinza, C.cinza, C.azul], borderWidth: [0, 0, 0, 2], borderDash: [], borderRadius: 8, borderSkipped: false, maxBarThickness: 56, grouped: false },
+          { label: 'Faturado até agora', data: [null, null, null, temDiario ? fatAte : tot.fat], backgroundColor: C.azul, borderRadius: 8, borderSkipped: false, maxBarThickness: 56, grouped: false },
+        ] },
+        options: { responsive: true, maintainAspectRatio: false, animation: { duration: 300 }, plugins: { legend: { display: false }, tooltip: { ...tip, filter: it => it.parsed.y != null, callbacks: { label: it => ` ${it.dataIndex === 3 ? (it.datasetIndex === 0 ? 'Projeção' : 'Faturado até agora') : 'Fechado'}: R$ ${Math.round(it.parsed.y).toLocaleString('pt-BR')}` } } }, scales: eixos },
+      });
+    }
   }
 
   renderTabela();
