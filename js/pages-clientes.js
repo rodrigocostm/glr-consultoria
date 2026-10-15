@@ -56,7 +56,7 @@ Router.register('clientes', (params, el) => {
     if (filtroGestor) lista = lista.filter(c => c.gestorId === parseInt(filtroGestor));
     if (filtroStatus) lista = lista.filter(c => c.status === filtroStatus);
 
-    if (!lista.length) return `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text-muted);">Nenhum cliente encontrado com os filtros aplicados.</td></tr>`;
+    if (!lista.length) return `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">Nenhum cliente encontrado com os filtros aplicados.</td></tr>`;
 
     return lista.map(c => {
       const temAPI = c._temAPI === true;
@@ -73,14 +73,12 @@ Router.register('clientes', (params, el) => {
             </div>
           </div>
         </td>
-        <td>${c.responsavel || '—'}</td>
         <td>
           ${c.gestorId ? `<div style="display:flex;align-items:center;gap:8px;">
             <div style="width:28px;height:28px;border-radius:50%;background:${corGestor(c.gestorId)}20;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${corGestor(c.gestorId)};">${iniciaisGestor(c.gestorId)}</div>
             <span style="font-size:13px;">${nomeGestor(c.gestorId)}</span>
           </div>` : '<span style="color:var(--text-muted);">—</span>'}
         </td>
-        <td>${formatDate(c.inicio) || '—'}</td>
         <td>
           ${c.valorPorVenda ? `<span style="font-size:13px;font-weight:600;color:var(--green);">R$ ${parseFloat(c.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>` : '<span style="color:var(--text-muted);">—</span>'}
         </td>
@@ -90,14 +88,6 @@ Router.register('clientes', (params, el) => {
           ${cresc !== null
             ? `<span class="fw-700 ${cresc >= 0 ? 'text-green' : 'text-red'}">${cresc >= 0 ? '+' : ''}${cresc}%</span>`
             : '<span style="color:var(--text-muted);">—</span>'}
-        </td>
-        <td>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <div style="font-size:13px;font-weight:700;color:${scoreColor(c.score||0)};">${c.score||0}</div>
-            <div style="flex:1;min-width:50px;">
-              <div class="progress-bar"><div class="progress-fill" style="width:${c.score||0}%;background:${scoreColor(c.score||0)};"></div></div>
-            </div>
-          </div>
         </td>
       </tr>`;
     }).join('');
@@ -133,14 +123,11 @@ Router.register('clientes', (params, el) => {
           <thead>
             <tr>
               <th>Empresa</th>
-              <th>Responsável</th>
               <th>Gestor GLR</th>
-              <th>Início</th>
               <th>Valor por Venda</th>
               <th>Status</th>
               <th>Faturamento</th>
               <th>Crescimento</th>
-              <th>Score GLR</th>
             </tr>
           </thead>
           <tbody id="clientes-tbody">${renderClientes()}</tbody>
@@ -358,31 +345,6 @@ Router.register('cliente-perfil', (params, el) => {
               ${indicadorCard('Status', GLR.statusLabel[c.status] || '—', c.status === 'crescimento' ? 'text-green' : c.status === 'risco' ? 'text-red' : 'text-accent', 'Atualizado pela projeção')}
             </div>
           </div>
-          ${(() => {
-                const sc = typeof window.calcularScoreCliente === 'function' ? window.calcularScoreCliente(c) : null;
-                const total = sc ? sc.total : (c.score || 0);
-                const detalhes = sc ? sc.detalhes : (c.scoreDetalhes || {});
-                return `<div class="card">
-            <div class="section-header">
-              <div class="section-title">🎯 Score GLR</div>
-              <div style="font-size:22px;font-weight:800;color:${scoreColor(total)};">${total}<span style="font-size:13px;color:var(--text-muted);">/100</span></div>
-            </div>
-            <div class="score-criteria">
-              ${Object.entries(detalhes).map(([k, v]) => `
-                <div class="criteria-item">
-                  <div class="criteria-header">
-                    <span class="criteria-name">${k.charAt(0).toUpperCase() + k.slice(1)}</span>
-                    <span class="criteria-val" style="color:${scoreColor(v)};">${v}</span>
-                  </div>
-                  <div class="progress-bar">
-                    <div class="progress-fill" style="width:${v}%;background:${scoreColor(v)};"></div>
-                  </div>
-                </div>
-              `).join('')}
-              ${!Object.keys(detalhes).length ? '<div style="color:var(--text-muted);font-size:13px;">Score ainda não calculado</div>' : ''}
-            </div>
-          </div>`;
-              })()}
         </div>
 
         <!-- Contas Marketplace vinculadas -->
