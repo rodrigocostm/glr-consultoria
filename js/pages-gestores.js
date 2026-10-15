@@ -34,6 +34,38 @@ Router.register('gestores', (params, el) => {
     );
   }
 
+  // ── Base automática (sincronizada a cada 15 min) ──────────────────────────
+  // Faturamento sem cancelados, ADS, unidades e meses fechados de TODAS as
+  // contas vinculadas ao cliente (glr_mc_vinculos, o mesmo vínculo da
+  // Projeção). Sem depender de abrir a Projeção nem de lançar DRE à mão.
+  let baseG = null;
+  const pad2 = n => String(n).padStart(2, '0');
+  const isoD = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const ontemG = new Date(hoje); ontemG.setDate(hoje.getDate() - 1);
+  const diasDecG = ontemG.getDate();
+  const diasMesG = new Date(ontemG.getFullYear(), ontemG.getMonth() + 1, 0).getDate();
+  const mesIniG = isoD(new Date(ontemG.getFullYear(), ontemG.getMonth(), 1));
+  const mesFechado = off => { const d = new Date(ontemG.getFullYear(), ontemG.getMonth() - off, 1); return { de: isoD(d), ate: isoD(new Date(d.getFullYear(), d.getMonth() + 1, 0)) }; };
+  function baseDoCliente(c) {
+    if (!baseG || !window.BaseDados) return null;
+    let vinculos = {};
+    try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
+    const contas = vinculos[String(c.id)] || [];
+    const r = { fat: 0, ads: 0, temAds: false, unid: 0, m: [0, 0, 0, 0], contas: contas.length, cobertas: 0 };
+    for (const ct of contas) {
+      const mkt = BaseDados.mktDe(ct.marketplace);
+      const id = String(ct.param_to_use?.shopId || ct.param_to_use?.meliUserId || ct.contaId || ct.external_id);
+      const info = mkt ? baseG[BaseDados.chave(mkt, id)] : null;
+      if (!info || !BaseDados.cobre(info, mesIniG)) continue;
+      r.cobertas++;
+      const t = BaseDados.somar(info, mesIniG, isoD(ontemG));
+      r.fat += t.faturamento; r.unid += t.unidades || t.pedidos;
+      if (BaseDados.cobreAds(info, mesIniG)) { r.ads += t.ads; r.temAds = true; }
+      for (const off of [1, 2, 3]) { const mf = mesFechado(off); if (BaseDados.cobre(info, mf.de)) r.m[off] += BaseDados.somar(info, mf.de, mf.ate).faturamento; }
+    }
+    return r.cobertas ? r : null;
+  }
+
   // Dados de performance de um cliente
   function perfCliente(c) {
     let projecoes = [], dres = [];
@@ -47,11 +79,12 @@ Router.register('gestores', (params, el) => {
     const calcP = base => base ? (parseFloat(base)/dd)*dm : 0;
 
     const fatBase  = plats.reduce((s,p)=>s+(parseFloat(p.fatBase)||0),0);
-    const adsBase  = plats.reduce((s,p)=>s+(parseFloat(p.adsBase)||0),0);
-    const fatProj  = plats.reduce((s,p)=>s+calcP(p.fatBase),0);
-    const adsProj  = plats.reduce((s,p)=>s+calcP(p.adsBase),0);
-    const pctADS   = fatBase > 0 ? (adsBase/fatBase)*100 : 0;
-    const pctADSProj = fatProj > 0 ? (adsProj/fatProj)*100 : 0;
+    let adsBase  = plats.reduce((s,p)=>s+(parseFloat(p.adsBase)||0),0);
+    let fatProj  = plats.reduce((s,p)=>s+calcP(p.fatBase),0);
+    let adsProj  = plats.reduce((s,p)=>s+calcP(p.adsBase),0);
+    let pctADS   = fatBase > 0 ? (adsBase/fatBase)*100 : 0;
+    let pctADSProj = fatProj > 0 ? (adsProj/fatProj)*100 : 0;
+    let vendasProjBase = null;
 
     const dresMes = dres.filter(d =>
       parseInt(d.clienteId)===c.id &&
@@ -74,7 +107,18 @@ Router.register('gestores', (params, el) => {
       if (h) return parseFloat(h.faturamento)||0;
       return 0;
     }
-    const fatM1 = fatOffset(1), fatM2 = fatOffset(2), fatM3 = fatOffset(3);
+    let fatM1 = fatOffset(1), fatM2 = fatOffset(2), fatM3 = fatOffset(3);
+
+    // Base automática tem prioridade: mês até ontem, projeção linear e meses fechados
+    const b = baseDoCliente(c);
+    let fatMes = null, viaBase = false;
+    if (b) {
+      viaBase = true; fatMes = b.fat;
+      fatProj = b.fat / diasDecG * diasMesG;
+      if (b.temAds) { adsBase = b.ads; adsProj = b.ads / diasDecG * diasMesG; pctADS = b.fat > 0 ? b.ads / b.fat * 100 : 0; pctADSProj = pctADS; }
+      vendasProjBase = b.unid / diasDecG * diasMesG;
+      if (b.m[1] > 0) fatM1 = b.m[1]; if (b.m[2] > 0) fatM2 = b.m[2]; if (b.m[3] > 0) fatM3 = b.m[3];
+    }
 
     // Meta manual (glr_metas) sobrescreve fatBase se definida
     let metas = {};
@@ -82,15 +126,16 @@ Router.register('gestores', (params, el) => {
     const metaManual = metas[c.id] ? parseFloat(metas[c.id]) : null;
     const metaFinal  = metaManual !== null ? metaManual : fatBase;
 
-    const fatRef    = fatReal || fatProj;
+    // Com a base, meta e "vs mês anterior" comparam a PROJEÇÃO do mês (não o parcial)
+    const fatRef    = viaBase ? fatProj : (fatReal || fatProj);
     const pctMeta   = metaFinal>0 ? (fatRef/metaFinal)*100 : null;
     const faltaMeta = metaFinal>0 ? metaFinal-fatRef : null;
     const compM1    = fatM1>0 ? ((fatRef-fatM1)/fatM1)*100 : null;
-    const vendasProj = plats.reduce((s,p)=>s+calcP(p.vendasBase),0);
+    const vendasProj = vendasProjBase != null ? vendasProjBase : plats.reduce((s,p)=>s+calcP(p.vendasBase),0);
     const recGLR    = Math.round(vendasProj)*(parseFloat(c.valorPorVenda)||0);
 
     return { fatBase, metaFinal, adsBase, pctADS, fatProj, adsProj, pctADSProj,
-             fatReal, adsReal, fatM1, fatM2, fatM3,
+             fatReal: viaBase ? fatMes : fatReal, adsReal, fatM1, fatM2, fatM3, viaBase, semVinculo: !b,
              pctMeta, faltaMeta, compM1, recGLR };
   }
 
@@ -128,7 +173,7 @@ Router.register('gestores', (params, el) => {
       fatM3:     rows.reduce((s,r)=>s+r.d.fatM3,0),
       recGLR:    rows.reduce((s,r)=>s+r.d.recGLR,0),
     };
-    const totRef = tot.fatReal||tot.fatProj;
+    const totRef = rows.some(r=>r.d.viaBase) ? tot.fatProj : (tot.fatReal||tot.fatProj);
     const totPct = tot.metaFinal>0 ? (totRef/tot.metaFinal)*100 : null;
     const totM1  = tot.fatM1>0 ? ((totRef-tot.fatM1)/tot.fatM1)*100 : null;
     const corTot = corMeta(totPct);
@@ -138,7 +183,7 @@ Router.register('gestores', (params, el) => {
     <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:980px;">
       <thead>
         <tr style="background:var(--bg-base);border-bottom:2px solid var(--border);">
-          ${['Empresa','Meta Base','ADS%','Projeção','Fat. Real','vs Mês Ant.','Falta p/ Meta','% Meta','ADS Proj.','%ADS','Rec. GLR',mesAbrev(3),mesAbrev(2),mesAbrev(1)]
+          ${['Empresa','Meta Base','ADS%','Projeção','Fat. até ontem','vs Mês Ant.','Falta p/ Meta','% Meta','ADS Proj.','%ADS','Rec. GLR',mesAbrev(3),mesAbrev(2),mesAbrev(1)]
             .map((h,i)=>`<th style="padding:8px ${i===0?'14px':'8px'};text-align:${i===0?'left':'right'};color:var(--text-muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap;">${h}</th>`).join('')}
         </tr>
       </thead>
@@ -157,7 +202,7 @@ Router.register('gestores', (params, el) => {
                 <input type="number" id="inp-meta-${c.id}"
                   value="${d.metaFinal>0?Math.round(d.metaFinal):''}"
                   placeholder="${d.fatBase>0?Math.round(d.fatBase):'Meta'}"
-                  data-fat-ref="${Math.round(d.fatReal||d.fatProj||0)}"
+                  data-fat-ref="${Math.round((d.viaBase ? d.fatProj : (d.fatReal||d.fatProj))||0)}"
                   data-gestor-id="${gid}"
                   onclick="event.stopPropagation()"
                   oninput="previewMeta(${c.id},this.value,this.dataset.fatRef)"
@@ -171,7 +216,7 @@ Router.register('gestores', (params, el) => {
             </td>
             <td style="padding:10px 8px;text-align:right;color:${d.pctADS>20?'#ef4444':d.pctADS>15?'#f59e0b':'var(--text-secondary)'};">${d.pctADS>0?d.pctADS.toFixed(1)+'%':'—'}</td>
             <td style="padding:10px 8px;text-align:right;font-weight:600;color:var(--accent-light);">${d.fatProj>0?fmtR(d.fatProj):'—'}</td>
-            <td style="padding:10px 8px;text-align:right;font-weight:${d.fatReal>0?700:400};color:${d.fatReal>0?'var(--text-primary)':'var(--text-muted)'};">${d.fatReal>0?fmtR(d.fatReal):'<span style="font-size:10px;">sem DRE</span>'}</td>
+            <td style="padding:10px 8px;text-align:right;font-weight:${d.fatReal>0?700:400};color:${d.fatReal>0?'var(--text-primary)':'var(--text-muted)'};">${d.fatReal>0?fmtR(d.fatReal):`<span style="font-size:10px;" title="Vincule as contas do cliente na Carteira/Projeção para os números virem da base">${d.viaBase?'R$ 0':'sem conta vinculada'}</span>`}</td>
             <td style="padding:10px 8px;text-align:right;font-weight:600;color:${corComp(d.compM1)};">${d.compM1!==null?fmtPct(d.compM1):'—'}</td>
             <td id="cell-falta-${c.id}" style="padding:10px 8px;text-align:right;color:${d.faltaMeta!==null?(d.faltaMeta<=0?'#10b981':'#f97316'):'var(--text-muted)'};">${d.faltaMeta!==null?(d.faltaMeta<=0?'✅ Batida':fmtR(d.faltaMeta)):'—'}</td>
             <td id="cell-pct-${c.id}" style="padding:10px 8px;text-align:center;">${d.pctMeta!==null?`<span style="background:${cor.bg};color:${cor.text};font-weight:800;padding:2px 9px;border-radius:99px;font-size:11px;">${d.pctMeta.toFixed(1)}%</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
@@ -213,6 +258,7 @@ Router.register('gestores', (params, el) => {
   }
 
   // ── Render principal ───────────────────────────────────────────
+  function montar() {
   el.innerHTML = `<div class="page">
 
     <!-- Header -->
@@ -245,7 +291,7 @@ Router.register('gestores', (params, el) => {
     ${GLR.gestores.map(g => {
       const cli     = clientesDoGestor(g);
       const rows    = cli.map(c=>({c,d:perfCliente(c)}));
-      const totRef  = rows.reduce((s,r)=>s+(r.d.fatReal||r.d.fatProj),0);
+      const totRef  = rows.reduce((s,r)=>s+(r.d.viaBase ? r.d.fatProj : (r.d.fatReal||r.d.fatProj)),0);
       const totMeta = rows.reduce((s,r)=>s+r.d.metaFinal,0); // usa metaFinal (manual ou fatBase)
       const totRecGLR = rows.reduce((s,r)=>s+r.d.recGLR,0);
       const totPct  = totMeta>0?(totRef/totMeta)*100:null;
@@ -298,6 +344,16 @@ Router.register('gestores', (params, el) => {
       }
     </style>
   </div>`;
+  }
+  montar();
+  // Base automática: carrega e redesenha; atualiza sozinha quando a base sincroniza
+  if (window.BaseDados) {
+    const recarregar = forcar => BaseDados.carregar(forcar).then(b => { baseG = b; if (Router.currentPage === 'gestores' && el.isConnected) montar(); }).catch(e => console.warn('[Gestores] base indisponível:', e.message));
+    recarregar(false);
+    const aoAtualizar = () => { if (!el.isConnected || Router.currentPage !== 'gestores') { window.removeEventListener('glr-base-atualizada', aoAtualizar); return; } recarregar(true); };
+    window.addEventListener('glr-base-atualizada', aoAtualizar);
+    BaseDados.iniciarTempoReal();
+  }
 
   // ── Salvar meta manual por cliente ──────────────────────────
   // Atualiza as células visuais sem re-renderizar a página
