@@ -1377,7 +1377,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
         <td style="padding:10px 12px;max-width:220px;">
           <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.nome}">${c.nome}</div>
           ${sug ? `<span style="display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:${sug.bg};color:${sug.cor};white-space:nowrap;" title="${sug.texto}">${sug.icon} ${sug.texto}</span>` : ''}
-          ${sugIA ? `<div style="margin-top:4px;"><button onclick="Router.navigate('sugestoes-ads')" title="${(sugIA.motivo||'').replace(/"/g,'')}" style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#ede9fe;color:#6d28d9;border:none;cursor:pointer;white-space:nowrap;">${TIPO_LABEL_IA[sugIA.tipo] || '💡 Sugestão'}${sugIA.valor_sugerido_label ? ' → ' + sugIA.valor_sugerido_label : ''}</button></div>` : ''}
+          ${sugIA ? `<div style="margin-top:4px;"><button onclick="Router.navigate('agente')" title="${(sugIA.motivo||'').replace(/"/g,'')}" style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#ede9fe;color:#6d28d9;border:none;cursor:pointer;white-space:nowrap;">${TIPO_LABEL_IA[sugIA.tipo] || '💡 Sugestão'}${sugIA.valor_sugerido_label ? ' → ' + sugIA.valor_sugerido_label : ''}</button></div>` : ''}
           ${vendasTrendHtml}
           ${tendenciaHtml}
           ${linkItens}
@@ -2417,6 +2417,8 @@ if (typeof Router !== 'undefined') {
   // A Central de ADS deixou de ser uma aba: vive dentro de "ADS Shopee" e
   // "ADS Mercado Livre" (window.AdsCentral.montar). Link antigo #ads → ADS Shopee.
   Router.register('ads', () => setTimeout(() => Router.navigate('agente'), 0));
+  // "Sugestões de ADS" também saiu do menu (as sugestões ficam na fila do agente): link antigo → ADS Shopee
+  Router.register('sugestoes-ads', () => setTimeout(() => Router.navigate('agente'), 0));
 }
 
 })();
