@@ -305,7 +305,22 @@ Router.register('agente-ml', (params, el) => {
     </details>`;
   }
 
+  // Painel "Desempenho de ADS" (a antiga Central de ADS, agora dentro desta tela)
+  // — container próprio, fora do aml-root que é redesenhado a todo momento.
+  let _desempenhoConta = null;
+  function montarDesempenho() {
+    const box = document.getElementById('aml-desempenho');
+    if (!box) return;
+    const id = state.aberta && state.aberta !== '__novo__' && !state.carregando && cfgDe(state.aberta) ? String(state.aberta) : null;
+    if (!id) { if (_desempenhoConta) { box.innerHTML = ''; _desempenhoConta = null; } return; }
+    if (_desempenhoConta === id || !window.AdsCentral) return;
+    _desempenhoConta = id;
+    box.innerHTML = '<div class="card" style="padding:20px 22px;margin-top:4px;"><div id="aml-desempenho-corpo"></div></div>';
+    window.AdsCentral.montar(document.getElementById('aml-desempenho-corpo'), { marketplace: 'ml', contaId: id, semCampanhas: true, semIA: false });
+  }
+
   function render() {
+    setTimeout(montarDesempenho, 0);
     const root = document.getElementById('aml-root'); if (!root) return;
     if (state.carregando) { root.innerHTML = '<div class="aml-sub" style="padding:30px;">⏳ Carregando…</div>'; return; }
     if (!state.aberta) { root.innerHTML = renderPortfolio(); return; }
@@ -355,11 +370,12 @@ Router.register('agente-ml', (params, el) => {
 
   el.innerHTML = `<div class="page">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
-      <div style="font-size:22px;font-weight:800;">🤝 Agente Mercado Livre</div>
+      <div style="font-size:22px;font-weight:800;">ADS Mercado Livre</div>
       <span class="aml-chip" title="Analisa e sugere; você aplica no painel do ML">Copiloto</span>
     </div>
     <div class="aml-sub" style="margin-bottom:18px;max-width:900px;">Analisa os anúncios patrocinados (Product Ads) de cada conta com as mesmas regras do agente da Shopee e sugere o que ajustar. O Mercado Livre não libera alteração de campanhas por integração — então você aplica no painel do ML e marca aqui. Quando o ML liberar, ele passa a executar sozinho.</div>
     <div id="aml-root"></div>
+    <div id="aml-desempenho"></div>
   </div>
   <style>
     .aml-sub{font-size:12.5px;color:var(--text-muted);line-height:1.5;}

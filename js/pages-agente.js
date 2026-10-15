@@ -51,7 +51,21 @@
       gmvLojaPorConta: {}, carregandoGmvLoja: {}, // acompanhamento do GMV Max da Loja (base sincronizada)
     };
 
-    function render() { renderShell(); renderChatDrawer(); }
+    function render() { renderShell(); renderChatDrawer(); montarDesempenho(); }
+
+    // Painel "Desempenho de ADS" (a antiga Central de ADS, agora dentro desta tela)
+    // — fica num container próprio, fora do ag-root que é redesenhado a todo momento.
+    let _desempenhoConta = null;
+    function montarDesempenho() {
+      const box = document.getElementById('ag-desempenho');
+      if (!box) return;
+      const id = state.contaAbertaId && state.contaAbertaId !== '__novo__' && configDaConta(state.contaAbertaId) ? String(state.contaAbertaId) : null;
+      if (!id || state.carregando) { if (_desempenhoConta) { box.innerHTML = ''; _desempenhoConta = null; } return; }
+      if (_desempenhoConta === id || !window.AdsCentral) return;
+      _desempenhoConta = id;
+      box.innerHTML = '<div class="card" style="padding:20px 22px;margin-top:22px;"><div id="ag-desempenho-corpo"></div></div>';
+      window.AdsCentral.montar(document.getElementById('ag-desempenho-corpo'), { marketplace: 'shopee', contaId: id, semCampanhas: true, semIA: true });
+    }
 
     // Servidor sincronizou (a cada 15 min) → atualiza o acompanhamento do GMV Max da Loja
     window._agGmvRecarregar = () => {
@@ -2147,6 +2161,7 @@
     function renderShell() {
       const root = document.getElementById('ag-root');
       if (!root) return;
+      setTimeout(montarDesempenho, 0); // painel de desempenho acompanha a conta aberta
       if (state.carregando) {
         root.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-muted);">⏳ Carregando agente...</div>`;
         return;
@@ -2190,13 +2205,14 @@
 
     el.innerHTML = `<div class="page">
       <div class="ag-titulo-pagina">
-        <div class="ag-hero-title"><span class="ag-pulse-dot"></span><span>Agente Shopee</span></div>
+        <div class="ag-hero-title"><span class="ag-pulse-dot"></span><span>ADS Shopee</span></div>
         <details class="ag-como">
           <summary title="Como o agente funciona">ⓘ Como funciona</summary>
           <div class="ag-como-corpo">Todo dia às 07:00 o agente revisa cada conta com o piloto ligado contra as regras da seção "Guardrails do piloto": pausa, reativa e ajusta orçamento ou meta de <abbr class="ag-sigla" title="Retorno sobre o investimento: quantos reais vendidos para cada R$ 1 gasto.">ROAS</abbr> sozinho quando a mudança está dentro da faixa combinada. O que passa do limite, ou que ele não pode decidir sozinho, aparece em "Precisa de você" pra você aprovar ou rejeitar.</div>
         </details>
       </div>
       <div id="ag-root"></div>
+      <div id="ag-desempenho"></div>
       <div id="ag-chat-root"></div>
       <style>
         .ag-chat-fab { position:fixed; right:22px; bottom:22px; z-index:40; padding:12px 18px; border:none; border-radius:99px; background:#6366f1; color:#fff; font-size:13.5px; font-weight:700; cursor:pointer; box-shadow:0 8px 24px rgba(99,102,241,.45); }

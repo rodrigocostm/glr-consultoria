@@ -18,6 +18,10 @@ let _aiCarregando = false;
 let _rankingSnaps = {};
 let _adsAutoRefreshOn    = false; // opt-in — evita gastar chamada de API à toa em quem não pediu
 let _adsAutoRefreshTimer = null;
+// Quando a Central está embutida nas telas "ADS Shopee" / "ADS Mercado Livre":
+// { marketplace: 'shopee'|'ml', contaId, semCampanhas, semIA } — trava a conta
+// aberta no agente e esconde o que a própria tela do agente já mostra.
+let embutido = null;
 
 // ─── Helpers ─────────────────────────────────────────────────
 const pad = n => String(n).padStart(2, '0');
@@ -821,12 +825,26 @@ async function buscarDados(forcar = false) {
 
 // ─── Render principal ─────────────────────────────────────────
 function renderPage(params, container) {
+  embutido = null;
   container.innerHTML = `
     <div id="ads-root" style="padding:24px;max-width:1400px;margin:0 auto;"></div>
   `;
   renderShell();
   carregarContas();
 }
+
+// Monta a Central dentro de outra tela, travada numa conta (usado pelas telas
+// ADS Shopee e ADS Mercado Livre — a Central deixou de ser uma aba separada).
+function montarEmbutido(container, opts) {
+  if (!container) return;
+  const mudouConta = !embutido || embutido.contaId !== String(opts.contaId) || embutido.marketplace !== opts.marketplace;
+  embutido = { ...opts, contaId: String(opts.contaId) };
+  if (mudouConta) { dadosADS = null; contaAtual = null; _aiHistory = []; }
+  container.innerHTML = `<div id="ads-root"></div>`;
+  renderShell();
+  carregarContas();
+}
+window.AdsCentral = { montar: montarEmbutido };
 
 function renderShell() {
   const root = document.getElementById('ads-root');
@@ -841,16 +859,16 @@ function renderShell() {
 
   root.innerHTML = `
     <!-- Cabeçalho -->
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:${embutido ? '16' : '24'}px;">
       <div>
-        <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">📢 Central de ADS</h2>
-        <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0;">Gerencie e otimize suas campanhas de anúncios</p>
+        <h2 style="font-size:${embutido ? '17' : '20'}px;font-weight:${embutido ? 800 : 700};color:var(--text-primary);margin:0;">${embutido ? '📊 Desempenho de ADS' : '📢 Central de ADS'}</h2>
+        <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0;">${embutido ? 'Investimento, retorno, vendas orgânicas × ADS, eficiência, tendências e ranqueamento do mês escolhido' : 'Gerencie e otimize suas campanhas de anúncios'}</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <select id="ads-sel-mes" class="form-input" style="border-radius:99px;padding:7px 14px;">
           ${meses.map(m => `<option value="${m.v}" ${m.v===`${mesSel}_${anoSel}`?'selected':''}>${m.l}</option>`).join('')}
         </select>
-        <select id="ads-sel-conta" class="form-input" style="border-radius:99px;padding:7px 14px;min-width:160px;">
+        <select id="ads-sel-conta" class="form-input" style="border-radius:99px;padding:7px 14px;min-width:160px;${embutido ? 'display:none;' : ''}">
           <option value="">Carregando contas...</option>
         </select>
         <button id="ads-btn-atualizar" onclick="window._adsAtualizar()" style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">
@@ -891,7 +909,7 @@ function renderShell() {
     _adsAutoRefreshTimer = setInterval(() => {
       // O router não avisa quando a página muda — se o usuário saiu da Central de
       // ADS, o próprio timer se desliga aqui em vez de continuar rodando escondido.
-      if (Router.currentPage !== 'ads') {
+      if (!document.getElementById('ads-root')) {
         clearInterval(_adsAutoRefreshTimer);
         _adsAutoRefreshTimer = null;
         _adsAutoRefreshOn = false;
@@ -919,6 +937,15 @@ async function carregarContas() {
       console.warn('[ADS] Fallback para cache local:', e.message);
     }
     contasSel = contas.filter(c => ['shopee','mercadolivre','ml','meli'].includes(c.marketplace));
+    if (embutido) {
+      const ehShopee = embutido.marketplace === 'shopee';
+      contasSel = contasSel.filter(c => ehShopee ? c.marketplace === 'shopee' : c.marketplace !== 'shopee');
+      const alvo = contasSel.find(c => [c.external_id, c.param_to_use?.shopId, c.param_to_use?.meliUserId].map(String).includes(embutido.contaId));
+      if (!alvo) { const b = document.getElementById('ads-body'); if (b) b.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);">Conta não encontrada na lista de contas conectadas.</div>'; return; }
+      contaAtual = alvo;
+      buscarDados(false);
+      return;
+    }
 
     const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
     const nomeConta = c => {
@@ -1076,7 +1103,7 @@ function renderConteudo() {
       ${d.saldo > 0 ? kpiCard('🏦 Saldo ADS', fmt(d.saldo), '', '#f0fdf4', '#15803d') : ''}
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;margin-bottom:24px;">
       <!-- Gráfico diário -->
       <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
         <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">📅 Gasto Diário</h3>
@@ -1090,8 +1117,8 @@ function renderConteudo() {
       </div>
     </div>
 
-    <!-- Tabela de campanhas -->
-    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
+    <!-- Tabela de campanhas (embutida: a tela do agente já tem a sua, com ações) -->
+    ${embutido?.semCampanhas ? '' : `<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
         <h3 style="font-size:14px;font-weight:700;margin:0;color:var(--text-primary);">🗂️ Campanhas (${d.campanhas.length})</h3>
         <div style="display:flex;gap:8px;">
@@ -1099,7 +1126,7 @@ function renderConteudo() {
         </div>
       </div>
       ${renderTabelaCampanhas(d.campanhas, d.janelas, d.sugestoesPorCampanha)}
-    </div>
+    </div>`}
 
     <!-- Tendências período -->
     ${renderTendencias(d)}
@@ -1114,7 +1141,7 @@ function renderConteudo() {
     ${renderRanqueamento()}
 
     <!-- Agente IA -->
-    ${renderAgentIA()}
+    ${embutido?.semIA ? '' : renderAgentIA()}
   `;
 
   // auto-carrega histórico de ranking
@@ -2387,7 +2414,9 @@ function _renderRankingHistorico() {
 
 // ─── Registro da rota ─────────────────────────────────────────
 if (typeof Router !== 'undefined') {
-  Router.register('ads', renderPage);
+  // A Central de ADS deixou de ser uma aba: vive dentro de "ADS Shopee" e
+  // "ADS Mercado Livre" (window.AdsCentral.montar). Link antigo #ads → ADS Shopee.
+  Router.register('ads', () => setTimeout(() => Router.navigate('agente'), 0));
 }
 
 })();
