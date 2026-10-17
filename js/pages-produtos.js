@@ -29,7 +29,7 @@ Router.register('produtos', (params, el) => {
 
   const st = {
     cliente: portal ? String(cfgPortal.clienteId) : (() => { try { return localStorage.getItem('glr_prod_cliente') || ''; } catch (e) { return ''; } })(),
-    busca: '', pagina: 0, filtro: 'todos', carregando: false, progresso: '', anuncios: [], contas: [], erro: null, modal: null,
+    busca: '', pagina: 0, filtro: 'todos', conta: '', carregando: false, progresso: '', anuncios: [], contas: [], erro: null, modal: null,
     rows: [], materializados: {}, // linha virtual -> id do produto criado ao lançar o custo
   };
 
@@ -328,7 +328,10 @@ Router.register('produtos', (params, el) => {
 
     st.rows = montarLinhas(); st.materializados = {};
     const q = st.busca.toLowerCase();
-    const lista = st.rows.filter(F[st.filtro] || F.todos).filter(r => !q || `${r.sku} ${r.nome} ${r.anuncios.map(a => a.id + ' ' + a.sku).join(' ')}`.toLowerCase().includes(q));
+    const multiConta = st.contas.length > 1;
+    const chaveConta = a => `${a.mkt}:${a.conta}`;
+    if (st.conta && !st.contas.some(c => `${c.mkt}:${c.id}` === st.conta)) st.conta = '';
+    const lista = st.rows.filter(F[st.filtro] || F.todos).filter(r => !st.conta || r.anuncios.some(a => chaveConta(a) === st.conta)).filter(r => !q || `${r.sku} ${r.nome} ${r.anuncios.map(a => a.id + ' ' + a.sku).join(' ')}`.toLowerCase().includes(q));
     const pags = Math.max(1, Math.ceil(lista.length / POR_PAGINA)); st.pagina = Math.min(st.pagina, pags - 1);
     const pagina = lista.slice(st.pagina * POR_PAGINA, (st.pagina + 1) * POR_PAGINA);
     const carregandoVazio = st.carregando && !st.anuncios.length;
@@ -344,13 +347,15 @@ Router.register('produtos', (params, el) => {
       </div>
       <div class="pr-info">
         <span id="pr-chips" style="display:contents">${renderChips()}</span>
+        ${multiConta ? `<select class="pr-sel" style="padding:5px 10px;font-size:12px" onchange="window._prConta(this.value)"><option value="">Todas as contas</option>${st.contas.map(c => `<option value="${c.mkt}:${h(c.id)}" ${st.conta === `${c.mkt}:${c.id}` ? 'selected' : ''}>${MKT[c.mkt].sigla} · ${h(c.nome)}</option>`).join('')}</select>` : ''}
         <span class="pr-mut">${st.contas.length || st.carregando ? `${st.anuncios.length} anúncios em ${st.contas.length} conta(s)` : (portal ? 'nenhuma conta encontrada' : '⚠️ nenhuma conta vinculada a este cliente (vincule na Projeção)')}
         ${st.carregando ? ` · ⏳ ${h(st.progresso || 'carregando…')}` : ` · <a href="#" onclick="window._prRecarregar();return false;">atualizar anúncios</a>`}${st.erro ? ` · <span style="color:#dc2626">${h(st.erro)}</span>` : ''}</span>
       </div>
       <div class="card" style="padding:0;overflow:hidden"><div style="overflow-x:auto">
         <table class="pr-tab"><thead><tr><th>SKU interno</th><th>Imagem</th><th>Título</th><th class="pr-n">Preço de custo</th>${portal ? '' : '<th class="pr-n">Custo extra</th>'}<th>Marketplaces associados</th>${portal ? '' : '<th></th>'}</tr></thead>
         <tbody>${pagina.map((r, i) => {
-          const por = {}; r.anuncios.forEach(a => { por[a.mkt] = (por[a.mkt] || 0) + 1; });
+          // Cliente com várias contas: o selo diz de qual conta é cada anúncio
+          const por = new Map(); r.anuncios.forEach(a => { const k = multiConta ? chaveConta(a) : a.mkt; if (!por.has(k)) por.set(k, { a, n: 0 }); por.get(k).n++; });
           const nota = r.diverge ? `<div class="pr-nota" style="color:#d97706" title="Custo nos anúncios: ${(r.custosAnuncios || []).map(R$).join(' / ')}">⚠ custo diferente em algum anúncio</div>`
             : r.virtual && r.origem === 'anuncio' && !portal ? '<div class="pr-nota">custo já lançado em Vendas</div>' : '';
           return `<tr>
@@ -359,7 +364,7 @@ Router.register('produtos', (params, el) => {
             <td class="pr-tit">${h(r.nome)}</td>
             <td class="pr-n">${celulaCusto(r, 'custo', i)}${nota}</td>
             ${portal ? '' : `<td class="pr-n">${celulaCusto(r, 'custoExtra', i)}</td>`}
-            <td>${Object.keys(por).length ? Object.entries(por).map(([k, n]) => `<span class="pr-mkt" style="--c:${MKT[k].cor}" title="${MKT[k].nome}">${MKT[k].sigla} ${n}</span>`).join(' ') : '<span class="pr-mut">nenhum</span>'}</td>
+            <td class="pr-mkts">${por.size ? [...por.values()].map(({ a, n }) => `<span class="pr-mkt" style="--c:${MKT[a.mkt].cor}" title="${MKT[a.mkt].nome}${multiConta ? ' · ' + h(a.contaNome || a.conta) : ''}">${MKT[a.mkt].sigla}${multiConta ? ` · ${h(a.contaNome || a.conta)}` : ''} ${n}</span>`).join('') : '<span class="pr-mut">nenhum</span>'}</td>
             ${portal ? '' : `<td class="pr-acoes"><button title="Associar anúncios" onclick="window._prAssociar(${st.rows.indexOf(r)})">🔗</button><button title="Editar" onclick="window._prEditar(${st.rows.indexOf(r)})">✎</button>${r.virtual ? '' : `<button title="Excluir" onclick="window._prExcluir(${st.rows.indexOf(r)})">🗑</button>`}</td>`}
           </tr>`;
         }).join('') || `<tr><td colspan="7" class="pr-mut" style="padding:28px;text-align:center">${carregandoVazio ? '⏳ Carregando os produtos das contas…' : st.rows.length ? 'Nada neste filtro.' : 'Nenhum anúncio ativo encontrado nas contas do cliente.'}</td></tr>`}</tbody></table>
@@ -370,8 +375,9 @@ Router.register('produtos', (params, el) => {
   }
 
   // ── Ações ──
-  window._prCliente = v => { st.cliente = v; st.anuncios = []; st.contas = []; st.pagina = 0; st.filtro = 'todos'; try { localStorage.setItem('glr_prod_cliente', v); } catch (e) {} render(); carregarAnuncios(false); };
+  window._prCliente = v => { st.cliente = v; st.anuncios = []; st.contas = []; st.pagina = 0; st.filtro = 'todos'; st.conta = ''; try { localStorage.setItem('glr_prod_cliente', v); } catch (e) {} render(); carregarAnuncios(false); };
   window._prBusca = v => { st.busca = v; st.pagina = 0; clearTimeout(window._prT); window._prT = setTimeout(() => { render(); const b = document.querySelector('.pr-topo .pr-busca'); if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); } }, 200); };
+  window._prConta = v => { st.conta = v; st.pagina = 0; render(); };
   window._prFiltro = f => { st.filtro = f; st.pagina = 0; render(); };
   window._prPagina = d => { st.pagina += d; render(); };
   window._prRecarregar = () => carregarAnuncios(true);
@@ -475,7 +481,8 @@ Router.register('produtos', (params, el) => {
     .pr-in.vazio{border-color:#dc2626}.pr-in.vazio::placeholder{color:#dc2626;font-weight:700}
     .pr-sem{color:#dc2626;font-weight:700}
     .pr-in.ok{border-color:#1baf7a}.pr-in.erro{border-color:#dc2626}
-    .pr-mkt{display:inline-block;font-size:11px;font-weight:800;color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);padding:2px 7px;border-radius:6px}
+    .pr-mkts{display:flex;flex-wrap:wrap;gap:4px;max-width:340px}
+    .pr-mkt{display:inline-block;white-space:nowrap;font-size:11px;font-weight:800;color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);padding:2px 7px;border-radius:6px}
     .pr-acoes{white-space:nowrap;text-align:right} .pr-acoes button{background:none;border:1px solid var(--border);border-radius:8px;width:30px;height:30px;margin-left:4px;cursor:pointer;color:var(--text-secondary)}
     .pr-acoes button:hover{border-color:#2a78d6}
     .pr-pag{display:flex;gap:10px;justify-content:center;align-items:center;padding:10px;font-size:13px;color:var(--text-secondary)} .pr-pag button{border:1px solid var(--border);background:var(--bg-card);border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text-primary)}
