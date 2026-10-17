@@ -273,9 +273,12 @@ async function _portalMcCall(action, params = {}, timeoutMs = 20000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
+    // O proxy exige o login: o servidor confere e só deixa consultar as contas deste cliente
+    const { data: sess } = await _sb.auth.getSession();
+    const token = sess?.session?.access_token || '';
     const resp = await fetch('/api/mcp', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ action, params }),
       signal: ctrl.signal,
     });
