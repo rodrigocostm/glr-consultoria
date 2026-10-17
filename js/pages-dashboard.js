@@ -462,7 +462,8 @@ Router.register('dashboard', (params, el) => {
         </div>
         <button class="btn btn-secondary btn-sm" id="btn-dash-vendas-dia">🔄 Atualizar</button>
       </div>
-      <div class="chart-wrapper">
+      <div class="dvd-kpis" id="dash-vd-kpis"></div>
+      <div class="chart-wrapper" style="height:300px">
         <canvas id="chart-vendas-dia"></canvas>
       </div>
     </div>
@@ -726,32 +727,7 @@ Router.register('dashboard', (params, el) => {
       if (!dias.length) {
         ctxVD.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">⏳ Carregando as vendas da carteira automaticamente…</div>';
       } else {
-        new Chart(ctxVD, {
-          data: {
-            labels: dias.map(d => d.data),
-            datasets: [
-              { type: 'bar', label: 'Nº de vendas', data: dias.map(d => d.pedidos), backgroundColor: 'rgba(99,102,241,0.55)', borderRadius: 4, yAxisID: 'y' },
-              { type: 'line', label: 'Comissão GLR (R$)', data: dias.map(d => d.comissao), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 2, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#10b981', yAxisID: 'y1' },
-            ]
-          },
-          options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: {
-              legend: { display: true, labels: { color: '#9192a8', font: { size: 11 }, boxWidth: 12 } },
-              tooltip: {
-                ...tooltipStyle(),
-                callbacks: {
-                  label: ctx => ctx.dataset.yAxisID === 'y1' ? ` R$ ${ctx.raw.toLocaleString('pt-BR',{minimumFractionDigits:2})}` : ` ${ctx.raw} venda${ctx.raw!==1?'s':''}`
-                }
-              }
-            },
-            scales: {
-              x: { grid: { color: 'rgba(255,255,255,0.04)', drawBorder:false }, ticks: { color:'#5a5b72', font:{size:11} } },
-              y:  { position:'left',  grid: { color: 'rgba(255,255,255,0.04)', drawBorder:false }, ticks: { color:'#5a5b72', font:{size:11}, precision:0 }, title:{display:true,text:'Nº de vendas',color:'#5a5b72',font:{size:10}} },
-              y1: { position:'right', grid: { drawOnChartArea:false }, ticks: { color:'#5a5b72', font:{size:11}, callback: v => 'R$ '+v }, title:{display:true,text:'Comissão GLR',color:'#5a5b72',font:{size:10}} },
-            }
-          }
-        });
+        _dashGraficoVendasDia(ctxVD, dias);
       }
     }
 
@@ -996,6 +972,75 @@ function chartDefaults() {
       }
     }
   };
+}
+
+// Vendas por dia & Comissão GLR: resumo do período + comissão em área (eixo da
+// direita) sobre as vendas em barras (eixo da esquerda), dica com o dia inteiro
+function _dashGraficoVendasDia(canvas, dias) {
+  const css = getComputedStyle(document.documentElement);
+  const v = (n, d) => (css.getPropertyValue(n) || '').trim() || d;
+  const cor = { texto: v('--text-muted', '#8a8ba3'), titulo: v('--text-primary', '#f1f1f8'), grade: 'rgba(140,140,170,0.12)', fundo: v('--bg-card', '#16161f'), borda: v('--border', 'rgba(255,255,255,0.08)') };
+  const AZUL = '#2a78d6', VERDE = '#1baf7a';
+  const R = (x, c = 0) => 'R$ ' + (x || 0).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+  const curto = x => x >= 1e6 ? (x / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'M' : x >= 1e3 ? (x / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'k' : String(Math.round(x));
+  const soma = k => dias.reduce((t, d) => t + (d[k] || 0), 0);
+  const ano = new Date().getFullYear();
+  const semana = d => { const [dd, mm] = d.split('/').map(Number); return new Date(ano, mm - 1, dd).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', ''); };
+  const melhor = dias.reduce((m, d) => (d.comissao > (m?.comissao ?? -1) ? d : m), null);
+  const iMelhor = dias.indexOf(melhor);
+
+  const kpis = document.getElementById('dash-vd-kpis');
+  if (kpis) {
+    const tPed = soma('pedidos'), tCom = soma('comissao'), tFat = soma('faturamento');
+    const item = (rot, val, sub, c) => `<div class="dvd-kpi"><span class="dvd-rot"><i style="background:${c}"></i>${rot}</span><b>${val}</b><small>${sub}</small></div>`;
+    kpis.innerHTML = item('Comissão GLR', R(tCom), `média ${R(tCom / dias.length)}/dia`, VERDE)
+      + item('Vendas', tPed.toLocaleString('pt-BR'), `média ${Math.round(tPed / dias.length).toLocaleString('pt-BR')}/dia`, AZUL)
+      + (tFat > 0 ? item('Faturamento', R(tFat), `ticket ${R(tPed ? tFat / tPed : 0, 2)}`, 'var(--text-muted)') : '')
+      + (melhor ? item('Melhor dia', melhor.data, `${R(melhor.comissao)} de comissão`, '#eb6834') : '');
+  }
+
+  const grad = (ctx, c, a1, a2) => { const { chartArea } = ctx.chart; if (!chartArea) return c; const g = ctx.chart.ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom); g.addColorStop(0, c + a1); g.addColorStop(1, c + a2); return g; };
+  // linha vertical seguindo o mouse
+  const guia = { id: 'guiaVD', afterDatasetsDraw(ch) { const a = ch.tooltip?.getActiveElements?.(); if (!a?.length) return; const x = a[0].element.x, { top, bottom } = ch.chartArea, c = ch.ctx; c.save(); c.strokeStyle = cor.borda; c.lineWidth = 1; c.setLineDash([4, 4]); c.beginPath(); c.moveTo(x, top); c.lineTo(x, bottom); c.stroke(); c.restore(); } };
+
+  return new Chart(canvas, {
+    data: {
+      labels: dias.map(d => d.data),
+      datasets: [
+        { type: 'line', label: 'Comissão GLR', data: dias.map(d => d.comissao), yAxisID: 'y1', order: 0,
+          borderColor: VERDE, backgroundColor: ctx => grad(ctx, VERDE, '55', '00'), fill: 'origin', borderWidth: 2.5, tension: 0.4, cubicInterpolationMode: 'monotone',
+          pointRadius: dias.map((_, i) => (i === iMelhor || dias.length === 1 ? 5 : 0)), pointBackgroundColor: VERDE, pointBorderColor: cor.fundo, pointBorderWidth: 2,
+          pointHoverRadius: 6, pointHoverBorderWidth: 2, pointHoverBorderColor: cor.fundo },
+        { type: 'bar', label: 'Vendas', data: dias.map(d => d.pedidos), yAxisID: 'y', order: 1,
+          backgroundColor: ctx => grad(ctx, AZUL, 'cc', '40'), hoverBackgroundColor: AZUL, borderRadius: 6, borderSkipped: false, maxBarThickness: 34, categoryPercentage: 0.7 },
+      ],
+    },
+    plugins: [guia],
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      animation: { duration: 500 },
+      plugins: {
+        legend: { display: true, align: 'end', labels: { color: cor.texto, font: { size: 11 }, usePointStyle: true, pointStyle: 'circle', boxWidth: 7, boxHeight: 7, padding: 14 } },
+        tooltip: {
+          backgroundColor: cor.fundo, titleColor: cor.titulo, bodyColor: cor.texto, borderColor: cor.borda, borderWidth: 1, padding: 12, cornerRadius: 10, boxPadding: 4, usePointStyle: true,
+          titleFont: { size: 12, weight: '700' }, bodyFont: { size: 12 },
+          callbacks: {
+            title: it => `${semana(it[0].label)}, ${it[0].label}`,
+            label: ctx => ctx.dataset.yAxisID === 'y1' ? ` Comissão GLR: ${R(ctx.raw, 2)}` : ` Vendas: ${(ctx.raw || 0).toLocaleString('pt-BR')}`,
+            afterBody: it => { const d = dias[it[0].dataIndex]; return d?.faturamento > 0 ? [` Faturamento: ${R(d.faturamento)}`] : []; },
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, border: { display: false }, ticks: { color: cor.texto, font: { size: 11 }, maxRotation: 0, autoSkipPadding: 12 } },
+        y: { position: 'left', beginAtZero: true, grace: '8%', grid: { color: cor.grade, drawTicks: false }, border: { display: false, dash: [3, 4] },
+          ticks: { color: cor.texto, font: { size: 11 }, padding: 8, maxTicksLimit: 5, precision: 0, callback: x => curto(x) } },
+        y1: { position: 'right', beginAtZero: true, grace: '8%', grid: { display: false }, border: { display: false },
+          ticks: { color: VERDE, font: { size: 11 }, padding: 8, maxTicksLimit: 5, callback: x => 'R$ ' + curto(x) } },
+      },
+    },
+  });
 }
 
 function tooltipStyle() {

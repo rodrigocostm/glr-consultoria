@@ -973,3 +973,12 @@ body.light .dash-v2 .btn-primary {
 @media (prefers-reduced-motion: reduce) {
   .dash-v2 .kpi-flash-up, .dash-v2 .kpi-flash-down { animation: none; }
 }
+
+/* Dashboard — resumo do gráfico Vendas por Dia & Comissão GLR */
+.dvd-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 4px 0 16px; }
+.dvd-kpis:empty { display: none; }
+.dvd-kpi { display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card-hover); }
+.dvd-rot { display: flex; align-items: center; gap: 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.dvd-rot i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.dvd-kpi b { font-size: 18px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.dvd-kpi small { font-size: 11px; color: var(--text-muted); }
