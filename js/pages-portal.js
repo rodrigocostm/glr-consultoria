@@ -825,6 +825,10 @@ window._initPortalCliente = async function(cfg) {
   window._portalConfig = cfg;
   _configurarSidebarCliente(cfg);
 
+  // Marcador LOCAL no lugar da chave: as telas que conferem "tem chave?" seguem em
+  // frente, e toda chamada vai pelo /api/mcp (a chave de verdade fica só no servidor).
+  // Não sobe pro banco (grava direto, sem o sync) e é apagado ao sair da conta.
+  try { (typeof _localSetItem === 'function' ? _localSetItem : localStorage.setItem.bind(localStorage))('glr_mc_apikey', 'portal'); } catch (e) {}
   // Custos lançados no admin (mesmo lucro que a equipe vê)
   await _portalSincronizarCustos();
   // O portal usa as MESMAS telas da equipe, lendo da base automática (só as contas

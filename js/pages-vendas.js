@@ -2127,7 +2127,7 @@ Router.register('vendas', async (params, el) => {
   }
 
   async function buscarPedidos(opts = {}) {
-    const apiKey = localStorage.getItem('glr_mc_apikey')||'';
+    const apiKey = window._portalConfig ? 'portal' : (localStorage.getItem('glr_mc_apikey')||''); // portal: a chave fica no servidor (/api/mcp)
     const statusEl = document.getElementById('vendas-status');
     const btnEl    = document.getElementById('btn-buscar');
     if (!apiKey) { if(statusEl) statusEl.textContent='⚠️ Configure a API Key nas Integrações.'; return; }
