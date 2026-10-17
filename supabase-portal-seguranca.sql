@@ -46,13 +46,13 @@ create policy portal_isolado on public.glr_storage as restrictive for all to aut
 -- Base automática: portal só as contas dele
 drop policy if exists portal_isolado on public.glr_pedidos;
 create policy portal_isolado on public.glr_pedidos as restrictive for select to authenticated
-  using (not (select public.glr_eh_portal()) or conta_id = any((select public.glr_portal_contas())));
+  using (not (select public.glr_eh_portal()) or array[conta_id] <@ (select public.glr_portal_contas()));
 drop policy if exists portal_isolado on public.glr_ads_diario;
 create policy portal_isolado on public.glr_ads_diario as restrictive for select to authenticated
-  using (not (select public.glr_eh_portal()) or conta_id = any((select public.glr_portal_contas())));
+  using (not (select public.glr_eh_portal()) or array[conta_id] <@ (select public.glr_portal_contas()));
 drop policy if exists portal_isolado on public.glr_sync_estado;
 create policy portal_isolado on public.glr_sync_estado as restrictive for select to authenticated
-  using (not (select public.glr_eh_portal()) or conta_id = any((select public.glr_portal_contas())));
+  using (not (select public.glr_eh_portal()) or array[conta_id] <@ (select public.glr_portal_contas()));
 
 -- A view respeita as políticas de quem consulta (senão ela furaria o isolamento)
 alter view public.vw_vendas_dia set (security_invoker = true);
