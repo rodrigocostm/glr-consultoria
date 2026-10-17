@@ -30,6 +30,11 @@ const ALLOWED_ACTIONS = new Set([
   'ml_ads_campaigns',
 ]);
 
+// Portal: ações administrativas da GLR nunca; escrita livre nunca.
+const BLOQUEADAS_PORTAL = /^(credits_status|ai_credits_status|me|raw_write|marketplace_action|billing_.*|suporte_.*|agente_.*|link_.*|anuncio_.*|photo_.*|video_.*|gerar_prompt|bling_.*|olist_.*|upload_clip.*|delete_clip|get_clips)$/;
+// Consultas de catálogo (categorias/atributos) não são de conta nenhuma
+const CATALOGO_LIVRE = new Set(['search_categories', 'ml_site_categories', 'ml_category_detail', 'category_attributes', 'ml_catalog_domain_categories', 'ml_category_sale_terms', 'ml_listing_fees', 'ml_lookup_ncm', 'tiktok_get_categories', 'tiktok_category_rules', 'tiktok_get_category_attributes', 'tiktok_recommend_category']);
+
 const CAMPOS_CONTA = ['meliUserId', 'meli_user_id', 'account_id', 'shopId', 'shop_id', 'seller_id', 'amazon_account_id', 'magalu_account_id'];
 
 async function usuarioDoToken(token) {
@@ -61,7 +66,6 @@ module.exports = async function handler(req, res) {
 
   const { action, params } = req.body || {};
   if (!action) return res.status(400).json({ error: 'action obrigatória' });
-  if (!ALLOWED_ACTIONS.has(action)) return res.status(403).json({ error: `Ação '${action}' não permitida via portal` });
 
   // 1) Login obrigatório
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -69,6 +73,7 @@ module.exports = async function handler(req, res) {
   try { usuario = await usuarioDoToken(token); } catch (e) { usuario = null; }
   if (!usuario) return res.status(401).json({ error: 'Faça login novamente para continuar.' });
 
+  // Equipe GLR usa a chave direto no próprio navegador; aqui ela só tem o conjunto antigo
   // 2) Cliente do portal: só as contas dele
   let contasPermitidas = null; // null = equipe GLR, sem restrição
   try {
@@ -76,10 +81,13 @@ module.exports = async function handler(req, res) {
     if (cfg) contasPermitidas = new Set((cfg.contaIds || []).map(String));
   } catch (e) { return res.status(500).json({ error: 'Não consegui conferir o acesso: ' + e.message }); }
 
+  if (!contasPermitidas && !ALLOWED_ACTIONS.has(action)) return res.status(403).json({ error: `Ação '${action}' não permitida via proxy` });
   const p = params || {};
   if (contasPermitidas) {
-    if (action === 'credits_status') return res.status(403).json({ error: 'Ação não disponível no portal' });
-    if (action !== 'list_accounts') {
+    // Cliente do portal: qualquer ação da PRÓPRIA conta (promoções, anúncios,
+    // financeiro, conciliação), menos as administrativas da GLR
+    if (BLOQUEADAS_PORTAL.test(action)) return res.status(403).json({ error: 'Ação não disponível no portal' });
+    if (action !== 'list_accounts' && !CATALOGO_LIVRE.has(action)) {
       const contas = CAMPOS_CONTA.map(k => p[k]).filter(v => v != null && v !== '').map(String);
       if (!contas.length) return res.status(403).json({ error: 'Informe a conta da consulta' });
       if (contas.some(c => !contasPermitidas.has(c))) return res.status(403).json({ error: 'Conta não vinculada ao seu acesso' });

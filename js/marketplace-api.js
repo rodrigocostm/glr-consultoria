@@ -9,11 +9,29 @@ const MarketplaceAPI = {
 
   // Retorna a API key salva
   getApiKey() {
+    if (window._portalConfig) return 'portal'; // portal do cliente: a chave fica no servidor (/api/mcp)
     return localStorage.getItem('glr_mc_apikey') || '';
+  },
+
+  // Portal do cliente: tudo passa pelo /api/mcp com o login do cliente — o servidor
+  // confere e só deixa agir nas contas vinculadas a ele (a chave da GLR não vai ao navegador).
+  async _callPortal(action, params) {
+    const { data: sess } = await _sb.auth.getSession();
+    const res = await fetch('/api/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token || ''}` },
+      body: JSON.stringify({ action, params }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || json.message || `HTTP ${res.status}`);
+    if (json.status && json.status !== 200) throw new Error(json.data?.error || json.message || 'Erro na API');
+    if (json.error && String(json.error).trim()) throw new Error(json.error);
+    return json;
   },
 
   // Chamada genérica à API
   async call(action, params = {}, apiKey = null) {
+    if (window._portalConfig) return this._callPortal(action, params);
     const key = apiKey || this.getApiKey();
     if (!key) throw new Error('API key não configurada');
 

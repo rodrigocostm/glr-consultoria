@@ -825,25 +825,22 @@ window._initPortalCliente = async function(cfg) {
   window._portalConfig = cfg;
   _configurarSidebarCliente(cfg);
 
-  // Custos lançados no admin — busca antes do render pra já mostrar o lucro descontado
+  // Custos lançados no admin (mesmo lucro que a equipe vê)
   await _portalSincronizarCustos();
-
-  // Busca inicial: await bloqueante garante que os dados chegam antes do render
-  if (!_portalCache()) {
-    const f = _portalFiltroData();
-    try {
-      await _portalBuscarVendas(f.de, f.ate, false);
-    } catch(err) {
-      console.error('[Portal] _portalBuscarVendas lançou exceção:', err);
-      window._diagCacheSaved = `EXCEÇÃO não tratada: ${err.message}`;
-    }
+  // O portal usa as MESMAS telas da equipe, lendo da base automática (só as contas
+  // do cliente — garantido pelo banco e pelo /api/mcp): abre na hora, sem "Aplicar".
+  try { localStorage.setItem('glr_promo_aba', 'auto'); } catch (e) {}
+  const atual = (window.location.hash || '').replace('#', '').split('?')[0];
+  if (typeof Router !== 'undefined') {
+    if (window.PORTAL_ROTAS.includes(atual)) Router.resolve(); else Router.navigate('vendas');
   }
-
-  if (typeof Router !== 'undefined') Router.navigate('portal-dashboard');
-
-  // Auto-refresh: incremental a cada minuto, full refresh às 3h
-  _iniciarAutoRefreshPortal();
+  // custos lançados pela GLR chegam sozinhos (a cada 5 min)
+  if (_portalAutoRefreshTimer) clearInterval(_portalAutoRefreshTimer);
+  _portalAutoRefreshTimer = setInterval(_portalSincronizarCustos, 5 * 60 * 1000);
 };
+
+// Telas liberadas para o cliente do portal (o router bloqueia o resto)
+window.PORTAL_ROTAS = ['vendas', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'conciliacao'];
 
 function _portalMostrarLoading(msg) {
   const el = document.getElementById('page-content');
@@ -903,17 +900,31 @@ function _configurarSidebarCliente(cfg) {
   nav.innerHTML = `
     <div class="sidebar-section" style="display:block!important;">
       <div class="sidebar-section-title">Meu Painel</div>
-      <button class="nav-item" data-page="portal-dashboard" onclick="Router.navigate('portal-dashboard')">
+      <button class="nav-item" data-page="vendas" onclick="Router.navigate('vendas')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        Dashboard de Vendas
+        Vendas
       </button>
-      <button class="nav-item" data-page="portal-vendas" onclick="Router.navigate('portal-vendas')">
-        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
-        Minhas Vendas
+      <button class="nav-item" data-page="promocoes" onclick="Router.navigate('promocoes')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        Promoções
       </button>
-      <button class="nav-item" data-page="portal-abc" onclick="Router.navigate('portal-abc')">
-        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        Curva ABC
+      <div class="sidebar-section-title" style="margin-top:10px;">Anúncios</div>
+      <button class="nav-item" data-page="anuncios-ml" onclick="Router.navigate('anuncios-ml')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        Mercado Livre
+      </button>
+      <button class="nav-item" data-page="anuncios-shopee" onclick="Router.navigate('anuncios-shopee')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        Shopee
+      </button>
+      <div class="sidebar-section-title" style="margin-top:10px;">Financeiro</div>
+      <button class="nav-item" data-page="financeiro" onclick="Router.navigate('financeiro')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        Financeiro
+      </button>
+      <button class="nav-item" data-page="conciliacao" onclick="Router.navigate('conciliacao')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Conciliação
       </button>
     </div>
   `;

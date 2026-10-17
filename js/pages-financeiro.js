@@ -706,7 +706,7 @@ Router.register('financeiro', async (params, el) => {
     const statusEl = document.getElementById('fin-status');
     const btnEl    = document.getElementById('fin-btn-atualizar');
     const reprocessBtn = document.getElementById('fin-btn-reprocessar');
-    const apiKey   = localStorage.getItem('glr_mc_apikey')||'';
+    const apiKey   = window._portalConfig ? 'portal' : (localStorage.getItem('glr_mc_apikey')||''); // portal: chave no servidor
     if (!apiKey) { if(statusEl) statusEl.textContent='⚠️ Configure a API Key nas Integrações.'; return; }
     if (buscando) { if(statusEl) statusEl.textContent='⏳ Aguarde a busca atual terminar...'; return; }
     // Trava: sem conta/empresa nem reprocessamento específico selecionado, não busca

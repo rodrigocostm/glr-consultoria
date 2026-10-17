@@ -37,6 +37,11 @@ const Router = {
       });
     }
 
+    // Cliente do portal só abre as telas liberadas para ele (as da equipe ficam de fora)
+    if (window._portalConfig && Array.isArray(window.PORTAL_ROTAS) && !window.PORTAL_ROTAS.includes(path)) {
+      window.location.hash = 'vendas';
+      return;
+    }
     this.currentParams = { ...this.currentParams, ...params };
     this.currentPage = path;
 
