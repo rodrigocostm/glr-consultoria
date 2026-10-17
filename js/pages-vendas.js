@@ -129,6 +129,7 @@ Router.register('vendas', async (params, el) => {
   // (pra achar o nome certo de um campo sem precisar abrir o console do navegador).
   // Remover depois que o frete do ML estiver batendo certinho.
   function _diagMostrar(grupo, pedidoId, obj) {
+    if (window._portalConfig) return; // depuração interna: nunca no portal do cliente
     let box = document.getElementById('diag-api-box');
     if (!box) {
       box = document.createElement('div');
@@ -1255,6 +1256,27 @@ Router.register('vendas', async (params, el) => {
     const legenda = document.getElementById('vg-legenda');
     if (legenda) legenda.innerHTML = [['Faturamento', cor.fat], ['Líquido MP', cor.liq], ['Lucro', cor.luc]].map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`).join('');
     if (window._vendasGrafico) { try { window._vendasGrafico.destroy(); } catch (e) {} }
+    if (dias.length === 1) {
+      const d0 = porDia[dias[0]] || {};
+      const vals = [d0.fat || 0, d0.liq || 0, d0.lucro || 0], cores = [cor.fat, cor.liq, cor.luc];
+      window._vendasGrafico = new Chart(cv, {
+        type: 'bar',
+        data: { labels: ['Faturamento', 'Líquido MP', 'Lucro'], datasets: [{ data: vals, backgroundColor: cores, borderRadius: 8, borderSkipped: false, maxBarThickness: 90 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: { duration: 350 },
+          plugins: {
+            legend: { display: false },
+            tooltip: { backgroundColor: cor.fundo, titleColor: cor.titulo, bodyColor: cor.texto, borderColor: cor.borda, borderWidth: 1, padding: 12, cornerRadius: 10,
+              callbacks: { title: () => dias[0], label: it => ` ${it.label}: ${R$(it.parsed.y)}`, afterBody: () => [`${d0.n || 0} venda${d0.n === 1 ? '' : 's'}`] } },
+          },
+          scales: {
+            x: { grid: { display: false }, border: { display: false }, ticks: { color: cor.texto, font: { size: 12, weight: '600' } } },
+            y: { beginAtZero: true, grid: { color: cor.grade, drawTicks: false }, border: { display: false }, ticks: { color: cor.texto, font: { size: 11 }, padding: 8, maxTicksLimit: 5, callback: kfmt } },
+          },
+        },
+      });
+      return;
+    }
     window._vendasGrafico = new Chart(cv, {
       type: 'line',
       data: { labels: dias.map(rotulo), datasets: [ds('Faturamento', 'fat', cor.fat, '40'), ds('Líquido MP', 'liq', cor.liq, '2e'), ds('Lucro', 'lucro', cor.luc, '38')] },
