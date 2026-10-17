@@ -430,6 +430,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ── Detecta se email é de cliente do portal ───────────────────
 async function _detectarPortalCliente(email) {
   try {
+    // Forma segura: o banco devolve só a config DESTE usuário (função glr_meu_portal,
+    // supabase-portal-seguranca.sql). Se a função ainda não existir, cai no jeito antigo.
+    const { data: meu, error: eRpc } = await _sb.rpc('glr_meu_portal');
+    if (!eRpc) return meu && meu.ativo !== false ? meu : null;
+
     // Tenta localStorage primeiro
     let configs = JSON.parse(localStorage.getItem('glr_portal_configs')||'[]');
 
