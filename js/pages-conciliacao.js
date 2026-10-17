@@ -310,7 +310,7 @@ Router.register('conciliacao', async (params, el) => {
           <h1 style="font-size:20px;font-weight:800;margin:0;">🧾 Conciliação Financeira</h1>
           <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">${atualizadoEm?`Atualizado em ${new Date(atualizadoEm).toLocaleString('pt-BR')}`:'Selecione uma conta e clique em Buscar.'}</div>
         </div>
-        <button class="btn-primary" style="padding:8px 16px;" ${carregando||!contaSel?'disabled':''} onclick="_conciliacaoBuscar()">${carregando?'⏳ Buscando...':'🔄 Buscar'}</button>
+        <button id="conc-btn-buscar" class="btn-primary" style="padding:8px 16px;" ${carregando||!contaSel?'disabled':''} onclick="_conciliacaoBuscar()">${carregando?'⏳ Buscando...':'🔄 Buscar'}</button>
       </div>
 
       <div class="card mb-16">
@@ -397,14 +397,25 @@ Router.register('conciliacao', async (params, el) => {
       filtroPeriodo = e.target.value;
       document.getElementById('conc-custom-range').style.display = filtroPeriodo==='custom'?'flex':'none';
       render();
+      if (window._portalConfig && filtroPeriodo !== 'custom') buscar(); // portal: sem botão, busca sozinho
     });
-    document.getElementById('conc-date-from')?.addEventListener('change', e => { customFrom = e.target.value; });
-    document.getElementById('conc-date-to')?.addEventListener('change', e => { customTo = e.target.value; });
-    document.getElementById('conc-sel-conta')?.addEventListener('change', e => { contaSel = e.target.value || null; pedidos=[]; atualizadoEm=null; render(); });
+    const _portalBusca = () => { if (window._portalConfig && contaSel && (filtroPeriodo !== 'custom' || (customFrom && customTo))) buscar(); };
+    document.getElementById('conc-date-from')?.addEventListener('change', e => { customFrom = e.target.value; _portalBusca(); });
+    document.getElementById('conc-date-to')?.addEventListener('change', e => { customTo = e.target.value; _portalBusca(); });
+    document.getElementById('conc-sel-conta')?.addEventListener('change', e => { contaSel = e.target.value || null; pedidos=[]; atualizadoEm=null; render(); _portalBusca(); });
   }
 
   window._conciliacaoBuscar = () => buscar();
 
   render();
-  carregarContas().then(render);
+  carregarContas().then(() => {
+    // Portal: já abre na primeira conta do cliente e busca sozinho
+    if (window._portalConfig) {
+      if (!contaSel || !contas.some(c => String(c.external_id) === String(contaSel))) contaSel = contas[0] ? String(contas[0].external_id) : null;
+      render();
+      if (contaSel && !pedidos.length && !carregando) buscar();
+      return;
+    }
+    render();
+  });
 });

@@ -2871,8 +2871,10 @@ Router.register('vendas', async (params, el) => {
     if (filtroPeriodo !== 'custom') buscarPedidos();
   });
   document.getElementById('sel-plat').addEventListener('change', e => { filtroPlat=e.target.value; renderLista(); });
-  document.getElementById('inp-date-from').addEventListener('change', e => { customFrom=e.target.value; });
-  document.getElementById('inp-date-to').addEventListener('change',   e => { customTo=e.target.value; });
+  // Portal (sem botão Atualizar): mudar as datas já carrega
+  const _datasMudaram = () => { if (window._portalConfig && customFrom && customTo && customFrom <= customTo) buscarPedidos({ soBase: true }); };
+  document.getElementById('inp-date-from').addEventListener('change', e => { customFrom=e.target.value; _datasMudaram(); });
+  document.getElementById('inp-date-to').addEventListener('change',   e => { customTo=e.target.value; _datasMudaram(); });
   document.getElementById('btn-buscar').addEventListener('click', () => buscarPedidos());
   document.getElementById('tab-dashboard').addEventListener('click', () => setAba('dashboard'));
   document.getElementById('tab-pedidos').addEventListener('click',   () => setAba('pedidos'));

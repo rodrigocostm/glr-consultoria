@@ -711,7 +711,7 @@ Router.register('financeiro', async (params, el) => {
     if (buscando) { if(statusEl) statusEl.textContent='⏳ Aguarde a busca atual terminar...'; return; }
     // Trava: sem conta/empresa nem reprocessamento específico selecionado, não busca
     // "todas as contas" de uma vez — isso empilhava chamada em cima de chamada.
-    if (!forceReprocess && !contaReprocess && contaSel === 'todas' && empresaSel === 'todas') {
+    if (!window._portalConfig && !forceReprocess && !contaReprocess && contaSel === 'todas' && empresaSel === 'todas') {
       if (statusEl) statusEl.innerHTML = '⚠️ Selecione uma <strong>conta</strong> ou <strong>empresa</strong> no filtro para buscar os dados.';
       pedidos = [];
       renderConteudo();
@@ -1587,7 +1587,8 @@ Router.register('financeiro', async (params, el) => {
     renderFiltroContas();
     console.log('[Contas] Carregadas:', contas.length);
     // Já tinha empresa/conta escolhida → carrega sozinho (da base, instantâneo)
-    if ((empresaSel !== 'todas' || contaSel !== 'todas') && Router.currentPage === 'financeiro') buscar();
+    // Portal: sempre carrega (só as contas do cliente); equipe: quando já tinha empresa/conta
+    if ((window._portalConfig || empresaSel !== 'todas' || contaSel !== 'todas') && Router.currentPage === 'financeiro') buscar();
   }).catch(e => {
     console.error('[Contas] Erro:', e.message);
   });

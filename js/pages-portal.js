@@ -829,6 +829,13 @@ window._initPortalCliente = async function(cfg) {
   // frente, e toda chamada vai pelo /api/mcp (a chave de verdade fica só no servidor).
   // Não sobe pro banco (grava direto, sem o sync) e é apagado ao sair da conta.
   try { (typeof _localSetItem === 'function' ? _localSetItem : localStorage.setItem.bind(localStorage))('glr_mc_apikey', 'portal'); } catch (e) {}
+  // Portal sem botões de carregar: as telas buscam sozinhas (ao abrir e ao mudar filtro)
+  document.body.classList.add('modo-portal');
+  if (!document.getElementById('portal-sem-botoes')) {
+    const st = document.createElement('style'); st.id = 'portal-sem-botoes';
+    st.textContent = 'body.modo-portal #btn-buscar, body.modo-portal #fin-btn-atualizar, body.modo-portal #fin-btn-reprocessar, body.modo-portal #op-manual-wrap, body.modo-portal .pm-config .btn, body.modo-portal #conc-btn-buscar { display: none !important; }';
+    document.head.appendChild(st);
+  }
   // Custos lançados no admin (mesmo lucro que a equipe vê)
   await _portalSincronizarCustos();
   // O portal usa as MESMAS telas da equipe, lendo da base automática (só as contas
