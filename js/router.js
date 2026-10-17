@@ -39,7 +39,7 @@ const Router = {
 
     // Cliente do portal só abre as telas liberadas para ele (as da equipe ficam de fora)
     if (window._portalConfig && Array.isArray(window.PORTAL_ROTAS) && !window.PORTAL_ROTAS.includes(path)) {
-      window.location.hash = 'vendas';
+      window.location.hash = window.PORTAL_ROTAS[0];
       return;
     }
     this.currentParams = { ...this.currentParams, ...params };
@@ -66,6 +66,7 @@ const Router = {
       ads: 'ADS Shopee',
       agente: 'ADS Shopee',
       'agente-ml': 'ADS Mercado Livre',
+      'meu-dashboard': 'Dashboard', 'meus-pedidos': 'Pedidos', 'minha-curva-abc': 'Curva ABC', 'minhas-oportunidades': 'Oportunidades',
       financeiro: 'Financeiro',
       vendas: 'Vendas',
       integracoes: 'Integrações',

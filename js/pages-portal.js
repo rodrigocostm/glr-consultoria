@@ -833,7 +833,7 @@ window._initPortalCliente = async function(cfg) {
   document.body.classList.add('modo-portal');
   if (!document.getElementById('portal-sem-botoes')) {
     const st = document.createElement('style'); st.id = 'portal-sem-botoes';
-    st.textContent = 'body.modo-portal #btn-buscar, body.modo-portal #fin-btn-atualizar, body.modo-portal #fin-btn-reprocessar, body.modo-portal #op-manual-wrap, body.modo-portal .pm-config .btn, body.modo-portal #conc-btn-buscar { display: none !important; }';
+    st.textContent = 'body.modo-portal #btn-buscar, body.modo-portal #fin-btn-atualizar, body.modo-portal #fin-btn-reprocessar, body.modo-portal #op-manual-wrap, body.modo-portal .pm-config .btn, body.modo-portal #conc-btn-buscar, body.modo-portal #vendas-abas, body.modo-portal #vendas-config-custo { display: none !important; }';
     document.head.appendChild(st);
   }
   // Custos lançados no admin (mesmo lucro que a equipe vê)
@@ -843,7 +843,7 @@ window._initPortalCliente = async function(cfg) {
   try { localStorage.setItem('glr_promo_aba', 'auto'); } catch (e) {}
   const atual = (window.location.hash || '').replace('#', '').split('?')[0];
   if (typeof Router !== 'undefined') {
-    if (window.PORTAL_ROTAS.includes(atual)) Router.resolve(); else Router.navigate('vendas');
+    if (window.PORTAL_ROTAS.includes(atual) && atual !== 'vendas') Router.resolve(); else Router.navigate('meu-dashboard');
   }
   // custos lançados pela GLR chegam sozinhos (a cada 5 min)
   if (_portalAutoRefreshTimer) clearInterval(_portalAutoRefreshTimer);
@@ -851,7 +851,7 @@ window._initPortalCliente = async function(cfg) {
 };
 
 // Telas liberadas para o cliente do portal (o router bloqueia o resto)
-window.PORTAL_ROTAS = ['vendas', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'conciliacao'];
+window.PORTAL_ROTAS = ['meu-dashboard', 'meus-pedidos', 'minha-curva-abc', 'minhas-oportunidades', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'conciliacao', 'vendas'];
 
 function _portalMostrarLoading(msg) {
   const el = document.getElementById('page-content');
@@ -911,9 +911,21 @@ function _configurarSidebarCliente(cfg) {
   nav.innerHTML = `
     <div class="sidebar-section" style="display:block!important;">
       <div class="sidebar-section-title">Meu Painel</div>
-      <button class="nav-item" data-page="vendas" onclick="Router.navigate('vendas')">
+      <button class="nav-item" data-page="meu-dashboard" onclick="Router.navigate('meu-dashboard')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        Vendas
+        Dashboard
+      </button>
+      <button class="nav-item" data-page="meus-pedidos" onclick="Router.navigate('meus-pedidos')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+        Pedidos
+      </button>
+      <button class="nav-item" data-page="minha-curva-abc" onclick="Router.navigate('minha-curva-abc')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Curva ABC
+      </button>
+      <button class="nav-item" data-page="minhas-oportunidades" onclick="Router.navigate('minhas-oportunidades')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+        Oportunidades
       </button>
       <button class="nav-item" data-page="promocoes" onclick="Router.navigate('promocoes')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>

@@ -2804,8 +2804,8 @@ Router.register('vendas', async (params, el) => {
       </div>
     </div>
 
-    <!-- Abas -->
-    <div style="display:flex;gap:8px;margin-bottom:20px;">
+    <!-- Abas (no portal cada aba é uma página do menu, e a barra some) -->
+    <div id="vendas-abas" style="display:flex;gap:8px;margin-bottom:20px;">
       <button id="tab-dashboard" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:#6366f1;color:var(--text-primary);">📊 Dashboard</button>
       <button id="tab-pedidos"   style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">📋 Pedidos</button>
       <button id="tab-oportunidades" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">🎯 Oportunidades</button>
@@ -2827,7 +2827,7 @@ Router.register('vendas', async (params, el) => {
     <div id="sec-pedidos" style="display:none;">
       <div id="vendas-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;"></div>
 
-      <details style="margin-bottom:16px;">
+      <details id="vendas-config-custo" style="margin-bottom:16px;">
         <summary style="cursor:pointer;padding:10px 16px;background:var(--bg-card-hover);border-radius:8px;font-size:13px;color:var(--text-secondary);font-weight:600;list-style:none;display:flex;align-items:center;gap:8px;">
           ⚙️ Configurações de Custo
           <span style="font-size:11px;color:var(--text-muted);font-weight:400;">Linhas extras e aplicação em massa</span>
@@ -2904,6 +2904,8 @@ Router.register('vendas', async (params, el) => {
   document.getElementById('tab-semanal').addEventListener('click', () => setAba('semanal'));
 
   renderLinhasExtras();
+  // Aba pedida pela rota (no portal: Dashboard, Pedidos, Curva ABC, Oportunidades como páginas)
+  if (params?.aba && ['dashboard', 'pedidos', 'oportunidades', 'semanal'].includes(params.aba)) setAba(params.aba);
 
   // Ao abrir a página: busca contas para popular filtros, depois usa cache de pedidos se existir
   (async () => {
@@ -2940,3 +2942,11 @@ Router.register('vendas', async (params, el) => {
   window.addEventListener('glr-base-atualizada', _vendasAoAtualizarBase);
   if (window.BaseDados) BaseDados.iniciarTempoReal();
 });
+
+// Páginas do portal do cliente: a mesma tela Vendas aberta direto numa aba
+// (Dashboard, Pedidos, Curva ABC, Oportunidades). A central continua usando #vendas.
+(function () {
+  const rotaVendas = Router.routes['vendas'];
+  [['meu-dashboard', 'dashboard'], ['meus-pedidos', 'pedidos'], ['minha-curva-abc', 'semanal'], ['minhas-oportunidades', 'oportunidades']]
+    .forEach(([rota, aba]) => Router.register(rota, (p, el) => rotaVendas({ ...(p || {}), aba }, el)));
+})();
