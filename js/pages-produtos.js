@@ -186,10 +186,12 @@ Router.register('produtos', (params, el) => {
     const assoc = new Set(prods.flatMap(p => (p.anuncios || []).map(chaveAnuncio)));
     const rows = prods.map(p => {
       const proprio = custoTotal(p) > 0;
-      const cats = proprio ? [] : (p.anuncios || []).map(custoDoAnuncio).filter(v => v > 0);
+      const cats = (p.anuncios || []).map(custoDoAnuncio).filter(v => v > 0);
+      // custo alterado direto no anúncio (Vendas ou portal do cliente) depois do produto
+      const diverge = proprio ? cats.some(v => Math.abs(v - custoTotal(p)) > 0.005) : new Set(cats).size > 1;
       return { id: String(p.id), sku: p.sku, nome: p.nome, imagem: p.imagem, anuncios: p.anuncios || [],
         custo: proprio ? num(p.custo) : (cats[0] || 0), custoExtra: proprio ? num(p.custoExtra) : 0,
-        origem: proprio ? 'produto' : (cats.length ? 'anuncio' : ''), diverge: new Set(cats).size > 1 };
+        origem: proprio ? 'produto' : (cats.length ? 'anuncio' : ''), diverge, custosAnuncios: [...new Set(cats)] };
     });
     const grupos = new Map();
     for (const a of st.anuncios) {
@@ -313,7 +315,6 @@ Router.register('produtos', (params, el) => {
   }
   function celulaCusto(r, campo, i) {
     const v = r[campo];
-    if (portal) return campo === 'custo' && !temCusto(r) ? '<span class="pr-sem">sem custo</span>' : R$(v);
     return `<input class="pr-in ${campo === 'custo' && !temCusto(r) ? 'vazio' : ''}" id="pr-${campo}-${i}" inputmode="decimal" placeholder="${campo === 'custo' ? 'sem custo' : '0,00'}" value="${dec(v)}"
       onchange="window._prCusto(${st.rows.indexOf(r)},'${campo}',this)" onkeydown="if(event.key==='Enter')this.blur()">`;
   }
@@ -347,17 +348,17 @@ Router.register('produtos', (params, el) => {
         ${st.carregando ? ` · ⏳ ${h(st.progresso || 'carregando…')}` : ` · <a href="#" onclick="window._prRecarregar();return false;">atualizar anúncios</a>`}${st.erro ? ` · <span style="color:#dc2626">${h(st.erro)}</span>` : ''}</span>
       </div>
       <div class="card" style="padding:0;overflow:hidden"><div style="overflow-x:auto">
-        <table class="pr-tab"><thead><tr><th>SKU interno</th><th>Imagem</th><th>Título</th><th class="pr-n">Preço de custo</th><th class="pr-n">Custo extra</th><th>Marketplaces associados</th>${portal ? '' : '<th></th>'}</tr></thead>
+        <table class="pr-tab"><thead><tr><th>SKU interno</th><th>Imagem</th><th>Título</th><th class="pr-n">Preço de custo</th>${portal ? '' : '<th class="pr-n">Custo extra</th>'}<th>Marketplaces associados</th>${portal ? '' : '<th></th>'}</tr></thead>
         <tbody>${pagina.map((r, i) => {
           const por = {}; r.anuncios.forEach(a => { por[a.mkt] = (por[a.mkt] || 0) + 1; });
-          const nota = r.diverge ? '<div class="pr-nota" style="color:#d97706">⚠ custo diferente entre os anúncios</div>'
+          const nota = r.diverge ? `<div class="pr-nota" style="color:#d97706" title="Custo nos anúncios: ${(r.custosAnuncios || []).map(R$).join(' / ')}">⚠ custo diferente em algum anúncio</div>`
             : r.virtual && r.origem === 'anuncio' && !portal ? '<div class="pr-nota">custo já lançado em Vendas</div>' : '';
           return `<tr>
             <td class="pr-sku">${h(r.sku || '—')}${r.virtual && !r.sku ? '<div class="pr-nota">anúncio sem SKU</div>' : ''}</td>
             <td>${r.imagem ? `<img class="pr-img" src="${h(r.imagem)}" alt="" loading="lazy">` : '<span class="pr-img"></span>'}</td>
             <td class="pr-tit">${h(r.nome)}</td>
             <td class="pr-n">${celulaCusto(r, 'custo', i)}${nota}</td>
-            <td class="pr-n">${celulaCusto(r, 'custoExtra', i)}</td>
+            ${portal ? '' : `<td class="pr-n">${celulaCusto(r, 'custoExtra', i)}</td>`}
             <td>${Object.keys(por).length ? Object.entries(por).map(([k, n]) => `<span class="pr-mkt" style="--c:${MKT[k].cor}" title="${MKT[k].nome}">${MKT[k].sigla} ${n}</span>`).join(' ') : '<span class="pr-mut">nenhum</span>'}</td>
             ${portal ? '' : `<td class="pr-acoes"><button title="Associar anúncios" onclick="window._prAssociar(${st.rows.indexOf(r)})">🔗</button><button title="Editar" onclick="window._prEditar(${st.rows.indexOf(r)})">✎</button>${r.virtual ? '' : `<button title="Excluir" onclick="window._prExcluir(${st.rows.indexOf(r)})">🗑</button>`}</td>`}
           </tr>`;
@@ -380,7 +381,7 @@ Router.register('produtos', (params, el) => {
   // Custo direto na tabela: salva sem redesenhar (o cursor segue para o próximo campo)
   window._prCusto = (id, campo, inp) => {
     const valor = inp.value;
-    if (portal) return;
+    if (portal) return salvarCustoPortal(st.rows[id], inp);
     const r = linha(id); if (!r) return;
     const { p, ant } = produtoDaLinha(r);
     if (!ant || !(custoTotal(ant) > 0)) { p.custo = r.custo; p.custoExtra = r.custoExtra; } // parte do custo já lançado no anúncio
@@ -391,6 +392,29 @@ Router.register('produtos', (params, el) => {
     inp.closest('tr')?.querySelector('[id^="pr-custo-"]')?.classList.toggle('vazio', !temCusto(r));
     const chips = document.getElementById('pr-chips'); if (chips) chips.innerHTML = renderChips();
   };
+  // Portal: grava pelo servidor (/api/mcp confere que os anúncios são das contas do cliente)
+  async function salvarCustoPortal(r, inp) {
+    if (!r) return;
+    const valor = num(inp.value);
+    const porConta = new Map();
+    for (const a of r.anuncios) { const k = `${a.mkt}:${a.conta}`; if (!porConta.has(k)) porConta.set(k, { a, itens: [] }); porConta.get(k).itens.push({ id: a.id, valor }); }
+    inp.disabled = true; inp.classList.remove('ok', 'erro');
+    try {
+      const cat = lerJSON('glr_vendas_custo_catalogo', {});
+      for (const { a, itens } of porConta.values()) {
+        const resp = await MarketplaceAPI.call('glr_portal_salvar_custo', { [a.mkt === 'ml' ? 'meliUserId' : 'shopId']: a.conta, itens });
+        for (const [k, v] of Object.entries(resp?.chaves || {})) { if (v > 0) cat[k] = v; else delete cat[k]; }
+      }
+      (typeof _localSetItem === 'function' ? _localSetItem : (k, v) => {})('glr_vendas_custo_catalogo', JSON.stringify(cat)); // local; o banco já foi gravado pelo servidor
+      r.custo = valor; r.custoExtra = 0; r.diverge = false;
+      inp.value = dec(valor); inp.classList.add('ok');
+      inp.classList.toggle('vazio', !temCusto(r));
+      const chips = document.getElementById('pr-chips'); if (chips) chips.innerHTML = renderChips();
+    } catch (e) {
+      inp.value = dec(r.custo + r.custoExtra); inp.classList.add('erro');
+      alert('Não consegui salvar o custo: ' + e.message);
+    } finally { inp.disabled = false; }
+  }
   window._prNovo = () => { st.modal = { tipo: 'editar', novo: true, prod: { id: novoId(), clienteId: st.cliente, sku: '', nome: '', imagem: '', custo: 0, custoExtra: 0, anuncios: [], criadoEm: new Date().toISOString() } }; render(); };
   window._prEditar = id => {
     const r = linha(id); if (!r) return;
@@ -426,7 +450,7 @@ Router.register('produtos', (params, el) => {
   el.innerHTML = `<div class="page">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:22px;font-weight:800;color:var(--text-primary)">📦 ${portal ? 'Meus produtos' : 'Produtos'}</div></div>
     <div class="pr-mut" style="margin-bottom:16px;max-width:900px">${portal
-      ? 'Seus produtos com o custo cadastrado pela GLR. Produto <b>sem custo</b> deixa a margem e o lucro incompletos — fale com a GLR para cadastrar.'
+      ? 'Seus produtos e o custo de cada um. Digite o custo direto na tabela (produto + embalagem) — ele entra no cálculo de margem e lucro de Vendas, Financeiro e Promoções. Produto <b>sem custo</b> deixa a margem incompleta.'
       : 'Escolha o cliente: os produtos carregam das contas dele com o custo atual. Lance o custo direto na tabela — ele vale para todos os anúncios associados (Vendas, Financeiro, DRE, Promoções e portal do cliente).'}</div>
     <div id="pr-root"></div>
   </div>
@@ -450,6 +474,7 @@ Router.register('produtos', (params, el) => {
     .pr-in:focus{outline:none;border-color:#2a78d6}
     .pr-in.vazio{border-color:#dc2626}.pr-in.vazio::placeholder{color:#dc2626;font-weight:700}
     .pr-sem{color:#dc2626;font-weight:700}
+    .pr-in.ok{border-color:#1baf7a}.pr-in.erro{border-color:#dc2626}
     .pr-mkt{display:inline-block;font-size:11px;font-weight:800;color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);padding:2px 7px;border-radius:6px}
     .pr-acoes{white-space:nowrap;text-align:right} .pr-acoes button{background:none;border:1px solid var(--border);border-radius:8px;width:30px;height:30px;margin-left:4px;cursor:pointer;color:var(--text-secondary)}
     .pr-acoes button:hover{border-color:#2a78d6}
