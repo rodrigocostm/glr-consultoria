@@ -42,8 +42,51 @@ const GLR_KEYS = [
 // Toda vez que qualquer parte do sistema salva no localStorage,
 // automaticamente também salva no Supabase — sem alterar nenhum outro arquivo.
 const _localSetItem = localStorage.setItem.bind(localStorage);
+
+// ── Listas compartilhadas por vários analistas: gravação ITEM A ITEM ──
+// Antes, cada navegador subia a lista INTEIRA e sobrescrevia a do banco: quem
+// estava com a cópia velha (aba aberta de um dia pro outro, notebook dormindo)
+// apagava as ações registradas pelos outros. Agora: lê a lista atual do banco,
+// aplica só o que mudou NESTE navegador (novos, editados e excluídos, pelo id)
+// e grava o resultado. Uma gravação por vez por chave.
+const CHAVES_POR_ITEM = ['glr_acoes', 'glr_tarefas'];
+const _baseSync = {};   // chave → última versão do banco que este navegador conhece
+const _filaSync = {};   // chave → promessa da gravação em andamento
+function _salvarMesclando(key, local) {
+  _filaSync[key] = (_filaSync[key] || Promise.resolve()).then(async () => {
+    const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave', key).maybeSingle();
+    if (error) { console.warn('[Supabase] Erro ao ler antes de gravar', key, error.message); return; }
+    const remoto = Array.isArray(data?.dados) ? data.dados : [];
+    const base = Array.isArray(_baseSync[key]) ? _baseSync[key] : null;
+    const idDe = x => (x && x.id != null) ? String(x.id) : null;
+    const mapa = arr => new Map(arr.filter(idDe).map(x => [idDe(x), x]));
+    const mB = mapa(base || []), mL = mapa(local), resultado = mapa(remoto);
+    // Excluídos neste navegador: estavam na última versão conhecida e saíram daqui
+    if (base) for (const id of mB.keys()) if (!mL.has(id)) resultado.delete(id);
+    // Novos ou editados neste navegador (item igual à versão conhecida não reescreve —
+    // assim não ressuscita o que outra pessoa excluiu)
+    for (const [id, item] of mL) {
+      const antes = mB.get(id);
+      if (!antes || JSON.stringify(antes) !== JSON.stringify(item)) resultado.set(id, item);
+    }
+    // Itens sem id (formato antigo): mantém os do banco e acrescenta os novos daqui
+    const semIdR = remoto.filter(x => !idDe(x)), vistos = new Set(semIdR.map(x => JSON.stringify(x)));
+    const final = [...resultado.values(), ...semIdR, ...local.filter(x => !idDe(x) && !vistos.has(JSON.stringify(x)))];
+    const { error: e2 } = await _sb.from('glr_storage').upsert({ chave: key, dados: final, atualizado_em: new Date().toISOString() }, { onConflict: 'chave' });
+    if (e2) { console.warn('[Supabase] Erro sync:', e2.message); return; }
+    _baseSync[key] = final;
+    _localSetItem(key, JSON.stringify(final));
+    if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();
+  }).catch(e => console.warn('[Supabase] Erro ao mesclar', key, e.message));
+  return _filaSync[key];
+}
+
 localStorage.setItem = function(key, value) {
   _localSetItem(key, value); // salva local normalmente
+  if (CHAVES_POR_ITEM.includes(key)) {
+    let dados; try { dados = JSON.parse(value); } catch (e) { dados = null; }
+    if (Array.isArray(dados)) { _salvarMesclando(key, dados); return; }
+  }
   if (GLR_KEYS.includes(key)) {
     // Nem todo valor salvo é JSON (ex: glr_mc_apikey é uma string simples,
     // não "aspas-envolvida") — se JSON.parse falhar, sobe o valor cru mesmo
@@ -99,7 +142,11 @@ async function sincronizarDoSupabase() {
     _localSetItem(flag, '1');
   }
   if (data?.length) {
-    data.forEach(row => _localSetItem(row.chave, _paraLocalStorage(row.dados)));
+    data.forEach(row => {
+      // Lista com gravação item a item que ainda está sendo gravada: não atropela
+      if (CHAVES_POR_ITEM.includes(row.chave)) _baseSync[row.chave] = Array.isArray(row.dados) ? row.dados : [];
+      _localSetItem(row.chave, _paraLocalStorage(row.dados));
+    });
     console.log(`[Supabase] ${data.length} coleções sincronizadas.`);
   }
   // Chaves que já existiam localmente mas nunca foram salvas desde que entraram no
@@ -115,11 +162,29 @@ async function sincronizarDoSupabase() {
   });
 }
 
+// ── Aba que ficou aberta (notebook dormiu, tempo real caiu): ao voltar para ela
+//    ou reconectar, recarrega tudo do banco — no máx. 1x por minuto ──
+let _ultimaRessincronia = Date.now();
+async function _ressincronizarSeVoltou() {
+  if (document.visibilityState === 'hidden' || window._portalConfig || Date.now() - _ultimaRessincronia < 60000) return;
+  _ultimaRessincronia = Date.now();
+  try {
+    await Promise.all(Object.values(_filaSync)); // termina o que estiver gravando antes
+    await sincronizarDoSupabase();
+    if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();
+    if (typeof Router !== 'undefined' && Router.currentPage && typeof Router.resolve === 'function' && ['relatorios', 'timeline', 'tarefas', 'calendario'].includes(Router.currentPage)) Router.resolve();
+  } catch (e) { console.warn('[Supabase] Ressincronia falhou:', e.message); }
+}
+document.addEventListener('visibilitychange', _ressincronizarSeVoltou);
+window.addEventListener('online', _ressincronizarSeVoltou);
+window.addEventListener('focus', _ressincronizarSeVoltou);
+
 // ── Real-time: atualiza quando outro usuário salvar algo ──
 function ativarRealtime() {
   _sb.channel('glr_changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'glr_storage' }, payload => {
       if (payload.new?.chave && payload.new?.dados != null) {
+        if (CHAVES_POR_ITEM.includes(payload.new.chave)) _baseSync[payload.new.chave] = Array.isArray(payload.new.dados) ? payload.new.dados : [];
         _localSetItem(payload.new.chave, _paraLocalStorage(payload.new.dados));
         if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();
         // Mostra notificação discreta

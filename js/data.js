@@ -67,7 +67,14 @@ GLR.eventoColor = {
 };
 
 // ---- Próximo ID auto-incremento ----
-GLR.nextId = (arr) => arr.length ? Math.max(...arr.map(x => x.id)) + 1 : 1;
+// Ações e tarefas são criadas por vários analistas ao mesmo tempo: "maior id + 1"
+// gerava o MESMO id em dois navegadores e um registro sobrescrevia o outro.
+// Para essas listas o id é único (data/hora em ms × 100 + sorteio).
+GLR.nextId = (arr) => {
+  const max = arr.length ? Math.max(...arr.map(x => parseInt(x.id) || 0)) : 0;
+  if (arr === GLR.acoes || arr === GLR.tarefas) return Math.max(max + 1, Date.now() * 100 + Math.floor(Math.random() * 100));
+  return max + 1;
+};
 
 // ---- Log de alterações (auditoria) ----
 // Registro genérico de "quem mudou o quê" — usado hoje pela tela de
