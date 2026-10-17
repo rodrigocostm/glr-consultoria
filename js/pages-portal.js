@@ -851,7 +851,7 @@ window._initPortalCliente = async function(cfg) {
 };
 
 // Telas liberadas para o cliente do portal (o router bloqueia o resto)
-window.PORTAL_ROTAS = ['meu-dashboard', 'meus-pedidos', 'minha-curva-abc', 'minhas-oportunidades', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'conciliacao', 'vendas'];
+window.PORTAL_ROTAS = ['meu-dashboard', 'meus-pedidos', 'minha-curva-abc', 'minhas-oportunidades', 'produtos', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'conciliacao', 'vendas'];
 
 function _portalMostrarLoading(msg) {
   const el = document.getElementById('page-content');
@@ -926,6 +926,10 @@ function _configurarSidebarCliente(cfg) {
       <button class="nav-item" data-page="minhas-oportunidades" onclick="Router.navigate('minhas-oportunidades')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
         Oportunidades
+      </button>
+      <button class="nav-item" data-page="produtos" onclick="Router.navigate('produtos')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
+        Produtos
       </button>
       <button class="nav-item" data-page="promocoes" onclick="Router.navigate('promocoes')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>

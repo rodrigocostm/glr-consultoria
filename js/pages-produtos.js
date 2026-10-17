@@ -1,13 +1,17 @@
 // ============================================================
 // GLR Consultoria — Gerenciamento de Produtos
 // ------------------------------------------------------------
-// Cadastro central de produtos por cliente (SKU interno, foto, título, custo,
-// custo extra) e ASSOCIAÇÃO dos anúncios de cada marketplace a eles — mesma
-// lógica do Gestor Seller. O custo do produto (custo + custo extra) é gravado
-// no catálogo de custos que Vendas, Financeiro, DRE, Promoções e o portal já
-// usam (glr_vendas_custo_catalogo), na chave de cada anúncio associado:
-// ML = id do anúncio; Shopee = id do item e nome (a chave que Vendas usa).
-// Produtos: glr_produtos (lista com gravação item a item — vários analistas).
+// Produtos por cliente (SKU interno, foto, título, custo, custo extra) e
+// ASSOCIAÇÃO dos anúncios de cada marketplace a eles — mesma lógica do Gestor
+// Seller. Ao escolher o cliente a lista monta sozinha a partir dos anúncios:
+//  • produtos já cadastrados (glr_produtos);
+//  • anúncios ainda sem produto, agrupados pelo SKU que já têm (sem SKU = uma
+//    linha por anúncio) — viram produto cadastrado quando o custo é lançado;
+//  • custo atual = o do produto ou, se não tiver, o já lançado no anúncio
+//    (glr_vendas_custo_catalogo, o mesmo de Vendas/Financeiro/DRE/Promoções).
+// O custo do produto (custo + custo extra) é gravado no catálogo de custos na
+// chave de cada anúncio associado: ML = id do anúncio; Shopee = id e nome.
+// No portal do cliente a tela é só de consulta (contas do próprio cliente).
 // ============================================================
 Router.register('produtos', (params, el) => {
   const R$ = v => 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -15,17 +19,23 @@ Router.register('produtos', (params, el) => {
   const lerJSON = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v ?? d; } catch (e) { return d; } };
   const normSku = s => String(s || '').trim().toUpperCase();
   const num = v => { const x = parseFloat(String(v ?? '').replace(/\s/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')); return isNaN(x) ? 0 : x; };
+  const dec = v => (num(v) > 0 ? num(v).toFixed(2).replace('.', ',') : '');
+  const clone = o => JSON.parse(JSON.stringify(o));
   const MKT = { ml: { nome: 'Mercado Livre', cor: '#d9a400', sigla: 'ML' }, shopee: { nome: 'Shopee', cor: '#eb6834', sigla: 'SH' } };
+  const mktDe = m => { m = String(m || '').toLowerCase(); return m.includes('shopee') ? 'shopee' : (['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : null); };
   const POR_PAGINA = 25;
+  const cfgPortal = window._portalConfig || null;
+  const portal = !!cfgPortal;
 
   const st = {
-    cliente: (() => { try { return localStorage.getItem('glr_prod_cliente') || ''; } catch (e) { return ''; } })(),
-    busca: '', pagina: 0, filtro: 'todos', carregando: false, progresso: '', anuncios: [], erro: null, modal: null,
+    cliente: portal ? String(cfgPortal.clienteId) : (() => { try { return localStorage.getItem('glr_prod_cliente') || ''; } catch (e) { return ''; } })(),
+    busca: '', pagina: 0, filtro: 'todos', carregando: false, progresso: '', anuncios: [], contas: [], erro: null, modal: null,
+    rows: [], materializados: {}, // linha virtual -> id do produto criado ao lançar o custo
   };
 
   // ── Dados ──
   const todos = () => lerJSON('glr_produtos', []);
-  const doCliente = () => todos().filter(p => String(p.clienteId) === String(st.cliente));
+  const doCliente = () => portal ? [] : todos().filter(p => String(p.clienteId) === String(st.cliente));
   function salvarTodos(lista) { localStorage.setItem('glr_produtos', JSON.stringify(lista)); } // sync item a item (supabase-init)
   function salvarProduto(prod, anterior) {
     const lista = todos();
@@ -61,13 +71,18 @@ Router.register('produtos', (params, el) => {
     if (mudou) localStorage.setItem('glr_vendas_custo_catalogo', JSON.stringify(cat));
   }
 
-  // ── Anúncios das contas do cliente (cache de 6 h) ──
-  function contasDoCliente() {
+  // ── Contas e anúncios do cliente (cache de 6 h) ──
+  async function obterContas() {
+    if (portal) {
+      const ids = new Set((cfgPortal.contaIds || []).map(String));
+      const lista = await MarketplaceAPI.listAccounts();
+      return (lista || []).filter(c => ids.has(String(c.external_id))).map(c => ({
+        mkt: mktDe(c.marketplace), id: String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id), nome: c.nickname || c.external_id,
+      })).filter(c => c.mkt);
+    }
     const vinc = lerJSON('glr_mc_vinculos', {});
     return (vinc[String(st.cliente)] || []).map(c => ({
-      mkt: c.marketplace === 'shopee' ? 'shopee' : (['meli', 'ml', 'mercadolivre'].includes(c.marketplace) ? 'ml' : null),
-      id: String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id),
-      nome: c.tags?.[0]?.name || c.nickname || c.external_id,
+      mkt: mktDe(c.marketplace), id: String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id), nome: c.tags?.[0]?.name || c.nickname || c.external_id,
     })).filter(c => c.mkt);
   }
   async function tentar(fn, n = 3) {
@@ -106,21 +121,29 @@ Router.register('produtos', (params, el) => {
     }
     return out;
   }
+  let geracao = 0; // troca de cliente no meio da busca: descarta a busca antiga
   async function carregarAnuncios(forcar) {
     if (!st.cliente) return;
+    const minha = ++geracao;
     const chave = `glr_prod_anuncios_${st.cliente}`;
     const cache = lerJSON(chave, null);
-    if (!forcar && cache && Date.now() - cache.em < 6 * 3600000) { st.anuncios = cache.lista; render(); return; }
     st.carregando = true; st.erro = null; render();
-    const lista = [];
     try {
-      for (const c of contasDoCliente()) {
+      st.contas = await obterContas();
+      if (minha !== geracao) return;
+      if (!forcar && cache && Date.now() - cache.em < 6 * 3600000) { st.anuncios = cache.lista; return; }
+      const lista = [];
+      for (const c of st.contas) {
         try { lista.push(...await buscarAnunciosConta(c)); }
         catch (e) { st.erro = `${c.nome}: ${e.message}`; }
+        if (minha !== geracao) return;
       }
       st.anuncios = lista;
       try { localStorage.setItem(chave, JSON.stringify({ em: Date.now(), lista })); } catch (e) {}
-    } finally { st.carregando = false; st.progresso = ''; render(); }
+    } catch (e) { if (minha === geracao) st.erro = e.message; }
+    finally {
+      if (minha === geracao) { st.carregando = false; st.progresso = ''; associarPeloSku(); render(); }
+    }
   }
 
   // ── Associação ──
@@ -132,38 +155,74 @@ Router.register('produtos', (params, el) => {
   }
   const enxuto = a => ({ mkt: a.mkt, conta: a.conta, contaNome: a.contaNome, id: a.id, nome: a.nome, sku: a.sku, imagem: a.imagem });
 
-  // Cria/associa produtos pelo SKU dos anúncios ainda sem produto
-  function criarPeloSku() {
+  // Anúncio novo com o SKU de um produto já cadastrado entra nele sozinho
+  function associarPeloSku() {
+    if (portal) return;
+    const prods = doCliente(); if (!prods.length) return;
     const assoc = mapaAssociados();
-    const livres = st.anuncios.filter(a => !assoc.has(chaveAnuncio(a)) && normSku(a.sku));
-    if (!livres.length) { alert('Nenhum anúncio sem produto com SKU preenchido. Anúncios sem SKU precisam ser associados à mão.'); return; }
-    const grupos = new Map();
-    for (const a of livres) { const k = normSku(a.sku); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(a); }
-    const existentes = new Map(doCliente().map(p => [normSku(p.sku), p]));
-    let novos = 0, associadosExist = 0;
-    for (const [sku] of grupos) existentes.has(sku) ? associadosExist++ : novos++;
-    if (!confirm(`Encontrei ${livres.length} anúncio(s) sem produto, em ${grupos.size} SKU(s):\n\n• ${novos} produto(s) novo(s) serão criados\n• ${associadosExist} SKU(s) já têm produto e só ganham os anúncios\n\nDepois é só preencher o custo. Continuar?`)) return;
+    const porSku = new Map(prods.filter(p => normSku(p.sku)).map(p => [normSku(p.sku), p]));
+    const novos = new Map();
+    for (const a of st.anuncios) {
+      const p = porSku.get(normSku(a.sku));
+      if (!p || assoc.has(chaveAnuncio(a))) continue;
+      if (!novos.has(p.id)) novos.set(p.id, []);
+      novos.get(p.id).push(a);
+    }
+    if (!novos.size) return;
     const lista = todos();
-    for (const [sku, anuncios] of grupos) {
-      const ja = existentes.get(sku);
-      if (ja) {
-        const p = lista.find(x => x.id === ja.id); const ant = JSON.parse(JSON.stringify(p));
-        p.anuncios = [...p.anuncios, ...anuncios.map(enxuto)]; p.atualizadoEm = new Date().toISOString();
-        sincronizarCatalogo(p, ant);
-      } else {
-        const base = anuncios.find(a => a.imagem) || anuncios[0];
-        lista.push({ id: novoId() + lista.length, clienteId: st.cliente, sku: anuncios[0].sku.trim(), nome: base.nome, imagem: base.imagem, custo: 0, custoExtra: 0, anuncios: anuncios.map(enxuto), criadoEm: new Date().toISOString(), atualizadoEm: new Date().toISOString() });
-      }
+    for (const [id, ans] of novos) {
+      const p = lista.find(x => x.id === id); const ant = clone(p);
+      p.anuncios = [...(p.anuncios || []), ...ans.map(enxuto)]; p.atualizadoEm = new Date().toISOString();
+      sincronizarCatalogo(p, ant);
     }
     salvarTodos(lista);
-    st.filtro = 'semcusto'; st.pagina = 0;
-    render();
+  }
+
+  // ── Linhas da tabela: produtos cadastrados + anúncios ainda sem produto ──
+  function montarLinhas() {
+    const cat = lerJSON('glr_vendas_custo_catalogo', {});
+    const custoDoAnuncio = a => { for (const k of chavesCatalogo(a)) { const v = num(cat[k]); if (v > 0) return v; } return 0; };
+    const prods = doCliente();
+    const assoc = new Set(prods.flatMap(p => (p.anuncios || []).map(chaveAnuncio)));
+    const rows = prods.map(p => {
+      const proprio = custoTotal(p) > 0;
+      const cats = proprio ? [] : (p.anuncios || []).map(custoDoAnuncio).filter(v => v > 0);
+      return { id: String(p.id), sku: p.sku, nome: p.nome, imagem: p.imagem, anuncios: p.anuncios || [],
+        custo: proprio ? num(p.custo) : (cats[0] || 0), custoExtra: proprio ? num(p.custoExtra) : 0,
+        origem: proprio ? 'produto' : (cats.length ? 'anuncio' : ''), diverge: new Set(cats).size > 1 };
+    });
+    const grupos = new Map();
+    for (const a of st.anuncios) {
+      if (assoc.has(chaveAnuncio(a))) continue;
+      const k = normSku(a.sku) ? 'sku:' + normSku(a.sku) : 'an:' + chaveAnuncio(a);
+      if (!grupos.has(k)) grupos.set(k, []);
+      grupos.get(k).push(a);
+    }
+    for (const [k, ans] of grupos) {
+      const base = ans.find(a => a.imagem) || ans[0];
+      const cats = ans.map(custoDoAnuncio).filter(v => v > 0);
+      rows.push({ id: 'v:' + k, virtual: true, sku: normSku(ans[0].sku) ? String(ans[0].sku).trim() : '', nome: base.nome, imagem: base.imagem, anuncios: ans,
+        custo: cats[0] || 0, custoExtra: 0, origem: cats.length ? 'anuncio' : '', diverge: new Set(cats).size > 1 });
+    }
+    return rows.sort((a, b) => (a.sku ? 0 : 1) - (b.sku ? 0 : 1) || String(a.sku || a.nome).localeCompare(String(b.sku || b.nome), 'pt-BR', { numeric: true }));
+  }
+  const temCusto = r => r.custo + r.custoExtra > 0;
+  const materializar = r => ({ id: novoId(), clienteId: st.cliente, sku: r.sku, nome: r.nome, imagem: r.imagem, custo: r.custo, custoExtra: r.custoExtra,
+    anuncios: r.anuncios.map(enxuto), criadoEm: new Date().toISOString() });
+  const linha = i => st.rows[i]; // índice em st.rows (refeito a cada render)
+  const prodPorId = id => todos().find(p => String(p.id) === String(id));
+  // Produto cadastrado da linha (cria na hora se a linha ainda é só anúncio)
+  function produtoDaLinha(r) {
+    const idReal = r.virtual ? st.materializados[r.id] : r.id;
+    const p = idReal ? prodPorId(idReal) : null;
+    if (p) return { p, ant: clone(p) };
+    return { p: materializar(r), ant: null };
   }
 
   // ── Planilha ──
   function exportarCsv() {
     const linhas = [['sku', 'nome', 'custo', 'custo_extra', 'anuncios'].join(';')];
-    for (const p of doCliente()) linhas.push([p.sku, `"${String(p.nome || '').replace(/"/g, '""')}"`, num(p.custo).toFixed(2).replace('.', ','), num(p.custoExtra).toFixed(2).replace('.', ','), (p.anuncios || []).map(a => `${a.mkt}:${a.id}`).join(' ')].join(';'));
+    for (const r of montarLinhas()) linhas.push([r.sku, `"${String(r.nome || '').replace(/"/g, '""')}"`, num(r.custo).toFixed(2).replace('.', ','), num(r.custoExtra).toFixed(2).replace('.', ','), r.anuncios.map(a => `${a.mkt}:${a.id}`).join(' ')].join(';'));
     const blob = new Blob(['﻿' + linhas.join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `produtos_${(GLR.clientes.find(c => String(c.id) === String(st.cliente))?.nome || st.cliente).replace(/\s+/g, '_')}.csv`; a.click();
@@ -180,14 +239,20 @@ Router.register('produtos', (params, el) => {
       const iCusto = cab.findIndex(c => ['custo', 'custo unitario', 'custo unitário', 'preço de custo', 'preco de custo'].includes(c));
       const iExtra = cab.findIndex(c => c.startsWith('custo_extra') || c.startsWith('custo extra'));
       if (iSku < 0 || iCusto < 0) { alert('A planilha precisa das colunas "sku" e "custo" (opcionais: "nome", "custo_extra"). Separador ; ou ,'); return; }
+      const virtuais = new Map(montarLinhas().filter(r => r.virtual && r.sku).map(r => [normSku(r.sku), r]));
       const lista = todos(); let criados = 0, atualizados = 0;
       for (const l of linhas.slice(1)) {
         const c = l.split(sep).map(x => x.replace(/^"|"$/g, '').trim());
         const sku = c[iSku]; if (!sku) continue;
         let p = lista.find(x => String(x.clienteId) === String(st.cliente) && normSku(x.sku) === normSku(sku));
-        const ant = p ? JSON.parse(JSON.stringify(p)) : null;
-        if (!p) { p = { id: novoId() + lista.length, clienteId: st.cliente, sku, nome: iNome >= 0 && c[iNome] ? c[iNome] : sku, imagem: '', custo: 0, custoExtra: 0, anuncios: [], criadoEm: new Date().toISOString() }; lista.push(p); criados++; } else atualizados++;
-        p.custo = num(c[iCusto]); if (iExtra >= 0) p.custoExtra = num(c[iExtra]); if (iNome >= 0 && c[iNome]) p.nome = c[iNome];
+        const ant = p ? clone(p) : null;
+        if (!p) {
+          const v = virtuais.get(normSku(sku));
+          p = v ? materializar(v) : { id: novoId() + lista.length, clienteId: st.cliente, sku, nome: sku, imagem: '', custo: 0, custoExtra: 0, anuncios: [], criadoEm: new Date().toISOString() };
+          p.id += lista.length; lista.push(p); criados++;
+        } else atualizados++;
+        p.custo = num(c[iCusto]); p.custoExtra = iExtra >= 0 ? num(c[iExtra]) : (ant ? num(p.custoExtra) : 0);
+        if (iNome >= 0 && c[iNome]) p.nome = c[iNome];
         p.atualizadoEm = new Date().toISOString();
         sincronizarCatalogo(p, ant);
       }
@@ -208,8 +273,8 @@ Router.register('produtos', (params, el) => {
         <div class="pr-campos">
           <label>SKU interno<input id="pr-sku" value="${h(p.sku)}" placeholder="ex.: JC-002"></label>
           <label class="pr-larga">Título<input id="pr-nome" value="${h(p.nome)}" placeholder="Nome do produto"></label>
-          <label>Custo do produto (R$)<input id="pr-custo" inputmode="decimal" value="${p.custo ? String(p.custo).replace('.', ',') : ''}" placeholder="0,00"></label>
-          <label>Custo extra (R$)<input id="pr-extra" inputmode="decimal" value="${p.custoExtra ? String(p.custoExtra).replace('.', ',') : ''}" placeholder="embalagem, etiqueta…"></label>
+          <label>Custo do produto (R$)<input id="pr-custo" inputmode="decimal" value="${dec(p.custo)}" placeholder="0,00"></label>
+          <label>Custo extra (R$)<input id="pr-extra" inputmode="decimal" value="${dec(p.custoExtra)}" placeholder="embalagem, etiqueta…"></label>
           <label class="pr-larga">Foto (link)<input id="pr-img" value="${h(p.imagem)}" placeholder="https://…"></label>
         </div>
         <div class="pr-mut">O custo + custo extra vale para todos os anúncios associados (Vendas, Financeiro, DRE, Promoções e portal).</div>
@@ -239,54 +304,64 @@ Router.register('produtos', (params, el) => {
     </div></div>`;
   }
 
+  const F = { todos: () => true, semcusto: r => !temCusto(r), comcusto: temCusto, semanuncio: r => !r.anuncios.length };
+  function renderChips() {
+    const rows = st.rows;
+    const chip = (k, t, n) => `<button class="pr-chip ${st.filtro === k ? 'on' : ''}" onclick="window._prFiltro('${k}')">${t} <b>${n}</b></button>`;
+    const semAn = rows.filter(F.semanuncio).length;
+    return chip('todos', 'Todos', rows.length) + chip('semcusto', 'Sem custo', rows.filter(F.semcusto).length) + chip('comcusto', 'Com custo', rows.filter(F.comcusto).length) + (semAn ? chip('semanuncio', 'Sem anúncio', semAn) : '');
+  }
+  function celulaCusto(r, campo, i) {
+    const v = r[campo];
+    if (portal) return campo === 'custo' && !temCusto(r) ? '<span class="pr-sem">sem custo</span>' : R$(v);
+    return `<input class="pr-in ${campo === 'custo' && !temCusto(r) ? 'vazio' : ''}" id="pr-${campo}-${i}" inputmode="decimal" placeholder="${campo === 'custo' ? 'sem custo' : '0,00'}" value="${dec(v)}"
+      onchange="window._prCusto(${st.rows.indexOf(r)},'${campo}',this)" onkeydown="if(event.key==='Enter')this.blur()">`;
+  }
+
   function render() {
     const box = document.getElementById('pr-root'); if (!box) return;
     const clientes = [...(GLR.clientes || [])].sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
-    if (!st.cliente) {
-      box.innerHTML = `<div class="card pr-vazio">Escolha o cliente para ver e cadastrar os produtos dele.<select class="pr-sel" onchange="window._prCliente(this.value)"><option value="">— Cliente —</option>${clientes.map(c => `<option value="${c.id}">${h(c.nome)}</option>`).join('')}</select></div>`;
-      return;
-    }
-    const prods = doCliente();
-    const assoc = mapaAssociados();
-    const semProduto = st.anuncios.filter(a => !assoc.has(chaveAnuncio(a)));
+    const vinc = lerJSON('glr_mc_vinculos', {});
+    const selCliente = portal ? '' : `<select class="pr-sel" onchange="window._prCliente(this.value)"><option value="">— Escolha o cliente —</option>${clientes.map(c => `<option value="${c.id}" ${String(c.id) === String(st.cliente) ? 'selected' : ''}>${h(c.nome)}${(vinc[String(c.id)] || []).length ? '' : ' (sem contas)'}</option>`).join('')}</select>`;
+    if (!st.cliente) { box.innerHTML = `<div class="card pr-vazio">Escolha o cliente para carregar os produtos dele.${selCliente}</div>`; return; }
+
+    st.rows = montarLinhas(); st.materializados = {};
     const q = st.busca.toLowerCase();
-    const F = { todos: () => true, semcusto: p => !(custoTotal(p) > 0), semanuncio: p => !(p.anuncios || []).length };
-    const lista = prods.filter(F[st.filtro] || F.todos).filter(p => !q || `${p.sku} ${p.nome} ${(p.anuncios || []).map(a => a.id + ' ' + a.sku).join(' ')}`.toLowerCase().includes(q))
-      .sort((a, b) => String(a.sku || a.nome).localeCompare(String(b.sku || b.nome), 'pt-BR', { numeric: true }));
+    const lista = st.rows.filter(F[st.filtro] || F.todos).filter(r => !q || `${r.sku} ${r.nome} ${r.anuncios.map(a => a.id + ' ' + a.sku).join(' ')}`.toLowerCase().includes(q));
     const pags = Math.max(1, Math.ceil(lista.length / POR_PAGINA)); st.pagina = Math.min(st.pagina, pags - 1);
     const pagina = lista.slice(st.pagina * POR_PAGINA, (st.pagina + 1) * POR_PAGINA);
-    const chip = (k, t, n) => `<button class="pr-chip ${st.filtro === k ? 'on' : ''}" onclick="window._prFiltro('${k}')">${t} <b>${n}</b></button>`;
-    const contas = contasDoCliente();
+    const carregandoVazio = st.carregando && !st.anuncios.length;
     box.innerHTML = `
       <div class="pr-topo">
-        <select class="pr-sel" onchange="window._prCliente(this.value)">${clientes.map(c => `<option value="${c.id}" ${String(c.id) === String(st.cliente) ? 'selected' : ''}>${h(c.nome)}</option>`).join('')}</select>
+        ${selCliente}
         <input class="pr-busca" style="max-width:320px" placeholder="Pesquisar SKU, título ou anúncio…" value="${h(st.busca)}" oninput="window._prBusca(this.value)">
         <span style="flex:1"></span>
-        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('pr-arquivo').click()">⬆ Importar planilha</button>
+        ${portal ? '' : `<button class="btn btn-secondary btn-sm" onclick="document.getElementById('pr-arquivo').click()">⬆ Importar planilha</button>
         <button class="btn btn-secondary btn-sm" onclick="window._prExportar()">⬇ Exportar</button>
-        <button class="btn btn-secondary btn-sm" ${st.carregando || !st.anuncios.length ? 'disabled' : ''} onclick="window._prCriarSku()">⚡ Criar pelo SKU dos anúncios</button>
         <button class="btn btn-primary btn-sm" onclick="window._prNovo()">+ Novo produto</button>
-        <input type="file" id="pr-arquivo" accept=".csv,text/csv" style="display:none" onchange="if(this.files[0])window._prImportar(this.files[0]);this.value=''">
+        <input type="file" id="pr-arquivo" accept=".csv,text/csv" style="display:none" onchange="if(this.files[0])window._prImportar(this.files[0]);this.value=''">`}
       </div>
       <div class="pr-info">
-        ${chip('todos', 'Produtos', prods.length)}${chip('semcusto', 'Sem custo', prods.filter(F.semcusto).length)}${chip('semanuncio', 'Sem anúncio', prods.filter(F.semanuncio).length)}
-        <span class="pr-mut">${contas.length ? `${st.anuncios.length} anúncios em ${contas.length} conta(s) · <b style="color:${semProduto.length ? '#d97706' : 'inherit'}">${semProduto.length} sem produto</b>` : '⚠️ nenhuma conta vinculada a este cliente (vincule na Projeção)'}
-        ${st.carregando ? ` · ⏳ ${h(st.progresso)}` : ` · <a href="#" onclick="window._prRecarregar();return false;">atualizar anúncios</a>`}${st.erro ? ` · <span style="color:#dc2626">${h(st.erro)}</span>` : ''}</span>
+        <span id="pr-chips" style="display:contents">${renderChips()}</span>
+        <span class="pr-mut">${st.contas.length || st.carregando ? `${st.anuncios.length} anúncios em ${st.contas.length} conta(s)` : (portal ? 'nenhuma conta encontrada' : '⚠️ nenhuma conta vinculada a este cliente (vincule na Projeção)')}
+        ${st.carregando ? ` · ⏳ ${h(st.progresso || 'carregando…')}` : ` · <a href="#" onclick="window._prRecarregar();return false;">atualizar anúncios</a>`}${st.erro ? ` · <span style="color:#dc2626">${h(st.erro)}</span>` : ''}</span>
       </div>
       <div class="card" style="padding:0;overflow:hidden"><div style="overflow-x:auto">
-        <table class="pr-tab"><thead><tr><th>SKU interno</th><th>Imagem</th><th>Título</th><th class="pr-n">Preço de custo</th><th class="pr-n">Custo extra</th><th>Marketplaces associados</th><th></th></tr></thead>
-        <tbody>${pagina.map(p => {
-          const por = {}; (p.anuncios || []).forEach(a => { por[a.mkt] = (por[a.mkt] || 0) + 1; });
+        <table class="pr-tab"><thead><tr><th>SKU interno</th><th>Imagem</th><th>Título</th><th class="pr-n">Preço de custo</th><th class="pr-n">Custo extra</th><th>Marketplaces associados</th>${portal ? '' : '<th></th>'}</tr></thead>
+        <tbody>${pagina.map((r, i) => {
+          const por = {}; r.anuncios.forEach(a => { por[a.mkt] = (por[a.mkt] || 0) + 1; });
+          const nota = r.diverge ? '<div class="pr-nota" style="color:#d97706">⚠ custo diferente entre os anúncios</div>'
+            : r.virtual && r.origem === 'anuncio' && !portal ? '<div class="pr-nota">custo já lançado em Vendas</div>' : '';
           return `<tr>
-            <td class="pr-sku">${h(p.sku || '—')}</td>
-            <td>${p.imagem ? `<img class="pr-img" src="${h(p.imagem)}" alt="" loading="lazy">` : '<span class="pr-img"></span>'}</td>
-            <td class="pr-tit">${h(p.nome)}</td>
-            <td class="pr-n">${num(p.custo) > 0 ? R$(p.custo) : '<span style="color:#dc2626;font-weight:700">sem custo</span>'}</td>
-            <td class="pr-n">${R$(p.custoExtra)}</td>
+            <td class="pr-sku">${h(r.sku || '—')}${r.virtual && !r.sku ? '<div class="pr-nota">anúncio sem SKU</div>' : ''}</td>
+            <td>${r.imagem ? `<img class="pr-img" src="${h(r.imagem)}" alt="" loading="lazy">` : '<span class="pr-img"></span>'}</td>
+            <td class="pr-tit">${h(r.nome)}</td>
+            <td class="pr-n">${celulaCusto(r, 'custo', i)}${nota}</td>
+            <td class="pr-n">${celulaCusto(r, 'custoExtra', i)}</td>
             <td>${Object.keys(por).length ? Object.entries(por).map(([k, n]) => `<span class="pr-mkt" style="--c:${MKT[k].cor}" title="${MKT[k].nome}">${MKT[k].sigla} ${n}</span>`).join(' ') : '<span class="pr-mut">nenhum</span>'}</td>
-            <td class="pr-acoes"><button title="Associar anúncios" onclick="window._prAssociar(${p.id})">🔗</button><button title="Editar" onclick="window._prEditar(${p.id})">✎</button><button title="Excluir" onclick="window._prExcluir(${p.id})">🗑</button></td>
+            ${portal ? '' : `<td class="pr-acoes"><button title="Associar anúncios" onclick="window._prAssociar(${st.rows.indexOf(r)})">🔗</button><button title="Editar" onclick="window._prEditar(${st.rows.indexOf(r)})">✎</button>${r.virtual ? '' : `<button title="Excluir" onclick="window._prExcluir(${st.rows.indexOf(r)})">🗑</button>`}</td>`}
           </tr>`;
-        }).join('') || `<tr><td colspan="7" class="pr-mut" style="padding:28px;text-align:center">${prods.length ? 'Nada neste filtro.' : 'Nenhum produto ainda. Use <b>⚡ Criar pelo SKU dos anúncios</b> para montar o cadastro a partir dos anúncios, ou <b>+ Novo produto</b>.'}</td></tr>`}</tbody></table>
+        }).join('') || `<tr><td colspan="7" class="pr-mut" style="padding:28px;text-align:center">${carregandoVazio ? '⏳ Carregando os produtos das contas…' : st.rows.length ? 'Nada neste filtro.' : 'Nenhum anúncio ativo encontrado nas contas do cliente.'}</td></tr>`}</tbody></table>
       </div>
       ${pags > 1 ? `<div class="pr-pag"><button ${st.pagina === 0 ? 'disabled' : ''} onclick="window._prPagina(-1)">‹</button><span>${st.pagina + 1} de ${pags}</span><button ${st.pagina >= pags - 1 ? 'disabled' : ''} onclick="window._prPagina(1)">›</button></div>` : ''}
       </div>
@@ -294,18 +369,35 @@ Router.register('produtos', (params, el) => {
   }
 
   // ── Ações ──
-  const prodPorId = id => todos().find(p => String(p.id) === String(id));
-  window._prCliente = v => { st.cliente = v; st.anuncios = []; st.pagina = 0; try { localStorage.setItem('glr_prod_cliente', v); } catch (e) {} render(); carregarAnuncios(false); };
+  window._prCliente = v => { st.cliente = v; st.anuncios = []; st.contas = []; st.pagina = 0; st.filtro = 'todos'; try { localStorage.setItem('glr_prod_cliente', v); } catch (e) {} render(); carregarAnuncios(false); };
   window._prBusca = v => { st.busca = v; st.pagina = 0; clearTimeout(window._prT); window._prT = setTimeout(() => { render(); const b = document.querySelector('.pr-topo .pr-busca'); if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); } }, 200); };
   window._prFiltro = f => { st.filtro = f; st.pagina = 0; render(); };
   window._prPagina = d => { st.pagina += d; render(); };
   window._prRecarregar = () => carregarAnuncios(true);
-  window._prCriarSku = criarPeloSku;
   window._prExportar = exportarCsv;
   window._prImportar = importarCsv;
   window._prFechar = () => { st.modal = null; render(); };
+  // Custo direto na tabela: salva sem redesenhar (o cursor segue para o próximo campo)
+  window._prCusto = (id, campo, inp) => {
+    const valor = inp.value;
+    if (portal) return;
+    const r = linha(id); if (!r) return;
+    const { p, ant } = produtoDaLinha(r);
+    if (!ant || !(custoTotal(ant) > 0)) { p.custo = r.custo; p.custoExtra = r.custoExtra; } // parte do custo já lançado no anúncio
+    p[campo] = num(valor); r[campo] = p[campo];
+    salvarProduto(p, ant);
+    if (r.virtual) st.materializados[r.id] = p.id;
+    r.origem = 'produto'; r.diverge = false;
+    inp.closest('tr')?.querySelector('[id^="pr-custo-"]')?.classList.toggle('vazio', !temCusto(r));
+    const chips = document.getElementById('pr-chips'); if (chips) chips.innerHTML = renderChips();
+  };
   window._prNovo = () => { st.modal = { tipo: 'editar', novo: true, prod: { id: novoId(), clienteId: st.cliente, sku: '', nome: '', imagem: '', custo: 0, custoExtra: 0, anuncios: [], criadoEm: new Date().toISOString() } }; render(); };
-  window._prEditar = id => { const p = prodPorId(id); if (!p) return; st.modal = { tipo: 'editar', prod: JSON.parse(JSON.stringify(p)), anterior: JSON.parse(JSON.stringify(p)) }; render(); };
+  window._prEditar = id => {
+    const r = linha(id); if (!r) return;
+    const { p, ant } = produtoDaLinha(r);
+    if (!ant || !(custoTotal(ant) > 0)) { p.custo = r.custo; p.custoExtra = r.custoExtra; }
+    st.modal = { tipo: 'editar', novo: !ant, prod: p, anterior: ant }; render();
+  };
   window._prSalvarEdicao = () => {
     const p = st.modal.prod, v = id => document.getElementById(id)?.value?.trim() || '';
     p.sku = v('pr-sku'); p.nome = v('pr-nome'); p.custo = num(v('pr-custo')); p.custoExtra = num(v('pr-extra')); p.imagem = v('pr-img');
@@ -313,26 +405,34 @@ Router.register('produtos', (params, el) => {
     if (p.sku && doCliente().some(x => x.id !== p.id && normSku(x.sku) === normSku(p.sku))) { alert('Já existe um produto com esse SKU neste cliente.'); return; }
     salvarProduto(p, st.modal.anterior || null); st.modal = null; render();
   };
-  window._prExcluir = id => { const p = prodPorId(id); if (p && confirm(`Excluir o produto "${p.nome}"? Os anúncios ficam livres para associar de novo.`)) { excluirProduto(p); render(); } };
-  window._prAssociar = id => { const p = prodPorId(id); if (!p) return; st.modal = { tipo: 'assoc', prod: p, sel: (p.anuncios || []).map(chaveAnuncio), q: '' }; render(); if (!st.anuncios.length) carregarAnuncios(false); };
+  window._prExcluir = i => { const p = st.rows[i] && prodPorId(st.rows[i].id); if (p && confirm(`Excluir o produto "${p.nome}"? Os anúncios voltam a aparecer como anúncios sem produto.`)) { excluirProduto(p); render(); } };
+  window._prAssociar = id => {
+    const r = linha(id); if (!r) return;
+    const { p, ant } = produtoDaLinha(r);
+    if (!ant || !(custoTotal(ant) > 0)) { p.custo = r.custo; p.custoExtra = r.custoExtra; }
+    st.modal = { tipo: 'assoc', prod: p, anterior: ant, sel: (p.anuncios || []).map(chaveAnuncio), q: '' }; render();
+  };
   window._prBuscaAssoc = v => { st.modal.q = v; clearTimeout(window._prT2); window._prT2 = setTimeout(() => { render(); const b = document.querySelector('.pr-modal .pr-busca'); if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); } }, 200); };
   window._prMarcar = k => { if (!st.modal.sel.includes(k)) st.modal.sel.push(k); render(); };
   window._prDesmarcar = k => { st.modal.sel = st.modal.sel.filter(x => x !== k); render(); };
   window._prConfirmarAssoc = () => {
-    const ant = JSON.parse(JSON.stringify(st.modal.prod));
-    const p = prodPorId(ant.id); if (!p) { st.modal = null; render(); return; }
-    p.anuncios = st.modal.sel.map(k => st.anuncios.find(a => chaveAnuncio(a) === k) || ant.anuncios.find(a => chaveAnuncio(a) === k)).filter(Boolean).map(enxuto);
+    const { prod, anterior } = st.modal;
+    const p = clone(prod);
+    p.anuncios = st.modal.sel.map(k => st.anuncios.find(a => chaveAnuncio(a) === k) || prod.anuncios.find(a => chaveAnuncio(a) === k)).filter(Boolean).map(enxuto);
     if (!p.imagem) p.imagem = p.anuncios.find(a => a.imagem)?.imagem || '';
-    salvarProduto(p, ant); st.modal = null; render();
+    salvarProduto(p, anterior || null); st.modal = null; render();
   };
 
   el.innerHTML = `<div class="page">
-    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:22px;font-weight:800;color:var(--text-primary)">📦 Produtos</div></div>
-    <div class="pr-mut" style="margin-bottom:16px;max-width:900px">Cadastre cada produto uma vez (SKU interno, custo e custo extra) e associe os anúncios dele no Mercado Livre e na Shopee. O custo passa a valer em todos os anúncios associados — Vendas, Financeiro, DRE, Promoções e portal do cliente.</div>
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:22px;font-weight:800;color:var(--text-primary)">📦 ${portal ? 'Meus produtos' : 'Produtos'}</div></div>
+    <div class="pr-mut" style="margin-bottom:16px;max-width:900px">${portal
+      ? 'Seus produtos com o custo cadastrado pela GLR. Produto <b>sem custo</b> deixa a margem e o lucro incompletos — fale com a GLR para cadastrar.'
+      : 'Escolha o cliente: os produtos carregam das contas dele com o custo atual. Lance o custo direto na tabela — ele vale para todos os anúncios associados (Vendas, Financeiro, DRE, Promoções e portal do cliente).'}</div>
     <div id="pr-root"></div>
   </div>
   <style>
     .pr-mut{font-size:12px;color:var(--text-muted)}
+    .pr-nota{font-size:10.5px;color:var(--text-muted);font-weight:400;margin-top:2px;white-space:nowrap}
     .pr-topo{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
     .pr-sel,.pr-busca{background:var(--bg-card);border:1px solid var(--border);border-radius:9px;color:var(--text-primary);padding:8px 11px;font-size:13px}
     .pr-busca{width:100%}
@@ -346,6 +446,10 @@ Router.register('produtos', (params, el) => {
     .pr-sku{font-family:ui-monospace,monospace;font-size:12px;color:var(--text-primary)!important;white-space:nowrap}
     .pr-img{width:40px;height:40px;border-radius:8px;object-fit:cover;display:block;background:var(--bg-card-hover)}
     .pr-tit{color:var(--text-primary)!important;font-weight:600;min-width:240px}
+    .pr-in{width:96px;text-align:right;background:var(--bg-card-hover);border:1px solid var(--border);border-radius:7px;color:var(--text-primary);padding:6px 8px;font-size:13px;font-variant-numeric:tabular-nums}
+    .pr-in:focus{outline:none;border-color:#2a78d6}
+    .pr-in.vazio{border-color:#dc2626}.pr-in.vazio::placeholder{color:#dc2626;font-weight:700}
+    .pr-sem{color:#dc2626;font-weight:700}
     .pr-mkt{display:inline-block;font-size:11px;font-weight:800;color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);padding:2px 7px;border-radius:6px}
     .pr-acoes{white-space:nowrap;text-align:right} .pr-acoes button{background:none;border:1px solid var(--border);border-radius:8px;width:30px;height:30px;margin-left:4px;cursor:pointer;color:var(--text-secondary)}
     .pr-acoes button:hover{border-color:#2a78d6}
