@@ -66,6 +66,7 @@ const Router = {
       ads: 'ADS Shopee',
       agente: 'ADS Shopee',
       'agente-ml': 'ADS Mercado Livre',
+      'produtos': 'Produtos',
       'meu-dashboard': 'Dashboard', 'meus-pedidos': 'Pedidos', 'minha-curva-abc': 'Curva ABC', 'minhas-oportunidades': 'Oportunidades',
       financeiro: 'Financeiro',
       vendas: 'Vendas',

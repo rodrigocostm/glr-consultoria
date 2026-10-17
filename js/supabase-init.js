@@ -13,7 +13,7 @@ const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 // Chaves gerenciadas pelo sistema
 const GLR_KEYS = [
-  'glr_clientes', 'glr_gestores', 'glr_tarefas', 'glr_acoes',
+  'glr_clientes', 'glr_gestores', 'glr_tarefas', 'glr_acoes', 'glr_produtos',
   'glr_alertas', 'glr_oportunidades', 'glr_projecoes', 'glr_dre',
   'glr_mc_vinculos', 'glr_mc_nicknames', 'glr_portal_configs',
   'glr_vendas_custos',  // custo de produto lançado no admin — precisa chegar no portal do cliente
@@ -49,7 +49,7 @@ const _localSetItem = localStorage.setItem.bind(localStorage);
 // apagava as ações registradas pelos outros. Agora: lê a lista atual do banco,
 // aplica só o que mudou NESTE navegador (novos, editados e excluídos, pelo id)
 // e grava o resultado. Uma gravação por vez por chave.
-const CHAVES_POR_ITEM = ['glr_acoes', 'glr_tarefas'];
+const CHAVES_POR_ITEM = ['glr_acoes', 'glr_tarefas', 'glr_produtos'];
 const _baseSync = {};   // chave → última versão do banco que este navegador conhece
 const _filaSync = {};   // chave → promessa da gravação em andamento
 function _salvarMesclando(key, local) {
