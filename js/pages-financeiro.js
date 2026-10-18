@@ -652,10 +652,13 @@ Router.register('financeiro', async (params, el) => {
   function pedidoDaBase(mkt, r, contaId) {
     const valor = parseFloat(r.valor_bruto) || 0;
     const status = r.situacao === 'devolvido' ? 'devolvido' : (r.status_original || '');
-    if (mkt === 'amazon' || mkt === 'tiktok') {
-      // Amazon/TikTok: taxas ainda não vêm na base — líquido = valor, marcado como sem taxa real
-      return { id: r.pedido_id, plataforma: mkt === 'amazon' ? 'Amazon' : 'TikTok Shop', contaId, dataTs: Date.parse(r.criado_em), valor, status,
-        taxas: { liquido: valor, comissao: 0, taxaServico: 0, imposto: 0, frete: 0, voucher: 0 }, _base: true, _semTaxa: r.situacao === 'valido' };
+    if (mkt !== 'shopee' && mkt !== 'ml') {
+      // Shein: líquido real da plataforma; Magalu: valor − comissão; Amazon/TikTok:
+      // taxas ainda não vêm na base — líquido = valor, marcado como sem taxa real
+      const tarifa = parseFloat(r.taxas?.tarifa_venda ?? r.taxas?.comissao) || 0;
+      const liq = r.liquido != null ? parseFloat(r.liquido) : (tarifa > 0 ? valor - tarifa : valor);
+      return { id: r.pedido_id, plataforma: { amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt] || mkt, contaId, dataTs: Date.parse(r.criado_em), valor, status,
+        taxas: { liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0 }, _base: true, _semTaxa: r.liquido == null && !(tarifa > 0) && r.situacao === 'valido' };
     }
     if (mkt === 'shopee') {
       // Igual à busca antiga: sem escrow (pedido ainda não concluído) → líquido = valor, sem taxas
@@ -680,7 +683,7 @@ Router.register('financeiro', async (params, el) => {
     if (!out.contas.length) return out;
     const ini = new Date(`${primeiroDia}T00:00:00-03:00`).toISOString();
     const fim = new Date(new Date(`${dataTo}T00:00:00-03:00`).getTime() + 86400000).toISOString();
-    for (const mkt of ['shopee', 'ml', 'amazon', 'tiktok']) {
+    for (const mkt of ['shopee', 'ml', 'amazon', 'tiktok', 'magalu', 'shein']) {
       const doMkt = out.contas.filter(c => BaseDados.mktDe(c.marketplace) === mkt);
       if (!doMkt.length) continue;
       const ids = doMkt.map(idNaBase);
@@ -697,7 +700,7 @@ Router.register('financeiro', async (params, el) => {
       const { data: ads, error: eAds } = await _sb.from('glr_ads_diario')
         .select('gasto,gmv_ads,pedidos_ads,impressoes,cliques').eq('marketplace', mkt).in('conta_id', ids).gte('data', primeiroDia).lte('data', dataTo);
       if (eAds) throw eAds;
-      const plat = { shopee: 'Shopee', ml: 'Mercado Livre', amazon: 'Amazon', tiktok: 'TikTok Shop' }[mkt];
+      const plat = { shopee: 'Shopee', ml: 'Mercado Livre', amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt];
       const soma = c => (ads || []).reduce((t, d) => t + (parseFloat(d[c]) || 0), 0);
       out.ads[plat] = soma('gasto');
       const inv = soma('gasto'), cl = soma('cliques'), imp = soma('impressoes'), fatAds = soma('gmv_ads');

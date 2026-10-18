@@ -1,5 +1,5 @@
 // ============================================================
-// GLR Consultoria — Motor de sincronização de dados (Shopee, Mercado Livre, Amazon e TikTok Shop)
+// GLR Consultoria — Motor de sincronização de dados (Shopee, Mercado Livre, Amazon, TikTok Shop, Magalu e Shein)
 // ------------------------------------------------------------
 // Chamado pelo agendador do próprio Supabase (pg_cron, ver
 // supabase-motor-dados.sql): a cada 15 min ("incremental") e toda noite
@@ -92,13 +92,13 @@ const dataBR = unix => { const d = new Date((unix - 3 * 3600) * SEG); const p = 
 
 // ── Contas a sincronizar: TODAS as lojas Shopee e Mercado Livre conectadas
 //    no conector + as vinculadas a clientes + as do piloto do Agente ──
-const MKT = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : m === 'amazon' ? 'amazon' : ['tiktok', 'tiktok_shop', 'tiktokshop'].includes(m) ? 'tiktok' : null; };
+const MKT = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : m === 'amazon' ? 'amazon' : ['tiktok', 'tiktok_shop', 'tiktokshop'].includes(m) ? 'tiktok' : m === 'magalu' ? 'magalu' : m === 'shein' ? 'shein' : null; };
 async function contasParaSincronizar(apiKey) {
   const chaves = new Map(); // "mkt:id" → { mkt, id }
   const add = (m, id) => { const mkt = MKT(m); if (mkt && id) chaves.set(`${mkt}:${id}`, { mkt, id: String(id) }); };
   try {
     const r = await comRetry(() => mcpCall(apiKey, 'list_accounts', {}));
-    for (const c of (r.data?.accounts || r.accounts || [])) add(c.marketplace, c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.external_id);
+    for (const c of (r.data?.accounts || r.accounts || [])) add(c.marketplace, c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.param_to_use?.magalu_account_id || c.param_to_use?.shein_supplier_id || c.external_id);
   } catch (e) { console.warn('[sync-dados] list_accounts falhou, seguindo só com os vínculos:', e.message); }
   const vinc = (await sbSelect('glr_storage', 'chave=eq.glr_mc_vinculos&select=dados'))[0]?.dados || {};
   for (const lista of Object.values(vinc)) for (const c of (Array.isArray(lista) ? lista : [])) add(c.marketplace, c.external_id);
@@ -662,6 +662,93 @@ async function gravarPedidosAmazon(apiKey, accId, deUnix, ateUnix, prazo) {
   return { n, completo: true };
 }
 
+// ── Magalu: o pedido vem inteiro (itens, frete, comissão), valores em centavos ──
+//    valor = itens (preço × qtd) − desconto, sem frete; "new" (pagamento não
+//    aprovado) não entra; cancelado/não aprovado = cancelado; com devolução = devolvido.
+const centavos = o => (parseFloat(o?.value ?? o?.total) || 0) / (parseFloat(o?.normalizer) || 100);
+function mapearPedidoMagalu(accId, o) {
+  const dels = o.deliveries || [];
+  const itens = dels.flatMap(d => (d.items || []).map(i => ({
+    item_id: i.info?.id || '', sku: i.info?.sku || '', nome: i.info?.name || '—', qtd: parseInt(i.quantity) || 1,
+    preco: r2(centavos(i.unit_price)), imagem: i.info?.images?.[0]?.url || '',
+  })));
+  const somaItens = r2(itens.reduce((s, i) => s + i.preco * i.qtd, 0));
+  const valor = r2(Math.max(0, somaItens - centavos(o.amounts?.discount)));
+  const comissao = r2(dels.reduce((s, d) => s + centavos(d.amounts?.commission), 0)) || r2(centavos(o.amounts?.commission));
+  const st = String(o.status || '').toLowerCase();
+  const devolvido = (o.returns || []).length > 0 || dels.some(d => (d.returns || []).length > 0);
+  return {
+    marketplace: 'magalu', conta_id: String(accId), pedido_id: String(o.code || o.id),
+    criado_em: new Date(o.purchased_at || o.created_at).toISOString(), atualizado_mkt: o.updated_at ? new Date(o.updated_at).toISOString() : null,
+    status_original: o.status || '', situacao: /cancel|unapproved/.test(st) ? 'cancelado' : devolvido ? 'devolvido' : 'valido',
+    valor_bruto: valor, valor_itens: somaItens, frete: r2(centavos(o.amounts?.freight)),
+    taxas: { tarifa_venda: comissao }, liquido: null, itens, sincronizado_em: new Date().toISOString(),
+  };
+}
+async function gravarPedidosMagalu(apiKey, accId, filtro, prazo) {
+  let n = 0;
+  for (let off = 0; off < 20000; off += 50) {
+    if (prazo && Date.now() > prazo) return { n, completo: false };
+    const r = await comRetry(() => mcpCall(apiKey, 'magalu_list_orders', { params: { magalu_account_id: accId, _limit: 50, _offset: off, ...filtro } }));
+    const d = r.data?.results ? r.data : r;
+    const res = d.results || [];
+    const linhas = res.filter(o => o && (o.code || o.id) && (o.purchased_at || o.created_at) && !/^new$|pending/i.test(o.status || '')).map(o => mapearPedidoMagalu(accId, o));
+    if (linhas.length) {
+      await sbUpsert('glr_pedidos', [...new Map(linhas.map(l => [l.pedido_id, l])).values()], 'marketplace,conta_id,pedido_id');
+      linhas.forEach(l => tocar('magalu', accId, l.criado_em));
+    }
+    n += linhas.length;
+    if (res.length < 50) break;
+  }
+  return { n, completo: true };
+}
+
+// ── Shein: a lista traz só o cabeçalho; item, valor e taxas vêm do detalhe
+//    (lote de 20). Uma linha por unidade. Datas da Shein em UTC+8.
+//    valor = preço com desconto; líquido = "estimatedIncome" da própria Shein.
+//    Reembolsado antes do envio = cancelado; depois (ou recusado/danificado) = devolvido.
+const isoShein = s => new Date(String(s).replace(/([+-]\d\d)(\d\d)$/, '$1:$2')).toISOString();
+const horaBR = unix => { const d = new Date((unix - 3 * 3600) * SEG); const p = n => String(n).padStart(2, '0'); return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`; };
+function mapearPedidoShein(supId, d) {
+  const grupos = new Map();
+  let comissao = 0, taxa = 0, liquido = 0;
+  for (const g of (d.orderGoodsInfoList || [])) {
+    const k = g.skuCode || g.sellerSku || g.goodsId;
+    const x = grupos.get(k) || { item_id: String(g.skc || g.goodsSn || ''), sku: g.sellerSku || '', nome: g.goodsTitle || '—', qtd: 0, preco: r2(g.sellerCurrencyDiscountPrice ?? g.sellerCurrencyPrice), imagem: g.spuPicURL || '' };
+    x.qtd++; grupos.set(k, x);
+    comissao += parseFloat(g.commission) || 0; taxa += parseFloat(g.performanceServiceCharge) || 0; liquido += parseFloat(g.estimatedIncome) || 0;
+  }
+  const itens = [...grupos.values()];
+  const valor = r2(itens.reduce((s, i) => s + i.preco * i.qtd, 0));
+  const st = parseInt(d.orderStatus);
+  const enviado = !!(d.sellerDeliveryTime || d.pickUpTime);
+  return {
+    marketplace: 'shein', conta_id: String(supId), pedido_id: String(d.orderNo),
+    criado_em: isoShein(d.orderTime || d.addTime), atualizado_mkt: d.orderMsgUpdateTime ? isoShein(d.orderMsgUpdateTime) : null,
+    status_original: String(d.orderStatus ?? ''), situacao: st === 6 ? (enviado ? 'devolvido' : 'cancelado') : (st === 8 || st === 9) ? 'devolvido' : 'valido',
+    valor_bruto: valor, valor_itens: valor, frete: null,
+    taxas: { comissao: r2(comissao), taxa_servico: r2(taxa) }, liquido: r2(liquido), itens, sincronizado_em: new Date().toISOString(),
+  };
+}
+async function gravarPedidosShein(apiKey, supId, deUnix, ateUnix, porAtualizacao, prazo) {
+  const r = await comRetry(() => mcpCall(apiKey, 'shein_order_list_range', { shein_supplier_id: supId, data_inicio: horaBR(deUnix), data_fim: horaBR(ateUnix), query_type: porAtualizacao ? 2 : 1, query_order_type: 4 }));
+  const d = r.data?.pedidos ? r.data : r;
+  const nums = [...new Set((d.pedidos || []).map(p => p.orderNo).filter(Boolean))];
+  let n = 0;
+  for (let i = 0; i < nums.length; i += 20) {
+    if (prazo && Date.now() > prazo) return { n, completo: false };
+    const rd = await comRetry(() => mcpCall(apiKey, 'shein_order_detail', { shein_supplier_id: supId, orderNoList: nums.slice(i, i + 20) }));
+    const info = rd.data?.info || rd.info || [];
+    const linhas = info.filter(x => x && x.orderNo && (x.orderTime || x.addTime)).map(x => mapearPedidoShein(supId, x));
+    if (linhas.length) {
+      await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id');
+      linhas.forEach(l => tocar('shein', supId, l.criado_em));
+    }
+    n += linhas.length;
+  }
+  return { n, completo: true };
+}
+
 const ADAPTADORES = {
   shopee: {
     // Por data de ATUALIZAÇÃO: venda nova, cancelamento e devolução de qualquer data.
@@ -706,6 +793,26 @@ const ADAPTADORES = {
     async incremental(apiKey, id, cursor, t, prazo) { return (await gravarPedidosAmazon(apiKey, id, t - 2 * DIA, t, prazo)).n; },
     async bloco(apiKey, id, de, ate, prazo) { return gravarPedidosAmazon(apiKey, id, de, ate, prazo); },
     blocoDias: 7, // a Amazon limita a listagem — blocos maiores, menos chamadas
+  },
+  magalu: {
+    async incremental(apiKey, id, cursor, t, prazo) {
+      const desde = Math.max((cursor.ate_update || t - 2 * DIA) - 600, t - 14 * DIA);
+      const r = await gravarPedidosMagalu(apiKey, id, { updated_at__gte: new Date(desde * SEG).toISOString() }, prazo);
+      if (r.completo) cursor.ate_update = t;
+      return r.n;
+    },
+    async bloco(apiKey, id, de, ate, prazo) { return gravarPedidosMagalu(apiKey, id, { purchased_at__gte: new Date(de * SEG).toISOString(), purchased_at__lte: new Date(ate * SEG).toISOString() }, prazo); },
+    blocoDias: 3,
+  },
+  shein: {
+    async incremental(apiKey, id, cursor, t, prazo) {
+      const desde = Math.max((cursor.ate_update || t - 2 * DIA) - 600, t - 14 * DIA);
+      const r = await gravarPedidosShein(apiKey, id, desde, t, true, prazo);
+      if (r.completo) cursor.ate_update = t;
+      return r.n;
+    },
+    async bloco(apiKey, id, de, ate, prazo) { return gravarPedidosShein(apiKey, id, de, ate, false, prazo); },
+    blocoDias: 3,
   },
 };
 
@@ -774,7 +881,7 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
   }
 
   // ADS é independente dos pedidos (loja autorizada só no app de Ads ainda tem ADS).
-  // Amazon e TikTok: ainda sem ADS na base.
+  // Amazon, TikTok, Magalu e Shein: ainda sem ADS na base.
   if (Date.now() < prazo && (ad.ads || ad.adsCompleto)) {
     try {
       const estAds = estadoAtual?.ads || {};

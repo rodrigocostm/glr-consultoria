@@ -177,7 +177,7 @@ Router.register('vendas', async (params, el) => {
     if (diff < 86400)return `há ${Math.floor(diff/3600)}h`;
     return `há ${Math.floor(diff/86400)} dias`;
   }
-  const platCor = { 'Mercado Livre':'#f59e0b', 'Shopee':'#f97316', 'Amazon':'#94a3b8', 'TikTok Shop':'#25d4d0', 'Magalu':'#0086ff' };
+  const platCor = { 'Mercado Livre':'#f59e0b', 'Shopee':'#f97316', 'Amazon':'#94a3b8', 'TikTok Shop':'#25d4d0', 'Magalu':'#0086ff', 'Shein':'#222222' };
 
   function corMargem(m) {
     if (m>=20) return '#34d399';
@@ -1851,7 +1851,7 @@ Router.register('vendas', async (params, el) => {
     const cor = platCor[p.plataforma]||'#9ca3af';
     const img = p.imagem
       ? `<img src="${p.imagem}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">`
-      : `<div style="width:44px;height:44px;background:var(--border);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;">${p.plataforma==='Shopee'?'🟠':p.plataforma==='Amazon'?'⚫':p.plataforma==='TikTok Shop'?'🎵':'🟡'}</div>`;
+      : `<div style="width:44px;height:44px;background:var(--border);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;">${p.plataforma==='Shopee'?'🟠':p.plataforma==='Amazon'?'⚫':p.plataforma==='TikTok Shop'?'🎵':p.plataforma==='Magalu'?'🔵':p.plataforma==='Shein'?'⬛':'🟡'}</div>`;
 
     const isCancelled = ['cancelled','in_cancel','cancelled_unpaid'].includes((p.status||'').toLowerCase());
     const taxasAuto = p.taxas != null; // tem dados automáticos da API
@@ -2046,7 +2046,7 @@ Router.register('vendas', async (params, el) => {
   // (Amazon, Magalu, conta ainda sincronizando) segue pela busca antiga, na API.
   const STORAGE_THUMBS = 'glr_vendas_thumbs'; // { itemId: url } — imagens já buscadas
   let thumbs = (() => { try { return JSON.parse(localStorage.getItem(STORAGE_THUMBS) || '{}'); } catch (e) { return {}; } })();
-  const idNaBase = c => String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.external_id);
+  const idNaBase = c => String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.param_to_use?.magalu_account_id || c.param_to_use?.shein_supplier_id || c.external_id);
   const diaBR = ts => new Date(ts).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
   function pedidoDaBaseVendas(mkt, r, contaId) {
@@ -2055,13 +2055,17 @@ Router.register('vendas', async (params, el) => {
     const ts = Date.parse(r.criado_em);
     const liq = r.liquido != null ? parseFloat(r.liquido) : null;
     const brutos = Array.isArray(r.itens) ? r.itens : [];
-    if (mkt === 'amazon' || mkt === 'tiktok') {
-      // Amazon/TikTok: sem taxas ainda na base (lucro = venda − custo − imposto, como antes);
-      // produto pelo nome (mesma chave da busca antiga da Amazon — preserva custos salvos)
+    if (mkt !== 'shopee' && mkt !== 'ml') {
+      // Amazon/TikTok/Magalu/Shein: produto pelo nome (mesma chave da busca antiga da
+      // Amazon/Magalu — preserva custos salvos). Taxas: Shein traz o líquido real;
+      // Magalu traz a comissão (líquido = valor − comissão); Amazon/TikTok ainda sem taxas.
+      const tarifa = parseFloat(r.taxas?.tarifa_venda ?? r.taxas?.comissao) || 0;
+      const taxas = liq != null ? { liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0 }
+        : tarifa > 0 ? { liquido: valor - tarifa, comissao: tarifa, taxaServico: 0, imposto: 0, frete: 0, voucher: 0 } : null;
       const itens = brutos.map(i => ({ nome: i.nome || '—', qtd: parseInt(i.qtd) || 1, preco: parseFloat(i.preco) || 0, imagem: i.imagem || '', sku: i.sku || '' }));
-      return { id: r.pedido_id, plataforma: mkt === 'amazon' ? 'Amazon' : 'TikTok Shop', contaId, data: diaBR(ts), dataTs: ts,
+      return { id: r.pedido_id, plataforma: { amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt] || mkt, contaId, data: diaBR(ts), dataTs: ts,
         produto: itens.length > 1 ? `${itens[0].nome} (+${itens.length - 1})` : (itens[0]?.nome || r.pedido_id), imagem: itens[0]?.imagem || '',
-        qtd: itens.reduce((t, i) => t + i.qtd, 0) || 1, valor, status, itens, taxas: null, _base: true };
+        qtd: itens.reduce((t, i) => t + i.qtd, 0) || 1, valor, status, itens, taxas, _base: true };
     }
     if (mkt === 'shopee') {
       // Shopee: chave de produto = nome (igual à busca antiga — preserva custos já salvos)
@@ -2090,7 +2094,7 @@ Router.register('vendas', async (params, el) => {
     if (!ok.length) return out;
     const ini = new Date(`${dataFrom}T00:00:00-03:00`).toISOString();
     const fim = new Date(new Date(`${dataTo}T00:00:00-03:00`).getTime() + 86400000).toISOString();
-    await Promise.all(['shopee', 'ml', 'amazon', 'tiktok'].map(async mkt => {
+    await Promise.all(['shopee', 'ml', 'amazon', 'tiktok', 'magalu', 'shein'].map(async mkt => {
       const doMkt = ok.filter(c => BaseDados.mktDe(c.marketplace) === mkt);
       if (!doMkt.length) return;
       const contaDe = Object.fromEntries(doMkt.map(c => [idNaBase(c), c.external_id]));
@@ -2808,6 +2812,8 @@ Router.register('vendas', async (params, el) => {
           <option value="Shopee">🟠 Shopee</option>
           <option value="Amazon">⚫ Amazon</option>
           <option value="TikTok Shop">🎵 TikTok Shop</option>
+          <option value="Magalu">🔵 Magalu</option>
+          <option value="Shein">⬛ Shein</option>
         </select>
         <button id="btn-buscar" class="btn-primary" style="padding:8px 16px;">🔄 Atualizar</button>
       </div>

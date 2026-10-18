@@ -17,7 +17,7 @@ Router.register('vendometro', (params, el) => {
   const N = v => Math.round(v || 0).toLocaleString('pt-BR');
   const h = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const lerJSON = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v ?? d; } catch (e) { return d; } };
-  const MKT = { ml: { sigla: 'ML', nome: 'Mercado Livre', cor: '#d9a400' }, shopee: { sigla: 'SH', nome: 'Shopee', cor: '#eb6834' }, amazon: { sigla: 'AMZ', nome: 'Amazon', cor: '#8b95a7' }, tiktok: { sigla: 'TT', nome: 'TikTok Shop', cor: '#1fb8b4' } };
+  const MKT = { ml: { sigla: 'ML', nome: 'Mercado Livre', cor: '#d9a400' }, shopee: { sigla: 'SH', nome: 'Shopee', cor: '#eb6834' }, amazon: { sigla: 'AMZ', nome: 'Amazon', cor: '#8b95a7' }, tiktok: { sigla: 'TT', nome: 'TikTok Shop', cor: '#1fb8b4' }, magalu: { sigla: 'MGL', nome: 'Magalu', cor: '#0a84ff' }, shein: { sigla: 'SHN', nome: 'Shein', cor: '#9aa0aa' } };
   const HORA = 3600e3, DIA = 24 * HORA;
   const horaBRT = t => new Date(t - 3 * HORA).getUTCHours();
   const isoDia = t => new Date(t - 3 * HORA).toISOString().slice(0, 10);
@@ -71,7 +71,7 @@ Router.register('vendometro', (params, el) => {
       if (cfgPortal && !st.contasPortal) {
         const ids = new Set((cfgPortal.contaIds || []).map(String));
         st.contasPortal = (await MarketplaceAPI.listAccounts() || []).filter(c => ids.has(String(c.external_id))).map(c => ({
-          mkt: BaseDados.mktDe(c.marketplace), id: String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.external_id), nome: c.tags?.find?.(t => t?.name)?.name || c.nickname || c.external_id,
+          mkt: BaseDados.mktDe(c.marketplace), id: String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.param_to_use?.magalu_account_id || c.param_to_use?.shein_supplier_id || c.external_id), nome: c.tags?.find?.(t => t?.name)?.name || c.nickname || c.external_id,
         })).filter(c => c.mkt);
       }
       const agora = Date.now(), hoje = isoDia(agora);
@@ -278,7 +278,7 @@ Router.register('vendometro', (params, el) => {
   window._vmTodos = () => { st.todos = !st.todos; render(); };
   window._vmTelaCheia = () => { const e = document.querySelector('.vm'); if (!document.fullscreenElement) e?.requestFullscreen?.(); else document.exitFullscreen?.(); };
 
-  const filtro = [['todos', 'Todas'], ['ml', 'Mercado Livre'], ['shopee', 'Shopee'], ['amazon', 'Amazon'], ['tiktok', 'TikTok']];
+  const filtro = [['todos', 'Todas'], ['ml', 'Mercado Livre'], ['shopee', 'Shopee'], ['amazon', 'Amazon'], ['tiktok', 'TikTok'], ['magalu', 'Magalu'], ['shein', 'Shein']];
   el.innerHTML = `<div class="vm">
     <div class="vm-hero">
       <img class="vm-marca-agua" src="logo.png" alt="">
