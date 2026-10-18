@@ -26,6 +26,7 @@ Router.register('vendometro', (params, el) => {
     mkt: (() => { try { return localStorage.getItem('glr_vm_mkt') || 'todos'; } catch (e) { return 'todos'; } })(),
     hoje: [], ontem: [], ads: [], dia: null, visitas: {}, visitasEm: 0, visitasProg: '',
     carregando: false, erro: null, atualizadoEm: 0, valorMostrado: 0, todos: false, grafico: null,
+    ...(() => { try { const v = JSON.parse(localStorage.getItem('glr_vm_sel') || '{}'); return { cliente: v.cliente || '', conta: v.conta || '' }; } catch (e) { return { cliente: '', conta: '' }; } })(),
   };
 
   // ── Contas da carteira: "ml:123" → cliente ──
@@ -38,7 +39,7 @@ Router.register('vendometro', (params, el) => {
       for (const ct of contas || []) {
         const mkt = BaseDados.mktDe(ct.marketplace); if (!mkt) continue;
         const id = String(ct.param_to_use?.shopId || ct.param_to_use?.meliUserId || ct.contaId || ct.external_id);
-        mapa.set(`${mkt}:${id}`, { cli, mkt, id });
+        mapa.set(`${mkt}:${id}`, { cli, mkt, id, nome: ct.tags?.[0]?.name || ct.nickname || id });
       }
     }
     return mapa;
@@ -103,10 +104,12 @@ Router.register('vendometro', (params, el) => {
   // ── Cálculo ──
   function calcular() {
     const contas = contasCarteira();
-    const passa = k => st.mkt === 'todos' || k.startsWith(st.mkt + ':');
+    // filtros: plataforma + cliente + conta. Com um cliente escolhido o ranking vira de CONTAS
+    const passa = k => { const ct = contas.get(k); return (st.mkt === 'todos' || k.startsWith(st.mkt + ':')) && (!st.cliente || String(ct?.cli.id) === st.cliente) && (!st.conta || k === st.conta); };
+    const porConta = !!st.cliente;
     const clientes = new Map();
-    const cli = c => { if (!clientes.has(c.id)) clientes.set(c.id, { nome: String(c.nome || ''), fat: 0, ped: 0, un: 0, ads: 0, vis: 0, temML: false, mkts: new Set() }); return clientes.get(c.id); };
-    for (const [k, ct] of contas) if (passa(k)) { const c = cli(ct.cli); c.mkts.add(ct.mkt); if (ct.mkt === 'ml') c.temML = true; }
+    const linha = ct => { const id = porConta ? `${ct.mkt}:${ct.id}` : ct.cli.id; if (!clientes.has(id)) clientes.set(id, { nome: String(porConta ? ct.nome : ct.cli.nome || ''), fat: 0, ped: 0, un: 0, ads: 0, vis: 0, temML: false, mkts: new Set() }); return clientes.get(id); };
+    for (const [k, ct] of contas) if (passa(k)) { const c = linha(ct); c.mkts.add(ct.mkt); if (ct.mkt === 'ml') c.temML = true; }
     const T = { fat: 0, ped: 0, un: 0, ads: 0, vis: 0, pedML: 0, fatOntem: 0, fatOntemAgora: 0, hoje: Array(24).fill(0), ontem: Array(24).fill(0) };
     const limOntem = Date.now() - DIA;
     for (const p of st.hoje) {
@@ -115,7 +118,7 @@ Router.register('vendometro', (params, el) => {
       const v = Number(p.valor_bruto) || 0, t = new Date(p.criado_em).getTime();
       const u = (Array.isArray(p.itens) ? p.itens : []).reduce((s, i) => s + (Number(i.qtd) || 1), 0) || 1;
       T.fat += v; T.ped++; T.un += u; T.hoje[horaBRT(t)] += v; if (ct.mkt === 'ml') T.pedML++;
-      const c = cli(ct.cli); c.fat += v; c.ped++; c.un += u;
+      const c = linha(ct); c.fat += v; c.ped++; c.un += u;
     }
     for (const p of st.ontem) {
       const k = `${p.marketplace}:${p.conta_id}`;
@@ -126,11 +129,11 @@ Router.register('vendometro', (params, el) => {
     for (const a of st.ads) {
       const k = `${BaseDados.mktDe(a.marketplace)}:${a.conta_id}`, ct = contas.get(k);
       if (!ct || !passa(k)) continue;
-      const g = Number(a.gasto) || 0; T.ads += g; cli(ct.cli).ads += g;
+      const g = Number(a.gasto) || 0; T.ads += g; linha(ct).ads += g;
     }
     for (const [k, v] of Object.entries(st.visitas)) {
       const ct = contas.get(k); if (!ct || !passa(k)) continue;
-      T.vis += v; cli(ct.cli).vis += v;
+      T.vis += v; linha(ct).vis += v;
     }
     T.clientes = [...clientes.values()].sort((a, b) => b.fat - a.fat || b.ped - a.ped || a.nome.localeCompare(b.nome));
     T.vendendo = T.clientes.filter(c => c.ped > 0).length;
@@ -151,6 +154,7 @@ Router.register('vendometro', (params, el) => {
 
   function render() {
     const root = document.getElementById('vm-root'); if (!root) return;
+    montarSeletores();
     const T = calcular();
     const varPct = T.fatOntemAgora > 0 ? (T.fat / T.fatOntemAgora - 1) * 100 : null;
     const tacos = T.fat > 0 ? T.ads / T.fat * 100 : 0;
@@ -166,7 +170,7 @@ Router.register('vendometro', (params, el) => {
     const met = (rot, val, sub = '') => `<div class="vm-met"><span>${rot}</span><b>${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
     setTxt('vm-metricas',
       met('Pedidos', N(T.ped)) + met('Unidades', N(T.un)) +
-      met('Ticket médio', R$(T.ped ? T.fat / T.ped : 0)) + met('Clientes vendendo', `${T.vendendo}<i>/${T.clientes.length}</i>`) +
+      met('Ticket médio', R$(T.ped ? T.fat / T.ped : 0)) + met(st.cliente ? 'Contas vendendo' : 'Clientes vendendo', `${T.vendendo}<i>/${T.clientes.length}</i>`) +
       met('ADS investido', R$(T.ads, 0), 'hoje') + met('TACOS', T.fat > 0 ? tacos.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—', 'ADS ÷ vendas') +
       met('Visitas', visTxt, st.mkt === 'shopee' ? 'Shopee não informa' : 'Mercado Livre') + met('Conversão', conv == null ? '—' : conv.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%', 'pedidos ML ÷ visitas'));
 
@@ -179,8 +183,8 @@ Router.register('vendometro', (params, el) => {
           <div class="vm-cli-s"><span>${N(c.ped)} ped.</span><span>ADS ${R$(c.ads, 0)}</span><span>${c.temML ? (temVisitas ? N(c.vis) : '…') : '—'} visitas</span></div>
         </div>
         <div class="vm-cli-v">${R$(c.fat)}</div>
-      </div>`).join('') || '<div class="vm-vazio">Nenhum cliente com conta vinculada nesta plataforma.</div>');
-    setTxt('vm-ver-todos', T.clientes.length > 10 ? `<button onclick="window._vmTodos()">${st.todos ? 'Mostrar top 10' : `Ver todos os ${T.clientes.length} clientes`}</button>` : '');
+      </div>`).join('') || `<div class="vm-vazio">Nenhuma conta ${st.cliente ? 'deste cliente ' : 'vinculada '}nesta plataforma.</div>`);
+    setTxt('vm-ver-todos', T.clientes.length > 10 ? `<button onclick="window._vmTodos()">${st.todos ? 'Mostrar top 10' : `Ver todos os ${T.clientes.length} ${st.cliente ? 'contas' : 'clientes'}`}</button>` : '');
 
     setTxt('vm-status', st.erro ? `<span style="color:#f87171">⚠ ${h(st.erro)}</span>`
       : `${st.carregando ? '⏳ atualizando…' : `atualizado às ${new Date(st.atualizadoEm || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`} · base sincroniza a cada 15 min${st.visitasProg ? ' · ' + st.visitasProg : ''}`);
@@ -238,6 +242,23 @@ Router.register('vendometro', (params, el) => {
   }
 
   // ── Ações ──
+  function salvarSel() { try { localStorage.setItem('glr_vm_sel', JSON.stringify({ cliente: st.cliente, conta: st.conta })); } catch (e) {} }
+  window._vmCliente = v => { st.cliente = v; st.conta = ''; st.todos = false; salvarSel(); render(); };
+  window._vmConta = v => { st.conta = v; salvarSel(); render(); };
+  // listas de cliente e conta (só clientes com conta vinculada)
+  function montarSeletores() {
+    const contas = [...contasCarteira().entries()];
+    const clientes = new Map(); for (const [, ct] of contas) clientes.set(String(ct.cli.id), ct.cli.nome);
+    if (st.cliente && !clientes.has(st.cliente)) { st.cliente = ''; st.conta = ''; }
+    const doCli = contas.filter(([, ct]) => String(ct.cli.id) === st.cliente);
+    if (st.conta && !doCli.some(([k]) => k === st.conta)) st.conta = '';
+    const sc = document.getElementById('vm-sel-cliente'), sk = document.getElementById('vm-sel-conta');
+    if (sc) sc.innerHTML = `<option value="">Todos os clientes</option>` + [...clientes].sort((a, b) => String(a[1]).localeCompare(String(b[1]))).map(([id, n]) => `<option value="${h(id)}" ${id === st.cliente ? 'selected' : ''}>${h(n)}</option>`).join('');
+    if (sk) { sk.hidden = doCli.length < 2; sk.innerHTML = `<option value="">Todas as contas</option>` + doCli.map(([k, ct]) => `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${MKT[ct.mkt].sigla} · ${h(ct.nome)}</option>`).join(''); }
+    const nomeCli = clientes.get(st.cliente), conta = doCli.find(([k]) => k === st.conta)?.[1];
+    const t = document.getElementById('vm-hoje'); if (t) t.textContent = `Vendas hoje · ${nomeCli ? nomeCli + (conta ? ` · ${MKT[conta.mkt].sigla} ${conta.nome}` : '') : 'carteira GLR'}`;
+    const r = document.getElementById('vm-rank-t'); if (r) r.textContent = st.cliente ? 'Ranking das contas' : 'Ranking de clientes';
+  }
   window._vmMkt = v => { st.mkt = v; try { localStorage.setItem('glr_vm_mkt', v); } catch (e) {} document.querySelectorAll('.vm-filtro button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); render(); };
   window._vmTodos = () => { st.todos = !st.todos; render(); };
   window._vmTelaCheia = () => { const e = document.querySelector('.vm'); if (!document.fullscreenElement) e?.requestFullscreen?.(); else document.exitFullscreen?.(); };
@@ -250,11 +271,13 @@ Router.register('vendometro', (params, el) => {
         <div class="vm-marca"><img src="logo.png" alt="GLR"><div><b>GLR Consultoria</b><span>Gestão de marketplaces</span></div></div>
         <div class="vm-titulo"><i></i><span>Vendômetro</span><i></i></div>
         <div class="vm-acoes">
+          <select class="vm-sel" id="vm-sel-cliente" onchange="window._vmCliente(this.value)"></select>
+          <select class="vm-sel" id="vm-sel-conta" onchange="window._vmConta(this.value)" hidden></select>
           <div class="vm-filtro">${filtro.map(([v, t]) => `<button data-v="${v}" class="${st.mkt === v ? 'on' : ''}" onclick="window._vmMkt('${v}')">${t}</button>`).join('')}</div>
           <button class="vm-cheia" title="Tela cheia" onclick="window._vmTelaCheia()">⛶</button>
         </div>
       </div>
-      <div class="vm-hoje">Vendas hoje · carteira GLR</div>
+      <div class="vm-hoje" id="vm-hoje">Vendas hoje · carteira GLR</div>
       <div class="vm-relogio" id="vm-relogio"></div>
       <div><div class="vm-total"><span class="vm-rs">R$</span><span id="vm-total">0,00</span></div></div>
       <div class="vm-var" id="vm-var"></div>
@@ -262,7 +285,7 @@ Router.register('vendometro', (params, el) => {
     <div class="vm-grid" id="vm-root">
       <div class="vm-card"><div class="vm-card-t">Métricas principais</div><div class="vm-mets" id="vm-metricas"></div></div>
       <div class="vm-card"><div class="vm-card-t">Tendência de vendas <small>por hora · hoje × ontem</small></div><div class="vm-graf"><canvas id="vm-grafico"></canvas></div></div>
-      <div class="vm-card"><div class="vm-card-t">Ranking de clientes <small>vendas de hoje</small></div><div class="vm-rank" id="vm-ranking"></div><div class="vm-todos" id="vm-ver-todos"></div></div>
+      <div class="vm-card"><div class="vm-card-t"><span id="vm-rank-t">Ranking de clientes</span> <small>vendas de hoje</small></div><div class="vm-rank" id="vm-ranking"></div><div class="vm-todos" id="vm-ver-todos"></div></div>
     </div>
     <div class="vm-rodape"><img src="logo.png" alt=""><span>GLR Consultoria · consultoriaglr.com.br</span><span class="vm-status" id="vm-status"></span></div>
   </div>
@@ -280,8 +303,10 @@ Router.register('vendometro', (params, el) => {
     .vm-titulo i{width:70px;height:1px;background:rgba(255,255,255,.45)}
     .vm-acoes{display:flex;justify-content:flex-end;gap:8px;align-items:center}
     .vm-filtro{display:flex;border:1px solid rgba(255,255,255,.25);border-radius:9px;overflow:hidden}
-    .vm-filtro button{background:none;border:0;color:rgba(255,255,255,.75);font-size:12px;padding:6px 10px;cursor:pointer}
+    .vm-filtro button{white-space:nowrap;background:none;border:0;color:rgba(255,255,255,.75);font-size:12px;padding:6px 10px;cursor:pointer}
     .vm-filtro button.on{background:rgba(255,255,255,.95);color:#141634;font-weight:700}
+    .vm-sel{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);border-radius:9px;color:#fff;font-size:12px;padding:6px 8px;max-width:190px}
+    .vm-sel option{color:#141634}
     .vm-cheia{background:none;border:1px solid rgba(255,255,255,.25);border-radius:9px;color:#fff;width:32px;height:30px;cursor:pointer;font-size:15px}
     .vm-hoje{position:relative;margin-top:14px;font-size:26px;font-weight:800}
     .vm-relogio{position:relative;display:inline-block;margin-top:8px;background:rgba(109,111,245,.9);padding:4px 14px;border-radius:6px;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -292,6 +317,7 @@ Router.register('vendometro', (params, el) => {
     .vm-up{color:#4ade80}.vm-down{color:#f87171}
     .vm-grid{display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1.3fr) minmax(320px,1fr);gap:16px;margin-top:18px}
     @media (max-width:1180px){.vm-grid{grid-template-columns:1fr 1fr}.vm-grid>.vm-card:nth-child(2){grid-column:1/-1;order:-1}}
+    @media (max-width:1100px){.vm-topo{grid-template-columns:1fr}.vm-acoes,.vm-marca{justify-content:center;flex-wrap:wrap}}
     @media (max-width:720px){.vm-grid{grid-template-columns:1fr}.vm-topo{grid-template-columns:1fr}.vm-acoes,.vm-marca{justify-content:center}#vm-total{font-size:48px}.vm-rs{font-size:24px}.vm-total{padding:8px 20px}.vm-titulo i{display:none}}
     .vm-card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;min-width:0;display:flex;flex-direction:column}
     .vm-card-t{font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:12px}.vm-card-t small{font-weight:400;font-size:11px;color:var(--text-muted);margin-left:6px}
