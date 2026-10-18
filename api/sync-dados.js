@@ -1,5 +1,5 @@
 // ============================================================
-// GLR Consultoria — Motor de sincronização de dados (Shopee + Mercado Livre)
+// GLR Consultoria — Motor de sincronização de dados (Shopee, Mercado Livre, Amazon e TikTok Shop)
 // ------------------------------------------------------------
 // Chamado pelo agendador do próprio Supabase (pg_cron, ver
 // supabase-motor-dados.sql): a cada 15 min ("incremental") e toda noite
@@ -92,13 +92,13 @@ const dataBR = unix => { const d = new Date((unix - 3 * 3600) * SEG); const p = 
 
 // ── Contas a sincronizar: TODAS as lojas Shopee e Mercado Livre conectadas
 //    no conector + as vinculadas a clientes + as do piloto do Agente ──
-const MKT = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : null; };
+const MKT = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : m === 'amazon' ? 'amazon' : ['tiktok', 'tiktok_shop', 'tiktokshop'].includes(m) ? 'tiktok' : null; };
 async function contasParaSincronizar(apiKey) {
   const chaves = new Map(); // "mkt:id" → { mkt, id }
   const add = (m, id) => { const mkt = MKT(m); if (mkt && id) chaves.set(`${mkt}:${id}`, { mkt, id: String(id) }); };
   try {
     const r = await comRetry(() => mcpCall(apiKey, 'list_accounts', {}));
-    for (const c of (r.data?.accounts || r.accounts || [])) add(c.marketplace, c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id);
+    for (const c of (r.data?.accounts || r.accounts || [])) add(c.marketplace, c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.external_id);
   } catch (e) { console.warn('[sync-dados] list_accounts falhou, seguindo só com os vínculos:', e.message); }
   const vinc = (await sbSelect('glr_storage', 'chave=eq.glr_mc_vinculos&select=dados'))[0]?.dados || {};
   for (const lista of Object.values(vinc)) for (const c of (Array.isArray(lista) ? lista : [])) add(c.marketplace, c.external_id);
@@ -566,6 +566,102 @@ async function atualizarOportunidades(apiKey, mkt, id, estAds, t, prazo) {
   };
 }
 
+// ── TikTok Shop: a busca já devolve o pedido inteiro (itens e pagamento) ──
+//    valor = produtos − desconto do vendedor (o subsídio da plataforma é do
+//    vendedor; frete do comprador fora — mesma regra de Shopee/ML).
+//    UNPAID não entra; CANCELLED = cancelado.
+function mapearPedidoTikTok(openId, o) {
+  const pg = o.payment || {};
+  const grupos = new Map();
+  for (const li of (o.line_items || [])) { // a TikTok repete a linha por unidade
+    const k = li.sku_id || li.product_id || li.id;
+    const g = grupos.get(k) || { item_id: String(li.product_id || ''), sku: li.seller_sku || '', nome: li.product_name || '—', variacao: li.sku_name || '', qtd: 0, preco: r2((parseFloat(li.original_price) || 0) - (parseFloat(li.seller_discount) || 0)), imagem: li.sku_image || '' };
+    g.qtd++; grupos.set(k, g);
+  }
+  const itens = [...grupos.values()];
+  const somaItens = r2(itens.reduce((s, i) => s + i.preco * i.qtd, 0));
+  const valor = pg.original_total_product_price != null ? r2((parseFloat(pg.original_total_product_price) || 0) - (parseFloat(pg.seller_discount) || 0)) : somaItens;
+  const status = String(o.status || '').toUpperCase();
+  return {
+    marketplace: 'tiktok', conta_id: String(openId), pedido_id: String(o.id),
+    criado_em: isoDeUnix(o.create_time), atualizado_mkt: o.update_time ? isoDeUnix(o.update_time) : null,
+    status_original: o.status || '', situacao: status === 'CANCELLED' ? 'cancelado' : 'valido',
+    valor_bruto: valor, valor_itens: somaItens, frete: null,
+    taxas: { desconto_plataforma: r2(pg.platform_discount), frete_comprador: r2(pg.shipping_fee), total_pago: r2(pg.total_amount) },
+    liquido: null, itens, sincronizado_em: new Date().toISOString(),
+  };
+}
+async function gravarPedidosTikTok(apiKey, openId, filtro, prazo) {
+  let n = 0, token = null;
+  for (let pag = 0; pag < 300; pag++) {
+    if (prazo && Date.now() > prazo) return { n, completo: false };
+    const r = await comRetry(() => mcpCall(apiKey, 'tiktok_search_orders', { open_id: openId, page_size: 100, ...filtro, ...(token ? { page_token: token } : {}) }));
+    const d = r.data?.orders ? r.data : r;
+    const orders = d.orders || [];
+    const linhas = orders.filter(o => o && o.id && o.create_time && String(o.status || '').toUpperCase() !== 'UNPAID').map(o => mapearPedidoTikTok(openId, o));
+    if (linhas.length) {
+      await sbUpsert('glr_pedidos', [...new Map(linhas.map(l => [l.pedido_id, l])).values()], 'marketplace,conta_id,pedido_id');
+      linhas.forEach(l => tocar('tiktok', openId, l.criado_em));
+    }
+    n += linhas.length;
+    token = d.next_page_token;
+    if (!token || !orders.length) break;
+  }
+  return { n, completo: true };
+}
+
+// ── Amazon: a lista traz número, status, total e data; os itens (SKU, nome,
+//    preço) vêm de amazon_get_order_items — buscados uma vez por pedido (a
+//    Amazon limita as chamadas, então no máx. AMAZON_ITENS_POR_RODADA por loja).
+//    valor = soma dos itens (sem frete); sem itens ainda, o total do pedido.
+//    Pending (não pago) não entra; Canceled = cancelado.
+const AMAZON_ITENS_POR_RODADA = 25;
+async function gravarPedidosAmazon(apiKey, accId, deUnix, ateUnix, prazo) {
+  let n = 0, token = null, itensFeitos = 0;
+  for (let pag = 0; pag < 100; pag++) {
+    if (prazo && Date.now() > prazo) return { n, completo: false };
+    const params = token ? { amazon_account_id: accId, next_token: token }
+      : { amazon_account_id: accId, created_after: new Date(deUnix * SEG).toISOString(), created_before: new Date(Math.min(ateUnix, agora() - 130) * SEG).toISOString(), limit: 100 };
+    const r = await comRetry(() => mcpCall(apiKey, 'amazon_list_orders', params));
+    const d = r.data?.orders ? r.data : r;
+    const orders = (d.orders || []).filter(o => o && o.amazon_order_id && o.purchase_date && !/^pending/i.test(o.status || ''));
+    if (orders.length) {
+      const ids = orders.map(o => `"${o.amazon_order_id}"`).join(',');
+      const existentes = new Map((await sbSelect('glr_pedidos', `marketplace=eq.amazon&conta_id=eq.${encodeURIComponent(accId)}&pedido_id=in.(${encodeURIComponent(ids)})&select=pedido_id,itens,valor_bruto,valor_itens`)).map(x => [x.pedido_id, x]));
+      const linhas = [];
+      for (const o of orders) {
+        const ant = existentes.get(o.amazon_order_id);
+        const cancelado = /cancel/i.test(o.status || '');
+        let itens = Array.isArray(ant?.itens) && ant.itens.length ? ant.itens : null;
+        if (!itens && !cancelado && itensFeitos < AMAZON_ITENS_POR_RODADA && (!prazo || Date.now() < prazo)) {
+          try {
+            const ri = await comRetry(() => mcpCall(apiKey, 'amazon_get_order_items', { amazon_account_id: accId, order_id: o.amazon_order_id }), 2);
+            const lista = (ri.data?.items || ri.items || []);
+            itens = lista.map(i => { const q = parseInt(i.quantity) || 1; return { item_id: i.asin || '', sku: i.seller_sku || '', nome: i.title || '—', qtd: q, preco: r2((parseFloat(i.price) || 0) / q) }; });
+            itensFeitos++;
+          } catch (e) { /* tenta de novo na próxima rodada */ }
+        }
+        const somaItens = itens ? r2(itens.reduce((s, i) => s + i.preco * i.qtd, 0)) : null;
+        const valor = somaItens || r2(o.total) || r2(ant?.valor_bruto);
+        linhas.push({
+          marketplace: 'amazon', conta_id: String(accId), pedido_id: String(o.amazon_order_id),
+          criado_em: new Date(o.purchase_date).toISOString(), atualizado_mkt: null,
+          status_original: o.status || '', situacao: cancelado ? 'cancelado' : 'valido',
+          valor_bruto: valor, valor_itens: somaItens, frete: null,
+          taxas: { canal: o.fulfillment_channel || null, total_pedido: o.total != null ? r2(o.total) : null },
+          liquido: null, itens: itens || [], sincronizado_em: new Date().toISOString(),
+        });
+      }
+      await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id');
+      linhas.forEach(l => tocar('amazon', accId, l.criado_em));
+      n += linhas.length;
+    }
+    token = d.next_token;
+    if (!token || d.tem_mais === false) break;
+  }
+  return { n, completo: true };
+}
+
 const ADAPTADORES = {
   shopee: {
     // Por data de ATUALIZAÇÃO: venda nova, cancelamento e devolução de qualquer data.
@@ -593,6 +689,23 @@ const ADAPTADORES = {
     async bloco(apiKey, id, de, ate, prazo) { return gravarPedidosML(apiKey, id, dataBR(de), dataBR(ate), prazo); },
     taxas: enriquecerTaxasML,
     ads: gravarAdsML,
+  },
+  tiktok: {
+    // Por data de ATUALIZAÇÃO (pega cancelamento de venda antiga também)
+    async incremental(apiKey, id, cursor, t, prazo) {
+      const desde = Math.max((cursor.ate_update || t - 2 * DIA) - 600, t - 14 * DIA);
+      const r = await gravarPedidosTikTok(apiKey, id, { update_time_ge: desde }, prazo);
+      if (r.completo) cursor.ate_update = t;
+      return r.n;
+    },
+    async bloco(apiKey, id, de, ate, prazo) { return gravarPedidosTikTok(apiKey, id, { create_time_ge: de, create_time_lt: ate + 1 }, prazo); },
+  },
+  amazon: {
+    // A Amazon filtra só por data da compra: relê os 2 últimos dias a cada rodada;
+    // cancelamento mais antigo entra na reconferência diária dos 45 dias.
+    async incremental(apiKey, id, cursor, t, prazo) { return (await gravarPedidosAmazon(apiKey, id, t - 2 * DIA, t, prazo)).n; },
+    async bloco(apiKey, id, de, ate, prazo) { return gravarPedidosAmazon(apiKey, id, de, ate, prazo); },
+    blocoDias: 7, // a Amazon limita a listagem — blocos maiores, menos chamadas
   },
 };
 
@@ -637,8 +750,9 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
     while (Date.now() < prazoConta) {
       const histAte = cursor.historico_ate || t;
       let de, ate, tipo;
-      if (histAte > limite) { de = Math.max(histAte - DIA, limite); ate = histAte - 1; tipo = 'hist'; }
-      else if (cursor.reproc_de && cursor.reproc_de < cursor.reproc_ate) { de = cursor.reproc_de; ate = Math.min(de + DIA, cursor.reproc_ate) - 1; tipo = 'reproc'; }
+      const passo = (ad.blocoDias || 1) * DIA;
+      if (histAte > limite) { de = Math.max(histAte - passo, limite); ate = histAte - 1; tipo = 'hist'; }
+      else if (cursor.reproc_de && cursor.reproc_de < cursor.reproc_ate) { de = cursor.reproc_de; ate = Math.min(de + passo, cursor.reproc_ate) - 1; tipo = 'reproc'; }
       else break;
       const r = await ad.bloco(apiKey, shopId, de, ate, prazoConta);
       gravados += r.n;
@@ -660,7 +774,8 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
   }
 
   // ADS é independente dos pedidos (loja autorizada só no app de Ads ainda tem ADS).
-  if (Date.now() < prazo) {
+  // Amazon e TikTok: ainda sem ADS na base.
+  if (Date.now() < prazo && (ad.ads || ad.adsCompleto)) {
     try {
       const estAds = estadoAtual?.ads || {};
       if (ad.adsCompleto) {
@@ -678,7 +793,7 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
   }
   // Oportunidades de ADS — 1x por dia por loja, depois das 06:00 (Brasília), se sobrar tempo
   const horaOp = new Date((t - 3 * 3600) * SEG).getUTCHours();
-  if (horaOp >= 6 && estadoAtual?.oport?.dia !== dataBR(t) && Date.now() < prazo - 20000) {
+  if ((mkt === 'shopee' || mkt === 'ml') && horaOp >= 6 && estadoAtual?.oport?.dia !== dataBR(t) && Date.now() < prazo - 20000) {
     try {
       const cur = await atualizarOportunidades(apiKey, mkt, shopId, estadoAtual?.ads, t, Math.min(prazo, Date.now() + 40000));
       if (cur) await salvarEstado(mkt, shopId, 'oportunidades', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: cur.candidatos.length, cursor: cur });

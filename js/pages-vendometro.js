@@ -17,7 +17,7 @@ Router.register('vendometro', (params, el) => {
   const N = v => Math.round(v || 0).toLocaleString('pt-BR');
   const h = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const lerJSON = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v ?? d; } catch (e) { return d; } };
-  const MKT = { ml: { sigla: 'ML', nome: 'Mercado Livre', cor: '#d9a400' }, shopee: { sigla: 'SH', nome: 'Shopee', cor: '#eb6834' } };
+  const MKT = { ml: { sigla: 'ML', nome: 'Mercado Livre', cor: '#d9a400' }, shopee: { sigla: 'SH', nome: 'Shopee', cor: '#eb6834' }, amazon: { sigla: 'AMZ', nome: 'Amazon', cor: '#8b95a7' }, tiktok: { sigla: 'TT', nome: 'TikTok Shop', cor: '#1fb8b4' } };
   const HORA = 3600e3, DIA = 24 * HORA;
   const horaBRT = t => new Date(t - 3 * HORA).getUTCHours();
   const isoDia = t => new Date(t - 3 * HORA).toISOString().slice(0, 10);
@@ -71,7 +71,7 @@ Router.register('vendometro', (params, el) => {
       if (cfgPortal && !st.contasPortal) {
         const ids = new Set((cfgPortal.contaIds || []).map(String));
         st.contasPortal = (await MarketplaceAPI.listAccounts() || []).filter(c => ids.has(String(c.external_id))).map(c => ({
-          mkt: BaseDados.mktDe(c.marketplace), id: String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id), nome: c.nickname || c.external_id,
+          mkt: BaseDados.mktDe(c.marketplace), id: String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.external_id), nome: c.tags?.find?.(t => t?.name)?.name || c.nickname || c.external_id,
         })).filter(c => c.mkt);
       }
       const agora = Date.now(), hoje = isoDia(agora);
@@ -174,7 +174,7 @@ Router.register('vendometro', (params, el) => {
     const tacos = T.fat > 0 ? T.ads / T.fat * 100 : 0;
     const conv = T.vis > 0 ? T.pedML / T.vis * 100 : null;
     const temVisitas = Object.keys(st.visitas).length > 0;
-    const visTxt = st.mkt === 'shopee' ? '—' : (temVisitas ? N(T.vis) : '…');
+    const visTxt = st.mkt !== 'todos' && st.mkt !== 'ml' ? '—' : (temVisitas ? N(T.vis) : '…');
 
     const big = document.getElementById('vm-total');
     if (big) contarAte(big, T.fat);
@@ -186,7 +186,7 @@ Router.register('vendometro', (params, el) => {
       met('Pedidos', N(T.ped)) + met('Unidades', N(T.un)) +
       met('Ticket médio', R$(T.ped ? T.fat / T.ped : 0)) + met(st.cliente ? 'Contas vendendo' : 'Clientes vendendo', `${T.vendendo}<i>/${T.clientes.length}</i>`) +
       met('ADS investido', R$(T.ads, 0), 'hoje') + met('TACOS', T.fat > 0 ? tacos.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—', 'ADS ÷ vendas') +
-      met('Visitas', visTxt, st.mkt === 'shopee' ? 'Shopee não informa' : 'Mercado Livre') + met('Conversão', conv == null ? '—' : conv.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%', 'pedidos ML ÷ visitas'));
+      met('Visitas', visTxt, st.mkt !== 'todos' && st.mkt !== 'ml' ? 'só Mercado Livre informa' : 'Mercado Livre') + met('Conversão', conv == null ? '—' : conv.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%', 'pedidos ML ÷ visitas'));
 
     const lista = st.todos ? T.clientes : T.clientes.slice(0, 10);
     setTxt('vm-ranking', lista.map((c, i) => `
@@ -278,7 +278,7 @@ Router.register('vendometro', (params, el) => {
   window._vmTodos = () => { st.todos = !st.todos; render(); };
   window._vmTelaCheia = () => { const e = document.querySelector('.vm'); if (!document.fullscreenElement) e?.requestFullscreen?.(); else document.exitFullscreen?.(); };
 
-  const filtro = [['todos', 'Todas'], ['ml', 'Mercado Livre'], ['shopee', 'Shopee']];
+  const filtro = [['todos', 'Todas'], ['ml', 'Mercado Livre'], ['shopee', 'Shopee'], ['amazon', 'Amazon'], ['tiktok', 'TikTok']];
   el.innerHTML = `<div class="vm">
     <div class="vm-hero">
       <img class="vm-marca-agua" src="logo.png" alt="">

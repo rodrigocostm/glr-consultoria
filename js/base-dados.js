@@ -17,7 +17,7 @@ const BaseDados = (() => {
   const TTL_MS = 60 * 1000;
   let cache = null, cacheEm = 0, emAndamento = null, avisoTimer = null, canal = null;
 
-  const mktDe = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : null; };
+  const mktDe = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : m === 'amazon' ? 'amazon' : ['tiktok', 'tiktok_shop', 'tiktokshop'].includes(m) ? 'tiktok' : null; };
   const chave = (mkt, id) => `${mktDe(mkt)}:${id}`;
   const inicioDiaBRT = iso => new Date(`${iso}T00:00:00-03:00`).getTime() / 1000;
 
