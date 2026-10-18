@@ -27,10 +27,18 @@ Router.register('vendometro', (params, el) => {
     hoje: [], ontem: [], ads: [], dia: null, visitas: {}, visitasEm: 0, visitasProg: '',
     carregando: false, erro: null, atualizadoEm: 0, valorMostrado: 0, todos: false, grafico: null,
     ...(() => { try { const v = JSON.parse(localStorage.getItem('glr_vm_sel') || '{}'); return { cliente: v.cliente || '', conta: v.conta || '' }; } catch (e) { return { cliente: '', conta: '' }; } })(),
+    contasPortal: null,
   };
+  // Portal do cliente: só as contas dele (o banco e o /api/mcp já garantem), sem escolher cliente
+  const cfgPortal = window._portalConfig || null;
+  if (cfgPortal) { st.cliente = String(cfgPortal.clienteId); if (st.conta && !st.conta.includes(':')) st.conta = ''; }
 
   // ── Contas da carteira: "ml:123" → cliente ──
   function contasCarteira() {
+    if (cfgPortal) {
+      const cli = { id: String(cfgPortal.clienteId), nome: cfgPortal.clienteNome || 'Minha loja' };
+      return new Map((st.contasPortal || []).map(c => [`${c.mkt}:${c.id}`, { cli, ...c }]));
+    }
     const vinc = lerJSON('glr_mc_vinculos', {});
     const clientes = new Map((GLR.clientes || []).map(c => [String(c.id), c]));
     const mapa = new Map();
@@ -60,6 +68,12 @@ Router.register('vendometro', (params, el) => {
     if (st.carregando || typeof _sb === 'undefined') return;
     st.carregando = true; st.erro = null; render();
     try {
+      if (cfgPortal && !st.contasPortal) {
+        const ids = new Set((cfgPortal.contaIds || []).map(String));
+        st.contasPortal = (await MarketplaceAPI.listAccounts() || []).filter(c => ids.has(String(c.external_id))).map(c => ({
+          mkt: BaseDados.mktDe(c.marketplace), id: String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id), nome: c.nickname || c.external_id,
+        })).filter(c => c.mkt);
+      }
       const agora = Date.now(), hoje = isoDia(agora);
       const iniHoje = new Date(`${hoje}T00:00:00-03:00`).getTime(), iniOntem = iniHoje - DIA;
       const [rh, ro, ra] = await Promise.all([
@@ -249,11 +263,12 @@ Router.register('vendometro', (params, el) => {
   function montarSeletores() {
     const contas = [...contasCarteira().entries()];
     const clientes = new Map(); for (const [, ct] of contas) clientes.set(String(ct.cli.id), ct.cli.nome);
-    if (st.cliente && !clientes.has(st.cliente)) { st.cliente = ''; st.conta = ''; }
+    if (st.cliente && !clientes.has(st.cliente) && !cfgPortal) { st.cliente = ''; st.conta = ''; }
     const doCli = contas.filter(([, ct]) => String(ct.cli.id) === st.cliente);
     if (st.conta && !doCli.some(([k]) => k === st.conta)) st.conta = '';
     const sc = document.getElementById('vm-sel-cliente'), sk = document.getElementById('vm-sel-conta');
-    if (sc) sc.innerHTML = `<option value="">Todos os clientes</option>` + [...clientes].sort((a, b) => String(a[1]).localeCompare(String(b[1]))).map(([id, n]) => `<option value="${h(id)}" ${id === st.cliente ? 'selected' : ''}>${h(n)}</option>`).join('');
+    if (sc) sc.hidden = !!cfgPortal;
+    if (sc && !cfgPortal) sc.innerHTML = `<option value="">Todos os clientes</option>` + [...clientes].sort((a, b) => String(a[1]).localeCompare(String(b[1]))).map(([id, n]) => `<option value="${h(id)}" ${id === st.cliente ? 'selected' : ''}>${h(n)}</option>`).join('');
     if (sk) { sk.hidden = doCli.length < 2; sk.innerHTML = `<option value="">Todas as contas</option>` + doCli.map(([k, ct]) => `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${MKT[ct.mkt].sigla} · ${h(ct.nome)}</option>`).join(''); }
     const nomeCli = clientes.get(st.cliente), conta = doCli.find(([k]) => k === st.conta)?.[1];
     const t = document.getElementById('vm-hoje'); if (t) t.textContent = `Vendas hoje · ${nomeCli ? nomeCli + (conta ? ` · ${MKT[conta.mkt].sigla} ${conta.nome}` : '') : 'carteira GLR'}`;
