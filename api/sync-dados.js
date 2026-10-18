@@ -587,8 +587,8 @@ function mapearPedidoTikTok(openId, o) {
     criado_em: isoDeUnix(o.create_time), atualizado_mkt: o.update_time ? isoDeUnix(o.update_time) : null,
     status_original: o.status || '', situacao: status === 'CANCELLED' ? 'cancelado' : 'valido',
     valor_bruto: valor, valor_itens: somaItens, frete: null,
-    taxas: { desconto_plataforma: r2(pg.platform_discount), frete_comprador: r2(pg.shipping_fee), total_pago: r2(pg.total_amount) },
-    liquido: null, itens, sincronizado_em: new Date().toISOString(),
+    // líquido e taxas NÃO vão aqui: vêm do acerto (enriquecerTaxasTikTok) e não podem ser apagados a cada atualização
+    itens, sincronizado_em: new Date().toISOString(),
   };
 }
 async function gravarPedidosTikTok(apiKey, openId, filtro, prazo) {
@@ -627,7 +627,7 @@ async function gravarPedidosAmazon(apiKey, accId, deUnix, ateUnix, prazo) {
     const orders = (d.orders || []).filter(o => o && o.amazon_order_id && o.purchase_date && !/^pending/i.test(o.status || ''));
     if (orders.length) {
       const ids = orders.map(o => `"${o.amazon_order_id}"`).join(',');
-      const existentes = new Map((await sbSelect('glr_pedidos', `marketplace=eq.amazon&conta_id=eq.${encodeURIComponent(accId)}&pedido_id=in.(${encodeURIComponent(ids)})&select=pedido_id,itens,valor_bruto,valor_itens`)).map(x => [x.pedido_id, x]));
+      const existentes = new Map((await sbSelect('glr_pedidos', `marketplace=eq.amazon&conta_id=eq.${encodeURIComponent(accId)}&pedido_id=in.(${encodeURIComponent(ids)})&select=pedido_id,itens,valor_bruto,valor_itens,situacao`)).map(x => [x.pedido_id, x]));
       const linhas = [];
       for (const o of orders) {
         const ant = existentes.get(o.amazon_order_id);
@@ -646,10 +646,10 @@ async function gravarPedidosAmazon(apiKey, accId, deUnix, ateUnix, prazo) {
         linhas.push({
           marketplace: 'amazon', conta_id: String(accId), pedido_id: String(o.amazon_order_id),
           criado_em: new Date(o.purchase_date).toISOString(), atualizado_mkt: null,
-          status_original: o.status || '', situacao: cancelado ? 'cancelado' : 'valido',
+          // reembolso marcado pelos eventos financeiros continua devolvido
+          status_original: o.status || '', situacao: cancelado ? 'cancelado' : ant?.situacao === 'devolvido' ? 'devolvido' : 'valido',
           valor_bruto: valor, valor_itens: somaItens, frete: null,
-          taxas: { canal: o.fulfillment_channel || null, total_pedido: o.total != null ? r2(o.total) : null },
-          liquido: null, itens: itens || [], sincronizado_em: new Date().toISOString(),
+          itens: itens || [], sincronizado_em: new Date().toISOString(),
         });
       }
       await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id');
@@ -689,7 +689,11 @@ async function gravarPedidosMagalu(apiKey, accId, filtro, prazo) {
   let n = 0;
   for (let off = 0; off < 20000; off += 50) {
     if (prazo && Date.now() > prazo) return { n, completo: false };
-    const r = await comRetry(() => mcpCall(apiKey, 'magalu_list_orders', { params: { magalu_account_id: accId, _limit: 50, _offset: off, ...filtro } }));
+    const q = { magalu_account_id: accId, _limit: 50, _offset: off, ...filtro };
+    const r = await comRetry(async () => {
+      try { return await mcpCall(apiKey, 'magalu_list_orders', { magalu_account_id: accId, params: q }); }
+      catch (e) { return await mcpCall(apiKey, 'magalu_list_orders', q); }
+    });
     const d = r.data?.results ? r.data : r;
     const res = d.results || [];
     const linhas = res.filter(o => o && (o.code || o.id) && (o.purchased_at || o.created_at) && !/^new$|pending/i.test(o.status || '')).map(o => mapearPedidoMagalu(accId, o));
@@ -749,6 +753,87 @@ async function gravarPedidosShein(apiKey, supId, deUnix, ateUnix, porAtualizacao
   return { n, completo: true };
 }
 
+// ── Taxas reais do TikTok: acerto (settlement) por pedido entregue/concluído ──
+//    líquido = settlement_amount; comissão = platform_commission; demais = fee − comissão.
+async function enriquecerTaxasTikTok(apiKey, openId, t, prazo) {
+  const pend = await sbSelect('glr_pedidos', `marketplace=eq.tiktok&conta_id=eq.${openId}&situacao=eq.valido&liquido=is.null&status_original=in.(COMPLETED,DELIVERED)&criado_em=gte.${desdeTaxas(t)}&order=criado_em.asc&limit=60&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto`);
+  const linhas = [];
+  for (const p of pend) {
+    if (Date.now() > prazo) break;
+    try {
+      const r = await mcpCall(apiKey, 'tiktok_finance_order_transactions', { open_id: openId, order_id: p.pedido_id });
+      const tx = r.statement_transactions || r.data?.statement_transactions || [];
+      if (!tx.length) continue; // ainda não acertado
+      const soma = k => tx.reduce((s, x) => s + (parseFloat(x[k]) || 0), 0);
+      const comissao = -soma('platform_commission_amount'), taxas = -soma('fee_amount');
+      linhas.push({ ...p, liquido: r2(soma('settlement_amount')), taxas: { comissao: r2(comissao), taxa_servico: r2(taxas - comissao), frete_vendedor: r2(-soma('shipping_fee_amount') - soma('customer_shipping_fee_amount')) } });
+    } catch (e) { /* tenta na próxima rodada */ }
+  }
+  if (linhas.length) { await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id'); linhas.forEach(l => tocar('tiktok', openId, l.criado_em)); }
+  await estimarTaxas('tiktok', openId, t);
+  return linhas.length;
+}
+
+// ── Taxas reais da Amazon: eventos financeiros por data de lançamento (janelas
+//    de 7 dias, cursor fin_ate). Venda → líquido e comissão; reembolso → devolvido.
+async function enriquecerTaxasAmazon(apiKey, accId, t, prazo, cursor) {
+  let feitos = 0;
+  while (Date.now() < prazo) {
+    const de = Math.max(cursor.fin_ate ? cursor.fin_ate - 2 * DIA : t - DIAS_HISTORICO * DIA, t - DIAS_HISTORICO * DIA);
+    const ate = Math.min(de + 7 * DIA, t - 300);
+    if (ate <= de) break;
+    const vendas = new Map(), devolvidos = new Set();
+    let token = null, completo = true;
+    for (let pag = 0; pag < 50; pag++) {
+      if (Date.now() > prazo) { completo = false; break; }
+      const params = token ? { amazon_account_id: accId, next_token: token } : { amazon_account_id: accId, posted_after: new Date(de * SEG).toISOString(), posted_before: new Date(ate * SEG).toISOString(), max_results: 100 };
+      const r = await comRetry(() => mcpCall(apiKey, 'amazon_list_financial_events', params), 2);
+      const d = r.data?.vendas ? r.data : r;
+      for (const v of (d.vendas || [])) {
+        const x = vendas.get(v.order_id) || { liq: 0, comissao: 0, outras: 0 };
+        x.liq += parseFloat(v.liquido) || 0;
+        for (const it of (v.itens || [])) for (const [k, val] of Object.entries(it.taxas || {})) { if (k === 'Commission') x.comissao -= parseFloat(val) || 0; else x.outras -= parseFloat(val) || 0; }
+        for (const [, val] of Object.entries(v.taxas_pedido || {})) x.outras -= parseFloat(val) || 0;
+        vendas.set(v.order_id, x);
+      }
+      for (const v of (d.reembolsos || [])) devolvidos.add(v.order_id);
+      token = d.next_token;
+      if (!token) break;
+    }
+    const ids = [...new Set([...vendas.keys(), ...devolvidos])];
+    for (let i = 0; i < ids.length; i += 50) {
+      const lista = ids.slice(i, i + 50).map(id => `"${id}"`).join(',');
+      const rows = await sbSelect('glr_pedidos', `marketplace=eq.amazon&conta_id=eq.${encodeURIComponent(accId)}&pedido_id=in.(${encodeURIComponent(lista)})&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto`);
+      const comLiq = rows.filter(r => vendas.has(r.pedido_id)).map(r => { const x = vendas.get(r.pedido_id); return { ...r, liquido: r2(x.liq), taxas: { comissao: r2(x.comissao), taxa_servico: r2(x.outras) } }; });
+      if (comLiq.length) await sbUpsert('glr_pedidos', comLiq, 'marketplace,conta_id,pedido_id');
+      const dev = rows.filter(r => devolvidos.has(r.pedido_id) && r.situacao === 'valido').map(r => ({ ...r, situacao: 'devolvido' }));
+      if (dev.length) await sbUpsert('glr_pedidos', dev, 'marketplace,conta_id,pedido_id');
+      [...comLiq, ...dev].forEach(l => tocar('amazon', accId, l.criado_em));
+      feitos += comLiq.length + dev.length;
+    }
+    if (!completo) break;
+    cursor.fin_ate = ate;
+    if (ate >= t - 300) break;
+  }
+  await estimarTaxas('amazon', accId, t);
+  return feitos;
+}
+
+// Pedido ainda não acertado: taxa ESTIMADA pela média real da própria conta
+// (últimos 60 dias acertados) — grava taxas.tarifa_venda, as telas usam como
+// líquido = valor − tarifa até chegar o valor real.
+async function estimarTaxas(mkt, conta, t) {
+  const c = encodeURIComponent(conta);
+  const desde = encodeURIComponent(new Date((t - 60 * DIA) * SEG).toISOString());
+  const ok = await sbSelect('glr_pedidos', `marketplace=eq.${mkt}&conta_id=eq.${c}&situacao=eq.valido&liquido=not.is.null&criado_em=gte.${desde}&select=valor_bruto,liquido&limit=500`);
+  const sv = ok.reduce((s, r) => s + (parseFloat(r.valor_bruto) || 0), 0), sl = ok.reduce((s, r) => s + (parseFloat(r.liquido) || 0), 0);
+  if (ok.length < 5 || sv <= 0) return;
+  const taxa = Math.min(0.6, Math.max(0, 1 - sl / sv));
+  const pend = await sbSelect('glr_pedidos', `marketplace=eq.${mkt}&conta_id=eq.${c}&situacao=eq.valido&liquido=is.null&taxas->>tarifa_venda=is.null&criado_em=gte.${desdeTaxas(t)}&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto&limit=1000`);
+  if (!pend.length) return;
+  await sbUpsert('glr_pedidos', pend.map(p => ({ ...p, taxas: { tarifa_venda: r2((parseFloat(p.valor_bruto) || 0) * taxa), estimado: true, taxa_media: Math.round(taxa * 10000) / 100 } })), 'marketplace,conta_id,pedido_id');
+}
+
 const ADAPTADORES = {
   shopee: {
     // Por data de ATUALIZAÇÃO: venda nova, cancelamento e devolução de qualquer data.
@@ -786,12 +871,14 @@ const ADAPTADORES = {
       return r.n;
     },
     async bloco(apiKey, id, de, ate, prazo) { return gravarPedidosTikTok(apiKey, id, { create_time_ge: de, create_time_lt: ate + 1 }, prazo); },
+    taxas: enriquecerTaxasTikTok,
   },
   amazon: {
     // A Amazon filtra só por data da compra: relê os 2 últimos dias a cada rodada;
     // cancelamento mais antigo entra na reconferência diária dos 45 dias.
     async incremental(apiKey, id, cursor, t, prazo) { return (await gravarPedidosAmazon(apiKey, id, t - 2 * DIA, t, prazo)).n; },
     async bloco(apiKey, id, de, ate, prazo) { return gravarPedidosAmazon(apiKey, id, de, ate, prazo); },
+    taxas: enriquecerTaxasAmazon,
     blocoDias: 7, // a Amazon limita a listagem — blocos maiores, menos chamadas
   },
   magalu: {
@@ -872,7 +959,7 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
     }
     // Taxas reais (escrow Shopee / recebimento ML) dos pedidos que ainda não têm.
     if (ad.taxas && Date.now() < prazo) {
-      try { cursor.taxas_ult = await ad.taxas(apiKey, shopId, t, Math.min(prazo, Date.now() + TEMPO_TAXAS_POR_CONTA_MS)); }
+      try { cursor.taxas_ult = await ad.taxas(apiKey, shopId, t, Math.min(prazo, Date.now() + TEMPO_TAXAS_POR_CONTA_MS), cursor); delete cursor.taxas_erro; }
       catch (e) { cursor.taxas_erro = String(e.message || e).slice(0, 200); }
     }
     await salvarEstado(mkt, shopId, 'pedidos', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, cursor, registros: gravados });

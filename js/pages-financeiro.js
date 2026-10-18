@@ -653,12 +653,12 @@ Router.register('financeiro', async (params, el) => {
     const valor = parseFloat(r.valor_bruto) || 0;
     const status = r.situacao === 'devolvido' ? 'devolvido' : (r.status_original || '');
     if (mkt !== 'shopee' && mkt !== 'ml') {
-      // Shein: líquido real da plataforma; Magalu: valor − comissão; Amazon/TikTok:
-      // taxas ainda não vêm na base — líquido = valor, marcado como sem taxa real
+      // Shein/Amazon/TikTok acertados: líquido real; Magalu: valor − comissão do pedido;
+      // Amazon/TikTok ainda não acertados: valor − taxa estimada pela média da conta
       const tarifa = parseFloat(r.taxas?.tarifa_venda ?? r.taxas?.comissao) || 0;
       const liq = r.liquido != null ? parseFloat(r.liquido) : (tarifa > 0 ? valor - tarifa : valor);
       return { id: r.pedido_id, plataforma: { amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt] || mkt, contaId, dataTs: Date.parse(r.criado_em), valor, status,
-        taxas: { liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0 }, _base: true, _semTaxa: r.liquido == null && !(tarifa > 0) && r.situacao === 'valido' };
+        taxas: { liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0 }, _base: true, _semTaxa: r.liquido == null && r.situacao === 'valido' && mkt !== 'magalu' }; // estimada ainda conta como sem taxa real
     }
     if (mkt === 'shopee') {
       // Igual à busca antiga: sem escrow (pedido ainda não concluído) → líquido = valor, sem taxas

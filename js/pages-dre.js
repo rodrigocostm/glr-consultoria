@@ -230,7 +230,7 @@ Router.register('dre', (params, el) => {
         fat += valor;
         // Mesma regra do Financeiro: sem taxa real ainda → Shopee líquido = valor; ML = valor − tarifa
         if (p.liquido != null) liq += parseFloat(p.liquido);
-        else { liq += (d.mkt === 'ml' || d.mkt === 'magalu') ? valor - (parseFloat(p.taxas?.tarifa_venda) || 0) : valor; semTaxa++; } // Magalu: comissão vem no pedido
+        else { liq += valor - (parseFloat(p.taxas?.tarifa_venda) || 0); semTaxa++; } // ML/Magalu: tarifa do pedido; Amazon/TikTok: estimada pela média da conta
         const impAPI = d.mkt === 'shopee' && p.liquido != null ? parseFloat(p.taxas?.imposto) || 0 : 0;
         const cst = custos[p.pedido_id] || {};
         imposto += impAPI > 0 ? impAPI : valor * (parseFloat(cst.imposto) || parseFloat(aliquotas[c.external_id] || 0)) / 100;
