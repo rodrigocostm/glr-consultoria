@@ -842,6 +842,50 @@ async function estimarTaxas(mkt, conta, t) {
   await sbUpsert('glr_pedidos', pend.map(p => ({ ...p, taxas: { tarifa_venda: r2((parseFloat(p.valor_bruto) || 0) * taxa), estimado: true, taxa_media: Math.round(taxa * 10000) / 100 } })), 'marketplace,conta_id,pedido_id');
 }
 
+// ── Monitor de preços do ML ──
+// O ML não guarda histórico de preço do anúncio. A cada 4 h tira uma "foto" dos
+// anúncios ativos (preço, categoria, tipo, frete, foto) e registra no histórico
+// `h` só quando o preço muda: [[unix, preço], ...] (últimas 20 mudanças).
+// Fica em glr_sync_estado (recurso 'precos'); a tela Monitor de preços lê dali.
+const PRECOS_A_CADA_MS = 4 * 3600 * 1000;
+async function atualizarPrecosML(apiKey, contaId, prazo) {
+  const ant = (await sbSelect('glr_sync_estado', `marketplace=eq.ml&conta_id=eq.${contaId}&recurso=eq.precos&select=cursor`).catch(() => []))[0]?.cursor || {};
+  const itensAnt = ant.itens || {};
+  const t = agora(), itens = {};
+  const guardar = b => {
+    if (!b?.id || b.price == null) return;
+    const p = r2(b.price), velho = itensAnt[b.id];
+    const h = Array.isArray(velho?.h) ? velho.h.slice(-19) : [];
+    if (!h.length || Math.abs(h[h.length - 1][1] - p) >= 0.01) h.push([t, p]);
+    itens[b.id] = { t: String(b.title || '').slice(0, 90), p, c: b.category_id || null, l: b.listing_type_id || null,
+      me: b.shipping?.mode === 'me2' ? 1 : 0, th: String(b.thumbnail || '').replace(/^http:/, 'https:'), v: parseInt(b.sold_quantity) || 0, h };
+  };
+  const pagina = async params => {
+    if (Date.now() > prazo) throw new Error('PRAZO');
+    const r = await comRetry(() => mcpCall(apiKey, 'list_items', { meliUserId: contaId, status: 'active', limit: 100, ...params }));
+    const d = r.data?.results ? r.data : r;
+    (d.results || []).forEach(e => guardar(e?.body || e));
+    return d;
+  };
+  try {
+    const p1 = await pagina({ offset: 0 });
+    const total = parseInt(p1.paging?.total) || 0;
+    if (total <= 1050) {
+      // até 1.050 anúncios o ML aceita offset
+      for (let off = 100; off < total; off += 100) { const d = await pagina({ offset: off }); if (!(d.results || []).length) break; }
+    } else {
+      // acima disso só no modo scan (scroll_id), recomeçando do zero
+      Object.keys(itens).forEach(k => delete itens[k]);
+      let d = await pagina({ search_type: 'scan' });
+      for (let i = 0; i < 200 && d.scroll_id && (d.results || []).length; i++) d = await pagina({ scroll_id: d.scroll_id });
+    }
+  } catch (e) {
+    if (e.message === 'PRAZO') return null; // não terminou: tenta na próxima rodada (não grava foto pela metade)
+    throw e;
+  }
+  return { em: Date.now(), itens };
+}
+
 const ADAPTADORES = {
   shopee: {
     // Por data de ATUALIZAÇÃO: venda nova, cancelamento e devolução de qualquer data.
@@ -993,6 +1037,13 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
       await salvarEstado(mkt, shopId, 'ads', { ultimo_erro: String(e.message || e).slice(0, 500) }).catch(() => {});
     }
   }
+  // Monitor de preços do ML — foto dos preços a cada 4 h, registrando o que mudou
+  if (mkt === 'ml' && Date.now() - (estadoAtual?.precosEm || 0) > PRECOS_A_CADA_MS && Date.now() < prazo - 30000) {
+    try {
+      const cur = await atualizarPrecosML(apiKey, shopId, Math.min(prazo - 15000, Date.now() + 45000));
+      if (cur) await salvarEstado('ml', shopId, 'precos', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: Object.keys(cur.itens).length, cursor: cur });
+    } catch (e) { await salvarEstado('ml', shopId, 'precos', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
+  }
   // Oportunidades de ADS — 1x por dia por loja, depois das 06:00 (Brasília), se sobrar tempo
   const horaOp = new Date((t - 3 * 3600) * SEG).getUTCHours();
   if ((mkt === 'shopee' || mkt === 'ml') && horaOp >= 6 && estadoAtual?.oport?.dia !== dataBR(t) && Date.now() < prazo - 20000) {
@@ -1012,11 +1063,14 @@ async function executar(apiKey, soConta) {
   const prazo = Date.now() + ORCAMENTO_MS;
   let contas = await contasParaSincronizar(apiKey);
   if (soConta) contas = contas.filter(c => c.id === String(soConta));
-  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor&recurso=neq.oportunidades');
+  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor&recurso=not.in.(oportunidades,precos)');
+  // Monitor de preços: só a hora da última foto (o cursor tem todos os anúncios — é grande)
+  const precosEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,em:cursor->>em&recurso=eq.precos').catch(() => []);
   // Oportunidades: só o dia da última atualização (o resto do cursor é grande e não precisa aqui)
   const oports = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.oportunidades').catch(() => []);
   const porConta = {};
   for (const o of oports) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].oport = { dia: o.dia }; }
+  for (const o of precosEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].precosEm = parseInt(o.em) || 0; }
   for (const e of estados) {
     const k = `${e.marketplace}:${e.conta_id}`;
     porConta[k] = porConta[k] || {};
