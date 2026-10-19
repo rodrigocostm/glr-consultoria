@@ -2086,6 +2086,25 @@ Router.register('vendas', async (params, el) => {
       _base: true };
   }
 
+  // Aviso na linha de status: contas da plataforma escolhida que ficaram FORA da
+  // seleção de contas, ou que ainda estão carregando o histórico na base — sem
+  // isso, "só 1 pedido do TikTok" parece erro quando é filtro ou carga em andamento.
+  const PLAT_MKT = { 'Mercado Livre': 'ml', 'Shopee': 'shopee', 'Amazon': 'amazon', 'TikTok Shop': 'tiktok', 'Magalu': 'magalu', 'Shein': 'shein' };
+  async function avisoContas(dataFrom) {
+    if (!window.BaseDados) return '';
+    const base = await BaseDados.carregar();
+    const daPlat = c => { const m = BaseDados.mktDe(c.marketplace); return m && (filtroPlat === 'todas' || PLAT_MKT[filtroPlat] === m); };
+    const todasDaPlat = contas.filter(daPlat);
+    const fora = filtroContasSel.size ? todasDaPlat.filter(c => !filtroContasSel.has(c.external_id)).length : 0;
+    const alvo = todasDaPlat.filter(c => !filtroContasSel.size || filtroContasSel.has(c.external_id));
+    const carregando = alvo.filter(c => !BaseDados.cobre(base[BaseDados.chave(BaseDados.mktDe(c.marketplace), idNaBase(c))], dataFrom));
+    const plat = filtroPlat === 'todas' ? '' : ` de ${filtroPlat}`;
+    const partes = [];
+    if (fora) partes.push(`<span title="Estão fora da seleção de contas (filtro 🏬). Limpe a seleção para ver todas.">⚠️ ${fora} conta(s)${plat} fora da seleção</span>`);
+    if (carregando.length) partes.push(`<span title="${carregando.map(contaNome).join(', ').replace(/"/g, '&quot;')}">⏳ ${carregando.length} conta(s)${plat} ainda carregando o histórico</span>`);
+    return partes.length ? ` &nbsp;<span style="font-size:11px;color:#d97706;">${partes.join(' · ')}</span>` : '';
+  }
+
   async function carregarBaseVendas(contasAlvo, dataFrom, dataTo) {
     const out = { cobertas: new Set(), pedidos: [] };
     if (!window.BaseDados || typeof _sb === 'undefined') return out;
@@ -2642,7 +2661,7 @@ Router.register('vendas', async (params, el) => {
       const selo = viaBase.cobertas.size && !contasParaBuscar.length
         ? `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 7px;border-radius:8px;">⚡ base automática · atualiza sozinha</span>`
         : `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 7px;border-radius:8px;">💾 salvo</span>`;
-      if (statusEl) statusEl.innerHTML=`${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;${selo}`;
+      if (statusEl) statusEl.innerHTML=`${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;${selo}${await avisoContas(dataFrom).catch(() => '')}`;
       renderLista();
       completarImagens();
 
