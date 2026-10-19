@@ -775,6 +775,19 @@ Router.register('vendas', async (params, el) => {
     if (abaAtiva === 'semanal') renderComparativoSemanal();
   }
 
+  // Códigos dos anúncios do produto, com link para abrir no marketplace
+  function idsAnuncio(x) {
+    const ids = [...(x.ids || [])], skus = [...(x.skus || [])];
+    if (!ids.length && !skus.length) return '';
+    const link = id => x.plataforma === 'Mercado Livre' ? `https://produto.mercadolivre.com.br/${String(id).replace(/^MLB(?=\d)/, 'MLB-')}`
+      : x.plataforma === 'Shopee' && x.shopId ? `https://shopee.com.br/product/${x.shopId}/${id}` : null;
+    const hh = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const partes = ids.slice(0, 3).map(id => { const u = link(id); return u ? `<a href="${u}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${hh(id)}</a>` : hh(id); });
+    if (ids.length > 3) partes.push(`+${ids.length - 3}`);
+    const sku = skus.length ? ` · SKU ${hh(skus.slice(0, 2).join(', '))}${skus.length > 2 ? '…' : ''}` : '';
+    return `<div class="cs-ids" title="${hh([...ids, ...skus].join(' · '))}">${partes.join(' · ') || ''}${ids.length ? sku : sku.replace(/^ · /, '')}</div>`;
+  }
+
   function calcularCurvaSemanal(lista) {
     const fimOntem = new Date(ontem); fimOntem.setHours(23, 59, 59, 999);
     const fimTs = fimOntem.getTime();
@@ -789,7 +802,10 @@ Router.register('vendas', async (params, el) => {
       const itens = (p.itens && p.itens.length) ? p.itens : [{ nome: p.produto, qtd: p.qtd || 1, preco: (p.valor || 0) / (p.qtd || 1) }];
       for (const it of itens) {
         const nome = it.nome || '—', k = `${p.contaId}|${nome}`;
-        const x = prods.get(k) || { k, nome, contaId: p.contaId, plataforma: p.plataforma, imagem: it.imagem || p.imagem || '', un: Array(NSEM).fill(0), rs: Array(NSEM).fill(0) };
+        const x = prods.get(k) || { k, nome, contaId: p.contaId, plataforma: p.plataforma, imagem: it.imagem || p.imagem || '', un: Array(NSEM).fill(0), rs: Array(NSEM).fill(0), ids: new Set(), skus: new Set(), shopId: p.shopId || null };
+        // código do anúncio (ML: MLB…; Shopee: item_id) e SKU — para achar o anúncio
+        const idAn = it.itemId || it.shopeeItemId; if (idAn) x.ids.add(String(idAn));
+        if (it.sku) x.skus.add(String(it.sku));
         const q = parseInt(it.qtd) || 1;
         x.un[w] += q; x.rs[w] += (parseFloat(it.preco) || 0) * q;
         if (!x.imagem && it.imagem) x.imagem = it.imagem;
@@ -873,7 +889,7 @@ Router.register('vendas', async (params, el) => {
     // Filtro / busca / ordenação
     const filtros = [['atencao', 'Precisa de atenção'], ['todos', 'Todos'], ['A', 'Curva A'], ['B', 'Curva B'], ['C', 'Curva C'], ['queda', 'Em queda'], ['alta', 'Em alta'], ['parou', 'Parados']];
     const passa = x => {
-      if (semBusca && !x.nome.toLowerCase().includes(semBusca.toLowerCase())) return false;
+      if (semBusca && !`${x.nome} ${[...(x.ids || [])].join(' ')} ${[...(x.skus || [])].join(' ')}`.toLowerCase().includes(semBusca.toLowerCase())) return false; // busca também por código do anúncio e SKU
       switch (semFiltro) {
         case 'atencao': return (x.classe === 'A' && caindo(x)) || (x.classe !== 'A' && ['alta', 'alta_forte'].includes(x.tend) && x.ult >= 3) || (x.tend === 'parou' && x.classe !== 'C');
         case 'A': case 'B': case 'C': return x.classe === semFiltro;
@@ -900,7 +916,7 @@ Router.register('vendas', async (params, el) => {
       const t = TEND[x.tend];
       return `<tr>
         <td><span class="cs-abc cs-${x.classe === '—' ? 'n' : x.classe}">${x.classe}</span></td>
-        <td class="cs-prod">${x.imagem ? `<img src="${h(x.imagem)}" alt="" loading="lazy">` : '<span class="cs-img"></span>'}<div><div class="cs-nome" title="${h(x.nome)}">${h(x.nome)}</div><div class="cs-mut">${multiConta ? h(nomeConta(x.contaId)) + ' · ' : ''}${h(x.plataforma)}${x.part ? ` · ${x.part.toFixed(1).replace('.', ',')}% do fat.` : ''}</div></div></td>
+        <td class="cs-prod">${x.imagem ? `<img src="${h(x.imagem)}" alt="" loading="lazy">` : '<span class="cs-img"></span>'}<div><div class="cs-nome" title="${h(x.nome)}">${h(x.nome)}</div><div class="cs-mut">${multiConta ? h(nomeConta(x.contaId)) + ' · ' : ''}${h(x.plataforma)}${x.part ? ` · ${x.part.toFixed(1).replace('.', ',')}% do fat.` : ''}</div>${idsAnuncio(x)}</div></td>
         <td class="cs-num">${R$(x.fat4).replace(/,\d{2}$/, '')}</td>
         <td>${spark(x)}</td>
         ${[3, 2, 1, 0].map(w => `<td class="cs-num${w === 0 ? ' cs-ult' : ''}">${cel(x, w)}</td>`).join('')}
@@ -940,6 +956,7 @@ Router.register('vendas', async (params, el) => {
       </div>
       <style>
         .cs-mut{color:var(--text-muted);font-size:11.5px;}
+        .cs-ids{font-size:11px;color:var(--text-muted);font-family:ui-monospace,monospace;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px;} .cs-ids a{color:#2a78d6;text-decoration:none;} .cs-ids a:hover{text-decoration:underline;}
         .cs-topo{margin-bottom:12px;}
         .cs-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
         @media (max-width:900px){.cs-cards{grid-template-columns:repeat(2,1fr);}}
