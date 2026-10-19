@@ -134,7 +134,7 @@ Router.register('performance', (params, el) => {
     <div style="overflow-x:auto;margin-bottom:8px;">
     <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1100px;">
       <thead>
-        <tr style="background:#1a2744;color:white;">
+        <tr style="background:var(--bg-subtle);color:var(--text-secondary);">
           <th style="padding:10px 12px;text-align:left;border-radius:8px 0 0 0;white-space:nowrap;">Empresa</th>
           <th style="padding:10px 8px;text-align:right;white-space:nowrap;">Meta (Base)</th>
           <th style="padding:10px 8px;text-align:right;white-space:nowrap;">ADS%</th>
@@ -163,11 +163,11 @@ Router.register('performance', (params, el) => {
               <div style="font-size:10px;color:var(--text-muted);font-weight:400;">${GLR.statusLabel[c.status]||c.status}</div>
             </td>
             <td style="padding:9px 8px;text-align:right;">${d.fatBase > 0 ? fmtR(d.fatBase) : '<span style="color:var(--text-muted)">—</span>'}</td>
-            <td style="padding:9px 8px;text-align:right;color:${d.pctADSBase>20?'#ef4444':d.pctADSBase>15?'#f59e0b':'var(--text-secondary)'};">${d.pctADSBase > 0 ? d.pctADSBase.toFixed(1)+'%' : '—'}</td>
+            <td style="padding:9px 8px;text-align:right;color:${d.pctADSBase>20?'var(--red)':d.pctADSBase>15?'var(--yellow)':'var(--text-secondary)'};">${d.pctADSBase > 0 ? d.pctADSBase.toFixed(1)+'%' : '—'}</td>
             <td style="padding:9px 8px;text-align:right;font-weight:600;color:var(--accent-light);">${d.fatProj > 0 ? fmtR(d.fatProj) : '—'}</td>
             <td style="padding:9px 8px;text-align:right;font-weight:${d.fatReal>0?'700':'400'};color:${d.fatReal>0?'var(--text-primary)':'var(--text-muted)'};">${d.fatReal > 0 ? fmtR(d.fatReal) : '<span style="font-size:10px;">sem DRE</span>'}</td>
             <td style="padding:9px 8px;text-align:right;font-weight:600;color:${corCrescimento(d.compMesAnt)};">${d.compMesAnt !== null ? fmtPct(d.compMesAnt) : '—'}</td>
-            <td style="padding:9px 8px;text-align:right;color:${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)'};">${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? '✅ Batida' : fmtR(d.faltaMeta)) : '—'}</td>
+            <td style="padding:9px 8px;text-align:right;color:${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text-muted)'};">${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? '✅ Batida' : fmtR(d.faltaMeta)) : '—'}</td>
             <td style="padding:9px 8px;text-align:center;">
               ${d.pctMeta !== null ? `
               <span style="background:${cor.bg};color:${cor.text};font-weight:700;padding:3px 8px;border-radius:99px;font-size:11px;">
@@ -175,8 +175,8 @@ Router.register('performance', (params, el) => {
               </span>` : '<span style="color:var(--text-muted)">—</span>'}
             </td>
             <td style="padding:9px 8px;text-align:right;color:var(--text-secondary);">${d.adsProj > 0 ? fmtR(d.adsProj) : '—'}</td>
-            <td style="padding:9px 8px;text-align:right;color:${d.pctADSProj>20?'#ef4444':d.pctADSProj>15?'#f59e0b':'var(--text-secondary)'};">${d.pctADSProj > 0 ? d.pctADSProj.toFixed(1)+'%' : '—'}</td>
-            <td style="padding:9px 8px;text-align:right;color:#10b981;font-weight:600;">${d.receitaGLR > 0 ? fmtR(d.receitaGLR) : '—'}</td>
+            <td style="padding:9px 8px;text-align:right;color:${d.pctADSProj>20?'var(--red)':d.pctADSProj>15?'var(--yellow)':'var(--text-secondary)'};">${d.pctADSProj > 0 ? d.pctADSProj.toFixed(1)+'%' : '—'}</td>
+            <td style="padding:9px 8px;text-align:right;color:var(--green);font-weight:600;">${d.receitaGLR > 0 ? fmtR(d.receitaGLR) : '—'}</td>
             <td style="padding:9px 8px;text-align:right;color:var(--text-muted);">${d.fatM3 > 0 ? fmtR(d.fatM3) : '—'}</td>
             <td style="padding:9px 8px;text-align:right;color:var(--text-muted);">${d.fatM2 > 0 ? fmtR(d.fatM2) : '—'}</td>
             <td style="padding:9px 8px;text-align:right;color:var(--text-muted);">${d.fatM1 > 0 ? fmtR(d.fatM1) : '—'}</td>
@@ -184,7 +184,7 @@ Router.register('performance', (params, el) => {
         }).join('')}
       </tbody>
       <tfoot>
-        <tr style="background:#1a274422;font-weight:700;font-size:12.5px;border-top:2px solid var(--border);">
+        <tr style="background:var(--bg-subtle);font-weight:700;font-size:12.5px;border-top:2px solid var(--border);">
           <td style="padding:10px 12px;">Total — ${clientes.length} cliente${clientes.length!==1?'s':''}</td>
           <td style="padding:10px 8px;text-align:right;">${tot.fatBase > 0 ? fmtR(tot.fatBase) : '—'}</td>
           <td style="padding:10px 8px;text-align:right;">${tot.fatBase > 0 ? ((tot.adsProj/tot.fatProj)*100).toFixed(1)+'%' : '—'}</td>
@@ -197,7 +197,7 @@ Router.register('performance', (params, el) => {
           </td>
           <td style="padding:10px 8px;text-align:right;">${tot.adsProj > 0 ? fmtR(tot.adsProj) : '—'}</td>
           <td style="padding:10px 8px;text-align:right;"></td>
-          <td style="padding:10px 8px;text-align:right;color:#10b981;">${tot.recGLR > 0 ? fmtR(tot.recGLR) : '—'}</td>
+          <td style="padding:10px 8px;text-align:right;color:var(--green);">${tot.recGLR > 0 ? fmtR(tot.recGLR) : '—'}</td>
           <td style="padding:10px 8px;text-align:right;">${tot.fatM3 > 0 ? fmtR(tot.fatM3) : '—'}</td>
           <td style="padding:10px 8px;text-align:right;">${tot.fatM2 > 0 ? fmtR(tot.fatM2) : '—'}</td>
           <td style="padding:10px 8px;text-align:right;">${tot.fatM1 > 0 ? fmtR(tot.fatM1) : '—'}</td>
@@ -208,9 +208,9 @@ Router.register('performance', (params, el) => {
 
     <!-- Legenda -->
     <div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 4px;font-size:11px;color:var(--text-muted);">
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#10b981;border-radius:3px;"></span> Batendo a meta (≥100%)</span>
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#f59e0b;border-radius:3px;"></span> Quase batendo (85–99%)</span>
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#ef4444;border-radius:3px;"></span> Abaixo da meta (&lt;85%)</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--green);border-radius:3px;"></span> Batendo a meta (≥100%)</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--yellow);border-radius:3px;"></span> Quase batendo (85–99%)</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--red);border-radius:3px;"></span> Abaixo da meta (&lt;85%)</span>
       <span style="margin-left:auto;">📡 Dados atualizados em tempo real · Clique em um cliente para ver o perfil</span>
     </div>`;
   }
@@ -235,7 +235,7 @@ Router.register('performance', (params, el) => {
     <!-- Cabeçalho -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
       <div>
-        <div class="section-title" style="font-size:20px;">📊 Performance Gestor</div>
+        <div class="section-title" style="font-size:20px;">Performance Gestor</div>
         <div class="section-subtitle">${meses[hoje.getMonth()]} ${hoje.getFullYear()} · Dados em tempo real</div>
       </div>
       <button class="btn" style="background:var(--bg-card);border:1px solid var(--border);" onclick="window.print()">
@@ -271,9 +271,9 @@ Router.register('performance', (params, el) => {
         <!-- Header do gestor -->
         <div style="padding:16px 20px;background:linear-gradient(135deg,#1a2744,#23305a);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
           <div style="display:flex;align-items:center;gap:12px;">
-            <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:800;color:white;font-size:18px;">${g.nome.charAt(0)}</div>
+            <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:700;color:white;font-size:18px;">${g.nome.charAt(0)}</div>
             <div>
-              <div style="font-size:16px;font-weight:800;color:white;">${g.nome}</div>
+              <div style="font-size:16px;font-weight:700;color:white;">${g.nome}</div>
               <div style="font-size:12px;color:rgba(255,255,255,0.6);">${clientes.length} cliente${clientes.length!==1?'s':''} · ${meses[hoje.getMonth()]} ${hoje.getFullYear()}</div>
             </div>
           </div>
@@ -284,19 +284,19 @@ Router.register('performance', (params, el) => {
             </div>
             <div style="text-align:center;">
               <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:2px;">Projeção</div>
-              <div style="font-size:15px;font-weight:700;color:#818cf8;">${tot.fatProj > 0 ? fmtR(tot.fatProj) : '—'}</div>
+              <div style="font-size:15px;font-weight:700;color:var(--accent-light);">${tot.fatProj > 0 ? fmtR(tot.fatProj) : '—'}</div>
             </div>
             ${tot.fatReal > 0 ? `<div style="text-align:center;">
               <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:2px;">Realizado</div>
-              <div style="font-size:15px;font-weight:700;color:#34d399;">${fmtR(tot.fatReal)}</div>
+              <div style="font-size:15px;font-weight:700;color:var(--green);">${fmtR(tot.fatReal)}</div>
             </div>` : ''}
             <div style="text-align:center;">
               <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:2px;">% Meta</div>
-              <div style="font-size:15px;font-weight:800;color:${corTot.text};">${totPctMeta !== null ? totPctMeta.toFixed(0)+'%' : '—'}</div>
+              <div style="font-size:15px;font-weight:700;color:${corTot.text};">${totPctMeta !== null ? totPctMeta.toFixed(0)+'%' : '—'}</div>
             </div>
             ${tot.recGLR > 0 ? `<div style="text-align:center;">
               <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:2px;">Receita GLR</div>
-              <div style="font-size:15px;font-weight:700;color:#34d399;">${fmtR(tot.recGLR)}</div>
+              <div style="font-size:15px;font-weight:700;color:var(--green);">${fmtR(tot.recGLR)}</div>
             </div>` : ''}
           </div>
         </div>
@@ -334,19 +334,19 @@ Router.register('performance', (params, el) => {
                   <div style="font-size:10px;color:var(--text-muted);font-weight:400;margin-top:1px;">${GLR.statusLabel[c.status]||c.status}</div>
                 </td>
                 <td style="padding:10px 8px;text-align:right;">${d.fatBase > 0 ? fmtR(d.fatBase) : '<span style="color:var(--text-muted)">—</span>'}</td>
-                <td style="padding:10px 8px;text-align:right;color:${d.pctADSBase>20?'#ef4444':d.pctADSBase>15?'#f59e0b':'var(--text-secondary)'};">${d.pctADSBase > 0 ? d.pctADSBase.toFixed(1)+'%' : '—'}</td>
+                <td style="padding:10px 8px;text-align:right;color:${d.pctADSBase>20?'var(--red)':d.pctADSBase>15?'var(--yellow)':'var(--text-secondary)'};">${d.pctADSBase > 0 ? d.pctADSBase.toFixed(1)+'%' : '—'}</td>
                 <td style="padding:10px 8px;text-align:right;font-weight:600;color:var(--accent-light);">${d.fatProj > 0 ? fmtR(d.fatProj) : '—'}</td>
                 <td style="padding:10px 8px;text-align:right;font-weight:${d.fatReal>0?'700':'400'};color:${d.fatReal>0?'var(--text-primary)':'var(--text-muted)'};">${d.fatReal > 0 ? fmtR(d.fatReal) : '<span style="font-size:10px;">sem DRE</span>'}</td>
                 <td style="padding:10px 8px;text-align:right;font-weight:600;color:${corCrescimento(d.compMesAnt)};">${d.compMesAnt !== null ? fmtPct(d.compMesAnt) : '—'}</td>
-                <td style="padding:10px 8px;text-align:right;color:${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? '#10b981' : '#f97316') : 'var(--text-muted)'};">${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? '✅ Batida' : fmtR(d.faltaMeta)) : '—'}</td>
+                <td style="padding:10px 8px;text-align:right;color:${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? 'var(--green)' : '#f97316') : 'var(--text-muted)'};">${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? '✅ Batida' : fmtR(d.faltaMeta)) : '—'}</td>
                 <td style="padding:10px 8px;text-align:center;">
                   ${d.pctMeta !== null
-                    ? `<span style="background:${cor.bg};color:${cor.text};font-weight:800;padding:3px 10px;border-radius:99px;font-size:11px;white-space:nowrap;">${d.pctMeta.toFixed(1)}%</span>`
+                    ? `<span style="background:${cor.bg};color:${cor.text};font-weight:700;padding:3px 10px;border-radius:99px;font-size:11px;white-space:nowrap;">${d.pctMeta.toFixed(1)}%</span>`
                     : '<span style="color:var(--text-muted)">—</span>'}
                 </td>
                 <td style="padding:10px 8px;text-align:right;color:var(--text-secondary);">${d.adsProj > 0 ? fmtR(d.adsProj) : '—'}</td>
-                <td style="padding:10px 8px;text-align:right;color:${d.pctADSProj>20?'#ef4444':d.pctADSProj>15?'#f59e0b':'var(--text-secondary)'};">${d.pctADSProj > 0 ? d.pctADSProj.toFixed(1)+'%' : '—'}</td>
-                <td style="padding:10px 8px;text-align:right;color:#10b981;font-weight:600;">${d.receitaGLR > 0 ? fmtR(d.receitaGLR) : '—'}</td>
+                <td style="padding:10px 8px;text-align:right;color:${d.pctADSProj>20?'var(--red)':d.pctADSProj>15?'var(--yellow)':'var(--text-secondary)'};">${d.pctADSProj > 0 ? d.pctADSProj.toFixed(1)+'%' : '—'}</td>
+                <td style="padding:10px 8px;text-align:right;color:var(--green);font-weight:600;">${d.receitaGLR > 0 ? fmtR(d.receitaGLR) : '—'}</td>
                 <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:11px;">${d.fatM3 > 0 ? fmtR(d.fatM3) : '—'}</td>
                 <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:11px;">${d.fatM2 > 0 ? fmtR(d.fatM2) : '—'}</td>
                 <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:11px;">${d.fatM1 > 0 ? fmtR(d.fatM1) : '—'}</td>
@@ -354,7 +354,7 @@ Router.register('performance', (params, el) => {
             }).join('')}
           </tbody>
           <tfoot>
-            <tr style="background:#1a274415;font-weight:700;font-size:12.5px;border-top:2px solid var(--border);">
+            <tr style="background:var(--bg-subtle);font-weight:700;font-size:12.5px;border-top:2px solid var(--border);">
               <td style="padding:10px 14px;color:var(--text-primary);">Total</td>
               <td style="padding:10px 8px;text-align:right;">${tot.fatBase > 0 ? fmtR(tot.fatBase) : '—'}</td>
               <td style="padding:10px 8px;text-align:right;">${tot.fatProj > 0 && tot.adsProj > 0 ? ((tot.adsProj/tot.fatProj)*100).toFixed(1)+'%' : '—'}</td>
@@ -362,10 +362,10 @@ Router.register('performance', (params, el) => {
               <td style="padding:10px 8px;text-align:right;">${tot.fatReal > 0 ? fmtR(tot.fatReal) : '—'}</td>
               <td style="padding:10px 8px;text-align:right;color:${corCrescimento(totCompM1)};">${totCompM1 !== null ? fmtPct(totCompM1) : '—'}</td>
               <td style="padding:10px 8px;"></td>
-              <td style="padding:10px 8px;text-align:center;">${totPctMeta !== null ? `<span style="background:${corTot.bg};color:${corTot.text};font-weight:800;padding:3px 10px;border-radius:99px;font-size:11px;">${totPctMeta.toFixed(1)}%</span>` : '—'}</td>
+              <td style="padding:10px 8px;text-align:center;">${totPctMeta !== null ? `<span style="background:${corTot.bg};color:${corTot.text};font-weight:700;padding:3px 10px;border-radius:99px;font-size:11px;">${totPctMeta.toFixed(1)}%</span>` : '—'}</td>
               <td style="padding:10px 8px;text-align:right;">${tot.adsProj > 0 ? fmtR(tot.adsProj) : '—'}</td>
               <td style="padding:10px 8px;"></td>
-              <td style="padding:10px 8px;text-align:right;color:#10b981;">${tot.recGLR > 0 ? fmtR(tot.recGLR) : '—'}</td>
+              <td style="padding:10px 8px;text-align:right;color:var(--green);">${tot.recGLR > 0 ? fmtR(tot.recGLR) : '—'}</td>
               <td style="padding:10px 8px;text-align:right;font-size:11px;">${tot.fatM3 > 0 ? fmtR(tot.fatM3) : '—'}</td>
               <td style="padding:10px 8px;text-align:right;font-size:11px;">${tot.fatM2 > 0 ? fmtR(tot.fatM2) : '—'}</td>
               <td style="padding:10px 8px;text-align:right;font-size:11px;">${tot.fatM1 > 0 ? fmtR(tot.fatM1) : '—'}</td>
@@ -376,9 +376,9 @@ Router.register('performance', (params, el) => {
 
         <!-- Legenda -->
         <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--text-muted);">
-          <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:#10b981;border-radius:2px;"></span> Batendo meta (≥100%)</span>
-          <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:#f59e0b;border-radius:2px;"></span> Quase lá (85–99%)</span>
-          <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:#ef4444;border-radius:2px;"></span> Abaixo da meta (&lt;85%)</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:var(--green);border-radius:2px;"></span> Batendo meta (≥100%)</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:var(--yellow);border-radius:2px;"></span> Quase lá (85–99%)</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:var(--red);border-radius:2px;"></span> Abaixo da meta (&lt;85%)</span>
           <span style="margin-left:auto;">Clique em um cliente para ver o perfil completo →</span>
         </div>
       </div>`;
@@ -659,7 +659,7 @@ Router.register('alertas', (params, el) => {
     </div>
 
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;display:flex;align-items:center;gap:6px;">
-      <span style="width:7px;height:7px;border-radius:50%;background:#10b981;display:inline-block;"></span>
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;"></span>
       Alertas gerados automaticamente em tempo real · ${alertas.length} total
     </div>
 
@@ -883,8 +883,8 @@ Router.register('projecao', (params, el) => {
       box.id = 'diag-api-box';
       box.style.cssText = 'position:fixed;bottom:12px;right:12px;width:520px;max-height:70vh;overflow-y:auto;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;z-index:99999;font-family:monospace;font-size:11px;color:#e5e7eb;box-shadow:0 10px 40px rgba(0,0,0,.5);';
       box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <strong style="color:#a5b4fc;">🔍 Diagnóstico Projeção (temporário)</strong>
-        <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:14px;">✕</button>
+        <strong style="color:var(--accent-light);">🔍 Diagnóstico Projeção (temporário)</strong>
+        <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button>
       </div><div id="diag-api-conteudo"></div>`;
       document.body.appendChild(box);
     }
@@ -1307,7 +1307,7 @@ Router.register('projecao', (params, el) => {
           <div class="pn-chips">
             ${chip(`vs ${_pnEsc(m1Nome)} (${_pnFmt0(tot.m1)})`, tot.evo)}
             ${chip(`vs média de 3 meses (${_pnFmt0(tot.media3)})`, tot.vsMedia)}
-            ${metaPct != null ? `<span class="pn-chip" style="--c:${metaPct >= 100 ? 'var(--pn-bom)' : metaPct >= 85 ? '#d97706' : 'var(--pn-ruim)'}">${metaPct.toFixed(0)}%<em>da meta de ${_pnFmt0(tot.meta)}</em></span>` : ''}
+            ${metaPct != null ? `<span class="pn-chip" style="--c:${metaPct >= 100 ? 'var(--pn-bom)' : metaPct >= 85 ? 'var(--yellow)' : 'var(--pn-ruim)'}">${metaPct.toFixed(0)}%<em>da meta de ${_pnFmt0(tot.meta)}</em></span>` : ''}
           </div>
         </div>
         <div class="pn-barra" title="Faturado até a data base sobre a projeção do mês">
@@ -1365,17 +1365,17 @@ Router.register('projecao', (params, el) => {
         </div>
       </div>
       <div class="pn-head-r">
-        <button class="pn-btn" onclick="abrirVinculoProjecao()">🔗 Vincular contas</button>
+        <button class="pn-btn" onclick="abrirVinculoProjecao()">Vincular contas</button>
         <details class="pn-mais"><summary class="pn-btn">⋯ Mais</summary>
           <div class="pn-menu">
-            <button id="btn-buscar-proj" onclick="buscarDadosProjecao()">🔄 Buscar dados pela API <small>contas fora da base</small></button>
+            <button id="btn-buscar-proj" onclick="buscarDadosProjecao()">Buscar dados pela API <small>contas fora da base</small></button>
             <button id="btn-forcar-meses-proj" onclick="buscarDadosProjecao(false, true)">↺ Buscar meses anteriores de novo</button>
             <button onclick="adicionarPlat()">+ Fonte manual <small>ex.: Amazon, loja própria</small></button>
-            <button onclick="exportarProjecao()">📄 Exportar CSV</button>
-            <button onclick="limparDadosManuais()" style="color:#dc2626">🗑️ Limpar valores digitados</button>
+            <button onclick="exportarProjecao()">Exportar CSV</button>
+            <button onclick="limparDadosManuais()" style="color:var(--red)">Limpar valores digitados</button>
           </div>
         </details>
-        <button class="pn-btn pn-btn-p" onclick="salvarProjecao(this)">💾 Salvar</button>
+        <button class="pn-btn pn-btn-p" onclick="salvarProjecao(this)">Salvar</button>
       </div>
     </div>
     <div class="pn-periodo">
@@ -1747,14 +1747,14 @@ Router.register('projecao', (params, el) => {
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:28px 32px;max-width:520px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.5);max-height:85vh;overflow-y:auto;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
             <div>
-              <div style="font-size:16px;font-weight:800;color:var(--text-primary);">🔗 Contas vinculadas</div>
+              <div style="font-size:16px;font-weight:700;color:var(--text-primary);">🔗 Contas vinculadas</div>
               <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${cliente?.nome || 'Cliente #'+cidAtivo}</div>
             </div>
             <button id="btn-fechar-vinculos" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted);">✕</button>
           </div>
 
           ${vinculadas.length === 0
-            ? `<div style="padding:16px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;font-size:13px;color:#f59e0b;margin-bottom:16px;">⚠️ Nenhuma conta vinculada ainda</div>`
+            ? `<div style="padding:16px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;font-size:13px;color:var(--yellow);margin-bottom:16px;">⚠️ Nenhuma conta vinculada ainda</div>`
             : `<div style="margin-bottom:16px;">
                 <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Contas vinculadas (${vinculadas.length})</div>
                 <div style="display:flex;flex-direction:column;gap:8px;">
@@ -1767,7 +1767,7 @@ Router.register('projecao', (params, el) => {
                         <div style="font-size:12px;font-weight:600;">${nick || tag || platNome[c.marketplace]||c.marketplace}</div>
                         <div style="font-size:10px;color:var(--text-muted);">ID: ${c.external_id}</div>
                       </div>
-                      <button onclick="window._desvincularProj('${c.external_id}')" style="background:rgba(239,68,68,0.15);border:none;color:#ef4444;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">✕ remover</button>
+                      <button onclick="window._desvincularProj('${c.external_id}')" style="background:rgba(239,68,68,0.15);border:none;color:var(--red);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">remover</button>
                     </div>`;
                   }).join('')}
                 </div>
@@ -1786,9 +1786,9 @@ Router.register('projecao', (params, el) => {
                   <div style="flex:1;min-width:0;">
                     <div style="font-size:12px;font-weight:600;">${nick || tag || platNome[c.marketplace]||c.marketplace}</div>
                     <div style="font-size:10px;color:var(--text-muted);">ID: ${c.external_id}</div>
-                    ${tag ? `<div style="font-size:10px;color:#818cf8;">${tag}</div>` : ''}
+                    ${tag ? `<div style="font-size:10px;color:var(--accent-light);">${tag}</div>` : ''}
                   </div>
-                  <button onclick="window._vincularProj('${c.external_id}')" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">+ vincular</button>
+                  <button onclick="window._vincularProj('${c.external_id}')" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);color:var(--accent-light);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">+ vincular</button>
                 </div>`;
               }).join('')}
             </div>
@@ -2058,14 +2058,14 @@ Router.register('relatorios', (params, el) => {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:3px solid #1a2744;">
         <div>
           <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Relatório de Gestão · Confidencial</div>
-          <div style="font-size:26px;font-weight:800;color:#1a2744;">${c.nome}</div>
+          <div style="font-size:26px;font-weight:700;color:#1a2744;">${c.nome}</div>
           <div style="font-size:13px;color:#666;margin-top:4px;">${mesAtual} ${anoAtual} · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
           <div style="margin-top:8px;">
             <span style="background:${sc}22;color:${sc};border:1px solid ${sc}44;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">${GLR.statusLabel[c.status]||c.status}</span>
           </div>
         </div>
         <div style="text-align:right;">
-          <div style="width:60px;height:60px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;margin-left:auto;">${c.nome.charAt(0)}</div>
+          <div style="width:60px;height:60px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:white;margin-left:auto;">${c.nome.charAt(0)}</div>
           <div style="font-size:12px;color:#888;margin-top:8px;">Gestor: <strong style="color:#333;">${c.gestor||'—'}</strong></div>
           <div style="font-size:12px;color:#888;">Responsável: <strong style="color:#333;">${c.responsavel||'—'}</strong></div>
           ${c.valorPorVenda ? `<div style="font-size:12px;color:#888;">Valor por Venda: <strong style="color:#333;">${fmtFull(c.valorPorVenda)}</strong></div>` : ''}
@@ -2084,16 +2084,16 @@ Router.register('relatorios', (params, el) => {
             { l:'Investimento ADS',      v: fmtFull(adsProj), icon:'📢', c:'#f59e0b' },
             ...(receitaGLR>0 ? [{ l:'Receita GLR', v: fmtFull(receitaGLR), icon:'🏆', c:'#10b981' }] : []),
           ].map(k=>`
-            <div style="background:#f8f9fc;border:1px solid #e5e7eb;border-radius:8px;padding:14px;text-align:center;">
+            <div style="background:var(--bg-subtle);border:1px solid #e5e7eb;border-radius:8px;padding:14px;text-align:center;">
               <div style="font-size:20px;margin-bottom:4px;">${k.icon}</div>
-              <div style="font-size:15px;font-weight:800;color:${k.c};">${k.v}</div>
+              <div style="font-size:15px;font-weight:700;color:${k.c};">${k.v}</div>
               <div style="font-size:10px;color:#888;margin-top:2px;text-transform:uppercase;letter-spacing:0.3px;">${k.l}</div>
             </div>`).join('')}
         </div>
-        ${pctADS>0?`<div style="margin-top:10px;font-size:12px;color:#888;text-align:right;">% ADS sobre Faturamento: <strong style="color:#f59e0b;">${pctADS.toFixed(1)}%</strong> · Dias decorridos: <strong>${dd}</strong> de <strong>${dm}</strong></div>`:''}
+        ${pctADS>0?`<div style="margin-top:10px;font-size:12px;color:#888;text-align:right;">% ADS sobre Faturamento: <strong style="color:var(--yellow);">${pctADS.toFixed(1)}%</strong> · Dias decorridos: <strong>${dd}</strong> de <strong>${dm}</strong></div>`:''}
       </div>` : `
-      <div style="margin-bottom:24px;padding:16px;background:#f8f9fc;border-radius:8px;text-align:center;color:#888;font-size:13px;">
-        Nenhuma projeção cadastrada para este cliente. <a href="#projecao" style="color:#6366f1;">Cadastrar projeção</a>
+      <div style="margin-bottom:24px;padding:16px;background:var(--bg-subtle);border-radius:8px;text-align:center;color:#888;font-size:13px;">
+        Nenhuma projeção cadastrada para este cliente. <a href="#projecao" style="color:var(--accent);">Cadastrar projeção</a>
       </div>`}
 
       <!-- Plataformas -->
@@ -2102,7 +2102,7 @@ Router.register('relatorios', (params, el) => {
         <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#1a2744;">🏪 Desempenho por Plataforma</div>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
           <thead>
-            <tr style="background:#1a2744;color:white;">
+            <tr style="background:var(--bg-subtle);color:var(--text-secondary);">
               <th style="padding:9px 12px;text-align:left;border-radius:6px 0 0 0;">Plataforma</th>
               <th style="padding:9px 12px;text-align:right;">Fat. Base</th>
               <th style="padding:9px 12px;text-align:right;">Projeção Fat.</th>
@@ -2117,22 +2117,22 @@ Router.register('relatorios', (params, el) => {
               const proj = calcProj(p.fatBase);
               const ads  = parseFloat(p.adsBase)||0;
               const pADS = proj>0?(calcProj(p.adsBase)/proj)*100:0;
-              return `<tr style="background:${i%2===0?'#f8f9fc':'white'};">
+              return `<tr style="background:${i%2===0?'var(--bg-subtle)':'white'};">
                 <td style="padding:9px 12px;font-weight:600;">${p.nome||'—'}</td>
                 <td style="padding:9px 12px;text-align:right;">${fat>0?fmtFull(fat):'—'}</td>
-                <td style="padding:9px 12px;text-align:right;font-weight:700;color:#6366f1;">${proj>0?fmtFull(proj):'—'}</td>
+                <td style="padding:9px 12px;text-align:right;font-weight:700;color:var(--accent);">${proj>0?fmtFull(proj):'—'}</td>
                 <td style="padding:9px 12px;text-align:right;">${p.vendasBase>0?Math.round(parseFloat(p.vendasBase)).toLocaleString('pt-BR'):'—'}</td>
                 <td style="padding:9px 12px;text-align:right;">${ads>0?fmtFull(ads):'—'}</td>
-                <td style="padding:9px 12px;text-align:right;color:#f59e0b;">${pADS>0?pADS.toFixed(1)+'%':'—'}</td>
+                <td style="padding:9px 12px;text-align:right;color:var(--yellow);">${pADS>0?pADS.toFixed(1)+'%':'—'}</td>
               </tr>`;
             }).join('')}
-            <tr style="background:#1a274411;font-weight:700;">
+            <tr style="background:var(--bg-subtle);font-weight:700;">
               <td style="padding:9px 12px;">Total</td>
               <td style="padding:9px 12px;text-align:right;">${fmtFull(plats.reduce((s,p)=>s+(parseFloat(p.fatBase)||0),0))}</td>
-              <td style="padding:9px 12px;text-align:right;color:#6366f1;">${fmtFull(fatProj)}</td>
+              <td style="padding:9px 12px;text-align:right;color:var(--accent);">${fmtFull(fatProj)}</td>
               <td style="padding:9px 12px;text-align:right;">${Math.round(plats.reduce((s,p)=>s+(parseFloat(p.vendasBase)||0),0)).toLocaleString('pt-BR')}</td>
               <td style="padding:9px 12px;text-align:right;">${fmtFull(plats.reduce((s,p)=>s+(parseFloat(p.adsBase)||0),0))}</td>
-              <td style="padding:9px 12px;text-align:right;color:#f59e0b;">${pctADS>0?pctADS.toFixed(1)+'%':'—'}</td>
+              <td style="padding:9px 12px;text-align:right;color:var(--yellow);">${pctADS>0?pctADS.toFixed(1)+'%':'—'}</td>
             </tr>
           </tbody>
         </table>
@@ -2203,7 +2203,7 @@ Router.register('relatorios', (params, el) => {
           ].filter(r=>parseFloat(r.v)>0).map((r,i)=>{
             const fat = parseFloat(dreRecente.valores.faturamento)||0;
             const pct = fat>0?((parseFloat(r.v)||0)/fat*100):0;
-            return `<tr style="background:${i%2===0?'#f8f9fc':'white'};">
+            return `<tr style="background:${i%2===0?'var(--bg-subtle)':'white'};">
               <td style="padding:8px 12px;font-style:italic;${r.receita?'font-weight:700;':''}">${r.l}</td>
               <td style="padding:8px 12px;text-align:right;${r.receita?'font-weight:700;':''}">${fmtFull(parseFloat(r.v)||0)}</td>
               <td style="padding:8px 12px;text-align:right;color:#888;">${pct.toFixed(2)}%</td>
@@ -2214,10 +2214,10 @@ Router.register('relatorios', (params, el) => {
             const custos = ['comissaoFrete','produtos','ads','imposto','juros','custoFixo','comissaoGLR'].reduce((s,k)=>s+(parseFloat(dreRecente.valores[k])||0),0);
             const res = fat-custos;
             const pct = fat>0?(res/fat*100):0;
-            return `<tr style="background:#1a274411;font-weight:700;font-size:14px;">
+            return `<tr style="background:var(--bg-subtle);font-weight:700;font-size:14px;">
               <td style="padding:10px 12px;">Resultado</td>
-              <td style="padding:10px 12px;text-align:right;color:${res>=0?'#10b981':'#ef4444'};">${fmtFull(res)}</td>
-              <td style="padding:10px 12px;text-align:right;color:${res>=0?'#10b981':'#ef4444'};">${pct.toFixed(2)}%</td>
+              <td style="padding:10px 12px;text-align:right;color:${res>=0?'var(--green)':'var(--red)'};">${fmtFull(res)}</td>
+              <td style="padding:10px 12px;text-align:right;color:${res>=0?'var(--green)':'var(--red)'};">${pct.toFixed(2)}%</td>
             </tr>`;
           })()}
         </table>
@@ -2234,9 +2234,9 @@ Router.register('relatorios', (params, el) => {
         ${acoes.length ? `
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
           ${acoes.slice(0,10).map((a,i)=>`
-          <tr style="background:${i%2===0?'#f8f9fc':'white'};">
+          <tr style="background:${i%2===0?'var(--bg-subtle)':'white'};">
             <td style="padding:8px 12px;color:#888;white-space:nowrap;">${a.data?new Date(a.data+'T00:00:00').toLocaleDateString('pt-BR'):''}</td>
-            <td style="padding:8px 12px;"><span style="background:#6366f111;color:#6366f1;padding:2px 8px;border-radius:20px;font-size:11px;">${a.categoria||a.tipo||''}</span></td>
+            <td style="padding:8px 12px;"><span style="background:#6366f111;color:var(--accent);padding:2px 8px;border-radius:20px;font-size:11px;">${a.categoria||a.tipo||''}</span></td>
             <td style="padding:8px 12px;">${a.descricao||''}</td>
             <td style="padding:8px 12px;color:#888;">${a.responsavel||''}</td>
           </tr>`).join('')}
@@ -2246,28 +2246,28 @@ Router.register('relatorios', (params, el) => {
       <!-- Oportunidades -->
       ${opps.length ? `
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#10b981;">💡 Oportunidades</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:var(--green);">💡 Oportunidades</div>
         ${opps.map(o=>`
           <div style="padding:10px 14px;background:#10b98108;border:1px solid #10b98133;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
             <div>
               <div style="font-weight:600;font-size:13.5px;">${o.titulo}</div>
               <div style="font-size:12px;color:#666;margin-top:2px;">${o.descricao||''}</div>
             </div>
-            ${o.impacto?`<div style="font-weight:800;color:#10b981;white-space:nowrap;margin-left:16px;">${fmtFull(o.impacto)}/mês</div>`:''}
+            ${o.impacto?`<div style="font-weight:700;color:var(--green);white-space:nowrap;margin-left:16px;">${fmtFull(o.impacto)}/mês</div>`:''}
           </div>`).join('')}
       </div>` : ''}
 
       <!-- Próximos Passos -->
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#f59e0b;">📋 Próximos Passos</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:var(--yellow);">📋 Próximos Passos</div>
         ${tarefasPend.length ? `
         <div style="display:flex;flex-direction:column;gap:8px;">
           ${tarefasPend.map((t,i)=>`
-            <div style="display:flex;gap:10px;align-items:center;padding:8px 12px;background:#f8f9fc;border-radius:6px;">
-              <div style="width:22px;height:22px;border-radius:50%;background:#1a2744;color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${i+1}</div>
+            <div style="display:flex;gap:10px;align-items:center;padding:8px 12px;background:var(--bg-subtle);border-radius:6px;">
+              <div style="width:22px;height:22px;border-radius:50%;background:var(--bg-subtle);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${i+1}</div>
               <div style="flex:1;font-size:13px;">${t.titulo}</div>
               <div style="font-size:12px;color:#888;">${t.prazo?new Date(t.prazo+'T00:00:00').toLocaleDateString('pt-BR'):''}</div>
-              <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${{urgente:'#ef444422',alta:'#f9731622',media:'#f59e0b22',baixa:'#10b98122'}[t.prioridade]||'#88888822'};color:${{urgente:'#ef4444',alta:'#f97316',media:'#f59e0b',baixa:'#10b981'}[t.prioridade]||'#888'};">${t.prioridade||''}</span>
+              <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${{urgente:'#ef444422',alta:'#f9731622',media:'#f59e0b22',baixa:'#10b98122'}[t.prioridade]||'#88888822'};color:${{urgente:'var(--red)',alta:'#f97316',media:'var(--yellow)',baixa:'var(--green)'}[t.prioridade]||'#888'};">${t.prioridade||''}</span>
             </div>`).join('')}
         </div>` : '<div style="color:#888;font-size:13px;">Sem tarefas pendentes.</div>'}
       </div>
@@ -2418,7 +2418,7 @@ Router.register('ia', (params, el) => {
     <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;">
       <div class="card" style="flex-shrink:0;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-          <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:16px;">🤖</div>
+          <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:16px;">🤖</div>
           <div>
             <div style="font-size:14px;font-weight:700;">GLR IA Copiloto</div>
             <div style="font-size:11px;color:var(--green);">● Online</div>
@@ -2443,7 +2443,7 @@ Router.register('ia', (params, el) => {
     <div class="card" style="flex:1;display:flex;flex-direction:column;padding:0;overflow:hidden;">
       <div id="ia-messages" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;">
         <div style="display:flex;gap:10px;">
-          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
+          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
           <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;max-width:80%;">
             <div style="font-size:14px;font-weight:600;margin-bottom:6px;color:var(--accent-light);">Olá! Sou o Copiloto da GLR 👋</div>
             <div style="font-size:13.5px;color:var(--text-secondary);line-height:1.6;">Analiso os dados reais cadastrados no sistema — sem inventar nada. Clientes, tarefas, gestores e faturamentos. Pergunte o que quiser!</div>
@@ -2475,7 +2475,7 @@ Router.register('ia', (params, el) => {
 
     const typingId = 'typing-' + Date.now();
     messagesDiv.innerHTML += `<div id="${typingId}" style="display:flex;gap:10px;">
-      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
+      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;">
         <div style="display:flex;gap:4px;align-items:center;">
           <div style="width:6px;height:6px;border-radius:50%;background:var(--text-muted);animation:pulse 1s infinite;"></div>
@@ -2496,7 +2496,7 @@ Router.register('ia', (params, el) => {
         .replace(/\n/g, '<br>');
 
       messagesDiv.innerHTML += `<div style="display:flex;gap:10px;">
-        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
+        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
         <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;max-width:85%;font-size:13.5px;line-height:1.7;color:var(--text-secondary);">${formatted}</div>
       </div>`;
       messagesDiv.scrollTop = messagesDiv.scrollHeight;

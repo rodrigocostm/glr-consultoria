@@ -214,15 +214,15 @@ Router.register('gestores', (params, el) => {
                   style="background:var(--accent);border:none;border-radius:5px;padding:5px 7px;cursor:pointer;color:white;font-size:11px;flex-shrink:0;">✓</button>
               </div>
             </td>
-            <td style="padding:10px 8px;text-align:right;color:${d.pctADS>20?'#ef4444':d.pctADS>15?'#f59e0b':'var(--text-secondary)'};">${d.pctADS>0?d.pctADS.toFixed(1)+'%':'—'}</td>
+            <td style="padding:10px 8px;text-align:right;color:${d.pctADS>20?'var(--red)':d.pctADS>15?'var(--yellow)':'var(--text-secondary)'};">${d.pctADS>0?d.pctADS.toFixed(1)+'%':'—'}</td>
             <td style="padding:10px 8px;text-align:right;font-weight:600;color:var(--accent-light);">${d.fatProj>0?fmtR(d.fatProj):'—'}</td>
             <td style="padding:10px 8px;text-align:right;font-weight:${d.fatReal>0?700:400};color:${d.fatReal>0?'var(--text-primary)':'var(--text-muted)'};">${d.fatReal>0?fmtR(d.fatReal):`<span style="font-size:10px;" title="Vincule as contas do cliente na Carteira/Projeção para os números virem da base">${d.viaBase?'R$ 0':'sem conta vinculada'}</span>`}</td>
             <td style="padding:10px 8px;text-align:right;font-weight:600;color:${corComp(d.compM1)};">${d.compM1!==null?fmtPct(d.compM1):'—'}</td>
-            <td id="cell-falta-${c.id}" style="padding:10px 8px;text-align:right;color:${d.faltaMeta!==null?(d.faltaMeta<=0?'#10b981':'#f97316'):'var(--text-muted)'};">${d.faltaMeta!==null?(d.faltaMeta<=0?'✅ Batida':fmtR(d.faltaMeta)):'—'}</td>
-            <td id="cell-pct-${c.id}" style="padding:10px 8px;text-align:center;">${d.pctMeta!==null?`<span style="background:${cor.bg};color:${cor.text};font-weight:800;padding:2px 9px;border-radius:99px;font-size:11px;">${d.pctMeta.toFixed(1)}%</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+            <td id="cell-falta-${c.id}" style="padding:10px 8px;text-align:right;color:${d.faltaMeta!==null?(d.faltaMeta<=0?'var(--green)':'#f97316'):'var(--text-muted)'};">${d.faltaMeta!==null?(d.faltaMeta<=0?'✅ Batida':fmtR(d.faltaMeta)):'—'}</td>
+            <td id="cell-pct-${c.id}" style="padding:10px 8px;text-align:center;">${d.pctMeta!==null?`<span style="background:${cor.bg};color:${cor.text};font-weight:700;padding:2px 9px;border-radius:99px;font-size:11px;">${d.pctMeta.toFixed(1)}%</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
             <td style="padding:10px 8px;text-align:right;color:var(--text-secondary);">${d.adsProj>0?fmtR(d.adsProj):'—'}</td>
-            <td style="padding:10px 8px;text-align:right;color:${d.pctADSProj>20?'#ef4444':d.pctADSProj>15?'#f59e0b':'var(--text-secondary)'};">${d.pctADSProj>0?d.pctADSProj.toFixed(1)+'%':'—'}</td>
-            <td style="padding:10px 8px;text-align:right;color:#10b981;font-weight:600;">${d.recGLR>0?fmtR(d.recGLR):'—'}</td>
+            <td style="padding:10px 8px;text-align:right;color:${d.pctADSProj>20?'var(--red)':d.pctADSProj>15?'var(--yellow)':'var(--text-secondary)'};">${d.pctADSProj>0?d.pctADSProj.toFixed(1)+'%':'—'}</td>
+            <td style="padding:10px 8px;text-align:right;color:var(--green);font-weight:600;">${d.recGLR>0?fmtR(d.recGLR):'—'}</td>
             <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:11px;">${d.fatM3>0?fmtR(d.fatM3):'—'}</td>
             <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:11px;">${d.fatM2>0?fmtR(d.fatM2):'—'}</td>
             <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:11px;">${d.fatM1>0?fmtR(d.fatM1):'—'}</td>
@@ -230,7 +230,7 @@ Router.register('gestores', (params, el) => {
         }).join('')}
       </tbody>
       <tfoot>
-        <tr style="background:#1a274415;font-weight:700;border-top:2px solid var(--border);">
+        <tr style="background:var(--bg-subtle);font-weight:700;border-top:2px solid var(--border);">
           <td style="padding:10px 14px;">Total · ${clientes.length} cliente${clientes.length!==1?'s':''}</td>
           <td style="padding:10px 8px;text-align:right;">${tot.metaFinal>0?fmtR(tot.metaFinal):'—'}</td>
           <td style="padding:10px 8px;text-align:right;">${tot.fatProj>0&&tot.adsProj>0?((tot.adsProj/tot.fatProj)*100).toFixed(1)+'%':'—'}</td>
@@ -238,10 +238,10 @@ Router.register('gestores', (params, el) => {
           <td style="padding:10px 8px;text-align:right;">${tot.fatReal>0?fmtR(tot.fatReal):'—'}</td>
           <td style="padding:10px 8px;text-align:right;color:${corComp(totM1)};">${totM1!==null?fmtPct(totM1):'—'}</td>
           <td></td>
-          <td style="padding:10px 8px;text-align:center;">${totPct!==null?`<span style="background:${corTot.bg};color:${corTot.text};font-weight:800;padding:2px 9px;border-radius:99px;font-size:11px;">${totPct.toFixed(1)}%</span>`:'—'}</td>
+          <td style="padding:10px 8px;text-align:center;">${totPct!==null?`<span style="background:${corTot.bg};color:${corTot.text};font-weight:700;padding:2px 9px;border-radius:99px;font-size:11px;">${totPct.toFixed(1)}%</span>`:'—'}</td>
           <td style="padding:10px 8px;text-align:right;">${tot.adsProj>0?fmtR(tot.adsProj):'—'}</td>
           <td></td>
-          <td style="padding:10px 8px;text-align:right;color:#10b981;">${tot.recGLR>0?fmtR(tot.recGLR):'—'}</td>
+          <td style="padding:10px 8px;text-align:right;color:var(--green);">${tot.recGLR>0?fmtR(tot.recGLR):'—'}</td>
           <td style="padding:10px 8px;text-align:right;font-size:11px;">${tot.fatM3>0?fmtR(tot.fatM3):'—'}</td>
           <td style="padding:10px 8px;text-align:right;font-size:11px;">${tot.fatM2>0?fmtR(tot.fatM2):'—'}</td>
           <td style="padding:10px 8px;text-align:right;font-size:11px;">${tot.fatM1>0?fmtR(tot.fatM1):'—'}</td>
@@ -250,9 +250,9 @@ Router.register('gestores', (params, el) => {
     </table>
     </div>
     <div style="padding:8px 16px 10px;border-top:1px solid var(--border);display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--text-muted);">
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:#10b981;border-radius:2px;"></span>Batendo meta ≥100%</span>
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:#f59e0b;border-radius:2px;"></span>Quase lá 85–99%</span>
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:#ef4444;border-radius:2px;"></span>Abaixo &lt;85%</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:var(--green);border-radius:2px;"></span>Batendo meta ≥100%</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:var(--yellow);border-radius:2px;"></span>Quase lá 85–99%</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:var(--red);border-radius:2px;"></span>Abaixo &lt;85%</span>
       <span style="margin-left:auto;">Clique no cliente para abrir o perfil →</span>
     </div>`;
   }
@@ -264,7 +264,7 @@ Router.register('gestores', (params, el) => {
     <!-- Header -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
       <div>
-        <div class="section-title" style="font-size:20px;">👥 Gestores — Performance ${meses[hoje.getMonth()]} ${hoje.getFullYear()}</div>
+        <div class="section-title" style="font-size:20px;">Gestores — Performance ${meses[hoje.getMonth()]} ${hoje.getFullYear()}</div>
         <div class="section-subtitle">${GLR.gestores.length} gestor${GLR.gestores.length!==1?'es':''} cadastrado${GLR.gestores.length!==1?'s':''} · Dados em tempo real</div>
       </div>
       <div style="display:flex;gap:10px;">
@@ -303,9 +303,9 @@ Router.register('gestores', (params, el) => {
         <!-- Header do gestor -->
         <div style="padding:16px 20px;background:linear-gradient(135deg,#1a2744,#23305a);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
           <div style="display:flex;align-items:center;gap:14px;">
-            <div style="width:48px;height:48px;border-radius:50%;background:${g.cor||'#6366f1'}30;border:2px solid ${g.cor||'#6366f1'}60;display:flex;align-items:center;justify-content:center;font-weight:800;color:${g.cor||'#6366f1'};font-size:16px;">${iniciais(g.nome)}</div>
+            <div style="width:48px;height:48px;border-radius:50%;background:${g.cor||'#4f46e5'}30;border:2px solid ${g.cor||'#4f46e5'}60;display:flex;align-items:center;justify-content:center;font-weight:700;color:${g.cor||'var(--accent)'};font-size:16px;">${iniciais(g.nome)}</div>
             <div>
-              <div style="font-size:17px;font-weight:800;color:white;">${g.nome}</div>
+              <div style="font-size:17px;font-weight:700;color:white;">${g.nome}</div>
               <div style="font-size:12px;color:rgba(255,255,255,0.5);">${g.cargo||'Gestor de Contas'} · ${cli.length} cliente${cli.length!==1?'s':''}</div>
             </div>
           </div>
@@ -314,17 +314,17 @@ Router.register('gestores', (params, el) => {
               <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;">META</div>
               <div id="hdr-meta-${gid}" style="font-size:14px;font-weight:700;color:white;">${totMeta>0?fmtR(totMeta):'—'}</div>
             </div>
-            ${totRef>0?`<div style="text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;">PROJEÇÃO/REAL</div><div style="font-size:14px;font-weight:700;color:#818cf8;">${fmtR(totRef)}</div></div>`:''}
+            ${totRef>0?`<div style="text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;">PROJEÇÃO/REAL</div><div style="font-size:14px;font-weight:700;color:var(--accent-light);">${fmtR(totRef)}</div></div>`:''}
             <div style="text-align:center;">
               <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;">% META</div>
-              <div id="hdr-pct-${gid}" style="font-size:18px;font-weight:800;color:${totPct!==null?corTot.text:'rgba(255,255,255,0.4)'};">${totPct!==null?totPct.toFixed(0)+'%':'—'}</div>
+              <div id="hdr-pct-${gid}" style="font-size:18px;font-weight:700;color:${totPct!==null?corTot.text:'rgba(255,255,255,0.4)'};">${totPct!==null?totPct.toFixed(0)+'%':'—'}</div>
             </div>
-            ${totRecGLR>0?`<div style="text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;">RECEITA GLR</div><div style="font-size:14px;font-weight:700;color:#34d399;">${fmtR(totRecGLR)}</div></div>`:''}
+            ${totRecGLR>0?`<div style="text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;">RECEITA GLR</div><div style="font-size:14px;font-weight:700;color:var(--green);">${fmtR(totRecGLR)}</div></div>`:''}
             <div style="display:flex;align-items:center;gap:6px;margin-left:8px;">
-              ${g.loginCriado ? `<span title="Login criado em ${g.loginCriadoEm ? new Date(g.loginCriadoEm).toLocaleDateString('pt-BR') : ''}" style="font-size:10px;background:rgba(16,185,129,0.2);color:#34d399;padding:3px 8px;border-radius:99px;font-weight:700;">✅ Login criado</span>` : ''}
-              <button class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);" onclick="abrirModalLoginGestor(${GLR.gestores.indexOf(g)})">🔐 ${g.loginCriado ? 'Acesso' : 'Criar Login'}</button>
-              <button class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);" onclick="editarGestor(${GLR.gestores.indexOf(g)})">✏️ Editar</button>
-              <button class="btn btn-ghost btn-sm" style="color:#f87171;border:1px solid rgba(248,113,113,0.3);" onclick="removerGestor(${GLR.gestores.indexOf(g)})">🗑️</button>
+              ${g.loginCriado ? `<span title="Login criado em ${g.loginCriadoEm ? new Date(g.loginCriadoEm).toLocaleDateString('pt-BR') : ''}" style="font-size:10px;background:rgba(16,185,129,0.2);color:var(--green);padding:3px 8px;border-radius:99px;font-weight:700;">✅ Login criado</span>` : ''}
+              <button class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);" onclick="abrirModalLoginGestor(${GLR.gestores.indexOf(g)})">${g.loginCriado ? 'Acesso' : 'Criar Login'}</button>
+              <button class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);" onclick="editarGestor(${GLR.gestores.indexOf(g)})">Editar</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--red);border:1px solid rgba(248,113,113,0.3);" onclick="removerGestor(${GLR.gestores.indexOf(g)})">🗑️</button>
             </div>
           </div>
         </div>
@@ -379,7 +379,7 @@ Router.register('gestores', (params, el) => {
         pctEl.innerHTML = '<span style="color:var(--text-muted)">—</span>';
       } else {
         const cor = corMeta(pct);
-        pctEl.innerHTML = `<span style="background:${cor.bg};color:${cor.text};font-weight:800;padding:2px 9px;border-radius:99px;font-size:11px;">${pct.toFixed(1)}%</span>`;
+        pctEl.innerHTML = `<span style="background:${cor.bg};color:${cor.text};font-weight:700;padding:2px 9px;border-radius:99px;font-size:11px;">${pct.toFixed(1)}%</span>`;
       }
     }
   }
@@ -452,7 +452,7 @@ Router.register('gestores', (params, el) => {
         <button class="btn btn-ghost btn-sm" onclick="this.closest('.modal-overlay').remove()">✕</button>
       </div>
       <div style="display:flex;justify-content:center;margin-bottom:20px;">
-        <div id="avatar-preview" style="width:64px;height:64px;border-radius:50%;background:${corAtual}20;border:3px solid ${corAtual}60;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:${corAtual};">
+        <div id="avatar-preview" style="width:64px;height:64px;border-radius:50%;background:${corAtual}20;border:3px solid ${corAtual}60;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:650;letter-spacing:-0.02em;color:${corAtual};">
           ${g?iniciais(g.nome):'?'}
         </div>
       </div>

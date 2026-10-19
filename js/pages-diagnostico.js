@@ -90,13 +90,13 @@ Router.register('diagnostico', async (params, el) => {
     <div class="page">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
         <div>
-          <h1 style="font-size:20px;font-weight:800;margin:0;">🩺 Diagnóstico do Sistema</h1>
+          <h1 style="font-size:20px;font-weight:700;margin:0;">🩺 Diagnóstico do Sistema</h1>
           <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Mostra o que já está salvo em cada área e testa a conexão com a API — não faz nenhuma busca de vendas sozinho.</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn-primary" style="padding:8px 16px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.35);color:#818cf8;" id="btn-backup" title="Baixa um arquivo com tudo que está salvo no banco e neste navegador — use antes de qualquer mudança grande">💾 Baixar backup completo</button>
+          <button class="btn-primary" style="padding:8px 16px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.35);color:var(--accent-light);" id="btn-backup" title="Baixa um arquivo com tudo que está salvo no banco e neste navegador — use antes de qualquer mudança grande">Baixar backup completo</button>
           <button class="btn-primary" style="padding:8px 16px;" id="btn-testar-api" ${testeApi==='carregando'?'disabled':''}>${testeApi==='carregando'?'⏳ Testando...':'🔄 Testar conexão'}</button>
-          <button class="btn-primary" style="padding:8px 16px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#10b981;" id="btn-atualizar-tudo">⚡ Atualizar tudo</button>
+          <button class="btn-primary" style="padding:8px 16px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:var(--green);" id="btn-atualizar-tudo">Atualizar tudo</button>
         </div>
       </div>
 
@@ -106,7 +106,7 @@ Router.register('diagnostico', async (params, el) => {
         <div class="kpi-card">
           <div class="kpi-icon" style="background:${apiKey?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.12)'};"><span style="font-size:18px;">🔑</span></div>
           <div class="kpi-label">API Key</div>
-          <div class="kpi-value" style="color:${apiKey?'#10b981':'#ef4444'};font-size:16px;">${apiKey ? 'Configurada' : 'Não configurada'}</div>
+          <div class="kpi-value" style="color:${apiKey?'var(--green)':'var(--red)'};font-size:16px;">${apiKey ? 'Configurada' : 'Não configurada'}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-icon" style="background:${totalContasVinc>0?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.12)'};"><span style="font-size:18px;">🔗</span></div>
@@ -121,14 +121,14 @@ Router.register('diagnostico', async (params, el) => {
         <div class="kpi-card">
           <div class="kpi-icon" style="background:${testeApi==='ok'?'rgba(16,185,129,0.12)':testeApi==='erro'?'rgba(239,68,68,0.12)':'rgba(148,163,184,0.12)'};"><span style="font-size:18px;">📡</span></div>
           <div class="kpi-label">Conexão API (agora)</div>
-          <div class="kpi-value" style="font-size:14px;color:${testeApi==='ok'?'#10b981':testeApi==='erro'?'#ef4444':'var(--text-muted)'};">
+          <div class="kpi-value" style="font-size:14px;color:${testeApi==='ok'?'var(--green)':testeApi==='erro'?'var(--red)':'var(--text-muted)'};">
             ${testeApi==='ok' ? '🟢 Respondendo' : testeApi==='erro' ? '🔴 Erro' : testeApi==='carregando' ? '⏳ Testando...' : 'Não testado ainda'}
           </div>
         </div>
       </div>
 
       ${testeApi==='erro' ? `<div class="card mb-16" style="border-color:rgba(239,68,68,0.4);">
-        <div style="color:#ef4444;font-weight:700;font-size:13px;margin-bottom:4px;">Erro ao testar a API:</div>
+        <div style="color:var(--red);font-weight:700;font-size:13px;margin-bottom:4px;">Erro ao testar a API:</div>
         <div style="font-size:12px;color:var(--text-secondary);font-family:monospace;">${window._diagErroApi||''}</div>
       </div>` : ''}
 
@@ -137,7 +137,7 @@ Router.register('diagnostico', async (params, el) => {
         <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:700px;">
           <thead>
-            <tr style="background:#1a2744;color:white;">
+            <tr style="background:var(--bg-subtle);color:var(--text-secondary);">
               <th style="padding:10px 12px;text-align:left;">Área</th>
               <th style="padding:10px 8px;text-align:left;">Detalhe</th>
               <th style="padding:10px 8px;text-align:right;">Última atualização</th>
@@ -162,9 +162,9 @@ Router.register('diagnostico', async (params, el) => {
         </div>
       </div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 4px;font-size:11px;color:var(--text-muted);">
-        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#10b981;border-radius:3px;"></span> Atualizado (&lt;24h)</span>
-        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#f59e0b;border-radius:3px;"></span> Desatualizado (24–72h)</span>
-        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#ef4444;border-radius:3px;"></span> Muito antigo (&gt;72h) ou sem dados</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--green);border-radius:3px;"></span> Atualizado (&lt;24h)</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--yellow);border-radius:3px;"></span> Desatualizado (24–72h)</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--red);border-radius:3px;"></span> Muito antigo (&gt;72h) ou sem dados</span>
         <span style="margin-left:auto;">Clique numa linha pra abrir a página correspondente</span>
       </div>
       <div style="font-size:11px;color:var(--text-muted);padding:4px;">
@@ -207,14 +207,14 @@ Router.register('diagnostico', async (params, el) => {
         return min < 60 ? `há ${min} min` : min < 1440 ? `há ${Math.round(min / 60)} h` : new Date(iso).toLocaleString('pt-BR');
       };
       const cel = e => !e ? '<span style="color:var(--text-muted);">aguardando 1ª rodada</span>'
-        : !e.ultimo_sucesso && !e.ultimo_erro ? '<span style="color:#f59e0b;">⏳ carregando pela 1ª vez…</span>'
-        : e.ultimo_erro ? `<span style="color:#ef4444;" title="${String(e.ultimo_erro).replace(/"/g, '&quot;')}">⚠️ erro ${quando(e.ultima_tentativa)}</span>`
-        : `<span style="color:#10b981;">✔ ${quando(e.ultimo_sucesso)}</span> <span style="color:var(--text-muted);">· ${e.registros ?? 0} na última rodada</span>`;
+        : !e.ultimo_sucesso && !e.ultimo_erro ? '<span style="color:var(--yellow);">⏳ carregando pela 1ª vez…</span>'
+        : e.ultimo_erro ? `<span style="color:var(--red);" title="${String(e.ultimo_erro).replace(/"/g, '&quot;')}">⚠️ erro ${quando(e.ultima_tentativa)}</span>`
+        : `<span style="color:var(--green);">✔ ${quando(e.ultimo_sucesso)}</span> <span style="color:var(--text-muted);">· ${e.registros ?? 0} na última rodada</span>`;
       const contas = Object.keys(porConta).sort((x, y) => String(nomes[x] || x).localeCompare(String(nomes[y] || y), 'pt-BR'));
       const ok = contas.filter(c => porConta[c].pedidos?.ultimo_sucesso && !porConta[c].pedidos?.ultimo_erro).length;
       box.innerHTML = `<div class="card" style="padding:18px 20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px;">
-          <div style="font-size:15px;font-weight:800;">🛰️ Saúde dos dados (sincronização automática)</div>
+          <div style="font-size:15px;font-weight:700;">🛰️ Saúde dos dados (sincronização automática)</div>
           <button class="btn-primary" style="padding:5px 12px;font-size:12px;" onclick="window._diagSaudeAtualizar && window._diagSaudeAtualizar()">🔄</button>
         </div>
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">O servidor busca sozinho, a cada 15 minutos, os pedidos novos ou alterados e o ADS de todas as lojas conectadas (Shopee, Mercado Livre, Amazon, TikTok Shop, Magalu e Shein). O histórico de 90 dias entra aos poucos (até 1 min por loja a cada rodada) e, depois das 03:00, os últimos 45 dias são reconferidos. Pedidos no banco: <b>${(totalPedidos || 0).toLocaleString('pt-BR')}</b> · contas em dia: <b>${ok}/${contas.length}</b></div>
@@ -230,7 +230,7 @@ Router.register('diagnostico', async (params, el) => {
         </table></div>`}
       </div>`;
     } catch (e) {
-      box.innerHTML = `<div class="card" style="padding:14px 18px;font-size:12.5px;color:#ef4444;">⚠️ Não consegui ler a sincronização: ${e.message || e}</div>`;
+      box.innerHTML = `<div class="card" style="padding:14px 18px;font-size:12.5px;color:var(--red);">⚠️ Não consegui ler a sincronização: ${e.message || e}</div>`;
     }
   }
   window._diagSaudeAtualizar = renderSaudeDados;
@@ -325,14 +325,14 @@ Router.register('diagnostico', async (params, el) => {
         <span style="font-size:11px;color:var(--text-muted);">${idxAtual+1}/${etapas.length}</span>
       </div>
       <div style="height:4px;background:var(--bg-card);">
-        <div style="height:100%;width:${Math.round((idxAtual/etapas.length)*100)}%;background:#10b981;transition:width .3s;"></div>
+        <div style="height:100%;width:${Math.round((idxAtual/etapas.length)*100)}%;background:var(--green);transition:width .3s;"></div>
       </div>
       <div style="max-height:280px;overflow-y:auto;padding:8px 0;">
         ${etapas.map((e,i) => `
           <div style="display:flex;align-items:center;gap:8px;padding:6px 16px;font-size:12px;">
             <span style="width:16px;text-align:center;">${e.status==='ok'?'✅':e.status==='erro'?'❌':i===idxAtual?'⏳':'⚪'}</span>
             <span style="flex:1;color:${i===idxAtual?'var(--text-primary)':'var(--text-secondary)'};font-weight:${i===idxAtual?'700':'400'};">${e.nome}</span>
-            ${e.erro?`<span style="font-size:10px;color:#ef4444;">${e.erro}</span>`:''}
+            ${e.erro?`<span style="font-size:10px;color:var(--red);">${e.erro}</span>`:''}
           </div>`).join('')}
       </div>
     </div>`;

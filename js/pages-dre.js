@@ -466,10 +466,10 @@ Router.register('dre', (params, el) => {
                     </button>`).join('')}
                   <button onclick="dreOnPlat('GERAL')"
                     style="padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;
-                           border:2px solid ${isGeral?'#10b981':'var(--border)'};
-                           background:${isGeral?'#10b981':'var(--bg-surface)'};
+                           border:2px solid ${isGeral?'var(--green)':'var(--border)'};
+                           background:${isGeral?'var(--green)':'var(--bg-surface)'};
                            color:${isGeral?'white':'var(--text-secondary)'};">
-                    📊 Geral
+                    Geral
                   </button>
                 </div>`}
           </div>
@@ -584,7 +584,7 @@ Router.register('dre', (params, el) => {
       ${modoAuto ? `
       <div style="margin-bottom:16px;padding:10px 14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px;">
         <svg width="15" height="15" fill="none" stroke="#10b981" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-        <span style="font-size:13px;color:#10b981;">
+        <span style="font-size:13px;color:var(--green);">
           ${vals._semTaxa != null
             ? `<strong>⚡ Preenchido da base automática</strong> — pedidos com as taxas reais e ADS desta conta (Shopee com GMV Max), atualizado pelo servidor a cada 15 min.${vals._semTaxa ? ` ${vals._semTaxa} pedido${vals._semTaxa !== 1 ? 's' : ''} ainda sem taxa real (o servidor está buscando) — por ora entram com a estimativa.` : ''}`
             : `<strong>Preenchido automaticamente da API</strong> — Faturamento, Comissão+Frete, ADS, Imposto e Comissão GLR vêm dos dados sincronizados no Financeiro.`}
@@ -608,13 +608,13 @@ Router.register('dre', (params, el) => {
       ${preenchidoGeral ? `
       <div style="margin-bottom:16px;padding:10px 14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px;">
         <svg width="15" height="15" fill="none" stroke="#10b981" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span style="font-size:13px;color:#10b981;">
+        <span style="font-size:13px;color:var(--green);">
           <strong>DRE Geral consolidado</strong> — Soma automática de todos os DREs de plataforma salvos neste período.
         </span>
       </div>` : ''}
 
       ${autoVazio && !modoAuto ? `
-      <div style="margin-bottom:16px;padding:10px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:var(--radius-sm);font-size:13px;color:#f59e0b;">
+      <div style="margin-bottom:16px;padding:10px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:var(--radius-sm);font-size:13px;color:var(--yellow);">
         ⚠️ Cache do Financeiro disponível mas sem dados para este cliente/plataforma. Verifique os vínculos de conta em Integrações ou sincronize o mês correto no Financeiro.
       </div>` : ''}
 
@@ -641,7 +641,7 @@ Router.register('dre', (params, el) => {
         </div>
         <div style="text-align:right;">
           <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Resultado</div>
-          <div id="res-display" style="font-size:24px;font-weight:800;color:${rc};">${fmt(calc.resultado)}</div>
+          <div id="res-display" style="font-size:24px;font-weight:700;color:${rc};">${fmt(calc.resultado)}</div>
           <div id="res-pct-display" style="font-size:12px;color:${rc};">${fmtPct(calc.pct)} sobre faturamento</div>
         </div>
       </div>
@@ -708,11 +708,11 @@ Router.register('dre', (params, el) => {
             <td colspan="4" style="padding:8px 12px;border-bottom:none;">
               <div style="display:flex;gap:8px;">
                 <button class="btn btn-add-linha" onclick="dreAdicionarLinha('custo')"
-                  style="font-size:12px;padding:4px 12px;background:rgba(248,113,113,0.08);border:1px dashed rgba(248,113,113,0.4);color:#f87171;border-radius:6px;cursor:pointer;">
+                  style="font-size:12px;padding:4px 12px;background:rgba(248,113,113,0.08);border:1px dashed rgba(248,113,113,0.4);color:var(--red);border-radius:6px;cursor:pointer;">
                   + Linha de Custo
                 </button>
                 <button class="btn btn-add-linha" onclick="dreAdicionarLinha('receita')"
-                  style="font-size:12px;padding:4px 12px;background:rgba(16,185,129,0.08);border:1px dashed rgba(16,185,129,0.4);color:#10b981;border-radius:6px;cursor:pointer;">
+                  style="font-size:12px;padding:4px 12px;background:rgba(16,185,129,0.08);border:1px dashed rgba(16,185,129,0.4);color:var(--green);border-radius:6px;cursor:pointer;">
                   + Linha de Receita
                 </button>
               </div>
@@ -800,7 +800,7 @@ Router.register('dre', (params, el) => {
         const isG  = d.plataforma === 'GERAL';
         return `<tr>
           <td>${c?c.nome:'—'}</td>
-          <td>${isG?'<span style="color:#10b981;font-weight:700;">📊 Geral</span>':d.plataforma}</td>
+          <td>${isG?'<span style="color:var(--green);font-weight:700;">📊 Geral</span>':d.plataforma}</td>
           <td>${meses[d.mes]} ${d.ano}</td>
           <td style="text-align:right;">${fmt(calc.fat)}</td>
           <td style="text-align:right;color:${rc};">${fmt(calc.resultado)}</td>
@@ -870,7 +870,7 @@ Router.register('dre', (params, el) => {
     const s=(id,html)=>{const e=document.getElementById(id);if(e)e.innerHTML=html;};
     s('res-val',     `<strong style="color:${rc};">${fmt(calc.resultado)}</strong>`);
     s('res-pct',     `<strong style="color:${rc};">${fmtPct(calc.pct)}</strong>`);
-    s('res-display', `<span style="color:${rc};font-size:24px;font-weight:800;">${fmt(calc.resultado)}</span>`);
+    s('res-display', `<span style="color:${rc};font-size:24px;font-weight:700;">${fmt(calc.resultado)}</span>`);
     s('res-pct-display',`<span style="color:${rc};font-size:12px;">${fmtPct(calc.pct)} sobre faturamento</span>`);
 
     const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};

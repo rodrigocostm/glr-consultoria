@@ -63,7 +63,7 @@ Router.register('fotos', (params, el) => {
     el.innerHTML = `<div class="page">
       <div style="text-align:center;padding:80px 24px;">
         <div style="font-size:52px;margin-bottom:16px;">🎨</div>
-        <div style="font-size:20px;font-weight:800;color:var(--text-primary);margin-bottom:8px;">Nenhum gestor cadastrado ainda</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Nenhum gestor cadastrado ainda</div>
         <div style="font-size:14px;color:var(--text-muted);max-width:420px;margin:0 auto 24px;">Cadastre pelo menos um gestor antes de usar o gerador.</div>
         <button class="btn btn-primary" onclick="Router.navigate('gestores')">Cadastrar gestor</button>
       </div>
@@ -260,7 +260,7 @@ Router.register('fotos', (params, el) => {
       <div id="foto-dropzone" ondragover="event.preventDefault();this.style.borderColor='#6366f1';" ondragleave="this.style.borderColor='var(--border)';"
            ondrop="event.preventDefault();this.style.borderColor='var(--border)';_fotoDrop(event);"
            onclick="document.getElementById('foto-file-input').click()"
-           style="border:2px dashed var(--border);border-radius:16px;min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:20px;background:var(--bg-soft,#f7f8fc);transition:border-color .15s;">
+           style="border:2px dashed var(--border);border-radius:16px;min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:20px;background:var(--bg-soft,var(--bg-subtle));transition:border-color .15s;">
         ${estado.refPreviewUrl
           ? `<img src="${estado.refPreviewUrl}" style="max-width:100%;max-height:150px;border-radius:10px;object-fit:contain;">
              <div style="font-size:11px;color:var(--text-muted);margin-top:10px;">Clique pra trocar a foto</div>`
@@ -290,7 +290,7 @@ Router.register('fotos', (params, el) => {
         `).join('')}
       </div>
 
-      <button class="btn btn-secondary" style="width:100%;" onclick="_fotoMontarPrompt()">📝 Montar Prompt</button>
+      <button class="btn btn-secondary" style="width:100%;" onclick="_fotoMontarPrompt()">Montar Prompt</button>
 
       ${tipoState.promptMontado ? `
         <div class="form-group" style="margin-top:14px;">
@@ -359,13 +359,13 @@ Router.register('fotos', (params, el) => {
       <div class="card" style="margin-bottom:16px;padding:26px;">
         <div style="text-align:center;margin-bottom:22px;">
           <div style="width:50px;height:50px;border-radius:14px;background:rgba(99,102,241,0.1);display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 10px;">🎨</div>
-          <div style="font-size:17px;font-weight:800;color:var(--text-primary);">Gerador de Fotos</div>
+          <div style="font-size:17px;font-weight:700;color:var(--text-primary);">Gerador de Fotos</div>
           <div style="font-size:12.5px;color:var(--text-muted);margin-top:4px;max-width:440px;margin-left:auto;margin-right:auto;">Envie uma foto de referência e gere fotos profissionais com IA. Sem publicar nada — baixe e use onde quiser.</div>
         </div>
 
         <div style="display:flex;gap:8px;margin-bottom:18px;">
-          <button class="btn btn-sm ${modo === 'tipo' ? 'btn-primary' : 'btn-secondary'}" onclick="_fotoModo('tipo')">🎯 Por Tipo Específico</button>
-          <button class="btn btn-sm ${modo === 'kit' ? 'btn-primary' : 'btn-secondary'}" onclick="_fotoModo('kit')">📦 Kit Automático (3 fotos)</button>
+          <button class="btn btn-sm ${modo === 'tipo' ? 'btn-primary' : 'btn-secondary'}" onclick="_fotoModo('tipo')">Por Tipo Específico</button>
+          <button class="btn btn-sm ${modo === 'kit' ? 'btn-primary' : 'btn-secondary'}" onclick="_fotoModo('kit')">Kit Automático (3 fotos)</button>
         </div>
 
         <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:18px;">
@@ -380,7 +380,7 @@ Router.register('fotos', (params, el) => {
                 ${GLR.gestores.map(g => `<option>${g.nome}</option>`).join('')}
               </select>
             </div>
-            <button class="btn btn-secondary" style="width:100%;" onclick="_fotoRegistrar()">✅ Registrar no relatório do dia</button>
+            <button class="btn btn-secondary" style="width:100%;" onclick="_fotoRegistrar()">Registrar no relatório do dia</button>
           </div>
         ` : ''}
       </div>`;

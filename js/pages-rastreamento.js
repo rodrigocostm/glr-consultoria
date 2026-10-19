@@ -45,8 +45,8 @@ function renderShell() {
     <!-- ADS -->
     <div class="card" style="padding:20px;margin-bottom:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
-        <div class="section-title" style="font-size:15px;">📢 Campanhas de ADS</div>
-        <button class="btn btn-primary btn-sm" id="track-btn-ads" onclick="window._trackEscanearAds()">🔄 Verificar mudanças agora</button>
+        <div class="section-title" style="font-size:15px;">Campanhas de ADS</div>
+        <button class="btn btn-primary btn-sm" id="track-btn-ads" onclick="window._trackEscanearAds()">Verificar mudanças agora</button>
       </div>
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">Varre orçamento, status e meta ROAS de todas as campanhas Mercado Livre e Shopee vinculadas.</p>
       <div id="track-ads-status" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
@@ -55,14 +55,14 @@ function renderShell() {
 
     <!-- Preços -->
     <div class="card" style="padding:20px;margin-bottom:20px;">
-      <div class="section-title" style="font-size:15px;margin-bottom:4px;">💲 Preços monitorados</div>
+      <div class="section-title" style="font-size:15px;margin-bottom:4px;">Preços monitorados</div>
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">
         Selecione a conta — busca automaticamente o preço de todos os anúncios ativos dela (até 100 do ML, 50 da Shopee) e compara
         com a última verificação. Sem precisar digitar ID de anúncio nenhum. Atualização manual (sem robô automático nem notificação por enquanto).
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
         <select id="track-preco-conta" class="form-input" style="min-width:220px;"><option value="">Carregando contas...</option></select>
-        <button class="btn btn-primary btn-sm" id="track-btn-precos" onclick="window._trackEscanearPrecos()" disabled>🔄 Verificar mudanças agora</button>
+        <button class="btn btn-primary btn-sm" id="track-btn-precos" onclick="window._trackEscanearPrecos()" disabled>Verificar mudanças agora</button>
       </div>
       <div id="track-preco-status" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
       <div id="track-preco-log"></div>
@@ -70,7 +70,7 @@ function renderShell() {
 
     <!-- Pré-venda -->
     <div class="card" style="padding:20px;">
-      <div class="section-title" style="font-size:15px;margin-bottom:4px;">📦 Entrada/saída de pré-venda</div>
+      <div class="section-title" style="font-size:15px;margin-bottom:4px;">Entrada/saída de pré-venda</div>
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">
         <b>Shopee:</b> confirmado — a API expõe <code>pre_order.is_pre_order</code> por anúncio/variação. O botão abaixo escaneia
         automaticamente todos os anúncios ativos de <b>todas as contas Shopee conectadas</b>.<br/>
@@ -80,9 +80,9 @@ function renderShell() {
         anúncio ativo</b> — sem precisar informar ID nenhum. Use o botão de estoque completo se quiser conferir manualmente.
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-        <button class="btn btn-primary btn-sm" id="track-btn-prevenda-shopee" onclick="window._trackEscanearPrevendaShopee()">🔄 Verificar pré-venda Shopee (todas as contas)</button>
-        <button class="btn btn-primary btn-sm" id="track-btn-prevenda-ml" onclick="window._trackEscanearPrevendaML()">🔄 Verificar pré-venda ML (todas as contas)</button>
-        <button class="btn btn-secondary btn-sm" id="track-btn-estoque-ml" onclick="window._trackListarEstoqueML()">📋 Ver estoque de todos os anúncios ML</button>
+        <button class="btn btn-primary btn-sm" id="track-btn-prevenda-shopee" onclick="window._trackEscanearPrevendaShopee()">Verificar pré-venda Shopee (todas as contas)</button>
+        <button class="btn btn-primary btn-sm" id="track-btn-prevenda-ml" onclick="window._trackEscanearPrevendaML()">Verificar pré-venda ML (todas as contas)</button>
+        <button class="btn btn-secondary btn-sm" id="track-btn-estoque-ml" onclick="window._trackListarEstoqueML()">Ver estoque de todos os anúncios ML</button>
       </div>
       <div id="track-prevenda-status-shopee" style="font-size:12px;color:var(--text-muted);margin-bottom:4px;"></div>
       <div id="track-prevenda-status-ml" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
@@ -94,7 +94,7 @@ function renderShell() {
         <p style="font-size:11.5px;color:var(--text-muted);margin:0 0 8px;">Ou, se você tiver um anúncio específico e quiser ver os campos brutos dele (pra a gente confirmar um sinal de API melhor no futuro):</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <input type="text" id="track-ml-item-id" class="form-input" placeholder="MLB... ou link do anúncio" style="min-width:260px;flex:1;">
-          <button class="btn btn-secondary btn-sm" onclick="window._trackInspecionarML()">🔎 Inspecionar anúncio ML</button>
+          <button class="btn btn-secondary btn-sm" onclick="window._trackInspecionarML()">Inspecionar anúncio ML</button>
         </div>
         <div id="track-ml-resultado" style="font-size:12.5px;margin-top:10px;"></div>
       </div>
@@ -314,7 +314,7 @@ window._trackEscanearPrecos = async function() {
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar mudanças agora'; }
   if (statusEl) {
     statusEl.innerHTML = erro
-      ? `<span style="color:#dc2626;">⚠️ Erro em ${nomeConta}: ${erro}</span>`
+      ? `<span style="color:var(--red);">⚠️ Erro em ${nomeConta}: ${erro}</span>`
       : `${nomeConta} — verificado em ${new Date().toLocaleString('pt-BR')}: ${ok} anúncio(s), ${mudancas} mudança(s) nova(s)${ok === 0 ? ' (nenhum anúncio ativo encontrado)' : ''}.`;
   }
   renderPrecoLog();
@@ -394,7 +394,7 @@ window._trackEscanearPrevendaShopee = async function() {
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar pré-venda Shopee (todas as contas)'; }
   if (statusEl) {
     statusEl.innerHTML = erro
-      ? `<span style="color:#dc2626;">⚠️ ${contasVerificadas}/${contasShopee.length} conta(s) Shopee verificada(s), ${totalItens} anúncio(s) — último erro: ${erro}</span>`
+      ? `<span style="color:var(--red);">⚠️ ${contasVerificadas}/${contasShopee.length} conta(s) Shopee verificada(s), ${totalItens} anúncio(s) — último erro: ${erro}</span>`
       : `${contasVerificadas} conta(s) Shopee verificada(s) em ${new Date().toLocaleString('pt-BR')} — ${totalItens} anúncio(s), ${mudancas} mudança(s) nova(s) de pré-venda.`;
   }
   renderPrevendaAtual();
@@ -530,7 +530,7 @@ window._trackEscanearPrevendaML = async function() {
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar pré-venda ML (todas as contas)'; }
   if (statusEl) {
     statusEl.innerHTML = erro
-      ? `<span style="color:#dc2626;">⚠️ ${contasVerificadas}/${contasML.length} conta(s) ML verificada(s), ${totalItens} anúncio(s) — último erro: ${erro} (contas com esse erro específico precisam reconectar em marketplaces.tiops.com.br)</span>`
+      ? `<span style="color:var(--red);">⚠️ ${contasVerificadas}/${contasML.length} conta(s) ML verificada(s), ${totalItens} anúncio(s) — último erro: ${erro} (contas com esse erro específico precisam reconectar em marketplaces.tiops.com.br)</span>`
       : `${contasVerificadas} conta(s) ML verificada(s) em ${new Date().toLocaleString('pt-BR')} — ${totalItens} anúncio(s), ${mudancas} mudança(s) nova(s) de pré-venda.`;
   }
   renderPrevendaAtual();
@@ -569,7 +569,7 @@ window._trackListarEstoqueML = async function() {
   if (btn) { btn.disabled = false; btn.textContent = '📋 Ver estoque de todos os anúncios ML'; }
 
   if (!todos.length) {
-    el.innerHTML = `<div style="padding:14px;text-align:center;color:#dc2626;font-size:12.5px;">Nenhum anúncio encontrado${erro ? ' — ' + erro : ''}.</div>`;
+    el.innerHTML = `<div style="padding:14px;text-align:center;color:var(--red);font-size:12.5px;">Nenhum anúncio encontrado${erro ? ' — ' + erro : ''}.</div>`;
     return;
   }
 
@@ -586,7 +586,7 @@ window._trackListarEstoqueML = async function() {
           <td style="padding:6px 8px;font-size:11.5px;font-family:monospace;color:var(--text-muted);white-space:nowrap;">${it.id}</td>
           <td style="padding:6px 8px;font-size:12px;color:var(--text-muted);white-space:nowrap;">${it.conta}</td>
           <td style="padding:6px 8px;font-size:12px;">${it.nome}</td>
-          <td style="padding:6px 8px;font-size:12px;text-align:right;font-weight:${it.estoque === 0 ? '700' : '400'};color:${it.estoque === 0 ? '#dc2626' : 'inherit'};">${it.estoque}</td>
+          <td style="padding:6px 8px;font-size:12px;text-align:right;font-weight:${it.estoque === 0 ? '700' : '400'};color:${it.estoque === 0 ? 'var(--red)' : 'inherit'};">${it.estoque}</td>
           <td style="padding:6px 8px;font-size:11px;color:var(--text-muted);">${it.subStatus}</td>
         </tr>`).join('')}</tbody>
       </table>
@@ -618,7 +618,7 @@ window._trackInspecionarML = async function() {
   }
 
   if (!item) {
-    resEl.innerHTML = `<span style="color:#dc2626;">⚠️ Não consegui acessar esse anúncio em nenhuma conta ML conectada (${erroFinal}). Confirme o ID/link ou se a conta dona dele está vinculada aqui.</span>`;
+    resEl.innerHTML = `<span style="color:var(--red);">⚠️ Não consegui acessar esse anúncio em nenhuma conta ML conectada (${erroFinal}). Confirme o ID/link ou se a conta dona dele está vinculada aqui.</span>`;
     return;
   }
 

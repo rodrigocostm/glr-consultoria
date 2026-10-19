@@ -173,8 +173,8 @@ function nomeMes(m, a) {
 
 function statusBadge(ativo) {
   return ativo
-    ? `<span style="background:#dcfce7;color:#16a34a;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:600;">Ativa</span>`
-    : `<span style="background:#fee2e2;color:#dc2626;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:600;">Pausada</span>`;
+    ? `<span style="background:#dcfce7;color:var(--green);padding:2px 10px;border-radius:99px;font-size:11px;font-weight:600;">Ativa</span>`
+    : `<span style="background:#fee2e2;color:var(--red);padding:2px 10px;border-radius:99px;font-size:11px;font-weight:600;">Pausada</span>`;
 }
 
 // ─── Cache ────────────────────────────────────────────────────
@@ -872,7 +872,7 @@ function renderShell() {
           <option value="">Carregando contas...</option>
         </select>
         <button id="ads-btn-atualizar" onclick="window._adsAtualizar()" style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">
-          🔄 Atualizar
+          Atualizar
         </button>
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none;">
           <input type="checkbox" id="ads-auto-refresh" ${_adsAutoRefreshOn ? 'checked' : ''} onchange="window._adsToggleAutoRefresh(this.checked)">
@@ -1007,11 +1007,11 @@ function renderErro(msg) {
   const body = document.getElementById('ads-body');
   if (!body) return;
   body.innerHTML = `
-    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:24px;text-align:center;color:#dc2626;">
+    <div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:12px;padding:24px;text-align:center;color:var(--red);">
       <div style="font-size:28px;margin-bottom:8px;">⚠️</div>
       <div style="font-weight:600;font-size:15px;">Erro ao buscar dados de ADS</div>
       <div style="font-size:13px;margin-top:8px;">${msg}</div>
-      <button onclick="window._adsAtualizar()" style="margin-top:16px;background:#dc2626;color:#fff;border:none;border-radius:99px;padding:8px 20px;cursor:pointer;font-weight:600;">Tentar novamente</button>
+      <button onclick="window._adsAtualizar()" style="margin-top:16px;background:var(--red);color:#fff;border:none;border-radius:99px;padding:8px 20px;cursor:pointer;font-weight:600;">Tentar novamente</button>
     </div>
   `;
 }
@@ -1047,7 +1047,7 @@ function renderConteudo() {
   const ma = d.mesAnterior;
   const deltaBadge = (atual, antes) => {
     if (!ma) return '';
-    if (!(antes > 0)) return atual > 0 ? `<span style="font-size:11px;font-weight:700;color:#16a34a;margin-left:6px;">novo</span>` : '';
+    if (!(antes > 0)) return atual > 0 ? `<span style="font-size:11px;font-weight:700;color:var(--green);margin-left:6px;">novo</span>` : '';
     const p = ((atual - antes) / antes) * 100;
     const cor = p >= 0 ? '#16a34a' : '#dc2626';
     const seta = p >= 0 ? '▲' : '▼';
@@ -1058,7 +1058,7 @@ function renderConteudo() {
   // Mostra erros de API diretamente na tela
   const erros = d._erros || [];
   const blocoErros = erros.length > 0 ? `
-    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:16px;margin-bottom:20px;">
+    <div style="background:var(--yellow-bg);border:1px solid #fde68a;border-radius:12px;padding:16px;margin-bottom:20px;">
       <div style="font-weight:700;font-size:13px;color:#92400e;margin-bottom:8px;">⚠️ Erros ao buscar dados da API (${erros.length})</div>
       ${erros.map(e => `<div style="font-size:12px;color:#78350f;padding:4px 0;border-bottom:1px solid #fde68a;word-break:break-all;">${e}</div>`).join('')}
     </div>
@@ -1071,20 +1071,20 @@ function renderConteudo() {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;">
         <div>
           <div style="font-size:11px;color:var(--text-secondary);">Vendas Totais (todos os canais)</div>
-          <div style="font-size:20px;font-weight:800;color:var(--text-primary);">${fmt(vendasTotais)}${deltaBadge(vendasTotais, ma?.vendas.total || 0)}</div>
+          <div style="font-size:20px;font-weight:700;color:var(--text-primary);">${fmt(vendasTotais)}${deltaBadge(vendasTotais, ma?.vendas.total || 0)}</div>
           ${subLabelMesAnt}
         </div>
         <div>
           <div style="font-size:11px;color:var(--text-secondary);">Vendas Orgânicas (sem Ads)</div>
-          <div style="font-size:20px;font-weight:800;color:#6366f1;">${fmt(vendasOrganicas)}</div>
+          <div style="font-size:20px;font-weight:700;color:var(--accent);">${fmt(vendasOrganicas)}</div>
         </div>
         <div>
           <div style="font-size:11px;color:var(--text-secondary);">Receita atribuída a Ads</div>
-          <div style="font-size:20px;font-weight:800;color:#16a34a;">${fmt(rec)}${deltaBadge(rec, ma?.ads.receita || 0)}</div>
+          <div style="font-size:20px;font-weight:700;color:var(--green);">${fmt(rec)}${deltaBadge(rec, ma?.ads.receita || 0)}</div>
         </div>
         <div>
           <div style="font-size:11px;color:var(--text-secondary);">% das vendas via Ads</div>
-          <div style="font-size:20px;font-weight:800;color:var(--text-primary);">${fmtN(pctViaAds, 1)}%</div>
+          <div style="font-size:20px;font-weight:700;color:var(--text-primary);">${fmtN(pctViaAds, 1)}%</div>
         </div>
       </div>
     </div>
@@ -1154,7 +1154,7 @@ function kpiCard(titulo, valor, sub, bg, cor) {
   return `
     <div style="background:${bg};border:1px solid ${cor}22;border-radius:12px;padding:16px;">
       <div style="font-size:11px;font-weight:600;color:${cor};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">${titulo}</div>
-      <div style="font-size:22px;font-weight:700;color:var(--text-primary);">${valor}</div>
+      <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;color:var(--text-primary);">${valor}</div>
       ${sub ? `<div style="font-size:11px;margin-top:4px;color:${cor};">${sub}</div>` : ''}
     </div>
   `;
@@ -1175,7 +1175,7 @@ function renderGraficoDiario(diario) {
     const dataFmt = partes.length >= 2 ? `${partes[0]}/${partes[1]}` : d.data;
     return `
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;flex:1;min-width:0;height:${MAX_H}px;" title="${dataFmt}: ${fmt(d.gasto)}">
-        <div style="width:100%;background:#6366f1;border-radius:3px 3px 0 0;height:${h}px;opacity:0.85;"></div>
+        <div style="width:100%;background:var(--accent);border-radius:3px 3px 0 0;height:${h}px;opacity:0.85;"></div>
         ${slice.length <= 15 ? `<div style="font-size:9px;color:var(--text-secondary);writing-mode:vertical-lr;transform:rotate(180deg);margin-top:2px;">${dataFmt}</div>` : ''}
       </div>
     `;
@@ -1303,10 +1303,10 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
       if (taxaAnterior > 0) {
         if (taxaRecente < taxaAnterior * 0.7) {
           const queda = ((1 - taxaRecente / taxaAnterior) * 100).toFixed(0);
-          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#fef2f2;color:#dc2626;white-space:nowrap;" title="Ritmo diário de pedidos: últimos 7 dias vs os 23 dias anteriores (dia 8 a 30)">📉 Vendas em queda (-${queda}% vs 23d antes)</span></div>`;
+          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--red-bg);color:var(--red);white-space:nowrap;" title="Ritmo diário de pedidos: últimos 7 dias vs os 23 dias anteriores (dia 8 a 30)">📉 Vendas em queda (-${queda}% vs 23d antes)</span></div>`;
         } else if (taxaRecente > taxaAnterior * 1.3) {
           const alta = ((taxaRecente / taxaAnterior - 1) * 100).toFixed(0);
-          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#f0fdf4;color:#16a34a;white-space:nowrap;" title="Ritmo diário de pedidos: últimos 7 dias vs os 23 dias anteriores (dia 8 a 30)">📈 Vendas subindo (+${alta}% vs 23d antes)</span></div>`;
+          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--green-bg);color:var(--green);white-space:nowrap;" title="Ritmo diário de pedidos: últimos 7 dias vs os 23 dias anteriores (dia 8 a 30)">📈 Vendas subindo (+${alta}% vs 23d antes)</span></div>`;
         }
       }
     }
@@ -1315,7 +1315,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
     const roasTarget = c.roasTarget != null ? fmtN(c.roasTarget, 0) + 'x' : '—';
     const btnRoas = c.bidding === 'auto'
       ? `<button onclick="window._adsEditarRoas(${c.id},'${c.nome.replace(/'/g,'').slice(0,30)}',${c.roasTarget ?? 0})" title="Editar meta ROAS"
-          style="background:#f0fdf4;color:#16a34a;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">🎯</button>`
+          style="background:var(--green-bg);color:var(--green);border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">🎯</button>`
       : '';
 
     // GMV Max usa um fluxo de edição próprio da Shopee (reference_id), ainda não
@@ -1323,7 +1323,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
     const somenteLeitura = c.tipo === 'GMV Max';
 
     const btnPausar = somenteLeitura ? '' : `<button onclick="window._adsPausar(${c.id})" title="Pausar campanha"
-      style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">⏸</button>`;
+      style="background:#fee2e2;color:var(--red);border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">⏸</button>`;
 
     const nomeOrca = c.nome.replace(/'/g,'').slice(0,30);
     const btnOrcamento = somenteLeitura ? '' : `<button onclick="window._adsEditarOrcamento(${c.id},'${nomeOrca}',${c.orcamento})" title="Editar orçamento"
@@ -1348,7 +1348,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
           <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmtN(it.impressoes)}</td>
           <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmtN(it.pedidos)}</td>
           <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmt(it.receita)}</td>
-          <td style="padding:6px 10px;font-size:12px;text-align:right;color:${itRoas>=3?'#16a34a':itRoas>0?'#d97706':'var(--text-muted,#94a3b8)'};font-weight:600;">${itRoas > 0 ? fmtN(itRoas, 2) + 'x' : '—'}</td>
+          <td style="padding:6px 10px;font-size:12px;text-align:right;color:${itRoas>=3?'var(--green)':itRoas>0?'var(--yellow)':'var(--text-muted,#94a3b8)'};font-weight:600;">${itRoas > 0 ? fmtN(itRoas, 2) + 'x' : '—'}</td>
         </tr>`;
       }).join('');
       linhaItens = `
@@ -1383,7 +1383,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
           ${linkItens}
         </td>
         <td style="padding:10px 12px;">
-          <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${c.bidding==='auto'?'#f0fdf4':'#eff6ff'};color:${c.bidding==='auto'?'#16a34a':'#2563eb'};font-weight:600;">${c.tipo}</span>
+          <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${c.bidding==='auto'?'var(--green-bg)':'#eff6ff'};color:${c.bidding==='auto'?'var(--green)':'#2563eb'};font-weight:600;">${c.tipo}</span>
         </td>
         <td style="padding:10px 12px;font-size:13px;font-weight:700;text-align:right;color:var(--text-primary);">${fmt(c.gasto)}</td>
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:var(--text-secondary);">${fmtN(c.cliques)}</td>
@@ -1392,7 +1392,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:var(--text-secondary);">${fmt(cpc)}</td>
         <td style="padding:10px 12px;font-size:13px;font-weight:700;text-align:right;color:${roasCor};">${roas > 0 ? fmtN(roas, 2) + 'x' : '—'}</td>
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:${acosCor};">${acos > 0 ? fmtN(acos, 1) + '%' : '—'}</td>
-        <td style="padding:10px 12px;font-size:13px;text-align:right;color:${c.roasTarget!=null?'#16a34a':'var(--text-muted,#94a3b8)'};font-weight:${c.roasTarget!=null?'700':'400'};">${roasTarget}</td>
+        <td style="padding:10px 12px;font-size:13px;text-align:right;color:${c.roasTarget!=null?'var(--green)':'var(--text-muted,#94a3b8)'};font-weight:${c.roasTarget!=null?'700':'400'};">${roasTarget}</td>
         <td style="padding:10px 12px;font-size:12px;text-align:right;color:var(--text-secondary);">${c.orcamentoLabel}</td>
         <td style="padding:10px 12px;text-align:right;white-space:nowrap;display:flex;gap:4px;justify-content:flex-end;">${btnRoas}${btnOrcamento}${btnPausar}</td>
       </tr>
@@ -1453,14 +1453,14 @@ function renderModalOrcamento() {
         <label style="font-size:12px;font-weight:600;color:var(--text-secondary);">Meta ROAS (ex: 50 = 50x)</label>
         <input id="ads-modal-roas-valor" type="number" min="1" step="1"
           style="width:100%;margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:15px;background:var(--bg-base);color:var(--text-primary);box-sizing:border-box;">
-        <div style="background:#f0fdf4;border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;color:#15803d;">
+        <div style="background:var(--green-bg);border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;color:#15803d;">
           💡 Shopee ajustará os lances automaticamente para atingir esta meta
         </div>
         <div style="display:flex;gap:8px;margin-top:16px;">
           <button onclick="document.getElementById('ads-modal-roas').style.display='none'"
             style="flex:1;padding:10px;background:var(--bg-base);border:1px solid var(--border);border-radius:8px;font-weight:600;cursor:pointer;color:var(--text-secondary);">Cancelar</button>
           <button onclick="window._adsSalvarRoas()"
-            style="flex:1;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Salvar Meta</button>
+            style="flex:1;padding:10px;background:var(--green);color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Salvar Meta</button>
         </div>
         <p id="ads-modal-roas-msg" style="font-size:12px;text-align:center;margin:10px 0 0;"></p>
       </div>
@@ -1511,7 +1511,7 @@ function renderComparativoProdutos(comp) {
   linhas.sort((x, y) => (y.a.pedidos - y.b.pedidos) - (x.a.pedidos - x.b.pedidos));
 
   const pct = (atual, ant) => ant > 0 ? (((atual - ant) / ant) * 100) : (atual > 0 ? 100 : 0);
-  const cel = (atual, p) => `<div>${fmtN(atual)}</div><div style="font-size:11px;color:${p >= 0 ? '#16a34a' : '#dc2626'};font-weight:600;">${p >= 0 ? '▲' : '▼'} ${fmtN(Math.abs(p), 0)}%</div>`;
+  const cel = (atual, p) => `<div>${fmtN(atual)}</div><div style="font-size:11px;color:${p >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:600;">${p >= 0 ? '▲' : '▼'} ${fmtN(Math.abs(p), 0)}%</div>`;
 
   const linhaHtml = l => `
     <tr style="border-bottom:1px solid var(--border);">
@@ -1531,7 +1531,7 @@ function renderComparativoProdutos(comp) {
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:640px;">
           <thead>
-            <tr style="background:#1a2744;color:white;">
+            <tr style="background:var(--bg-subtle);color:var(--text-secondary);">
               <th style="padding:8px 12px;text-align:left;">Campanha / Produto</th>
               <th style="padding:8px 12px;">Impressões</th>
               <th style="padding:8px 12px;">Cliques</th>
@@ -1624,12 +1624,12 @@ function renderTendencias(d) {
       <p style="font-size:12px;color:var(--text-secondary);margin:0 0 16px;">Comparativo automático para detectar quedas de performance</p>
 
       ${alertas.length > 0 ? `
-        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px;margin-bottom:16px;">
-          <div style="font-size:12px;font-weight:700;color:#dc2626;margin-bottom:8px;">🚨 Alertas de Queda Detectados</div>
+        <div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:10px;padding:14px;margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px;">🚨 Alertas de Queda Detectados</div>
           ${alertas.map(a => `<div style="font-size:12px;color:#7f1d1d;padding:3px 0;line-height:1.5;">${a}</div>`).join('')}
         </div>
       ` : `
-        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px;margin-bottom:16px;font-size:12px;color:#15803d;font-weight:600;">
+        <div style="background:var(--green-bg);border:1px solid #bbf7d0;border-radius:10px;padding:12px;margin-bottom:16px;font-size:12px;color:#15803d;font-weight:600;">
           ✅ Nenhuma queda significativa detectada no período
         </div>
       `}
@@ -1697,15 +1697,15 @@ function renderAgentIA() {
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px;" id="ads-ia-section">
       <!-- Header -->
-      <div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
+      <div style="background:linear-gradient(135deg,var(--accent),#8b5cf6);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
         <div>
           <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:2px;">🤖 Consultor IA de ADS</div>
           <div style="font-size:11px;color:rgba(255,255,255,.75);">Especialista sênior • Shopee & Mercado Livre • Análise em tempo real</div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button onclick="window._adsAutoAnalisar()" style="font-size:11px;font-weight:600;color:#fff;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:5px 12px;cursor:pointer;">⚡ Analisar</button>
-          <button id="ads-btn-sugestoes" onclick="window._adsGerarSugestoes()" style="font-size:11px;font-weight:600;color:#fff;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:5px 12px;cursor:pointer;">🎯 Gerar Sugestões</button>
-          <button onclick="window._adsNovaConversa()" style="font-size:11px;color:rgba(255,255,255,.8);background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:5px 10px;cursor:pointer;">🔄 Nova</button>
+          <button onclick="window._adsAutoAnalisar()" style="font-size:11px;font-weight:600;color:#fff;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:5px 12px;cursor:pointer;">Analisar</button>
+          <button id="ads-btn-sugestoes" onclick="window._adsGerarSugestoes()" style="font-size:11px;font-weight:600;color:#fff;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:5px 12px;cursor:pointer;">Gerar Sugestões</button>
+          <button onclick="window._adsNovaConversa()" style="font-size:11px;color:rgba(255,255,255,.8);background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:5px 10px;cursor:pointer;">Nova</button>
         </div>
       </div>
 
@@ -1739,7 +1739,7 @@ function renderAgentIA() {
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window._adsEnviarMensagem();}"
             style="flex:1;padding:11px 16px;border:1px solid var(--border);border-radius:99px;background:var(--bg-base);color:var(--text-primary);font-size:13px;outline:none;">
           <button onclick="window._adsEnviarMensagem()" id="ads-ia-btn"
-            style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:99px;padding:11px 24px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Enviar</button>
+            style="background:linear-gradient(135deg,var(--accent),#8b5cf6);color:#fff;border:none;border-radius:99px;padding:11px 24px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Enviar</button>
         </div>
       </div>
     </div>
@@ -2057,7 +2057,7 @@ window._adsEnviarMensagem = async function(msgPredef) {
   // Bolha usuário
   const divU = document.createElement('div');
   divU.style.cssText = 'display:flex;justify-content:flex-end;';
-  divU.innerHTML = `<div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:85%;font-size:13px;line-height:1.5;">${texto}</div>`;
+  divU.innerHTML = `<div style="background:linear-gradient(135deg,var(--accent),#8b5cf6);color:#fff;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:85%;font-size:13px;line-height:1.5;">${texto}</div>`;
   msgs.appendChild(divU);
   msgs.scrollTop = msgs.scrollHeight;
 
@@ -2193,7 +2193,7 @@ ${ctx}${ctxRanking}`,
       <div style="background:var(--bg-surface);border:1px solid #6366f122;border-radius:0 12px 12px 12px;padding:14px 18px;max-width:92%;font-size:13px;color:var(--text-primary);line-height:1.7;">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);">
           <span style="font-size:16px;">🤖</span>
-          <span style="font-size:11px;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:.5px;">Consultor IA</span>
+          <span style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;">Consultor IA</span>
           <span style="font-size:10px;color:var(--text-secondary);margin-left:auto;">${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
         </div>
         <div>${_mdToHtml(resposta)}</div>
@@ -2204,7 +2204,7 @@ ${ctx}${ctxRanking}`,
   } catch(e) {
     document.getElementById('ads-ia-typing')?.remove();
     const divE = document.createElement('div');
-    divE.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 16px;font-size:12px;color:#dc2626;">❌ Erro ao conectar com o Consultor IA: ${e.message}${e.message.includes('401') ? ' — verifique a API Key do Claude nas configurações do Vercel' : ''}</div>`;
+    divE.innerHTML = `<div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:10px;padding:12px 16px;font-size:12px;color:var(--red);">❌ Erro ao conectar com o Consultor IA: ${e.message}${e.message.includes('401') ? ' — verifique a API Key do Claude nas configurações do Vercel' : ''}</div>`;
     msgs.appendChild(divE);
     msgs.scrollTop = msgs.scrollHeight;
   }
@@ -2304,7 +2304,7 @@ window._adsBuscarRanking = async function() {
       _renderRankingResultado(keyword, items.length, posicoes);
     }
   } catch(e) {
-    body.innerHTML = `<div style="color:#dc2626;font-size:12px;padding:12px;">❌ Erro ao pesquisar: ${e.message}</div>`;
+    body.innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px;">❌ Erro ao pesquisar: ${e.message}</div>`;
   }
 };
 
@@ -2326,7 +2326,7 @@ function _renderRankingResultado(keyword, total, posicoes) {
 
   if (posicoes.length === 0) {
     body.innerHTML = `
-      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;font-size:13px;color:#92400e;">
+      <div style="background:var(--yellow-bg);border:1px solid #fde68a;border-radius:8px;padding:16px;font-size:13px;color:#92400e;">
         <strong>Nenhum produto seu encontrado</strong> nos primeiros ${total} resultados para "<strong>${keyword}</strong>".<br>
         <span style="font-size:12px;display:block;margin-top:6px;">Isso pode indicar oportunidade de melhoria nos títulos ou necessidade de aumentar investimento em ADS para esta keyword.</span>
       </div>`;
@@ -2344,8 +2344,8 @@ function _renderRankingResultado(keyword, total, posicoes) {
       const ant = prevSnap.posicoes.find(x => String(x.id) === String(p.id));
       if (ant) {
         const d = ant.pos - p.pos;
-        delta = d > 0 ? `<span style="color:#16a34a;font-size:11px;font-weight:700;">▲ +${d}</span>`
-               : d < 0 ? `<span style="color:#dc2626;font-size:11px;font-weight:700;">▼ ${d}</span>`
+        delta = d > 0 ? `<span style="color:var(--green);font-size:11px;font-weight:700;">▲ +${d}</span>`
+               : d < 0 ? `<span style="color:var(--red);font-size:11px;font-weight:700;">▼ ${d}</span>`
                : `<span style="color:var(--text-secondary);font-size:11px;">—</span>`;
       } else {
         delta = `<span style="color:#9333ea;font-size:11px;font-weight:700;">✨ Novo</span>`;
@@ -2362,10 +2362,10 @@ function _renderRankingResultado(keyword, total, posicoes) {
 
   const bestPos = Math.min(...posicoes.map(p => p.pos));
   const alerta = bestPos <= 3
-    ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#15803d;margin-bottom:12px;font-weight:600;">✅ Excelente! Seu melhor produto está na posição #${bestPos} para "<strong>${keyword}</strong>"</div>`
+    ? `<div style="background:var(--green-bg);border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#15803d;margin-bottom:12px;font-weight:600;">✅ Excelente! Seu melhor produto está na posição #${bestPos} para "<strong>${keyword}</strong>"</div>`
     : bestPos <= 10
-    ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;font-size:12px;color:#92400e;margin-bottom:12px;">⚠️ Melhor posição: #${bestPos}. Aumentar lance de ADS pode ajudar a chegar ao Top 3.</div>`
-    : `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:12px;color:#dc2626;margin-bottom:12px;font-weight:600;">🔴 Melhor posição: #${bestPos}. Revise títulos e invista em ADS para esta keyword.</div>`;
+    ? `<div style="background:var(--yellow-bg);border:1px solid #fde68a;border-radius:8px;padding:10px 14px;font-size:12px;color:#92400e;margin-bottom:12px;">⚠️ Melhor posição: #${bestPos}. Aumentar lance de ADS pode ajudar a chegar ao Top 3.</div>`
+    : `<div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:12px;color:var(--red);margin-bottom:12px;font-weight:600;">🔴 Melhor posição: #${bestPos}. Revise títulos e invista em ADS para esta keyword.</div>`;
 
   const comparativo = prevSnap ? `<span style="font-size:10px;color:var(--text-secondary);margin-left:8px;">vs pesquisa de ${new Date(prevSnap.ts).toLocaleDateString('pt-BR')}</span>` : '';
 
@@ -2406,7 +2406,7 @@ function _renderRankingHistorico() {
         const badge = best ? `<span style="font-size:10px;opacity:.7;margin-left:3px;">#${best}</span>` : '';
         return `<button onclick="document.getElementById('ads-rank-input').value='${kw.replace(/'/g,'')}';window._adsBuscarRanking();"
           style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:4px 10px;cursor:pointer;color:var(--text-secondary);display:flex;align-items:center;gap:2px;">
-          🔍 ${kw}${badge}
+          ${kw}${badge}
         </button>`;
       }).join('')}
     </div>`;

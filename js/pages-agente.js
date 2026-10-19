@@ -45,6 +45,7 @@
       tabOrdem: { col: 'gasto', dir: -1 }, tabTodas: false, tabFiltro: 'todas',
       logBusca: '', logMostrar: 20, regrasSalvoEm: null, chatAberto: false, reativando: false,
       sec: {}, // seções recolhíveis abertas (o render recria o HTML, então o estado mora aqui)
+      aba: (() => { try { return localStorage.getItem('glr_ag_aba') || 'geral'; } catch (e) { return 'geral'; } })(), // setor aberto da conta
       executandoAcaoManual: false,
       rodandoAgente: false, resultadoRodada: null,
       processandoAlertaId: null,
@@ -610,26 +611,26 @@
       let corpo;
       if (carregando) corpo = `<div id="ag-abc-prog" style="color:var(--text-muted);font-size:13px;">⏳ ${esc(state.abcProgresso || 'calculando...')}</div><div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">A primeira leitura puxa 3 meses de pedidos e pode levar alguns minutos — os meses fechados ficam guardados e as próximas atualizações leem só o mês atual.</div>`;
       else if (!a) corpo = `<div style="color:var(--text-muted);font-size:13px;">Ainda não analisado. Clique em Analisar pra montar a curva e comparar a projeção do mês com o mês passado.</div>`;
-      else if (a.erro) corpo = `<div style="color:#dc2626;font-size:13px;">⚠️ ${esc(a.erro)}</div>`;
+      else if (a.erro) corpo = `<div style="color:var(--red);font-size:13px;">⚠️ ${esc(a.erro)}</div>`;
       else {
         const top = a.produtos.filter(p => p.classe === 'A' || p.alerta).slice(0, 12);
         corpo = `
           <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:12px;">
-            ${['A', 'B', 'C'].map(c => `<div><div class="ag-hud-label" style="margin-bottom:2px;">Curva ${c}</div><div class="ag-mono" style="font-size:20px;font-weight:800;color:${COR_CLASSE[c]};">${a.resumo[c]}</div></div>`).join('')}
-            <div><div class="ag-hud-label" style="margin-bottom:2px;">Receita ${mesLabel(a.k1)}</div><div class="ag-mono" style="font-size:20px;font-weight:800;">${R$(a.total1)}</div></div>
+            ${['A', 'B', 'C'].map(c => `<div><div class="ag-hud-label" style="margin-bottom:2px;">Curva ${c}</div><div class="ag-mono" style="font-size:20px;font-weight:700;color:${COR_CLASSE[c]};">${a.resumo[c]}</div></div>`).join('')}
+            <div><div class="ag-hud-label" style="margin-bottom:2px;">Receita ${mesLabel(a.k1)}</div><div class="ag-mono" style="font-size:20px;font-weight:700;">${R$(a.total1)}</div></div>
           </div>
-          ${a.alertas.length ? `<div style="background:#dc26261a;border:1px solid #dc2626;border-radius:8px;padding:10px 12px;margin-bottom:12px;">
-            <div style="font-size:12.5px;font-weight:800;color:#dc2626;margin-bottom:6px;">🚨 ${a.alertas.length} produto(s) pedindo ação conjunta</div>
+          ${a.alertas.length ? `<div style="background:#dc26261a;border:1px solid var(--red);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+            <div style="font-size:12.5px;font-weight:700;color:var(--red);margin-bottom:6px;">🚨 ${a.alertas.length} produto(s) pedindo ação conjunta</div>
             ${a.alertas.map(p => `<div style="font-size:12px;line-height:1.5;margin-top:4px;"><b>${esc(p.nome.slice(0, 70))}</b> <span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:${COR_CLASSE[p.classe]}1a;">Curva ${p.classe}</span> — ${p.alerta === 'virada' ? `vinha crescendo (${pct(p.crescimentoAnterior)}) e` : ''} projeta ${R$(p.proj)} (${pct(p.varProj)} vs ${mesLabel(a.k1)}), impacto ≈ ${R$(p.impacto)}</div>`).join('')}
-          </div>` : (a.projecaoOk ? `<div style="font-size:12.5px;color:#16a34a;margin-bottom:12px;">✅ Nenhum produto A/B com queda projetada relevante neste mês.</div>` : `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;">Projeção do mês só é confiável a partir do dia ${ABC_DIA_MIN_PROJECAO + 1} (hoje há ${a.diasDecorridos} dia(s) de dados) — por enquanto sem alertas.</div>`)}
+          </div>` : (a.projecaoOk ? `<div style="font-size:12.5px;color:var(--green);margin-bottom:12px;">✅ Nenhum produto A/B com queda projetada relevante neste mês.</div>` : `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;">Projeção do mês só é confiável a partir do dia ${ABC_DIA_MIN_PROJECAO + 1} (hoje há ${a.diasDecorridos} dia(s) de dados) — por enquanto sem alertas.</div>`)}
           <div style="overflow-x:auto;"><table class="ag-tech-table"><thead><tr><th>Produto</th><th>Classe</th><th>${mesLabel(a.k2)}</th><th>${mesLabel(a.k1)}</th><th>Projeção ${mesLabel(a.k0)}</th><th>Variação</th></tr></thead><tbody>
-            ${top.map(p => `<tr style="--row-accent:${COR_CLASSE[p.classe]};"><td>${esc(p.nome.slice(0, 55))}</td><td><span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:${COR_CLASSE[p.classe]}1a;">${p.classe}</span></td><td class="ag-mono">${a.semMes2 ? '—' : R$(p.r2)}</td><td class="ag-mono">${R$(p.r1)}</td><td class="ag-mono">${p.proj != null && a.projecaoOk ? R$(p.proj) : '—'}</td><td class="ag-mono" style="font-weight:800;color:${p.varProj == null ? 'var(--text-muted)' : p.varProj <= ABC_QUEDA_PROJ ? '#dc2626' : '#16a34a'};">${p.varProj == null ? '—' : pct(p.varProj)}</td></tr>`).join('')}
+            ${top.map(p => `<tr style="--row-accent:${COR_CLASSE[p.classe]};"><td>${esc(p.nome.slice(0, 55))}</td><td><span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:${COR_CLASSE[p.classe]}1a;">${p.classe}</span></td><td class="ag-mono">${a.semMes2 ? '—' : R$(p.r2)}</td><td class="ag-mono">${R$(p.r1)}</td><td class="ag-mono">${p.proj != null && a.projecaoOk ? R$(p.proj) : '—'}</td><td class="ag-mono" style="font-weight:700;color:${p.varProj == null ? 'var(--text-muted)' : p.varProj <= ABC_QUEDA_PROJ ? 'var(--red)' : 'var(--green)'};">${p.varProj == null ? '—' : pct(p.varProj)}</td></tr>`).join('')}
           </tbody></table></div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Curva A = produtos que somam ~80% da receita de ${mesLabel(a.k1)}, B até 95%, C o resto. Projeção linear (receita até ontem ÷ dias decorridos × dias do mês), receita sem cancelados.${a.atualizadoEm ? ` Atualizado ${new Date(a.atualizadoEm).toLocaleString('pt-BR')}.` : ''}</div>`;
       }
       return `<div class="ag-hud-card" style="--ag-hud-accent:${cor};margin-bottom:20px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:2px;">
-          <div style="font-size:14px;font-weight:800;">🅰️ Curva ABC de vendas</div>
+          <div style="font-size:14px;font-weight:700;">Curva ABC de vendas</div>
           <button class="btn btn-secondary btn-sm" ${carregando ? 'disabled' : ''} onclick="window._agAnalisarABC()">${a && !a.erro ? '🔄 Atualizar' : '▶ Analisar'}</button>
         </div>
         <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:12px;">Produto que cresceu mês passado e projeta queda neste mês vira alerta na Fila de Atenção, pra decidirmos a ação juntos.</div>
@@ -938,19 +939,19 @@
           return `<div class="ag-hud-card" style="--ag-hud-accent:${saude.cor};cursor:pointer;" onclick="window._agAbrirConta('${esc(cfg.conta_id)}')">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
               <div>
-                <div style="font-size:15px;font-weight:800;">${h(nomeExibicao(cfg))}</div>
+                <div style="font-size:15px;font-weight:700;">${h(nomeExibicao(cfg))}</div>
                 <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Shopee · ${cfg.ativo ? 'piloto ativo' : 'piloto pausado'}${clienteVinculado(cfg.conta_id).cliente_nome ? ` · cliente ${h(clienteVinculado(cfg.conta_id).cliente_nome)}` : ''}</div>
               </div>
               <span style="font-size:20px;line-height:1;" title="${saude.label}">${saude.emoji}</span>
             </div>
             <div style="display:flex;gap:18px;margin-top:14px;">
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS mês</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:${tacos != null && cfg.meta_acos ? (tacos <= cfg.meta_acos ? '#16a34a' : tacos <= cfg.meta_acos * 1.3 ? '#d97706' : '#dc2626') : 'inherit'};">${tacos != null ? fmtPct(tacos) : '—'}</div></div>
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">Projeção mês</div><div class="ag-mono" style="font-size:18px;font-weight:800;">${mes ? R$(mes.projecao).replace(/,\d{2}$/, '') : '—'}</div></div>
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">Fila</div><div class="ag-mono" style="font-size:18px;font-weight:800;color:${pendencias ? '#d97706' : 'inherit'};">${pendencias}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS mês</div><div class="ag-mono" style="font-size:18px;font-weight:700;color:${tacos != null && cfg.meta_acos ? (tacos <= cfg.meta_acos ? 'var(--green)' : tacos <= cfg.meta_acos * 1.3 ? 'var(--yellow)' : 'var(--red)') : 'inherit'};">${tacos != null ? fmtPct(tacos) : '—'}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">Projeção mês</div><div class="ag-mono" style="font-size:18px;font-weight:700;">${mes ? R$(mes.projecao).replace(/,\d{2}$/, '') : '—'}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">Fila</div><div class="ag-mono" style="font-size:18px;font-weight:700;color:${pendencias ? 'var(--yellow)' : 'inherit'};">${pendencias}</div></div>
             </div>
           </div>`;
         }).join('')}
-        <div class="ag-hud-card" style="--ag-hud-accent:#64748b;cursor:pointer;border-style:dashed;display:flex;align-items:center;justify-content:center;min-height:110px;" onclick="window._agAbrirConta('__novo__')">
+        <div class="ag-hud-card" style="--ag-hud-accent:var(--text-muted);cursor:pointer;border-style:dashed;display:flex;align-items:center;justify-content:center;min-height:110px;" onclick="window._agAbrirConta('__novo__')">
           <div style="text-align:center;color:var(--text-muted);font-size:13px;font-weight:600;">+ Adicionar conta</div>
         </div>
       </div>`;
@@ -1075,8 +1076,8 @@
 
     function renderAcaoManual(contaId) {
       return `<details class="ag-sec" ${state.sec.manual ? 'open' : ''} ontoggle="window._agToggleSec('manual', this.open)">
-      <summary>⚡ Ajuste manual avançado (1 campanha na mão)</summary>
-      <div class="ag-hud-card" style="--ag-hud-accent:#dc2626;margin-top:10px;">
+      <summary>Ajuste manual avançado (1 campanha na mão)</summary>
+      <div class="ag-hud-card" style="--ag-hud-accent:var(--red);margin-top:10px;">
         <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Só pra casos pontuais — pode colar o ID aqui ou usar "✏️ Ajustar à mão" no menu ⋯ da linha da campanha, que já preenche tudo. Pra aumentar investimento, prefira "🚀 Sugerir mais investimento" no mesmo menu, que já calcula o valor certo pra você aprovar.</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px;">
           <div class="form-group" style="margin:0;"><label class="form-label">ID da campanha</label><input type="text" class="form-input" id="ag-man-campanha" placeholder="Ex: 86858387"></div>
@@ -1092,7 +1093,7 @@
           <div class="form-group" style="margin:0;" id="ag-man-valor-wrap"><label class="form-label">Valor novo</label><input type="number" step="0.1" class="form-input" id="ag-man-valor" placeholder="Ex: 300 ou 17.5"></div>
         </div>
         <div class="form-group" style="margin-bottom:12px;"><label class="form-label">Por quê (opcional, vai pro log)</label><input type="text" class="form-input" id="ag-man-explicacao" placeholder="Ex: recomendação do chat — Rack Linea, ACOS saudável, aumentar orçamento"></div>
-        <button class="btn btn-primary" style="background:#dc2626;border-color:#dc2626;" ${state.executandoAcaoManual ? 'disabled' : ''} onclick="window._agExecutarAcaoManual()">
+        <button class="btn btn-primary" style="background:var(--red);border-color:var(--red);" ${state.executandoAcaoManual ? 'disabled' : ''} onclick="window._agExecutarAcaoManual()">
           ${state.executandoAcaoManual ? '⏳ Executando na Shopee...' : '⚡ Executar agora'}
         </button>
       </div>
@@ -1322,20 +1323,20 @@
           <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;margin-top:10px;"><input type="checkbox" id="ag-ativo"> Ligar o piloto nesta conta</label>
         </div>` : `<input type="hidden" id="ag-conta" value="${esc(cfg.conta_id)}">`}
         <div class="ag-regras-grid">
-          <div class="ag-regra-bloco" style="--c:#dc2626;">
+          <div class="ag-regra-bloco" style="--c:var(--red);">
             <div class="ag-regra-tit">🛑 Pausa (último recurso) e contenção forte</div>
             ${campoRegra('ag-pausa-acos', `Contenção forte quando o ${sigla('ACOS')} passar de`, cfg.regra_pausa_acos, { step: '0.1', sufixo: '%', dica: 'Acima disso, com venda, o agente aperta 25% em vez de 15% — não pausa. Deixe vazio para desligar a pausa automática.' })}
             ${campoRegra('ag-pausa-dias', 'janela para avaliar gasto sem retorno', cfg.regra_pausa_dias ?? 3, { sufixo: 'dias', dica: 'Pausa só se, nessa janela, gastou acima do limite sem vender (ou vendendo menos do que gastou).' })}
             ${campoRegra('ag-maturacao', 'Maturação mínima da campanha', cfg.dias_maturacao_campanha ?? 7, { sufixo: 'dias', dica: 'Campanha mais nova que isso não é pausada ainda — só registra um aviso.' })}
           </div>
-          <div class="ag-regra-bloco" style="--c:#16a34a;">
+          <div class="ag-regra-bloco" style="--c:var(--green);">
             <div class="ag-regra-tit">📈 Quando pode crescer sozinho</div>
             ${campoRegra('ag-meta-acos', `Meta de ${sigla('TACOS')}`, cfg.meta_acos, { step: '0.1', sufixo: '%', dica: 'Quanto da venda total da loja pode ir para ADS. É a métrica principal do agente.' })}
             ${campoRegra('ag-orc-min', 'Orçamento mínimo', cfg.orcamento_min, { step: '0.01', sufixo: 'R$/dia', dica: 'Piso ao reduzir o investimento.' })}
             ${campoRegra('ag-orc-max', 'Orçamento máximo', cfg.orcamento_max, { step: '0.01', sufixo: 'R$/dia', dica: 'Teto ao aumentar o investimento.' })}
             ${campoRegra('ag-janela', 'Janela de decisão', cfg.janela_decisao_dias ?? 1, { sufixo: 'dias', dica: 'Quantos dias de dados entram na análise.' })}
           </div>
-          <div class="ag-regra-bloco" style="--c:#d97706;">
+          <div class="ag-regra-bloco" style="--c:var(--yellow);">
             <div class="ag-regra-tit">✋ O que sempre espera sua aprovação</div>
             ${campoRegra('ag-alerta-var', 'Alerta se a variação proposta passar de', cfg.alerta_variacao_pct ?? 30, { sufixo: '%', dica: 'Mudança maior que isso não é feita sozinha: vira item em “Precisa de você”.' })}
           </div>
@@ -1343,7 +1344,7 @@
         <details class="ag-avancado">
           <summary>Avançado</summary>
           <div class="ag-regras-grid" style="margin-top:10px;">
-            <div class="ag-regra-bloco" style="--c:#64748b;">
+            <div class="ag-regra-bloco" style="--c:var(--text-muted);">
               ${campoRegra('ag-margem', 'Margem', cfg.margem_pct, { step: '0.1', sufixo: '%' })}
               ${campoRegra('ag-estoque-min', 'Estoque mínimo', cfg.estoque_minimo, { sufixo: 'un' })}
             </div>
@@ -1365,8 +1366,8 @@
 
     // Formulário de conta nova (sem conta aberta ainda)
     function renderConfig() {
-      return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
-        <div class="ag-sec-head"><div class="ag-sec-titulo">🛡️ Guardrails do piloto <span class="ag-sec-sub">Defina as regras que o agente vai seguir nesta conta. O agente avalia todas as contas com o piloto ligado 4 vezes por dia: 07:00 (revisão completa do dia anterior) e 12:00, 16:00 e 20:00 (acompanhamento do dia: orçamento esgotando, gasto sem venda, ritmo de vendas).</span></div></div>
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:20px;">
+        <div class="ag-sec-head"><div class="ag-sec-titulo">Guardrails do piloto <span class="ag-sec-sub">Defina as regras que o agente vai seguir nesta conta. O agente avalia todas as contas com o piloto ligado 4 vezes por dia: 07:00 (revisão completa do dia anterior) e 12:00, 16:00 e 20:00 (acompanhamento do dia: orçamento esgotando, gasto sem venda, ritmo de vendas).</span></div></div>
         ${formRegras({}, true)}
       </div>`;
     }
@@ -1378,9 +1379,9 @@
       const v = { pausaAcos: cfg.regra_pausa_acos, pausaDias: cfg.regra_pausa_dias ?? 3, mat: cfg.dias_maturacao_campanha ?? 7, meta: cfg.meta_acos, orcMin: cfg.orcamento_min, orcMax: cfg.orcamento_max, alerta: cfg.alerta_variacao_pct ?? 30 };
       const salvoAgora = state.regrasSalvoEm && Date.now() - state.regrasSalvoEm < 20000;
       const chip = (txt, cor) => `<span class="ag-action-chip" style="color:${cor};background:${cor}1a;">${txt}</span>`;
-      return `<div class="ag-hud-card" id="ag-regras-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
+      return `<div class="ag-hud-card" id="ag-regras-card" style="--ag-hud-accent:var(--accent);margin-bottom:20px;">
         <div class="ag-sec-head">
-          <div class="ag-sec-titulo">🛡️ Guardrails do piloto <span class="ag-sec-sub">as regras que o agente segue sozinho em cada campanha</span></div>
+          <div class="ag-sec-titulo">Guardrails do piloto <span class="ag-sec-sub">as regras que o agente segue sozinho em cada campanha</span></div>
           <div class="ag-periodos">
             ${salvoAgora ? '<span class="ag-regras-salvo">✔ Regras salvas</span>' : ''}
             <button class="btn btn-sm ${aberto ? 'btn-primary' : 'btn-secondary'}" onclick="window._agToggleRegras()">${aberto ? 'Fechar edição' : '✏️ Editar regras'}</button>
@@ -1445,9 +1446,9 @@
     function renderLog(contaId) {
       const doConta = logsDaConta(contaId);
       const cont = t => t === 'todos' ? doConta.length : doConta.filter(l => l.tipo === t).length;
-      return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:20px;">
         <div class="ag-sec-head">
-          <div class="ag-sec-titulo">📜 Registro do agente <span class="ag-sec-sub">tudo que foi feito, decidido e conversado — inclusive as ações automáticas e as suas</span></div>
+          <div class="ag-sec-titulo">Registro do agente <span class="ag-sec-sub">tudo que foi feito, decidido e conversado — inclusive as ações automáticas e as suas</span></div>
           <div class="ag-periodos">${['todos', 'decisao', 'alerta', 'sistema', 'chat'].map(t => `<button class="btn btn-sm ${state.filtroLog === t ? 'btn-primary' : 'btn-secondary'}" onclick="window._agFiltrarLog('${t}')">${t === 'todos' ? 'Todos' : TIPO_LABEL[t]} (${cont(t)})</button>`).join('')}</div>
         </div>
         <input type="search" class="form-input" id="ag-log-busca" placeholder="Buscar no registro (campanha, motivo, ação)…" value="${esc(state.logBusca || '')}" oninput="window._agLogBusca(this.value)" style="margin-bottom:12px;" aria-label="Buscar no registro do agente">
@@ -1469,9 +1470,9 @@
         const txt = v === Infinity ? 'novo' : `${sobe ? '+' : '−'}${fmtNum(Math.abs(v))}%`;
         return `<span style="color:${cor};font-weight:700;">${sobe ? '▲' : v < 0 ? '▼' : '–'} ${txt}</span>`;
       };
-      const metrica = (label, valor, sub, variacao) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${label}</div><div class="ag-mono" style="font-size:20px;font-weight:800;">${valor}</div><div class="ag-hud-sub">${sub || ''}${sub && variacao != null ? ' · ' : ''}${varChip(variacao)}</div></div>`;
+      const metrica = (label, valor, sub, variacao) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${label}</div><div class="ag-mono" style="font-size:20px;font-weight:700;">${valor}</div><div class="ag-hud-sub">${sub || ''}${sub && variacao != null ? ' · ' : ''}${varChip(variacao)}</div></div>`;
       return `<div class="ag-hud-card" style="--ag-hud-accent:#0ea5e9;margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:800;margin-bottom:2px;">📊 Impressões, Cliques e Vendas (${periodoLabel(d.periodo || state.negocioPeriodo)})</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">📊 Impressões, Cliques e Vendas (${periodoLabel(d.periodo || state.negocioPeriodo)})</div>
         <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Funil de ADS da conta inteira — de quantas vezes o anúncio apareceu até quantas vendas ele gerou. Variação vs o período anterior equivalente.</div>
         <div style="display:flex;gap:28px;flex-wrap:wrap;">
           ${metrica('Impressões', n(d.impressoesTotal), null, d.variacaoImpressoes)}
@@ -1645,7 +1646,7 @@
         </div>
         <div class="ag-topbar-r">
           <span class="ag-topbar-run">${ultima ? `Última execução: <b>${quandoCurto(ultima.criado_em)}</b>${resumoTxt ? ` · ${h(resumoTxt)}` : ''}` : 'Ainda não rodou'}${cfg.ativo ? ` · próxima: <b>${proximaExecucao()}</b>` : ' · piloto desligado, não roda sozinho'}</span>
-          <button class="btn btn-primary btn-sm" onclick="window._agChatToggle()" title="Abrir o chat com o agente — peça pra reativar, otimizar ou explicar qualquer coisa desta conta">💬 Chat com o agente</button>
+          <button class="btn btn-primary btn-sm" onclick="window._agChatToggle()" title="Abrir o chat com o agente — peça pra reativar, otimizar ou explicar qualquer coisa desta conta">Chat com o agente</button>
           <button class="btn btn-secondary btn-sm" ${state.rodandoAgente ? 'disabled' : ''} onclick="window._agRodarAgora()" title="Dispara agora o mesmo ciclo das 07:00 nesta conta.">${state.rodandoAgente ? '⏳ Rodando...' : '🚀 Rodar agora'}</button>
         </div>
       </div>${renderResultadoRodada()}`;
@@ -1703,7 +1704,7 @@
       const bannerReativ = reativ.length ? (() => {
         const algumaLegada = reativ.some(r => reativacaoLegada(r.log));
         const nomes = reativ.slice(0, 5).map(r => h(r.c.nome.slice(0, 45))).join(', ') + (reativ.length > 5 ? ` e mais ${reativ.length - 5}` : '');
-        return `<div class="ag-precisa-item" style="--c:#dc2626;">
+        return `<div class="ag-precisa-item" style="--c:var(--red);">
           <div class="ag-precisa-corpo">
             <div class="ag-precisa-titulo">⚠️ ${reativ.length} campanha(s) com reativação aprovada continuam pausadas na Shopee</div>
             <div class="ag-precisa-motivo">${nomes}. ${algumaLegada ? 'As aprovações antigas só alteraram a meta de ROAS — o comando de reativar nunca foi enviado (já corrigido para as próximas).' : 'A Shopee ainda mostra essas campanhas como pausadas.'}</div>
@@ -1717,11 +1718,11 @@
         const proc = state.processandoAlertaId === l.id;
         const impacto = (String(l.explicacao || '').match(/Impacto estimado:\s*(R\$\s*[\d.,]+)/) || [])[1];
         const motivo = falha ? 'Erro: ' + motivoCurto(String(l.explicacao || '').split('mas deu erro:')[1] || l.explicacao, 150) : motivoCurto(l.explicacao, 170);
-        return `<div class="ag-precisa-item" style="--c:${falha ? '#dc2626' : '#d97706'};">
+        return `<div class="ag-precisa-item" style="--c:${falha ? 'var(--red)' : 'var(--yellow)'};">
           <div class="ag-precisa-corpo">
             <div class="ag-precisa-titulo">${d.nomeCampanha || esc(l.titulo)}
               ${d.acaoLabel ? `<span class="ag-action-chip" style="color:${d.acaoCor};background:${d.acaoCor}1a;">${d.acaoLabel}</span>` : ''}
-              ${falha ? '<span class="ag-action-chip" style="color:#dc2626;background:#dc26261a;">✖ Falhou</span>' : ''}
+              ${falha ? '<span class="ag-action-chip" style="color:var(--red);background:#dc26261a;">✖ Falhou</span>' : ''}
             </div>
             ${d.deParaVal ? `<div class="ag-mono ag-precisa-depara">${d.deParaVal}</div>` : ''}
             <div class="ag-precisa-motivo">${h(motivo)}${impacto ? ` · <b>impacto ≈ ${h(impacto)}</b>` : ''}</div>
@@ -1732,8 +1733,8 @@
           </div>
         </div>`;
       };
-      return `<div class="ag-hud-card" style="--ag-hud-accent:#d97706;margin-bottom:20px;">
-        <div class="ag-sec-head"><div class="ag-sec-titulo">🔔 Precisa de você <span class="ag-contagem">${pend.length + falhas.length + (reativ.length ? 1 : 0)}</span></div>
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--yellow);margin-bottom:20px;">
+        <div class="ag-sec-head"><div class="ag-sec-titulo">Precisa de você <span class="ag-contagem">${pend.length + falhas.length + (reativ.length ? 1 : 0)}</span></div>
           ${pend.filter(l => temAcaoReconhecida(l.dados || {})).length >= 2 ? `<button class="btn btn-sm ag-btn-ok" ${state.aprovandoLote ? 'disabled' : ''} onclick="window._agAprovarTodas()">${state.aprovandoLote ? '⏳ Aprovando...' : `✅ Aprovar todas (${pend.filter(l => temAcaoReconhecida(l.dados || {})).length})`}</button>` : ''}
         </div>
         <div class="ag-lista-precisa">${bannerReativ}${pend.map(l => linha(l, false)).join('')}${falhas.map(l => linha(l, true)).join('')}</div>
@@ -1761,7 +1762,7 @@
       else {
         const A = v.totAtual, P = v.totAnterior;
         const ctrA = A.impressoes > 0 ? A.cliques / A.impressoes * 100 : 0, ctrP = P.impressoes > 0 ? P.cliques / P.impressoes * 100 : 0;
-        const bloco = (rot, val, sub, va) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${rot}</div><div class="ag-mono" style="font-size:20px;font-weight:800;">${val}</div><div class="ag-hud-sub">${sub}${va ? ' · ' + va : ''}</div></div>`;
+        const bloco = (rot, val, sub, va) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${rot}</div><div class="ag-mono" style="font-size:20px;font-weight:700;">${val}</div><div class="ag-hud-sub">${sub}${va ? ' · ' + va : ''}</div></div>`;
         corpo = `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:12px;">
             ${bloco('Impressões', n(A.impressoes), `vs ${n(P.impressoes)}`, chip(A.impressoes, P.impressoes))}
             ${bloco('Cliques', n(A.cliques), `vs ${n(P.cliques)}`, chip(A.cliques, P.cliques))}
@@ -1772,7 +1773,7 @@
           <div style="position:relative;height:230px;"><canvas id="ag-vis-graf"></canvas></div>`;
       }
       return `<div class="ag-hud-card" style="--ag-hud-accent:#2a78d6;margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:800;margin-bottom:2px;">👁️ Comparativo de visualizações (${periodoLabel(p)} × período anterior)</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">👁️ Comparativo de visualizações (${periodoLabel(p)} × período anterior)</div>
         <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Quantas vezes os anúncios da loja apareceram (impressões de ADS), dia a dia, contra o mesmo número de dias do período anterior. A visualização orgânica dos anúncios a Shopee não informa pela API.</div>
         ${corpo}
       </div>`;
@@ -1847,8 +1848,8 @@
       const n = state.negocioPorConta[contaId + ':' + p];
       const PERIODOS = [['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['mes', 'Mês atual']];
       const cab = `<div class="ag-sec-head">
-        <div class="ag-sec-titulo">📈 Indicadores <span class="ag-sec-sub">${periodoLabel(p)} vs período anterior equivalente · vale também para a tabela de campanhas</span></div>
-        <div class="ag-periodos">
+        <div class="ag-sec-titulo">Indicadores <span class="ag-sec-sub">${periodoLabel(p)} vs período anterior equivalente · vale também para a tabela de campanhas</span></div>
+        <div class="ag-periodos ag-periodos-kpi">
           ${PERIODOS.map(([v, l]) => `<button class="btn btn-sm ${p === v ? 'btn-primary' : 'btn-secondary'}" onclick="window._agMudarPeriodo('${v}')">${l}</button>`).join('')}
           <button class="btn btn-secondary btn-sm" ${state.carregandoNegocio ? 'disabled' : ''} onclick="window._agAtualizarTudo()" title="Buscar de novo na Shopee">🔄</button>
         </div>
@@ -1896,13 +1897,13 @@
           if (tx != null) notas += `<div class="ag-nota">ℹ️ <b>Vendas via ADS e ACOS sem cancelados.</b> A Shopee atribui ao anúncio pedidos que depois foram cancelados (nesta loja, ${fmtPct(tx * 100)} do valor dos pedidos do período foi cancelado ou devolvido). Sem descontar, as vendas via ADS passam do faturamento e o ${sigla('ACOS')} fica menor que o ${sigla('TACOS')}, o que não faz sentido. Aqui o valor da Shopee é reduzido pela taxa de cancelamento da loja (estimativa); o número original aparece embaixo de cada card.</div>`;
           else if (fat > 0 && A.gmv > fat) notas += `<div class="ag-nota">ℹ️ As vendas via ADS da Shopee incluem pedidos que depois foram cancelados — por isso passam do faturamento. Quando a base automática cobrir este período, o valor aparece já sem os cancelados.</div>`;
         } else {
-          cards.push(`<div class="ag-kpi" style="--ag-hud-accent:#dc2626;grid-column:span 4;"><div class="ag-hud-label">Dados de ADS</div><div class="ag-hud-sub">Não consegui buscar o investimento em ADS agora${n.adsErro ? ` (${h(n.adsErro)})` : ''}. <button class="btn btn-secondary btn-sm" onclick="window._agAtualizarTudo()">Tentar de novo</button></div></div>`);
+          cards.push(`<div class="ag-kpi" style="--ag-hud-accent:var(--red);grid-column:span 4;"><div class="ag-hud-label">Dados de ADS</div><div class="ag-hud-sub">Não consegui buscar o investimento em ADS agora${n.adsErro ? ` (${h(n.adsErro)})` : ''}. <button class="btn btn-secondary btn-sm" onclick="window._agAtualizarTudo()">Tentar de novo</button></div></div>`);
         }
         if (n.incompleto) notas += `<div class="ag-aviso ag-aviso-aten">⚠️ ${h(n.avisoIncompleto)}</div>`;
         if (n.adsJanelaReduzida) notas += '<div class="ag-nota">ℹ️ A Shopee só entrega até 30 dias de dados de ADS por consulta — o investimento e as vendas via ADS usam os últimos 30 dias, mesmo com "Mês atual" mais longo.</div>';
         corpo = `<div class="ag-kpi-grid">${cards.join('')}</div>${notas}`;
       }
-      return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">${cab}${corpo}</div>`;
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:20px;">${cab}${corpo}</div>`;
     }
 
     // ── 4. O que o agente fez (timeline) ──
@@ -1945,11 +1946,11 @@
       const pausas24h = todas.filter(l => l.resultado === 'executado' && (l.dados?.pausada === true || /pausada/i.test(l.titulo || '')) && Date.now() - new Date(l.criado_em).getTime() < 86400000).length;
       const bannerPausas = pausas24h >= 3 ? `<div class="ag-aviso ag-aviso-aten" style="margin:0 0 12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
         <span>⏸ O agente pausou <b>${pausas24h} campanhas</b> nas últimas 24 horas. Quer revisar quais valem ser reativadas e como otimizar?</span>
-        <button class="btn btn-primary btn-sm" onclick="window._agChatPedir(0)">💬 Pedir ao chat pra sugerir reativações</button>
+        <button class="btn btn-primary btn-sm" onclick="window._agChatPedir(0)">Pedir ao chat pra sugerir reativações</button>
       </div>` : '';
-      return `<div class="ag-hud-card" style="--ag-hud-accent:#6366f1;margin-bottom:20px;">
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:20px;">
         <div class="ag-sec-head">
-          <div class="ag-sec-titulo">🕘 O que o agente fez <span class="ag-sec-sub">últimos 7 dias: ${c7('auto')} automáticas · ${c7('manual')} manuais · ${c7('falhas')} falhas</span></div>
+          <div class="ag-sec-titulo">O que o agente fez <span class="ag-sec-sub">últimos 7 dias: ${c7('auto')} automáticas · ${c7('manual')} manuais · ${c7('falhas')} falhas</span></div>
           <div class="ag-periodos">${FILTROS.map(([k, l]) => `<button class="btn btn-sm ${filtro === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agFiltroTimeline('${k}')">${l} (${grupos[k].length})</button>`).join('')}</div>
         </div>
         ${bannerPausas}
@@ -1983,18 +1984,18 @@
     function renderTabelaCampanhas(cfg) {
       const contaId = cfg.conta_id, d = state.dadosAoVivoPorConta[contaId];
       const cab = `<div class="ag-sec-head">
-        <div class="ag-sec-titulo">📡 Campanhas <span class="ag-sec-sub">${periodoLabel(state.negocioPeriodo)} · ativas com atividade no período e todas as pausadas</span></div>
-        <button class="btn btn-secondary btn-sm" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">🔄 Atualizar</button>
+        <div class="ag-sec-titulo">Campanhas <span class="ag-sec-sub">${periodoLabel(state.negocioPeriodo)} · ativas com atividade no período e todas as pausadas</span></div>
+        <button class="btn btn-secondary btn-sm" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">Atualizar</button>
       </div>`;
-      if (!d && state.carregandoDadosAoVivo) return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}<div class="ag-skel" style="height:180px;border-radius:10px;"></div></div>`;
+      if (!d && state.carregandoDadosAoVivo) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">${cab}<div class="ag-skel" style="height:180px;border-radius:10px;"></div></div>`;
       if (!d) {
         // Carrega sozinho (uma vez por conta), sem precisar clicar
         state.autoCampanhas = state.autoCampanhas || {};
         if (!state.autoCampanhas[contaId] && !state.carregandoDadosAoVivo) { state.autoCampanhas[contaId] = true; setTimeout(() => buscarDadosAoVivo(contaId, state.negocioPeriodo), 0); }
-        return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}<div class="ag-vazio">⏳ Carregando as campanhas da Shopee…</div></div>`;
+        return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">${cab}<div class="ag-vazio">⏳ Carregando as campanhas da Shopee…</div></div>`;
       }
-      if (d.erro) return `<div class="ag-hud-card" style="--ag-hud-accent:#d97706;margin-bottom:20px;">${cab}<div class="ag-aviso ag-aviso-erro">⚠️ ${h(d.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._agAtualizarDados()">Tentar de novo</button></div></div>`;
-      if (!d.todasCampanhas?.length) return `<div class="ag-hud-card" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}<div class="ag-vazio">Nenhuma campanha com atividade em ${periodoLabel(state.negocioPeriodo)}.</div></div>`;
+      if (d.erro) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--yellow);margin-bottom:20px;">${cab}<div class="ag-aviso ag-aviso-erro">⚠️ ${h(d.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._agAtualizarDados()">Tentar de novo</button></div></div>`;
+      if (!d.todasCampanhas?.length) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">${cab}<div class="ag-vazio">Nenhuma campanha com atividade em ${periodoLabel(state.negocioPeriodo)}.</div></div>`;
 
       const { col, dir } = state.tabOrdem;
       const acesso = ORDENACAO[col] || ORDENACAO.gasto;
@@ -2006,7 +2007,7 @@
         ${[['todas', 'Todas'], ['ativas', 'Ativas'], ['pausadas', '⏸ Pausadas']].map(([k, l]) => `<button class="btn btn-sm ${filtro === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agTabFiltro('${k}')">${l} (${contagem(k)})</button>`).join('')}
       </div>`;
       const linhasOrd = d.todasCampanhas.filter(FILTROS_CAMP[filtro]).sort((a, b) => { const x = acesso(a), y = acesso(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
-      if (!linhasOrd.length) return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">${cab}${abas}<div class="ag-vazio">${filtro === 'pausadas' ? '✅ Nenhuma campanha pausada agora.' : 'Nenhuma campanha neste filtro.'}</div></div>`;
+      if (!linhasOrd.length) return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">${cab}${abas}<div class="ag-vazio">${filtro === 'pausadas' ? '✅ Nenhuma campanha pausada agora.' : 'Nenhuma campanha neste filtro.'}</div></div>`;
       const LIMITE = 10;
       const linhas = state.tabTodas ? linhasOrd : linhasOrd.slice(0, LIMITE);
       const th = (chave, rotulo, extra) => `<th class="ag-th-sort" onclick="window._agOrdenar('${chave}')">${rotulo}${col === chave ? (dir === 1 ? ' ▲' : ' ▼') : ''}${extra || ''}</th>`;
@@ -2022,7 +2023,7 @@
         const nomeJs = esc(c.nome).replace(/'/g, "\\'");
         const ativa = (c.status || '').toLowerCase() === 'ongoing', pausada = (c.status || '').toLowerCase() === 'paused';
         const cAcos = corAcos(c.acos, cfg);
-        return `<tr id="ag-camp-${c.id}" style="--row-accent:${s.anomalia ? '#dc2626' : s.cor};">
+        return `<tr id="ag-camp-${c.id}" style="--row-accent:${s.anomalia ? 'var(--red)' : s.cor};">
           <td style="max-width:260px;"><div class="ag-camp-nome">${h(c.nome)}</div><div class="ag-camp-id">ID ${c.id}</div></td>
           <td><span class="ag-action-chip" style="color:${s.cor};background:${s.cor}1a;">${s.txt}</span>${s.anomalia ? `<div class="ag-camp-anom" title="Pausada com ACOS dentro da meta — vale checar se a pausa foi intencional.">⚠ pausada com ACOS bom</div>` : ''}</td>
           <td style="min-width:200px;max-width:280px;">${ultHtml}</td>
@@ -2035,14 +2036,14 @@
           <td class="ag-mono" style="font-weight:700;">${R$(c.gmv)}</td>
           <td class="ag-mono" style="font-weight:700;${cAcos ? `color:${cAcos};` : ''}">${fmtPct(c.acos)}</td>
           <td><details class="ag-menu"><summary title="Ações">⋯</summary><div class="ag-menu-lista">
-            ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agBoostCampanha('${c.id}', '${nomeJs}', ${c.budget || 0}, ${c.roasTarget != null ? c.roasTarget : 'null'}, ${c.acos === Infinity ? 'Infinity' : c.acos})">🚀 Sugerir mais investimento</button>` : ''}
+            ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agBoostCampanha('${c.id}', '${nomeJs}', ${c.budget || 0}, ${c.roasTarget != null ? c.roasTarget : 'null'}, ${c.acos === Infinity ? 'Infinity' : c.acos})">Sugerir mais investimento</button>` : ''}
             ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agSugerirCampanha('${c.id}', 'pausar', '${nomeJs}')">⏸ Sugerir pausar</button>` : ''}
             ${pausada ? `<button onclick="this.closest('details').removeAttribute('open');window._agSugerirCampanha('${c.id}', 'retomar', '${nomeJs}')">▶ Sugerir reativar</button>` : ''}
-            <button onclick="this.closest('details').removeAttribute('open');window._agUsarCampanhaManual('${c.id}', '${nomeJs}')">✏️ Ajustar à mão</button>
+            <button onclick="this.closest('details').removeAttribute('open');window._agUsarCampanhaManual('${c.id}', '${nomeJs}')">Ajustar à mão</button>
           </div></details></td>
         </tr>`;
       };
-      return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:#818cf8;margin-bottom:20px;">
+      return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">
         ${cab}
         ${abas}
         ${filtro === 'pausadas' ? '<div class="ag-nota" style="margin:-4px 0 12px;">Todas as campanhas pausadas na Shopee agora, inclusive as que não gastaram neste período. A coluna “Última ação” mostra quem pausou e por quê; as marcadas com ⚠ estão pausadas com o ACOS dentro da meta (candidatas a reativar). Use o menu ⋯ pra sugerir a reativação.</div>' : ''}
@@ -2124,7 +2125,7 @@
       for (let k = 7; k >= 0; k--) { const d = isoMenos(k); dias.push({ d, gasto: parseFloat(g.gasto[d]) || 0, vendas: parseFloat(g.vendas[d]) || 0 }); }
       const kpi = (rot, val, sub) => `<div class="ag-gmv-kpi"><div class="ag-gmv-rot">${rot}</div><div class="ag-gmv-val">${val}</div>${sub ? `<div class="ag-gmv-sub">${sub}</div>` : ''}</div>`;
       return `<div class="card ag-gmv">
-        <div class="ag-sec-head"><div class="ag-sec-titulo">🏪 GMV Max da Loja <span class="ag-sec-sub">acompanhamento — o agente só reporta, não ajusta esta campanha</span></div></div>
+        <div class="ag-sec-head"><div class="ag-sec-titulo">GMV Max da Loja <span class="ag-sec-sub">acompanhamento — o agente só reporta, não ajusta esta campanha</span></div></div>
         <div class="ag-gmv-kpis">
           ${kpi('Investimento no mês', R$(g7), `projeção do mês ${R$(g7 / diaHoje * diasMes)}${histOk ? ` · <span style="color:${cor(gAnt, g7)};">${varPct(g7, gAnt)}</span> vs mesmos dias do mês anterior` : ''}`)}
           ${kpi('Vendas no mês', R$(v7), histOk ? `<span style="color:${cor(v7, vAnt)};">${varPct(v7, vAnt)}</span> vs mesmos dias do mês anterior` : 'comparação com o mês anterior: histórico carregando')}
@@ -2198,7 +2199,7 @@
       const rolagemAntiga = msgsAntigo ? msgsAntigo.scrollTop : 0;
 
       if (!state.chatAberto) {
-        raiz.innerHTML = `<button class="ag-chat-fab" onclick="window._agChatToggle()" title="Conversar com o agente sobre esta conta">💬 Perguntar ao agente</button>`;
+        raiz.innerHTML = `<button class="ag-chat-fab" onclick="window._agChatToggle()" title="Conversar com o agente sobre esta conta">Perguntar ao agente</button>`;
         return;
       }
       raiz.innerHTML = `<div class="ag-chat-panel" role="dialog" aria-label="Conversa com o agente">
@@ -2275,25 +2276,44 @@
         return;
       }
 
-      const funil = renderImpressoesCliquesVendas(cfg.conta_id);
-      root.innerHTML = `
-        ${renderCabecalho(cfg)}
-        ${renderPrecisaDeVoce(cfg.conta_id)}
-        ${renderKPIs(cfg)}
-        ${renderComparativoVisualizacoes(cfg)}
-        ${renderGmvLoja(cfg.conta_id)}
-        ${renderRegras(cfg)}
-        ${renderTimeline(cfg.conta_id)}
-        ${renderTabelaCampanhas(cfg)}
-        ${renderLog(cfg.conta_id)}
-        <div class="ag-secundarias">
-          ${secaoColapsavel('funil', '📊 Funil de ADS (impressões → cliques → pedidos)', funil || '<div class="ag-vazio">Sem dados de ADS no período.</div>')}
-          ${blocoABC(cfg.conta_id)}
-          ${renderAcaoManual(cfg.conta_id)}
-          ${secaoColapsavel('relatorios', '🗞️ Relatórios diários (gerados às 07:00 sobre o dia anterior)', renderRelatorios(cfg.conta_id))}
-        </div>
-      `;
+      // Setores (abas): cada um mostra só o que precisa — mesmos blocos de antes.
+      const aba = ['geral', 'acoes', 'campanhas', 'produtos', 'config', 'historico'].includes(state.aba) ? state.aba : 'geral';
+      const nPend = contagemPendencias(cfg.conta_id);
+      const PER = [['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['mes', 'Mês atual']];
+      const ABAS = [['geral', 'Visão geral'], ['acoes', 'Ações'], ['campanhas', 'Campanhas'], ['produtos', 'Produtos'], ['config', 'Configuração'], ['historico', 'Histórico']];
+      const barra = `<div class="ag-abas">
+        <div class="ag-abas-lista">${ABAS.map(([k, t]) => `<button class="ag-aba ${aba === k ? 'on' : ''}" onclick="window._agAba('${k}')">${t}${k === 'acoes' && nPend ? ` <span class="ag-aba-n">${nPend}</span>` : ''}</button>`).join('')}</div>
+        <div class="tabs ag-abas-per">${PER.map(([v, l]) => `<button class="tab-btn ${state.negocioPeriodo === v ? 'active' : ''}" onclick="window._agMudarPeriodo('${v}')">${l}</button>`).join('')}</div>
+      </div>`;
+      let corpo = '';
+      if (aba === 'geral') corpo = `${renderKPIs(cfg)}${resumoPendencias(cfg.conta_id, nPend)}${renderComparativoVisualizacoes(cfg)}`;
+      else if (aba === 'acoes') corpo = `${renderPrecisaDeVoce(cfg.conta_id)}${renderTimeline(cfg.conta_id)}<div class="ag-secundarias">${renderAcaoManual(cfg.conta_id)}</div>`;
+      else if (aba === 'campanhas') { const funil = renderImpressoesCliquesVendas(cfg.conta_id); corpo = `${renderTabelaCampanhas(cfg)}${renderGmvLoja(cfg.conta_id)}<div class="ag-secundarias">${secaoColapsavel('funil', 'Funil de ADS (impressões → cliques → pedidos)', funil || '<div class="ag-vazio">Sem dados de ADS no período.</div>')}</div>`; }
+      else if (aba === 'produtos') corpo = `<div class="ag-secundarias">${blocoABC(cfg.conta_id)}</div>`;
+      else if (aba === 'config') corpo = renderRegras(cfg);
+      else corpo = `${renderLog(cfg.conta_id)}<div class="ag-secundarias">${secaoColapsavel('relatorios', 'Relatórios diários (gerados às 07:00 sobre o dia anterior)', renderRelatorios(cfg.conta_id))}</div>`;
+      root.innerHTML = `${renderCabecalho(cfg)}${barra}<div class="ag-setor ag-setor-${aba}">${corpo}</div>`;
+      // o painel "Desempenho de ADS" fica fora do ag-root: aparece só em Campanhas
+      const des = document.getElementById('ag-desempenho'); if (des) des.style.display = aba === 'campanhas' ? '' : 'none';
     }
+    // Mesma contagem do "Precisa de você"
+    function contagemPendencias(contaId) {
+      const logs = logsDaConta(contaId);
+      const tresDias = Date.now() - 3 * 86400000;
+      const pend = logs.filter(l => l.tipo === 'alerta' && l.resultado === 'so_alerta').length;
+      const falhas = logs.filter(l => l.tipo === 'decisao' && l.resultado === 'erro' && new Date(l.criado_em).getTime() > tresDias).length;
+      return pend + falhas + (reativacoesPendentes(contaId).length ? 1 : 0);
+    }
+    // Resumo na Visão geral: as 3 mais recentes + atalho para a aba Ações
+    function resumoPendencias(contaId, n) {
+      if (!n) return '<div class="ag-resumo-pend ag-resumo-ok">Nada pendente — o agente não precisa de você agora.</div>';
+      const pend = logsDaConta(contaId).filter(l => l.tipo === 'alerta' && l.resultado === 'so_alerta').sort(maisRecente).slice(0, 3);
+      return `<div class="ag-resumo-pend">
+        <div class="ag-resumo-cab"><b>Precisa de você</b> <span class="ag-aba-n">${n}</span><span style="flex:1"></span><button class="btn btn-ghost btn-sm" onclick="window._agAba('acoes')">Ver todas →</button></div>
+        ${pend.map(l => { const d = descreverAcao(l); return `<div class="ag-resumo-li" onclick="window._agAba('acoes')"><span class="ag-resumo-dot"></span><span class="ag-resumo-t">${d.nomeCampanha || esc(l.titulo)}</span>${d.acaoLabel ? `<span class="ag-resumo-tag">${d.acaoLabel}</span>` : ''}</div>`; }).join('')}
+      </div>`;
+    }
+    window._agAba = k => { state.aba = k; try { localStorage.setItem('glr_ag_aba', k); } catch (e) {} render(); window.scrollTo({ top: 0 }); };
 
     el.innerHTML = `<div class="page">
       <div class="ag-titulo-pagina">

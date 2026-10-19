@@ -37,7 +37,7 @@ Router.register('integracoes', (params, el) => {
     <!-- Header -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
       <div>
-        <div class="section-title" style="font-size:20px;">🔌 Integrações — Marketplace Connect</div>
+        <div class="section-title" style="font-size:20px;">Integrações — Marketplace Connect</div>
         <div class="section-subtitle">Conecte contas de marketplace para importar dados reais automaticamente</div>
       </div>
     </div>
@@ -50,10 +50,10 @@ Router.register('integracoes', (params, el) => {
           value="${apiKey}" placeholder="mc_live_xxxxxxxxxxxxxxxx"
           style="flex:1;min-width:280px;font-family:monospace;">
         <button onclick="const i=document.getElementById('inp-apikey');i.type=i.type==='password'?'text':'password';this.textContent=i.type==='password'?'👁 Mostrar':'🙈 Ocultar';"
-          style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:8px 12px;cursor:pointer;font-size:12px;white-space:nowrap;">👁 Mostrar</button>
+          style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:8px 12px;cursor:pointer;font-size:12px;white-space:nowrap;">Mostrar</button>
         <button class="btn btn-primary" onclick="salvarApiKey()">Salvar</button>
         <button class="btn btn-secondary" onclick="testarApiKey()">Testar conexão</button>
-        <button class="btn btn-secondary" onclick="descobrirAcoesAmazon()">🔍 Descobrir ações Amazon</button>
+        <button class="btn btn-secondary" onclick="descobrirAcoesAmazon()">Descobrir ações Amazon</button>
         <span id="status-apikey" style="font-size:13px;"></span>
       </div>
       <div id="credits-info" style="margin-top:10px;font-size:12px;color:var(--text-muted);"></div>
@@ -63,7 +63,7 @@ Router.register('integracoes', (params, el) => {
     <!-- Contas disponíveis -->
     <div class="card mb-16" id="card-contas" style="${apiKey ? '' : 'opacity:0.4;pointer-events:none;'}">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <div class="section-title">📋 Contas Conectadas</div>
+        <div class="section-title">Contas Conectadas</div>
         <button class="btn btn-secondary btn-sm" onclick="recarregarContas()">↻ Recarregar</button>
       </div>
       <div id="lista-contas">
@@ -128,7 +128,7 @@ Router.register('integracoes', (params, el) => {
             <span style="font-weight:600;color:var(--text-primary);">${l.acao}</span>
             ${l.detalhes ? `<span style="color:var(--text-secondary);"> — ${l.detalhes}</span>` : ''}
           </div>
-          <div style="flex-shrink:0;font-size:11px;color:#818cf8;">${l.usuario}</div>
+          <div style="flex-shrink:0;font-size:11px;color:var(--accent-light);">${l.usuario}</div>
         </div>
       `).join('')}
     </div>`;
@@ -176,8 +176,8 @@ Router.register('integracoes', (params, el) => {
       st.style.color = '#10b981';
       st.textContent = '✓ Conectado!';
       cr.innerHTML = `Plano: <strong>${plano}</strong> · Créditos: <strong>${creditos}</strong>`
-        + (adsAtivo === true  ? ' · <span style="color:#16a34a;font-weight:700;">✅ Módulo ADS ativo</span>' : '')
-        + (adsAtivo === false ? ' · <span style="color:#dc2626;font-weight:700;">❌ Módulo ADS inativo</span>' : '')
+        + (adsAtivo === true  ? ' · <span style="color:var(--green);font-weight:700;">✅ Módulo ADS ativo</span>' : '')
+        + (adsAtivo === false ? ' · <span style="color:var(--red);font-weight:700;">❌ Módulo ADS inativo</span>' : '')
         + `<details style="margin-top:6px;font-size:11px;color:var(--text-muted);cursor:pointer;"><summary>Ver resposta bruta</summary><pre style="font-size:10px;overflow:auto;max-height:120px;">${JSON.stringify(d, null, 2)}</pre></details>`;
       localStorage.setItem('glr_mc_apikey', key);
     } catch(e) {
@@ -201,11 +201,11 @@ Router.register('integracoes', (params, el) => {
       const amazonActions = nomes.filter(n => /amazon/i.test(n));
 
       box.innerHTML = `
-        <div style="background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;font-family:monospace;font-size:12px;color:#e5e7eb;">
-          <div style="color:#a5b4fc;font-weight:700;margin-bottom:8px;">🔍 Ações Amazon encontradas no catálogo (${amazonActions.length})</div>
+        <div style="background:#0d0d14;border:1px solid var(--accent);border-radius:10px;padding:14px;font-family:monospace;font-size:12px;color:#e5e7eb;">
+          <div style="color:var(--accent-light);font-weight:700;margin-bottom:8px;">🔍 Ações Amazon encontradas no catálogo (${amazonActions.length})</div>
           ${amazonActions.length
             ? `<ul style="margin:0;padding-left:18px;">${amazonActions.map(n=>`<li>${n}</li>`).join('')}</ul><div style="margin-top:10px;color:#fbbf24;">⏳ Consultando parâmetros de amazon_list_orders, amazon_get_order_items e amazon_list_financial_events...</div>`
-            : `<div style="color:#f87171;">Nenhuma ação com "amazon" no nome foi encontrada. Total de ações no catálogo: ${nomes.length}.<br>Isso confirma que a API do Marketplace Connect ainda não tem suporte real pra Amazon — precisa confirmar com o suporte deles (Tiops) antes de eu implementar qualquer busca de pedido.</div>`}
+            : `<div style="color:var(--red);">Nenhuma ação com "amazon" no nome foi encontrada. Total de ações no catálogo: ${nomes.length}.<br>Isso confirma que a API do Marketplace Connect ainda não tem suporte real pra Amazon — precisa confirmar com o suporte deles (Tiops) antes de eu implementar qualquer busca de pedido.</div>`}
         </div>`;
 
       if (!amazonActions.length) return;
@@ -224,11 +224,11 @@ Router.register('integracoes', (params, el) => {
       const bloco = document.getElementById('amazon-diag-params') || document.createElement('div');
       bloco.id = 'amazon-diag-params';
       bloco.style.cssText = 'margin-top:10px;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;font-family:monospace;font-size:11px;color:#e5e7eb;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;';
-      bloco.innerHTML = `<div style="color:#a5b4fc;font-weight:700;margin-bottom:8px;font-family:Inter,sans-serif;font-size:12px;">📋 Parâmetros das ações-chave</div>` +
+      bloco.innerHTML = `<div style="color:var(--accent-light);font-weight:700;margin-bottom:8px;font-family:Inter,sans-serif;font-size:12px;">📋 Parâmetros das ações-chave</div>` +
         chave.map(a => `<div style="margin-bottom:10px;"><div style="color:#fbbf24;">${a}</div>${JSON.stringify(detalhes[a], null, 2)}</div>`).join('');
       box.appendChild(bloco);
     } catch(e) {
-      box.innerHTML = `<div style="color:#ef4444;font-size:12px;">Erro ao consultar catálogo: ${e.message}</div>`;
+      box.innerHTML = `<div style="color:var(--red);font-size:12px;">Erro ao consultar catálogo: ${e.message}</div>`;
     }
   };
 
@@ -260,12 +260,12 @@ Router.register('integracoes', (params, el) => {
           <div style="min-width:0;flex:1;">
             <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${platNome[c.marketplace] || c.marketplace}</div>
             <div style="font-size:11px;color:var(--text-muted);">ID: ${c.external_id}</div>
-            ${tags ? `<div style="font-size:10px;color:#818cf8;margin-top:2px;font-weight:600;">${tags}</div>` : ''}
+            ${tags ? `<div style="font-size:10px;color:var(--accent-light);margin-top:2px;font-weight:600;">${tags}</div>` : ''}
             <input type="text" value="${nick}" placeholder="Apelido (opcional)"
               onchange="salvarNickname('${c.external_id}', this.value)"
               style="margin-top:5px;width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--text-primary);outline:none;">
             <div style="font-size:10px;margin-top:4px;">
-              <span style="background:${c.connected ? '#10b98120' : '#ef444420'};color:${c.connected ? '#10b981' : '#ef4444'};padding:1px 6px;border-radius:99px;">
+              <span style="background:${c.connected ? '#10b98120' : '#ef444420'};color:${c.connected ? 'var(--green)' : 'var(--red)'};padding:1px 6px;border-radius:99px;">
                 ${c.connected ? '● Conectado' : '○ Desconectado'}
               </span>
             </div>
@@ -292,7 +292,7 @@ Router.register('integracoes', (params, el) => {
       localStorage.setItem('glr_mc_contas', JSON.stringify(contas));
       renderContasNaTela(contas);
     } catch(e) {
-      el.innerHTML = `<div style="color:#ef4444;font-size:13px;">✗ Erro: ${e.message}</div>`;
+      el.innerHTML = `<div style="color:var(--red);font-size:13px;">✗ Erro: ${e.message}</div>`;
     }
   };
 
@@ -446,8 +446,8 @@ Router.register('integracoes', (params, el) => {
           <span>${platIcon[d.plataforma?.toLowerCase()] || '🏪'}</span>
           <span style="font-weight:600;">${d.plataforma}</span>
           ${d.erro
-            ? `<span style="color:#ef4444;">✗ ${d.erro}</span>`
-            : `<span style="color:#10b981;">✓ Fat: <strong>R$ ${Math.round(d.faturamento).toLocaleString('pt-BR')}</strong>${d.pedidos ? ` · <strong>${d.pedidos} pedidos</strong>` : ''}${d.investimento ? ` · ADS: R$ ${Math.round(d.investimento).toLocaleString('pt-BR')}` : ''}</span>`
+            ? `<span style="color:var(--red);">✗ ${d.erro}</span>`
+            : `<span style="color:var(--green);">✓ Fat: <strong>R$ ${Math.round(d.faturamento).toLocaleString('pt-BR')}</strong>${d.pedidos ? ` · <strong>${d.pedidos} pedidos</strong>` : ''}${d.investimento ? ` · ADS: R$ ${Math.round(d.investimento).toLocaleString('pt-BR')}` : ''}</span>`
           }
         </div>`).join('');
 
@@ -458,7 +458,7 @@ Router.register('integracoes', (params, el) => {
       registrarLog('Dados importados', `${cliente?.nome || clienteId} — ${mesesNomes[mes]}/${ano} (${importados} conta${importados !== 1 ? 's' : ''})`);
 
     } catch(e) {
-      res.innerHTML = `<div style="color:#ef4444;font-size:12px;margin-top:6px;">✗ ${e.message}</div>`;
+      res.innerHTML = `<div style="color:var(--red);font-size:12px;margin-top:6px;">✗ ${e.message}</div>`;
       btn.textContent = '⬇ Importar dados';
       btn.disabled = false;
     }
@@ -492,12 +492,12 @@ function renderClientesVinculados(vinc, mesesNomes, hoje) {
           <div style="font-size:11px;color:rgba(255,255,255,0.5);">${contas.length} conta${contas.length !== 1 ? 's' : ''} vinculada${contas.length !== 1 ? 's' : ''}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <select id="sel-mes-${clienteId}" style="background:#1a2744;border:1px solid rgba(255,255,255,0.2);color:white;border-radius:6px;padding:5px 8px;font-size:12px;">
+          <select id="sel-mes-${clienteId}" style="background:var(--bg-subtle);border:1px solid rgba(255,255,255,0.2);color:var(--text-secondary);border-radius:6px;padding:5px 8px;font-size:12px;">
             ${mesesNomes.map((m, i) => `<option value="${i}" ${i === mesAtual ? 'selected' : ''}>${m} ${i <= mesAtual ? anoAtual : anoAtual - 1}</option>`).join('')}
           </select>
           <button id="btn-import-${clienteId}" class="btn btn-primary btn-sm"
             onclick="importarDados(${clienteId}, parseInt(document.getElementById('sel-mes-${clienteId}').value), ${anoAtual})">
-            ⬇ Importar dados
+            Importar dados
           </button>
         </div>
       </div>
@@ -514,7 +514,7 @@ function renderClientesVinculados(vinc, mesesNomes, hoje) {
               <div style="flex:1;min-width:0;">
                 <div style="font-size:12px;font-weight:700;">${platNome[c.marketplace]||c.marketplace}</div>
                 <div style="font-size:10px;color:var(--text-muted);">ID: ${c.external_id}</div>
-                ${tags ? `<div style="font-size:10px;color:#818cf8;font-weight:600;margin-top:2px;">${tags}</div>` : ''}
+                ${tags ? `<div style="font-size:10px;color:var(--accent-light);font-weight:600;margin-top:2px;">${tags}</div>` : ''}
                 <input type="text" value="${nick}" placeholder="Apelido (ex: GAMA SHOPEE)"
                   onchange="salvarNickname('${c.external_id}', this.value)"
                   style="margin-top:5px;width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--text-primary);outline:none;box-sizing:border-box;">
@@ -530,7 +530,7 @@ function renderClientesVinculados(vinc, mesesNomes, hoje) {
                   <span style="font-size:11px;color:var(--text-muted);">%</span>
                 </div>
                 <button onclick="desvincularConta(${clienteId},'${c.external_id}')"
-                  style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:0;" title="Desvincular">✕ remover</button>
+                  style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:0;" title="Desvincular">remover</button>
               </div>
             </div>`;
           }).join('')}

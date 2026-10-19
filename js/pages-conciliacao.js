@@ -307,7 +307,7 @@ Router.register('conciliacao', async (params, el) => {
     <div class="page">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
         <div>
-          <h1 style="font-size:20px;font-weight:800;margin:0;">🧾 Conciliação Financeira</h1>
+          <h1 style="font-size:20px;font-weight:700;margin:0;">🧾 Conciliação Financeira</h1>
           <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">${atualizadoEm?`Atualizado em ${new Date(atualizadoEm).toLocaleString('pt-BR')}`:'Selecione uma conta e clique em Buscar.'}</div>
         </div>
         <button id="conc-btn-buscar" class="btn-primary" style="padding:8px 16px;" ${carregando||!contaSel?'disabled':''} onclick="_conciliacaoBuscar()">${carregando?'⏳ Buscando...':'🔄 Buscar'}</button>
@@ -344,18 +344,18 @@ Router.register('conciliacao', async (params, el) => {
       </div>` : `
       <div class="kpi-grid mb-24" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));">
         <div class="kpi-card"><div class="kpi-label">Pedidos</div><div class="kpi-value">${totalPedidos}</div></div>
-        <div class="kpi-card"><div class="kpi-label">✅ Batem</div><div class="kpi-value" style="color:#10b981;">${totalBatem}</div></div>
-        <div class="kpi-card"><div class="kpi-label">⚠️ Divergem</div><div class="kpi-value" style="color:#ef4444;">${totalDivergem}</div></div>
-        <div class="kpi-card"><div class="kpi-label">💰 Pagos</div><div class="kpi-value" style="color:#10b981;">${totalPago}</div></div>
-        <div class="kpi-card"><div class="kpi-label">⏳ Pendentes</div><div class="kpi-value" style="color:#f59e0b;">${totalPendente}</div></div>
-        <div class="kpi-card"><div class="kpi-label">Diferença total</div><div class="kpi-value" style="color:${Math.abs(somaDiff)<1?'#10b981':'#ef4444'};font-size:15px;">${R$(somaDiff)}</div></div>
+        <div class="kpi-card"><div class="kpi-label">✅ Batem</div><div class="kpi-value" style="color:var(--green);">${totalBatem}</div></div>
+        <div class="kpi-card"><div class="kpi-label">⚠️ Divergem</div><div class="kpi-value" style="color:var(--red);">${totalDivergem}</div></div>
+        <div class="kpi-card"><div class="kpi-label">💰 Pagos</div><div class="kpi-value" style="color:var(--green);">${totalPago}</div></div>
+        <div class="kpi-card"><div class="kpi-label">⏳ Pendentes</div><div class="kpi-value" style="color:var(--yellow);">${totalPendente}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Diferença total</div><div class="kpi-value" style="color:${Math.abs(somaDiff)<1?'var(--green)':'var(--red)'};font-size:15px;">${R$(somaDiff)}</div></div>
       </div>
 
       <div class="card" style="padding:0;overflow:hidden;">
         <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px;">
           <thead>
-            <tr style="background:#1a2744;color:white;">
+            <tr style="background:var(--bg-subtle);color:var(--text-secondary);">
               <th style="padding:10px 12px;text-align:left;">Pedido</th>
               <th style="padding:10px 8px;text-align:right;">Bruto</th>
               <th style="padding:10px 8px;text-align:right;">Taxas Esperadas</th>
@@ -373,17 +373,17 @@ Router.register('conciliacao', async (params, el) => {
               <tr style="background:${i%2===0?'var(--bg-card)':'var(--bg-surface)'};">
                 <td style="padding:9px 12px;font-weight:600;">${p.id}<div style="font-size:10px;color:var(--text-muted);">${p.data}</div></td>
                 <td style="padding:9px 8px;text-align:right;">${R$(p.bruto)}</td>
-                <td style="padding:9px 8px;text-align:right;color:#ef4444;">
+                <td style="padding:9px 8px;text-align:right;color:var(--red);">
                   - ${R$(p.taxasEsperadas)}
                   ${p.breakdown?.length ? `<div style="font-size:9.5px;color:var(--text-muted);font-weight:400;text-align:right;margin-top:2px;">${p.breakdown.map(b=>`${b.nome}: ${b.exibirValor!=null?R$(Math.abs(b.exibirValor)):(b.valor>=0?'-':'+')+R$(Math.abs(b.valor))}`).join('<br>')}</div>` : ''}
                 </td>
                 <td style="padding:9px 8px;text-align:right;">${R$(p.liquidoEsperado)}</td>
                 <td style="padding:9px 8px;text-align:right;font-weight:600;">${p.liquidoReal!=null?R$(p.liquidoReal):'—'}</td>
-                <td style="padding:9px 8px;text-align:right;color:${p.diff==null?'var(--text-muted)':Math.abs(p.diff)<1?'#10b981':'#ef4444'};">
+                <td style="padding:9px 8px;text-align:right;color:${p.diff==null?'var(--text-muted)':Math.abs(p.diff)<1?'var(--green)':'var(--red)'};">
                   ${p.diff!=null?R$(p.diff):'—'}
-                  ${p.diff!=null && Math.abs(p.diff)>=1 ? `<div style="font-size:9.5px;color:#ef4444;font-weight:400;">não identificado</div>` : ''}
+                  ${p.diff!=null && Math.abs(p.diff)>=1 ? `<div style="font-size:9.5px;color:var(--red);font-weight:400;">não identificado</div>` : ''}
                 </td>
-                <td style="padding:9px 8px;text-align:center;">${p.bate==null?'<span style="color:var(--text-muted);">—</span>':p.bate?'<span style="color:#10b981;">✅</span>':'<span style="color:#ef4444;">⚠️</span>'}</td>
+                <td style="padding:9px 8px;text-align:center;">${p.bate==null?'<span style="color:var(--text-muted);">—</span>':p.bate?'<span style="color:var(--green);">✅</span>':'<span style="color:var(--red);">⚠️</span>'}</td>
                 <td style="padding:9px 8px;color:${st.cor};">${st.label}</td>
               </tr>`;
             }).join('')}

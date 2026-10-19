@@ -192,10 +192,10 @@ Router.register('anuncios-amazon', (params, el) => {
           return `<tr>${prodCel(it)}<td class="n">${R$(it.preco)}${it.promo ? `<div class="az-promo">em promo: ${R$(it.promo.preco)}${it.promo.ate ? ` até ${it.promo.ate.split('-').reverse().join('/')}` : ''}</div>` : ''}</td>
             <td class="n">${custoInput(it)}</td>
             <td class="n"><input class="az-in" inputmode="decimal" placeholder="${sug ? dec(sug) : '0,00'}" value="${p.preco != null ? dec(p.preco) : ''}" onchange="window._azPromoPreco('${h(it.sku)}', this.value)">
-              ${sug && it.preco && sug >= it.preco ? `<div style="color:#dc2626;font-size:11px">sem espaço: ${pct(st.margemMin)} de margem pede ${R$(sug)}, acima do preço</div>` : sug ? `<div class="az-mut">p/ ${pct(st.margemMin)}: ${R$(sug)}</div>` : custoDe(it) == null ? '<div class="az-mut">cadastre o custo para sugerir</div>' : ''}
-              ${abaixoMin ? `<div style="color:#d97706;font-size:11px">abaixo do mínimo permitido (${R$(it.minimo)})</div>` : ''}${maior ? '<div style="color:#dc2626;font-size:11px">precisa ser menor que o preço</div>' : ''}</td>
+              ${sug && it.preco && sug >= it.preco ? `<div style="color:var(--red);font-size:11px">sem espaço: ${pct(st.margemMin)} de margem pede ${R$(sug)}, acima do preço</div>` : sug ? `<div class="az-mut">p/ ${pct(st.margemMin)}: ${R$(sug)}</div>` : custoDe(it) == null ? '<div class="az-mut">cadastre o custo para sugerir</div>' : ''}
+              ${abaixoMin ? `<div style="color:var(--yellow);font-size:11px">abaixo do mínimo permitido (${R$(it.minimo)})</div>` : ''}${maior ? '<div style="color:var(--red);font-size:11px">precisa ser menor que o preço</div>' : ''}</td>
             <td><input type="date" class="az-in az-dt" value="${p.ini || hojeIso()}" onchange="window._azPromoData('${h(it.sku)}','ini',this.value)"> <input type="date" class="az-in az-dt" value="${p.fim || hojeIso(7)}" onchange="window._azPromoData('${h(it.sku)}','fim',this.value)"></td>
-            <td class="n" style="color:${corMargem(m?.margem)};font-weight:800">${m?.margem == null ? '<span class="az-mut">—</span>' : `${pct(m.margem)}<div class="az-mut" style="font-weight:400">lucro ${R$(m.lucro)}</div>`}</td>
+            <td class="n" style="color:${corMargem(m?.margem)};font-weight:700">${m?.margem == null ? '<span class="az-mut">—</span>' : `${pct(m.margem)}<div class="az-mut" style="font-weight:400">lucro ${R$(m.lucro)}</div>`}</td>
             <td style="white-space:nowrap">${it.promo ? `<button class="btn btn-sm btn-secondary" ${st.aplicando[it.sku] ? 'disabled' : ''} onclick="window._azTirarPromo('${h(it.sku)}')">Tirar promoção</button> ` : ''}<button class="btn btn-sm btn-primary" ${!preco || maior || st.aplicando[it.sku] ? 'disabled' : ''} onclick="window._azAplicarPromo('${h(it.sku)}')">${st.aplicando[it.sku] ? '…' : 'Aplicar'}</button></td></tr>`;
         }).join('') || `<tr><td colspan="7" class="az-vazio">${st.carregando ? '⏳ ' + h(st.progresso) : 'Nenhum anúncio.'}</td></tr>`}</tbody></table></div></div>`;
   }
@@ -206,9 +206,9 @@ Router.register('anuncios-amazon', (params, el) => {
     const comM = lista.filter(x => x.m?.margem != null);
     const neg = comM.filter(x => x.m.margem < 0).length, baixa = comM.filter(x => x.m.margem >= 0 && x.m.margem < st.margemMin).length;
     return `<div class="az-resumo">
-        <div><b style="color:#dc2626">${neg}</b><span>no prejuízo</span></div>
-        <div><b style="color:#d97706">${baixa}</b><span>abaixo de ${pct(st.margemMin)}</span></div>
-        <div><b style="color:#16a34a">${comM.length - neg - baixa}</b><span>margem boa</span></div>
+        <div><b style="color:var(--red)">${neg}</b><span>no prejuízo</span></div>
+        <div><b style="color:var(--yellow)">${baixa}</b><span>abaixo de ${pct(st.margemMin)}</span></div>
+        <div><b style="color:var(--green)">${comM.length - neg - baixa}</b><span>margem boa</span></div>
         <div><b>${lista.length - comM.length}</b><span>sem custo cadastrado</span></div>
       </div>
       <div class="az-mut" style="margin-bottom:10px">Margem = preço − taxa estimada da Amazon − custo − imposto (${pct(aliquota())}). Frete pago por você (MFN) não entra. Ordem: do pior para o melhor. Preencha o custo direto na tabela — vale para Vendas, Financeiro e DRE também.</div>
@@ -220,7 +220,7 @@ Router.register('anuncios-amazon', (params, el) => {
           <td class="n">${custoInput(it)}</td>
           <td class="n">${R$(m?.imposto)}</td>
           <td class="n" style="font-weight:700;color:${corMargem(m?.margem)}">${m?.lucro != null ? R$(m.lucro) : '—'}</td>
-          <td class="n" style="font-weight:800;color:${corMargem(m?.margem)}">${m?.margem != null ? pct(m.margem) : '<span class="az-mut">sem custo</span>'}</td></tr>`).join('') || `<tr><td colspan="7" class="az-vazio">${st.carregando ? '⏳ ' + h(st.progresso) : 'Nenhum anúncio.'}</td></tr>`}</tbody></table></div></div>`;
+          <td class="n" style="font-weight:700;color:${corMargem(m?.margem)}">${m?.margem != null ? pct(m.margem) : '<span class="az-mut">sem custo</span>'}</td></tr>`).join('') || `<tr><td colspan="7" class="az-vazio">${st.carregando ? '⏳ ' + h(st.progresso) : 'Nenhum anúncio.'}</td></tr>`}</tbody></table></div></div>`;
   }
 
   function render() {
@@ -235,7 +235,7 @@ Router.register('anuncios-amazon', (params, el) => {
         <label class="az-mut">Margem mínima <input class="az-in" style="width:56px" inputmode="decimal" value="${dec(st.margemMin).replace(',00', '')}" onchange="window._azMargemMin(this.value)">%</label>
         <span style="flex:1"></span>
         <span class="az-mut">${st.carregando ? '⏳ ' + h(st.progresso) : `${st.itens.length} anúncios ativos${atualizado ? ` · atualizado ${new Date(atualizado).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}`}</span>
-        <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._azRecarregar()">🔄 Atualizar</button>
+        <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._azRecarregar()">Atualizar</button>
       </div>
       ${st.erro ? `<div class="az-erro">⚠️ ${h(st.erro)}</div>` : ''}
       <div class="az-abas">${ABAS.map(([k, t]) => `<button class="az-aba ${st.aba === k ? 'on' : ''}" onclick="window._azAba('${k}')">${t}</button>`).join('')}</div>
@@ -294,7 +294,7 @@ Router.register('anuncios-amazon', (params, el) => {
   };
 
   el.innerHTML = `<div class="page">
-    <div style="font-size:22px;font-weight:800;color:var(--text-primary);margin-bottom:4px">🛒 Amazon</div>
+    <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;color:var(--text-primary);margin-bottom:4px">Amazon</div>
     <div class="az-mut" style="margin-bottom:16px;max-width:900px">Na Amazon todos os vendedores de um produto disputam o mesmo anúncio — o jogo é ficar com a <b>Buy Box</b> sem perder margem. Aqui você vê onde ganha e onde perde, cria promoções vendo a margem e confere a margem real de cada produto.</div>
     <div id="az-root"></div>
   </div>

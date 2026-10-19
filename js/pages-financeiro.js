@@ -1396,7 +1396,7 @@ Router.register('financeiro', async (params, el) => {
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <span id="fin-status" style="font-size:11px;color:var(--text-muted);margin-right:4px;"></span>
-        <button onclick="window.print()" class="btn" style="border:1px solid var(--border);background:var(--bg-card);padding:7px 14px;border-radius:99px;font-size:13px;">📥 PDF</button>
+        <button onclick="window.print()" class="btn" style="border:1px solid var(--border);background:var(--bg-card);padding:7px 14px;border-radius:99px;font-size:13px;">PDF</button>
         <select id="fin-sel-empresa" class="form-input" style="border-radius:99px;padding:7px 14px;width:140px;" title="Filtrar por empresa/tag">
           <option value="todas">Todas as Empresas</option>
         </select>
@@ -1404,8 +1404,8 @@ Router.register('financeiro', async (params, el) => {
           <option value="todas">Todas</option>
         </select>
         <input type="month" id="fin-sel-mes" class="form-input" value="${mesSel}" style="border-radius:99px;padding:6px 14px;width:150px;">
-        <button id="fin-btn-atualizar" class="btn-primary" style="padding:7px 16px;border-radius:99px;">🔄 Atualizar</button>
-        <button id="fin-btn-reprocessar" class="btn-primary" style="padding:7px 16px;border-radius:99px;background:rgba(249,115,22,0.15);border:1px solid rgba(249,115,22,0.3);color:var(--orange);" title="Força reprocessamento mesmo com dados em cache">♻️ Reprocessar</button>
+        <button id="fin-btn-atualizar" class="btn-primary" style="padding:7px 16px;border-radius:99px;">Atualizar</button>
+        <button id="fin-btn-reprocessar" class="btn-primary" style="padding:7px 16px;border-radius:99px;background:rgba(249,115,22,0.15);border:1px solid rgba(249,115,22,0.3);color:var(--orange);" title="Força reprocessamento mesmo com dados em cache">Reprocessar</button>
       </div>
     </div>
     <div id="fin-conteudo"></div>

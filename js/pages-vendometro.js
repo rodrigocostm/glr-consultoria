@@ -200,7 +200,7 @@ Router.register('vendometro', (params, el) => {
       </div>`).join('') || `<div class="vm-vazio">Nenhuma conta ${st.cliente ? 'deste cliente ' : 'vinculada '}nesta plataforma.</div>`);
     setTxt('vm-ver-todos', T.clientes.length > 10 ? `<button onclick="window._vmTodos()">${st.todos ? 'Mostrar top 10' : `Ver todos os ${T.clientes.length} ${st.cliente ? 'contas' : 'clientes'}`}</button>` : '');
 
-    setTxt('vm-status', st.erro ? `<span style="color:#f87171">⚠ ${h(st.erro)}</span>`
+    setTxt('vm-status', st.erro ? `<span style="color:var(--red)">⚠ ${h(st.erro)}</span>`
       : `${st.carregando ? '⏳ atualizando…' : `atualizado às ${new Date(st.atualizadoEm || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`} · base sincroniza a cada 15 min${st.visitasProg ? ' · ' + st.visitasProg : ''}`);
 
     desenharGrafico(T);

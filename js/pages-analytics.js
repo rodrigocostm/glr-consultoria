@@ -606,16 +606,16 @@ Router.register('analytics-conteudo', async (params, el) => {
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px;">
         <div class="card">
           <div class="section-title mb-10" style="font-size:13px;">🔴 Contas Críticas (${criticas.length})</div>
-          ${criticas.length ? criticas.map(d=>`<div style="padding:6px 0;font-size:13px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${d.clienteId}})">${d.nome} <span style="float:right;color:#ef4444;font-weight:700;">${d.pctMeta!=null?d.pctMeta.toFixed(0)+'%':'—'}</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:12px;">Nenhuma 🎉</div>'}
+          ${criticas.length ? criticas.map(d=>`<div style="padding:6px 0;font-size:13px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${d.clienteId}})">${d.nome} <span style="float:right;color:var(--red);font-weight:700;">${d.pctMeta!=null?d.pctMeta.toFixed(0)+'%':'—'}</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:12px;">Nenhuma 🎉</div>'}
         </div>
         <div class="card">
           <div class="section-title mb-10" style="font-size:13px;">🟢 Contas Saudáveis (${saudaveis.length})</div>
-          ${saudaveis.length ? saudaveis.map(d=>`<div style="padding:6px 0;font-size:13px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${d.clienteId}})">${d.nome} <span style="float:right;color:#10b981;font-weight:700;">${d.pctMeta!=null?d.pctMeta.toFixed(0)+'%':'—'}</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:12px;">Nenhuma ainda</div>'}
+          ${saudaveis.length ? saudaveis.map(d=>`<div style="padding:6px 0;font-size:13px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${d.clienteId}})">${d.nome} <span style="float:right;color:var(--green);font-weight:700;">${d.pctMeta!=null?d.pctMeta.toFixed(0)+'%':'—'}</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:12px;">Nenhuma ainda</div>'}
         </div>
         <div class="card">
           <div class="section-title mb-10" style="font-size:13px;">🏆 Ranking Rápido</div>
-          <div style="padding:8px 0;font-size:13px;">Melhor: <strong style="color:#10b981;cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${melhor?.clienteId||0}})">${melhor ? `${melhor.nome} (${melhor.pctMeta.toFixed(0)}%)` : '—'}</strong></div>
-          <div style="padding:8px 0;font-size:13px;border-top:1px solid var(--border);">Pior: <strong style="color:#ef4444;cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${pior?.clienteId||0}})">${pior && pior!==melhor ? `${pior.nome} (${pior.pctMeta.toFixed(0)}%)` : '—'}</strong></div>
+          <div style="padding:8px 0;font-size:13px;">Melhor: <strong style="color:var(--green);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${melhor?.clienteId||0}})">${melhor ? `${melhor.nome} (${melhor.pctMeta.toFixed(0)}%)` : '—'}</strong></div>
+          <div style="padding:8px 0;font-size:13px;border-top:1px solid var(--border);">Pior: <strong style="color:var(--red);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${pior?.clienteId||0}})">${pior && pior!==melhor ? `${pior.nome} (${pior.pctMeta.toFixed(0)}%)` : '—'}</strong></div>
         </div>
       </div>`;
     })()}
@@ -636,7 +636,7 @@ Router.register('analytics-conteudo', async (params, el) => {
       <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:800px;">
         <thead>
-          <tr style="background:#1a2744;color:white;">
+          <tr style="background:var(--bg-subtle);color:var(--text-secondary);">
             <th style="padding:10px 12px;text-align:left;">Conta</th>
             <th style="padding:10px 8px;text-align:left;">Canal</th>
             <th style="padding:10px 8px;text-align:right;">Meta</th>
@@ -662,10 +662,10 @@ Router.register('analytics-conteudo', async (params, el) => {
               <td style="padding:9px 8px;text-align:center;">
                 ${d.pctMeta!=null?`<span style="background:${st.bg};color:${st.cor};font-weight:700;padding:3px 8px;border-radius:99px;font-size:11px;">${d.pctMeta.toFixed(1)}%</span>`:'<span style="color:var(--text-muted);">—</span>'}
               </td>
-              <td style="padding:9px 8px;text-align:right;font-weight:600;color:${d.compMesAnt==null?'var(--text-muted)':d.compMesAnt>=0?'#10b981':'#ef4444'};">${d.compMesAnt!=null?(d.compMesAnt>=0?'▲ +':'▼ ')+d.compMesAnt.toFixed(1)+'%':'—'}</td>
+              <td style="padding:9px 8px;text-align:right;font-weight:600;color:${d.compMesAnt==null?'var(--text-muted)':d.compMesAnt>=0?'var(--green)':'var(--red)'};">${d.compMesAnt!=null?(d.compMesAnt>=0?'▲ +':'▼ ')+d.compMesAnt.toFixed(1)+'%':'—'}</td>
               <td style="padding:9px 8px;text-align:right;">${(d.pctAdsAtual*100).toFixed(1)}%</td>
               <td style="padding:9px 8px;text-align:right;color:var(--text-muted);">${(d.adsIdeal*100).toFixed(1)}%</td>
-              <td style="padding:9px 8px;text-align:right;color:${d.gapAds<=0?'#10b981':'#ef4444'};font-weight:600;">${d.gapAds>=0?'+':''}${d.gapAds.toFixed(1)} p.p.</td>
+              <td style="padding:9px 8px;text-align:right;color:${d.gapAds<=0?'var(--green)':'var(--red)'};font-weight:600;">${d.gapAds>=0?'+':''}${d.gapAds.toFixed(1)} p.p.</td>
               <td style="padding:9px 8px;text-align:center;"><span style="background:${st.bg};color:${st.cor};font-weight:700;padding:3px 10px;border-radius:99px;font-size:11px;">${st.label}</span></td>
             </tr>`;
           }).join('')}
@@ -674,9 +674,9 @@ Router.register('analytics-conteudo', async (params, el) => {
       </div>
     </div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 4px;font-size:11px;color:var(--text-muted);margin-bottom:20px;">
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#10b981;border-radius:3px;"></span> Saudável (≥${LIMITE_SAUDAVEL}% da meta)</span>
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#f59e0b;border-radius:3px;"></span> Atenção (${LIMITE_ATENCAO}–${LIMITE_SAUDAVEL}%)</span>
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#ef4444;border-radius:3px;"></span> Crítico (&lt;${LIMITE_ATENCAO}%)</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--green);border-radius:3px;"></span> Saudável (≥${LIMITE_SAUDAVEL}% da meta)</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--yellow);border-radius:3px;"></span> Atenção (${LIMITE_ATENCAO}–${LIMITE_SAUDAVEL}%)</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--red);border-radius:3px;"></span> Crítico (&lt;${LIMITE_ATENCAO}%)</span>
       <span style="margin-left:auto;">🎯 Configure Meta e ADS Ideal em Carteira de Clientes → editar cliente</span>
     </div>
 
@@ -731,7 +731,7 @@ Router.register('analytics-conteudo', async (params, el) => {
       <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px;">
         <thead>
-          <tr style="background:#1a2744;color:white;">
+          <tr style="background:var(--bg-subtle);color:var(--text-secondary);">
             <th style="padding:10px 12px;text-align:left;">Produto</th>
             ${filtroClienteQueda==='todos' ? '<th style="padding:10px 8px;text-align:left;">Cliente</th>' : ''}
             <th style="padding:10px 8px;text-align:left;">Canal</th>
@@ -823,7 +823,7 @@ Router.register('analytics-conteudo', async (params, el) => {
 
   function tabBtn(id, label) {
     const ativo = abaAtiva === id;
-    return `<button id="analytics-tab-${id}" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:${ativo?'700':'600'};font-size:13px;background:${ativo?'#6366f1':'var(--bg-card-hover)'};color:${ativo?'var(--text-primary)':'var(--text-secondary)'};">${label}</button>`;
+    return `<button id="analytics-tab-${id}" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:${ativo?'700':'600'};font-size:13px;background:${ativo?'var(--accent)':'var(--bg-card-hover)'};color:${ativo?'var(--text-primary)':'var(--text-secondary)'};">${label}</button>`;
   }
 
   function render() {
@@ -831,7 +831,7 @@ Router.register('analytics-conteudo', async (params, el) => {
     <div class="page">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
         <div>
-          <h1 style="font-size:20px;font-weight:800;margin:0;">📊 Analytics — Painel Executivo</h1>
+          <h1 style="font-size:20px;font-weight:700;margin:0;">📊 Analytics — Painel Executivo</h1>
           <div id="analytics-status" style="font-size:12px;color:var(--text-muted);margin-top:4px;">
             ${abaAtiva==='executivo' ? (atualizadoExecEm?`Atualizado em ${new Date(atualizadoExecEm).toLocaleString('pt-BR')}`:'Nenhum dado carregado ainda') : ''}
             ${abaAtiva==='queda' ? (atualizadoQuedaEm?`Atualizado em ${new Date(atualizadoQuedaEm).toLocaleString('pt-BR')}`:'Nenhum dado carregado ainda') : ''}

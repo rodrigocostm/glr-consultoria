@@ -318,14 +318,14 @@ Router.register('dashboard', (params, el) => {
     el.innerHTML = `<div class="page">
       <div style="text-align:center;padding:80px 24px;">
         <div style="font-size:52px;margin-bottom:16px;">🚀</div>
-        <div style="font-size:22px;font-weight:800;color:var(--text-primary);margin-bottom:8px;">Bem-vindo ao GLR Centro de Operações</div>
+        <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;color:var(--text-primary);margin-bottom:8px;">Bem-vindo ao GLR Centro de Operações</div>
         <div style="font-size:14px;color:var(--text-muted);max-width:420px;margin:0 auto 28px;">Nenhum dado cadastrado ainda. Comece cadastrando gestores e clientes para visualizar o dashboard.</div>
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
           <button class="btn btn-primary" onclick="Router.navigate('clientes')">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
             Cadastrar primeiro cliente
           </button>
-          <button class="btn btn-secondary" onclick="Router.navigate('analytics')">📊 Ir pro Analytics</button>
+          <button class="btn btn-secondary" onclick="Router.navigate('analytics')">Ir pro Analytics</button>
         </div>
       </div>
     </div>`;
@@ -553,7 +553,7 @@ Router.register('dashboard', (params, el) => {
             ${['crescimento', 'ativo', 'queda', 'risco'].map(s => {
               const count = clientes.filter(c => c.status === s).length;
               const pct = clientes.length ? Math.round(count / clientes.length * 100) : 0;
-              return `<div class="dx-leg"><i style="background:${{ crescimento: '#10b981', ativo: '#6366f1', queda: '#f97316', risco: '#ef4444' }[s]}"></i><span>${GLR.statusLabel[s]}</span><b>${count}</b><small>${pct}%</small></div>`;
+              return `<div class="dx-leg"><i style="background:${{ crescimento: 'var(--green)', ativo: 'var(--accent)', queda: '#f97316', risco: 'var(--red)' }[s]}"></i><span>${GLR.statusLabel[s]}</span><b>${count}</b><small>${pct}%</small></div>`;
             }).join('')}
           </div>
         </div>

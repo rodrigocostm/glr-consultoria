@@ -53,7 +53,7 @@ async function carregarSugestoes() {
     if (error) throw error;
     sugestoes = data || [];
   } catch (e) {
-    if (el) el.innerHTML = `<div style="padding:30px;text-align:center;color:#dc2626;">⚠️ Erro ao carregar: ${e.message}</div>`;
+    if (el) el.innerHTML = `<div style="padding:30px;text-align:center;color:var(--red);">⚠️ Erro ao carregar: ${e.message}</div>`;
     return;
   }
   renderFiltros();
@@ -93,24 +93,24 @@ function renderLista() {
     const podeExecutarAuto = ['pausar', 'retomar', 'ajustar_orcamento'].includes(s.tipo);
     const acoes = s.status === 'pendente' ? `
       <div style="display:flex;gap:8px;margin-top:10px;">
-        <button class="btn btn-sm btn-primary" onclick="window._sugAprovar('${s.id}')">✅ Aprovar${podeExecutarAuto ? ' e Executar' : ''}</button>
-        <button class="btn btn-sm btn-secondary" onclick="window._sugRejeitar('${s.id}')">❌ Rejeitar</button>
+        <button class="btn btn-sm btn-primary" onclick="window._sugAprovar('${s.id}')">Aprovar${podeExecutarAuto ? ' e Executar' : ''}</button>
+        <button class="btn btn-sm btn-secondary" onclick="window._sugRejeitar('${s.id}')">Rejeitar</button>
       </div>
     ` : s.status === 'erro' ? `
-      <div style="font-size:11.5px;color:#dc2626;margin-top:8px;">Erro: ${s.erro_execucao || 'desconhecido'}</div>
+      <div style="font-size:11.5px;color:var(--red);margin-top:8px;">Erro: ${s.erro_execucao || 'desconhecido'}</div>
       <div style="display:flex;gap:8px;margin-top:8px;">
-        <button class="btn btn-sm btn-primary" onclick="window._sugAprovar('${s.id}')">🔁 Tentar de novo</button>
+        <button class="btn btn-sm btn-primary" onclick="window._sugAprovar('${s.id}')">Tentar de novo</button>
       </div>
     ` : '';
 
-    return `<div class="card" style="padding:16px 18px;margin-bottom:10px;border-left:3px solid ${PRIORIDADE_COR[s.prioridade] || '#64748b'};">
+    return `<div class="card" style="padding:16px 18px;margin-bottom:10px;border-left:3px solid ${PRIORIDADE_COR[s.prioridade] || 'var(--text-muted)'};">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
         <div>
           <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${fmtQuando(s.criado_em)} · ${s.conta_nome || s.conta_id} · ${s.marketplace === 'shopee' ? '🟠 Shopee' : '🟡 ML'}</div>
           <div style="font-size:14px;font-weight:700;">${TIPO_LABEL[s.tipo] || s.tipo}${s.campanha_nome ? ' — ' + s.campanha_nome : ''}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:${PRIORIDADE_COR[s.prioridade] || '#64748b'};">${s.prioridade || 'media'}</span>
+          <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:${PRIORIDADE_COR[s.prioridade] || 'var(--text-muted)'};">${s.prioridade || 'media'}</span>
           <span style="font-size:11px;background:var(--bg-card-hover);padding:3px 10px;border-radius:99px;">${STATUS_LABEL[s.status] || s.status}</span>
         </div>
       </div>
@@ -118,7 +118,7 @@ function renderLista() {
         <div style="font-size:13px;margin-top:8px;">
           <span style="color:var(--text-muted);">${s.valor_atual_label || '—'}</span>
           <span style="margin:0 6px;">→</span>
-          <span style="font-weight:700;color:#6366f1;">${s.valor_sugerido_label || '—'}</span>
+          <span style="font-weight:700;color:var(--accent);">${s.valor_sugerido_label || '—'}</span>
         </div>` : ''}
       ${s.motivo ? `<div style="font-size:12.5px;color:var(--text-secondary);margin-top:6px;line-height:1.5;">${s.motivo}</div>` : ''}
       ${acoes}

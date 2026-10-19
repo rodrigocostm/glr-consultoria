@@ -206,7 +206,7 @@ function _portalFiltroBar(pageAtual) {
           <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--text-primary);">
             <input type="checkbox" value="${c.id}" ${contasSel.has(c.id)?'checked':''}
               onchange="const s=_portalContasSelecionadas(); this.checked?s.add('${c.id}'):s.delete('${c.id}'); window._portalSetContasSelecionadas(s);"
-              style="width:14px;height:14px;accent-color:#6366f1;">
+              style="width:14px;height:14px;accent-color:var(--accent);">
             ${c.marketplace?.includes('shopee')?'🟠':'🟡'} ${c.nome}
           </label>`).join('')}
         <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;">
@@ -216,12 +216,12 @@ function _portalFiltroBar(pageAtual) {
     </div>` : '';
   const erroShopee = (cache?.resumoContas||[]).find(r => r.erro)?.erro;
   const avisoErro = erroShopee
-    ? `<div style="width:100%;margin-top:8px;padding:8px 12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;font-size:11px;color:#ef4444;">⚠️ Shopee: ${erroShopee}</div>`
+    ? `<div style="width:100%;margin-top:8px;padding:8px 12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;font-size:11px;color:var(--red);">⚠️ Shopee: ${erroShopee}</div>`
     : '';
 
   const status = cache?.at
     ? `<span style="font-size:11px;color:var(--text-secondary);">Atualizado às ${new Date(cache.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} | ${cache.pedidos?.length||0} pedidos no cache</span>`
-    : `<span style="font-size:11px;color:#d97706;">⚠️ Clique em Aplicar para buscar os dados</span>`;
+    : `<span style="font-size:11px;color:var(--yellow);">⚠️ Clique em Aplicar para buscar os dados</span>`;
 
   const mostrarDatas = presetSel === 'custom';
   return `
@@ -998,7 +998,7 @@ Router.register('portal-dashboard', (params, el) => {
         <div style="font-size:48px;margin-bottom:16px;">⚠️</div>
         <div style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Erro ao carregar dados</div>
         <div style="font-size:13px;color:var(--text-secondary);margin-bottom:24px;">${cache.erro}</div>
-        <button onclick="window._portalRecarregar()" style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:12px 28px;font-size:14px;font-weight:600;cursor:pointer;">🔄 Tentar novamente</button>
+        <button onclick="window._portalRecarregar()" style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:12px 28px;font-size:14px;font-weight:600;cursor:pointer;">Tentar novamente</button>
       </div>`;
     window._portalRecarregar = async () => {
       localStorage.removeItem(_portalCacheKey());
@@ -1073,7 +1073,7 @@ Router.register('portal-dashboard', (params, el) => {
   const bars = dias.map(([d,v]) => {
     const h = Math.max(Math.round((v/maxDia)*100), 2);
     return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;flex:1;min-width:0;height:100px;" title="${d}: ${_pR$(v)}">
-      <div style="width:100%;background:#6366f1;border-radius:3px 3px 0 0;height:${h}px;opacity:.8;"></div>
+      <div style="width:100%;background:var(--accent);border-radius:3px 3px 0 0;height:${h}px;opacity:.8;"></div>
     </div>`;
   }).join('');
 
@@ -1148,7 +1148,7 @@ Router.register('portal-dashboard', (params, el) => {
         </div>` : ''}
 
       ${!temCusto && ativos.length > 0 ? `
-        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;margin-top:16px;font-size:12px;color:#92400e;">
+        <div style="background:var(--yellow-bg);border:1px solid #fde68a;border-radius:10px;padding:12px 16px;margin-top:16px;font-size:12px;color:#92400e;">
           ℹ️ Lucro Bruto e Margem ficam mais precisos quando o custo dos produtos é cadastrado na página Vendas.
         </div>` : ''}
     </div>
@@ -1283,7 +1283,7 @@ function _renderPortalVendaRow(p, custos) {
           <div style="font-size:10px;color:var(--text-secondary);margin-top:2px;display:flex;gap:6px;align-items:center;">
             <span style="color:${cor};font-weight:600;">${p.plataforma}</span>
             <span>${p.id}</span>
-            ${isCancelled ? '<span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;">● Cancelado</span>' : ''}
+            ${isCancelled ? '<span style="background:var(--red-bg);color:var(--red);padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;">● Cancelado</span>' : ''}
           </div>
         </div>
       </div>
@@ -1347,7 +1347,7 @@ function _renderPortalVendaDetalhe(p, l) {
         </div>`).join('')}
       <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
         <span style="font-size:12px;color:var(--text-secondary);">Margem s/ receita</span>
-        <span style="font-size:18px;font-weight:800;color:${_pCorMargem(l.margem)};">${_pN(l.margem,1)}%</span>
+        <span style="font-size:18px;font-weight:700;color:${_pCorMargem(l.margem)};">${_pN(l.margem,1)}%</span>
       </div>
     </div>
   </div>`;
@@ -1416,7 +1416,7 @@ Router.register('portal-abc', (params, el) => {
         <td style="padding:10px 12px;text-align:center;font-size:12px;color:var(--text-secondary);">${_pN(p.pctProd,1)}%</td>
         <td style="padding:10px 12px;text-align:center;font-size:12px;color:var(--text-secondary);">${_pN(p.pctAcum,1)}%</td>
         <td style="padding:10px 12px;text-align:center;">
-          <span style="background:${c.bg};color:${c.cor};border-radius:99px;padding:3px 14px;font-size:12px;font-weight:800;">${p.cls}</span>
+          <span style="background:${c.bg};color:${c.cor};border-radius:99px;padding:3px 14px;font-size:12px;font-weight:700;">${p.cls}</span>
         </td>
       </tr>`;
   }).join('');
@@ -1432,23 +1432,23 @@ Router.register('portal-abc', (params, el) => {
 
       <!-- Resumo ABC -->
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;">
-        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;text-align:center;">
-          <div style="font-size:32px;font-weight:800;color:#16a34a;">A</div>
-          <div style="font-size:13px;font-weight:700;color:#16a34a;margin:4px 0;">${countA} produto(s)</div>
+        <div style="background:var(--green-bg);border:1px solid #bbf7d0;border-radius:12px;padding:20px;text-align:center;">
+          <div style="font-size:32px;font-weight:700;color:var(--green);">A</div>
+          <div style="font-size:13px;font-weight:700;color:var(--green);margin:4px 0;">${countA} produto(s)</div>
           <div style="font-size:18px;font-weight:700;color:var(--text-primary);">${_pR$(fatA)}</div>
-          <div style="font-size:11px;color:#16a34a;margin-top:4px;">Foco total — ${_pN(total>0?fatA/total*100:0,1)}% do faturamento</div>
+          <div style="font-size:11px;color:var(--green);margin-top:4px;">Foco total — ${_pN(total>0?fatA/total*100:0,1)}% do faturamento</div>
         </div>
-        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:20px;text-align:center;">
-          <div style="font-size:32px;font-weight:800;color:#d97706;">B</div>
-          <div style="font-size:13px;font-weight:700;color:#d97706;margin:4px 0;">${countB} produto(s)</div>
+        <div style="background:var(--yellow-bg);border:1px solid #fde68a;border-radius:12px;padding:20px;text-align:center;">
+          <div style="font-size:32px;font-weight:700;color:var(--yellow);">B</div>
+          <div style="font-size:13px;font-weight:700;color:var(--yellow);margin:4px 0;">${countB} produto(s)</div>
           <div style="font-size:18px;font-weight:700;color:var(--text-primary);">${_pR$(fatB)}</div>
-          <div style="font-size:11px;color:#d97706;margin-top:4px;">Monitorar — ${_pN(total>0?fatB/total*100:0,1)}% do faturamento</div>
+          <div style="font-size:11px;color:var(--yellow);margin-top:4px;">Monitorar — ${_pN(total>0?fatB/total*100:0,1)}% do faturamento</div>
         </div>
-        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:20px;text-align:center;">
-          <div style="font-size:32px;font-weight:800;color:#dc2626;">C</div>
-          <div style="font-size:13px;font-weight:700;color:#dc2626;margin:4px 0;">${countC} produto(s)</div>
+        <div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:12px;padding:20px;text-align:center;">
+          <div style="font-size:32px;font-weight:700;color:var(--red);">C</div>
+          <div style="font-size:13px;font-weight:700;color:var(--red);margin:4px 0;">${countC} produto(s)</div>
           <div style="font-size:18px;font-weight:700;color:var(--text-primary);">${_pR$(fatC)}</div>
-          <div style="font-size:11px;color:#dc2626;margin-top:4px;">Revisar — ${_pN(total>0?fatC/total*100:0,1)}% do faturamento</div>
+          <div style="font-size:11px;color:var(--red);margin-top:4px;">Revisar — ${_pN(total>0?fatC/total*100:0,1)}% do faturamento</div>
         </div>
       </div>
 

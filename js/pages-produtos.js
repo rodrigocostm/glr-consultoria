@@ -340,8 +340,8 @@ Router.register('produtos', (params, el) => {
         ${selCliente}
         <input class="pr-busca" style="max-width:320px" placeholder="Pesquisar SKU, título ou anúncio…" value="${h(st.busca)}" oninput="window._prBusca(this.value)">
         <span style="flex:1"></span>
-        ${portal ? '' : `<button class="btn btn-secondary btn-sm" onclick="document.getElementById('pr-arquivo').click()">⬆ Importar planilha</button>
-        <button class="btn btn-secondary btn-sm" onclick="window._prExportar()">⬇ Exportar</button>
+        ${portal ? '' : `<button class="btn btn-secondary btn-sm" onclick="document.getElementById('pr-arquivo').click()">Importar planilha</button>
+        <button class="btn btn-secondary btn-sm" onclick="window._prExportar()">Exportar</button>
         <button class="btn btn-primary btn-sm" onclick="window._prNovo()">+ Novo produto</button>
         <input type="file" id="pr-arquivo" accept=".csv,text/csv" style="display:none" onchange="if(this.files[0])window._prImportar(this.files[0]);this.value=''">`}
       </div>
@@ -349,14 +349,14 @@ Router.register('produtos', (params, el) => {
         <span id="pr-chips" style="display:contents">${renderChips()}</span>
         ${multiConta ? `<select class="pr-sel" style="padding:5px 10px;font-size:12px" onchange="window._prConta(this.value)"><option value="">Todas as contas</option>${st.contas.map(c => `<option value="${c.mkt}:${h(c.id)}" ${st.conta === `${c.mkt}:${c.id}` ? 'selected' : ''}>${MKT[c.mkt].sigla} · ${h(c.nome)}</option>`).join('')}</select>` : ''}
         <span class="pr-mut">${st.contas.length || st.carregando ? `${st.anuncios.length} anúncios em ${st.contas.length} conta(s)` : (portal ? 'nenhuma conta encontrada' : '⚠️ nenhuma conta vinculada a este cliente (vincule na Projeção)')}
-        ${st.carregando ? ` · ⏳ ${h(st.progresso || 'carregando…')}` : ` · <a href="#" onclick="window._prRecarregar();return false;">atualizar anúncios</a>`}${st.erro ? ` · <span style="color:#dc2626">${h(st.erro)}</span>` : ''}</span>
+        ${st.carregando ? ` · ⏳ ${h(st.progresso || 'carregando…')}` : ` · <a href="#" onclick="window._prRecarregar();return false;">atualizar anúncios</a>`}${st.erro ? ` · <span style="color:var(--red)">${h(st.erro)}</span>` : ''}</span>
       </div>
       <div class="card" style="padding:0;overflow:hidden"><div style="overflow-x:auto">
         <table class="pr-tab"><thead><tr><th>SKU interno</th><th>Imagem</th><th>Título</th><th class="pr-n">Preço de custo</th>${portal ? '' : '<th class="pr-n">Custo extra</th>'}<th>Marketplaces associados</th>${portal ? '' : '<th></th>'}</tr></thead>
         <tbody>${pagina.map((r, i) => {
           // Cliente com várias contas: o selo diz de qual conta é cada anúncio
           const por = new Map(); r.anuncios.forEach(a => { const k = multiConta ? chaveConta(a) : a.mkt; if (!por.has(k)) por.set(k, { a, n: 0 }); por.get(k).n++; });
-          const nota = r.diverge ? `<div class="pr-nota" style="color:#d97706" title="Custo nos anúncios: ${(r.custosAnuncios || []).map(R$).join(' / ')}">⚠ custo diferente em algum anúncio</div>`
+          const nota = r.diverge ? `<div class="pr-nota" style="color:var(--yellow)" title="Custo nos anúncios: ${(r.custosAnuncios || []).map(R$).join(' / ')}">⚠ custo diferente em algum anúncio</div>`
             : r.virtual && r.origem === 'anuncio' && !portal ? '<div class="pr-nota">custo já lançado em Vendas</div>' : '';
           return `<tr>
             <td class="pr-sku">${h(r.sku || '—')}${r.virtual && !r.sku ? '<div class="pr-nota">anúncio sem SKU</div>' : ''}</td>
@@ -454,7 +454,7 @@ Router.register('produtos', (params, el) => {
   };
 
   el.innerHTML = `<div class="page">
-    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:22px;font-weight:800;color:var(--text-primary)">📦 ${portal ? 'Meus produtos' : 'Produtos'}</div></div>
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;color:var(--text-primary)">${portal ? 'Meus produtos' : 'Produtos'}</div></div>
     <div class="pr-mut" style="margin-bottom:16px;max-width:900px">${portal
       ? 'Seus produtos e o custo de cada um. Digite o custo direto na tabela (produto + embalagem) — ele entra no cálculo de margem e lucro de Vendas, Financeiro e Promoções. Produto <b>sem custo</b> deixa a margem incompleta.'
       : 'Escolha o cliente: os produtos carregam das contas dele com o custo atual. Lance o custo direto na tabela — ele vale para todos os anúncios associados (Vendas, Financeiro, DRE, Promoções e portal do cliente).'}</div>

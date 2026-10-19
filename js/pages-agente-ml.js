@@ -171,7 +171,7 @@ Router.register('agente-ml', (params, el) => {
   // ── Render ──
   const corTacos = (tacos, meta) => tacos != null && meta ? (tacos <= meta ? '#16a34a' : tacos <= meta * 1.3 ? '#d97706' : '#dc2626') : '#64748b';
   function kpi(rot, val, sub, cor) {
-    return `<div class="aml-kpi" style="--c:${cor || '#6366f1'}"><div class="aml-rot">${rot}</div><div class="aml-val">${val}</div>${sub ? `<div class="aml-sub">${sub}</div>` : ''}</div>`;
+    return `<div class="aml-kpi" style="--c:${cor || 'var(--accent)'}"><div class="aml-rot">${rot}</div><div class="aml-val">${val}</div>${sub ? `<div class="aml-sub">${sub}</div>` : ''}</div>`;
   }
   function renderPortfolio() {
     return `<div class="aml-grid">
@@ -179,12 +179,12 @@ Router.register('agente-ml', (params, el) => {
         const id = String(cfg.conta_id), m = mesDe(id), fila = pendentes(id).length;
         const cor = corTacos(m?.tacos, cfg.meta_acos);
         return `<div class="card aml-card" style="--c:${cor}" onclick="window._amlAbrir('${h(id)}')">
-          <div style="font-weight:800;font-size:15px;">${h(nomeDe(id))}</div>
+          <div style="font-weight:700;font-size:15px;">${h(nomeDe(id))}</div>
           <div class="aml-sub">Mercado Livre · ${cfg.ativo ? 'análise diária ligada' : 'análise diária desligada'}</div>
           <div style="display:flex;gap:18px;margin-top:12px;flex-wrap:wrap;">
             <div><div class="aml-rot">TACOS mês</div><div class="aml-val" style="font-size:18px;color:${cor};">${pct(m?.tacos)}</div></div>
             <div><div class="aml-rot">Projeção mês</div><div class="aml-val" style="font-size:18px;">${m ? R$(m.proj).replace(/,\d{2}$/, '') : '—'}</div></div>
-            <div><div class="aml-rot">Sugestões</div><div class="aml-val" style="font-size:18px;color:${fila ? '#d97706' : 'inherit'};">${fila}</div></div>
+            <div><div class="aml-rot">Sugestões</div><div class="aml-val" style="font-size:18px;color:${fila ? 'var(--yellow)' : 'inherit'};">${fila}</div></div>
           </div>
         </div>`;
       }).join('')}
@@ -196,7 +196,7 @@ Router.register('agente-ml', (params, el) => {
     const opcoes = state.contasML.filter(x => !cfgDe(idConta(x))).map(x => `<option value="${h(idConta(x))}">${h(nomeConta(x))} (${h(idConta(x))})</option>`).join('');
     const campo = (id, rot, val, dica, suf) => `<label class="aml-campo"><span>${rot}</span><div><input id="${id}" class="form-control" value="${val ?? ''}" inputmode="decimal">${suf ? `<em>${suf}</em>` : ''}</div>${dica ? `<small>${dica}</small>` : ''}</label>`;
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
-      <div style="font-weight:800;font-size:15px;margin-bottom:4px;">🛡️ Guardrails do copiloto</div>
+      <div style="font-weight:700;font-size:15px;margin-bottom:4px;">🛡️ Guardrails do copiloto</div>
       <div class="aml-sub" style="margin-bottom:12px;">As mesmas regras do agente da Shopee: TACOS do mês decide se dá pra acelerar; ACOS sem cancelados; pausar só quando gasta muito sem retorno.</div>
       ${!cfg ? `<label class="aml-campo"><span>Conta do Mercado Livre</span><div><select id="aml-conta" class="form-control"><option value="">Escolha…</option>${opcoes}</select></div></label>` : ''}
       <div class="aml-campos">
@@ -288,7 +288,7 @@ Router.register('agente-ml', (params, el) => {
       if (d.acao === 'mover_produto') return `ACOS <b>${pct(d.acos)}</b>${meta ? ` · meta ${pct(meta)}` : ''} · gastou ${R$(d.gasto)}`;
       if (d.acao === 'roas_target' || d.acao === 'orcamento' || d.acao === 'acos_target') return `ACOS da campanha <b>${pct(d.acos)}</b> · gastou ${R$(d.gasto)}`;
       if (d.acao === 'adicionar_produto') return d.unidades_loja_30d ? `<b>${un(d.unidades_loja_30d)}</b> no mês sem ADS` : `${un(d.unidades_ultima)} na semana${varTxt(d.variacao_pct)}`;
-      if (d.acao === 'abc_queda') return `<b>${un(d.unidades_ultima)}</b> na semana × média ${String(d.media_3_semanas ?? '—').replace('.', ',')} <b style="color:#dc2626">${varTxt(d.variacao_pct).trim()}</b>`;
+      if (d.acao === 'abc_queda') return `<b>${un(d.unidades_ultima)}</b> na semana × média ${String(d.media_3_semanas ?? '—').replace('.', ',')} <b style="color:var(--red)">${varTxt(d.variacao_pct).trim()}</b>`;
       return '';
     };
     const assunto = d => ['roas_target', 'orcamento', 'acos_target', 'pausar'].includes(d.acao) ? (d.campanha || '—') : (d.produto || d.campanha || '—');
@@ -297,12 +297,12 @@ Router.register('agente-ml', (params, el) => {
     const fazerNoMl = todas.filter(x => x.d.acao !== 'abc_queda').length;
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
-        <div style="font-weight:800;font-size:15px;">📋 O que fazer no Mercado Livre</div>
+        <div style="font-weight:700;font-size:15px;">📋 O que fazer no Mercado Livre</div>
         <div class="aml-sub">${fazerNoMl} para aplicar no painel do ML · ${todas.length - fazerNoMl} para revisar</div>
       </div>
       <div class="aml-sub" style="margin-bottom:12px;">Aplique em Publicidade → Product Ads → campanha e marque <b>✓ Feito</b>. O ML não deixa a integração alterar o ADS.</div>
       ${quadroNova}
-      ${todas.length ? `<div class="aml-filtros">${chips.map(([k, t, n]) => `<button class="aml-fchip ${filtro === k ? 'on' : ''}" style="--c:${TIPOS[k]?.cor || '#64748b'}" onclick="window._amlFiltroSug('${k}')">${t} <b>${n}</b></button>`).join('')}</div>` : ''}
+      ${todas.length ? `<div class="aml-filtros">${chips.map(([k, t, n]) => `<button class="aml-fchip ${filtro === k ? 'on' : ''}" style="--c:${TIPOS[k]?.cor || 'var(--text-muted)'}" onclick="window._amlFiltroSug('${k}')">${t} <b>${n}</b></button>`).join('')}</div>` : ''}
       ${lista.length ? `<div class="aml-lista">${lista.map(({ l, d }) => {
         const t = TIPOS[d.acao] || { rot: 'Ação', cor: '#64748b' };
         const ids = d.item_ids || [];
@@ -314,7 +314,7 @@ Router.register('agente-ml', (params, el) => {
           </div>
           <div class="aml-li-pq">${porque(d)}</div>
           <div class="aml-li-bt">
-            <button class="btn btn-primary btn-sm" ${state.processando ? 'disabled' : ''} title="${d.acao === 'abc_queda' ? 'Já revisei' : 'Já apliquei no painel do ML'}" onclick="window._amlMarcar('${l.id}','executado')">✓ ${d.acao === 'abc_queda' ? 'Revisado' : 'Feito'}</button>
+            <button class="btn btn-primary btn-sm" ${state.processando ? 'disabled' : ''} title="${d.acao === 'abc_queda' ? 'Já revisei' : 'Já apliquei no painel do ML'}" onclick="window._amlMarcar('${l.id}','executado')">${d.acao === 'abc_queda' ? 'Revisado' : 'Feito'}</button>
             <button class="aml-x" ${state.processando ? 'disabled' : ''} title="Descartar" onclick="window._amlMarcar('${l.id}','descartado')">✕</button>
           </div>
           <details class="aml-det"><summary>detalhes</summary>
@@ -331,7 +331,7 @@ Router.register('agente-ml', (params, el) => {
     const tx = m?.taxaCancel || 0;
     let corpo;
     if (!c) corpo = '<div class="aml-sub">⏳ Carregando campanhas…</div>';
-    else if (c.erro) corpo = `<div class="aml-sub" style="color:#dc2626;">Não consegui buscar as campanhas: ${h(c.erro)}</div>`;
+    else if (c.erro) corpo = `<div class="aml-sub" style="color:var(--red);">Não consegui buscar as campanhas: ${h(c.erro)}</div>`;
     else if (!c.lista.length) corpo = '<div class="aml-sub">Nenhuma campanha de Product Ads nesta conta.</div>';
     else {
       const pend = new Set(pendentes(id).map(l => String(l.dados?.campaign_id)));
@@ -352,7 +352,7 @@ Router.register('agente-ml', (params, el) => {
     }
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
-        <div><div style="font-weight:800;font-size:15px;">📢 Campanhas de Product Ads — mês atual</div>
+        <div><div style="font-weight:700;font-size:15px;">📢 Campanhas de Product Ads — mês atual</div>
         <div class="aml-sub">Clique numa campanha para ver os produtos dentro dela. ACOS sem cancelados${tx > 0.005 ? ` (cancelamentos/devoluções da loja no mês: ${pct(tx * 100)})` : ''}.</div></div>
         <button class="btn btn-secondary btn-sm" title="Atualizar" ${state.carregandoCamp ? 'disabled' : ''} onclick="window._amlCampanhas()">🔄</button>
       </div>${corpo}</div>`;
@@ -361,7 +361,7 @@ Router.register('agente-ml', (params, el) => {
   function renderProdutos(contaId, campId, tx, cfg) {
     const p = state.produtos[`${contaId}:${campId}`];
     if (!p || p.carregando) return '<div class="aml-sub" style="padding:10px 14px;">⏳ Carregando produtos…</div>';
-    if (p.erro) return `<div class="aml-sub" style="padding:10px 14px;color:#dc2626;">Não consegui buscar os produtos: ${h(p.erro)}</div>`;
+    if (p.erro) return `<div class="aml-sub" style="padding:10px 14px;color:var(--red);">Não consegui buscar os produtos: ${h(p.erro)}</div>`;
     if (!p.lista.length) return '<div class="aml-sub" style="padding:10px 14px;">Nenhum produto nesta campanha.</div>';
     const pend = new Set(pendentes(contaId).map(l => String(l.dados?.familia || '')).filter(Boolean));
     const gastoCamp = p.lista.reduce((s, f) => s + f.gasto, 0) || 1;
@@ -379,7 +379,7 @@ Router.register('agente-ml', (params, el) => {
     const lista = state.logs.filter(l => String(l.conta_id) === String(id) && !(l.tipo === 'alerta' && l.resultado === 'so_alerta')).slice(0, 15);
     const quando = s => new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const rot = l => l.tipo === 'sistema' ? '🧠' : l.resultado === 'executado' ? '✅ aplicada' : l.resultado === 'descartado' ? '✖ descartada' : '';
-    return `<details class="card" style="padding:14px 20px;margin-bottom:18px;"><summary style="cursor:pointer;font-weight:800;">🕘 Registro</summary>
+    return `<details class="card" style="padding:14px 20px;margin-bottom:18px;"><summary style="cursor:pointer;font-weight:700;">Registro</summary>
       ${lista.length ? lista.map(l => `<div class="aml-hist"><span class="aml-sub">${quando(l.criado_em)}</span> ${rot(l)} <b>${h(l.titulo)}</b><div class="aml-sub">${h(semInstrucao(l.explicacao).slice(0, 260))}</div></div>`).join('') : '<div class="aml-sub" style="margin-top:8px;">Nada registrado ainda.</div>'}
     </details>`;
   }
@@ -415,7 +415,7 @@ Router.register('agente-ml', (params, el) => {
         </select>
         <label style="display:flex;gap:6px;align-items:center;font-size:13px;"><input type="checkbox" ${cfg?.ativo ? 'checked' : ''} onchange="window._amlAtivo(this.checked)"> Análise diária 07:00</label>
         <span class="aml-sub" style="flex:1;">${ultima ? `Última análise: ${new Date(ultima.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : 'Ainda não analisou'}</span>
-        <button class="btn btn-secondary btn-sm" onclick="window._amlEditar(${state.editando ? 'false' : 'true'})">⚙️ Guardrails</button>
+        <button class="btn btn-secondary btn-sm" onclick="window._amlEditar(${state.editando ? 'false' : 'true'})">Guardrails</button>
         <button class="btn btn-primary btn-sm" ${state.analisando ? 'disabled' : ''} onclick="window._amlAnalisar()">${state.analisando ? '⏳ Analisando…' : '🔎 Analisar agora'}</button>
       </div>
       ${state.editando ? renderConfig(cfg) : ''}
@@ -449,7 +449,7 @@ Router.register('agente-ml', (params, el) => {
 
   el.innerHTML = `<div class="page">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
-      <div style="font-size:22px;font-weight:800;">ADS Mercado Livre</div>
+      <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;">ADS Mercado Livre</div>
       <span class="aml-chip" title="Analisa e sugere; você aplica no painel do ML">Copiloto</span>
     </div>
     <div class="aml-sub" style="margin-bottom:18px;max-width:900px;">Analisa os anúncios patrocinados (Product Ads) de cada conta com as mesmas regras do agente da Shopee e sugere o que ajustar. O Mercado Livre não libera alteração de campanhas por integração — então você aplica no painel do ML e marca aqui. Quando o ML liberar, ele passa a executar sozinho.</div>

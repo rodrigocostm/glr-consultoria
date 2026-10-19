@@ -14,7 +14,7 @@ Router.register('relatorios', (params, el) => {
     el.innerHTML = `<div class="page">
       <div style="text-align:center;padding:80px 24px;">
         <div style="font-size:52px;margin-bottom:16px;">📋</div>
-        <div style="font-size:20px;font-weight:800;color:var(--text-primary);margin-bottom:8px;">Nenhum gestor cadastrado ainda</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Nenhum gestor cadastrado ainda</div>
         <div style="font-size:14px;color:var(--text-muted);max-width:420px;margin:0 auto 24px;">O relatório diário mostra as ações registradas por cada gestor. Cadastre pelo menos um gestor antes de continuar.</div>
         <button class="btn btn-primary" onclick="Router.navigate('gestores')">Cadastrar gestor</button>
       </div>
@@ -93,7 +93,7 @@ Router.register('relatorios', (params, el) => {
         <div class="card" style="margin-bottom:14px;${semAtividade ? 'opacity:.7;' : ''}">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${lista.length ? '14px' : '0'};">
             <div style="display:flex;align-items:center;gap:10px;">
-              <div style="width:34px;height:34px;border-radius:50%;background:${g.cor || '#6366f1'}22;color:${g.cor || '#6366f1'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">${g.avatar || g.nome?.slice(0,2).toUpperCase() || ''}</div>
+              <div style="width:34px;height:34px;border-radius:50%;background:${g.cor || '#4f46e5'}22;color:${g.cor || 'var(--accent)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">${g.avatar || g.nome?.slice(0,2).toUpperCase() || ''}</div>
               <div style="font-size:14px;font-weight:700;color:var(--text-primary);">${g.nome}</div>
             </div>
             <span class="badge" style="background:${semAtividade ? 'var(--red-bg)' : 'var(--green-bg)'};color:${semAtividade ? 'var(--red)' : 'var(--green)'};">${lista.length} ${lista.length === 1 ? 'ação' : 'ações'}</span>
@@ -142,7 +142,7 @@ Router.register('relatorios', (params, el) => {
         <button class="btn btn-ghost btn-sm" onclick="_relHoje()">Hoje</button>
       </div>
       <div style="display:flex;gap:8px;">
-        <button class="btn btn-secondary btn-sm" id="rel-btn-copiar" onclick="_relCopiar()">📋 Copiar Relatório</button>
+        <button class="btn btn-secondary btn-sm" id="rel-btn-copiar" onclick="_relCopiar()">Copiar Relatório</button>
         <button class="btn btn-primary btn-sm" onclick="_relNovaAcao()">+ Registrar Ação</button>
       </div>
     </div>

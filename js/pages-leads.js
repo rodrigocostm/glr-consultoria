@@ -26,7 +26,7 @@ function renderShell() {
         <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">📇 Leads</h2>
         <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0;">Contatos capturados na landing page e nas páginas de campanha.</p>
       </div>
-      <button class="btn btn-secondary btn-sm" onclick="window._leadsRecarregar()">🔄 Atualizar</button>
+      <button class="btn btn-secondary btn-sm" onclick="window._leadsRecarregar()">Atualizar</button>
     </div>
 
     <div id="leads-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;"></div>
@@ -45,7 +45,7 @@ async function carregarLeads() {
     if (error) throw error;
     leads = data || [];
   } catch (e) {
-    if (tabelaEl) tabelaEl.innerHTML = `<div style="padding:30px;text-align:center;color:#dc2626;">⚠️ Erro ao carregar leads: ${e.message}</div>`;
+    if (tabelaEl) tabelaEl.innerHTML = `<div style="padding:30px;text-align:center;color:var(--red);">⚠️ Erro ao carregar leads: ${e.message}</div>`;
     console.warn('[Leads] Erro:', e.message);
     return;
   }

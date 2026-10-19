@@ -41,7 +41,7 @@
     el.innerHTML = `<div class="page">
       <div style="text-align:center;padding:80px 24px;">
         <div style="font-size:52px;margin-bottom:16px;">🚧</div>
-        <div style="font-size:20px;font-weight:800;color:var(--text-primary);margin-bottom:8px;">Criação de anúncio ${info.nome} — em construção</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Criação de anúncio ${info.nome} — em construção</div>
         <div style="font-size:14px;color:var(--text-muted);max-width:460px;margin:0 auto 20px;">
           A aba de Mercado Livre está completa (categoria real, ficha técnica dinâmica, foto com IA). ${info.nome} usa o mesmo padrão e entra em seguida.
         </div>
@@ -484,10 +484,10 @@
       if (state.resultado) {
         root.innerHTML = `<div class="card" style="padding:40px;text-align:center;max-width:520px;margin:0 auto;">
           <div style="font-size:44px;margin-bottom:12px;">✅</div>
-          <div style="font-size:18px;font-weight:800;margin-bottom:8px;">Anúncio criado no Mercado Livre!</div>
+          <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Anúncio criado no Mercado Livre!</div>
           <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">ID: ${esc(state.resultado.id || '—')}</div>
           ${state.resultado.permalink ? `<a href="${state.resultado.permalink}" target="_blank" rel="noopener" class="btn btn-primary" style="width:100%;margin-bottom:10px;">🔗 Ver anúncio no Mercado Livre</a>` : ''}
-          <button class="btn btn-secondary" style="width:100%;" onclick="window._anMlReset()">➕ Criar outro anúncio</button>
+          <button class="btn btn-secondary" style="width:100%;" onclick="window._anMlReset()">Criar outro anúncio</button>
         </div>`;
         return;
       }
@@ -512,7 +512,7 @@
             <div id="an-dropzone" ondragover="event.preventDefault();this.style.borderColor='#6366f1';" ondragleave="this.style.borderColor='var(--border)';"
                  ondrop="event.preventDefault();this.style.borderColor='var(--border)';window._anMlDropRef(event);"
                  onclick="document.getElementById('an-ref-input').click()"
-                 style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,#f7f8fc);">
+                 style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,var(--bg-subtle));">
               ${state.fotoRefPreview
                 ? `<img src="${state.fotoRefPreview}" style="max-width:100%;max-height:130px;border-radius:8px;object-fit:contain;">`
                 : `<div style="font-size:32px;">📤</div><div style="font-size:12.5px;font-weight:600;margin-top:6px;">Envie a foto de referência</div>`}
@@ -534,7 +534,7 @@
                 ${state.fotos.map((f, i) => `
                   <div style="position:relative;">
                     <img src="${f.url}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid var(--border);">
-                    ${i === 0 ? '<span style="position:absolute;top:3px;left:3px;background:#6366f1;color:#fff;font-size:9px;padding:1px 5px;border-radius:99px;">capa</span>' : ''}
+                    ${i === 0 ? '<span style="position:absolute;top:3px;left:3px;background:var(--accent);color:#fff;font-size:9px;padding:1px 5px;border-radius:99px;">capa</span>' : ''}
                     <button type="button" onclick="window._anMlRemoverFoto(${f.id})" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;">✕</button>
                   </div>`).join('')}
               </div>` : `<div style="font-size:11px;color:var(--text-muted);margin-top:10px;">Nenhuma foto adicionada ainda.</div>`}
@@ -550,7 +550,7 @@
               </div>
             ` : `
               <button class="btn btn-primary btn-sm" style="margin-bottom:8px;width:100%;" ${state.categoriaNavCarregando ? 'disabled' : ''} onclick="window._anMlNavegarCategorias()">
-                📂 Escolher categoria na lista
+                Escolher categoria na lista
               </button>
 
               ${state.categoriaNavegando ? `
@@ -579,7 +579,7 @@
                     <input type="text" class="form-input" id="an-cat-busca" placeholder="Ex: armário de cozinha" value="${esc(state.categoriaBuscaInput)}" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();window._anMlBuscarCategoria();}">
                     <button class="btn btn-secondary" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anMlBuscarCategoria()">${state.buscandoCategoria ? '⏳' : '🔍'}</button>
                   </div>
-                  ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:#6366f1;margin-bottom:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
+                  ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:var(--accent);margin-bottom:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
                   ${state.categoriaResultados.length ? `
                     <div style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;">
                       ${state.categoriaResultados.map((c, i) => `
@@ -1142,9 +1142,9 @@
       if (state.resultado) {
         root.innerHTML = `<div class="card" style="padding:40px;text-align:center;max-width:520px;margin:0 auto;">
           <div style="font-size:44px;margin-bottom:12px;">✅</div>
-          <div style="font-size:18px;font-weight:800;margin-bottom:8px;">Anúncio criado na Shopee!</div>
+          <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Anúncio criado na Shopee!</div>
           <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Item ID: ${esc(state.resultado.item_id || '—')} — pode levar alguns minutos até aparecer na loja, a Shopee revisa antes de publicar.</div>
-          <button class="btn btn-secondary" style="width:100%;" onclick="window._anSpReset()">➕ Criar outro anúncio</button>
+          <button class="btn btn-secondary" style="width:100%;" onclick="window._anSpReset()">Criar outro anúncio</button>
         </div>`;
         return;
       }
@@ -1169,7 +1169,7 @@
             <div id="an-sp-dropzone" ondragover="event.preventDefault();this.style.borderColor='#ee4d2d';" ondragleave="this.style.borderColor='var(--border)';"
                  ondrop="event.preventDefault();this.style.borderColor='var(--border)';window._anSpDropRef(event);"
                  onclick="document.getElementById('an-sp-ref-input').click()"
-                 style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,#f7f8fc);">
+                 style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,var(--bg-subtle));">
               ${state.fotoRefPreview
                 ? `<img src="${state.fotoRefPreview}" style="max-width:100%;max-height:130px;border-radius:8px;object-fit:contain;">`
                 : `<div style="font-size:32px;">📤</div><div style="font-size:12.5px;font-weight:600;margin-top:6px;">Envie a foto de referência</div>`}
@@ -1209,7 +1209,7 @@
               </div>
             ` : `
               <button class="btn btn-primary btn-sm" style="margin-bottom:8px;width:100%;" onclick="window._anSpNavegarCategorias()">
-                📂 Escolher categoria na lista
+                Escolher categoria na lista
               </button>
 
               ${state.categoriaNavegando ? `
@@ -1789,9 +1789,9 @@
       if (state.resultado) {
         root.innerHTML = `<div class="card" style="padding:40px;text-align:center;max-width:520px;margin:0 auto;">
           <div style="font-size:44px;margin-bottom:12px;">✅</div>
-          <div style="font-size:18px;font-weight:800;margin-bottom:8px;">Anúncio criado no TikTok Shop!</div>
+          <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Anúncio criado no TikTok Shop!</div>
           <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Product ID: ${esc(state.resultado.product_id || '—')} — o TikTok revisa antes de deixar visível na loja.</div>
-          <button class="btn btn-secondary" style="width:100%;" onclick="window._anTtReset()">➕ Criar outro anúncio</button>
+          <button class="btn btn-secondary" style="width:100%;" onclick="window._anTtReset()">Criar outro anúncio</button>
         </div>`;
         return;
       }
@@ -1814,7 +1814,7 @@
             <div id="an-tt-dropzone" ondragover="event.preventDefault();this.style.borderColor='#25F4EE';" ondragleave="this.style.borderColor='var(--border)';"
                  ondrop="event.preventDefault();this.style.borderColor='var(--border)';window._anTtDropRef(event);"
                  onclick="document.getElementById('an-tt-ref-input').click()"
-                 style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,#f7f8fc);">
+                 style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,var(--bg-subtle));">
               ${state.fotoRefPreview
                 ? `<img src="${state.fotoRefPreview}" style="max-width:100%;max-height:130px;border-radius:8px;object-fit:contain;">`
                 : `<div style="font-size:32px;">📤</div><div style="font-size:12.5px;font-weight:600;margin-top:6px;">Envie a foto de referência</div>`}
@@ -1854,7 +1854,7 @@
               </div>
             ` : `
               <button class="btn btn-primary btn-sm" style="margin-bottom:8px;width:100%;" onclick="window._anTtNavegarCategorias()">
-                📂 Escolher categoria na lista
+                Escolher categoria na lista
               </button>
 
               ${state.categoriaNavegando ? `

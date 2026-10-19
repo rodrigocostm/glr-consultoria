@@ -30,8 +30,8 @@ function renderShell() {
       </select>
     </div>
     <div class="pm-abas">
-      <button id="pm-aba-auto" class="pm-aba ${abaPromo === 'auto' ? 'on' : ''}" onclick="window._pmAba('auto')">⚡ Promoções por anúncio</button>
-      <button id="pm-aba-camp" class="pm-aba ${abaPromo === 'camp' ? 'on' : ''}" onclick="window._pmAba('camp')">📣 Campanhas e cupons</button>
+      <button id="pm-aba-auto" class="pm-aba ${abaPromo === 'auto' ? 'on' : ''}" onclick="window._pmAba('auto')">Promoções por anúncio</button>
+      <button id="pm-aba-camp" class="pm-aba ${abaPromo === 'camp' ? 'on' : ''}" onclick="window._pmAba('camp')">Campanhas e cupons</button>
     </div>
     <div id="pm-auto" style="${abaPromo === 'auto' ? '' : 'display:none'}"></div>
     <div id="promo-body" style="${abaPromo === 'camp' ? '' : 'display:none'}">
@@ -358,7 +358,7 @@ const PM = (() => {
     const box = document.getElementById('pm-auto');
     if (!box) return;
     if (!contaAtual) { box.innerHTML = ''; return; }
-    if (st.erro) { box.innerHTML = `<div class="card" style="padding:24px;color:#dc2626;">Erro: ${h(st.erro)} <button class="btn btn-secondary btn-sm" onclick="window._pmAtualizar()">Tentar de novo</button></div>`; return; }
+    if (st.erro) { box.innerHTML = `<div class="card" style="padding:24px;color:var(--red);">Erro: ${h(st.erro)} <button class="btn btn-secondary btn-sm" onclick="window._pmAtualizar()">Tentar de novo</button></div>`; return; }
     const m = margemMin(), d = despesas();
     const itens = st.itens;
     const semCusto = itens.filter(it => custoDe(it.id) == null);
@@ -368,7 +368,7 @@ const PM = (() => {
     const F = { todos: itens, batem, abaixo, semcusto: semCusto, ativa: emPromo };
     const lista = (F[st.filtro] || itens).slice().sort((a, b) => (b.vendidos || 0) - (a.vendidos || 0));
     const corM = mg => mg == null ? 'var(--text-muted)' : mg >= m ? '#16a34a' : mg >= 0 ? '#d97706' : '#dc2626';
-    const chipM = mg => mg == null ? '<span class="pm-chip" style="--c:#64748b">sem custo</span>' : `<span class="pm-chip" style="--c:${corM(mg)}">${mg.toFixed(1).replace('.', ',')}%</span>`;
+    const chipM = mg => mg == null ? '<span class="pm-chip" style="--c:var(--text-muted)">sem custo</span>' : `<span class="pm-chip" style="--c:${corM(mg)}">${mg.toFixed(1).replace('.', ',')}%</span>`;
     const card = (k, rot, n, sub, cor) => `<button class="pm-card ${st.filtro === k ? 'on' : ''}" style="--c:${cor}" onclick="window._pmFiltro('${k}')"><span class="pm-rot">${rot}</span><b>${n}</b><span class="pm-sub">${sub}</span></button>`;
 
     box.innerHTML = `
@@ -377,7 +377,7 @@ const PM = (() => {
         <label title="Investimento em ADS como % do preço — entra na margem (margem pós-ADS)">ADS <input id="pm-ads" type="number" step="0.1" min="0" value="${d.ads || ''}" placeholder="0" onchange="window._pmAds(this.value)">%${tacosSug != null ? ` <button class="pm-link" type="button" onclick="window._pmAds('${tacosSug.toFixed(1)}')" title="TACOS do mês desta conta (base automática)">usar TACOS do mês (${tacosSug.toFixed(1).replace('.', ',')}%)</button>` : ''}</label>
         <span class="pm-mut">Imposto da conta: <b>${d.imp ? d.imp.toString().replace('.', ',') + '%' : 'não definido'}</b>${d.extraPct || d.extraFixo ? ` · despesas extras de Vendas: ${d.extraPct ? d.extraPct + '%' : ''}${d.extraPct && d.extraFixo ? ' + ' : ''}${d.extraFixo ? R(d.extraFixo) + '/pedido' : ''}` : ''}</span>
         <span class="pm-mut" style="flex:1">Margem${d.ads ? ' pós-ADS' : ''} = (preço − tarifa ML − frete do ML naquele preço − custo − imposto − despesas${d.ads ? ' − ADS' : ''}) ÷ preço</span>
-        <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._pmAtualizar()">🔄 Atualizar</button>
+        <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._pmAtualizar()">Atualizar</button>
       </div>
       ${st.carregando || st.emLote ? `<div class="pm-prog">⏳ ${h(st.progresso)}</div>` : ''}
       ${itens.length ? `
@@ -390,7 +390,7 @@ const PM = (() => {
       </div>
       <div class="pm-acoes">
         <span class="pm-mut">${lista.length} anúncio(s) · ordenado por vendas</span>
-        <button class="btn btn-primary btn-sm" ${st.carregando || st.emLote || !batem.length ? 'disabled' : ''} onclick="window._pmAplicarLote()">⚡ Aplicar em todos que batem a margem (${batem.length})</button>
+        <button class="btn btn-primary btn-sm" ${st.carregando || st.emLote || !batem.length ? 'disabled' : ''} onclick="window._pmAplicarLote()">Aplicar em todos que batem a margem (${batem.length})</button>
       </div>
       <div class="card" style="padding:0;overflow:hidden;"><div style="overflow-x:auto;">
         <table class="pm-tab">
@@ -406,11 +406,11 @@ const PM = (() => {
                 : window._portalConfig ? `<div class="pm-sem">⚠️ sem custo</div><div class="pm-mut">peça para a GLR cadastrar</div>`
                 : `<div class="pm-sem">⚠️ sem custo<input class="pm-inp" placeholder="R$ custo" onkeydown="if(event.key==='Enter')window._pmCusto('${it.id}',this.value)" onchange="window._pmCusto('${it.id}',this.value)"></div><div class="pm-mut">salva também em Vendas</div>`}</td>
               <td>${it.ativa ? `<div class="pm-mut">${h(TIPO[it.ativa.promo.type] || it.ativa.promo.type)}</div><b>${R(it.ativa.preco)}</b> ${chipM(it.ativa.margem)}` : '<span class="pm-mut">—</span>'}</td>
-              <td>${it.erroPromo ? `<span class="pm-mut" style="color:#dc2626">erro ao buscar: ${h(it.erroPromo)}</span>` : it.opcoes?.length ? `<select class="pm-sel" onchange="window._pmEscolha('${it.id}',this.value)">${it.opcoes.map((o, i) => `<option value="${i}" ${i === st.escolha[it.id] ? 'selected' : ''}>${o.bate ? '✅' : o.margem == null ? '•' : '⚠️'} ${h(TIPO[o.promo.type] || o.promo.type)}${o.promo.name ? ' · ' + h(o.promo.name) : ''} — ${R(o.preco)} (−${o.desconto.toFixed(0)}%)</option>`).join('')}</select>${op ? `<div class="pm-mut">${h(op.motivo)}${op.promo.finish_date ? ` · até ${new Date(op.promo.finish_date).toLocaleDateString('pt-BR')}` : ''}</div>` : ''}` : '<span class="pm-mut">sem promoção disponível</span>'}</td>
+              <td>${it.erroPromo ? `<span class="pm-mut" style="color:var(--red)">erro ao buscar: ${h(it.erroPromo)}</span>` : it.opcoes?.length ? `<select class="pm-sel" onchange="window._pmEscolha('${it.id}',this.value)">${it.opcoes.map((o, i) => `<option value="${i}" ${i === st.escolha[it.id] ? 'selected' : ''}>${o.bate ? '✅' : o.margem == null ? '•' : '⚠️'} ${h(TIPO[o.promo.type] || o.promo.type)}${o.promo.name ? ' · ' + h(o.promo.name) : ''} — ${R(o.preco)} (−${o.desconto.toFixed(0)}%)</option>`).join('')}</select>${op ? `<div class="pm-mut">${h(op.motivo)}${op.promo.finish_date ? ` · até ${new Date(op.promo.finish_date).toLocaleDateString('pt-BR')}` : ''}</div>` : ''}` : '<span class="pm-mut">sem promoção disponível</span>'}</td>
               <td class="pm-n">${op ? `<b>${R(op.recebe)}</b><div class="pm-mut">tarifa ${R(op.tarifa)}${op.frete ? ` · frete ${R(op.frete)}` : ''}</div>` : '—'}</td>
               <td class="pm-n">${op ? chipM(op.margem) + (op.lucro != null ? `<div class="pm-mut">lucro ${R(op.lucro)}</div>${d.ads ? `<div class="pm-mut">ADS ${R(op.adsValor)} · antes do ADS ${op.margemAntesAds.toFixed(1).replace('.', ',')}%</div>` : ''}` : '') : '—'}</td>
               <td>${op ? `<button class="btn btn-sm ${op.bate ? 'btn-primary' : 'btn-secondary'}" ${st.aplicando[it.id] || st.emLote ? 'disabled' : ''} onclick="window._pmAplicar('${it.id}')" title="${op.bate ? 'Bate a margem mínima' : 'Fica abaixo da margem mínima'}">${st.aplicando[it.id] ? '⏳' : 'Aplicar'}</button>` : ''}
-                ${res ? `<div class="pm-res" style="color:${res.ok ? '#16a34a' : '#dc2626'}">${h(res.txt)}</div>` : ''}</td>
+                ${res ? `<div class="pm-res" style="color:${res.ok ? 'var(--green)' : 'var(--red)'}">${h(res.txt)}</div>` : ''}</td>
             </tr>`;
           }).join('') || '<tr><td colspan="7" class="pm-mut" style="padding:24px;text-align:center">Nada neste filtro.</td></tr>'}</tbody>
         </table>
@@ -523,7 +523,7 @@ async function buscarPromocoes() {
     promocoes = r?.data?.results || r?.results || [];
   } catch(e) {
     promocoes = [];
-    body.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:24px;text-align:center;color:#dc2626;">
+    body.innerHTML = `<div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:12px;padding:24px;text-align:center;color:var(--red);">
       <div style="font-weight:600;">Erro ao buscar promoções: ${e.message}</div>
     </div>`;
     return;
@@ -558,7 +558,7 @@ function renderConteudo() {
   body.innerHTML = `
     <!-- Promoções ativas -->
     <div style="margin-bottom:28px;">
-      <div class="section-title" style="font-size:15px;margin-bottom:12px;">📣 Promoções Ativas (${ativas.length})</div>
+      <div class="section-title" style="font-size:15px;margin-bottom:12px;">Promoções Ativas (${ativas.length})</div>
       ${ativas.length ? ativas.map(linhaPromo).join('') : `<div style="padding:24px;text-align:center;color:var(--text-secondary);font-size:13px;background:var(--bg-card);border-radius:12px;">Nenhuma promoção ativa nessa conta agora.</div>`}
       ${outras.length ? `
         <details style="margin-top:12px;">
@@ -569,7 +569,7 @@ function renderConteudo() {
 
     <!-- Criar desconto em item -->
     <div class="card" style="padding:20px;margin-bottom:20px;">
-      <div class="section-title" style="font-size:15px;margin-bottom:4px;">💸 Criar Desconto em Item</div>
+      <div class="section-title" style="font-size:15px;margin-bottom:4px;">Criar Desconto em Item</div>
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 16px;">Desconto de preço (PRICE_DISCOUNT) pontual num anúncio — até 14 dias de duração.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="form-group">
@@ -595,7 +595,7 @@ function renderConteudo() {
 
     <!-- Criar cupom -->
     <div class="card" style="padding:20px;">
-      <div class="section-title" style="font-size:15px;margin-bottom:4px;">🎟️ Criar Cupom de Vendedor</div>
+      <div class="section-title" style="font-size:15px;margin-bottom:4px;">Criar Cupom de Vendedor</div>
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 16px;">Cupom válido pra loja inteira, com código próprio.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="form-group" style="grid-column:1/-1;">
@@ -676,7 +676,7 @@ window._promoVerItens = async function(promotionId, promotionType) {
     </table>`;
     el.dataset.aberto = '1';
   } catch(e) {
-    el.innerHTML = `<div style="font-size:12px;color:#dc2626;">Erro: ${e.message}</div>`;
+    el.innerHTML = `<div style="font-size:12px;color:var(--red);">Erro: ${e.message}</div>`;
   }
 };
 
@@ -701,12 +701,12 @@ window._promoCriarDesconto = async function() {
     });
     const res = r?.data?.results?.[0] || r?.results?.[0];
     if (res?.aplicado) {
-      resDiv.innerHTML = `<span style="color:var(--green);">✅ Desconto aplicado — preço efetivo: ${fmtR(res.aplicado.price)} (original ${fmtR(res.aplicado.original_price)})${res.atencao ? '<br><span style="color:#d97706;">⚠️ ' + res.atencao + '</span>' : ''}</span>`;
+      resDiv.innerHTML = `<span style="color:var(--green);">✅ Desconto aplicado — preço efetivo: ${fmtR(res.aplicado.price)} (original ${fmtR(res.aplicado.original_price)})${res.atencao ? '<br><span style="color:var(--yellow);">⚠️ ' + res.atencao + '</span>' : ''}</span>`;
     } else {
       resDiv.innerHTML = `<span style="color:var(--green);">✅ Desconto enviado.</span>`;
     }
   } catch(e) {
-    resDiv.innerHTML = `<span style="color:#dc2626;">❌ Erro: ${e.message}</span>`;
+    resDiv.innerHTML = `<span style="color:var(--red);">❌ Erro: ${e.message}</span>`;
   }
 };
 
@@ -740,7 +740,7 @@ window._promoCriarCupom = async function() {
     const id = r?.data?.id || r?.id;
     resDiv.innerHTML = `<span style="color:var(--green);">✅ Cupom criado${id ? ' — ID ' + id : ''}.</span>`;
   } catch(e) {
-    resDiv.innerHTML = `<span style="color:#dc2626;">❌ Erro: ${e.message}</span>`;
+    resDiv.innerHTML = `<span style="color:var(--red);">❌ Erro: ${e.message}</span>`;
   }
 };
 

@@ -556,7 +556,7 @@ Router.register('score', (params, el) => {
         </div>
         <div style="text-align:center;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius);padding:10px 20px;">
           <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Média da carteira</div>
-          <div style="font-size:26px;font-weight:800;color:${scoreColor(mediaGeral)};">${mediaGeral}</div>
+          <div style="font-size:26px;font-weight:700;color:${scoreColor(mediaGeral)};">${mediaGeral}</div>
           <div style="font-size:10px;color:var(--text-muted);">/ 100</div>
         </div>
       </div>
@@ -577,7 +577,7 @@ Router.register('score', (params, el) => {
 
     <!-- Ranking -->
     <div class="section-header mb-16">
-      <div class="section-title">📊 Ranking da Carteira</div>
+      <div class="section-title">Ranking da Carteira</div>
       <div class="section-subtitle">${resultados.length} clientes · ordenados por pontuação</div>
     </div>
 
@@ -590,7 +590,7 @@ Router.register('score', (params, el) => {
 
             <!-- Posição + nome -->
             <div style="display:flex;align-items:center;gap:10px;min-width:200px;flex:1;">
-              <div style="font-size:16px;font-weight:800;color:var(--text-muted);width:28px;text-align:center;">${medal||('#'+(i+1))}</div>
+              <div style="font-size:16px;font-weight:700;color:var(--text-muted);width:28px;text-align:center;">${medal||('#'+(i+1))}</div>
               <div>
                 <div style="font-size:14px;font-weight:700;">${c.nome}</div>
                 <div style="font-size:11px;color:var(--text-muted);">Gestor: ${c.gestor||'—'} · ${GLR.statusLabel[c.status]||c.status}</div>
@@ -603,7 +603,7 @@ Router.register('score', (params, el) => {
                 <div style="flex:1;background:var(--bg-base);border-radius:99px;height:10px;overflow:hidden;">
                   <div style="width:${r.total}%;height:100%;background:${scoreColor(r.total)};border-radius:99px;transition:width .5s;"></div>
                 </div>
-                <div style="font-size:22px;font-weight:800;color:${scoreColor(r.total)};width:40px;text-align:right;">${r.total}</div>
+                <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;color:${scoreColor(r.total)};width:40px;text-align:right;">${r.total}</div>
               </div>
             </div>
 
@@ -622,7 +622,7 @@ Router.register('score', (params, el) => {
                 return `
                 <div style="background:var(--bg-base);border-radius:var(--radius-sm);padding:8px;text-align:center;border:1px solid ${scoreColor(v)}22;">
                   <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${cr.icon} ${cr.key}</div>
-                  <div style="font-size:13px;font-weight:800;color:${scoreColor(v)};">${v}</div>
+                  <div style="font-size:13px;font-weight:700;color:${scoreColor(v)};">${v}</div>
                   <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">${info}</div>
                 </div>`;
               }).join('')}

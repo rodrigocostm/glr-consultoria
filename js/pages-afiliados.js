@@ -89,15 +89,15 @@ Router.register('afiliados', async (params, el) => {
       <!-- Header -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
         <div>
-          <h2 style="font-size:20px;font-weight:800;margin:0;">🔗 Central de Afiliados</h2>
-          <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${dataInicio} → ${dataFim} ${_atualizadoEm[plataforma]?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${Math.floor((Date.now()-_atualizadoEm[plataforma])/60000)<60?'há '+Math.max(1,Math.floor((Date.now()-_atualizadoEm[plataforma])/60000))+' min':'há '+Math.floor((Date.now()-_atualizadoEm[plataforma])/3600000)+'h'}</span>`:''}</div>
+          <h2 style="font-size:20px;font-weight:700;margin:0;">🔗 Central de Afiliados</h2>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${dataInicio} → ${dataFim} ${_atualizadoEm[plataforma]?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${Math.floor((Date.now()-_atualizadoEm[plataforma])/60000)<60?'há '+Math.max(1,Math.floor((Date.now()-_atualizadoEm[plataforma])/60000))+' min':'há '+Math.floor((Date.now()-_atualizadoEm[plataforma])/3600000)+'h'}</span>`:''}</div>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <select id="sel-cliente-afil" class="form-control" style="min-width:160px;" onchange="window._afilClienteChange(this.value)">
             ${clientesComVinc.map(c => `<option value="${c.id}" ${c.id===clienteSelecionado?'selected':''}>${c.nome}</option>`).join('')}
           </select>
           <button class="btn btn-primary" id="btn-buscar-afil" onclick="window._afilBuscar()">
-            🔄 Buscar dados
+            Buscar dados
           </button>
         </div>
       </div>
@@ -105,10 +105,10 @@ Router.register('afiliados', async (params, el) => {
       <!-- Tabs plataforma -->
       <div style="display:flex;gap:8px;margin-bottom:20px;">
         ${contasShopee.length ? `<button class="btn ${plataforma==='shopee'?'btn-primary':'btn-secondary'}" onclick="window._afilPlat('shopee')" style="display:flex;align-items:center;gap:6px;">
-          🟠 Shopee <span style="opacity:.7;font-size:11px;">(${contasShopee.length} conta${contasShopee.length>1?'s':''})</span>
+          Shopee <span style="opacity:.7;font-size:11px;">(${contasShopee.length} conta${contasShopee.length>1?'s':''})</span>
         </button>` : ''}
         ${contasML.length ? `<button class="btn ${plataforma==='ml'?'btn-primary':'btn-secondary'}" onclick="window._afilPlat('ml')" style="display:flex;align-items:center;gap:6px;">
-          🟡 Mercado Livre <span style="opacity:.7;font-size:11px;">(${contasML.length} conta${contasML.length>1?'s':''})</span>
+          Mercado Livre <span style="opacity:.7;font-size:11px;">(${contasML.length} conta${contasML.length>1?'s':''})</span>
         </button>` : ''}
       </div>
 
@@ -331,10 +331,10 @@ Router.register('afiliados', async (params, el) => {
         <div class="card mb-16">
           <div class="section-header" style="margin-bottom:16px;">
             <div>
-              <div class="section-title">🟠 ${r.conta}</div>
+              <div class="section-title">${r.conta}</div>
               <div style="font-size:11px;color:var(--text-muted);font-family:monospace;">Shop ID: ${r.shopId}</div>
             </div>
-            ${!temDados ? `<span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;">Sem dados AMS</span>` : ''}
+            ${!temDados ? `<span class="badge" style="background:rgba(245,158,11,0.15);color:var(--yellow);">Sem dados AMS</span>` : ''}
           </div>
           ${temDados ? `
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;">
@@ -352,12 +352,12 @@ Router.register('afiliados', async (params, el) => {
             return `
           <div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px;">
             ${erroAuth
-              ? `<div style="color:#dc2626;font-weight:600;margin-bottom:6px;">⚠️ Módulo de Ads não autorizado na Shopee</div>
+              ? `<div style="color:var(--red);font-weight:600;margin-bottom:6px;">⚠️ Módulo de Ads não autorizado na Shopee</div>
                  <span style="font-size:12px;">${erroAuth.erro}</span>`
               : `Nenhum dado de afiliados encontrado para esta conta no período.<br>
                  <span style="font-size:12px;">Verifique se o programa AMS está ativo na conta Shopee.</span>`}
           </div>
-          ${r.debug?.length ? `<details style="margin-top:8px;font-size:11px;text-align:left;"><summary style="cursor:pointer;color:var(--text-muted);padding:8px;">🔍 Diagnóstico API</summary><div style="padding:8px 12px;background:var(--surface);border-radius:var(--radius-sm);margin-top:4px;">${r.debug.map(d=>`<div style="margin-bottom:6px;padding:6px;border-left:3px solid ${d.ok?'#10b981':'#ef4444'};"><div style="font-weight:600;color:${d.ok?'#10b981':'#ef4444'};">${d.ok?'✅':'❌'} ${d.action}</div><div style="color:var(--text-muted);font-family:monospace;font-size:10px;word-break:break-all;">${d.ok?JSON.stringify(d.raw).substring(0,300):d.erro}</div></div>`).join('')}</div></details>` : ''}`;
+          ${r.debug?.length ? `<details style="margin-top:8px;font-size:11px;text-align:left;"><summary style="cursor:pointer;color:var(--text-muted);padding:8px;">Diagnóstico API</summary><div style="padding:8px 12px;background:var(--surface);border-radius:var(--radius-sm);margin-top:4px;">${r.debug.map(d=>`<div style="margin-bottom:6px;padding:6px;border-left:3px solid ${d.ok?'var(--green)':'var(--red)'};"><div style="font-weight:600;color:${d.ok?'var(--green)':'var(--red)'};">${d.ok?'✅':'❌'} ${d.action}</div><div style="color:var(--text-muted);font-family:monospace;font-size:10px;word-break:break-all;">${d.ok?JSON.stringify(d.raw).substring(0,300):d.erro}</div></div>`).join('')}</div></details>` : ''}`;
           })()}
 
           ${r.afilPerf?.length > 0 ? `
@@ -423,7 +423,7 @@ Router.register('afiliados', async (params, el) => {
         return `
         <div class="card mb-16">
           <div class="section-header">
-            <div class="section-title">🟡 ${r.conta}</div>
+            <div class="section-title">${r.conta}</div>
             <div style="font-size:11px;color:var(--text-muted);font-family:monospace;">User ID: ${r.meliUserId}</div>
           </div>
           <div style="padding:32px;text-align:center;">
@@ -449,10 +449,10 @@ Router.register('afiliados', async (params, el) => {
       <div class="card mb-16">
         <div class="section-header" style="margin-bottom:16px;">
           <div>
-            <div class="section-title">🟡 ${r.conta}</div>
+            <div class="section-title">${r.conta}</div>
             <div style="font-size:11px;color:var(--text-muted);font-family:monospace;">User ID: ${r.meliUserId}</div>
           </div>
-          ${!temDados ? `<span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;">Sem dados de afiliados</span>` : ''}
+          ${!temDados ? `<span class="badge" style="background:rgba(245,158,11,0.15);color:var(--yellow);">Sem dados de afiliados</span>` : ''}
         </div>
         ${temDados ? `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">

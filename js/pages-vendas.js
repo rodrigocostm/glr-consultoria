@@ -136,8 +136,8 @@ Router.register('vendas', async (params, el) => {
       box.id = 'diag-api-box';
       box.style.cssText = 'position:fixed;bottom:12px;right:12px;width:520px;max-height:70vh;overflow-y:auto;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;z-index:99999;font-family:monospace;font-size:11px;color:#e5e7eb;box-shadow:0 10px 40px rgba(0,0,0,.5);';
       box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <strong style="color:#a5b4fc;">🔍 Diagnóstico API (temporário)</strong>
-        <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:14px;">✕</button>
+        <strong style="color:var(--accent-light);">🔍 Diagnóstico API (temporário)</strong>
+        <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button>
       </div><div id="diag-api-conteudo"></div>`;
       document.body.appendChild(box);
     }
@@ -296,7 +296,7 @@ Router.register('vendas', async (params, el) => {
         <div class="dcb-panel" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:220px;max-height:280px;overflow-y:auto;padding:6px;">
           ${itens.length === 0 ? `<div style="padding:8px;font-size:12px;color:var(--text-muted);">Nenhuma opção</div>` : itens.map(i => `
             <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--text-primary);" onmouseover="this.style.background='var(--bg-card-hover)'" onmouseout="this.style.background='transparent'">
-              <input type="checkbox" value="${i.valor}" ${selecionados.has(i.valor)?'checked':''} style="width:14px;height:14px;accent-color:#6366f1;">
+              <input type="checkbox" value="${i.valor}" ${selecionados.has(i.valor)?'checked':''} style="width:14px;height:14px;accent-color:var(--accent);">
               <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.label}</span>
             </label>`).join('')}
           ${itens.length > 0 ? `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;display:flex;gap:6px;">
@@ -920,7 +920,7 @@ Router.register('vendas', async (params, el) => {
         <td class="cs-num">${R$(x.fat4).replace(/,\d{2}$/, '')}</td>
         <td>${spark(x)}</td>
         ${[3, 2, 1, 0].map(w => `<td class="cs-num${w === 0 ? ' cs-ult' : ''}">${cel(x, w)}</td>`).join('')}
-        <td class="cs-num" style="color:${x.var == null ? 'inherit' : x.var < 0 ? '#dc2626' : x.var > 0 ? '#16a34a' : 'inherit'};font-weight:700;">${varTxt(x.var)}</td>
+        <td class="cs-num" style="color:${x.var == null ? 'inherit' : x.var < 0 ? 'var(--red)' : x.var > 0 ? 'var(--green)' : 'inherit'};font-weight:700;">${varTxt(x.var)}</td>
         <td><span class="cs-tend" style="--c:${t.c}">${t.t}</span></td>
       </tr>`;
     }).join('');
@@ -1071,7 +1071,7 @@ Router.register('vendas', async (params, el) => {
         ${card('Shopee', nSh, 'fora de campanha individual', '#1baf7a')}
         ${card('Sugestões dos agentes', ag.length, 'curva ABC e “colocar em campanha”, pendentes', ag.length ? '#d97706' : '#64748b')}
       </div>
-      ${ag.length ? `<details class="card op-ag"><summary>🤖 Sugestões pendentes dos agentes (${ag.length})</summary>${ag.slice(0, 12).map(l => {
+      ${ag.length ? `<details class="card op-ag"><summary>Sugestões pendentes dos agentes (${ag.length})</summary>${ag.slice(0, 12).map(l => {
         const c = contas.find(c => idNaBase(c) === String(l.conta_id));
         const ml = l.dados?.marketplace === 'ml';
         return `<div class="op-ag-i"><b>${h(l.titulo)}</b>${c ? ` <span class="op-sub">· ${h(contaNome(c))}</span>` : ''} <a href="#" onclick="Router.navigate('${ml ? 'agente-ml' : 'agente'}');return false;">abrir no agente →</a></div>`;
@@ -1113,7 +1113,7 @@ Router.register('vendas', async (params, el) => {
     if (!sec) return;
     if (!document.getElementById('op-auto')) {
       sec.innerHTML = `<div id="op-auto"></div>
-        <details class="card" style="padding:12px 18px;" id="op-manual-wrap"><summary style="cursor:pointer;font-weight:700;color:var(--text-primary);">🔍 Busca detalhada pela API — visitas sem venda e produtos que nunca tiveram ADS</summary><div id="sec-oport-manual" style="margin-top:12px;"></div></details>`;
+        <details class="card" style="padding:12px 18px;" id="op-manual-wrap"><summary style="cursor:pointer;font-weight:700;color:var(--text-primary);">Busca detalhada pela API — visitas sem venda e produtos que nunca tiveram ADS</summary><div id="sec-oport-manual" style="margin-top:12px;"></div></details>`;
     }
     renderOportunidadesAuto();
     renderOportunidadesManual();
@@ -1135,7 +1135,7 @@ Router.register('vendas', async (params, el) => {
             No <strong>Mercado Livre</strong> as visitas são do período filtrado; na <strong>Shopee</strong> a API só retorna
             visitas acumuladas (sem filtro de data), então o número ali é o total desde sempre.
           </div>
-          <button id="btn-buscar-oport" class="btn-primary" onclick="buscarOportunidades()" style="padding:10px 20px;">🔍 Buscar oportunidades</button>
+          <button id="btn-buscar-oport" class="btn-primary" onclick="buscarOportunidades()" style="padding:10px 20px;">Buscar oportunidades</button>
           <div id="oport-status" style="font-size:12px;color:var(--text-muted);margin-top:12px;"></div>
         </div>
         ${renderForaDoAdsHTML()}
@@ -1149,16 +1149,16 @@ Router.register('vendas', async (params, el) => {
       <tr style="border-bottom:1px solid var(--border);">
         <td style="padding:10px 12px;color:var(--text-primary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(o.nome||'').replace(/"/g,'&quot;')}">${o.mp==='Shopee'?'🟠':'🟡'} ${o.nome||'—'}</td>
         <td style="padding:10px 12px;color:var(--text-secondary);">${o.conta}</td>
-        <td style="padding:10px 12px;text-align:right;font-weight:700;color:#f59e0b;">${o.visitas.toLocaleString('pt-BR')}${o.mp==='Shopee'?' <span style="font-size:9px;color:var(--text-muted);">(total)</span>':''}</td>
+        <td style="padding:10px 12px;text-align:right;font-weight:700;color:var(--yellow);">${o.visitas.toLocaleString('pt-BR')}${o.mp==='Shopee'?' <span style="font-size:9px;color:var(--text-muted);">(total)</span>':''}</td>
         <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${o.preco ? R$(o.preco) : '—'}</td>
         <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${o.estoque || '—'}</td>
-        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:#6366f1;font-size:12px;">Ver anúncio ↗</a>` : ''}</td>
+        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:var(--accent);font-size:12px;">Ver anúncio ↗</a>` : ''}</td>
       </tr>`).join('');
 
     sec.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período ${oportAtualizadoEm?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(oportAtualizadoEm)}</span>`:''}${falhasOport ? `<div style="font-size:12px;font-weight:600;color:#dc2626;margin-top:3px;">⚠️ ${falhasOport} anúncio(s) não responderam à consulta de visitas (limite da API) — clique em Buscar de novo.</div>` : ''}${diagOport ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">ML: ${diagOport.ativos} anúncios ativos · ${diagOport.vendidos} venderam no período · ${diagOport.checados} sem venda checados · ${diagOport.comVisita} com visita${diagOport.erro ? ` · erro: ${diagOport.erro.replace(/</g,'&lt;')}` : ''}${!diagOport.comVisita && diagOport.exemplo ? ` · resposta da API: <code>${diagOport.exemplo.replace(/</g,'&lt;')}</code>` : ''}</div>` : ''}</div>
-        <button id="btn-buscar-oport" class="btn" onclick="buscarOportunidades()" style="padding:7px 14px;font-size:12px;">🔄 Buscar de novo</button>
+        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período ${oportAtualizadoEm?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(oportAtualizadoEm)}</span>`:''}${falhasOport ? `<div style="font-size:12px;font-weight:600;color:var(--red);margin-top:3px;">⚠️ ${falhasOport} anúncio(s) não responderam à consulta de visitas (limite da API) — clique em Buscar de novo.</div>` : ''}${diagOport ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">ML: ${diagOport.ativos} anúncios ativos · ${diagOport.vendidos} venderam no período · ${diagOport.checados} sem venda checados · ${diagOport.comVisita} com visita${diagOport.erro ? ` · erro: ${diagOport.erro.replace(/</g,'&lt;')}` : ''}${!diagOport.comVisita && diagOport.exemplo ? ` · resposta da API: <code>${diagOport.exemplo.replace(/</g,'&lt;')}</code>` : ''}</div>` : ''}</div>
+        <button id="btn-buscar-oport" class="btn" onclick="buscarOportunidades()" style="padding:7px 14px;font-size:12px;">Buscar de novo</button>
       </div>
       ${oportunidades.length === 0 ? `
         <div class="card" style="padding:32px;text-align:center;color:var(--text-muted);">Nenhuma oportunidade encontrada — todos os anúncios com visita já converteram, ou nenhum teve visita no período.</div>
@@ -1194,7 +1194,7 @@ Router.register('vendas', async (params, el) => {
           <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;max-width:480px;margin-left:auto;margin-right:auto;">
             Anúncios ativos que nunca receberam investimento em anúncio patrocinado — candidatos a testar tráfego pago.
           </div>
-          <button id="btn-buscar-fora-ads" class="btn-primary" style="padding:10px 20px;">🚫 Buscar produtos fora do ADS</button>
+          <button id="btn-buscar-fora-ads" class="btn-primary" style="padding:10px 20px;">Buscar produtos fora do ADS</button>
           <div id="fora-ads-status" style="font-size:12px;color:var(--text-muted);margin-top:12px;"></div>
         </div>`;
     }
@@ -1218,23 +1218,23 @@ Router.register('vendas', async (params, el) => {
       <tr style="border-bottom:1px solid var(--border);">
         <td style="padding:10px 12px;color:var(--text-primary);max-width:340px;" title="${(o.nome||'').replace(/"/g,'&quot;')}"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.mp==='Shopee'?'🟠':'🟡'} ${o.nome||'—'}</div><div style="font-size:11px;color:var(--text-muted);">${o.conta} · ${o.id}</div></td>
         <td style="padding:10px 12px;"><span style="font-size:11.5px;font-weight:700;color:${pt.cor};white-space:nowrap;">${pt.t}</span></td>
-        <td style="padding:10px 12px;font-size:12px;color:${(o.situacao || 'Sem campanha') === 'Sem campanha' ? 'var(--text-secondary)' : '#d97706'};">${o.situacao || 'Sem campanha'}</td>
+        <td style="padding:10px 12px;font-size:12px;color:${(o.situacao || 'Sem campanha') === 'Sem campanha' ? 'var(--text-secondary)' : 'var(--yellow)'};">${o.situacao || 'Sem campanha'}</td>
         ${td(o.mp === 'Shopee' ? '<span style="color:var(--text-muted);" title="A API da Shopee não informa visitas confiáveis por anúncio">—</span>' : num(o.visitas))}
         ${td(num(o.vendasTotal))}
         ${td(num(o.vendas30 ?? null), (o.vendas30 || 0) > 0)}
         ${td(c != null ? c.toFixed(1).replace('.', ',') + '%' : '<span style="color:var(--text-muted);">—</span>')}
         ${td(o.preco ? R$(o.preco) : '—')}
         ${td(o.estoque || '—')}
-        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:#6366f1;font-size:12px;white-space:nowrap;">Ver anúncio ↗</a>` : ''}</td>
+        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:var(--accent);font-size:12px;white-space:nowrap;">Ver anúncio ↗</a>` : ''}</td>
       </tr>`;
     }).join('');
 
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 16px;gap:10px;flex-wrap:wrap;">
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary);">🚫 ${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS${nAlto ? ` · <span style="color:#16a34a;">${nAlto} com potencial alto</span>` : ''} ${foraAdsAtualizadoEm?`<span style="font-size:11px;font-weight:400;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(foraAdsAtualizadoEm)}</span>`:''}
-          ${falhasForaAds ? `<div style="font-size:12px;font-weight:600;color:#dc2626;margin-top:3px;">⚠️ ${falhasForaAds} anúncio(s) não responderam à checagem de ADS (limite da API) — clique em Buscar de novo.</div>` : ''}
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary);">🚫 ${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS${nAlto ? ` · <span style="color:var(--green);">${nAlto} com potencial alto</span>` : ''} ${foraAdsAtualizadoEm?`<span style="font-size:11px;font-weight:400;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(foraAdsAtualizadoEm)}</span>`:''}
+          ${falhasForaAds ? `<div style="font-size:12px;font-weight:600;color:var(--red);margin-top:3px;">⚠️ ${falhasForaAds} anúncio(s) não responderam à checagem de ADS (limite da API) — clique em Buscar de novo.</div>` : ''}
           <div style="font-size:11.5px;font-weight:400;color:var(--text-muted);margin-top:3px;">Visitas e vendas totais = desde a criação do anúncio (ML). Vendas 30 dias = base automática. Potencial alto: 3+ vendas em 30 dias, ou 300+ visitas convertendo 1% ou mais.</div></div>
-        <button id="btn-buscar-fora-ads" class="btn" style="padding:7px 14px;font-size:12px;">🔄 Buscar de novo</button>
+        <button id="btn-buscar-fora-ads" class="btn" style="padding:7px 14px;font-size:12px;">Buscar de novo</button>
       </div>
       ${foraDoAds.length === 0 ? `
         <div class="card" style="padding:32px;text-align:center;color:var(--text-muted);">Todos os anúncios ativos já têm alguma campanha de ADS.</div>
@@ -1404,7 +1404,7 @@ Router.register('vendas', async (params, el) => {
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
       <div class="kpi-card">
         <div class="kpi-label">💰 Investimento em ADS</div>
-        <div class="kpi-value" style="color:#ef4444;font-size:18px;" id="dashboard-ads">R$ 0,00</div>
+        <div class="kpi-value" style="color:var(--red);font-size:18px;" id="dashboard-ads">R$ 0,00</div>
         <div class="kpi-sub" id="dashboard-ads-pct">0% do faturamento</div>
       </div>
       <div class="kpi-card">
@@ -1424,7 +1424,7 @@ Router.register('vendas', async (params, el) => {
       </div>
       <div class="kpi-card">
         <div class="kpi-label">💵 Faturamento Total</div>
-        <div class="kpi-value" style="color:#34d399;font-size:18px;" id="card-fat">—</div>
+        <div class="kpi-value" style="color:var(--green);font-size:18px;" id="card-fat">—</div>
         <div class="kpi-sub"><span id="card-fat-ml">—</span> ML · <span id="card-fat-shopee">—</span> Shopee</div>
       </div>
     </div>
@@ -1472,7 +1472,7 @@ Router.register('vendas', async (params, el) => {
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">60 DIAS</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">90 DIAS</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">120 DIAS</th>
-              <th style="padding:10px 12px;text-align:right;color:#f59e0b;font-weight:600;white-space:nowrap;border-left:1px solid var(--border);">💰 CUSTO UNIT.</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--yellow);font-weight:600;white-space:nowrap;border-left:1px solid var(--border);">💰 CUSTO UNIT.</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">LÍQ. MP</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">LUCRO</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">MARGEM</th>
@@ -1493,7 +1493,7 @@ Router.register('vendas', async (params, el) => {
                     <div style="min-width:0;">
                       <div style="color:var(--text-primary);font-weight:600;font-size:13px;line-height:1.4;word-break:break-word;max-width:320px;">${p.nome}</div>
                       <div style="display:flex;gap:8px;align-items:center;margin-top:2px;flex-wrap:wrap;">
-                        ${p.sku ? `<span style="background:rgba(99,102,241,0.15);color:#818cf8;font-size:9px;padding:1px 6px;border-radius:4px;font-family:monospace;">SKU: ${p.sku}</span>` : ''}
+                        ${p.sku ? `<span style="background:rgba(99,102,241,0.15);color:var(--accent-light);font-size:9px;padding:1px 6px;border-radius:4px;font-family:monospace;">SKU: ${p.sku}</span>` : ''}
                         <span style="color:var(--text-muted);font-size:10px;">${p.n} pedido${p.n!==1?'s':''} · ${p.qtd} un.</span>
                       </div>
                     </div>
@@ -1502,7 +1502,7 @@ Router.register('vendas', async (params, el) => {
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${p.qtd}</td>
                 <td style="padding:10px 12px;text-align:right;color:#3b82f6;font-weight:600;">${R$(p.fat)}</td>
                 <td style="padding:10px 12px;text-align:right;">
-                  <span style="background:rgba(99,102,241,0.15);color:#818cf8;padding:2px 7px;border-radius:10px;font-size:11px;">${pct(represent)}</span>
+                  <span style="background:rgba(99,102,241,0.15);color:var(--accent-light);padding:2px 7px;border-radius:10px;font-size:11px;">${pct(represent)}</span>
                 </td>
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);border-left:1px solid var(--border);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 30).length)()}</td>
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 60).length)()}</td>
@@ -1514,7 +1514,7 @@ Router.register('vendas', async (params, el) => {
                     data-ids="${p.ids.join(',')}"
                     data-key="${encodeURIComponent(p.key)}"
                     class="inp-custo-prod"
-                    style="width:90px;background:var(--bg-input);border:1px solid ${custoMisto?'rgba(96,165,250,0.5)':'rgba(245,158,11,0.4)'};border-radius:6px;padding:5px 8px;color:${custoMisto?'#60a5fa':'#f59e0b'};font-size:12px;text-align:right;"
+                    style="width:90px;background:var(--bg-input);border:1px solid ${custoMisto?'rgba(96,165,250,0.5)':'rgba(245,158,11,0.4)'};border-radius:6px;padding:5px 8px;color:${custoMisto?'#60a5fa':'var(--yellow)'};font-size:12px;text-align:right;"
                     title="${custoMisto ? 'Os pedidos deste produto têm custos diferentes entre si — digite um valor pra sobrescrever todos com o mesmo custo' : 'Custo unitário — aplica a todos os '+p.n+' pedidos deste produto'}">
                 </td>
                 <td style="padding:10px 12px;text-align:right;color:#8b5cf6;">${p.liq>0?R$(p.liq):'—'}</td>
@@ -1555,7 +1555,7 @@ Router.register('vendas', async (params, el) => {
       return `<div class="card" style="padding:0;overflow:hidden;">
         <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
           <div>
-            <span style="font-size:14px;font-weight:700;color:#f59e0b;">⚠️ Produtos sem custo</span>
+            <span style="font-size:14px;font-weight:700;color:var(--yellow);">⚠️ Produtos sem custo</span>
             <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${semCusto.length} produto${semCusto.length!==1?'s':''} · ${semCusto.reduce((s,g)=>s+g.ids.length,0)} pedidos sem custo preenchido</span>
           </div>
           <span style="font-size:11px;color:var(--text-muted);">Digite o custo e pressione Enter para aplicar a todos os pedidos daquele produto</span>
@@ -1568,7 +1568,7 @@ Router.register('vendas', async (params, el) => {
                 <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;">UNID.</th>
                 <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;">PEDIDOS</th>
                 <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;">FATURADO</th>
-                <th style="padding:10px 12px;text-align:right;color:#f59e0b;font-weight:600;border-left:1px solid var(--border);">💰 CUSTO UNIT.</th>
+                <th style="padding:10px 12px;text-align:right;color:var(--yellow);font-weight:600;border-left:1px solid var(--border);">💰 CUSTO UNIT.</th>
               </tr>
             </thead>
             <tbody>
@@ -1588,7 +1588,7 @@ Router.register('vendas', async (params, el) => {
                     data-ids="${g.ids.join(',')}"
                     data-key="${encodeURIComponent(g.key)}"
                     class="inp-custo-prod inp-sem-custo"
-                    style="width:100px;background:var(--bg-input);border:1px solid rgba(245,158,11,0.5);border-radius:6px;padding:5px 8px;color:#f59e0b;font-size:12px;text-align:right;"
+                    style="width:100px;background:var(--bg-input);border:1px solid rgba(245,158,11,0.5);border-radius:6px;padding:5px 8px;color:var(--yellow);font-size:12px;text-align:right;"
                     title="Aplica a ${g.ids.length} pedido${g.ids.length!==1?'s':''} deste produto">
                 </td>
               </tr>`).join('')}
@@ -1771,7 +1771,7 @@ Router.register('vendas', async (params, el) => {
         <td style="padding:12px 16px;color:var(--text-primary);font-weight:700;">📊 TOTAL</td>
         <td style="padding:12px 12px;text-align:right;color:var(--text-primary);font-weight:700;">${totalVisitas.toLocaleString('pt-BR')}</td>
         <td style="padding:12px 12px;text-align:right;color:var(--text-primary);font-weight:700;">${totalVendas}</td>
-        <td style="padding:12px 12px;text-align:right;color:#34d399;font-weight:700;">${R$(totalFat)}</td>
+        <td style="padding:12px 12px;text-align:right;color:var(--green);font-weight:700;">${R$(totalFat)}</td>
         <td style="padding:12px 12px;text-align:right;color:var(--text-primary);font-weight:700;">${R$(totalVendas > 0 ? totalFat / totalVendas : 0)}</td>
       </tr>
     `;
@@ -1786,7 +1786,7 @@ Router.register('vendas', async (params, el) => {
     el.innerHTML = `
       <div class="kpi-card"><div class="kpi-label">💰 Faturamento Bruto</div><div class="kpi-value" style="color:#60a5fa;">${R$(t.fat)}</div><div class="kpi-sub">${lista.length} pedidos</div></div>
       ${t.liq!=null?`<div class="kpi-card"><div class="kpi-label">🏦 Líquido Marketplace</div><div class="kpi-value" style="color:#a78bfa;">${R$(t.liq)}</div><div class="kpi-sub">${t.fat>0?pct(t.liq/t.fat*100):''} do fat.</div></div>`:''}
-      <div class="kpi-card"><div class="kpi-label">📦 Custo Produto</div><div class="kpi-value" style="color:#f87171;">${R$(t.custo)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">📦 Custo Produto</div><div class="kpi-value" style="color:var(--red);">${R$(t.custo)}</div></div>
       <div class="kpi-card"><div class="kpi-label">➕ Outros Custos</div><div class="kpi-value" style="color:#f97316;">${R$(t.out)}</div></div>
       <div class="kpi-card"><div class="kpi-label">✅ Lucro Bruto</div><div class="kpi-value" style="color:${corMargem(t.margem)};">${R$(t.lucro)}</div><div class="kpi-sub">Margem: ${pct(t.margem)}</div></div>
     `;
@@ -1907,7 +1907,7 @@ Router.register('vendas', async (params, el) => {
             <div style="font-size:10px;color:var(--text-muted);margin-top:2px;display:flex;gap:6px;align-items:center;">
               <span style="color:${cor};font-weight:600;">${p.plataforma}</span>
               <span>${p.id}</span>
-              ${isCancelled ? '<span style="background:rgba(239,68,68,0.15);color:#ef4444;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;">● Cancelado</span>' : ''}
+              ${isCancelled ? '<span style="background:rgba(239,68,68,0.15);color:var(--red);padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;">● Cancelado</span>' : ''}
               ${taxasAuto && !isCancelled ? '<span style="background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 5px;border-radius:8px;font-size:9px;">taxas auto</span>' : ''}
             </div>
           </div>
@@ -2048,7 +2048,7 @@ Router.register('vendas', async (params, el) => {
           </div>`).join('')}
         <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
           <span style="font-size:12px;color:var(--text-secondary);">Margem s/ receita</span>
-          <span style="font-size:18px;font-weight:800;color:${corMargem(l.margem)};">${pct(l.margem)}</span>
+          <span style="font-size:18px;font-weight:700;color:${corMargem(l.margem)};">${pct(l.margem)}</span>
         </div>
       </div>
     </div>`;
@@ -2119,7 +2119,7 @@ Router.register('vendas', async (params, el) => {
     const partes = [];
     if (fora) partes.push(`<span title="Estão fora da seleção de contas (filtro 🏬). Limpe a seleção para ver todas.">⚠️ ${fora} conta(s)${plat} fora da seleção</span>`);
     if (carregando.length) partes.push(`<span title="${carregando.map(contaNome).join(', ').replace(/"/g, '&quot;')}">⏳ ${carregando.length} conta(s)${plat} ainda carregando o histórico</span>`);
-    return partes.length ? ` &nbsp;<span style="font-size:11px;color:#d97706;">${partes.join(' · ')}</span>` : '';
+    return partes.length ? ` &nbsp;<span style="font-size:11px;color:var(--yellow);">${partes.join(' · ')}</span>` : '';
   }
 
   async function carregarBaseVendas(contasAlvo, dataFrom, dataTo) {
@@ -2676,8 +2676,8 @@ Router.register('vendas', async (params, el) => {
       _backfillCatalogoCusto();
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
       const selo = viaBase.cobertas.size && !contasParaBuscar.length
-        ? `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 7px;border-radius:8px;">⚡ base automática · atualiza sozinha</span>`
-        : `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 7px;border-radius:8px;">💾 salvo</span>`;
+        ? `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">⚡ base automática · atualiza sozinha</span>`
+        : `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">💾 salvo</span>`;
       if (statusEl) statusEl.innerHTML=`${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;${selo}${await avisoContas(dataFrom).catch(() => '')}`;
       renderLista();
       completarImagens();
@@ -2740,22 +2740,22 @@ Router.register('vendas', async (params, el) => {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
     overlay.innerHTML = `
       <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:28px 32px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-        <div style="font-size:18px;font-weight:800;color:#ef4444;margin-bottom:6px;">🗑️ Limpar dados manuais</div>
+        <div style="font-size:18px;font-weight:700;color:var(--red);margin-bottom:6px;">🗑️ Limpar dados manuais</div>
         <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Os seguintes dados serão removidos permanentemente:</div>
         <div style="background:var(--bg-base);border-radius:8px;padding:14px;margin-bottom:20px;font-size:13px;display:flex;flex-direction:column;gap:8px;">
-          <div style="display:flex;justify-content:space-between;"><span>📦 Custos de produto por pedido</span><strong style="color:${nCustos?'#ef4444':'#6b7280'};">${nCustos ? nCustos+' pedidos' : 'vazio'}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>🏷️ Catálogo de custo por produto</span><strong style="color:${nCatalogo?'#ef4444':'#6b7280'};">${nCatalogo ? nCatalogo+' produtos' : 'vazio'}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>➕ Linhas extras de custo</span><strong style="color:${nLinhas?'#ef4444':'#6b7280'};">${nLinhas ? nLinhas+' linhas' : 'vazio'}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>💰 Dados manuais do Financeiro</span><strong style="color:${temFin?'#ef4444':'#6b7280'};">${temFin?'sim':'vazio'}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>📊 Entradas manuais do DRE</span><strong style="color:${temDre?'#ef4444':'#6b7280'};">${temDre?'sim':'vazio'}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>📈 Dados manuais da Projeção</span><strong style="color:${temProj?'#ef4444':'#6b7280'};">${temProj?'sim':'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>📦 Custos de produto por pedido</span><strong style="color:${nCustos?'var(--red)':'var(--text-muted)'};">${nCustos ? nCustos+' pedidos' : 'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>🏷️ Catálogo de custo por produto</span><strong style="color:${nCatalogo?'var(--red)':'var(--text-muted)'};">${nCatalogo ? nCatalogo+' produtos' : 'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>➕ Linhas extras de custo</span><strong style="color:${nLinhas?'var(--red)':'var(--text-muted)'};">${nLinhas ? nLinhas+' linhas' : 'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>💰 Dados manuais do Financeiro</span><strong style="color:${temFin?'var(--red)':'var(--text-muted)'};">${temFin?'sim':'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>📊 Entradas manuais do DRE</span><strong style="color:${temDre?'var(--red)':'var(--text-muted)'};">${temDre?'sim':'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>📈 Dados manuais da Projeção</span><strong style="color:${temProj?'var(--red)':'var(--text-muted)'};">${temProj?'sim':'vazio'}</strong></div>
         </div>
-        <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:12px;color:#10b981;">
+        <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:12px;color:var(--green);">
           ✅ Mantidos: vínculos de contas, API key, alíquotas, apelidos, cache da API
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end;">
           <button id="btn-cancelar-limpeza" style="padding:9px 20px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-hover);color:var(--text-primary);font-weight:600;cursor:pointer;">Cancelar</button>
-          <button id="btn-confirmar-limpeza" style="padding:9px 20px;border-radius:8px;border:none;background:#ef4444;color:white;font-weight:700;cursor:pointer;">🗑️ Confirmar limpeza</button>
+          <button id="btn-confirmar-limpeza" style="padding:9px 20px;border-radius:8px;border:none;background:var(--red);color:white;font-weight:700;cursor:pointer;">Confirmar limpeza</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -2811,7 +2811,7 @@ Router.register('vendas', async (params, el) => {
           <span style="flex:1;font-size:13px;color:var(--text-primary);">${l.nome}</span>
           <span style="font-size:12px;color:var(--text-secondary);">${l.tipo==='pct'?l.valor+'%':'R$ '+parseFloat(l.valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
           <span style="font-size:10px;color:var(--text-muted);background:var(--border);padding:1px 6px;border-radius:8px;">${l.tipo==='pct'?'% pedido':'fixo'}</span>
-          <button onclick="window.removerLinhaExtra('${l.id}')" style="background:rgba(239,68,68,0.15);border:none;color:#ef4444;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:12px;">✕</button>
+          <button onclick="window.removerLinhaExtra('${l.id}')" style="background:rgba(239,68,68,0.15);border:none;color:var(--red);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:12px;">✕</button>
         </div>`).join('');
   }
 
@@ -2820,7 +2820,7 @@ Router.register('vendas', async (params, el) => {
     <!-- Cabeçalho + Filtros -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
       <div>
-        <div class="section-title" style="font-size:20px;">🛒 Vendas</div>
+        <div class="section-title" style="font-size:20px;">Vendas</div>
         <div id="vendas-status" style="font-size:12px;color:var(--text-muted);margin-top:4px;">Carregando...</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -2851,16 +2851,16 @@ Router.register('vendas', async (params, el) => {
           <option value="Magalu">🔵 Magalu</option>
           <option value="Shein">⬛ Shein</option>
         </select>
-        <button id="btn-buscar" class="btn-primary" style="padding:8px 16px;">🔄 Atualizar</button>
+        <button id="btn-buscar" class="btn-primary" style="padding:8px 16px;">Atualizar</button>
       </div>
     </div>
 
     <!-- Abas (no portal cada aba é uma página do menu, e a barra some) -->
     <div id="vendas-abas" style="display:flex;gap:8px;margin-bottom:20px;">
-      <button id="tab-dashboard" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:#6366f1;color:var(--text-primary);">📊 Dashboard</button>
-      <button id="tab-pedidos"   style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">📋 Pedidos</button>
-      <button id="tab-oportunidades" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">🎯 Oportunidades</button>
-      <button id="tab-semanal" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">📅 Curva ABC Semanal</button>
+      <button id="tab-dashboard" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:var(--accent);color:var(--text-primary);">Dashboard</button>
+      <button id="tab-pedidos"   style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">Pedidos</button>
+      <button id="tab-oportunidades" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">Oportunidades</button>
+      <button id="tab-semanal" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">Curva ABC Semanal</button>
     </div>
 
     <!-- Aba Dashboard -->
@@ -2880,7 +2880,7 @@ Router.register('vendas', async (params, el) => {
 
       <details id="vendas-config-custo" style="margin-bottom:16px;">
         <summary style="cursor:pointer;padding:10px 16px;background:var(--bg-card-hover);border-radius:8px;font-size:13px;color:var(--text-secondary);font-weight:600;list-style:none;display:flex;align-items:center;gap:8px;">
-          ⚙️ Configurações de Custo
+          Configurações de Custo
           <span style="font-size:11px;color:var(--text-muted);font-weight:400;">Linhas extras e aplicação em massa</span>
         </summary>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
@@ -2905,17 +2905,17 @@ Router.register('vendas', async (params, el) => {
               <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Imposto (%)</div><input id="inp-global-imposto" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="0" style="width:100%;box-sizing:border-box;"></div>
               <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Outros (R$)</div><input id="inp-global-outros" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
             </div>
-            <button onclick="aplicarCustoGlobal()" class="btn-primary" style="padding:7px 16px;">⚡ Aplicar a todos</button>
+            <button onclick="aplicarCustoGlobal()" class="btn-primary" style="padding:7px 16px;">Aplicar a todos</button>
           </div>
         </div>
 
         <!-- Zona de limpeza -->
         <div style="margin-top:12px;padding:14px 18px;background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.2);border-radius:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
           <div>
-            <div style="font-size:13px;font-weight:700;color:#ef4444;">🗑️ Limpar todos os dados manuais</div>
+            <div style="font-size:13px;font-weight:700;color:var(--red);">🗑️ Limpar todos os dados manuais</div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Remove custos de produto, impostos manuais, linhas extras, armazenamento, despesas e entradas do DRE. Mantém vínculos, API key, alíquotas e cache da API.</div>
           </div>
-          <button onclick="confirmarLimpezaManuais()" style="background:#ef4444;color:white;border:none;border-radius:8px;padding:8px 16px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;">🗑️ Limpar dados manuais</button>
+          <button onclick="confirmarLimpezaManuais()" style="background:var(--red);color:white;border:none;border-radius:8px;padding:8px 16px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;">Limpar dados manuais</button>
         </div>
       </details>
 
@@ -2976,7 +2976,7 @@ Router.register('vendas', async (params, el) => {
       catalogoCusto = JSON.parse(localStorage.getItem(STORAGE_CATALOGO)||'{}');
       _backfillCatalogoCusto();
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
-      if (statusEl) statusEl.innerHTML = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 7px;border-radius:8px;">📦 cache ${fmtAgo(at)}</span>`;
+      if (statusEl) statusEl.innerHTML = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;">📦 cache ${fmtAgo(at)}</span>`;
       renderLista();
     }
     // A base é leitura rápida (sem API pedido a pedido): já carrega ao abrir. Contas

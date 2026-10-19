@@ -56,7 +56,7 @@ async function _renderPortalAdminLista() {
       ${configs.map(cfg => `
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
           <div style="display:flex;align-items:center;gap:14px;">
-            <div style="width:40px;height:40px;border-radius:50%;background:${cfg.ativo!==false?'#f0fdf4':'#f8fafc'};border:2px solid ${cfg.ativo!==false?'#16a34a':'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:${cfg.ativo!==false?'#16a34a':'var(--text-secondary)'};">
+            <div style="width:40px;height:40px;border-radius:50%;background:${cfg.ativo!==false?'var(--green-bg)':'#f8fafc'};border:2px solid ${cfg.ativo!==false?'var(--green)':'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:${cfg.ativo!==false?'var(--green)':'var(--text-secondary)'};">
               ${(cfg.clienteNome||'?').slice(0,2).toUpperCase()}
             </div>
             <div>
@@ -71,11 +71,11 @@ async function _renderPortalAdminLista() {
               ${cfg.ativo!==false ? '⏸ Suspender' : '▶ Ativar'}
             </button>
             <button onclick="window._portalAdminEditar('${cfg.id}')"
-              style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid #6366f1;background:transparent;color:#6366f1;font-weight:600;">
-              ✏️ Editar
+              style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:600;">
+              Editar
             </button>
             <button onclick="window._portalAdminRemover('${cfg.id}')"
-              style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid #fecaca;background:transparent;color:#dc2626;">
+              style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid #fecaca;background:transparent;color:var(--red);">
               🗑
             </button>
           </div>
@@ -177,7 +177,7 @@ function _portalModalAtualizarContasInterno(clienteId, selecionadas) {
     const ico = platIco[c.marketplace] || '🏪';
     const nome = nicks[c.external_id] || c.nickname || c.external_id;
     return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
-      <input type="checkbox" value="${c.external_id}" ${checked} style="width:14px;height:14px;accent-color:#6366f1;">
+      <input type="checkbox" value="${c.external_id}" ${checked} style="width:14px;height:14px;accent-color:var(--accent);">
       <span>${ico} ${nome} <span style="color:var(--text-secondary);font-size:11px;">(ID: ${c.external_id})</span></span>
     </label>`;
   }).join('');

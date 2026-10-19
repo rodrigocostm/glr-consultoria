@@ -66,7 +66,7 @@ Router.register('clientes', (params, el) => {
       return `<tr onclick="Router.navigate('cliente-perfil', {id: ${c.id}})">
         <td>
           <div style="display:flex;align-items:center;gap:10px;">
-            <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:white;flex-shrink:0;">${c.nome.charAt(0)}</div>
+            <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:white;flex-shrink:0;">${c.nome.charAt(0)}</div>
             <div>
               <div style="font-size:14px;font-weight:600;color:var(--text-primary);">${c.nome}</div>
               <div style="font-size:11.5px;color:var(--text-muted);">${c.categoria || ''}</div>
@@ -219,7 +219,7 @@ function setupClienteHandlers() {
 
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
-        ${c ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);margin-right:auto;" onclick="removerCliente(${c.id})">🗑️ Remover</button>` : ''}
+        ${c ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);margin-right:auto;" onclick="removerCliente(${c.id})">Remover</button>` : ''}
         <button class="btn btn-primary" onclick="salvarCliente(${c?.id || 'null'})">
           ${c ? 'Salvar alterações' : 'Cadastrar Cliente'}
         </button>
@@ -357,8 +357,8 @@ Router.register('cliente-perfil', (params, el) => {
           const platColor = { meli:'#f59e0b', ml:'#f59e0b', mercadolivre:'#f59e0b', shopee:'#f97316' };
           return `<div class="card mb-16" id="card-contas-mp">
             <div class="section-header" style="margin-bottom:12px;">
-              <div class="section-title">🔌 Contas Marketplace</div>
-              <button onclick="window.carregarDadosContas(${c.id})" class="btn btn-secondary btn-sm" id="btn-carregar-contas">📊 Carregar dados</button>
+              <div class="section-title">Contas Marketplace</div>
+              <button onclick="window.carregarDadosContas(${c.id})" class="btn btn-secondary btn-sm" id="btn-carregar-contas">Carregar dados</button>
             </div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;" id="contas-mp-grid">
               ${contas.map(ct => {
@@ -373,7 +373,7 @@ Router.register('cliente-perfil', (params, el) => {
                     <span style="font-size:20px;">${icon}</span>
                     <div style="flex:1;min-width:0;">
                       <div style="font-size:13px;font-weight:700;color:${cor};">${nome}</div>
-                      <div style="font-size:10px;color:#6b7280;">${extId}</div>
+                      <div style="font-size:10px;color:var(--text-muted);">${extId}</div>
                     </div>
                   </div>
 
@@ -384,11 +384,11 @@ Router.register('cliente-perfil', (params, el) => {
                       value="${aliq}"
                       id="aliq-${extId}"
                       onchange="window.salvarAliquota('${extId}', this.value)"
-                      style="flex:1;background:#1a2744;border:1px solid rgba(251,191,36,0.3);border-radius:5px;padding:4px 8px;color:#fbbf24;font-size:13px;font-weight:700;text-align:right;width:100%;box-sizing:border-box;">
+                      style="flex:1;background:var(--bg-subtle);border:1px solid rgba(251,191,36,0.3);border-radius:5px;padding:4px 8px;color:#fbbf24;font-size:13px;font-weight:700;text-align:right;width:100%;box-sizing:border-box;">
                     <span style="font-size:12px;color:#fbbf24;font-weight:600;">%</span>
                   </div>
 
-                  <div id="dados-${extId}" style="font-size:12px;color:#6b7280;">Clique em "Carregar dados"</div>
+                  <div id="dados-${extId}" style="font-size:12px;color:var(--text-muted);">Clique em "Carregar dados"</div>
                 </div>`;
               }).join('')}
             </div>
@@ -397,7 +397,7 @@ Router.register('cliente-perfil', (params, el) => {
 
         ${c.historico?.length ? `<div class="card mb-16">
           <div class="section-header">
-            <div class="section-title">📈 Evolução de Faturamento</div>
+            <div class="section-title">Evolução de Faturamento</div>
           </div>
           <div class="chart-wrapper-lg">
             <canvas id="chart-cliente-evolucao"></canvas>
@@ -478,10 +478,10 @@ Router.register('cliente-perfil', (params, el) => {
 
     <div class="card mb-16" id="perfil-header">
       <div style="display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;">
-        <div style="width:60px;height:60px;border-radius:var(--radius);background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;flex-shrink:0;">${ci.nome.charAt(0)}</div>
+        <div style="width:60px;height:60px;border-radius:var(--radius);background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:white;flex-shrink:0;">${ci.nome.charAt(0)}</div>
         <div style="flex:1;min-width:200px;">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
-            <h2 style="font-size:20px;font-weight:800;">${ci.nome}</h2>
+            <h2 style="font-size:20px;font-weight:700;">${ci.nome}</h2>
             <span class="badge ${GLR.statusColor[ci.status] || 'status-ativo'}" id="perfil-status-badge">${GLR.statusLabel[ci.status] || ci.status}</span>
             ${ci.valorPorVenda ? `<span style="font-size:12px;padding:3px 10px;border-radius:99px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.2);color:var(--green);font-weight:600;">R$ ${parseFloat(ci.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2})} / venda</span>` : ''}
           </div>
@@ -494,7 +494,7 @@ Router.register('cliente-perfil', (params, el) => {
         </div>
         <div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">
           <button class="btn btn-secondary btn-sm" onclick="openModalNovaAcao(${clienteId})">+ Ação</button>
-          <button class="btn btn-secondary btn-sm" onclick="openModalNovoCliente(${clienteId})">✏️ Editar</button>
+          <button class="btn btn-secondary btn-sm" onclick="openModalNovoCliente(${clienteId})">Editar</button>
           <button class="btn btn-primary btn-sm" onclick="openModalNovaTarefa(${clienteId})">+ Tarefa</button>
         </div>
       </div>
@@ -550,7 +550,7 @@ Router.register('cliente-perfil', (params, el) => {
       const mp    = ct.marketplace || ct.plataforma || '';
       const elId  = `dados-${extId}`;
       const elDiv = document.getElementById(elId);
-      if (elDiv) elDiv.innerHTML = `<span style="color:#6b7280;">⏳ Buscando...</span>`;
+      if (elDiv) elDiv.innerHTML = `<span style="color:var(--text-muted);">⏳ Buscando...</span>`;
 
       try {
         let fat = 0, pedidos = 0, ads = 0;
@@ -583,26 +583,26 @@ Router.register('cliente-perfil', (params, el) => {
         if (elDiv) elDiv.innerHTML = `
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div>
-              <div style="font-size:10px;color:#6b7280;margin-bottom:2px;">Faturamento (mês)</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Faturamento (mês)</div>
               <div style="font-size:14px;font-weight:700;color:#60a5fa;">${R$(fat)}</div>
             </div>
             <div>
-              <div style="font-size:10px;color:#6b7280;margin-bottom:2px;">Pedidos</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Pedidos</div>
               <div style="font-size:14px;font-weight:700;color:#e5e7eb;">${pedidos}</div>
             </div>
             <div>
-              <div style="font-size:10px;color:#6b7280;margin-bottom:2px;">Projeção mês</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Projeção mês</div>
               <div style="font-size:13px;font-weight:600;color:#a78bfa;">${R$(projecao)}</div>
             </div>
             ${adsPct ? `<div>
-              <div style="font-size:10px;color:#6b7280;margin-bottom:2px;">ADS%</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">ADS%</div>
               <div style="font-size:13px;font-weight:600;color:#fbbf24;">${adsPct}%</div>
             </div>` : ''}
           </div>
           <div style="margin-top:8px;font-size:10px;color:#4b5563;">Base: 01/${pad(hoje.getMonth()+1)} até ${pad(ontem.getDate())}/${pad(ontem.getMonth()+1)}</div>`;
 
       } catch(e) {
-        if (elDiv) elDiv.innerHTML = `<span style="color:#ef4444;font-size:12px;">Erro: ${e.message}</span>`;
+        if (elDiv) elDiv.innerHTML = `<span style="color:var(--red);font-size:12px;">Erro: ${e.message}</span>`;
       }
     }
 
@@ -630,7 +630,7 @@ function scoreLabel(s) {
 function indicadorCard(label, value, colorClass, sub) {
   return `<div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;">
     <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${label}</div>
-    <div style="font-size:20px;font-weight:800;margin-bottom:4px;" class="${colorClass}">${value}</div>
+    <div style="font-size:20px;font-weight:700;margin-bottom:4px;" class="${colorClass}">${value}</div>
     <div style="font-size:11.5px;color:var(--text-muted);">${sub}</div>
   </div>`;
 }
@@ -682,7 +682,7 @@ function openModalNovaAcao(clienteId, acaoId) {
       </div>
     </div>
     <div style="display:flex;gap:10px;justify-content:${acaoExistente ? 'space-between' : 'flex-end'};">
-      ${acaoExistente ? `<button class="btn btn-ghost" style="color:#ef4444;" onclick="(function(){
+      ${acaoExistente ? `<button class="btn btn-ghost" style="color:var(--red);" onclick="(function(){
         if(!confirm('Excluir esta ação?'))return;
         GLR.acoes = GLR.acoes.filter(a => a.id !== ${acaoExistente.id});
         localStorage.setItem('glr_acoes',JSON.stringify(GLR.acoes));

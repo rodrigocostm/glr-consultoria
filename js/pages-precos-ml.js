@@ -272,7 +272,7 @@ Router.register('precos-ml', (params, el) => {
   };
 
   el.innerHTML = `<div class="page">
-    <div style="font-size:22px;font-weight:800;color:var(--text-primary);margin-bottom:4px">🏷️ Monitor de preços ML</div>
+    <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;color:var(--text-primary);margin-bottom:4px">Monitor de preços ML</div>
     <div class="pml-mut" style="margin-bottom:16px;max-width:920px">Os anúncios que mudaram de preço na conta, e o efeito disso: margem antes × agora (subiu ou caiu) e vendas por dia antes × depois.</div>
     <div id="pml-root"></div>
   </div>
