@@ -28,7 +28,10 @@ Router.register('vendometro', (params, el) => {
     carregando: false, erro: null, atualizadoEm: 0, valorMostrado: 0, todos: false, grafico: null,
     ...(() => { try { const v = JSON.parse(localStorage.getItem('glr_vm_sel') || '{}'); return { cliente: v.cliente || '', conta: v.conta || '' }; } catch (e) { return { cliente: '', conta: '' }; } })(),
     contasPortal: null,
+    // Modo foto: esconde nomes e números sensíveis para prints (Instagram)
+    foto: (() => { try { return { on: false, nomes: true, linha: true, valores: false, painel: false, ...JSON.parse(localStorage.getItem('glr_vm_foto') || '{}') }; } catch (e) { return { on: false, nomes: true, linha: true, valores: false, painel: false }; } })(),
   };
+  const oculta = k => st.foto.on && st.foto[k];
   // Portal do cliente: só as contas dele (o banco e o /api/mcp já garantem), sem escolher cliente
   const cfgPortal = window._portalConfig || null;
   if (cfgPortal) { st.cliente = String(cfgPortal.clienteId); if (st.conta && !st.conta.includes(':')) st.conta = ''; }
@@ -189,14 +192,16 @@ Router.register('vendometro', (params, el) => {
       met('Visitas', visTxt, st.mkt !== 'todos' && st.mkt !== 'ml' ? 'só Mercado Livre informa' : 'Mercado Livre') + met('Conversão', conv == null ? '—' : conv.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%', 'pedidos ML ÷ visitas'));
 
     const lista = st.todos ? T.clientes : T.clientes.slice(0, 10);
+    const nomeVis = (c, i) => oculta('nomes') ? `${st.cliente ? 'Conta' : 'Cliente'} ${i + 1}` : c.nome;
+    document.getElementById('vm-root')?.classList.toggle('vm-sem-painel', oculta('painel'));
     setTxt('vm-ranking', lista.map((c, i) => `
       <div class="vm-cli">
         <span class="vm-pos ${i < 3 && c.fat > 0 ? 'p' + (i + 1) : ''}">${i + 1}</span>
         <div class="vm-cli-n">
-          <div class="vm-cli-t"><b title="${h(c.nome)}">${h(c.nome)}</b>${[...c.mkts].map(m => `<span class="vm-tag" style="--c:${MKT[m].cor}" title="${MKT[m].nome}">${MKT[m].sigla}</span>`).join('')}</div>
-          <div class="vm-cli-s"><span>${N(c.ped)} ped.</span><span>ADS ${R$(c.ads, 0)}</span><span>${c.temML ? (temVisitas ? N(c.vis) : '…') : '—'} visitas</span></div>
+          <div class="vm-cli-t"><b title="${h(nomeVis(c, i))}">${h(nomeVis(c, i))}</b>${[...c.mkts].map(m => `<span class="vm-tag" style="--c:${MKT[m].cor}" title="${MKT[m].nome}">${MKT[m].sigla}</span>`).join('')}</div>
+          ${oculta('linha') ? '' : `<div class="vm-cli-s"><span>${N(c.ped)} ped.</span><span>ADS ${R$(c.ads, 0)}</span><span>${c.temML ? (temVisitas ? N(c.vis) : '…') : '—'} visitas</span></div>`}
         </div>
-        <div class="vm-cli-v">${R$(c.fat)}</div>
+        <div class="vm-cli-v">${oculta('valores') ? '<span class="vm-oculto">R$ ••••</span>' : R$(c.fat)}</div>
       </div>`).join('') || `<div class="vm-vazio">Nenhuma conta ${st.cliente ? 'deste cliente ' : 'vinculada '}nesta plataforma.</div>`);
     setTxt('vm-ver-todos', T.clientes.length > 10 ? `<button onclick="window._vmTodos()">${st.todos ? 'Mostrar top 10' : `Ver todos os ${T.clientes.length} ${st.cliente ? 'contas' : 'clientes'}`}</button>` : '');
 
@@ -267,14 +272,30 @@ Router.register('vendometro', (params, el) => {
     const doCli = contas.filter(([, ct]) => String(ct.cli.id) === st.cliente);
     if (st.conta && !doCli.some(([k]) => k === st.conta)) st.conta = '';
     const sc = document.getElementById('vm-sel-cliente'), sk = document.getElementById('vm-sel-conta');
-    if (sc) sc.hidden = !!cfgPortal;
+    if (sc) sc.hidden = !!cfgPortal || oculta('nomes');
     if (sc && !cfgPortal) sc.innerHTML = `<option value="">Todos os clientes</option>` + [...clientes].sort((a, b) => String(a[1]).localeCompare(String(b[1]))).map(([id, n]) => `<option value="${h(id)}" ${id === st.cliente ? 'selected' : ''}>${h(n)}</option>`).join('');
-    if (sk) { sk.hidden = doCli.length < 2; sk.innerHTML = `<option value="">Todas as contas</option>` + doCli.map(([k, ct]) => `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${MKT[ct.mkt].sigla} · ${h(ct.nome)}</option>`).join(''); }
+    if (sk) { sk.hidden = doCli.length < 2 || oculta('nomes'); sk.innerHTML = `<option value="">Todas as contas</option>` + doCli.map(([k, ct]) => `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${MKT[ct.mkt].sigla} · ${h(ct.nome)}</option>`).join(''); }
     const nomeCli = clientes.get(st.cliente), conta = doCli.find(([k]) => k === st.conta)?.[1];
-    const t = document.getElementById('vm-hoje'); if (t) t.textContent = `Vendas hoje · ${nomeCli ? nomeCli + (conta ? ` · ${MKT[conta.mkt].sigla} ${conta.nome}` : '') : 'carteira GLR'}`;
+    const t = document.getElementById('vm-hoje'); if (t) t.textContent = `Vendas hoje · ${nomeCli ? (oculta('nomes') ? (conta ? `${MKT[conta.mkt].sigla} · conta selecionada` : 'cliente selecionado') : nomeCli + (conta ? ` · ${MKT[conta.mkt].sigla} ${conta.nome}` : '')) : 'carteira GLR'}`;
     const r = document.getElementById('vm-rank-t'); if (r) r.textContent = st.cliente ? 'Ranking das contas' : 'Ranking de clientes';
   }
   window._vmMkt = v => { st.mkt = v; try { localStorage.setItem('glr_vm_mkt', v); } catch (e) {} document.querySelectorAll('.vm-filtro button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); render(); };
+  // Modo foto
+  function pintarFoto() {
+    const b = document.getElementById('vm-foto-btn'); if (b) b.classList.toggle('on', st.foto.on);
+    const m = document.getElementById('vm-foto-menu'); if (!m) return;
+    const op = (k, t) => `<label class="vm-foto-op ${st.foto.on ? '' : 'off'}"><input type="checkbox" id="vm-foto-${k}" ${st.foto[k] ? 'checked' : ''} ${st.foto.on ? '' : 'disabled'} onchange="window._vmFotoOp('${k}', this.checked)"> ${t}</label>`;
+    m.innerHTML = `<label class="vm-foto-on"><input type="checkbox" id="vm-foto-on" ${st.foto.on ? 'checked' : ''} onchange="window._vmFotoOp('on', this.checked)"> <b>Modo foto</b></label>
+      <div class="vm-foto-dica">Esconde dados para tirar print e postar.</div>
+      ${op('nomes', 'Ocultar nomes das lojas')}${op('linha', 'Ocultar pedidos, ADS e visitas do ranking')}${op('valores', 'Ocultar valor de cada loja')}${op('painel', 'Ocultar painel de métricas principais')}`;
+  }
+  window._vmFotoOp = (k, v) => { st.foto[k] = v; try { localStorage.setItem('glr_vm_foto', JSON.stringify(st.foto)); } catch (e) {} pintarFoto(); render(); };
+  window._vmFotoMenu = ev => {
+    ev?.stopPropagation();
+    const m = document.getElementById('vm-foto-menu'); if (!m) return;
+    m.hidden = !m.hidden; if (!m.hidden) pintarFoto();
+  };
+  if (!window._vmFotoFora) { window._vmFotoFora = true; document.addEventListener('click', ev => { const m = document.getElementById('vm-foto-menu'); if (m && !m.hidden && !ev.target.closest('.vm-foto')) m.hidden = true; }); }
   window._vmTodos = () => { st.todos = !st.todos; render(); };
   window._vmTelaCheia = () => { const e = document.querySelector('.vm'); if (!document.fullscreenElement) e?.requestFullscreen?.(); else document.exitFullscreen?.(); };
 
@@ -289,6 +310,7 @@ Router.register('vendometro', (params, el) => {
           <select class="vm-sel" id="vm-sel-cliente" onchange="window._vmCliente(this.value)"></select>
           <select class="vm-sel" id="vm-sel-conta" onchange="window._vmConta(this.value)" hidden></select>
           <div class="vm-filtro">${filtro.map(([v, t]) => `<button data-v="${v}" class="${st.mkt === v ? 'on' : ''}" onclick="window._vmMkt('${v}')">${t}</button>`).join('')}</div>
+          <div class="vm-foto"><button class="vm-cheia ${st.foto.on ? 'on' : ''}" id="vm-foto-btn" title="Modo foto: ocultar nomes e números para print" onclick="window._vmFotoMenu(event)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button><div class="vm-foto-menu" id="vm-foto-menu" hidden></div></div>
           <button class="vm-cheia" title="Tela cheia" onclick="window._vmTelaCheia()">⛶</button>
         </div>
       </div>
@@ -330,6 +352,13 @@ Router.register('vendometro', (params, el) => {
     #vm-total{font-size:84px;font-weight:900;letter-spacing:-.02em;line-height:1}
     .vm-var{position:relative;margin-top:12px;font-size:13px;color:rgba(255,255,255,.75)}
     .vm-up{color:#4ade80}.vm-down{color:#f87171}
+    .vm-foto{position:relative}.vm-cheia{display:inline-grid;place-items:center}.vm-cheia.on{background:#fff;color:#262a7a;border-color:#fff}
+    .vm-foto-menu{position:absolute;right:0;top:38px;z-index:20;width:290px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:12px;display:flex;flex-direction:column;gap:8px;text-align:left}
+    .vm-foto-menu label{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}.vm-foto-menu input{accent-color:var(--accent);width:15px;height:15px}
+    .vm-foto-op.off{opacity:.45;cursor:default}.vm-foto-dica{font-size:11.5px;color:var(--text-muted);margin:-4px 0 4px 23px}
+    .vm-foto-on{padding-bottom:2px}.vm-oculto{color:var(--text-muted);letter-spacing:1px}
+    .vm-grid.vm-sem-painel{grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr)}.vm-grid.vm-sem-painel>.vm-card:first-child{display:none}
+    @media (max-width:1180px){.vm-grid.vm-sem-painel{grid-template-columns:1fr}}
     .vm-grid{display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1.3fr) minmax(320px,1fr);gap:16px;margin-top:18px}
     @media (max-width:1180px){.vm-grid{grid-template-columns:1fr 1fr}.vm-grid>.vm-card:nth-child(2){grid-column:1/-1;order:-1}}
     @media (max-width:1100px){.vm-topo{grid-template-columns:1fr}.vm-acoes,.vm-marca{justify-content:center;flex-wrap:wrap}}
