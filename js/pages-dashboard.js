@@ -337,8 +337,8 @@ Router.register('dashboard', (params, el) => {
   el.innerHTML = `<div class="page dash-v2">
     <div id="dash-aba-conteudo"></div>
     <div style="margin:40px 0 20px;padding-top:20px;border-top:1px solid var(--border);">
-      <div class="section-title" style="font-size:18px;">🚦 Análises da Carteira</div>
-      <div class="section-subtitle">Painel Executivo, Produtos em Queda, Plano de Ação e Checklist Diário</div>
+      <div class="dx-h1" style="font-size:18px">Análises da carteira</div>
+      <div class="section-subtitle">Painel executivo, produtos em queda, plano de ação e checklist diário</div>
     </div>
     <div id="dash-analises-conteudo"></div>
   </div>`;
@@ -419,293 +419,273 @@ Router.register('dashboard', (params, el) => {
     ? `Atualizado em ${new Date(analyticsCache.atualizadoEm).toLocaleString('pt-BR')}`
     : '⏳ Carregando automaticamente…';
 
+  // Linha de status compacta (indicadores secundários)
+  const stat = (rot, val, sub, tom) => `<div class="dx-stat"><span class="dx-stat-rot">${rot}</span><b class="${tom || ''}">${val}</b>${sub ? `<span class="dx-stat-sub">${sub}</span>` : ''}</div>`;
+  const vazioTxt = t => `<div class="dx-vazio">${t}</div>`;
+
   contAba.innerHTML = `
-    <div style="margin-bottom:20px;padding:16px 20px;background:linear-gradient(135deg,rgba(99,102,241,0.15),rgba(139,92,246,0.1));border:1px solid rgba(99,102,241,0.2);border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-      <div style="display:flex;align-items:center;gap:12px;">
-        <span style="font-size:24px;">📊</span>
-        <div>
-          <div style="font-size:16px;font-weight:700;">Dashboard — Visão Geral da Carteira</div>
-          <div style="font-size:12px;color:var(--text-secondary);" id="dash-status-txt">${atualizadoTxt}</div>
-        </div>
+    <div class="dx-topo">
+      <div>
+        <div class="dx-h1">Visão geral da carteira</div>
+        <div class="dx-sub" id="dash-status-txt">${atualizadoTxt}</div>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none;" title="Atualiza sozinho quando o servidor sincroniza novas vendas (a cada 15 min) e a cada minuto enquanto o Dashboard está aberto">
+      <div class="dx-acoes">
+        <label class="dx-toggle" title="Atualiza sozinho quando o servidor sincroniza novas vendas (a cada 15 min) e a cada minuto enquanto o Dashboard está aberto">
           <input type="checkbox" id="dash-auto-refresh" ${window._dashAutoDesligado ? '' : 'checked'} onchange="window._dashToggleAutoRefresh(this.checked)">
-          Atualização automática
+          <span>Atualização automática</span>
         </label>
-        <button class="btn btn-primary" id="btn-dash-atualizar" style="padding:8px 16px;">🔄 Atualizar dados</button>
+        <button class="btn btn-primary" id="btn-dash-atualizar">${ICONE_DX.refresh} Atualizar dados</button>
       </div>
     </div>
 
-    <!-- KPIs -->
-    <div class="kpi-grid">
-      ${kpiCard('Clientes na Carteira', clientesTodos.length, `${comAPI} com dados reais`, comAPI > 0, 'rgba(99,102,241,0.15)', '👥', '#6366f1')}
-      ${kpiCard('Meta Total', metaTotal>0?GLR.formatCurrency(metaTotal):'—', 'soma das metas', metaTotal>0, 'rgba(245,158,11,0.12)', '🎯', '#f59e0b')}
-      <div class="kpi-flash" data-kpi="fatAtual" data-kpi-val="${faturamentoAtual}">${kpiCard('Faturamento Atual', faturamentoAtual > 0 ? GLR.formatCurrency(faturamentoAtual) : '—', faturamentoAtual > 0 ? 'real, mês até agora' : 'carregando automaticamente…', faturamentoAtual > 0, 'rgba(99,102,241,0.15)', '💵', '#6366f1')}</div>
-      ${kpiCard('Projeção de Faturamento', GLR.formatCurrency(faturamentoTotal), crescMedioAPI!=null?`${crescMedioAPI>=0?'+':''}${crescMedioAPI.toFixed(1)}% vs mês ant.`:(semAPI>0?'vincule contas p/ ver dados reais':''), true, 'rgba(99,102,241,0.12)', '🏆', '#6366f1', comAPI>0)}
-      <div class="kpi-flash" data-kpi="receitaGLR" data-kpi-val="${receitaGLR}">${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', receitaGLR > 0 ? 'real, mês até agora' : 'carregando automaticamente…', receitaGLR > 0, 'rgba(16,185,129,0.15)', '💰', '#10b981')}</div>
-      ${kpiCard('Projeção Receita GLR', projecaoReceitaGLR > 0 ? GLR.formatCurrency(projecaoReceitaGLR) : '—', projecaoReceitaGLR > 0 ? 'estimativa fim do mês' : 'carregando automaticamente…', projecaoReceitaGLR > 0, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
-      ${kpiCard('Ticket Médio Cliente GLR', ticketMedioGLR > 0 ? GLR.formatCurrency(ticketMedioGLR) : '—', ticketMedioGLR > 0 ? `projeção ÷ ${clientes.length} clientes` : 'carregando automaticamente…', ticketMedioGLR > 0, 'rgba(16,185,129,0.12)', '🎟️', '#10b981')}
-      <div class="kpi-flash" data-kpi="qtdPedidos" data-kpi-val="${qtdPedidosAtual}">${kpiCard('Quantidade de Pedidos', qtdPedidosAtual > 0 ? qtdPedidosAtual.toLocaleString('pt-BR') : '—', qtdPedidosAtual > 0 ? 'real, mês até agora' : 'carregando automaticamente…', qtdPedidosAtual > 0, 'rgba(6,182,212,0.15)', '📦', '#06b6d4')}</div>
-      ${kpiCard('Em Crescimento', crescimento, `${clientes.length ? Math.round(crescimento/clientes.length*100) : 0}% da carteira`, true, 'rgba(16,185,129,0.12)', '📈', '#10b981')}
-      ${kpiCard('Em Risco / Queda', risco+queda, `${risco} em risco · ${queda} em queda`, (risco+queda)===0, 'rgba(239,68,68,0.12)', '⚠️', '#ef4444')}
-      ${kpiCard('Tarefas Pendentes', tarefasPendentes, `${tasksAtras} atrasadas`, tarefasPendentes === 0, 'rgba(245,158,11,0.12)', '✅', '#f59e0b')}
-      ${kpiCard('Reuniões na Semana', reunioesSemana, 'próximos 7 dias', true, 'rgba(6,182,212,0.12)', '📅', '#06b6d4')}
+    <!-- KPIs principais -->
+    <div class="kpi-grid dx-kpis">
+      <div class="kpi-flash" data-kpi="fatAtual" data-kpi-val="${faturamentoAtual}">${kpiCard('Faturamento do mês', faturamentoAtual > 0 ? GLR.formatCurrency(faturamentoAtual) : '—', faturamentoAtual > 0 ? 'real, mês até agora' : 'carregando…', true, '', '💵', '', false, 'neutro')}</div>
+      <div class="kpi-flash" data-kpi="qtdPedidos" data-kpi-val="${qtdPedidosAtual}">${kpiCard('Pedidos', qtdPedidosAtual > 0 ? qtdPedidosAtual.toLocaleString('pt-BR') : '—', qtdPedidosAtual > 0 ? 'real, mês até agora' : 'carregando…', true, '', '📦', '', false, 'neutro')}</div>
+      <div class="kpi-flash" data-kpi="receitaGLR" data-kpi-val="${receitaGLR}">${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', receitaGLR > 0 ? 'comissão real do mês' : 'carregando…', true, '', '💰', '', false, 'neutro')}</div>
+      ${kpiCard('Projeção de faturamento', GLR.formatCurrency(faturamentoTotal), crescMedioAPI != null ? `${crescMedioAPI >= 0 ? '+' : ''}${crescMedioAPI.toFixed(1).replace('.', ',')}% vs mês anterior` : (semAPI > 0 ? 'vincule contas para ver dados reais' : ''), crescMedioAPI == null || crescMedioAPI >= 0, '', '🏆', '', false, crescMedioAPI == null ? 'neutro' : '')}
+      ${kpiCard('Projeção da receita GLR', projecaoReceitaGLR > 0 ? GLR.formatCurrency(projecaoReceitaGLR) : '—', projecaoReceitaGLR > 0 ? 'estimativa para o fim do mês' : 'carregando…', true, '', '📈', '', false, 'neutro')}
+      ${kpiCard('Ticket médio por cliente', ticketMedioGLR > 0 ? GLR.formatCurrency(ticketMedioGLR) : '—', ticketMedioGLR > 0 ? `projeção ÷ ${clientes.length} clientes` : 'carregando…', true, '', '🎟️', '', false, 'neutro')}
     </div>
 
-    <!-- Vendas por dia + Comissão GLR por dia -->
-    <div class="card mb-24">
-      <div class="section-header">
-        <div>
-          <div class="section-title">🛒 Vendas por Dia & Comissão GLR</div>
-          <div class="section-subtitle" id="dash-vd-status">${_dashVendasDiaTxt()}</div>
-        </div>
-        <button class="btn btn-secondary btn-sm" id="btn-dash-vendas-dia">🔄 Atualizar</button>
-      </div>
-      <div class="dvd-kpis" id="dash-vd-kpis"></div>
-      <div class="chart-wrapper" style="height:300px">
-        <canvas id="chart-vendas-dia"></canvas>
-      </div>
+    <!-- Indicadores secundários -->
+    <div class="dx-stats">
+      ${stat('Clientes na carteira', clientesTodos.length, `${comAPI} com dados reais`)}
+      ${stat('Meta total', metaTotal > 0 ? GLR.formatCurrency(metaTotal) : '—', 'soma das metas')}
+      ${stat('Em crescimento', crescimento, `${clientes.length ? Math.round(crescimento / clientes.length * 100) : 0}% da carteira`, crescimento ? 'dx-pos' : '')}
+      ${stat('Em risco ou queda', risco + queda, `${risco} em risco · ${queda} em queda`, risco + queda ? 'dx-neg' : '')}
+      ${stat('Tarefas pendentes', tarefasPendentes, `${tasksAtras} atrasadas`, tasksAtras ? 'dx-neg' : '')}
+      ${stat('Reuniões na semana', reunioesSemana, 'próximos 7 dias')}
     </div>
 
-    <!-- Concentração por canal -->
-    <div class="card mb-24">
-      <div class="section-header">
-        <div>
-          <div class="section-title">📊 Faturamento & Comissão GLR por Canal</div>
-          <div class="section-subtitle">Concentração — Mercado Livre, Shopee, Amazon etc. · mesmo período do gráfico acima</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
-        <div style="flex:1;min-width:220px;max-width:260px;">
-          <canvas id="chart-canal"></canvas>
-        </div>
-        <div style="flex:2;min-width:260px;" id="dash-canal-legenda"></div>
-      </div>
-    </div>
-
-    <!-- Gráficos principais -->
-    <div class="grid-2 mb-24">
+    <!-- Vendas por dia + canais -->
+    <div class="dx-linha dx-2-1">
       <div class="card">
         <div class="section-header">
           <div>
-            <div class="section-title">Evolução da Carteira</div>
-            <div class="section-subtitle">Faturamento total — últimos meses · dados API</div>
+            <div class="section-title">Vendas por dia e comissão GLR</div>
+            <div class="section-subtitle" id="dash-vd-status">${_dashVendasDiaTxt()}</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btn-dash-vendas-dia">${ICONE_DX.refresh} Atualizar</button>
+        </div>
+        <div class="dvd-kpis" id="dash-vd-kpis"></div>
+        <div class="chart-wrapper" style="height:300px">
+          <canvas id="chart-vendas-dia"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Faturamento por canal</div>
+            <div class="section-subtitle">Concentração no mesmo período</div>
           </div>
         </div>
-        <div class="chart-wrapper">
-          <canvas id="chart-evolucao"></canvas>
+        <div class="dx-canal">
+          <div class="dx-canal-graf"><canvas id="chart-canal"></canvas></div>
+          <div id="dash-canal-legenda"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- Atenção: risco + alertas -->
+    <div class="dx-linha dx-1-1">
+      <div class="card">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Clientes em risco ou queda</div>
+            <div class="section-subtitle">Ordenados pela maior queda</div>
+          </div>
+          ${clientesAtencao.length ? `<span class="badge status-risco">${clientesAtencao.length}</span>` : ''}
+        </div>
+        ${clientesAtencao.length === 0
+          ? vazioTxt('Nenhum cliente em risco — carteira saudável.')
+          : `<div class="dx-lista">${clientesAtencao.map(c => `
+          <div class="dx-li" onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
+            <div class="dx-li-txt"><b>${c.nome}</b><span>Gestor: ${nomeGestorDe(c)} · ${GLR.formatCurrency(c.faturamento || 0)}</span></div>
+            <div class="dx-li-val"><span class="dx-neg">${c.crescimento || 0}%</span><span class="badge ${GLR.statusColor[c.status]}">${GLR.statusLabel[c.status]}</span></div>
+          </div>`).join('')}</div>`}
+      </div>
+
+      <div class="card">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Alertas recentes</div>
+            <div class="section-subtitle">Críticos primeiro</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="Router.navigate('alertas')">Ver todos</button>
+        </div>
+        ${(() => {
+          const tom = { risco: 'dx-dot-neg', queda: 'dx-dot-neg', atrasada: 'dx-dot-ate', meta: 'dx-dot-neu', positivo: 'dx-dot-pos' };
+          const alertas = typeof gerarAlertasAutomaticos === 'function' ? gerarAlertasAutomaticos() : [];
+          const criticos = alertas.filter(a => a.tipo === 'risco' || a.tipo === 'queda');
+          const outros = alertas.filter(a => a.tipo !== 'risco' && a.tipo !== 'queda');
+          const lista = [...criticos, ...outros].slice(0, 6);
+          if (!lista.length) return vazioTxt('Nenhum alerta no momento.');
+          return `<div class="dx-lista">${lista.map(a => `<div class="dx-li" onclick="Router.navigate('alertas')">
+              <span class="dx-dot ${tom[a.tipo] || 'dx-dot-neu'}"></span>
+              <div class="dx-li-txt"><b>${a.titulo}</b><span>${a.descricao.substring(0, 110)}${a.descricao.length > 110 ? '…' : ''}</span></div>
+            </div>`).join('')}</div>`;
+        })()}
+      </div>
+    </div>
+
+    <!-- Evolução + status -->
+    <div class="dx-linha dx-2-1">
+      <div class="card">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Evolução da carteira</div>
+            <div class="section-subtitle">Faturamento total nos últimos meses</div>
+          </div>
+        </div>
+        <div class="chart-wrapper"><canvas id="chart-evolucao"></canvas></div>
       </div>
       <div class="card">
         <div class="section-header">
           <div>
-            <div class="section-title">Distribuição por Status</div>
+            <div class="section-title">Distribuição por status</div>
             <div class="section-subtitle">Situação atual da carteira</div>
           </div>
         </div>
-        <div style="display:flex;gap:24px;align-items:center;">
-          <div style="flex:1;max-width:180px;">
-            <canvas id="chart-status"></canvas>
-          </div>
-          <div style="flex:1;">
-            ${['crescimento','ativo','queda','risco'].map(s => {
+        <div class="dx-status">
+          <div class="dx-status-graf"><canvas id="chart-status"></canvas></div>
+          <div>
+            ${['crescimento', 'ativo', 'queda', 'risco'].map(s => {
               const count = clientes.filter(c => c.status === s).length;
               const pct = clientes.length ? Math.round(count / clientes.length * 100) : 0;
-              return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-                <div style="width:10px;height:10px;border-radius:50%;background:${{'crescimento':'#10b981','ativo':'#6366f1','queda':'#f97316','risco':'#ef4444'}[s]};flex-shrink:0;"></div>
-                <span style="flex:1;font-size:13px;color:var(--text-secondary);text-transform:capitalize;">${GLR.statusLabel[s]}</span>
-                <span style="font-weight:700;font-size:13px;">${count}</span>
-                <span style="color:var(--text-muted);font-size:12px;">${pct}%</span>
-              </div>`;
+              return `<div class="dx-leg"><i style="background:${{ crescimento: '#10b981', ativo: '#6366f1', queda: '#f97316', risco: '#ef4444' }[s]}"></i><span>${GLR.statusLabel[s]}</span><b>${count}</b><small>${pct}%</small></div>`;
             }).join('')}
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Ranking + Gestores -->
-    <div class="grid-2 mb-24">
+    <!-- Ranking + gestores -->
+    <div class="dx-linha dx-1-1">
       <div class="card">
         <div class="section-header">
-          <div class="section-title">🏆 Ranking — Melhor Desempenho</div>
+          <div>
+            <div class="section-title">Melhor desempenho</div>
+            <div class="section-subtitle">Maior crescimento vs mês anterior</div>
+          </div>
           <button class="btn btn-ghost btn-sm" onclick="Router.navigate('clientes')">Ver todos</button>
         </div>
         ${clientes.length === 0
-          ? `<div style="color:var(--text-muted);font-size:13px;padding:16px 0;text-align:center;">Nenhum cliente com dados ainda</div>`
-          : [...clientes].sort((a,b) => (b.crescimento||0) - (a.crescimento||0)).slice(0,6).map((c, i) => `
-          <div class="ranking-item" onclick="Router.navigate('cliente-perfil', {id: ${c.id}})" style="cursor:pointer;">
-            <span class="ranking-num">#${i+1}</span>
-            <div style="flex:1;">
-              <div class="ranking-name">${c.nome}</div>
-              <div style="font-size:11px;color:var(--text-muted);">${nomeGestorDe(c)}</div>
-            </div>
-            <div style="text-align:right;">
-              <div class="ranking-val ${(c.crescimento||0) >= 0 ? 'text-green' : 'text-red'}">${(c.crescimento||0) >= 0 ? '+' : ''}${c.crescimento||0}%</div>
-              <div style="font-size:11px;color:var(--text-muted);">${GLR.formatCurrency(c.faturamento||0)}</div>
-            </div>
-            <span class="badge ${GLR.statusColor[c.status]}" style="margin-left:8px;">${GLR.statusLabel[c.status]}</span>
+          ? vazioTxt('Nenhum cliente com dados ainda.')
+          : `<div class="dx-lista">${[...clientes].sort((a, b) => (b.crescimento || 0) - (a.crescimento || 0)).slice(0, 6).map((c, i) => `
+          <div class="dx-li" onclick="Router.navigate('cliente-perfil', {id: ${c.id}})">
+            <span class="dx-pos-n">${i + 1}</span>
+            <div class="dx-li-txt"><b>${c.nome}</b><span>${nomeGestorDe(c)} · ${GLR.formatCurrency(c.faturamento || 0)}</span></div>
+            <div class="dx-li-val"><span class="${(c.crescimento || 0) >= 0 ? 'dx-pos' : 'dx-neg'}">${(c.crescimento || 0) >= 0 ? '+' : ''}${c.crescimento || 0}%</span></div>
+          </div>`).join('')}</div>`}
+      </div>
+
+      <div class="card">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Desempenho dos gestores</div>
+            <div class="section-subtitle">Crescimento médio dos clientes de cada um</div>
           </div>
-        `).join('')}
-      </div>
-
-      <div class="card">
-        <div class="section-header">
-          <div class="section-title">👨‍💼 Performance dos Gestores</div>
         </div>
-        ${gestoresComDados.length===0
-          ? `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">Nenhum gestor cadastrado</div>`
-          : gestoresComDados.map(g=>`
-          <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--border);">
-            <div style="width:40px;height:40px;border-radius:50%;background:${g.cor||'#6366f1'}22;border:2px solid ${g.cor||'#6366f1'}44;
-                        display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:${g.cor||'#6366f1'};flex-shrink:0;">${g.avatar}</div>
-            <div style="flex:1;">
-              <div style="font-size:14px;font-weight:600;">${g.nome}</div>
-              <div style="font-size:12px;color:var(--text-muted);">${g.cargo||''} · ${g.qtdClientes} cliente${g.qtdClientes!==1?'s':''} · ${g.tarefasPend} tarefa${g.tarefasPend!==1?'s':''} pendente${g.tarefasPend!==1?'s':''}</div>
-            </div>
-            <div style="text-align:right;">
-              <div class="ranking-val ${g.crescMedio>=0?'text-green':'text-red'}">${g.crescMedio>=0?'+':''}${g.crescMedio.toFixed(1)}%</div>
-              <div style="font-size:11px;color:var(--text-muted);">${GLR.formatCurrency(g.fat)}</div>
-            </div>
-          </div>`).join('')}
+        ${gestoresComDados.length === 0
+          ? vazioTxt('Nenhum gestor cadastrado.')
+          : `<div class="dx-lista">${gestoresComDados.map(g => `
+          <div class="dx-li" style="cursor:default">
+            <span class="dx-av">${g.avatar}</span>
+            <div class="dx-li-txt"><b>${g.nome}</b><span>${g.cargo ? g.cargo + ' · ' : ''}${g.qtdClientes} cliente${g.qtdClientes !== 1 ? 's' : ''} · ${g.tarefasPend} tarefa${g.tarefasPend !== 1 ? 's' : ''} pendente${g.tarefasPend !== 1 ? 's' : ''}</span></div>
+            <div class="dx-li-val" style="flex-direction:column;align-items:flex-end;gap:0"><span class="${g.crescMedio >= 0 ? 'dx-pos' : 'dx-neg'}">${g.crescMedio >= 0 ? '+' : ''}${g.crescMedio.toFixed(1).replace('.', ',')}%</span><small>${GLR.formatCurrency(g.fat)}</small></div>
+          </div>`).join('')}</div>`}
       </div>
     </div>
 
-    <!-- Clientes em atenção + Alertas -->
-    <div class="grid-2 mb-24">
+    <!-- Tarefas + eventos -->
+    <div class="dx-linha dx-1-1">
       <div class="card">
         <div class="section-header">
-          <div class="section-title">🚨 Clientes em Risco ou Queda</div>
-        </div>
-        ${clientesAtencao.length===0
-          ? `<div style="padding:32px;text-align:center;">
-               <div style="font-size:32px;margin-bottom:8px;">✅</div>
-               <div style="font-size:14px;font-weight:600;color:var(--green);">Nenhum cliente em risco</div>
-               <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Carteira saudável</div>
-             </div>`
-          : clientesAtencao.map(c=>`
-          <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;"
-               onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
-            <div style="flex:1;">
-              <div style="font-size:14px;font-weight:600;">${c.nome}</div>
-              <div style="font-size:12px;color:var(--text-muted);">Gestor: ${nomeGestorDe(c)} · ${GLR.formatCurrency(c.faturamento||0)}</div>
-            </div>
-            <div style="text-align:right;">
-              <div class="ranking-val text-red">${c.crescimento||0}%</div>
-              <span class="badge ${GLR.statusColor[c.status]}">${GLR.statusLabel[c.status]}</span>
-            </div>
-          </div>`).join('')}
-      </div>
-
-      <div class="card">
-        <div class="section-header">
-          <div class="section-title">🔔 Alertas Recentes</div>
-          <button class="btn btn-ghost btn-sm" onclick="Router.navigate('alertas')">Ver todos</button>
-        </div>
-        ${(() => {
-          const cores  = { risco:'#ef4444', queda:'#f97316', atrasada:'#f59e0b', meta:'#6366f1', positivo:'#10b981' };
-          const icons  = { risco:'🚨', queda:'📉', atrasada:'⏰', meta:'🎯', positivo:'✅' };
-          const alertas = typeof gerarAlertasAutomaticos === 'function' ? gerarAlertasAutomaticos() : [];
-          const criticos = alertas.filter(a => a.tipo === 'risco' || a.tipo === 'queda');
-          const outros   = alertas.filter(a => a.tipo !== 'risco' && a.tipo !== 'queda');
-          const lista    = [...criticos, ...outros].slice(0, 5);
-          if (!lista.length) return '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">Nenhum alerta no momento. ✅</div>';
-          return lista.map(a => {
-            const cor = cores[a.tipo] || '#6366f1';
-            return `<div class="alert-card" onclick="Router.navigate('alertas')" style="margin-bottom:8px;cursor:pointer;">
-              <div class="alert-icon" style="background:${cor}20;">
-                <span style="font-size:16px;">${icons[a.tipo] || '🔔'}</span>
-              </div>
-              <div style="min-width:0;">
-                <div class="alert-title">${a.titulo}</div>
-                <div class="alert-desc" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.descricao.substring(0, 90)}${a.descricao.length > 90 ? '…' : ''}</div>
-              </div>
-            </div>`;
-          }).join('');
-        })()}
-      </div>
-    </div>
-
-    <!-- Concentração de receita -->
-    ${concentracao.some(c=>c.faturamento>0) ? `
-    <div class="card mb-24">
-      <div class="section-header">
-        <div class="section-title">💼 Concentração de Faturamento</div>
-        <div class="section-subtitle">Participação de cada cliente</div>
-      </div>
-      <div class="chart-wrapper">
-        <canvas id="chart-concentracao"></canvas>
-      </div>
-    </div>` : ''}
-
-    <!-- Tarefas urgentes + Próximos eventos -->
-    <div class="grid-2 mb-24">
-      <div class="card">
-        <div class="section-header">
-          <div class="section-title">⚡ Tarefas Urgentes</div>
+          <div>
+            <div class="section-title">Tarefas urgentes</div>
+            <div class="section-subtitle">Atrasadas ou com prioridade urgente</div>
+          </div>
           <button class="btn btn-ghost btn-sm" onclick="Router.navigate('tarefas')">Ver todas</button>
         </div>
-        ${GLR.tarefas.filter(t => t.status !== 'concluida' && (t.status === 'atrasada' || (t.prazo && t.prazo < hojeIsoDash) || t.prioridade === 'urgente')).slice(0,5).map(t => `
-          <div class="task-card" onclick="Router.navigate('tarefas')">
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-              <div class="task-title">${t.titulo}</div>
+        ${(() => {
+          const urg = GLR.tarefas.filter(t => t.status !== 'concluida' && (t.status === 'atrasada' || (t.prazo && t.prazo < hojeIsoDash) || t.prioridade === 'urgente')).slice(0, 5);
+          if (!urg.length) return vazioTxt('Nenhuma tarefa urgente.');
+          return `<div class="dx-lista">${urg.map(t => {
+            const atras = t.status === 'atrasada' || (t.prazo && t.prazo < hojeIsoDash);
+            return `<div class="dx-li" onclick="Router.navigate('tarefas')">
+              <div class="dx-li-txt"><b>${t.titulo}</b><span>${t.responsavel || '—'} · ${formatDate(t.prazo)}${atras ? ' · <em class="dx-neg">atrasada</em>' : ''}</span></div>
               <span class="badge ${GLR.prioridadeColor[t.prioridade]}">${t.prioridade}</span>
-            </div>
-            <div class="task-meta">
-              <span>👤 ${t.responsavel}</span>
-              <span>📅 ${formatDate(t.prazo)}</span>
-              ${t.status === 'atrasada' || (t.prazo && t.prazo < hojeIsoDash) ? '<span style="color:var(--red);font-weight:600;">ATRASADA</span>' : ''}
-            </div>
-          </div>
-        `).join('')}
+            </div>`;
+          }).join('')}</div>`;
+        })()}
       </div>
 
       <div class="card">
         <div class="section-header">
-          <div class="section-title">📅 Próximos Eventos</div>
+          <div>
+            <div class="section-title">Próximos eventos</div>
+            <div class="section-subtitle">Reuniões, follow-ups e entregas</div>
+          </div>
           <button class="btn btn-ghost btn-sm" onclick="Router.navigate('calendario')">Ver calendário</button>
         </div>
-        ${GLR.eventos.slice(0,5).map(e => {
-          const cor = GLR.eventoColor[e.tipo];
-          return `<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);">
-            <div style="width:38px;height:38px;border-radius:var(--radius-sm);background:${cor}20;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
-              ${{ reuniao: '🤝', followup: '📞', entrega: '📦', visita: '🏢', interno: '🏠' }[e.tipo]}
-            </div>
-            <div style="flex:1;">
-              <div style="font-size:13.5px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">${e.titulo}</div>
-              <div style="font-size:12px;color:var(--text-muted);">${formatDate(e.data)} às ${e.hora} · ${e.responsavel}</div>
-            </div>
-          </div>`;
-        }).join('')}
+        ${!GLR.eventos.length ? vazioTxt('Nenhum evento agendado.') : `<div class="dx-lista">${GLR.eventos.slice(0, 5).map(e => `<div class="dx-li" style="cursor:default">
+            <span class="dx-dot" style="background:${GLR.eventoColor[e.tipo] || 'var(--accent)'}"></span>
+            <div class="dx-li-txt"><b>${e.titulo}</b><span>${formatDate(e.data)} às ${e.hora} · ${e.responsavel}</span></div>
+          </div>`).join('')}</div>`}
       </div>
     </div>
 
-    <!-- Carteira completa -->
-    <div class="card">
+    ${concentracao.some(c => c.faturamento > 0) ? `
+    <div class="card dx-bloco">
       <div class="section-header">
-        <div class="section-title">📋 Carteira Completa</div>
-        <button class="btn btn-ghost btn-sm" onclick="Router.navigate('clientes')">Gerenciar</button>
+        <div>
+          <div class="section-title">Concentração de faturamento</div>
+          <div class="section-subtitle">Participação de cada cliente</div>
+        </div>
       </div>
-      <table class="table" style="font-size:13px;">
+      <div class="chart-wrapper"><canvas id="chart-concentracao"></canvas></div>
+    </div>` : ''}
+
+    <!-- Carteira completa -->
+    <div class="card dx-bloco" style="padding:0;overflow:hidden">
+      <div class="section-header" style="padding:18px 22px 0">
+        <div>
+          <div class="section-title">Carteira completa</div>
+          <div class="section-subtitle">${clientesTodos.length} clientes · ordenados por faturamento</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" style="width:220px" placeholder="Buscar cliente ou gestor" oninput="window._dashFiltrarCarteira(this.value)">
+          <button class="btn btn-secondary btn-sm" onclick="Router.navigate('clientes')">Gerenciar</button>
+        </div>
+      </div>
+      <div class="table-wrapper" style="padding:6px 0 0">
+      <table class="table" id="dx-carteira">
         <thead><tr>
-          <th>Cliente</th><th>Gestor</th><th>Status</th>
+          <th style="padding-left:22px">Cliente</th><th>Gestor</th><th>Status</th>
           <th style="text-align:right;">Faturamento</th>
           <th style="text-align:right;">Crescimento</th>
-          <th></th>
+          <th style="padding-right:22px"></th>
         </tr></thead>
         <tbody>
-        ${[...clientesTodos].sort((a,b)=>(b.faturamento||0)-(a.faturamento||0)).map(c=>`
-          <tr style="cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
-            <td style="font-weight:600;">${c.nome}</td>
+        ${[...clientesTodos].sort((a, b) => (b.faturamento || 0) - (a.faturamento || 0)).map(c => `
+          <tr style="cursor:pointer;" data-busca="${String(c.nome + ' ' + nomeGestorDe(c)).toLowerCase().replace(/"/g, '')}" onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
+            <td style="font-weight:600;padding-left:22px">${c.nome}</td>
             <td style="color:var(--text-muted);">${nomeGestorDe(c)}</td>
             <td><span class="badge ${GLR.statusColor[c.status]}">${GLR.statusLabel[c.status]}</span></td>
-            <td style="text-align:right;">${c._temAPI ? GLR.formatCurrency(c.faturamento||0) : '<span style="color:var(--text-muted);">sem dados</span>'}</td>
-            <td style="text-align:right;color:${(c.crescimento||0)>=0?'var(--green)':'var(--red)'};">${c._temAPI ? `${(c.crescimento||0)>=0?'+':''}${c.crescimento||0}%` : '—'}</td>
-            <td style="text-align:right;"><button class="btn btn-ghost btn-sm">Ver perfil →</button></td>
+            <td style="text-align:right;">${c._temAPI ? GLR.formatCurrency(c.faturamento || 0) : '<span style="color:var(--text-muted);">sem dados</span>'}</td>
+            <td style="text-align:right;" class="${(c.crescimento || 0) >= 0 ? 'dx-pos' : 'dx-neg'}">${c._temAPI ? `${(c.crescimento || 0) >= 0 ? '+' : ''}${c.crescimento || 0}%` : '—'}</td>
+            <td style="text-align:right;padding-right:22px"><button class="btn btn-ghost btn-sm">Ver perfil</button></td>
           </tr>`).join('')}
         </tbody>
       </table>
+      </div>
     </div>`;
+
+  window._dashFiltrarCarteira = q => {
+    q = String(q || '').toLowerCase().trim();
+    document.querySelectorAll('#dx-carteira tbody tr').forEach(tr => { tr.style.display = !q || tr.dataset.busca.includes(q) ? '' : 'none'; });
+  };
 
   _dashAplicarFlash();
 
@@ -933,15 +913,23 @@ async function _dashAtualizarTudo() {
 
 
 // ---- Shared KPI card builder ----
-function kpiCard(label, value, sub, positive, iconBg, icon, iconColor, rawHtml = false) {
-  return `<div class="kpi-card">
-    <div class="kpi-icon" style="background:${iconBg};">
-      <span style="font-size:18px;">${icon}</span>
-    </div>
-    <div class="kpi-label">${label}</div>
-    <div class="kpi-value">${value}</div>
-    ${rawHtml ? sub : `<div class="kpi-delta ${positive ? 'up' : 'down'}">${positive ? '▲' : '▼'} ${sub}</div>`}
-  </div>`;
+// Ícones discretos (traço) no lugar dos emojis — Design System v2
+const _svg = d => `<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">${d}</svg>`;
+const ICONE_DX = {
+  refresh: _svg('<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>'),
+  '💵': _svg('<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>'),
+  '📦': _svg('<path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/>'),
+  '💰': _svg('<circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.7-1.5-3-1.5-1.7 0-3 .9-3 2s1.3 1.7 3 2 3 .9 3 2-1.3 2-3 2c-1.4 0-2.6-.6-3-1.6M12 6v2M12 16v2"/>'),
+  '🏆': _svg('<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>'),
+  '📈': _svg('<path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/>'),
+  '🎟️': _svg('<path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/>'),
+};
+function kpiCard(label, value, sub, positive, iconBg, icon, iconColor, rawHtml = false, modo = '') {
+  const ic = ICONE_DX[icon] ? `<span class="dx-kpi-ic">${ICONE_DX[icon]}</span>` : '';
+  const rodape = rawHtml ? sub
+    : modo === 'neutro' ? (sub ? `<div class="dx-kpi-sub">${sub}</div>` : '')
+    : `<div class="kpi-delta ${positive ? 'up' : 'down'}">${positive ? '▲' : '▼'} ${sub}</div>`;
+  return `<div class="kpi-card"><div class="dx-kpi-top"><div class="kpi-label">${label}</div>${ic}</div><div class="kpi-value">${value}</div>${rodape}</div>`;
 }
 
 function formatDate(str) {
