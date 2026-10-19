@@ -785,12 +785,16 @@ async function enriquecerTaxasTikTok(apiKey, openId, t, prazo) {
 // ── Taxas reais da Amazon: eventos financeiros por data de lançamento (janelas
 //    de 7 dias, cursor fin_ate). Venda → líquido e comissão; reembolso → devolvido.
 async function enriquecerTaxasAmazon(apiKey, accId, t, prazo, cursor) {
+  // v2 (19/10/2026): passa a descontar o frete da etiqueta (MFNPostageFee) e a
+  // gravar o ADS (cobranças de Product Ads) — relê os 90 dias uma vez
+  if (!cursor.fin_v2) { delete cursor.fin_ate; cursor.fin_v2 = 1; }
   let feitos = 0;
   while (Date.now() < prazo) {
-    const de = Math.max(cursor.fin_ate ? cursor.fin_ate - 2 * DIA : t - DIAS_HISTORICO * DIA, t - DIAS_HISTORICO * DIA);
+    // janelas de 7 dias começando à meia-noite (Brasília): os dias do ADS ficam inteiros
+    const de = inicioDiaUnix(Math.max(cursor.fin_ate ? cursor.fin_ate - 2 * DIA : t - DIAS_HISTORICO * DIA, t - DIAS_HISTORICO * DIA));
     const ate = Math.min(de + 7 * DIA, t - 300);
     if (ate <= de) break;
-    const vendas = new Map(), devolvidos = new Set();
+    const vendas = new Map(), envio = new Map(), devolvidos = new Set(), ads = new Map();
     let token = null, completo = true;
     for (let pag = 0; pag < 50; pag++) {
       if (Date.now() > prazo) { completo = false; break; }
@@ -804,24 +808,55 @@ async function enriquecerTaxasAmazon(apiKey, accId, t, prazo, cursor) {
         for (const [, val] of Object.entries(v.taxas_pedido || {})) x.outras -= parseFloat(val) || 0;
         vendas.set(v.order_id, x);
       }
+      // frete da etiqueta e outras taxas de serviço por pedido (envio próprio)
+      for (const v of (d.taxas_servico || [])) {
+        if (!v.order_id) continue;
+        const soma = Object.values(v.taxas || {}).reduce((s, x) => s - (parseFloat(x) || 0), 0);
+        if (soma) envio.set(v.order_id, (envio.get(v.order_id) || 0) + soma);
+      }
       for (const v of (d.reembolsos || [])) devolvidos.add(v.order_id);
+      // ADS: cobrança de Product Ads, no dia do lançamento
+      for (const v of (d.publicidade || [])) {
+        const dia = dataBR(Math.floor(Date.parse(v.posted) / SEG));
+        ads.set(dia, (ads.get(dia) || 0) - (parseFloat(v.valor) || 0));
+      }
       token = d.next_token;
       if (!token) break;
     }
-    const ids = [...new Set([...vendas.keys(), ...devolvidos])];
+    const ids = [...new Set([...vendas.keys(), ...envio.keys(), ...devolvidos])];
     for (let i = 0; i < ids.length; i += 50) {
       const lista = ids.slice(i, i + 50).map(id => `"${id}"`).join(',');
-      const rows = await sbSelect('glr_pedidos', `marketplace=eq.amazon&conta_id=eq.${encodeURIComponent(accId)}&pedido_id=in.(${encodeURIComponent(lista)})&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto`);
-      const comLiq = rows.filter(r => vendas.has(r.pedido_id)).map(r => { const x = vendas.get(r.pedido_id); return { ...r, liquido: r2(x.liq), taxas: { comissao: r2(x.comissao), taxa_servico: r2(x.outras) } }; });
+      const rows = await sbSelect('glr_pedidos', `marketplace=eq.amazon&conta_id=eq.${encodeURIComponent(accId)}&pedido_id=in.(${encodeURIComponent(lista)})&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto,liquido,taxas`);
+      // líquido = líquido da venda − frete da etiqueta (cada parte pode chegar numa janela diferente)
+      const comLiq = rows.filter(r => vendas.has(r.pedido_id) || envio.has(r.pedido_id)).map(r => {
+        const tx = r.taxas || {}, x = vendas.get(r.pedido_id);
+        const liqVenda = x ? x.liq : (tx.liq_venda != null ? tx.liq_venda : (r.liquido != null ? parseFloat(r.liquido) + (parseFloat(tx.envio) || 0) : null));
+        const env = envio.has(r.pedido_id) ? envio.get(r.pedido_id) : (parseFloat(tx.envio) || 0);
+        const taxas = { comissao: r2(x ? x.comissao : tx.comissao), taxa_servico: r2(x ? x.outras : tx.taxa_servico), envio: r2(env), ...(liqVenda != null ? { liq_venda: r2(liqVenda) } : {}) };
+        if (liqVenda == null && tx.tarifa_venda != null) Object.assign(taxas, { tarifa_venda: tx.tarifa_venda, estimado: tx.estimado, taxa_media: tx.taxa_media });
+        const { taxas: _t, liquido: _l, ...base } = r;
+        return { ...base, liquido: liqVenda != null ? r2(liqVenda - env) : null, taxas };
+      });
       if (comLiq.length) await sbUpsert('glr_pedidos', comLiq, 'marketplace,conta_id,pedido_id');
-      const dev = rows.filter(r => devolvidos.has(r.pedido_id) && r.situacao === 'valido').map(r => ({ ...r, situacao: 'devolvido' }));
+      const dev = rows.filter(r => devolvidos.has(r.pedido_id) && r.situacao === 'valido').map(r => ({ marketplace: r.marketplace, conta_id: r.conta_id, pedido_id: r.pedido_id, criado_em: r.criado_em, situacao: 'devolvido', valor_bruto: r.valor_bruto }));
       if (dev.length) await sbUpsert('glr_pedidos', dev, 'marketplace,conta_id,pedido_id');
       [...comLiq, ...dev].forEach(l => tocar('amazon', accId, l.criado_em));
       feitos += comLiq.length + dev.length;
     }
     if (!completo) break;
+    // ADS por dia: só dias inteiros dentro da janela (o de hoje fecha na próxima)
+    const linhasAds = [];
+    for (let u = de; u + DIA <= ate; u += DIA) {
+      const dia = dataBR(u);
+      linhasAds.push({ marketplace: 'amazon', conta_id: String(accId), data: dia, gasto: r2(ads.get(dia) || 0), gmv_ads: 0, pedidos_ads: 0, impressoes: 0, cliques: 0, sincronizado_em: new Date().toISOString() });
+    }
+    if (linhasAds.length) await sbUpsert('glr_ads_diario', linhasAds, 'marketplace,conta_id,data');
     cursor.fin_ate = ate;
-    if (ate >= t - 300) break;
+    if (ate >= t - 300) {
+      // em dia: o ADS da Amazon cobre os últimos 90 dias (cobranças de Product Ads)
+      await salvarEstado('amazon', accId, 'ads', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: 0, cursor: { hist_ate: inicioDiaUnix(t) - DIAS_HISTORICO * DIA, fonte: 'cobrancas_product_ads' } }).catch(() => {});
+      break;
+    }
   }
   await estimarTaxas('amazon', accId, t);
   return feitos;
