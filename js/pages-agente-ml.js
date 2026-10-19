@@ -458,12 +458,12 @@ Router.register('agente-ml', (params, el) => {
   </div>
   <style>
     .aml-sub{font-size:12.5px;color:var(--text-muted);line-height:1.5;}
-    .aml-chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(99,102,241,.12);color:#6366f1;vertical-align:middle;}
+    .aml-chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(99,102,241,.12);color:var(--accent);vertical-align:middle;}
     .aml-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
-    .aml-card{padding:16px 18px;cursor:pointer;border-left:4px solid var(--c,#64748b);}
+    .aml-card{padding:16px 18px;cursor:pointer;border-left:4px solid var(--c,var(--text-muted));}
     .aml-novo{display:flex;align-items:center;justify-content:center;min-height:110px;color:var(--text-muted);font-weight:600;border-style:dashed;}
-    .aml-rot{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);}
-    .aml-val{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;}
+    .aml-rot{font-size:11px;text-transform:none;letter-spacing:0;color:var(--text-muted);}
+    .aml-val{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;}
     .aml-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:18px;}
     .aml-kpi{background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:12px;padding:12px 14px;}
     .aml-topo{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin-bottom:18px;}
@@ -474,7 +474,7 @@ Router.register('agente-ml', (params, el) => {
     .aml-lista{border:1px solid var(--border);border-radius:10px;overflow:hidden;}
     .aml-li{display:grid;grid-template-columns:150px minmax(0,1fr) minmax(170px,240px) auto;gap:4px 14px;align-items:center;padding:10px 14px;border-left:4px solid var(--c);border-bottom:1px solid var(--border);}
     .aml-li:last-child{border-bottom:none;} .aml-li:hover{background:rgba(99,102,241,.04);}
-    .aml-tipo{font-size:11px;font-weight:800;color:var(--c);text-transform:uppercase;letter-spacing:.3px;}
+    .aml-tipo{font-size:11px;font-weight:700;color:var(--c);text-transform:none;letter-spacing:0;}
     .aml-li-ass{font-weight:700;font-size:13px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .aml-li-faz{font-size:12.5px;color:var(--text-secondary);margin-top:1px;}
     .aml-li-como{font-size:11.5px;color:var(--text-muted);margin-top:3px;}
@@ -483,12 +483,12 @@ Router.register('agente-ml', (params, el) => {
     .aml-li-pq{font-size:12px;color:var(--text-secondary);font-variant-numeric:tabular-nums;}
     .aml-li-bt{display:flex;gap:6px;align-items:center;justify-content:flex-end;}
     .aml-x{border:1px solid var(--border);background:none;border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text-muted);}
-    .aml-x:hover{border-color:#dc2626;color:#dc2626;}
+    .aml-x:hover{border-color:var(--red);color:var(--red);}
     .aml-det{grid-column:2/-1;font-size:12px;} .aml-det summary{cursor:pointer;color:var(--text-muted);font-size:11.5px;width:max-content;}
     @media (max-width:900px){.aml-li{grid-template-columns:1fr auto}.aml-li-txt,.aml-li-pq{grid-column:1/-1}.aml-tipo{grid-column:1}.aml-li-bt{grid-column:2;grid-row:1}.aml-det{grid-column:1/-1}}
     .aml-tab{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums;}
     .aml-tab th,.aml-tab td{padding:7px 8px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;}
-    .aml-tab th{font-size:11px;color:var(--text-muted);text-transform:uppercase;}
+    .aml-tab th{font-size:11px;color:var(--text-muted);text-transform:none;}
     .aml-campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 16px;}
     .aml-campo{display:flex;flex-direction:column;gap:4px;font-size:12.5px;margin-bottom:8px;}
     .aml-campo > div{display:flex;align-items:center;gap:6px;} .aml-campo em{font-style:normal;color:var(--text-muted);font-size:12px;}

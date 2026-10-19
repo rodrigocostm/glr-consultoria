@@ -418,7 +418,7 @@ const PM = (() => {
       <style>
         .pm-abas{display:flex;gap:6px;margin-bottom:16px;}
         .pm-aba{border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);border-radius:99px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;}
-        .pm-aba.on{background:#2a78d6;border-color:#2a78d6;color:#fff;}
+        .pm-aba.on{background:var(--accent);border-color:var(--accent);color:#fff;}
         .pm-mut{font-size:11.5px;color:var(--text-muted);}
         .pm-config{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin-bottom:14px;font-size:13px;color:var(--text-secondary);}
         .pm-config input{width:64px;margin:0 4px;background:var(--bg-card-hover);border:1px solid var(--border);border-radius:7px;color:var(--text-primary);padding:4px 6px;font-weight:700;}
@@ -427,24 +427,24 @@ const PM = (() => {
         .pm-card{text-align:left;background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:12px;padding:10px 14px;cursor:pointer;display:flex;flex-direction:column;gap:1px;}
         .pm-card.on{box-shadow:0 0 0 2px var(--c);}
         .pm-card b{font-size:22px;color:var(--text-primary);font-variant-numeric:tabular-nums;}
-        .pm-rot{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);font-weight:600;}
+        .pm-rot{font-size:11px;text-transform:none;letter-spacing:0;color:var(--text-muted);font-weight:600;}
         .pm-sub{font-size:11.5px;color:var(--text-muted);}
         .pm-acoes{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
         .pm-tab{width:100%;border-collapse:collapse;font-size:12.5px;}
-        .pm-tab th{padding:10px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
+        .pm-tab th{padding:10px;text-align:left;font-size:10.5px;text-transform:none;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
         .pm-tab td{padding:10px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text-secondary);}
         .pm-n{text-align:right !important;white-space:nowrap;font-variant-numeric:tabular-nums;}
         .pm-anuncio{display:flex;gap:10px;min-width:300px;max-width:420px;}
         .pm-anuncio img{width:48px;height:48px;border-radius:8px;object-fit:cover;flex:none;background:var(--bg-card-hover);}
         .pm-anuncio a{color:var(--text-primary);font-weight:600;text-decoration:none;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
-        .pm-chip{display:inline-block;font-weight:800;font-size:12px;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);padding:2px 8px;border-radius:99px;}
-        .pm-sem{color:#dc2626;font-weight:700;font-size:12px;display:flex;flex-direction:column;gap:4px;}
-        .pm-inp{width:110px;background:var(--bg-card-hover);border:1px solid #dc2626;border-radius:7px;color:var(--text-primary);padding:5px 7px;font-size:12.5px;}
+        .pm-chip{display:inline-block;font-weight:700;font-size:12px;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);padding:2px 8px;border-radius:99px;}
+        .pm-sem{color:var(--red);font-weight:700;font-size:12px;display:flex;flex-direction:column;gap:4px;}
+        .pm-inp{width:110px;background:var(--bg-card-hover);border:1px solid var(--red);border-radius:7px;color:var(--text-primary);padding:5px 7px;font-size:12.5px;}
         .pm-custo{display:flex;align-items:center;gap:6px;} .pm-custo b{color:var(--text-primary);}
         .pm-lapis{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;}
         .pm-sel{max-width:330px;background:var(--bg-card-hover);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);padding:6px 8px;font-size:12px;}
         .pm-res{font-size:11.5px;margin-top:4px;max-width:200px;}
-        .pm-link{background:none;border:none;color:#2a78d6;font-size:12px;font-weight:600;cursor:pointer;padding:0 0 0 4px;text-decoration:underline;}
+        .pm-link{background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;padding:0 0 0 4px;text-decoration:underline;}
       </style>`;
   }
 

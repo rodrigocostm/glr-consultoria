@@ -301,6 +301,25 @@
     const sun  = document.getElementById('theme-icon-sun');
     if (moon) moon.style.display = tema === 'light' ? 'none' : '';
     if (sun)  sun.style.display  = tema === 'light' ? '' : 'none';
+    aplicarTemaGraficos();
+  }
+  // Paleta única dos gráficos (Chart.js) a partir dos tokens do tema
+  function aplicarTemaGraficos() {
+    if (!window.Chart) return;
+    const cs = getComputedStyle(document.body);
+    const v = n => cs.getPropertyValue(n).trim();
+    const d = Chart.defaults;
+    d.font.family = "'Geist', -apple-system, BlinkMacSystemFont, sans-serif";
+    d.font.size = 12;
+    d.color = v('--text-muted');
+    d.borderColor = v('--border');
+    Object.assign(d.plugins.legend.labels, { usePointStyle: true, boxWidth: 8, boxHeight: 8 });
+    Object.assign(d.plugins.tooltip, {
+      backgroundColor: v('--bg-card'), titleColor: v('--text-primary'), bodyColor: v('--text-secondary'),
+      borderColor: v('--border-strong'), borderWidth: 1, padding: 10, cornerRadius: 10,
+      boxPadding: 4, usePointStyle: true, titleFont: { weight: '600' },
+    });
+    Object.values(Chart.instances || {}).forEach(c => { try { c.update('none'); } catch (e) {} });
   }
   function toggleTheme() {
     const novo = document.body.classList.contains('light') ? 'dark' : 'light';
@@ -414,27 +433,27 @@
 <script src="js/pages-clientes.js?v=20"></script>
 <script src="js/pages-operacional.js?v=13"></script>
 <script src="js/pages-avancados.js?v=61"></script>
-<script src="js/pages-dre.js?v=11"></script>
+<script src="js/pages-dre.js?v=12"></script>
 <script src="js/marketplace-api.js?v=26"></script>
 <script src="js/pages-integracoes.js?v=12"></script>
 <script src="js/margem-lucro.js?v=1"></script>
-<script src="js/pages-vendas.js?v=98"></script>
+<script src="js/pages-vendas.js?v=99"></script>
 <script src="js/pages-analytics.js?v=13"></script>
 <script src="js/pages-diagnostico.js?v=12"></script>
 <script src="js/pages-conciliacao.js?v=8"></script>
-<script src="js/pages-financeiro.js?v=86"></script>
+<script src="js/pages-financeiro.js?v=87"></script>
 <script src="js/pages-ads.js?v=45"></script>
-<script src="js/pages-agente.js?v=60"></script>
-<script src="js/pages-agente-ml.js?v=8"></script>
+<script src="js/pages-agente.js?v=61"></script>
+<script src="js/pages-agente-ml.js?v=9"></script>
 <script src="js/pages-afiliados.js?v=8"></script>
-<script src="js/pages-promocoes.js?v=5"></script>
-<script src="js/pages-produtos.js?v=5"></script>
+<script src="js/pages-promocoes.js?v=6"></script>
+<script src="js/pages-produtos.js?v=6"></script>
 <script src="js/pages-vendometro.js?v=6"></script>
 <script src="js/pages-rastreamento.js?v=16"></script>
 <script src="js/pages-leads.js?v=4"></script>
 <script src="js/pages-anuncios.js?v=9"></script>
-<script src="js/pages-amazon.js?v=2"></script>
-<script src="js/pages-precos-ml.js?v=2"></script>
+<script src="js/pages-amazon.js?v=3"></script>
+<script src="js/pages-precos-ml.js?v=3"></script>
 <script src="js/pages-portal.js?v=27"></script>
 <script src="js/pages-portal-admin.js?v=2"></script>
 <script src="js/pages-relatorios.js?v=3"></script>

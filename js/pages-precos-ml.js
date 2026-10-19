@@ -282,20 +282,20 @@ Router.register('precos-ml', (params, el) => {
     .pml-sel{background:var(--bg-card);border:1px solid var(--border);border-radius:9px;color:var(--text-primary);padding:8px 11px;font-size:13px}
     .pml-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
     .pml-chip{border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);border-radius:99px;padding:5px 12px;font-size:12px;cursor:pointer}
-    .pml-chip.on{background:#2a78d6;border-color:#2a78d6;color:#fff}
+    .pml-chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
     .pml-tab{width:100%;border-collapse:collapse;font-size:13px}
-    .pml-tab th{padding:10px 12px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap}
+    .pml-tab th{padding:10px 12px;text-align:left;font-size:10.5px;text-transform:none;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap}
     .pml-tab td{padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-secondary);vertical-align:middle}
     .pml-tab .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
     .pml-prod{display:flex;gap:10px;align-items:center;min-width:260px;max-width:440px}
     .pml-prod img,.pml-img{width:40px;height:40px;border-radius:8px;object-fit:cover;flex:none;background:var(--bg-card-hover);display:block}
     .pml-tit{font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .pml-prod a{color:#2a78d6;text-decoration:none;font-family:ui-monospace,monospace}
-    .pml-up{color:#16a34a;font-weight:700;font-size:12px}.pml-down{color:#dc2626;font-weight:700;font-size:12px}
+    .pml-prod a{color:var(--accent);text-decoration:none;font-family:ui-monospace,monospace}
+    .pml-up{color:var(--green);font-weight:700;font-size:12px}.pml-down{color:var(--red);font-weight:700;font-size:12px}
     .pml-in{width:80px;background:var(--bg-card-hover);border:1px solid var(--border);border-radius:7px;color:var(--text-primary);padding:5px 7px;font-size:12.5px;text-align:right}
-    .pml-in.vazio{border-color:#dc2626}
+    .pml-in.vazio{border-color:var(--red)}
     .pml-vazio{padding:28px;text-align:center;color:var(--text-muted)}
-    .pml-erro{background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.3);color:#dc2626;border-radius:10px;padding:8px 12px;font-size:12.5px;margin-bottom:10px}
+    .pml-erro{background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.3);color:var(--red);border-radius:10px;padding:8px 12px;font-size:12.5px;margin-bottom:10px}
     .pml-pag{display:flex;gap:10px;justify-content:center;align-items:center;padding:10px;font-size:13px;color:var(--text-secondary)}
     .pml-pag button{border:1px solid var(--border);background:var(--bg-card);border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text-primary)}
   </style>`;

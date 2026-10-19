@@ -956,24 +956,24 @@ Router.register('vendas', async (params, el) => {
       </div>
       <style>
         .cs-mut{color:var(--text-muted);font-size:11.5px;}
-        .cs-ids{font-size:11px;color:var(--text-muted);font-family:ui-monospace,monospace;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px;} .cs-ids a{color:#2a78d6;text-decoration:none;} .cs-ids a:hover{text-decoration:underline;}
+        .cs-ids{font-size:11px;color:var(--text-muted);font-family:ui-monospace,monospace;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px;} .cs-ids a{color:var(--accent);text-decoration:none;} .cs-ids a:hover{text-decoration:underline;}
         .cs-topo{margin-bottom:12px;}
         .cs-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
         @media (max-width:900px){.cs-cards{grid-template-columns:repeat(2,1fr);}}
         .cs-card{background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:12px;padding:12px 14px;}
-        .cs-rot{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);}
-        .cs-val{font-size:22px;font-weight:800;color:var(--text-primary);font-variant-numeric:tabular-nums;}
+        .cs-rot{font-size:11px;text-transform:none;letter-spacing:0;color:var(--text-muted);}
+        .cs-val{font-size:22px;font-weight:700;color:var(--text-primary);font-variant-numeric:tabular-nums;}
         .cs-sub{font-size:12px;color:var(--text-secondary);}
         .cs-foco{padding:14px 18px;margin-bottom:14px;}
-        .cs-foco-t{font-weight:800;font-size:14px;margin-bottom:8px;color:var(--text-primary);}
+        .cs-foco-t{font-weight:700;font-size:14px;margin-bottom:8px;color:var(--text-primary);}
         .cs-foco-i{border-left:3px solid var(--c);padding:6px 10px;margin-bottom:6px;font-size:12.5px;color:var(--text-secondary);}
         .cs-foco-i b{color:var(--text-primary);}
         .cs-ctrl{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
         .cs-chips{display:flex;gap:6px;flex-wrap:wrap;}
         .cs-chip{border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);border-radius:99px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;}
-        .cs-chip.on{background:#6366f1;border-color:#6366f1;color:#fff;}
+        .cs-chip.on{background:var(--accent);border-color:var(--accent);color:#fff;}
         .cs-tab{width:100%;border-collapse:collapse;font-size:12.5px;}
-        .cs-tab th{padding:9px 10px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
+        .cs-tab th{padding:9px 10px;text-align:left;font-size:10.5px;text-transform:none;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
         .cs-tab td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-secondary);vertical-align:middle;}
         .cs-num{text-align:right !important;font-variant-numeric:tabular-nums;white-space:nowrap;}
         .cs-ult{background:rgba(99,102,241,.06);color:var(--text-primary) !important;font-weight:700;}
@@ -981,8 +981,8 @@ Router.register('vendas', async (params, el) => {
         .cs-prod{display:flex;gap:10px;align-items:center;min-width:280px;max-width:420px;}
         .cs-prod img,.cs-img{width:34px;height:34px;border-radius:6px;object-fit:cover;flex:none;background:var(--bg-card-hover);}
         .cs-nome{color:var(--text-primary);font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
-        .cs-abc{display:inline-flex;width:24px;height:24px;border-radius:6px;align-items:center;justify-content:center;font-weight:800;font-size:12px;}
-        .cs-A{background:rgba(42,120,214,.15);color:#2a78d6;} .cs-B{background:rgba(235,104,52,.15);color:#eb6834;} .cs-C{background:rgba(100,116,139,.15);color:#64748b;} .cs-n{color:var(--text-muted);}
+        .cs-abc{display:inline-flex;width:24px;height:24px;border-radius:6px;align-items:center;justify-content:center;font-weight:700;font-size:12px;}
+        .cs-A{background:rgba(42,120,214,.15);color:var(--accent);} .cs-B{background:rgba(235,104,52,.15);color:#eb6834;} .cs-C{background:rgba(100,116,139,.15);color:var(--text-muted);} .cs-n{color:var(--text-muted);}
         .cs-tend{display:inline-block;font-size:11.5px;font-weight:700;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);padding:3px 9px;border-radius:99px;white-space:nowrap;}
       </style>`;
     const busca = document.getElementById('cs-busca');
@@ -1091,17 +1091,17 @@ Router.register('vendas', async (params, el) => {
       </div>
       <style>
         .op-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:12px;}
-        .op-tit{font-size:15px;font-weight:800;color:var(--text-primary);}
+        .op-tit{font-size:15px;font-weight:700;color:var(--text-primary);}
         .op-sub{font-size:12px;color:var(--text-muted);line-height:1.5;}
         .op-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
         @media (max-width:900px){.op-cards{grid-template-columns:repeat(2,1fr);}}
         .op-card{background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:12px;padding:12px 14px;}
-        .op-rot{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);}
-        .op-val{font-size:22px;font-weight:800;color:var(--text-primary);font-variant-numeric:tabular-nums;}
+        .op-rot{font-size:11px;text-transform:none;letter-spacing:0;color:var(--text-muted);}
+        .op-val{font-size:22px;font-weight:700;color:var(--text-primary);font-variant-numeric:tabular-nums;}
         .op-ag{padding:12px 18px;margin-bottom:14px;} .op-ag summary{cursor:pointer;font-weight:700;color:var(--text-primary);}
-        .op-ag-i{padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-secondary);} .op-ag-i a{color:#6366f1;font-size:12px;}
+        .op-ag-i{padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-secondary);} .op-ag-i a{color:var(--accent);font-size:12px;}
         .op-tab{width:100%;border-collapse:collapse;font-size:12.5px;}
-        .op-tab th{padding:9px 10px;text-align:left;font-size:10.5px;text-transform:uppercase;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
+        .op-tab th{padding:9px 10px;text-align:left;font-size:10.5px;text-transform:none;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
         .op-tab td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-secondary);vertical-align:middle;}
         .op-n{text-align:right !important;font-variant-numeric:tabular-nums;white-space:nowrap;}
         .op-nome{color:var(--text-primary);font-weight:600;text-decoration:none;}

@@ -1446,7 +1446,7 @@ Router.register('financeiro', async (params, el) => {
       border-radius: 50%;
       color: white;
       font-size: 18px;
-      font-weight: 800;
+      font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1462,7 +1462,7 @@ Router.register('financeiro', async (params, el) => {
     }
     .fin-valor {
       font-size: 18px;
-      font-weight: 800;
+      font-weight: 700;
       background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
@@ -1550,7 +1550,7 @@ Router.register('financeiro', async (params, el) => {
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .fin-switch input:checked + .fin-slider {
-      background: linear-gradient(135deg, var(--green), #10b981);
+      background: linear-gradient(135deg, var(--green), var(--green));
     }
     .fin-switch input:checked + .fin-slider:before {
       transform: translateX(20px);

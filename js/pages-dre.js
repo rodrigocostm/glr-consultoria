@@ -530,7 +530,7 @@ Router.register('dre', (params, el) => {
       .dre-wrap{max-width:960px;margin:0 auto;}
       .dre-tbl{width:100%;border-collapse:collapse;font-size:14px;}
       .dre-tbl th{background:var(--bg-surface);color:var(--text-muted);font-size:11px;font-weight:600;
-        text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;border-bottom:2px solid var(--border);}
+        text-transform:none;letter-spacing:0;padding:10px 12px;border-bottom:2px solid var(--border);}
       .dre-tbl td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
       .dre-tbl tr:hover td{background:rgba(255,255,255,.02);}
       .dre-receita td{font-weight:600;}
@@ -552,7 +552,7 @@ Router.register('dre', (params, el) => {
       .dre-inp-label:focus{border-bottom-color:var(--accent);}
       .dre-inp[readonly]{opacity:.65;cursor:default;}
       .dre-inp.auto-filled{border-color:rgba(99,102,241,0.4);background:rgba(99,102,241,0.04);}
-      .dre-auto-badge{font-size:9px;color:#818cf8;background:rgba(99,102,241,0.12);
+      .dre-auto-badge{font-size:9px;color:var(--accent-light);background:rgba(99,102,241,0.12);
         border-radius:3px;padding:1px 4px;vertical-align:middle;margin-left:4px;font-weight:700;}
       /* Print */
       .dre-print-header,.dre-print-footer{display:none;}
@@ -560,13 +560,13 @@ Router.register('dre', (params, el) => {
         .dre-wrap{max-width:100%;}
         .card{box-shadow:none!important;border:none!important;background:white!important;}
         .dre-screen-header{display:none!important;}
-        .dre-print-header{display:block;text-align:center;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #1a2744;}
-        .dre-print-logo{background:#1a2744;color:white;font-size:13px;font-weight:800;padding:3px 10px;border-radius:4px;display:inline-block;margin-bottom:10px;}
-        .dre-print-title{font-size:22px;font-weight:700;color:#1a2744;margin:0 0 4px;font-style:italic;}
+        .dre-print-header{display:block;text-align:center;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid var(--bg-subtle);}
+        .dre-print-logo{background:var(--bg-subtle);color:var(--text-secondary);font-size:13px;font-weight:700;padding:3px 10px;border-radius:4px;display:inline-block;margin-bottom:10px;}
+        .dre-print-title{font-size:22px;font-weight:700;color:var(--bg-subtle);margin:0 0 4px;font-style:italic;}
         .dre-print-sub{font-size:15px;color:#555;margin:0;font-style:italic;}
         .dre-print-footer{display:block;text-align:center;margin-top:28px;padding-top:10px;border-top:1px solid #ccc;font-size:11px;color:#888;}
-        .dre-tbl th{background:#1a2744!important;color:white!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-        .dre-resultado td{background:#f0f2f5!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+        .dre-tbl th{background:var(--bg-subtle)!important;color:var(--text-secondary)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+        .dre-resultado td{background:var(--bg-subtle)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
         .dre-tbl td,.dre-tbl th{color:#111!important;border-color:#ccc!important;}
         .dre-inp{border:none!important;background:transparent!important;color:#111!important;font-size:14px!important;}
         #dre-hist,button,.btn-add-linha,.btn-rem-linha,.dre-auto-badge{display:none!important;}
