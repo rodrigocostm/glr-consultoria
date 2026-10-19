@@ -354,6 +354,7 @@ Router.register('vendometro', (params, el) => {
     .vm-up{color:#4ade80}.vm-down{color:#f87171}
     .vm-foto{position:relative}.vm-cheia{display:inline-grid;place-items:center}.vm-cheia.on{background:#fff;color:#262a7a;border-color:#fff}
     .vm-foto-menu{position:absolute;right:0;top:38px;z-index:20;width:290px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:12px;display:flex;flex-direction:column;gap:8px;text-align:left}
+    .vm-foto-menu[hidden]{display:none}
     .vm-foto-menu label{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}.vm-foto-menu input{accent-color:var(--accent);width:15px;height:15px}
     .vm-foto-op.off{opacity:.45;cursor:default}.vm-foto-dica{font-size:11.5px;color:var(--text-muted);margin:-4px 0 4px 23px}
     .vm-foto-on{padding-bottom:2px}.vm-oculto{color:var(--text-muted);letter-spacing:1px}
