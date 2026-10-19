@@ -245,8 +245,25 @@ Router.register('agente-ml', (params, el) => {
       const an = (d.item_ids || []).slice(0, 3).join(', ') + ((d.item_ids || []).length > 3 ? '…' : '');
       if (d.acao !== 'mover_produto' || !an) return '';
       const destinoOk = d.destino && !destinoFraco(d);
-      return `<div class="aml-li-como">No ML: Publicidade → Product Ads → campanha "${h(d.campanha || '')}" → pausar o anúncio <b>${h(an)}</b> · depois ${destinoOk ? `campanha "${h(d.destino)}" → Adicionar anúncios → ${h(an)}` : `Criar campanha (ROAS objetivo ${roasXg(d.destino ? roasNovo(d) : d.para)}) só com ${h(an)}`}${d.destino && destinoFraco(d) ? ` <span style="color:#d97706">— "${h(d.destino)}" (${roasXg(d.para)}) é quase igual à atual, não resolve</span>` : ''}</div>`;
+      return `<div class="aml-li-como">No ML: Publicidade → Product Ads → campanha "${h(d.campanha || '')}" → pausar o anúncio <b>${h(an)}</b> · depois ${destinoOk ? `campanha "${h(d.destino)}" → Adicionar anúncios → ${h(an)}` : `colocar na campanha nova de ROAS ${roasXg(d.destino ? roasNovo(d) : d.para)} (quadro acima — uma só para todos)`}</div>`;
     };
+    // Produtos que vão para campanha nova: agrupa por ROAS → UMA campanha com todos
+    const novaCamp = {};
+    for (const l of pendentes(id)) {
+      const d = l.dados || {};
+      if (d.acao !== 'mover_produto' || (d.destino && !destinoFraco(d))) continue;
+      const r = roasXg(d.destino ? roasNovo(d) : d.para);
+      (novaCamp[r] = novaCamp[r] || []).push(d);
+    }
+    const quadroNova = Object.entries(novaCamp).map(([r, ds]) => {
+      const ids = [...new Set(ds.flatMap(d => d.item_ids || []))];
+      return `<div class="aml-nova">
+        <div><b>Campanha nova sugerida: ROAS objetivo ${r}</b> · ${ds.length} produto(s), ${ids.length} anúncio(s)</div>
+        <div class="aml-sub" style="margin:2px 0 6px">Crie uma campanha só (Publicidade → Product Ads → Criar campanha, ROAS objetivo ${r}) e adicione estes anúncios. Depois pause cada um na campanha de origem indicada na lista e marque ✓ Feito.</div>
+        <div class="aml-nova-ids">${ids.map(h).join(', ')}</div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="navigator.clipboard.writeText('${ids.join(', ')}').then(()=>{this.textContent='✓ Copiado'})">Copiar anúncios</button>
+      </div>`;
+    }).join('');
     const todas = pendentes(id).map(l => ({ l, d: l.dados || {} })).sort((a, b) => (TIPOS[a.d.acao]?.ordem || 8) - (TIPOS[b.d.acao]?.ordem || 8));
     const filtro = state.filtroSug || 'todas';
     const lista = filtro === 'todas' ? todas : todas.filter(x => x.d.acao === filtro);
@@ -284,6 +301,7 @@ Router.register('agente-ml', (params, el) => {
         <div class="aml-sub">${fazerNoMl} para aplicar no painel do ML · ${todas.length - fazerNoMl} para revisar</div>
       </div>
       <div class="aml-sub" style="margin-bottom:12px;">Aplique em Publicidade → Product Ads → campanha e marque <b>✓ Feito</b>. O ML não deixa a integração alterar o ADS.</div>
+      ${quadroNova}
       ${todas.length ? `<div class="aml-filtros">${chips.map(([k, t, n]) => `<button class="aml-fchip ${filtro === k ? 'on' : ''}" style="--c:${TIPOS[k]?.cor || '#64748b'}" onclick="window._amlFiltroSug('${k}')">${t} <b>${n}</b></button>`).join('')}</div>` : ''}
       ${lista.length ? `<div class="aml-lista">${lista.map(({ l, d }) => {
         const t = TIPOS[d.acao] || { rot: 'Ação', cor: '#64748b' };
@@ -460,6 +478,8 @@ Router.register('agente-ml', (params, el) => {
     .aml-li-ass{font-weight:700;font-size:13px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .aml-li-faz{font-size:12.5px;color:var(--text-secondary);margin-top:1px;}
     .aml-li-como{font-size:11.5px;color:var(--text-muted);margin-top:3px;}
+    .aml-nova{border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;background:var(--bg-card-hover);}
+    .aml-nova-ids{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--text-secondary);word-break:break-all;}
     .aml-li-pq{font-size:12px;color:var(--text-secondary);font-variant-numeric:tabular-nums;}
     .aml-li-bt{display:flex;gap:6px;align-items:center;justify-content:flex-end;}
     .aml-x{border:1px solid var(--border);background:none;border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text-muted);}
