@@ -1740,6 +1740,97 @@
       </div>`;
     }
 
+    // ── Comparativo de visualizações: impressões (e cliques/CTR) dia a dia,
+    // período atual × anterior de mesmo tamanho, da base (glr_ads_diario).
+    // Visualização orgânica do anúncio a Shopee não fornece pela API — aqui é
+    // quantas vezes os anúncios pagos apareceram.
+    function renderComparativoVisualizacoes(cfg) {
+      const contaId = cfg.conta_id, p = state.negocioPeriodo, chave = contaId + ':' + p;
+      state.visPorConta = state.visPorConta || {};
+      state.visMetrica = state.visMetrica || 'impressoes';
+      const v = state.visPorConta[chave];
+      if (!v) { state.visPorConta[chave] = { carregando: true }; carregarVisualizacoes(contaId, p); }
+      else if (!v.carregando && !v.erro) setTimeout(() => desenharVisualizacoes(chave), 0);
+      const n = x => Math.round(x || 0).toLocaleString('pt-BR');
+      const chip = (a, b) => b > 0 ? varChip((a - b) / b * 100) : '';
+      const METR = [['impressoes', 'Impressões'], ['cliques', 'Cliques'], ['ctr', 'CTR']];
+      let corpo;
+      if (!v || v.carregando) corpo = `<div class="ag-kpi ag-skel" style="height:220px;"></div>`;
+      else if (v.erro) corpo = `<div class="ag-aviso ag-aviso-erro">⚠️ Não consegui ler as visualizações: ${h(v.erro)}</div>`;
+      else if (!v.temDados) corpo = `<div class="ag-vazio">Sem impressões de ADS na base para este período (a loja pode não ter anúncio ativo ou a base ainda está carregando o histórico).</div>`;
+      else {
+        const A = v.totAtual, P = v.totAnterior;
+        const ctrA = A.impressoes > 0 ? A.cliques / A.impressoes * 100 : 0, ctrP = P.impressoes > 0 ? P.cliques / P.impressoes * 100 : 0;
+        const bloco = (rot, val, sub, va) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${rot}</div><div class="ag-mono" style="font-size:20px;font-weight:800;">${val}</div><div class="ag-hud-sub">${sub}${va ? ' · ' + va : ''}</div></div>`;
+        corpo = `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:12px;">
+            ${bloco('Impressões', n(A.impressoes), `vs ${n(P.impressoes)}`, chip(A.impressoes, P.impressoes))}
+            ${bloco('Cliques', n(A.cliques), `vs ${n(P.cliques)}`, chip(A.cliques, P.cliques))}
+            ${bloco('CTR', fmtPct(ctrA, 2), `vs ${fmtPct(ctrP, 2)}`, ctrP > 0 ? chip(ctrA, ctrP) : '')}
+            ${bloco('Impressões por dia', n(A.impressoes / v.dias), `vs ${n(P.impressoes / v.dias)}`, '')}
+          </div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;">${METR.map(([k, l]) => `<button class="btn btn-sm ${state.visMetrica === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agVisMetrica('${k}')">${l}</button>`).join('')}</div>
+          <div style="position:relative;height:230px;"><canvas id="ag-vis-graf"></canvas></div>`;
+      }
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#2a78d6;margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:800;margin-bottom:2px;">👁️ Comparativo de visualizações (${periodoLabel(p)} × período anterior)</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Quantas vezes os anúncios da loja apareceram (impressões de ADS), dia a dia, contra o mesmo número de dias do período anterior. A visualização orgânica dos anúncios a Shopee não informa pela API.</div>
+        ${corpo}
+      </div>`;
+    }
+    async function carregarVisualizacoes(contaId, p) {
+      const chave = contaId + ':' + p;
+      try {
+        const j = janelasNegocio(p);
+        const { data, error } = await _sb.from('glr_ads_diario').select('data,impressoes,cliques')
+          .eq('marketplace', 'shopee').eq('conta_id', String(contaId)).gte('data', j.anteriorDe).lte('data', j.atualAte);
+        if (error) throw error;
+        const porDia = Object.fromEntries((data || []).map(r => [r.data, r]));
+        const lista = (de, ate) => { const out = []; for (let d = new Date(de + 'T12:00:00'); isoDe(d) <= ate; d.setDate(d.getDate() + 1)) out.push(isoDe(d)); return out; };
+        const atual = lista(j.atualDe, j.atualAte), anterior = lista(j.anteriorDe, j.anteriorAte);
+        const dias = Math.max(atual.length, 1);
+        const linha = d => ({ data: d, impressoes: parseInt(porDia[d]?.impressoes) || 0, cliques: parseInt(porDia[d]?.cliques) || 0 });
+        const A = atual.map(linha), P = anterior.map(linha);
+        const tot = arr => arr.reduce((t, x) => ({ impressoes: t.impressoes + x.impressoes, cliques: t.cliques + x.cliques }), { impressoes: 0, cliques: 0 });
+        state.visPorConta[chave] = { atual: A, anterior: P, dias, totAtual: tot(A), totAnterior: tot(P), temDados: (data || []).some(r => (parseInt(r.impressoes) || 0) > 0) };
+      } catch (e) { state.visPorConta[chave] = { erro: e.message || String(e) }; }
+      if (String(state.contaAbertaId) === String(contaId) && state.negocioPeriodo === p) render();
+    }
+    function desenharVisualizacoes(chave) {
+      const cv = document.getElementById('ag-vis-graf'), v = state.visPorConta?.[chave];
+      if (!cv || !v || !v.atual || typeof Chart === 'undefined') return;
+      Chart.getChart(cv)?.destroy();
+      const m = state.visMetrica;
+      const val = x => !x ? null : m === 'ctr' ? (x.impressoes > 0 ? x.cliques / x.impressoes * 100 : 0) : x[m];
+      const css = getComputedStyle(document.documentElement), cor = n => (css.getPropertyValue(n) || '').trim();
+      const texto = cor('--text-muted') || '#8a8ba3';
+      const br = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '';
+      const fmt = x => x == null ? '—' : m === 'ctr' ? fmtPct(x, 2) : Math.round(x).toLocaleString('pt-BR');
+      const grad = ctx => { const a = ctx.chart.chartArea; if (!a) return '#2a78d6'; const g = ctx.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, '#2a78d655'); g.addColorStop(1, '#2a78d600'); return g; };
+      new Chart(cv, {
+        type: 'line',
+        data: {
+          labels: v.atual.map(x => br(x.data)),
+          datasets: [
+            { label: 'Período atual', data: v.atual.map(val), borderColor: '#2a78d6', backgroundColor: grad, fill: 'origin', borderWidth: 2.5, tension: 0.35, cubicInterpolationMode: 'monotone', pointRadius: v.atual.length === 1 ? 4 : 0, pointHoverRadius: 5 },
+            { label: 'Período anterior', data: v.atual.map((_, i) => val(v.anterior[i])), borderColor: '#94a3b8', borderDash: [5, 4], borderWidth: 1.8, tension: 0.35, cubicInterpolationMode: 'monotone', pointRadius: 0, pointHoverRadius: 4, fill: false },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { align: 'end', labels: { color: texto, usePointStyle: true, pointStyle: 'circle', boxWidth: 7, boxHeight: 7, font: { size: 11 } } },
+            tooltip: { backgroundColor: cor('--bg-card') || '#16161f', titleColor: cor('--text-primary') || '#f1f1f8', bodyColor: texto, borderColor: cor('--border') || 'rgba(255,255,255,.08)', borderWidth: 1, padding: 10, cornerRadius: 10, usePointStyle: true,
+              callbacks: { title: it => `Dia ${it[0].dataIndex + 1}`, label: c => ` ${c.dataset.label} (${br(c.datasetIndex === 0 ? v.atual[c.dataIndex]?.data : v.anterior[c.dataIndex]?.data)}): ${fmt(c.raw)}` } },
+          },
+          scales: {
+            x: { grid: { display: false }, border: { display: false }, ticks: { color: texto, font: { size: 10 }, maxRotation: 0, autoSkipPadding: 10 } },
+            y: { beginAtZero: true, grid: { color: 'rgba(140,140,170,.12)' }, border: { display: false }, ticks: { color: texto, font: { size: 10 }, maxTicksLimit: 5, callback: x => m === 'ctr' ? x + '%' : x >= 1000 ? (x / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'k' : x } },
+          },
+        },
+      });
+    }
+    window._agVisMetrica = k => { state.visMetrica = k; render(); };
+
     // ── 3. Indicadores (um seletor de período vale pra tela toda) ──
     function kpiCard(label, valor, rodape, cor, valorCor) {
       return `<div class="ag-kpi" style="--ag-hud-accent:${cor};"><div class="ag-hud-label">${label}</div><div class="ag-hud-value" ${valorCor ? `style="color:${valorCor};"` : ''}>${valor}</div><div class="ag-hud-sub">${rodape || ''}</div></div>`;
@@ -2189,6 +2280,7 @@
         ${renderCabecalho(cfg)}
         ${renderPrecisaDeVoce(cfg.conta_id)}
         ${renderKPIs(cfg)}
+        ${renderComparativoVisualizacoes(cfg)}
         ${renderGmvLoja(cfg.conta_id)}
         ${renderRegras(cfg)}
         ${renderTimeline(cfg.conta_id)}
@@ -2412,6 +2504,7 @@
       buscarDadosAoVivo(state.contaAbertaId, periodo);
     };
     window._agAtualizarTudo = () => {
+      if (state.visPorConta) delete state.visPorConta[state.contaAbertaId + ':' + state.negocioPeriodo];
       buscarNegocio(state.contaAbertaId, state.negocioPeriodo, true);
       buscarDadosAoVivo(state.contaAbertaId, state.negocioPeriodo);
     };
