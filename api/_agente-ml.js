@@ -213,7 +213,9 @@ async function processarContaML(cfg, mcApiKey, h) {
         // 1b) Produto que puxa o ACOS da campanha → campanha mais conservadora
         const pesado = f.gasto >= Math.max(limProd, x.gasto * 0.3);
         if (pesado && f.acos > Math.max(meta * 1.5, cfg.regra_pausa_acos || 0) && f.unidades > 0) {
-          const destino = C.filter(o => o.id !== x.id && o.roasAlvo > x.roasAlvo && o.rentab).sort((a, b) => a.roasAlvo - b.roasAlvo)[0];
+          // destino precisa ser pelo menos 20% mais conservador — 12,5x → 12,9x não muda o lance;
+          // sem campanha assim, a sugestão é criar uma nova só para o produto
+          const destino = C.filter(o => o.id !== x.id && o.roasAlvo >= x.roasAlvo * 1.2 && o.rentab).sort((a, b) => a.roasAlvo - b.roasAlvo)[0];
           const roasNova = r1(Math.max(roasMeta, x.roasAlvo * 1.25)); // campanha nova: sempre mais conservadora que a atual
           const ok = await sugerir(chave, `Sugestão: mover produto para campanha mais conservadora — ${f.nome.slice(0, 50)}`,
             `"${f.nome.slice(0, 70)}" vende, mas com ACOS de ${pctTxt(f.acos)} (sem cancelados) em ${diasProd} dias — bem acima da meta (${meta}%) — e responde por ${Math.round(f.gasto / (x.gasto || f.gasto) * 100)}% do gasto da campanha "${x.nome}" (ROAS objetivo ${roasTxt(x.roasAlvo)}). Em vez de apertar a campanha inteira, ${destino ? `mover este produto para "${destino.nome}" (ROAS objetivo ${roasTxt(destino.roasAlvo)}, lance mais conservador)` : `criar uma campanha só para ele com ROAS objetivo de ${roasTxt(roasNova)} (lance mais conservador)`}. Não pausar: o produto vende.`,

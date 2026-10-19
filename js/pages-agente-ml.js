@@ -217,6 +217,7 @@ Router.register('agente-ml', (params, el) => {
   // Sugestões em formato de "bater o olho e agir": uma linha por sugestão —
   // tipo de ação (cor), produto/campanha, O QUE FAZER e o PORQUÊ em um número;
   // explicação completa e anúncios ficam escondidos (▸ detalhes).
+  const roasXg = v => v ? `${(+v).toFixed(1).replace('.', ',')}x` : '—';
   const TIPOS = {
     retirar_produto: { rot: 'Tirar produto', cor: '#dc2626', ordem: 1 },
     pausar: { rot: 'Pausar campanha', cor: '#dc2626', ordem: 2 },
@@ -228,6 +229,24 @@ Router.register('agente-ml', (params, el) => {
     abc_queda: { rot: 'Curva A caindo', cor: '#8b5cf6', ordem: 9 },
   };
   function renderSugestoes(id) {
+    const meta = parseFloat(cfgDe(id)?.meta_acos) || null;
+    const roasMeta = meta ? 100 / meta : null;
+    // "Mover produto": tirar o anúncio da campanha atual e colocar numa campanha mais
+    // conservadora (ROAS objetivo maior = lance menor só para ele). Destino com ROAS
+    // quase igual (menos de 20% maior) não muda nada → orienta criar campanha nova.
+    const roasNovo = d => Math.max(roasMeta || 0, (+d.de || 0) * 1.25) || null;
+    const destinoFraco = d => d.destino && d.de && d.para && +d.para < +d.de * 1.2;
+    const moverTxt = d => {
+      const de = `"${h(d.campanha || '')}"${d.de ? ` (ROAS ${roasXg(d.de)})` : ''}`;
+      if (d.destino && !destinoFraco(d)) return `Tirar de ${de} e colocar em <b>"${h(d.destino)}"</b> (ROAS ${roasXg(d.para)})`;
+      return `Tirar de ${de} e criar <b>campanha nova</b> com ROAS objetivo <b>${roasXg(d.destino ? roasNovo(d) : d.para)}</b>`;
+    };
+    const comoFazer = d => {
+      const an = (d.item_ids || []).slice(0, 3).join(', ') + ((d.item_ids || []).length > 3 ? '…' : '');
+      if (d.acao !== 'mover_produto' || !an) return '';
+      const destinoOk = d.destino && !destinoFraco(d);
+      return `<div class="aml-li-como">No ML: Publicidade → Product Ads → campanha "${h(d.campanha || '')}" → pausar o anúncio <b>${h(an)}</b> · depois ${destinoOk ? `campanha "${h(d.destino)}" → Adicionar anúncios → ${h(an)}` : `Criar campanha (ROAS objetivo ${roasXg(d.destino ? roasNovo(d) : d.para)}) só com ${h(an)}`}${d.destino && destinoFraco(d) ? ` <span style="color:#d97706">— "${h(d.destino)}" (${roasXg(d.para)}) é quase igual à atual, não resolve</span>` : ''}</div>`;
+    };
     const todas = pendentes(id).map(l => ({ l, d: l.dados || {} })).sort((a, b) => (TIPOS[a.d.acao]?.ordem || 8) - (TIPOS[b.d.acao]?.ordem || 8));
     const filtro = state.filtroSug || 'todas';
     const lista = filtro === 'todas' ? todas : todas.filter(x => x.d.acao === filtro);
@@ -239,7 +258,7 @@ Router.register('agente-ml', (params, el) => {
     const fazer = d => ({
       retirar_produto: `Tirar da campanha ${camp(d)}`,
       pausar: 'Pausar a campanha',
-      mover_produto: `Mover para ${d.destino ? `"${h(d.destino)}"` : `uma campanha nova com ROAS ${roasX(d.para)}`}`,
+      mover_produto: moverTxt(d),
       roas_target: `ROAS objetivo ${roasX(d.de)} → <b>${roasX(d.para)}</b>`,
       acos_target: `Meta de ACOS ${pct(d.de)} → <b>${pct(d.para)}</b>`,
       orcamento: `Orçamento ${R$(d.de)} → <b>${R$(d.para)}</b>`,
@@ -249,7 +268,7 @@ Router.register('agente-ml', (params, el) => {
     // por quê (um número)
     const porque = d => {
       if (d.acao === 'retirar_produto' || d.acao === 'pausar') return `gastou <b>${R$(d.gasto)}</b>${d.janela_dias ? ` em ${d.janela_dias}d` : ''} · ${d.unidades ? `${un(d.unidades)} vendidas` : (d.vendas_sem_cancelados ? `vendeu ${R$(d.vendas_sem_cancelados)}` : '<b>0 vendas</b>')}`;
-      if (d.acao === 'mover_produto') return `ACOS <b>${pct(d.acos)}</b> · gastou ${R$(d.gasto)}`;
+      if (d.acao === 'mover_produto') return `ACOS <b>${pct(d.acos)}</b>${meta ? ` · meta ${pct(meta)}` : ''} · gastou ${R$(d.gasto)}`;
       if (d.acao === 'roas_target' || d.acao === 'orcamento' || d.acao === 'acos_target') return `ACOS da campanha <b>${pct(d.acos)}</b> · gastou ${R$(d.gasto)}`;
       if (d.acao === 'adicionar_produto') return d.unidades_loja_30d ? `<b>${un(d.unidades_loja_30d)}</b> no mês sem ADS` : `${un(d.unidades_ultima)} na semana${varTxt(d.variacao_pct)}`;
       if (d.acao === 'abc_queda') return `<b>${un(d.unidades_ultima)}</b> na semana × média ${String(d.media_3_semanas ?? '—').replace('.', ',')} <b style="color:#dc2626">${varTxt(d.variacao_pct).trim()}</b>`;
@@ -273,7 +292,7 @@ Router.register('agente-ml', (params, el) => {
           <span class="aml-tipo">${t.rot}</span>
           <div class="aml-li-txt">
             <div class="aml-li-ass" title="${h(assunto(d))}">${h(assunto(d))}</div>
-            <div class="aml-li-faz">${fazer(d)}</div>
+            <div class="aml-li-faz">${fazer(d)}</div>${comoFazer(d)}
           </div>
           <div class="aml-li-pq">${porque(d)}</div>
           <div class="aml-li-bt">
@@ -440,6 +459,7 @@ Router.register('agente-ml', (params, el) => {
     .aml-tipo{font-size:11px;font-weight:800;color:var(--c);text-transform:uppercase;letter-spacing:.3px;}
     .aml-li-ass{font-weight:700;font-size:13px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .aml-li-faz{font-size:12.5px;color:var(--text-secondary);margin-top:1px;}
+    .aml-li-como{font-size:11.5px;color:var(--text-muted);margin-top:3px;}
     .aml-li-pq{font-size:12px;color:var(--text-secondary);font-variant-numeric:tabular-nums;}
     .aml-li-bt{display:flex;gap:6px;align-items:center;justify-content:flex-end;}
     .aml-x{border:1px solid var(--border);background:none;border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text-muted);}
