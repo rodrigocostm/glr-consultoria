@@ -1964,6 +1964,6 @@
   Router.register('anuncios-ml', renderML);
   Router.register('anuncios-shopee', renderShopee);
   Router.register('anuncios-tiktok', renderTikTok);
-  Router.register('anuncios-amazon', (p, el) => renderEmConstrucao('amazon', el));
+  // anuncios-amazon: página própria em js/pages-amazon.js (Buy Box, Promoções e Margem)
 
 })();
