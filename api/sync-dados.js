@@ -616,13 +616,21 @@ async function gravarPedidosTikTok(apiKey, openId, filtro, prazo) {
 //    valor = soma dos itens (sem frete); sem itens ainda, o total do pedido.
 //    Pending (não pago) não entra; Canceled = cancelado.
 const AMAZON_ITENS_POR_RODADA = 25;
+// Guia da Tiops: com mais de uma conta Amazon, se a conta não for respeitada a
+// API responde 200 com dado de OUTRA loja (falha silenciosa). Confere a conta
+// que respondeu (conta_usada / selling_partner_id) antes de gravar qualquer coisa.
+function conferirContaAmazon(r, accId) {
+  const usada = r?.conta_usada?.amazon_account_id || r?.data?.conta_usada?.amazon_account_id || r?.selling_partner_id || r?.data?.selling_partner_id;
+  if (usada && String(usada) !== String(accId)) throw new Error(`Amazon respondeu pela conta ${usada}, esperado ${accId} — nada gravado`);
+  return r;
+}
 async function gravarPedidosAmazon(apiKey, accId, deUnix, ateUnix, prazo) {
   let n = 0, token = null, itensFeitos = 0;
   for (let pag = 0; pag < 100; pag++) {
     if (prazo && Date.now() > prazo) return { n, completo: false };
     const params = token ? { amazon_account_id: accId, next_token: token }
       : { amazon_account_id: accId, created_after: new Date(deUnix * SEG).toISOString(), created_before: new Date(Math.min(ateUnix, agora() - 130) * SEG).toISOString(), limit: 100 };
-    const r = await comRetry(() => mcpCall(apiKey, 'amazon_list_orders', params));
+    const r = conferirContaAmazon(await comRetry(() => mcpCall(apiKey, 'amazon_list_orders', params)), accId);
     const d = r.data?.orders ? r.data : r;
     const orders = (d.orders || []).filter(o => o && o.amazon_order_id && o.purchase_date && !/^pending/i.test(o.status || ''));
     if (orders.length) {
@@ -635,7 +643,7 @@ async function gravarPedidosAmazon(apiKey, accId, deUnix, ateUnix, prazo) {
         let itens = Array.isArray(ant?.itens) && ant.itens.length ? ant.itens : null;
         if (!itens && !cancelado && itensFeitos < AMAZON_ITENS_POR_RODADA && (!prazo || Date.now() < prazo)) {
           try {
-            const ri = await comRetry(() => mcpCall(apiKey, 'amazon_get_order_items', { amazon_account_id: accId, order_id: o.amazon_order_id }), 2);
+            const ri = conferirContaAmazon(await comRetry(() => mcpCall(apiKey, 'amazon_get_order_items', { amazon_account_id: accId, order_id: o.amazon_order_id }), 2), accId);
             const lista = (ri.data?.items || ri.items || []);
             itens = lista.map(i => { const q = parseInt(i.quantity) || 1; return { item_id: i.asin || '', sku: i.seller_sku || '', nome: i.title || '—', qtd: q, preco: r2((parseFloat(i.price) || 0) / q) }; });
             itensFeitos++;
@@ -787,7 +795,7 @@ async function enriquecerTaxasAmazon(apiKey, accId, t, prazo, cursor) {
     for (let pag = 0; pag < 50; pag++) {
       if (Date.now() > prazo) { completo = false; break; }
       const params = token ? { amazon_account_id: accId, next_token: token } : { amazon_account_id: accId, posted_after: new Date(de * SEG).toISOString(), posted_before: new Date(ate * SEG).toISOString(), max_results: 100 };
-      const r = await comRetry(() => mcpCall(apiKey, 'amazon_list_financial_events', params), 2);
+      const r = conferirContaAmazon(await comRetry(() => mcpCall(apiKey, 'amazon_list_financial_events', params), 2), accId);
       const d = r.data?.vendas ? r.data : r;
       for (const v of (d.vendas || [])) {
         const x = vendas.get(v.order_id) || { liq: 0, comissao: 0, outras: 0 };
