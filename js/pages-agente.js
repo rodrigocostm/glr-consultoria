@@ -21,10 +21,10 @@
   function nl2br(s) { return esc(s).replace(/\n/g, '<br>'); }
   const R$ = v => 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const TIPO_LABEL = { decisao: '⚙️ Decisão', alerta: '🔔 Alerta', sistema: '🖥️ Sistema', chat: '💬 Chat' };
-  const TIPO_COR = { decisao: '#6366f1', alerta: '#d97706', sistema: '#64748b', chat: '#0ea5e9' };
-  const RESULTADO_LABEL = { executado: '✅ Executado', erro: '⚠️ Erro', so_alerta: '🔔 Aguardando aprovação' };
-  const RESULTADO_COR = { executado: '#16a34a', erro: '#dc2626', so_alerta: '#d97706' };
+  const TIPO_LABEL = { decisao: 'Decisão', alerta: 'Alerta', sistema: 'Sistema', chat: 'Chat' };
+  const TIPO_COR = { decisao: 'var(--accent)', alerta: 'var(--yellow)', sistema: 'var(--text-muted)', chat: 'var(--cyan)' };
+  const RESULTADO_LABEL = { executado: '✅ Executado', erro: '⚠️ Erro', so_alerta: 'Aguardando aprovação' };
+  const RESULTADO_COR = { executado: 'var(--green)', erro: 'var(--red)', so_alerta: 'var(--yellow)' };
 
   function renderPage(params, el) {
     const state = {
@@ -605,8 +605,8 @@
       const a = state.abcPorConta[contaId];
       const carregando = state.carregandoABC;
       const pct = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(0) + '%';
-      const COR_CLASSE = { A: '#16a34a', B: '#d97706', C: '#64748b' };
-      const cor = a && !a.erro && a.alertas.length ? '#dc2626' : '#6366f1';
+      const COR_CLASSE = { A: 'var(--green)', B: 'var(--yellow)', C: 'var(--text-muted)' };
+      const cor = a && !a.erro && a.alertas.length ? 'var(--red)' : 'var(--accent)';
       const mesLabel = k => { const [y, m] = k.split('-'); return new Date(+y, +m - 1, 1).toLocaleDateString('pt-BR', { month: 'short' }); };
       let corpo;
       if (carregando) corpo = `<div id="ag-abc-prog" style="color:var(--text-muted);font-size:13px;">⏳ ${esc(state.abcProgresso || 'calculando...')}</div><div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">A primeira leitura puxa 3 meses de pedidos e pode levar alguns minutos — os meses fechados ficam guardados e as próximas atualizações leem só o mês atual.</div>`;
@@ -620,18 +620,18 @@
             <div><div class="ag-hud-label" style="margin-bottom:2px;">Receita ${mesLabel(a.k1)}</div><div class="ag-mono" style="font-size:20px;font-weight:700;">${R$(a.total1)}</div></div>
           </div>
           ${a.alertas.length ? `<div style="background:#dc26261a;border:1px solid var(--red);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
-            <div style="font-size:12.5px;font-weight:700;color:var(--red);margin-bottom:6px;">🚨 ${a.alertas.length} produto(s) pedindo ação conjunta</div>
-            ${a.alertas.map(p => `<div style="font-size:12px;line-height:1.5;margin-top:4px;"><b>${esc(p.nome.slice(0, 70))}</b> <span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:${COR_CLASSE[p.classe]}1a;">Curva ${p.classe}</span> — ${p.alerta === 'virada' ? `vinha crescendo (${pct(p.crescimentoAnterior)}) e` : ''} projeta ${R$(p.proj)} (${pct(p.varProj)} vs ${mesLabel(a.k1)}), impacto ≈ ${R$(p.impacto)}</div>`).join('')}
+            <div style="font-size:12.5px;font-weight:700;color:var(--red);margin-bottom:6px;">${a.alertas.length} produto(s) pedindo ação conjunta</div>
+            ${a.alertas.map(p => `<div style="font-size:12px;line-height:1.5;margin-top:4px;"><b>${esc(p.nome.slice(0, 70))}</b> <span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:color-mix(in srgb,${COR_CLASSE[p.classe]} 10%,transparent);">Curva ${p.classe}</span> — ${p.alerta === 'virada' ? `vinha crescendo (${pct(p.crescimentoAnterior)}) e` : ''} projeta ${R$(p.proj)} (${pct(p.varProj)} vs ${mesLabel(a.k1)}), impacto ≈ ${R$(p.impacto)}</div>`).join('')}
           </div>` : (a.projecaoOk ? `<div style="font-size:12.5px;color:var(--green);margin-bottom:12px;">✅ Nenhum produto A/B com queda projetada relevante neste mês.</div>` : `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;">Projeção do mês só é confiável a partir do dia ${ABC_DIA_MIN_PROJECAO + 1} (hoje há ${a.diasDecorridos} dia(s) de dados) — por enquanto sem alertas.</div>`)}
           <div style="overflow-x:auto;"><table class="ag-tech-table"><thead><tr><th>Produto</th><th>Classe</th><th>${mesLabel(a.k2)}</th><th>${mesLabel(a.k1)}</th><th>Projeção ${mesLabel(a.k0)}</th><th>Variação</th></tr></thead><tbody>
-            ${top.map(p => `<tr style="--row-accent:${COR_CLASSE[p.classe]};"><td>${esc(p.nome.slice(0, 55))}</td><td><span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:${COR_CLASSE[p.classe]}1a;">${p.classe}</span></td><td class="ag-mono">${a.semMes2 ? '—' : R$(p.r2)}</td><td class="ag-mono">${R$(p.r1)}</td><td class="ag-mono">${p.proj != null && a.projecaoOk ? R$(p.proj) : '—'}</td><td class="ag-mono" style="font-weight:700;color:${p.varProj == null ? 'var(--text-muted)' : p.varProj <= ABC_QUEDA_PROJ ? 'var(--red)' : 'var(--green)'};">${p.varProj == null ? '—' : pct(p.varProj)}</td></tr>`).join('')}
+            ${top.map(p => `<tr style="--row-accent:${COR_CLASSE[p.classe]};"><td>${esc(p.nome.slice(0, 55))}</td><td><span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:color-mix(in srgb,${COR_CLASSE[p.classe]} 10%,transparent);">${p.classe}</span></td><td class="ag-mono">${a.semMes2 ? '—' : R$(p.r2)}</td><td class="ag-mono">${R$(p.r1)}</td><td class="ag-mono">${p.proj != null && a.projecaoOk ? R$(p.proj) : '—'}</td><td class="ag-mono" style="font-weight:700;color:${p.varProj == null ? 'var(--text-muted)' : p.varProj <= ABC_QUEDA_PROJ ? 'var(--red)' : 'var(--green)'};">${p.varProj == null ? '—' : pct(p.varProj)}</td></tr>`).join('')}
           </tbody></table></div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Curva A = produtos que somam ~80% da receita de ${mesLabel(a.k1)}, B até 95%, C o resto. Projeção linear (receita até ontem ÷ dias decorridos × dias do mês), receita sem cancelados.${a.atualizadoEm ? ` Atualizado ${new Date(a.atualizadoEm).toLocaleString('pt-BR')}.` : ''}</div>`;
       }
       return `<div class="ag-hud-card" style="--ag-hud-accent:${cor};margin-bottom:20px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:2px;">
           <div style="font-size:14px;font-weight:700;">Curva ABC de vendas</div>
-          <button class="btn btn-secondary btn-sm" ${carregando ? 'disabled' : ''} onclick="window._agAnalisarABC()">${a && !a.erro ? '🔄 Atualizar' : '▶ Analisar'}</button>
+          <button class="btn btn-secondary btn-sm" ${carregando ? 'disabled' : ''} onclick="window._agAnalisarABC()">${a && !a.erro ? 'Atualizar' : '▶ Analisar'}</button>
         </div>
         <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:12px;">Produto que cresceu mês passado e projeta queda neste mês vira alerta na Fila de Atenção, pra decidirmos a ação juntos.</div>
         ${corpo}
@@ -922,9 +922,9 @@
       const alertaVelho = alertas.some(a => new Date(a.criado_em).getTime() < doisDiasAtras);
       const tacosMuitoAcima = cfg.meta_acos && tacos != null && tacos > cfg.meta_acos * 1.3;
       const tacosAcima = cfg.meta_acos && tacos != null && tacos > cfg.meta_acos;
-      if (alertaVelho || tacosMuitoAcima) return { cor: '#dc2626', emoji: '🔴', label: 'Precisa de atenção' };
-      if (alertas.length || tacosAcima) return { cor: '#d97706', emoji: '🟡', label: 'Vale um olhar' };
-      return { cor: '#16a34a', emoji: '🟢', label: 'Saudável' };
+      if (alertaVelho || tacosMuitoAcima) return { cor: 'var(--red)', emoji: '🔴', label: 'Precisa de atenção' };
+      if (alertas.length || tacosAcima) return { cor: 'var(--yellow)', emoji: '🟡', label: 'Vale um olhar' };
+      return { cor: 'var(--green)', emoji: '🟢', label: 'Saudável' };
     }
 
     // ── Portfólio (grid de contas) ─────────────────────────────
@@ -1078,7 +1078,7 @@
       return `<details class="ag-sec" ${state.sec.manual ? 'open' : ''} ontoggle="window._agToggleSec('manual', this.open)">
       <summary>Ajuste manual avançado (1 campanha na mão)</summary>
       <div class="ag-hud-card" style="--ag-hud-accent:var(--red);margin-top:10px;">
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Só pra casos pontuais — pode colar o ID aqui ou usar "✏️ Ajustar à mão" no menu ⋯ da linha da campanha, que já preenche tudo. Pra aumentar investimento, prefira "🚀 Sugerir mais investimento" no mesmo menu, que já calcula o valor certo pra você aprovar.</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Só pra casos pontuais — pode colar o ID aqui ou usar "Ajustar à mão" no menu ⋯ da linha da campanha, que já preenche tudo. Pra aumentar investimento, prefira "Sugerir mais investimento" no mesmo menu, que já calcula o valor certo pra você aprovar.</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px;">
           <div class="form-group" style="margin:0;"><label class="form-label">ID da campanha</label><input type="text" class="form-input" id="ag-man-campanha" placeholder="Ex: 86858387"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Nome (só pro log)</label><input type="text" class="form-input" id="ag-man-nome" placeholder="Opcional"></div>
@@ -1094,7 +1094,7 @@
         </div>
         <div class="form-group" style="margin-bottom:12px;"><label class="form-label">Por quê (opcional, vai pro log)</label><input type="text" class="form-input" id="ag-man-explicacao" placeholder="Ex: recomendação do chat — Rack Linea, ACOS saudável, aumentar orçamento"></div>
         <button class="btn btn-primary" style="background:var(--red);border-color:var(--red);" ${state.executandoAcaoManual ? 'disabled' : ''} onclick="window._agExecutarAcaoManual()">
-          ${state.executandoAcaoManual ? '⏳ Executando na Shopee...' : '⚡ Executar agora'}
+          ${state.executandoAcaoManual ? '⏳ Executando na Shopee...' : 'Executar agora'}
         </button>
       </div>
       </details>`;
@@ -1106,46 +1106,46 @@
       const d = l.dados || {};
       const n1 = v => (Math.round(parseFloat(v) * 10) / 10).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
       const nomeCampanha = esc((l.titulo || '').replace(/^(Campanha pausada|Orçamento ajustado|Meta de ROAS ajustada|Falha ao pausar|Falha ao ajustar orçamento|Falha ao ajustar meta de ROAS|Sugestão de baixar meta de ROI|Sugestão de subir meta de ROI|Sugestão de aumento de orçamento|Sugestão de corte de orçamento) — /, ''));
-      let acaoLabel = null, acaoCor = '#64748b', deParaVal = null;
+      let acaoLabel = null, acaoCor = 'var(--text-muted)', deParaVal = null;
       if (d.roas_de != null && d.roas_para != null) {
         const maisAgressivo = d.roas_para < d.roas_de;
         acaoLabel = maisAgressivo ? '▼ Lance + agressivo' : '▲ Lance + conservador';
-        acaoCor = maisAgressivo ? '#22d3ee' : '#d97706';
+        acaoCor = maisAgressivo ? 'var(--cyan)' : 'var(--yellow)';
         deParaVal = `${n1(d.roas_de)}x → ${n1(d.roas_para)}x`;
       } else if (d.budget_de != null && d.budget_para != null) {
         const subiu = d.budget_para > d.budget_de;
         acaoLabel = subiu ? '▲ Orçamento ↑' : '▼ Orçamento ↓';
-        acaoCor = subiu ? '#22d3ee' : '#d97706';
+        acaoCor = subiu ? 'var(--cyan)' : 'var(--yellow)';
         deParaVal = `${R$(d.budget_de)} → ${R$(d.budget_para)}`;
       } else if (d.roas_atual != null && d.roas_sugerido != null) {
         // Sugestão ainda pendente (vinda do chat ou da Regra 3/4), antes de aprovar.
         const maisAgressivo = d.roas_sugerido < d.roas_atual;
         acaoLabel = maisAgressivo ? '▼ Sugestão: lance + agressivo' : '▲ Sugestão: lance + conservador';
-        acaoCor = maisAgressivo ? '#22d3ee' : '#d97706';
+        acaoCor = maisAgressivo ? 'var(--cyan)' : 'var(--yellow)';
         deParaVal = `${n1(d.roas_atual)}x → ${n1(d.roas_sugerido)}x`;
       } else if (d.budget_atual != null && d.budget_sugerido != null) {
         const subiu = d.budget_sugerido > d.budget_atual;
         acaoLabel = subiu ? '▲ Sugestão: orçamento ↑' : '▼ Sugestão: orçamento ↓';
-        acaoCor = subiu ? '#22d3ee' : '#d97706';
+        acaoCor = subiu ? 'var(--cyan)' : 'var(--yellow)';
         deParaVal = `${R$(d.budget_atual)} → ${R$(d.budget_sugerido)}`;
       } else if (d.pausar === true) {
-        acaoLabel = '⏸ Sugestão: pausar'; acaoCor = '#dc2626';
+        acaoLabel = '⏸ Sugestão: pausar'; acaoCor = 'var(--red)';
       } else if (d.estoque_atual != null && d.estoque_sugerido != null) {
         const subiu = d.estoque_sugerido > d.estoque_atual;
         acaoLabel = subiu ? '▲ Sugestão: repor estoque' : '▼ Sugestão: reduzir estoque';
-        acaoCor = subiu ? '#22d3ee' : '#d97706';
+        acaoCor = subiu ? 'var(--cyan)' : 'var(--yellow)';
         deParaVal = `${d.estoque_atual} un → ${d.estoque_sugerido} un`;
       } else if (d.preco_atual != null && d.preco_sugerido != null) {
         const subiu = d.preco_sugerido > d.preco_atual;
         acaoLabel = subiu ? '▲ Sugestão: subir preço' : '▼ Sugestão: baixar preço';
-        acaoCor = subiu ? '#22d3ee' : '#d97706';
+        acaoCor = subiu ? 'var(--cyan)' : 'var(--yellow)';
         deParaVal = `${R$(d.preco_atual)} → ${R$(d.preco_sugerido)}`;
       } else if ((l.titulo || '').includes('pausada')) {
-        acaoLabel = '⏸ Pausada'; acaoCor = '#dc2626';
+        acaoLabel = '⏸ Pausada'; acaoCor = 'var(--red)';
       }
-      if (d.retomar === true) { acaoLabel = '▶ Sugestão: reativar' + (acaoLabel ? ' + ' + acaoLabel.replace('Sugestão: ', '') : ''); acaoCor = '#22d3ee'; }
-      else if (d.retomada === true) { acaoLabel = '▶ Reativada' + (acaoLabel ? ' + ' + acaoLabel : ''); acaoCor = '#22d3ee'; }
-      else if (d.pausada === true) { acaoLabel = '⏸ Pausada'; acaoCor = '#dc2626'; }
+      if (d.retomar === true) { acaoLabel = '▶ Sugestão: reativar' + (acaoLabel ? ' + ' + acaoLabel.replace('Sugestão: ', '') : ''); acaoCor = 'var(--cyan)'; }
+      else if (d.retomada === true) { acaoLabel = '▶ Reativada' + (acaoLabel ? ' + ' + acaoLabel : ''); acaoCor = 'var(--cyan)'; }
+      else if (d.pausada === true) { acaoLabel = '⏸ Pausada'; acaoCor = 'var(--red)'; }
       return { nomeCampanha, acaoLabel, acaoCor, deParaVal, acos: d.acos != null ? n1(d.acos) + '%' : null };
     }
 
@@ -1324,20 +1324,20 @@
         </div>` : `<input type="hidden" id="ag-conta" value="${esc(cfg.conta_id)}">`}
         <div class="ag-regras-grid">
           <div class="ag-regra-bloco" style="--c:var(--red);">
-            <div class="ag-regra-tit">🛑 Pausa (último recurso) e contenção forte</div>
+            <div class="ag-regra-tit">Pausa (último recurso) e contenção forte</div>
             ${campoRegra('ag-pausa-acos', `Contenção forte quando o ${sigla('ACOS')} passar de`, cfg.regra_pausa_acos, { step: '0.1', sufixo: '%', dica: 'Acima disso, com venda, o agente aperta 25% em vez de 15% — não pausa. Deixe vazio para desligar a pausa automática.' })}
             ${campoRegra('ag-pausa-dias', 'janela para avaliar gasto sem retorno', cfg.regra_pausa_dias ?? 3, { sufixo: 'dias', dica: 'Pausa só se, nessa janela, gastou acima do limite sem vender (ou vendendo menos do que gastou).' })}
             ${campoRegra('ag-maturacao', 'Maturação mínima da campanha', cfg.dias_maturacao_campanha ?? 7, { sufixo: 'dias', dica: 'Campanha mais nova que isso não é pausada ainda — só registra um aviso.' })}
           </div>
           <div class="ag-regra-bloco" style="--c:var(--green);">
-            <div class="ag-regra-tit">📈 Quando pode crescer sozinho</div>
+            <div class="ag-regra-tit">Quando pode crescer sozinho</div>
             ${campoRegra('ag-meta-acos', `Meta de ${sigla('TACOS')}`, cfg.meta_acos, { step: '0.1', sufixo: '%', dica: 'Quanto da venda total da loja pode ir para ADS. É a métrica principal do agente.' })}
             ${campoRegra('ag-orc-min', 'Orçamento mínimo', cfg.orcamento_min, { step: '0.01', sufixo: 'R$/dia', dica: 'Piso ao reduzir o investimento.' })}
             ${campoRegra('ag-orc-max', 'Orçamento máximo', cfg.orcamento_max, { step: '0.01', sufixo: 'R$/dia', dica: 'Teto ao aumentar o investimento.' })}
             ${campoRegra('ag-janela', 'Janela de decisão', cfg.janela_decisao_dias ?? 1, { sufixo: 'dias', dica: 'Quantos dias de dados entram na análise.' })}
           </div>
           <div class="ag-regra-bloco" style="--c:var(--yellow);">
-            <div class="ag-regra-tit">✋ O que sempre espera sua aprovação</div>
+            <div class="ag-regra-tit">O que sempre espera sua aprovação</div>
             ${campoRegra('ag-alerta-var', 'Alerta se a variação proposta passar de', cfg.alerta_variacao_pct ?? 30, { sufixo: '%', dica: 'Mudança maior que isso não é feita sozinha: vira item em “Precisa de você”.' })}
           </div>
         </div>
@@ -1359,7 +1359,7 @@
         <div class="ag-regras-rodape">
           <span id="ag-regras-estado" class="ag-regras-estado"></span>
           ${novo ? '' : '<button class="btn btn-secondary btn-sm" id="ag-regras-descartar" style="display:none;" onclick="window._agRegrasDescartar()">Descartar alterações</button>'}
-          <button class="btn btn-primary" id="ag-regras-salvar" ${state.salvandoConfig ? 'disabled' : ''} onclick="window._agSalvarConfig()">${state.salvandoConfig ? '⏳ Salvando...' : '💾 Salvar regras'}</button>
+          <button class="btn btn-primary" id="ag-regras-salvar" ${state.salvandoConfig ? 'disabled' : ''} onclick="window._agSalvarConfig()">${state.salvandoConfig ? '⏳ Salvando...' : 'Salvar regras'}</button>
         </div>
       </div>`;
     }
@@ -1378,23 +1378,23 @@
       const aberto = !!state.sec.regras;
       const v = { pausaAcos: cfg.regra_pausa_acos, pausaDias: cfg.regra_pausa_dias ?? 3, mat: cfg.dias_maturacao_campanha ?? 7, meta: cfg.meta_acos, orcMin: cfg.orcamento_min, orcMax: cfg.orcamento_max, alerta: cfg.alerta_variacao_pct ?? 30 };
       const salvoAgora = state.regrasSalvoEm && Date.now() - state.regrasSalvoEm < 20000;
-      const chip = (txt, cor) => `<span class="ag-action-chip" style="color:${cor};background:${cor}1a;">${txt}</span>`;
+      const chip = (txt, cor) => `<span class="ag-action-chip" style="color:${cor};background:color-mix(in srgb,${cor} 10%,transparent);">${txt}</span>`;
       return `<div class="ag-hud-card" id="ag-regras-card" style="--ag-hud-accent:var(--accent);margin-bottom:20px;">
         <div class="ag-sec-head">
           <div class="ag-sec-titulo">Guardrails do piloto <span class="ag-sec-sub">as regras que o agente segue sozinho em cada campanha</span></div>
           <div class="ag-periodos">
             ${salvoAgora ? '<span class="ag-regras-salvo">✔ Regras salvas</span>' : ''}
-            <button class="btn btn-sm ${aberto ? 'btn-primary' : 'btn-secondary'}" onclick="window._agToggleRegras()">${aberto ? 'Fechar edição' : '✏️ Editar regras'}</button>
+            <button class="btn btn-sm ${aberto ? 'btn-primary' : 'btn-secondary'}" onclick="window._agToggleRegras()">${aberto ? 'Fechar edição' : 'Editar regras'}</button>
           </div>
         </div>
         ${aberto ? formRegras(cfg, false) : `
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
-            ${chip(`Pausa: só gasto alto sem retorno · ${numRegra(v.pausaDias)} dia(s)`, '#dc2626')}
-            ${chip(`Maturação: ${numRegra(v.mat)} dias`, '#64748b')}
-            ${chip(`Meta ${sigla('TACOS')}: ${numRegra(v.meta)}%`, '#16a34a')}
-            ${chip(`Orçamento: ${v.orcMin != null ? R$(v.orcMin) : '—'} a ${v.orcMax != null ? R$(v.orcMax) : '—'}`, '#16a34a')}
-            ${chip(`Aprovação acima de ${numRegra(v.alerta)}%`, '#d97706')}
-            ${chip(cfg.ativo ? 'Piloto ON' : 'Piloto OFF', cfg.ativo ? '#22d3ee' : '#64748b')}
+            ${chip(`Pausa: só gasto alto sem retorno · ${numRegra(v.pausaDias)} dia(s)`, 'var(--red)')}
+            ${chip(`Maturação: ${numRegra(v.mat)} dias`, 'var(--text-muted)')}
+            ${chip(`Meta ${sigla('TACOS')}: ${numRegra(v.meta)}%`, 'var(--green)')}
+            ${chip(`Orçamento: ${v.orcMin != null ? R$(v.orcMin) : '—'} a ${v.orcMax != null ? R$(v.orcMax) : '—'}`, 'var(--green)')}
+            ${chip(`Aprovação acima de ${numRegra(v.alerta)}%`, 'var(--yellow)')}
+            ${chip(cfg.ativo ? 'Piloto ON' : 'Piloto OFF', cfg.ativo ? 'var(--cyan)' : 'var(--text-muted)')}
           </div>
           <div class="ag-regras-resumo">${textoRegras(v)}</div>
           ${cfg.notas ? `<div class="ag-nota"><b>Notas:</b> ${h(cfg.notas)}</div>` : ''}`}
@@ -1426,15 +1426,15 @@
       lista.forEach(l => {
         const dia = diaRotulo(l.criado_em);
         if (dia !== diaAtual) { diaAtual = dia; html += `<div class="ag-log-dia">${h(dia)}</div>`; }
-        const cor = TIPO_COR[l.tipo] || '#64748b';
-        const res = l.resultado === 'so_alerta' ? { txt: 'Aguardando você', cor: '#d97706' } : l.resultado === 'executado' ? { txt: 'Executado', cor: '#16a34a' } : l.resultado === 'erro' ? { txt: 'Erro', cor: '#dc2626' } : l.resultado === 'descartado' ? { txt: 'Descartado', cor: '#64748b' } : { txt: l.resultado || '', cor: '#64748b' };
+        const cor = TIPO_COR[l.tipo] || 'var(--text-muted)';
+        const res = l.resultado === 'so_alerta' ? { txt: 'Aguardando você', cor: 'var(--yellow)' } : l.resultado === 'executado' ? { txt: 'Executado', cor: 'var(--green)' } : l.resultado === 'erro' ? { txt: 'Erro', cor: 'var(--red)' } : l.resultado === 'descartado' ? { txt: 'Descartado', cor: 'var(--text-muted)' } : { txt: l.resultado || '', cor: 'var(--text-muted)' };
         const orig = l.origem === 'cron' ? 'Automático' : l.origem === 'chat' ? 'Chat' : l.origem === 'aprovacao_manual' ? 'Aprovado por você' : l.origem === 'analista' ? 'Você' : '';
         html += `<details class="ag-log-item" style="--c:${cor};">
           <summary>
             <span class="ag-log-hora">${new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-            <span class="ag-action-chip" style="color:${cor};background:${cor}1a;">${TIPO_LABEL[l.tipo] || l.tipo}</span>
+            <span class="ag-action-chip" style="color:${cor};background:color-mix(in srgb,${cor} 10%,transparent);">${TIPO_LABEL[l.tipo] || l.tipo}</span>
             <span class="ag-log-titulo">${h(l.titulo)}</span>
-            ${res.txt ? `<span class="ag-action-chip" style="color:${res.cor};background:${res.cor}1a;">${res.txt}</span>` : ''}
+            ${res.txt ? `<span class="ag-action-chip" style="color:${res.cor};background:color-mix(in srgb,${res.cor} 10%,transparent);">${res.txt}</span>` : ''}
             ${orig ? `<span class="ag-log-origem">${orig}</span>` : ''}
           </summary>
           ${l.explicacao ? `<div class="ag-log-corpo">${nl2br(h(l.explicacao))}</div>` : '<div class="ag-log-corpo ag-camp-motivo">Sem detalhes.</div>'}
@@ -1466,13 +1466,13 @@
       const n = v => (v || 0).toLocaleString('pt-BR');
       const varChip = v => {
         if (v == null) return '';
-        const sobe = v > 0, cor = sobe ? '#16a34a' : v < 0 ? '#dc2626' : '#64748b';
+        const sobe = v > 0, cor = sobe ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--text-muted)';
         const txt = v === Infinity ? 'novo' : `${sobe ? '+' : '−'}${fmtNum(Math.abs(v))}%`;
         return `<span style="color:${cor};font-weight:700;">${sobe ? '▲' : v < 0 ? '▼' : '–'} ${txt}</span>`;
       };
       const metrica = (label, valor, sub, variacao) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${label}</div><div class="ag-mono" style="font-size:20px;font-weight:700;">${valor}</div><div class="ag-hud-sub">${sub || ''}${sub && variacao != null ? ' · ' : ''}${varChip(variacao)}</div></div>`;
-      return `<div class="ag-hud-card" style="--ag-hud-accent:#0ea5e9;margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">📊 Impressões, Cliques e Vendas (${periodoLabel(d.periodo || state.negocioPeriodo)})</div>
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--cyan);margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Impressões, Cliques e Vendas (${periodoLabel(d.periodo || state.negocioPeriodo)})</div>
         <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Funil de ADS da conta inteira — de quantas vezes o anúncio apareceu até quantas vendas ele gerou. Variação vs o período anterior equivalente.</div>
         <div style="display:flex;gap:28px;flex-wrap:wrap;">
           ${metrica('Impressões', n(d.impressoesTotal), null, d.variacaoImpressoes)}
@@ -1508,7 +1508,7 @@
     function varChip(v, inverso) {
       if (v == null) return '';
       const sobe = v > 0, bom = inverso ? !sobe : sobe;
-      const cor = v === 0 ? '#64748b' : bom ? '#16a34a' : '#dc2626';
+      const cor = v === 0 ? 'var(--text-muted)' : bom ? 'var(--green)' : 'var(--red)';
       const txt = v === Infinity ? 'novo' : (sobe ? '+' : '−') + fmtNum(Math.abs(v)) + '%';
       return `<span style="color:${cor};font-weight:700;">${v === 0 ? '–' : sobe ? '▲' : '▼'} ${txt}</span>`;
     }
@@ -1585,35 +1585,35 @@
     }
 
     function origemInfo(l) {
-      if (l.origem === 'cron') return { txt: 'Automático', cor: '#6366f1' };
-      if (l.origem === 'aprovacao_manual') return { txt: 'Aprovado por você', cor: '#0ea5e9' };
-      return { txt: 'Feito por você', cor: '#0ea5e9' };
+      if (l.origem === 'cron') return { txt: 'Automático', cor: 'var(--accent)' };
+      if (l.origem === 'aprovacao_manual') return { txt: 'Aprovado por você', cor: 'var(--cyan)' };
+      return { txt: 'Feito por você', cor: 'var(--cyan)' };
     }
 
     // O "Executado" só quer dizer que a Shopee não devolveu erro. Aqui
     // compara o que foi pedido com o estado ao vivo da campanha pra dizer se
     // realmente pegou.
     function estadoAplicacao(l, contaId) {
-      if (l.resultado === 'erro') return { k: 'falhou', txt: '✖ Falhou', cor: '#dc2626' };
+      if (l.resultado === 'erro') return { k: 'falhou', txt: '✖ Falhou', cor: 'var(--red)' };
       const d = l.dados || {};
-      const nv = { k: 'nv', txt: 'Sem confirmação (campanha fora da janela)', cor: '#64748b' };
+      const nv = { k: 'nv', txt: 'Sem confirmação (campanha fora da janela)', cor: 'var(--text-muted)' };
       const live = campanhaAoVivo(contaId, d.campaign_id, l.titulo);
       if (!live) return nv;
       const t = new Date(l.criado_em).getTime();
       const posterior = logsDaConta(contaId).some(x => x.id !== l.id && x.tipo === 'decisao' && x.resultado === 'executado' && new Date(x.criado_em).getTime() > t && logEhDaCampanha(x, live));
-      if (posterior) return { k: 'sup', txt: 'Superada por ação posterior', cor: '#64748b' };
+      if (posterior) return { k: 'sup', txt: 'Superada por ação posterior', cor: 'var(--text-muted)' };
       const st = (live.status || '').toLowerCase();
       let ok = null;
       const roasPara = d.roas_para ?? d.roas_sugerido, budPara = d.budget_para ?? d.budget_sugerido;
-      if (reativacaoLegada(l) && st === 'paused') return { k: 'div', txt: '⚠ Só a meta de ROAS mudou — a campanha continua pausada', cor: '#dc2626' };
+      if (reativacaoLegada(l) && st === 'paused') return { k: 'div', txt: '⚠ Só a meta de ROAS mudou — a campanha continua pausada', cor: 'var(--red)' };
       if (d.retomada === true) ok = st === 'ongoing';
       else if (d.pausada === true || (/pausada/i.test(l.titulo || '') && !/falha/i.test(l.titulo || ''))) ok = st === 'paused';
       else if (roasPara != null) ok = live.roasTarget != null && Math.abs(live.roasTarget - roasPara) < 0.06;
       else if (budPara != null) ok = Math.abs((live.budget || 0) - budPara) < 0.01;
       if (ok === null) return nv;
-      if (ok) return { k: 'ok', txt: '✔ Confirmada na Shopee', cor: '#16a34a' };
-      if (Date.now() - t < 3600000) return { k: 'pend', txt: '⏳ Enviada, aguardando confirmação', cor: '#d97706' };
-      return { k: 'div', txt: '⚠ A Shopee mostra outro valor', cor: '#dc2626' };
+      if (ok) return { k: 'ok', txt: '✔ Confirmada na Shopee', cor: 'var(--green)' };
+      if (Date.now() - t < 3600000) return { k: 'pend', txt: '⏳ Enviada, aguardando confirmação', cor: 'var(--yellow)' };
+      return { k: 'div', txt: '⚠ A Shopee mostra outro valor', cor: 'var(--red)' };
     }
 
     // ── 1. Cabeçalho compacto da conta ──
@@ -1638,7 +1638,7 @@
             ${state.contas.length > 1 ? '<option value="__portfolio__">⟵ Todas as contas</option>' : ''}
             <option value="__novo__">+ Adicionar conta</option>
           </select>
-          <span class="ag-saude-pill" style="color:${saude.cor};background:${saude.cor}1a;" title="Combina o TACOS contra a meta e se há pendências antigas esperando você.">${saude.emoji} ${saude.label}</span>
+          <span class="ag-saude-pill" style="color:${saude.cor};background:color-mix(in srgb,${saude.cor} 10%,transparent);" title="Combina o TACOS contra a meta e se há pendências antigas esperando você.">${saude.emoji} ${saude.label}</span>
           <label class="ag-toggle" title="Ligado: o agente revisa e age nesta conta todo dia às 07:00.">
             <input type="checkbox" ${cfg.ativo ? 'checked' : ''} onchange="window._agTogglePiloto(this.checked)">
             <span class="ag-toggle-trilho"></span><span>Piloto ${cfg.ativo ? 'ON' : 'OFF'}</span>
@@ -1647,7 +1647,7 @@
         <div class="ag-topbar-r">
           <span class="ag-topbar-run">${ultima ? `Última execução: <b>${quandoCurto(ultima.criado_em)}</b>${resumoTxt ? ` · ${h(resumoTxt)}` : ''}` : 'Ainda não rodou'}${cfg.ativo ? ` · próxima: <b>${proximaExecucao()}</b>` : ' · piloto desligado, não roda sozinho'}</span>
           <button class="btn btn-primary btn-sm" onclick="window._agChatToggle()" title="Abrir o chat com o agente — peça pra reativar, otimizar ou explicar qualquer coisa desta conta">Chat com o agente</button>
-          <button class="btn btn-secondary btn-sm" ${state.rodandoAgente ? 'disabled' : ''} onclick="window._agRodarAgora()" title="Dispara agora o mesmo ciclo das 07:00 nesta conta.">${state.rodandoAgente ? '⏳ Rodando...' : '🚀 Rodar agora'}</button>
+          <button class="btn btn-secondary btn-sm" ${state.rodandoAgente ? 'disabled' : ''} onclick="window._agRodarAgora()" title="Dispara agora o mesmo ciclo das 07:00 nesta conta.">${state.rodandoAgente ? '⏳ Rodando...' : 'Rodar agora'}</button>
         </div>
       </div>${renderResultadoRodada()}`;
     }
@@ -1721,7 +1721,7 @@
         return `<div class="ag-precisa-item" style="--c:${falha ? 'var(--red)' : 'var(--yellow)'};">
           <div class="ag-precisa-corpo">
             <div class="ag-precisa-titulo">${d.nomeCampanha || esc(l.titulo)}
-              ${d.acaoLabel ? `<span class="ag-action-chip" style="color:${d.acaoCor};background:${d.acaoCor}1a;">${d.acaoLabel}</span>` : ''}
+              ${d.acaoLabel ? `<span class="ag-action-chip" style="color:${d.acaoCor};background:color-mix(in srgb,${d.acaoCor} 10%,transparent);">${d.acaoLabel}</span>` : ''}
               ${falha ? '<span class="ag-action-chip" style="color:var(--red);background:#dc26261a;">✖ Falhou</span>' : ''}
             </div>
             ${d.deParaVal ? `<div class="ag-mono ag-precisa-depara">${d.deParaVal}</div>` : ''}
@@ -1729,7 +1729,7 @@
           </div>
           <div class="ag-precisa-acoes">
             ${exec ? `<button class="btn btn-sm ag-btn-ok" ${proc ? 'disabled' : ''} onclick="window._agAprovarAlerta('${l.id}')">${proc ? '⏳' : '✅ Aprovar'}</button>` : ''}
-            <button class="btn btn-sm ag-btn-no" ${proc ? 'disabled' : ''} onclick="window._agDescartarAlerta('${l.id}')">${falha ? 'Marcar como visto' : exec ? '🚫 Rejeitar' : 'Dispensar'}</button>
+            <button class="btn btn-sm ag-btn-no" ${proc ? 'disabled' : ''} onclick="window._agDescartarAlerta('${l.id}')">${falha ? 'Marcar como visto' : exec ? 'Rejeitar' : 'Dispensar'}</button>
           </div>
         </div>`;
       };
@@ -1773,7 +1773,7 @@
           <div style="position:relative;height:230px;"><canvas id="ag-vis-graf"></canvas></div>`;
       }
       return `<div class="ag-hud-card" style="--ag-hud-accent:#2a78d6;margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">👁️ Comparativo de visualizações (${periodoLabel(p)} × período anterior)</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Comparativo de visualizações (${periodoLabel(p)} × período anterior)</div>
         <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Quantas vezes os anúncios da loja apareceram (impressões de ADS), dia a dia, contra o mesmo número de dias do período anterior. A visualização orgânica dos anúncios a Shopee não informa pela API.</div>
         ${corpo}
       </div>`;
@@ -1837,10 +1837,10 @@
       return `<div class="ag-kpi" style="--ag-hud-accent:${cor};"><div class="ag-hud-label">${label}</div><div class="ag-hud-value" ${valorCor ? `style="color:${valorCor};"` : ''}>${valor}</div><div class="ag-hud-sub">${rodape || ''}</div></div>`;
     }
     function corAcos(acos, cfg) {
-      if (acos === Infinity) return '#dc2626';
+      if (acos === Infinity) return 'var(--red)';
       if (!cfg.meta_acos) return null;
-      if (acos <= cfg.meta_acos) return '#16a34a';
-      return acos <= (cfg.regra_pausa_acos || cfg.meta_acos * 1.5) ? '#d97706' : '#dc2626';
+      if (acos <= cfg.meta_acos) return 'var(--green)';
+      return acos <= (cfg.regra_pausa_acos || cfg.meta_acos * 1.5) ? 'var(--yellow)' : 'var(--red)';
     }
 
     function renderKPIs(cfg) {
@@ -1869,18 +1869,18 @@
         // Mês atual: projeção linear do mês (mesma conta da Projeção de Crescimento)
         const hojeD = new Date(), diasMes = new Date(hojeD.getFullYear(), hojeD.getMonth() + 1, 0).getDate();
         const fatorProj = p === 'mes' && hojeD.getDate() > 0 ? diasMes / hojeD.getDate() : null;
-        const cards = [kpiCard(n.fonteFaturamento === 'base' ? 'Faturamento (sem cancelados)' : 'Faturamento (sem cancelados, API)', R$(fat), `${varChip(n.variacaoPct)} vs ${R$(fatAnt)}${fatorProj ? ` · projeção do mês <b>${R$(fat * fatorProj)}</b>` : ''}`, '#6366f1')];
+        const cards = [kpiCard(n.fonteFaturamento === 'base' ? 'Faturamento (sem cancelados)' : 'Faturamento (sem cancelados, API)', R$(fat), `${varChip(n.variacaoPct)} vs ${R$(fatAnt)}${fatorProj ? ` · projeção do mês <b>${R$(fat * fatorProj)}</b>` : ''}`, 'var(--accent)')];
         let notas = '';
         if (A) {
           const tacos = fat > 0 ? A.gasto / fat * 100 : (A.gasto > 0 ? Infinity : 0);
           const tacosAnt = P && fatAnt > 0 ? P.gasto / fatAnt * 100 : null;
           const meta = cfg.meta_acos;
-          const corTacos = !meta ? '#6366f1' : tacos <= meta ? '#16a34a' : tacos <= meta * 1.3 ? '#d97706' : '#dc2626';
+          const corTacos = !meta ? 'var(--accent)' : tacos <= meta ? 'var(--green)' : tacos <= meta * 1.3 ? 'var(--yellow)' : 'var(--red)';
           const larg = !meta || tacos === Infinity ? 100 : Math.min(100, tacos / (meta * 1.6) * 100);
           const veredito = !meta ? 'sem meta configurada' : tacos <= meta ? 'dentro da meta' : tacos <= meta * 1.3 ? 'um pouco acima da meta' : 'bem acima da meta';
           const medidor = meta ? `<div class="ag-meter"><div class="ag-meter-fill" style="width:${larg}%;background:${corTacos};"></div><div class="ag-meter-meta" style="left:${100 / 1.6}%;" title="Meta ${fmtPct(meta)}"></div></div>` : '';
           cards.push(kpiCard(`${sigla('TACOS')}${p === 'mes' ? ' do mês' : ''} vs meta`, fmtPct(tacos), `${medidor}meta ${meta != null ? fmtPct(meta) : '—'} · ${veredito}${tacosAnt ? ` · ${varChip((tacos - tacosAnt) / tacosAnt * 100, true)}` : ''}`, corTacos, corTacos));
-          cards.push(kpiCard(`Investimento em ${sigla('ADS')}`, R$(A.gasto), `${P && P.gasto > 0 ? varChip((A.gasto - P.gasto) / P.gasto * 100, true) + ' ' : ''}vs ${R$(P ? P.gasto : 0)}`, '#0ea5e9'));
+          cards.push(kpiCard(`Investimento em ${sigla('ADS')}`, R$(A.gasto), `${P && P.gasto > 0 ? varChip((A.gasto - P.gasto) / P.gasto * 100, true) + ' ' : ''}vs ${R$(P ? P.gasto : 0)}`, 'var(--cyan)'));
           // A Shopee atribui ao ADS pedidos que depois foram CANCELADOS — por isso
           // as vendas via ADS dela podem passar do faturamento e o ACOS sair menor
           // que o TACOS (incoerente). Desconta os cancelados pela taxa de
@@ -1889,11 +1889,11 @@
           const tx = n.taxaCancelAtual, txAnt = n.taxaCancelAnterior;
           const gmvAj = tx != null ? A.gmv * (1 - tx) : A.gmv;
           const gmvAjAnt = P ? (txAnt != null ? P.gmv * (1 - txAnt) : P.gmv) : 0;
-          cards.push(kpiCard(`Vendas via ${sigla('ADS')}${tx != null ? ' (sem cancelados)' : ` (${sigla('GMV')})`}`, R$(gmvAj), `${gmvAjAnt > 0 ? varChip((gmvAj - gmvAjAnt) / gmvAjAnt * 100) + ' ' : ''}vs ${R$(gmvAjAnt)}${tx != null ? `<br><span style="opacity:.8;">Shopee: ${R$(A.gmv)} (inclui ${fmtPct(tx * 100)} cancelado)</span>` : ''}`, '#22d3ee'));
+          cards.push(kpiCard(`Vendas via ${sigla('ADS')}${tx != null ? ' (sem cancelados)' : ` (${sigla('GMV')})`}`, R$(gmvAj), `${gmvAjAnt > 0 ? varChip((gmvAj - gmvAjAnt) / gmvAjAnt * 100) + ' ' : ''}vs ${R$(gmvAjAnt)}${tx != null ? `<br><span style="opacity:.8;">Shopee: ${R$(A.gmv)} (inclui ${fmtPct(tx * 100)} cancelado)</span>` : ''}`, 'var(--cyan)'));
           const acos = gmvAj > 0 ? A.gasto / gmvAj * 100 : (A.gasto > 0 ? Infinity : 0);
           const acosAnt = P && gmvAjAnt > 0 ? P.gasto / gmvAjAnt * 100 : null;
           const acosShopee = A.gmv > 0 ? A.gasto / A.gmv * 100 : null;
-          cards.push(kpiCard(sigla('ACOS'), fmtPct(acos), `${acosAnt ? varChip((acos - acosAnt) / acosAnt * 100, true) + ' ' : ''}${acosAnt != null ? `vs ${fmtPct(acosAnt)}` : ''}${tx != null && acosShopee != null ? `<br><span style="opacity:.8;">na Shopee (com cancelados): ${fmtPct(acosShopee)}</span>` : ''}`, '#d97706', corAcos(acos, cfg)));
+          cards.push(kpiCard(sigla('ACOS'), fmtPct(acos), `${acosAnt ? varChip((acos - acosAnt) / acosAnt * 100, true) + ' ' : ''}${acosAnt != null ? `vs ${fmtPct(acosAnt)}` : ''}${tx != null && acosShopee != null ? `<br><span style="opacity:.8;">na Shopee (com cancelados): ${fmtPct(acosShopee)}</span>` : ''}`, 'var(--yellow)', corAcos(acos, cfg)));
           if (tx != null) notas += `<div class="ag-nota">ℹ️ <b>Vendas via ADS e ACOS sem cancelados.</b> A Shopee atribui ao anúncio pedidos que depois foram cancelados (nesta loja, ${fmtPct(tx * 100)} do valor dos pedidos do período foi cancelado ou devolvido). Sem descontar, as vendas via ADS passam do faturamento e o ${sigla('ACOS')} fica menor que o ${sigla('TACOS')}, o que não faz sentido. Aqui o valor da Shopee é reduzido pela taxa de cancelamento da loja (estimativa); o número original aparece embaixo de cada card.</div>`;
           else if (fat > 0 && A.gmv > fat) notas += `<div class="ag-nota">ℹ️ As vendas via ADS da Shopee incluem pedidos que depois foram cancelados — por isso passam do faturamento. Quando a base automática cobrir este período, o valor aparece já sem os cancelados.</div>`;
         } else {
@@ -1934,8 +1934,8 @@
           <div class="ag-tl-corpo">
             <div>${nomeHtml} — ${h(textoAcao(l))}</div>
             <div class="ag-tl-meta">
-              <span class="ag-action-chip" style="color:${orig.cor};background:${orig.cor}1a;">${orig.txt}</span>
-              <span class="ag-action-chip" style="color:${est.cor};background:${est.cor}1a;">${est.txt}</span>
+              <span class="ag-action-chip" style="color:${orig.cor};background:color-mix(in srgb,${orig.cor} 10%,transparent);">${orig.txt}</span>
+              <span class="ag-action-chip" style="color:${est.cor};background:color-mix(in srgb,${est.cor} 10%,transparent);">${est.txt}</span>
               <span class="ag-tl-motivo">${h(motivo)}</span>
             </div>
           </div>
@@ -1969,16 +1969,16 @@
 
     function statusCampanha(contaId, c, cfg) {
       const st = (c.status || '').toLowerCase();
-      if (st === 'ongoing') return { txt: 'Ativa', cor: '#16a34a', anomalia: false };
+      if (st === 'ongoing') return { txt: 'Ativa', cor: 'var(--green)', anomalia: false };
       if (st === 'paused') {
         const pausa = logsDaConta(contaId).filter(l => l.tipo === 'decisao' && l.resultado === 'executado' && (l.dados?.pausada === true || /pausada/i.test(l.titulo || '')) && logEhDaCampanha(l, c)).sort(maisRecente)[0];
         const txt = !pausa ? 'Pausada (fora do agente)' : pausa.origem === 'cron' ? 'Pausada pelo agente' : 'Pausada por você';
         const anomalia = c.gasto > 0 && c.acos !== Infinity && !!cfg.meta_acos && c.acos <= cfg.meta_acos;
-        return { txt, cor: '#d97706', anomalia };
+        return { txt, cor: 'var(--yellow)', anomalia };
       }
-      if (st === 'ended') return { txt: 'Encerrada', cor: '#64748b', anomalia: false };
-      if (st === 'closed') return { txt: 'Fechada', cor: '#64748b', anomalia: false };
-      return { txt: c.status || '—', cor: '#64748b', anomalia: false };
+      if (st === 'ended') return { txt: 'Encerrada', cor: 'var(--text-muted)', anomalia: false };
+      if (st === 'closed') return { txt: 'Fechada', cor: 'var(--text-muted)', anomalia: false };
+      return { txt: c.status || '—', cor: 'var(--text-muted)', anomalia: false };
     }
 
     function renderTabelaCampanhas(cfg) {
@@ -2025,7 +2025,7 @@
         const cAcos = corAcos(c.acos, cfg);
         return `<tr id="ag-camp-${c.id}" style="--row-accent:${s.anomalia ? 'var(--red)' : s.cor};">
           <td style="max-width:260px;"><div class="ag-camp-nome">${h(c.nome)}</div><div class="ag-camp-id">ID ${c.id}</div></td>
-          <td><span class="ag-action-chip" style="color:${s.cor};background:${s.cor}1a;">${s.txt}</span>${s.anomalia ? `<div class="ag-camp-anom" title="Pausada com ACOS dentro da meta — vale checar se a pausa foi intencional.">⚠ pausada com ACOS bom</div>` : ''}</td>
+          <td><span class="ag-action-chip" style="color:${s.cor};background:color-mix(in srgb,${s.cor} 10%,transparent);">${s.txt}</span>${s.anomalia ? `<div class="ag-camp-anom" title="Pausada com ACOS dentro da meta — vale checar se a pausa foi intencional.">⚠ pausada com ACOS bom</div>` : ''}</td>
           <td style="min-width:200px;max-width:280px;">${ultHtml}</td>
           <td class="ag-mono">${orc}</td>
           <td class="ag-mono">${R$(c.gasto)}</td>
@@ -2119,7 +2119,7 @@
       const de14 = antIni;
       const roas = (v, gg) => gg > 0 ? (v / gg).toFixed(1).replace('.', ',') : '—';
       const varPct = (a, b) => b > 0 ? `${a >= b ? '▲' : '▼'} ${Math.abs((a - b) / b * 100).toFixed(0)}%` : '';
-      const cor = (a, b) => b > 0 ? (a >= b ? '#10b981' : '#ef4444') : 'var(--text-muted)';
+      const cor = (a, b) => b > 0 ? (a >= b ? 'var(--green)' : 'var(--red)') : 'var(--text-muted)';
       const histOk = g.desde && g.desde <= Math.floor(new Date(`${de14}T00:00:00-03:00`).getTime() / 1000);
       const dias = [];
       for (let k = 7; k >= 0; k--) { const d = isoMenos(k); dias.push({ d, gasto: parseFloat(g.gasto[d]) || 0, vendas: parseFloat(g.vendas[d]) || 0 }); }
@@ -2205,7 +2205,7 @@
       raiz.innerHTML = `<div class="ag-chat-panel" role="dialog" aria-label="Conversa com o agente">
         <div class="ag-chat-head">
           <div style="min-width:0;">
-            <div class="ag-chat-titulo">💬 Agente · ${h(nomeExibicao(cfg))}</div>
+            <div class="ag-chat-titulo">Agente · ${h(nomeExibicao(cfg))}</div>
             <div class="ag-chat-sub">${contextoChatCurto(cfg.conta_id)}</div>
           </div>
           <div class="ag-chat-head-acoes">
@@ -2220,7 +2220,7 @@
             <div>Eu vejo os indicadores, as campanhas, o que o agente fez e a curva ABC desta conta. Pedidos de mudança viram sugestões em "Precisa de você" — nada é executado sem o seu aprovar.</div>
             <div class="ag-chat-chips">${PERGUNTAS_RAPIDAS.map((p, i) => `<button onclick="window._agPerguntar(${i})">${h(p)}</button>`).join('')}</div>
           </div>` : ''}
-          ${state.chatMessages.map(m => `<div class="ag-chat-linha ${m.role === 'user' ? 'eu' : 'ag'}"><div class="ag-chat-balao">${mdLeve(m.content)}${m.ferramentas && m.ferramentas.length ? `<div class="ag-chat-fontes">🔎 Consultei: ${m.ferramentas.map(f => h(f.resumo) + (f.erro ? ' (falhou)' : '')).join(' · ')}</div>` : ''}</div></div>`).join('')}
+          ${state.chatMessages.map(m => `<div class="ag-chat-linha ${m.role === 'user' ? 'eu' : 'ag'}"><div class="ag-chat-balao">${mdLeve(m.content)}${m.ferramentas && m.ferramentas.length ? `<div class="ag-chat-fontes">Consultei: ${m.ferramentas.map(f => h(f.resumo) + (f.erro ? ' (falhou)' : '')).join(' · ')}</div>` : ''}</div></div>`).join('')}
           ${state.chatEnviando ? '<div class="ag-chat-linha ag"><div class="ag-chat-balao"><div class="ag-chat-digitando" style="padding:0 0 6px;"><span></span><span></span><span></span></div><div class="ag-chat-fontes" style="margin:0;border:none;padding:0;">Consultando os dados da conta na Shopee… perguntas que comparam períodos podem levar até 1–2 minutos.</div></div></div>' : ''}
         </div>
         <div class="ag-chat-entrada">

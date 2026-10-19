@@ -22,12 +22,12 @@ Router.register('diagnostico', async (params, el) => {
 
   function statusDe(ts, { semDadoOk=false } = {}) {
     if (!ts) return semDadoOk
-      ? { label: 'OK', cor: '#10b981', bg: 'rgba(16,185,129,0.12)' }
-      : { label: 'Sem dados', cor: '#ef4444', bg: 'rgba(239,68,68,0.12)' };
+      ? { label: 'OK', cor: 'var(--green)', bg: 'rgba(16,185,129,0.12)' }
+      : { label: 'Sem dados', cor: 'var(--red)', bg: 'rgba(239,68,68,0.12)' };
     const horas = (Date.now() - ts) / 3600000;
-    if (horas < 24) return { label: 'Atualizado', cor: '#10b981', bg: 'rgba(16,185,129,0.12)' };
-    if (horas < 72) return { label: 'Desatualizado', cor: '#f59e0b', bg: 'rgba(245,158,11,0.12)' };
-    return { label: 'Muito antigo', cor: '#ef4444', bg: 'rgba(239,68,68,0.12)' };
+    if (horas < 24) return { label: 'Atualizado', cor: 'var(--green)', bg: 'rgba(16,185,129,0.12)' };
+    if (horas < 72) return { label: 'Desatualizado', cor: 'var(--yellow)', bg: 'rgba(245,158,11,0.12)' };
+    return { label: 'Muito antigo', cor: 'var(--red)', bg: 'rgba(239,68,68,0.12)' };
   }
 
   function montarAreas() {
@@ -90,12 +90,12 @@ Router.register('diagnostico', async (params, el) => {
     <div class="page">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
         <div>
-          <h1 style="font-size:20px;font-weight:700;margin:0;">🩺 Diagnóstico do Sistema</h1>
+          <h1 style="font-size:20px;font-weight:700;margin:0;">Diagnóstico do Sistema</h1>
           <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Mostra o que já está salvo em cada área e testa a conexão com a API — não faz nenhuma busca de vendas sozinho.</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn-primary" style="padding:8px 16px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.35);color:var(--accent-light);" id="btn-backup" title="Baixa um arquivo com tudo que está salvo no banco e neste navegador — use antes de qualquer mudança grande">Baixar backup completo</button>
-          <button class="btn-primary" style="padding:8px 16px;" id="btn-testar-api" ${testeApi==='carregando'?'disabled':''}>${testeApi==='carregando'?'⏳ Testando...':'🔄 Testar conexão'}</button>
+          <button class="btn-primary" style="padding:8px 16px;" id="btn-testar-api" ${testeApi==='carregando'?'disabled':''}>${testeApi==='carregando'?'⏳ Testando...':'Testar conexão'}</button>
           <button class="btn-primary" style="padding:8px 16px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:var(--green);" id="btn-atualizar-tudo">Atualizar tudo</button>
         </div>
       </div>
@@ -133,7 +133,7 @@ Router.register('diagnostico', async (params, el) => {
       </div>` : ''}
 
       <div class="card" style="padding:0;overflow:hidden;">
-        <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;">📋 Status por Área</div>
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;">Status por Área</div>
         <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:700px;">
           <thead>
@@ -168,7 +168,7 @@ Router.register('diagnostico', async (params, el) => {
         <span style="margin-left:auto;">Clique numa linha pra abrir a página correspondente</span>
       </div>
       <div style="font-size:11px;color:var(--text-muted);padding:4px;">
-        📢 Central de ADS, 🔗 Afiliados e 🧾 Conciliação exigem escolher uma conta específica — não entram no "Atualizar tudo" pra não disparar chamada em todas as contas de uma vez sem querer.
+        Central de ADS, Afiliados e Conciliação exigem escolher uma conta específica — não entram no "Atualizar tudo" pra não disparar chamada em todas as contas de uma vez sem querer.
       </div>
     </div>`;
 
@@ -214,13 +214,13 @@ Router.register('diagnostico', async (params, el) => {
       const ok = contas.filter(c => porConta[c].pedidos?.ultimo_sucesso && !porConta[c].pedidos?.ultimo_erro).length;
       box.innerHTML = `<div class="card" style="padding:18px 20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px;">
-          <div style="font-size:15px;font-weight:700;">🛰️ Saúde dos dados (sincronização automática)</div>
+          <div style="font-size:15px;font-weight:700;">Saúde dos dados (sincronização automática)</div>
           <button class="btn-primary" style="padding:5px 12px;font-size:12px;" onclick="window._diagSaudeAtualizar && window._diagSaudeAtualizar()">🔄</button>
         </div>
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">O servidor busca sozinho, a cada 15 minutos, os pedidos novos ou alterados e o ADS de todas as lojas conectadas (Shopee, Mercado Livre, Amazon, TikTok Shop, Magalu e Shein). O histórico de 90 dias entra aos poucos (até 1 min por loja a cada rodada) e, depois das 03:00, os últimos 45 dias são reconferidos. Pedidos no banco: <b>${(totalPedidos || 0).toLocaleString('pt-BR')}</b> · contas em dia: <b>${ok}/${contas.length}</b></div>
         ${!contas.length ? '<div style="font-size:13px;color:var(--text-muted);">Nenhuma rodada ainda — a primeira acontece em até 15 minutos depois da publicação.</div>' : `
         <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-          <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;"><th style="padding:6px;">Conta</th><th style="padding:6px;">Pedidos</th><th style="padding:6px;">ADS</th><th style="padding:6px;">Histórico carregado até</th></tr></thead>
+          <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:none;"><th style="padding:6px;">Conta</th><th style="padding:6px;">Pedidos</th><th style="padding:6px;">ADS</th><th style="padding:6px;">Histórico carregado até</th></tr></thead>
           <tbody>${contas.map(c => `<tr style="border-top:1px solid var(--border);">
             <td style="padding:6px;font-weight:600;">${nomes[c] || c} <span style="font-weight:400;color:var(--text-muted);font-size:11px;">${({ shopee: 'Shopee', ml: 'Mercado Livre', amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' })[porConta[c].marketplace] || porConta[c].marketplace} · ${c}</span></td>
             <td style="padding:6px;">${cel(porConta[c].pedidos)}</td>
@@ -275,7 +275,7 @@ Router.register('diagnostico', async (params, el) => {
     } catch (e) {
       alert('Não consegui gerar o backup: ' + (e.message || e));
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '💾 Baixar backup completo'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Baixar backup completo'; }
     }
   }
 
@@ -301,15 +301,15 @@ Router.register('diagnostico', async (params, el) => {
   // cada vez. Fica num overlay fixo (fora do #page-content) pra sobreviver às
   // trocas de página do Router.navigate no meio do processo. ──
   const ETAPAS_AUTO = [
-    { nome: '🛒 Vendas — Pedidos',       rota: 'vendas',     modo: 'click', btnId: 'btn-buscar', cacheKey: 'glr_vendas_cache' },
-    { nome: '🎯 Vendas — Oportunidades', rota: 'vendas',     modo: 'fn',    fnGlobal: 'buscarOportunidades', cacheKey: 'glr_vendas_oportunidades' },
-    { nome: '🚫 Vendas — Fora do ADS',   rota: 'vendas',     modo: 'fn',    fnGlobal: 'buscarForaDoAds', cacheKey: 'glr_vendas_fora_ads' },
-    { nome: '💰 Financeiro',             rota: 'financeiro', modo: 'click', btnId: 'fin-btn-atualizar', cacheKey: 'glr_fin_cache' },
+    { nome: 'Vendas — Pedidos',       rota: 'vendas',     modo: 'click', btnId: 'btn-buscar', cacheKey: 'glr_vendas_cache' },
+    { nome: 'Vendas — Oportunidades', rota: 'vendas',     modo: 'fn',    fnGlobal: 'buscarOportunidades', cacheKey: 'glr_vendas_oportunidades' },
+    { nome: 'Vendas — Fora do ADS',   rota: 'vendas',     modo: 'fn',    fnGlobal: 'buscarForaDoAds', cacheKey: 'glr_vendas_fora_ads' },
+    { nome: 'Financeiro',             rota: 'financeiro', modo: 'click', btnId: 'fin-btn-atualizar', cacheKey: 'glr_fin_cache' },
     // Analytics agora vive dentro do Dashboard, sempre montado (sem aba separada) —
     // window._analyticsBuscarExec já existe assim que a página carrega.
-    { nome: '📊 Analytics — Painel Executivo', rota: 'dashboard', modo: 'fn', fnGlobal: '_analyticsBuscarExec', cacheKey: 'glr_analytics_dados' },
-    { nome: '📉 Analytics — Produtos em Queda', rota: 'dashboard', modo: 'fn', fnGlobal: '_analyticsBuscarQueda', cacheKey: 'glr_analytics_queda' },
-    { nome: '📈 Projeção de Crescimento', rota: 'projecao',  modo: 'fn',    fnGlobal: 'buscarDadosProjecao', semCache: true },
+    { nome: 'Analytics — Painel Executivo', rota: 'dashboard', modo: 'fn', fnGlobal: '_analyticsBuscarExec', cacheKey: 'glr_analytics_dados' },
+    { nome: 'Analytics — Produtos em Queda', rota: 'dashboard', modo: 'fn', fnGlobal: '_analyticsBuscarQueda', cacheKey: 'glr_analytics_queda' },
+    { nome: 'Projeção de Crescimento', rota: 'projecao',  modo: 'fn',    fnGlobal: 'buscarDadosProjecao', semCache: true },
   ];
 
   function _lerCacheAt(key) {
@@ -321,7 +321,7 @@ Router.register('diagnostico', async (params, el) => {
     return `
     <div id="diag-overlay" style="position:fixed;bottom:20px;right:20px;width:340px;background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.4);z-index:9999;overflow:hidden;">
       <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px;display:flex;justify-content:space-between;align-items:center;">
-        <span>⚡ Atualizando tudo...</span>
+        <span>Atualizando tudo...</span>
         <span style="font-size:11px;color:var(--text-muted);">${idxAtual+1}/${etapas.length}</span>
       </div>
       <div style="height:4px;background:var(--bg-card);">

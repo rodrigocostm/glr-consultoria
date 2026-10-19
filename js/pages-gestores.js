@@ -184,7 +184,7 @@ Router.register('gestores', (params, el) => {
       <thead>
         <tr style="background:var(--bg-base);border-bottom:2px solid var(--border);">
           ${['Empresa','Meta Base','ADS%','Projeção','Fat. até ontem','vs Mês Ant.','Falta p/ Meta','% Meta','ADS Proj.','%ADS','Rec. GLR',mesAbrev(3),mesAbrev(2),mesAbrev(1)]
-            .map((h,i)=>`<th style="padding:8px ${i===0?'14px':'8px'};text-align:${i===0?'left':'right'};color:var(--text-muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap;">${h}</th>`).join('')}
+            .map((h,i)=>`<th style="padding:8px ${i===0?'14px':'8px'};text-align:${i===0?'left':'right'};color:var(--text-muted);font-weight:600;font-size:10px;text-transform:none;letter-spacing:0;white-space:nowrap;">${h}</th>`).join('')}
         </tr>
       </thead>
       <tbody>
@@ -301,29 +301,29 @@ Router.register('gestores', (params, el) => {
       <div class="card" style="padding:0;overflow:hidden;margin-bottom:24px;" data-gestor-id="${gid}">
 
         <!-- Header do gestor -->
-        <div style="padding:16px 20px;background:linear-gradient(135deg,#1a2744,#23305a);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div style="padding:16px 20px;background:var(--bg-subtle);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
           <div style="display:flex;align-items:center;gap:14px;">
             <div style="width:48px;height:48px;border-radius:50%;background:${g.cor||'#4f46e5'}30;border:2px solid ${g.cor||'#4f46e5'}60;display:flex;align-items:center;justify-content:center;font-weight:700;color:${g.cor||'var(--accent)'};font-size:16px;">${iniciais(g.nome)}</div>
             <div>
-              <div style="font-size:17px;font-weight:700;color:white;">${g.nome}</div>
-              <div style="font-size:12px;color:rgba(255,255,255,0.5);">${g.cargo||'Gestor de Contas'} · ${cli.length} cliente${cli.length!==1?'s':''}</div>
+              <div style="font-size:17px;font-weight:700;color:var(--text-primary);">${g.nome}</div>
+              <div style="font-size:12px;color:var(--text-muted);">${g.cargo||'Gestor de Contas'} · ${cli.length} cliente${cli.length!==1?'s':''}</div>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
             <div style="text-align:center;">
-              <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;">META</div>
-              <div id="hdr-meta-${gid}" style="font-size:14px;font-weight:700;color:white;">${totMeta>0?fmtR(totMeta):'—'}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">META</div>
+              <div id="hdr-meta-${gid}" style="font-size:14px;font-weight:700;color:var(--text-primary);">${totMeta>0?fmtR(totMeta):'—'}</div>
             </div>
-            ${totRef>0?`<div style="text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;">PROJEÇÃO/REAL</div><div style="font-size:14px;font-weight:700;color:var(--accent-light);">${fmtR(totRef)}</div></div>`:''}
+            ${totRef>0?`<div style="text-align:center;"><div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">PROJEÇÃO/REAL</div><div style="font-size:14px;font-weight:700;color:var(--accent-light);">${fmtR(totRef)}</div></div>`:''}
             <div style="text-align:center;">
-              <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;">% META</div>
-              <div id="hdr-pct-${gid}" style="font-size:18px;font-weight:700;color:${totPct!==null?corTot.text:'rgba(255,255,255,0.4)'};">${totPct!==null?totPct.toFixed(0)+'%':'—'}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">% META</div>
+              <div id="hdr-pct-${gid}" style="font-size:18px;font-weight:700;color:${totPct!==null?corTot.text:'var(--text-muted)'};">${totPct!==null?totPct.toFixed(0)+'%':'—'}</div>
             </div>
-            ${totRecGLR>0?`<div style="text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:2px;">RECEITA GLR</div><div style="font-size:14px;font-weight:700;color:var(--green);">${fmtR(totRecGLR)}</div></div>`:''}
+            ${totRecGLR>0?`<div style="text-align:center;"><div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">RECEITA GLR</div><div style="font-size:14px;font-weight:700;color:var(--green);">${fmtR(totRecGLR)}</div></div>`:''}
             <div style="display:flex;align-items:center;gap:6px;margin-left:8px;">
               ${g.loginCriado ? `<span title="Login criado em ${g.loginCriadoEm ? new Date(g.loginCriadoEm).toLocaleDateString('pt-BR') : ''}" style="font-size:10px;background:rgba(16,185,129,0.2);color:var(--green);padding:3px 8px;border-radius:99px;font-weight:700;">✅ Login criado</span>` : ''}
-              <button class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);" onclick="abrirModalLoginGestor(${GLR.gestores.indexOf(g)})">${g.loginCriado ? 'Acesso' : 'Criar Login'}</button>
-              <button class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);" onclick="editarGestor(${GLR.gestores.indexOf(g)})">Editar</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--text-secondary);border:1px solid var(--border);" onclick="abrirModalLoginGestor(${GLR.gestores.indexOf(g)})">${g.loginCriado ? 'Acesso' : 'Criar Login'}</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--text-secondary);border:1px solid var(--border);" onclick="editarGestor(${GLR.gestores.indexOf(g)})">Editar</button>
               <button class="btn btn-ghost btn-sm" style="color:var(--red);border:1px solid rgba(248,113,113,0.3);" onclick="removerGestor(${GLR.gestores.indexOf(g)})">🗑️</button>
             </div>
           </div>
@@ -423,7 +423,7 @@ Router.register('gestores', (params, el) => {
         if (hdrPct) {
           const cor = corMeta(pct);
           hdrPct.textContent = pct !== null ? pct.toFixed(0) + '%' : '—';
-          hdrPct.style.color = pct !== null ? cor.text : 'rgba(255,255,255,0.4)';
+          hdrPct.style.color = pct !== null ? cor.text : 'var(--text-muted)';
         }
       }
     }
@@ -548,7 +548,7 @@ Router.register('gestores', (params, el) => {
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `<div class="modal">
       <div class="modal-header">
-        <div class="modal-title">🔐 Login de ${g.nome}</div>
+        <div class="modal-title">Login de ${g.nome}</div>
         <button class="btn btn-ghost btn-sm" onclick="this.closest('.modal-overlay').remove()">✕</button>
       </div>
       <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:8px;padding:10px 12px;margin-bottom:18px;font-size:12px;color:var(--text-secondary);line-height:1.5;">

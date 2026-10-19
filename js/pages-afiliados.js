@@ -89,8 +89,8 @@ Router.register('afiliados', async (params, el) => {
       <!-- Header -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
         <div>
-          <h2 style="font-size:20px;font-weight:700;margin:0;">🔗 Central de Afiliados</h2>
-          <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${dataInicio} → ${dataFim} ${_atualizadoEm[plataforma]?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${Math.floor((Date.now()-_atualizadoEm[plataforma])/60000)<60?'há '+Math.max(1,Math.floor((Date.now()-_atualizadoEm[plataforma])/60000))+' min':'há '+Math.floor((Date.now()-_atualizadoEm[plataforma])/3600000)+'h'}</span>`:''}</div>
+          <h2 style="font-size:20px;font-weight:700;margin:0;">Central de Afiliados</h2>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${dataInicio} → ${dataFim} ${_atualizadoEm[plataforma]?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">${Math.floor((Date.now()-_atualizadoEm[plataforma])/60000)<60?'há '+Math.max(1,Math.floor((Date.now()-_atualizadoEm[plataforma])/60000))+' min':'há '+Math.floor((Date.now()-_atualizadoEm[plataforma])/3600000)+'h'}</span>`:''}</div>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <select id="sel-cliente-afil" class="form-control" style="min-width:160px;" onchange="window._afilClienteChange(this.value)">
@@ -115,7 +115,7 @@ Router.register('afiliados', async (params, el) => {
       <!-- Área de conteúdo -->
       <div id="afil-content">
         <div style="text-align:center;padding:60px;color:var(--text-muted);">
-          Clique em <strong>🔄 Buscar dados</strong> para carregar os dados de afiliados.
+          Clique em <strong>Buscar dados</strong> para carregar os dados de afiliados.
         </div>
       </div>
     </div>`;
@@ -176,10 +176,10 @@ Router.register('afiliados', async (params, el) => {
               </div>
               <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
                 <a href="https://seller.shopee.com.br/portal/marketing/affiliate" target="_blank" class="btn btn-primary">
-                  📊 Acessar AMS na Shopee
+                  Acessar AMS na Shopee
                 </a>
                 <a href="https://marketplaces.tiops.com.br" target="_blank" class="btn btn-secondary">
-                  🔑 Suporte tiops.com.br
+                  Suporte tiops.com.br
                 </a>
               </div>
               <div style="margin-top:20px;padding:12px 16px;background:rgba(239,68,68,0.08);border-radius:var(--radius-sm);font-size:12px;color:var(--text-muted);font-family:monospace;text-align:left;max-width:500px;margin-left:auto;margin-right:auto;">
@@ -286,7 +286,7 @@ Router.register('afiliados', async (params, el) => {
     } finally {
       _carregando = false;
       const btn = document.getElementById('btn-buscar-afil');
-      if (btn) { btn.disabled = false; btn.textContent = '🔄 Buscar dados'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Buscar dados'; }
     }
   }
 
@@ -310,11 +310,11 @@ Router.register('afiliados', async (params, el) => {
     return `
       <!-- KPIs -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px;">
-        ${kpiAfil('Receita via Afiliados', 'R$ ' + fmtBRL(totalReceita), '#10b981', '💰')}
-        ${kpiAfil('Comissão Paga', 'R$ ' + fmtBRL(totalComissao), '#f97316', '💸')}
-        ${kpiAfil('Pedidos via Afiliados', fmtNum(totalPedidos), '#6366f1', '📦')}
-        ${kpiAfil('Afiliadores Ativos', fmtNum(totalAfiliados), '#06b6d4', '👥')}
-        ${kpiAfil('ROAS Afiliados', roasAfil > 0 ? roasAfil.toFixed(1) + 'x' : '—', '#8b5cf6', '📈')}
+        ${kpiAfil('Receita via Afiliados', 'R$ ' + fmtBRL(totalReceita), 'var(--green)', '💰')}
+        ${kpiAfil('Comissão Paga', 'R$ ' + fmtBRL(totalComissao), 'var(--orange)', '💸')}
+        ${kpiAfil('Pedidos via Afiliados', fmtNum(totalPedidos), 'var(--accent)', '📦')}
+        ${kpiAfil('Afiliadores Ativos', fmtNum(totalAfiliados), 'var(--cyan)', '👥')}
+        ${kpiAfil('ROAS Afiliados', roasAfil > 0 ? roasAfil.toFixed(1) + 'x' : '—', 'var(--purple)', '📈')}
       </div>
 
       <!-- Por conta -->
@@ -338,12 +338,12 @@ Router.register('afiliados', async (params, el) => {
           </div>
           ${temDados ? `
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;">
-            ${metricaAfil('Receita', 'R$ ' + fmtBRL(receita), '#10b981')}
-            ${metricaAfil('Comissão', 'R$ ' + fmtBRL(comissao), '#f97316')}
-            ${metricaAfil('Pedidos', fmtNum(pedidos), '#6366f1')}
-            ${metricaAfil('Afiliadores', fmtNum(afiliados), '#06b6d4')}
-            ${metricaAfil('Cliques', fmtNum(cliques), '#8b5cf6')}
-            ${metricaAfil('Taxa Comissão', taxa.toFixed(2) + '%', '#f59e0b')}
+            ${metricaAfil('Receita', 'R$ ' + fmtBRL(receita), 'var(--green)')}
+            ${metricaAfil('Comissão', 'R$ ' + fmtBRL(comissao), 'var(--orange)')}
+            ${metricaAfil('Pedidos', fmtNum(pedidos), 'var(--accent)')}
+            ${metricaAfil('Afiliadores', fmtNum(afiliados), 'var(--cyan)')}
+            ${metricaAfil('Cliques', fmtNum(cliques), 'var(--purple)')}
+            ${metricaAfil('Taxa Comissão', taxa.toFixed(2) + '%', 'var(--yellow)')}
           </div>` : (() => {
             // Se algum endpoint AMS falhou com erro de autorização/módulo não conectado,
             // mostra esse motivo específico em vez do aviso genérico — é a causa real na
@@ -456,12 +456,12 @@ Router.register('afiliados', async (params, el) => {
         </div>
         ${temDados ? `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
-          ${metricaAfil('Receita', 'R$ ' + fmtBRL(receita), '#10b981')}
-          ${metricaAfil('Comissão Paga', 'R$ ' + fmtBRL(comissao), '#f97316')}
-          ${metricaAfil('Pedidos', fmtNum(pedidos), '#6366f1')}
-          ${metricaAfil('Afiliados Ativos', fmtNum(afiliados), '#06b6d4')}
-          ${metricaAfil('Cliques', fmtNum(cliques), '#8b5cf6')}
-          ${metricaAfil('Taxa Comissão', taxa.toFixed(2) + '%', '#f59e0b')}
+          ${metricaAfil('Receita', 'R$ ' + fmtBRL(receita), 'var(--green)')}
+          ${metricaAfil('Comissão Paga', 'R$ ' + fmtBRL(comissao), 'var(--orange)')}
+          ${metricaAfil('Pedidos', fmtNum(pedidos), 'var(--accent)')}
+          ${metricaAfil('Afiliados Ativos', fmtNum(afiliados), 'var(--cyan)')}
+          ${metricaAfil('Cliques', fmtNum(cliques), 'var(--purple)')}
+          ${metricaAfil('Taxa Comissão', taxa.toFixed(2) + '%', 'var(--yellow)')}
         </div>` : `
         <div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px;">
           Nenhum dado de afiliados encontrado no período.<br>
@@ -501,7 +501,7 @@ Router.register('afiliados', async (params, el) => {
   // ── Helpers visuais ───────────────────────────────────────
   function kpiAfil(label, valor, cor, icon) {
     return `<div class="kpi-card">
-      <div class="kpi-icon" style="background:${cor}22;"><span style="font-size:18px;">${icon}</span></div>
+      <div class="kpi-icon" style="background:color-mix(in srgb,${cor} 13%,transparent);"><span style="font-size:18px;">${icon}</span></div>
       <div class="kpi-label">${label}</div>
       <div class="kpi-value" style="font-size:18px;">${valor}</div>
     </div>`;

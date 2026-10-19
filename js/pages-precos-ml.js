@@ -242,7 +242,7 @@ Router.register('precos-ml', (params, el) => {
         <select class="pml-sel" onchange="window._pmlPeriodo(this.value)">${[7, 15, 30, 60].map(d => `<option value="${d}" ${+st.periodo === d ? 'selected' : ''}>Mudanças dos últimos ${d} dias</option>`).join('')}</select>
         <input class="pml-sel" style="min-width:220px" placeholder="Buscar produto ou MLB…" value="${h(st.busca)}" oninput="window._pmlBusca(this.value)">
         <span style="flex:1"></span>
-        <button class="btn btn-secondary btn-sm" ${st.verificando || st.carregando ? 'disabled' : ''} onclick="window._pmlAgora()">${st.verificando ? '⏳ ' + h(st.progresso) : '🔍 Ver preços agora'}</button>
+        <button class="btn btn-secondary btn-sm" ${st.verificando || st.carregando ? 'disabled' : ''} onclick="window._pmlAgora()">${st.verificando ? '⏳ ' + h(st.progresso) : 'Ver preços agora'}</button>
       </div>
       <div class="pml-mut" style="margin-bottom:10px">${h(fotoTxt)} · margem com tarifa e frete exatos do ML em cada preço, custo do produto, imposto${despesas().ads ? `, ADS ${pct(despesas().ads)}` : ''} e despesas de Vendas</div>
       ${st.erro ? `<div class="pml-erro">⚠️ ${h(st.erro)}</div>` : ''}

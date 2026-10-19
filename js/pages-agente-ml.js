@@ -169,7 +169,7 @@ Router.register('agente-ml', (params, el) => {
   }
 
   // ── Render ──
-  const corTacos = (tacos, meta) => tacos != null && meta ? (tacos <= meta ? '#16a34a' : tacos <= meta * 1.3 ? '#d97706' : '#dc2626') : '#64748b';
+  const corTacos = (tacos, meta) => tacos != null && meta ? (tacos <= meta ? 'var(--green)' : tacos <= meta * 1.3 ? 'var(--yellow)' : 'var(--red)') : 'var(--text-muted)';
   function kpi(rot, val, sub, cor) {
     return `<div class="aml-kpi" style="--c:${cor || 'var(--accent)'}"><div class="aml-rot">${rot}</div><div class="aml-val">${val}</div>${sub ? `<div class="aml-sub">${sub}</div>` : ''}</div>`;
   }
@@ -196,7 +196,7 @@ Router.register('agente-ml', (params, el) => {
     const opcoes = state.contasML.filter(x => !cfgDe(idConta(x))).map(x => `<option value="${h(idConta(x))}">${h(nomeConta(x))} (${h(idConta(x))})</option>`).join('');
     const campo = (id, rot, val, dica, suf) => `<label class="aml-campo"><span>${rot}</span><div><input id="${id}" class="form-control" value="${val ?? ''}" inputmode="decimal">${suf ? `<em>${suf}</em>` : ''}</div>${dica ? `<small>${dica}</small>` : ''}</label>`;
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
-      <div style="font-weight:700;font-size:15px;margin-bottom:4px;">🛡️ Guardrails do copiloto</div>
+      <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Guardrails do copiloto</div>
       <div class="aml-sub" style="margin-bottom:12px;">As mesmas regras do agente da Shopee: TACOS do mês decide se dá pra acelerar; ACOS sem cancelados; pausar só quando gasta muito sem retorno.</div>
       ${!cfg ? `<label class="aml-campo"><span>Conta do Mercado Livre</span><div><select id="aml-conta" class="form-control"><option value="">Escolha…</option>${opcoes}</select></div></label>` : ''}
       <div class="aml-campos">
@@ -219,14 +219,14 @@ Router.register('agente-ml', (params, el) => {
   // explicação completa e anúncios ficam escondidos (▸ detalhes).
   const roasXg = v => v ? `${(+v).toFixed(1).replace('.', ',')}x` : '—';
   const TIPOS = {
-    retirar_produto: { rot: 'Tirar produto', cor: '#dc2626', ordem: 1 },
-    pausar: { rot: 'Pausar campanha', cor: '#dc2626', ordem: 2 },
-    mover_produto: { rot: 'Mover produto', cor: '#d97706', ordem: 3 },
-    roas_target: { rot: 'Ajustar ROAS', cor: '#2a78d6', ordem: 4 },
-    acos_target: { rot: 'Meta de ACOS', cor: '#2a78d6', ordem: 4 },
-    orcamento: { rot: 'Orçamento', cor: '#2a78d6', ordem: 5 },
-    adicionar_produto: { rot: 'Colocar no ADS', cor: '#1baf7a', ordem: 6 },
-    abc_queda: { rot: 'Curva A caindo', cor: '#8b5cf6', ordem: 9 },
+    retirar_produto: { rot: 'Tirar produto', cor: 'var(--red)', ordem: 1 },
+    pausar: { rot: 'Pausar campanha', cor: 'var(--red)', ordem: 2 },
+    mover_produto: { rot: 'Mover produto', cor: 'var(--yellow)', ordem: 3 },
+    roas_target: { rot: 'Ajustar ROAS', cor: 'var(--accent)', ordem: 4 },
+    acos_target: { rot: 'Meta de ACOS', cor: 'var(--accent)', ordem: 4 },
+    orcamento: { rot: 'Orçamento', cor: 'var(--accent)', ordem: 5 },
+    adicionar_produto: { rot: 'Colocar no ADS', cor: 'var(--green)', ordem: 6 },
+    abc_queda: { rot: 'Curva A caindo', cor: 'var(--purple)', ordem: 9 },
   };
   function renderSugestoes(id) {
     const meta = parseFloat(cfgDe(id)?.meta_acos) || null;
@@ -297,14 +297,14 @@ Router.register('agente-ml', (params, el) => {
     const fazerNoMl = todas.filter(x => x.d.acao !== 'abc_queda').length;
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
-        <div style="font-weight:700;font-size:15px;">📋 O que fazer no Mercado Livre</div>
+        <div style="font-weight:700;font-size:15px;">O que fazer no Mercado Livre</div>
         <div class="aml-sub">${fazerNoMl} para aplicar no painel do ML · ${todas.length - fazerNoMl} para revisar</div>
       </div>
       <div class="aml-sub" style="margin-bottom:12px;">Aplique em Publicidade → Product Ads → campanha e marque <b>✓ Feito</b>. O ML não deixa a integração alterar o ADS.</div>
       ${quadroNova}
       ${todas.length ? `<div class="aml-filtros">${chips.map(([k, t, n]) => `<button class="aml-fchip ${filtro === k ? 'on' : ''}" style="--c:${TIPOS[k]?.cor || 'var(--text-muted)'}" onclick="window._amlFiltroSug('${k}')">${t} <b>${n}</b></button>`).join('')}</div>` : ''}
       ${lista.length ? `<div class="aml-lista">${lista.map(({ l, d }) => {
-        const t = TIPOS[d.acao] || { rot: 'Ação', cor: '#64748b' };
+        const t = TIPOS[d.acao] || { rot: 'Ação', cor: 'var(--text-muted)' };
         const ids = d.item_ids || [];
         return `<div class="aml-li" style="--c:${t.cor}">
           <span class="aml-tipo">${t.rot}</span>
@@ -340,7 +340,7 @@ Router.register('agente-ml', (params, el) => {
         ${linhas.map(x => {
           const mm = x.metrics || {}, g = parseFloat(mm.cost) || 0, v = (parseFloat(mm.total_amount) || 0) * (1 - tx);
           const acos = v > 0 ? g / v * 100 : (g > 0 ? Infinity : null);
-          const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity || acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? '#dc2626' : acos > cfg.meta_acos ? '#d97706' : '#16a34a';
+          const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity || acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? 'var(--red)' : acos > cfg.meta_acos ? 'var(--yellow)' : 'var(--green)';
           const roasAlvo = parseFloat(x.roas_target) || (x.acos_target ? 100 / x.acos_target : 0);
           const aberta = state.aberto === String(x.id);
           return `<tr class="aml-linha" onclick="window._amlProdutos('${x.id}')"><td><span class="aml-seta">${aberta ? '▾' : '▸'}</span> ${h(x.name)}${pend.has(String(x.id)) ? ' <span class="aml-chip" title="Tem sugestão pendente">sugestão</span>' : ''}</td>
@@ -352,7 +352,7 @@ Router.register('agente-ml', (params, el) => {
     }
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
-        <div><div style="font-weight:700;font-size:15px;">📢 Campanhas de Product Ads — mês atual</div>
+        <div><div style="font-weight:700;font-size:15px;">Campanhas de Product Ads — mês atual</div>
         <div class="aml-sub">Clique numa campanha para ver os produtos dentro dela. ACOS sem cancelados${tx > 0.005 ? ` (cancelamentos/devoluções da loja no mês: ${pct(tx * 100)})` : ''}.</div></div>
         <button class="btn btn-secondary btn-sm" title="Atualizar" ${state.carregandoCamp ? 'disabled' : ''} onclick="window._amlCampanhas()">🔄</button>
       </div>${corpo}</div>`;
@@ -368,7 +368,7 @@ Router.register('agente-ml', (params, el) => {
     return `<div class="aml-prods"><table class="aml-tab"><thead><tr><th>Produto (variações somadas)</th><th>Anúncios ativos</th><th>Gasto</th><th>% do gasto</th><th>Vendas (sem cancel.)</th><th>Un.</th><th>ROAS</th><th>ACOS</th></tr></thead><tbody>
       ${p.lista.map(f => {
         const v = f.vendas * (1 - tx), acos = v > 0 ? f.gasto / v * 100 : (f.gasto > 0 ? Infinity : null);
-        const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity ? '#dc2626' : acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? '#dc2626' : acos > cfg.meta_acos ? '#d97706' : '#16a34a';
+        const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity ? 'var(--red)' : acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? 'var(--red)' : acos > cfg.meta_acos ? 'var(--yellow)' : 'var(--green)';
         const pausados = f.itens.length - f.ativos;
         return `<tr><td style="white-space:normal;min-width:240px;">${f.permalink ? `<a href="${h(f.permalink)}" target="_blank" rel="noopener">${h(f.nome)}</a>` : h(f.nome)}${f.recomendado ? ' <span class="aml-chip" title="O ML recomenda anunciar">recomendado ML</span>' : ''}${pend.has(f.chave) ? ' <span class="aml-chip">sugestão</span>' : ''}</td>
           <td>${f.ativos}/${f.itens.length}${pausados ? ` <span class="aml-sub">(${pausados} fora)</span>` : ''}</td><td>${R$(f.gasto)}</td><td>${Math.round(f.gasto / gastoCamp * 100)}%</td><td>${R$(v)}</td><td>${f.unidades}</td>
@@ -416,12 +416,12 @@ Router.register('agente-ml', (params, el) => {
         <label style="display:flex;gap:6px;align-items:center;font-size:13px;"><input type="checkbox" ${cfg?.ativo ? 'checked' : ''} onchange="window._amlAtivo(this.checked)"> Análise diária 07:00</label>
         <span class="aml-sub" style="flex:1;">${ultima ? `Última análise: ${new Date(ultima.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : 'Ainda não analisou'}</span>
         <button class="btn btn-secondary btn-sm" onclick="window._amlEditar(${state.editando ? 'false' : 'true'})">Guardrails</button>
-        <button class="btn btn-primary btn-sm" ${state.analisando ? 'disabled' : ''} onclick="window._amlAnalisar()">${state.analisando ? '⏳ Analisando…' : '🔎 Analisar agora'}</button>
+        <button class="btn btn-primary btn-sm" ${state.analisando ? 'disabled' : ''} onclick="window._amlAnalisar()">${state.analisando ? '⏳ Analisando…' : 'Analisar agora'}</button>
       </div>
       ${state.editando ? renderConfig(cfg) : ''}
       <div class="aml-kpis">
         ${kpi('Faturamento do mês (sem cancelados)', m ? R$(m.fat) : '—', m ? `projeção do mês <b>${R$(m.proj)}</b>` : 'a base automática ainda não cobre o mês desta conta')}
-        ${kpi('Investimento em ADS no mês', m?.ads != null ? R$(m.ads) : '—', '', '#0ea5e9')}
+        ${kpi('Investimento em ADS no mês', m?.ads != null ? R$(m.ads) : '—', '', 'var(--cyan)')}
         ${kpi('TACOS do mês vs meta', pct(m?.tacos), `meta ${pct(cfg?.meta_acos)}`, corTacos(m?.tacos, cfg?.meta_acos))}
       </div>
       ${renderSugestoes(id)}

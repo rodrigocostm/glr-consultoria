@@ -6,7 +6,7 @@ Router.register('portal-admin', async (params, el) => {
   el.innerHTML = `<div style="padding:24px;max-width:900px;margin:0 auto;" id="portal-admin-root">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
       <div>
-        <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">🔐 Portal dos Clientes</h2>
+        <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">Portal dos Clientes</h2>
         <p style="font-size:13px;color:var(--text-secondary);margin:0;">Gerencie os acessos dos seus clientes ao portal de vendas</p>
       </div>
       <button onclick="window._portalAdminNovo()" style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;">+ Novo Acesso</button>
@@ -56,12 +56,12 @@ async function _renderPortalAdminLista() {
       ${configs.map(cfg => `
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
           <div style="display:flex;align-items:center;gap:14px;">
-            <div style="width:40px;height:40px;border-radius:50%;background:${cfg.ativo!==false?'var(--green-bg)':'#f8fafc'};border:2px solid ${cfg.ativo!==false?'var(--green)':'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:${cfg.ativo!==false?'var(--green)':'var(--text-secondary)'};">
+            <div style="width:40px;height:40px;border-radius:50%;background:${cfg.ativo!==false?'var(--green-bg)':'var(--bg-subtle)'};border:2px solid ${cfg.ativo!==false?'var(--green)':'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:${cfg.ativo!==false?'var(--green)':'var(--text-secondary)'};">
               ${(cfg.clienteNome||'?').slice(0,2).toUpperCase()}
             </div>
             <div>
               <div style="font-size:14px;font-weight:700;color:var(--text-primary);">${cfg.clienteNome||'—'}</div>
-              <div style="font-size:12px;color:var(--text-secondary);">📧 ${cfg.email} · ${(cfg.contaIds||[]).length} conta(s)</div>
+              <div style="font-size:12px;color:var(--text-secondary);">${cfg.email} · ${(cfg.contaIds||[]).length} conta(s)</div>
               <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">Criado em ${new Date(cfg.criadoEm||Date.now()).toLocaleDateString('pt-BR')}</div>
             </div>
           </div>
@@ -75,7 +75,7 @@ async function _renderPortalAdminLista() {
               Editar
             </button>
             <button onclick="window._portalAdminRemover('${cfg.id}')"
-              style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid #fecaca;background:transparent;color:var(--red);">
+              style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid color-mix(in srgb,var(--red) 28%,transparent);background:transparent;color:var(--red);">
               🗑
             </button>
           </div>
@@ -106,25 +106,25 @@ function _abrirModal(cfg) {
   modal.innerHTML = `
     <div style="background:var(--bg-surface);border-radius:16px;padding:28px;width:480px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:90vh;overflow-y:auto;">
       <h3 style="font-size:16px;font-weight:700;margin:0 0 20px;color:var(--text-primary);">
-        ${isEdit ? '✏️ Editar Acesso' : '🔐 Novo Acesso ao Portal'}
+        ${isEdit ? 'Editar Acesso' : 'Novo Acesso ao Portal'}
       </h3>
 
-      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:6px;">Cliente</label>
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:none;margin-bottom:6px;">Cliente</label>
       <select id="pm-cliente" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:13px;margin-bottom:16px;box-sizing:border-box;" onchange="window._portalModalAtualizarContas()">
         <option value="">— Selecione —</option>
         ${clientes.map(c => `<option value="${c.id}" ${cfg?.clienteId==c.id?'selected':''}>${c.nome}</option>`).join('')}
       </select>
 
-      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:6px;">Contas visíveis (marque quais o cliente pode ver)</label>
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:none;margin-bottom:6px;">Contas visíveis (marque quais o cliente pode ver)</label>
       <div id="pm-contas" style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:16px;min-height:40px;font-size:12px;color:var(--text-secondary);">
         Selecione um cliente acima
       </div>
 
-      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:6px;">E-mail de acesso</label>
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:none;margin-bottom:6px;">E-mail de acesso</label>
       <input id="pm-email" type="email" value="${cfg?.email||''}" placeholder="cliente@empresa.com"
         style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:13px;margin-bottom:16px;box-sizing:border-box;">
 
-      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:6px;">
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:none;margin-bottom:6px;">
         Senha ${isEdit ? '(deixe em branco para manter)' : ''}
       </label>
       <input id="pm-senha" type="password" placeholder="Mínimo 6 caracteres"
@@ -191,11 +191,11 @@ window._portalAdminSalvar = async function(editId) {
   const checkboxes = document.querySelectorAll('#pm-contas input[type=checkbox]:checked');
   const contaIds = Array.from(checkboxes).map(cb => String(cb.value));
 
-  if (!email) { msg.textContent = '⚠️ Informe o e-mail'; msg.style.color='#dc2626'; return; }
-  if (!clienteId) { msg.textContent = '⚠️ Selecione um cliente'; msg.style.color='#dc2626'; return; }
-  if (!editId && !senha) { msg.textContent = '⚠️ Informe a senha para novo acesso'; msg.style.color='#dc2626'; return; }
-  if (senha && senha.length < 6) { msg.textContent = '⚠️ Senha deve ter no mínimo 6 caracteres'; msg.style.color='#dc2626'; return; }
-  if (!contaIds.length) { msg.textContent = '⚠️ Selecione ao menos uma conta'; msg.style.color='#dc2626'; return; }
+  if (!email) { msg.textContent = '⚠️ Informe o e-mail'; msg.style.color='var(--red)'; return; }
+  if (!clienteId) { msg.textContent = '⚠️ Selecione um cliente'; msg.style.color='var(--red)'; return; }
+  if (!editId && !senha) { msg.textContent = '⚠️ Informe a senha para novo acesso'; msg.style.color='var(--red)'; return; }
+  if (senha && senha.length < 6) { msg.textContent = '⚠️ Senha deve ter no mínimo 6 caracteres'; msg.style.color='var(--red)'; return; }
+  if (!contaIds.length) { msg.textContent = '⚠️ Selecione ao menos uma conta'; msg.style.color='var(--red)'; return; }
 
   msg.textContent = editId ? 'Salvando...' : 'Criando usuário...';
   msg.style.color = 'var(--text-secondary)';
@@ -217,14 +217,14 @@ window._portalAdminSalvar = async function(editId) {
         // Tenta atualizar senha — requer que o usuário esteja logado com a conta alvo (não é possível admin-side sem service key)
         // Orientamos o usuário a pedir reset via Supabase
         msg.textContent = '⚠️ Para alterar a senha, use o painel do Supabase ou peça ao cliente para redefinir.';
-        msg.style.color = '#d97706';
+        msg.style.color = 'var(--yellow)';
       }
     } else {
       // Novo: cria usuário no Supabase
       const { error: signUpError } = await _sb.auth.signUp({ email, password: senha });
       if (signUpError && !signUpError.message.includes('already registered')) {
         msg.textContent = '❌ Erro ao criar usuário: ' + signUpError.message;
-        msg.style.color = '#dc2626';
+        msg.style.color = 'var(--red)';
         return;
       }
       const novoId = 'portal_' + Date.now();
@@ -233,14 +233,14 @@ window._portalAdminSalvar = async function(editId) {
 
     await _salvarConfigs(configs);
     msg.textContent = '✅ Salvo com sucesso!';
-    msg.style.color = '#16a34a';
+    msg.style.color = 'var(--green)';
     setTimeout(async () => {
       document.getElementById('portal-modal')?.remove();
       await _renderPortalAdminLista();
     }, 1000);
   } catch(e) {
     msg.textContent = '❌ Erro: ' + e.message;
-    msg.style.color = '#dc2626';
+    msg.style.color = 'var(--red)';
   }
 };
 

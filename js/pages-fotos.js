@@ -10,7 +10,7 @@
 const _FOTO_TEMPLATES = [
   {
     id: 'ambientada',
-    nome: '🏠 Ambientada',
+    nome: 'Ambientada',
     desc: 'Produto inserido num ambiente, com itens de composição ao redor',
     campos: [
       { key: 'o_que_e', label: 'O que é o produto', placeholder: 'Ex: um sofá de 3 lugares cinza' },
@@ -20,7 +20,7 @@ const _FOTO_TEMPLATES = [
   },
   {
     id: 'closeup_dir_esq',
-    nome: '🔍 Close-up (direita → esquerda, câmera alta)',
+    nome: 'Close-up (direita → esquerda, câmera alta)',
     desc: 'Câmera próxima, produto da direita pra esquerda, vista de cima',
     campos: [
       { key: 'produto', label: 'Produto', placeholder: 'Ex: o tênis' },
@@ -30,7 +30,7 @@ const _FOTO_TEMPLATES = [
   },
   {
     id: 'closeup_esq_dir',
-    nome: '🔍 Close-up (esquerda → direita, ângulo Plongé)',
+    nome: 'Close-up (esquerda → direita, ângulo Plongé)',
     desc: 'Câmera próxima, produto completo da esquerda pra direita, ângulo Plongé',
     campos: [
       { key: 'produto', label: 'Produto', placeholder: 'Ex: o tênis' },
@@ -39,7 +39,7 @@ const _FOTO_TEMPLATES = [
   },
   {
     id: 'render3d',
-    nome: '🧊 Render 3D (fundo branco)',
+    nome: 'Render 3D (fundo branco)',
     desc: 'Produto em render 3D realista, fundo branco',
     campos: [
       { key: 'produto', label: 'Produto', placeholder: 'Ex: o liquidificador' },
@@ -251,13 +251,13 @@ Router.register('fotos', (params, el) => {
       <div style="text-align:center;">
         <img src="${img.url}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;border:1px solid var(--border);">
         <div style="font-size:11px;color:var(--text-muted);margin:6px 0 4px;">${titulo}</div>
-        <a href="${img.url}" download="${titulo.replace(/\s+/g, '-').toLowerCase()}.png" target="_blank" class="btn btn-secondary btn-sm" style="width:100%;">⬇ Baixar</a>
+        <a href="${img.url}" download="${titulo.replace(/\s+/g, '-').toLowerCase()}.png" target="_blank" class="btn btn-secondary btn-sm" style="width:100%;">Baixar</a>
       </div>`;
   }
 
   function renderDropzone() {
     return `
-      <div id="foto-dropzone" ondragover="event.preventDefault();this.style.borderColor='#6366f1';" ondragleave="this.style.borderColor='var(--border)';"
+      <div id="foto-dropzone" ondragover="event.preventDefault();this.style.borderColor='var(--accent)';" ondragleave="this.style.borderColor='var(--border)';"
            ondrop="event.preventDefault();this.style.borderColor='var(--border)';_fotoDrop(event);"
            onclick="document.getElementById('foto-file-input').click()"
            style="border:2px dashed var(--border);border-radius:16px;min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:20px;background:var(--bg-soft,var(--bg-subtle));transition:border-color .15s;">
@@ -299,7 +299,7 @@ Router.register('fotos', (params, el) => {
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Edita livremente — o que estiver aqui é exatamente o que vai pra IA. Confira antes de gerar pra não gastar crédito à toa.</div>
         </div>
         <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:10px;" ${(!estado.refBase64 || tipoState.gerando) ? 'disabled' : ''} onclick="_fotoGerarTipo()">
-          ${tipoState.gerando ? '⏳ Gerando...' : '🎨 Gerar Foto'}
+          ${tipoState.gerando ? '⏳ Gerando...' : 'Gerar Foto'}
         </button>
       ` : ''}
 
@@ -315,7 +315,7 @@ Router.register('fotos', (params, el) => {
         <label class="form-label" style="display:flex;justify-content:space-between;align-items:center;">
           Nome do Produto (opcional)
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;" ${(!estado.refBase64 || estado.sugerindo) ? 'disabled' : ''} onclick="_fotoSugerir()">
-            ${estado.sugerindo ? '⏳ Sugerindo...' : '✨ Sugerir com IA'}
+            ${estado.sugerindo ? '⏳ Sugerindo...' : 'Sugerir com IA'}
           </button>
         </label>
         <input type="text" class="form-input" id="foto-nome" value="${(estado.nome || '').replace(/"/g, '&quot;')}" placeholder="Ex: Armário de Cozinha 2 Portas">
@@ -325,7 +325,7 @@ Router.register('fotos', (params, el) => {
       </div>
 
       <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;border-radius:12px;" ${(!estado.refBase64 || estado.gerandoAmbientada) ? 'disabled' : ''} onclick="_fotoGerarAmbientada()">
-        ${estado.gerandoAmbientada ? '⏳ Gerando...' : (estado.ambientada ? '🔄 Gerar outra foto ambientada' : '🎨 Gerar Foto Ambientada (1 foto)')}
+        ${estado.gerandoAmbientada ? '⏳ Gerando...' : (estado.ambientada ? 'Gerar outra foto ambientada' : 'Gerar Foto Ambientada (1 foto)')}
       </button>
       <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center;">Gera só a foto principal primeiro — os 2 close-ups de detalhe custam à parte e só valem a pena depois de aprovar essa.</div>
 
@@ -333,7 +333,7 @@ Router.register('fotos', (params, el) => {
         <div style="margin-top:20px;">
           <div style="max-width:320px;margin:0 auto;">${cardFoto(estado.ambientada, 'Ambientada')}</div>
           <button class="btn btn-secondary" style="width:100%;margin-top:16px;" ${estado.gerandoDetalhes ? 'disabled' : ''} onclick="_fotoGerarDetalhes()">
-            ${estado.gerandoDetalhes ? '⏳ Gerando detalhes...' : '🔍 Gerar 2 Fotos de Detalhe (a partir dessa)'}
+            ${estado.gerandoDetalhes ? '⏳ Gerando detalhes...' : 'Gerar 2 Fotos de Detalhe (a partir dessa)'}
           </button>
         </div>
       ` : ''}
@@ -387,7 +387,7 @@ Router.register('fotos', (params, el) => {
   }
 
   el.innerHTML = `<div class="page">
-    <div class="section-title mb-16">🎨 Gerador de Fotos</div>
+    <div class="section-title mb-16">Gerador de Fotos</div>
     <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;max-width:640px;">
       Envie a foto de um produto e gere variações profissionais com IA. Sem publicar nada — baixe e use onde quiser.
     </div>

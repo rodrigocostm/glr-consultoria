@@ -173,8 +173,8 @@ function nomeMes(m, a) {
 
 function statusBadge(ativo) {
   return ativo
-    ? `<span style="background:#dcfce7;color:var(--green);padding:2px 10px;border-radius:99px;font-size:11px;font-weight:600;">Ativa</span>`
-    : `<span style="background:#fee2e2;color:var(--red);padding:2px 10px;border-radius:99px;font-size:11px;font-weight:600;">Pausada</span>`;
+    ? `<span style="background:var(--green-bg);color:var(--green);padding:2px 10px;border-radius:99px;font-size:11px;font-weight:600;">Ativa</span>`
+    : `<span style="background:var(--red-bg);color:var(--red);padding:2px 10px;border-radius:99px;font-size:11px;font-weight:600;">Pausada</span>`;
 }
 
 // ─── Cache ────────────────────────────────────────────────────
@@ -861,7 +861,7 @@ function renderShell() {
     <!-- Cabeçalho -->
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:${embutido ? '16' : '24'}px;">
       <div>
-        <h2 style="font-size:${embutido ? '17' : '20'}px;font-weight:${embutido ? 800 : 700};color:var(--text-primary);margin:0;">${embutido ? '📊 Desempenho de ADS' : '📢 Central de ADS'}</h2>
+        <h2 style="font-size:${embutido ? '17' : '20'}px;font-weight:${embutido ? 800 : 700};color:var(--text-primary);margin:0;">${embutido ? 'Desempenho de ADS' : 'Central de ADS'}</h2>
         <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0;">${embutido ? 'Investimento, retorno, vendas orgânicas × ADS, eficiência, tendências e ranqueamento do mês escolhido' : 'Gerencie e otimize suas campanhas de anúncios'}</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
@@ -1007,7 +1007,7 @@ function renderErro(msg) {
   const body = document.getElementById('ads-body');
   if (!body) return;
   body.innerHTML = `
-    <div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:12px;padding:24px;text-align:center;color:var(--red);">
+    <div style="background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:12px;padding:24px;text-align:center;color:var(--red);">
       <div style="font-size:28px;margin-bottom:8px;">⚠️</div>
       <div style="font-weight:600;font-size:15px;">Erro ao buscar dados de ADS</div>
       <div style="font-size:13px;margin-top:8px;">${msg}</div>
@@ -1049,7 +1049,7 @@ function renderConteudo() {
     if (!ma) return '';
     if (!(antes > 0)) return atual > 0 ? `<span style="font-size:11px;font-weight:700;color:var(--green);margin-left:6px;">novo</span>` : '';
     const p = ((atual - antes) / antes) * 100;
-    const cor = p >= 0 ? '#16a34a' : '#dc2626';
+    const cor = p >= 0 ? 'var(--green)' : 'var(--red)';
     const seta = p >= 0 ? '▲' : '▼';
     return `<span style="font-size:11px;font-weight:700;color:${cor};margin-left:6px;">${seta} ${Math.abs(p).toFixed(1)}%</span>`;
   };
@@ -1058,16 +1058,16 @@ function renderConteudo() {
   // Mostra erros de API diretamente na tela
   const erros = d._erros || [];
   const blocoErros = erros.length > 0 ? `
-    <div style="background:var(--yellow-bg);border:1px solid #fde68a;border-radius:12px;padding:16px;margin-bottom:20px;">
-      <div style="font-weight:700;font-size:13px;color:#92400e;margin-bottom:8px;">⚠️ Erros ao buscar dados da API (${erros.length})</div>
-      ${erros.map(e => `<div style="font-size:12px;color:#78350f;padding:4px 0;border-bottom:1px solid #fde68a;word-break:break-all;">${e}</div>`).join('')}
+    <div style="background:var(--yellow-bg);border:1px solid color-mix(in srgb,var(--yellow) 28%,transparent);border-radius:12px;padding:16px;margin-bottom:20px;">
+      <div style="font-weight:700;font-size:13px;color:var(--yellow);margin-bottom:8px;">⚠️ Erros ao buscar dados da API (${erros.length})</div>
+      ${erros.map(e => `<div style="font-size:12px;color:var(--yellow);padding:4px 0;border-bottom:1px solid color-mix(in srgb,var(--yellow) 28%,transparent);word-break:break-all;">${e}</div>`).join('')}
     </div>
   ` : '';
 
   body.innerHTML = blocoErros + `
     <!-- Vendas totais (orgânico + ads) — contexto pra Receita ADS não ser lida como faturamento total -->
     <div style="background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(139,92,246,0.06));border:1px solid rgba(99,102,241,0.2);border-radius:12px;padding:16px 20px;margin-bottom:20px;">
-      <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">💵 Vendas do período — Ads vs Orgânico (${pedidosTotais} pedido${pedidosTotais!==1?'s':''} no total)</div>
+      <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:none;letter-spacing:0;margin-bottom:10px;">Vendas do período — Ads vs Orgânico (${pedidosTotais} pedido${pedidosTotais!==1?'s':''} no total)</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;">
         <div>
           <div style="font-size:11px;color:var(--text-secondary);">Vendas Totais (todos os canais)</div>
@@ -1091,28 +1091,28 @@ function renderConteudo() {
 
     <!-- KPIs principais -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px;">
-      ${kpiCard('💰 Investimento', fmt(inv), ma ? `vs mês ant.: ${fmt(ma.ads.investimento)}` : '', '#f0f9ff', '#0ea5e9')}
-      ${kpiCard('📈 Receita ADS', fmt(rec), 'atribuída pelo marketplace, não é o total', '#f0fdf4', '#16a34a')}
-      ${kpiCard('🎯 ROAS', fmtN(roas, 2) + 'x', roas >= 3 ? '✅ Bom' : roas >= 1.5 ? '⚠️ Regular' : '❌ Baixo', roas >= 3 ? '#f0fdf4' : roas >= 1.5 ? '#fffbeb' : '#fef2f2', roas >= 3 ? '#16a34a' : roas >= 1.5 ? '#d97706' : '#dc2626')}
-      ${kpiCard('📊 ACoS', fmtN(acos, 1) + '%', acos <= 30 ? '✅ Bom' : acos <= 50 ? '⚠️ Regular' : '❌ Alto', acos <= 30 ? '#f0fdf4' : acos <= 50 ? '#fffbeb' : '#fef2f2', acos <= 30 ? '#16a34a' : acos <= 50 ? '#d97706' : '#dc2626')}
-      ${kpiCard('🧮 TACOS', fmtN(tacos, 1) + '%', 'investimento sobre o faturamento TOTAL' + (tacos <= 10 ? ' — ✅ Bom' : tacos <= 20 ? ' — ⚠️ Regular' : ' — ❌ Alto'), tacos <= 10 ? '#f0fdf4' : tacos <= 20 ? '#fffbeb' : '#fef2f2', tacos <= 10 ? '#16a34a' : tacos <= 20 ? '#d97706' : '#dc2626')}
-      ${kpiCard('🖱️ Cliques', fmtN(cli), '', '#faf5ff', '#9333ea')}
-      ${kpiCard('👁️ Impressões', fmtN(imp), '', '#fff7ed', '#ea580c')}
-      ${kpiCard('📉 CTR', fmtN(ctr, 2) + '%', '', '#f0f9ff', '#0284c7')}
-      ${kpiCard('💵 CPC Médio', fmt(cpc), '', '#fdf4ff', '#c026d3')}
-      ${d.saldo > 0 ? kpiCard('🏦 Saldo ADS', fmt(d.saldo), '', '#f0fdf4', '#15803d') : ''}
+      ${kpiCard('Investimento', fmt(inv), ma ? `vs mês ant.: ${fmt(ma.ads.investimento)}` : '', '#f0f9ff', 'var(--cyan)')}
+      ${kpiCard('Receita ADS', fmt(rec), 'atribuída pelo marketplace, não é o total', 'var(--green-bg)', 'var(--green)')}
+      ${kpiCard('ROAS', fmtN(roas, 2) + 'x', roas >= 3 ? '✅ Bom' : roas >= 1.5 ? '⚠️ Regular' : '❌ Baixo', roas >= 3 ? 'var(--green-bg)' : roas >= 1.5 ? 'var(--yellow-bg)' : 'var(--red-bg)', roas >= 3 ? 'var(--green)' : roas >= 1.5 ? 'var(--yellow)' : 'var(--red)')}
+      ${kpiCard('ACoS', fmtN(acos, 1) + '%', acos <= 30 ? '✅ Bom' : acos <= 50 ? '⚠️ Regular' : '❌ Alto', acos <= 30 ? 'var(--green-bg)' : acos <= 50 ? 'var(--yellow-bg)' : 'var(--red-bg)', acos <= 30 ? 'var(--green)' : acos <= 50 ? 'var(--yellow)' : 'var(--red)')}
+      ${kpiCard('TACOS', fmtN(tacos, 1) + '%', 'investimento sobre o faturamento TOTAL' + (tacos <= 10 ? ' — ✅ Bom' : tacos <= 20 ? ' — ⚠️ Regular' : ' — ❌ Alto'), tacos <= 10 ? 'var(--green-bg)' : tacos <= 20 ? 'var(--yellow-bg)' : 'var(--red-bg)', tacos <= 10 ? 'var(--green)' : tacos <= 20 ? 'var(--yellow)' : 'var(--red)')}
+      ${kpiCard('Cliques', fmtN(cli), '', '#faf5ff', 'var(--purple)')}
+      ${kpiCard('Impressões', fmtN(imp), '', '#fff7ed', 'var(--orange)')}
+      ${kpiCard('CTR', fmtN(ctr, 2) + '%', '', '#f0f9ff', '#0284c7')}
+      ${kpiCard('CPC Médio', fmt(cpc), '', '#fdf4ff', '#c026d3')}
+      ${d.saldo > 0 ? kpiCard('Saldo ADS', fmt(d.saldo), '', 'var(--green-bg)', 'var(--green)') : ''}
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;margin-bottom:24px;">
       <!-- Gráfico diário -->
       <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
-        <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">📅 Gasto Diário</h3>
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">Gasto Diário</h3>
         ${renderGraficoDiario(d.diario)}
       </div>
 
       <!-- Métricas de eficiência -->
       <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
-        <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">🎯 Eficiência das Campanhas</h3>
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">Eficiência das Campanhas</h3>
         ${renderEficiencia(d)}
       </div>
     </div>
@@ -1120,7 +1120,7 @@ function renderConteudo() {
     <!-- Tabela de campanhas (embutida: a tela do agente já tem a sua, com ações) -->
     ${embutido?.semCampanhas ? '' : `<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <h3 style="font-size:14px;font-weight:700;margin:0;color:var(--text-primary);">🗂️ Campanhas (${d.campanhas.length})</h3>
+        <h3 style="font-size:14px;font-weight:700;margin:0;color:var(--text-primary);">Campanhas (${d.campanhas.length})</h3>
         <div style="display:flex;gap:8px;">
           <span style="font-size:12px;color:var(--text-secondary);">Ordenado por investimento</span>
         </div>
@@ -1152,8 +1152,8 @@ function renderConteudo() {
 
 function kpiCard(titulo, valor, sub, bg, cor) {
   return `
-    <div style="background:${bg};border:1px solid ${cor}22;border-radius:12px;padding:16px;">
-      <div style="font-size:11px;font-weight:600;color:${cor};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">${titulo}</div>
+    <div style="background:${bg};border:1px solid color-mix(in srgb,${cor} 13%,transparent);border-radius:12px;padding:16px;">
+      <div style="font-size:11px;font-weight:600;color:${cor};text-transform:none;letter-spacing:0;margin-bottom:6px;">${titulo}</div>
       <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;color:var(--text-primary);">${valor}</div>
       ${sub ? `<div style="font-size:11px;margin-top:4px;color:${cor};">${sub}</div>` : ''}
     </div>
@@ -1237,24 +1237,24 @@ function _sugestaoCampanha(c, roas, acos, ctr) {
   if (c.gasto <= 0) return null; // sem investimento ainda, nada a sugerir
 
   if (roas === 0) {
-    return { icon: '⚠️', texto: 'Sem vendas', cor: '#dc2626', bg: '#fef2f2' };
+    return { icon: '⚠️', texto: 'Sem vendas', cor: 'var(--red)', bg: 'var(--red-bg)' };
   }
   if (c.roasTarget != null) {
     if (roas < c.roasTarget * 0.7) {
-      return { icon: '📉', texto: 'Abaixo da meta', cor: '#dc2626', bg: '#fef2f2' };
+      return { icon: '📉', texto: 'Abaixo da meta', cor: 'var(--red)', bg: 'var(--red-bg)' };
     }
     if (roas >= c.roasTarget * 1.5) {
-      return { icon: '🚀', texto: 'Aumentar orçamento', cor: '#16a34a', bg: '#f0fdf4' };
+      return { icon: '🚀', texto: 'Aumentar orçamento', cor: 'var(--green)', bg: 'var(--green-bg)' };
     }
   }
   if (acos > 50) {
-    return { icon: '💸', texto: 'ACoS alto', cor: '#dc2626', bg: '#fef2f2' };
+    return { icon: '💸', texto: 'ACoS alto', cor: 'var(--red)', bg: 'var(--red-bg)' };
   }
   if (ctr > 0 && ctr < 0.5 && c.impressoes > 1000) {
-    return { icon: '🖼️', texto: 'Revisar título/fotos do anúncio', cor: '#d97706', bg: '#fffbeb' };
+    return { icon: '🖼️', texto: 'Revisar título/fotos do anúncio', cor: 'var(--yellow)', bg: 'var(--yellow-bg)' };
   }
   if (roas >= 3) {
-    return { icon: '✅', texto: 'Saudável', cor: '#16a34a', bg: '#f0fdf4' };
+    return { icon: '✅', texto: 'Saudável', cor: 'var(--green)', bg: 'var(--green-bg)' };
   }
   return null;
 }
@@ -1274,11 +1274,11 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
     const ctr     = c.impressoes > 0 ? (c.cliques / c.impressoes) * 100 : 0;
     const cpc     = c.cliques > 0 ? c.gasto / c.cliques : 0;
 
-    const roasCor = roas >= 3 ? '#16a34a' : roas >= 1.5 ? '#d97706' : roas > 0 ? '#dc2626' : 'var(--text-muted,#94a3b8)';
-    const acosCor = acos === 0 ? 'var(--text-muted,#94a3b8)' : acos <= 30 ? '#16a34a' : acos <= 50 ? '#d97706' : '#dc2626';
+    const roasCor = roas >= 3 ? 'var(--green)' : roas >= 1.5 ? 'var(--yellow)' : roas > 0 ? 'var(--red)' : 'var(--text-muted,var(--text-muted))';
+    const acosCor = acos === 0 ? 'var(--text-muted,var(--text-muted))' : acos <= 30 ? 'var(--green)' : acos <= 50 ? 'var(--yellow)' : 'var(--red)';
     const sug = _sugestaoCampanha(c, roas, acos, ctr);
     const sugIA = sugestoesPorCampanha[String(c.id)] || null;
-    const TIPO_LABEL_IA = { pausar: '⏸️ Pausar', retomar: '▶️ Retomar', ajustar_orcamento: '💰 Ajustar orçamento', ajustar_roas_target: '🎯 Ajustar meta ROAS', revisar_anuncio: '🛍️ Revisar anúncio', outro: '💡 Sugestão' };
+    const TIPO_LABEL_IA = { pausar: '⏸️ Pausar', retomar: '▶️ Retomar', ajustar_orcamento: 'Ajustar orçamento', ajustar_roas_target: 'Ajustar meta ROAS', revisar_anuncio: 'Revisar anúncio', outro: 'Sugestão' };
 
     // Tendência de ROAS nas 3 janelas — dá pra ver se a campanha está
     // melhorando (7d acima do 30d) ou piorando (7d abaixo do 30d) com o tempo.
@@ -1286,7 +1286,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
     let tendenciaHtml = '';
     if (j && (j.roas7 || j.roas15 || j.roas30)) {
       const seta = j.roas7 > j.roas30 * 1.1 ? '↑' : j.roas7 < j.roas30 * 0.9 ? '↓' : '→';
-      const setaCor = seta === '↑' ? '#16a34a' : seta === '↓' ? '#dc2626' : 'var(--text-muted,#94a3b8)';
+      const setaCor = seta === '↑' ? 'var(--green)' : seta === '↓' ? 'var(--red)' : 'var(--text-muted,var(--text-muted))';
       const v = x => x > 0 ? fmtN(x, 1) + 'x' : '—';
       tendenciaHtml = `<div style="font-size:10px;color:var(--text-muted);margin-top:3px;white-space:nowrap;" title="ROAS por janela — 7 dias vs 15 dias vs 30 dias">
         <span style="color:${setaCor};font-weight:700;">${seta}</span> 7d ${v(j.roas7)} · 15d ${v(j.roas15)} · 30d ${v(j.roas30)}
@@ -1303,10 +1303,10 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
       if (taxaAnterior > 0) {
         if (taxaRecente < taxaAnterior * 0.7) {
           const queda = ((1 - taxaRecente / taxaAnterior) * 100).toFixed(0);
-          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--red-bg);color:var(--red);white-space:nowrap;" title="Ritmo diário de pedidos: últimos 7 dias vs os 23 dias anteriores (dia 8 a 30)">📉 Vendas em queda (-${queda}% vs 23d antes)</span></div>`;
+          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--red-bg);color:var(--red);white-space:nowrap;" title="Ritmo diário de pedidos: últimos 7 dias vs os 23 dias anteriores (dia 8 a 30)">Vendas em queda (-${queda}% vs 23d antes)</span></div>`;
         } else if (taxaRecente > taxaAnterior * 1.3) {
           const alta = ((taxaRecente / taxaAnterior - 1) * 100).toFixed(0);
-          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--green-bg);color:var(--green);white-space:nowrap;" title="Ritmo diário de pedidos: últimos 7 dias vs os 23 dias anteriores (dia 8 a 30)">📈 Vendas subindo (+${alta}% vs 23d antes)</span></div>`;
+          vendasTrendHtml = `<div style="margin-top:4px;"><span style="display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--green-bg);color:var(--green);white-space:nowrap;" title="Ritmo diário de pedidos: últimos 7 dias vs os 23 dias anteriores (dia 8 a 30)">Vendas subindo (+${alta}% vs 23d antes)</span></div>`;
         }
       }
     }
@@ -1323,11 +1323,11 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
     const somenteLeitura = c.tipo === 'GMV Max';
 
     const btnPausar = somenteLeitura ? '' : `<button onclick="window._adsPausar(${c.id})" title="Pausar campanha"
-      style="background:#fee2e2;color:var(--red);border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">⏸</button>`;
+      style="background:var(--red-bg);color:var(--red);border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">⏸</button>`;
 
     const nomeOrca = c.nome.replace(/'/g,'').slice(0,30);
     const btnOrcamento = somenteLeitura ? '' : `<button onclick="window._adsEditarOrcamento(${c.id},'${nomeOrca}',${c.orcamento})" title="Editar orçamento"
-      style="background:#eff6ff;color:#2563eb;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">✏️</button>`;
+      style="background:var(--bg-subtle);color:#2563eb;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">✏️</button>`;
 
     // GMV Max: link "N produtos" que expande/recolhe o breakdown por item — igual
     // a lista que a Shopee mostra no próprio painel de GMV Max da Loja.
@@ -1348,7 +1348,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
           <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmtN(it.impressoes)}</td>
           <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmtN(it.pedidos)}</td>
           <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmt(it.receita)}</td>
-          <td style="padding:6px 10px;font-size:12px;text-align:right;color:${itRoas>=3?'var(--green)':itRoas>0?'var(--yellow)':'var(--text-muted,#94a3b8)'};font-weight:600;">${itRoas > 0 ? fmtN(itRoas, 2) + 'x' : '—'}</td>
+          <td style="padding:6px 10px;font-size:12px;text-align:right;color:${itRoas>=3?'var(--green)':itRoas>0?'var(--yellow)':'var(--text-muted,var(--text-muted))'};font-weight:600;">${itRoas > 0 ? fmtN(itRoas, 2) + 'x' : '—'}</td>
         </tr>`;
       }).join('');
       linhaItens = `
@@ -1357,13 +1357,13 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
             <table style="width:100%;border-collapse:collapse;">
               <thead>
                 <tr>
-                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:left;text-transform:uppercase;">Produto</th>
-                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">Investido</th>
-                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">Cliques</th>
-                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">Impressões</th>
-                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">Pedidos</th>
-                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">Vendas</th>
-                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:uppercase;">ROAS</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:left;text-transform:none;">Produto</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:none;">Investido</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:none;">Cliques</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:none;">Impressões</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:none;">Pedidos</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:none;">Vendas</th>
+                  <th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:right;text-transform:none;">ROAS</th>
                 </tr>
               </thead>
               <tbody>${linhasItens}</tbody>
@@ -1377,13 +1377,13 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
         <td style="padding:10px 12px;max-width:220px;">
           <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.nome}">${c.nome}</div>
           ${sug ? `<span style="display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:${sug.bg};color:${sug.cor};white-space:nowrap;" title="${sug.texto}">${sug.icon} ${sug.texto}</span>` : ''}
-          ${sugIA ? `<div style="margin-top:4px;"><button onclick="Router.navigate('agente')" title="${(sugIA.motivo||'').replace(/"/g,'')}" style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:#ede9fe;color:#6d28d9;border:none;cursor:pointer;white-space:nowrap;">${TIPO_LABEL_IA[sugIA.tipo] || '💡 Sugestão'}${sugIA.valor_sugerido_label ? ' → ' + sugIA.valor_sugerido_label : ''}</button></div>` : ''}
+          ${sugIA ? `<div style="margin-top:4px;"><button onclick="Router.navigate('agente')" title="${(sugIA.motivo||'').replace(/"/g,'')}" style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--purple-bg);color:var(--purple);border:none;cursor:pointer;white-space:nowrap;">${TIPO_LABEL_IA[sugIA.tipo] || 'Sugestão'}${sugIA.valor_sugerido_label ? ' → ' + sugIA.valor_sugerido_label : ''}</button></div>` : ''}
           ${vendasTrendHtml}
           ${tendenciaHtml}
           ${linkItens}
         </td>
         <td style="padding:10px 12px;">
-          <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${c.bidding==='auto'?'var(--green-bg)':'#eff6ff'};color:${c.bidding==='auto'?'var(--green)':'#2563eb'};font-weight:600;">${c.tipo}</span>
+          <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${c.bidding==='auto'?'var(--green-bg)':'var(--bg-subtle)'};color:${c.bidding==='auto'?'var(--green)':'#2563eb'};font-weight:600;">${c.tipo}</span>
         </td>
         <td style="padding:10px 12px;font-size:13px;font-weight:700;text-align:right;color:var(--text-primary);">${fmt(c.gasto)}</td>
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:var(--text-secondary);">${fmtN(c.cliques)}</td>
@@ -1392,7 +1392,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:var(--text-secondary);">${fmt(cpc)}</td>
         <td style="padding:10px 12px;font-size:13px;font-weight:700;text-align:right;color:${roasCor};">${roas > 0 ? fmtN(roas, 2) + 'x' : '—'}</td>
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:${acosCor};">${acos > 0 ? fmtN(acos, 1) + '%' : '—'}</td>
-        <td style="padding:10px 12px;font-size:13px;text-align:right;color:${c.roasTarget!=null?'var(--green)':'var(--text-muted,#94a3b8)'};font-weight:${c.roasTarget!=null?'700':'400'};">${roasTarget}</td>
+        <td style="padding:10px 12px;font-size:13px;text-align:right;color:${c.roasTarget!=null?'var(--green)':'var(--text-muted,var(--text-muted))'};font-weight:${c.roasTarget!=null?'700':'400'};">${roasTarget}</td>
         <td style="padding:10px 12px;font-size:12px;text-align:right;color:var(--text-secondary);">${c.orcamentoLabel}</td>
         <td style="padding:10px 12px;text-align:right;white-space:nowrap;display:flex;gap:4px;justify-content:flex-end;">${btnRoas}${btnOrcamento}${btnPausar}</td>
       </tr>
@@ -1405,18 +1405,18 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
       <table style="width:100%;border-collapse:collapse;">
         <thead>
           <tr style="background:var(--bg-base);">
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:left;text-transform:uppercase;min-width:180px;">Campanha</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:left;text-transform:uppercase;">Tipo</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">Investido</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">Cliques</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">Impressões</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">CTR</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">CPC</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">ROAS Real</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">ACoS</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">Meta ROAS</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">Orçamento</th>
-            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:uppercase;">Ações</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:left;text-transform:none;min-width:180px;">Campanha</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:left;text-transform:none;">Tipo</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:none;">Investido</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:none;">Cliques</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:none;">Impressões</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:none;">CTR</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:none;">CPC</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:none;">ROAS Real</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:none;">ACoS</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:none;">Meta ROAS</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:none;">Orçamento</th>
+            <th style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text-secondary);text-align:right;text-transform:none;">Ações</th>
           </tr>
         </thead>
         <tbody>${linhas}</tbody>
@@ -1430,7 +1430,7 @@ function renderModalOrcamento() {
   return `
     <div id="ads-modal-orc" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
       <div style="background:var(--bg-surface);border-radius:16px;padding:28px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-        <h3 style="font-size:15px;font-weight:700;margin:0 0 6px;color:var(--text-primary);">✏️ Editar Orçamento Diário</h3>
+        <h3 style="font-size:15px;font-weight:700;margin:0 0 6px;color:var(--text-primary);">Editar Orçamento Diário</h3>
         <p id="ads-modal-orc-nome" style="font-size:12px;color:var(--text-secondary);margin:0 0 20px;"></p>
         <label style="font-size:12px;font-weight:600;color:var(--text-secondary);">Novo orçamento diário (R$) — 0 = Ilimitado</label>
         <input id="ads-modal-orc-valor" type="number" min="0" step="0.01"
@@ -1447,14 +1447,14 @@ function renderModalOrcamento() {
 
     <div id="ads-modal-roas" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
       <div style="background:var(--bg-surface);border-radius:16px;padding:28px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-        <h3 style="font-size:15px;font-weight:700;margin:0 0 6px;color:var(--text-primary);">🎯 Editar Meta de ROAS</h3>
+        <h3 style="font-size:15px;font-weight:700;margin:0 0 6px;color:var(--text-primary);">Editar Meta de ROAS</h3>
         <p id="ads-modal-roas-nome" style="font-size:12px;color:var(--text-secondary);margin:0 0 4px;"></p>
         <p style="font-size:11px;color:var(--text-secondary);margin:0 0 20px;">Digite o valor de ROAS desejado (ex: 50 = meta de 50x)</p>
         <label style="font-size:12px;font-weight:600;color:var(--text-secondary);">Meta ROAS (ex: 50 = 50x)</label>
         <input id="ads-modal-roas-valor" type="number" min="1" step="1"
           style="width:100%;margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:15px;background:var(--bg-base);color:var(--text-primary);box-sizing:border-box;">
-        <div style="background:var(--green-bg);border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;color:#15803d;">
-          💡 Shopee ajustará os lances automaticamente para atingir esta meta
+        <div style="background:var(--green-bg);border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;color:var(--green);">
+          Shopee ajustará os lances automaticamente para atingir esta meta
         </div>
         <div style="display:flex;gap:8px;margin-top:16px;">
           <button onclick="document.getElementById('ads-modal-roas').style.display='none'"
@@ -1471,16 +1471,16 @@ function renderModalOrcamento() {
 // ─── Produtos em crescimento/queda (comparativo semanal de Ads) ────
 function _tendenciaAds(pedidosAtual, pedidosAnterior, impAtual, impAnterior) {
   if (pedidosAnterior === 0 && pedidosAtual === 0) {
-    if (impAnterior > 0 && impAtual === 0) return { label: 'Sumiu (sem impressão)', cor: '#ef4444' };
+    if (impAnterior > 0 && impAtual === 0) return { label: 'Sumiu (sem impressão)', cor: 'var(--red)' };
     return null;
   }
-  if (pedidosAnterior === 0 && pedidosAtual > 0) return { label: 'Novo / Decolando', cor: '#16a34a' };
-  if (pedidosAtual === 0 && pedidosAnterior > 0) return { label: 'Zerou', cor: '#ef4444' };
+  if (pedidosAnterior === 0 && pedidosAtual > 0) return { label: 'Novo / Decolando', cor: 'var(--green)' };
+  if (pedidosAtual === 0 && pedidosAnterior > 0) return { label: 'Zerou', cor: 'var(--red)' };
   const variacao = ((pedidosAtual - pedidosAnterior) / pedidosAnterior) * 100;
-  if (variacao <= -40) return { label: 'Queda forte', cor: '#ef4444' };
-  if (variacao <= -15) return { label: 'Em queda', cor: '#f59e0b' };
-  if (variacao >= 40)  return { label: 'Crescendo forte', cor: '#16a34a' };
-  if (variacao >= 15)  return { label: 'Em crescimento', cor: '#22c55e' };
+  if (variacao <= -40) return { label: 'Queda forte', cor: 'var(--red)' };
+  if (variacao <= -15) return { label: 'Em queda', cor: 'var(--yellow)' };
+  if (variacao >= 40)  return { label: 'Crescendo forte', cor: 'var(--green)' };
+  if (variacao >= 15)  return { label: 'Em crescimento', cor: 'var(--green)' };
   return null; // estável — não polui a lista
 }
 
@@ -1502,7 +1502,7 @@ function renderComparativoProdutos(comp) {
   if (!linhas.length) {
     return `
       <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
-        <h3 style="font-size:14px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">📦 Produtos em Crescimento &amp; Queda (Ads)</h3>
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">Produtos em Crescimento &amp; Queda (Ads)</h3>
         <p style="font-size:12px;color:var(--text-secondary);margin:0;">Sem variação relevante detectada nos últimos 7 dias vs 7 dias anteriores.</p>
       </div>
     `;
@@ -1519,15 +1519,15 @@ function renderComparativoProdutos(comp) {
       <td style="padding:10px 12px;text-align:center;">${cel(l.a.impressoes, pct(l.a.impressoes, l.b.impressoes))}</td>
       <td style="padding:10px 12px;text-align:center;">${cel(l.a.cliques, pct(l.a.cliques, l.b.cliques))}</td>
       <td style="padding:10px 12px;text-align:center;">${cel(l.a.pedidos, pct(l.a.pedidos, l.b.pedidos))}</td>
-      <td style="padding:10px 12px;text-align:center;"><span style="background:${l.tendencia.cor}22;color:${l.tendencia.cor};padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;">${l.tendencia.label}</span></td>
+      <td style="padding:10px 12px;text-align:center;"><span style="background:color-mix(in srgb,${l.tendencia.cor} 13%,transparent);color:${l.tendencia.cor};padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;">${l.tendencia.label}</span></td>
     </tr>
   `;
 
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
-      <h3 style="font-size:14px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">📦 Produtos em Crescimento &amp; Queda (Ads)</h3>
+      <h3 style="font-size:14px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">Produtos em Crescimento &amp; Queda (Ads)</h3>
       <p style="font-size:12px;color:var(--text-secondary);margin:0 0 4px;">Últimos 7 dias (${comp.janelas.atualLabel}) vs 7 dias anteriores (${comp.janelas.anteriorLabel}) — por campanha/produto anunciado</p>
-      <p style="font-size:11px;color:var(--text-secondary);margin:0 0 14px;">💡 Se impressão e clique caem junto com os pedidos, o problema é no Ads (verba, lance, relevância). Se impressão/clique se mantêm mas os pedidos via Ads caem, compare com <strong>Análises → Produtos em Queda</strong> pra ver se é o produto todo (orgânico incluso) que está caindo, ou só a parte de Ads.</p>
+      <p style="font-size:11px;color:var(--text-secondary);margin:0 0 14px;">Se impressão e clique caem junto com os pedidos, o problema é no Ads (verba, lance, relevância). Se impressão/clique se mantêm mas os pedidos via Ads caem, compare com <strong>Análises → Produtos em Queda</strong> pra ver se é o produto todo (orgânico incluso) que está caindo, ou só a parte de Ads.</p>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:640px;">
           <thead>
@@ -1569,11 +1569,11 @@ function renderTendencias(d) {
   const card = (icon, label, valAtual, valAnt, pct, invertColor) => {
     const sobe = pct >= 0;
     const cor  = invertColor
-      ? (sobe ? '#d97706'  : '#16a34a')  // gasto: sobe é ruim
-      : (sobe ? '#16a34a' : '#dc2626');   // receita/roas/etc: sobe é bom
+      ? (sobe ? 'var(--yellow)'  : 'var(--green)')  // gasto: sobe é ruim
+      : (sobe ? 'var(--green)' : 'var(--red)');   // receita/roas/etc: sobe é bom
     return `
       <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:10px;padding:14px;">
-        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">${icon} ${label}</div>
+        <div style="font-size:11px;color:var(--text-secondary);font-weight:600;text-transform:none;letter-spacing:0;margin-bottom:6px;">${icon} ${label}</div>
         <div style="font-size:18px;font-weight:700;color:var(--text-primary);">${valAtual}</div>
         <div style="font-size:12px;font-weight:600;color:${cor};margin-top:4px;">${sobe ? '▲' : '▼'} ${fmtN(Math.abs(pct), 1)}% vs período anterior</div>
         <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">Anterior: ${valAnt}</div>
@@ -1597,10 +1597,10 @@ function renderTendencias(d) {
   const recDiff  = diff(rec7,  recA);
   const cliDiff  = diff(cli7,  cliA);
   const pedDiff  = diff(ped7,  pedA);
-  if (pedDiff  < -20) alertas.push(`📦 Pedidos via ADS caíram <strong>${fmtN(Math.abs(pedDiff), 1)}%</strong> — queda de volume de vendas, não só de eficiência`);
-  if (recDiff  < -15) alertas.push(`📉 Faturamento via ADS caiu <strong>${fmtN(Math.abs(recDiff),  1)}%</strong> — verifique se campanhas estão ativas e com saldo`);
-  if (metaRoasMedia != null && roas7 < metaRoasMedia * 0.8) alertas.push(`🎯 ROAS real (${fmtN(roas7,2)}x) está abaixo da meta média (${fmtN(metaRoasMedia,2)}x) — revise lances e produtos`);
-  if (cliDiff  < -20) alertas.push(`👁️ Cliques caíram <strong>${fmtN(Math.abs(cliDiff),  1)}%</strong> — anúncios podem estar perdendo relevância ou orçamento acabou`);
+  if (pedDiff  < -20) alertas.push(`Pedidos via ADS caíram <strong>${fmtN(Math.abs(pedDiff), 1)}%</strong> — queda de volume de vendas, não só de eficiência`);
+  if (recDiff  < -15) alertas.push(`Faturamento via ADS caiu <strong>${fmtN(Math.abs(recDiff),  1)}%</strong> — verifique se campanhas estão ativas e com saldo`);
+  if (metaRoasMedia != null && roas7 < metaRoasMedia * 0.8) alertas.push(`ROAS real (${fmtN(roas7,2)}x) está abaixo da meta média (${fmtN(metaRoasMedia,2)}x) — revise lances e produtos`);
+  if (cliDiff  < -20) alertas.push(`Cliques caíram <strong>${fmtN(Math.abs(cliDiff),  1)}%</strong> — anúncios podem estar perdendo relevância ou orçamento acabou`);
   const invDiff  = diff(inv7, invA);
   if (invDiff > 30 && pedDiff < 0) alertas.push(`⚠️ Investimento subiu <strong>${fmtN(invDiff, 1)}%</strong> mas pedidos não acompanharam — eficiência piorando`);
 
@@ -1611,7 +1611,7 @@ function renderTendencias(d) {
   const sparkline = pedidosPorDia.map((p, i) => {
     const h = Math.max((p / maxP) * 60, 2);
     const anterior = i > 0 ? pedidosPorDia[i - 1] : p;
-    const cor = p >= anterior ? '#16a34a' : '#dc2626';
+    const cor = p >= anterior ? 'var(--green)' : 'var(--red)';
     const data = diasRecentes[i]?.data?.slice(5) || '';
     return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;" title="${data}: ${p} pedido${p !== 1 ? 's' : ''}">
       <div style="width:100%;background:${cor};border-radius:2px 2px 0 0;height:${h}px;opacity:.8;"></div>
@@ -1620,16 +1620,16 @@ function renderTendencias(d) {
 
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
-      <h3 style="font-size:14px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">📊 Tendências — Últimos 7 dias vs período anterior</h3>
+      <h3 style="font-size:14px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">Tendências — Últimos 7 dias vs período anterior</h3>
       <p style="font-size:12px;color:var(--text-secondary);margin:0 0 16px;">Comparativo automático para detectar quedas de performance</p>
 
       ${alertas.length > 0 ? `
-        <div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:10px;padding:14px;margin-bottom:16px;">
-          <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px;">🚨 Alertas de Queda Detectados</div>
-          ${alertas.map(a => `<div style="font-size:12px;color:#7f1d1d;padding:3px 0;line-height:1.5;">${a}</div>`).join('')}
+        <div style="background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:10px;padding:14px;margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px;">Alertas de Queda Detectados</div>
+          ${alertas.map(a => `<div style="font-size:12px;color:var(--red);padding:3px 0;line-height:1.5;">${a}</div>`).join('')}
         </div>
       ` : `
-        <div style="background:var(--green-bg);border:1px solid #bbf7d0;border-radius:10px;padding:12px;margin-bottom:16px;font-size:12px;color:#15803d;font-weight:600;">
+        <div style="background:var(--green-bg);border:1px solid color-mix(in srgb,var(--green) 28%,transparent);border-radius:10px;padding:12px;margin-bottom:16px;font-size:12px;color:var(--green);font-weight:600;">
           ✅ Nenhuma queda significativa detectada no período
         </div>
       `}
@@ -1639,12 +1639,12 @@ function renderTendencias(d) {
         ${card('📈', 'Receita ADS',  fmt(rec7),  fmt(recA),  recDiff,  false)}
         ${card('💰', 'Investimento', fmt(inv7),  fmt(invA),  invDiff,  true)}
         ${(() => {
-          const cor = metaRoasMedia != null ? (roas7 >= metaRoasMedia ? '#16a34a' : '#dc2626') : '#64748b';
+          const cor = metaRoasMedia != null ? (roas7 >= metaRoasMedia ? 'var(--green)' : 'var(--red)') : 'var(--text-muted)';
           const subLabel = metaRoasMedia != null
             ? `Meta: ${fmtN(metaRoasMedia,2)}x`
             : `${roasDiff >= 0 ? '▲' : '▼'} ${fmtN(Math.abs(roasDiff),1)}% vs período anterior`;
           return `<div style="background:var(--bg-base);border:1px solid var(--border);border-radius:10px;padding:14px;">
-            <div style="font-size:11px;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">🎯 ROAS</div>
+            <div style="font-size:11px;color:var(--text-secondary);font-weight:600;text-transform:none;letter-spacing:0;margin-bottom:6px;">ROAS</div>
             <div style="font-size:18px;font-weight:700;color:var(--text-primary);">${fmtN(roas7,2)}x</div>
             <div style="font-size:12px;font-weight:600;color:${cor};margin-top:4px;">${subLabel}</div>
             <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">Período anterior: ${fmtN(roasA,2)}x</div>
@@ -1697,9 +1697,9 @@ function renderAgentIA() {
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px;" id="ads-ia-section">
       <!-- Header -->
-      <div style="background:linear-gradient(135deg,var(--accent),#8b5cf6);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
+      <div style="background:linear-gradient(135deg,var(--accent),var(--purple));padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:2px;">🤖 Consultor IA de ADS</div>
+          <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:2px;">Consultor IA de ADS</div>
           <div style="font-size:11px;color:rgba(255,255,255,.75);">Especialista sênior • Shopee & Mercado Livre • Análise em tempo real</div>
         </div>
         <div style="display:flex;gap:6px;">
@@ -1712,12 +1712,12 @@ function renderAgentIA() {
       <div style="padding:20px;">
         <!-- Workflows -->
         <div style="margin-bottom:14px;">
-          <div style="font-size:10px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Workflows de Consultoria</div>
+          <div style="font-size:10px;font-weight:700;color:var(--text-secondary);text-transform:none;letter-spacing:0;margin-bottom:8px;">Workflows de Consultoria</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px;">
             ${_WORKFLOWS.map(w => `
               <button onclick="window._adsEnviarMensagem('${w.msg.replace(/'/g,"\\'")}')"
                 style="font-size:11px;font-weight:600;background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:6px 12px;cursor:pointer;color:var(--text-primary);display:flex;align-items:center;gap:5px;transition:all .15s;"
-                onmouseover="this.style.borderColor='#6366f1';this.style.color='#6366f1';"
+                onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)';"
                 onmouseout="this.style.borderColor='';this.style.color='';">
                 ${w.icon} ${w.label}
               </button>`).join('')}
@@ -1739,7 +1739,7 @@ function renderAgentIA() {
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window._adsEnviarMensagem();}"
             style="flex:1;padding:11px 16px;border:1px solid var(--border);border-radius:99px;background:var(--bg-base);color:var(--text-primary);font-size:13px;outline:none;">
           <button onclick="window._adsEnviarMensagem()" id="ads-ia-btn"
-            style="background:linear-gradient(135deg,var(--accent),#8b5cf6);color:#fff;border:none;border-radius:99px;padding:11px 24px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Enviar</button>
+            style="background:linear-gradient(135deg,var(--accent),var(--purple));color:#fff;border:none;border-radius:99px;padding:11px 24px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Enviar</button>
         </div>
       </div>
     </div>
@@ -1756,31 +1756,31 @@ function renderOtimizacoes(d) {
   const ctr  = d.resumo.impressoes > 0 ? (d.resumo.cliques / d.resumo.impressoes) * 100 : 0;
 
   if (roas > 0 && roas < 1.5)
-    sugestoes.push({ icon: '❌', cor: '#dc2626', bg: '#fef2f2', titulo: 'ROAS crítico', desc: `ROAS de ${fmtN(roas,2)}x está muito abaixo do ideal (≥3x). Revise os produtos anunciados e ajuste os lances para produtos de maior margem.` });
+    sugestoes.push({ icon: '❌', cor: 'var(--red)', bg: 'var(--red-bg)', titulo: 'ROAS crítico', desc: `ROAS de ${fmtN(roas,2)}x está muito abaixo do ideal (≥3x). Revise os produtos anunciados e ajuste os lances para produtos de maior margem.` });
   else if (roas < 3)
-    sugestoes.push({ icon: '⚠️', cor: '#d97706', bg: '#fffbeb', titulo: 'ROAS pode melhorar', desc: `ROAS de ${fmtN(roas,2)}x está abaixo do ideal. Considere pausar campanhas com baixo retorno e aumentar budget nas mais rentáveis.` });
+    sugestoes.push({ icon: '⚠️', cor: 'var(--yellow)', bg: 'var(--yellow-bg)', titulo: 'ROAS pode melhorar', desc: `ROAS de ${fmtN(roas,2)}x está abaixo do ideal. Considere pausar campanhas com baixo retorno e aumentar budget nas mais rentáveis.` });
 
   if (acos > 50)
-    sugestoes.push({ icon: '⚠️', cor: '#d97706', bg: '#fffbeb', titulo: 'ACoS elevado', desc: `ACoS de ${fmtN(acos,1)}% significa que você gasta R$${fmtN(acos/100,2)} para cada R$1 gerado. Reduza lances ou filtre produtos com baixa conversão.` });
+    sugestoes.push({ icon: '⚠️', cor: 'var(--yellow)', bg: 'var(--yellow-bg)', titulo: 'ACoS elevado', desc: `ACoS de ${fmtN(acos,1)}% significa que você gasta R$${fmtN(acos/100,2)} para cada R$1 gerado. Reduza lances ou filtre produtos com baixa conversão.` });
 
   if (ctr > 0 && ctr < 0.5)
-    sugestoes.push({ icon: '📉', cor: '#7c3aed', bg: '#faf5ff', titulo: 'CTR muito baixo', desc: `CTR de ${fmtN(ctr,2)}% indica que os anúncios não estão atraentes. Melhore as imagens principais, títulos e preços dos produtos anunciados.` });
+    sugestoes.push({ icon: '📉', cor: 'var(--purple)', bg: '#faf5ff', titulo: 'CTR muito baixo', desc: `CTR de ${fmtN(ctr,2)}% indica que os anúncios não estão atraentes. Melhore as imagens principais, títulos e preços dos produtos anunciados.` });
 
   const campPausadas = d.campanhas.filter(c => !c.ativa).length;
   if (campPausadas > 0)
-    sugestoes.push({ icon: '⏸️', cor: '#64748b', bg: '#f8fafc', titulo: `${campPausadas} campanha(s) pausada(s)`, desc: `Você tem campanhas pausadas. Verifique se elas foram pausadas intencionalmente ou se precisam ser reativadas.` });
+    sugestoes.push({ icon: '⏸️', cor: 'var(--text-muted)', bg: 'var(--bg-subtle)', titulo: `${campPausadas} campanha(s) pausada(s)`, desc: `Você tem campanhas pausadas. Verifique se elas foram pausadas intencionalmente ou se precisam ser reativadas.` });
 
   if (d.saldo > 0 && d.saldo < inv * 0.3)
-    sugestoes.push({ icon: '🏦', cor: '#dc2626', bg: '#fef2f2', titulo: 'Saldo ADS baixo', desc: `Saldo de ${fmt(d.saldo)} pode interromper as campanhas. Recarregue o saldo para garantir continuidade dos anúncios.` });
+    sugestoes.push({ icon: '🏦', cor: 'var(--red)', bg: 'var(--red-bg)', titulo: 'Saldo ADS baixo', desc: `Saldo de ${fmt(d.saldo)} pode interromper as campanhas. Recarregue o saldo para garantir continuidade dos anúncios.` });
 
   if (sugestoes.length === 0) {
     if (inv === 0) return '';
-    sugestoes.push({ icon: '✅', cor: '#16a34a', bg: '#f0fdf4', titulo: 'Campanhas saudáveis', desc: `As métricas estão dentro dos parâmetros ideais. Continue monitorando para manter a performance.` });
+    sugestoes.push({ icon: '✅', cor: 'var(--green)', bg: 'var(--green-bg)', titulo: 'Campanhas saudáveis', desc: `As métricas estão dentro dos parâmetros ideais. Continue monitorando para manter a performance.` });
   }
 
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
-      <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">💡 Sugestões de Otimização</h3>
+      <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">Sugestões de Otimização</h3>
       <div style="display:flex;flex-direction:column;gap:12px;">
         ${sugestoes.map(s => `
           <div style="background:${s.bg};border-left:4px solid ${s.cor};border-radius:0 8px 8px 0;padding:12px 16px;display:flex;gap:12px;align-items:flex-start;">
@@ -1839,7 +1839,7 @@ window._adsEditarOrcamento = function(campaignId, nome, orcamentoAtual) {
 window._adsSalvarOrcamento = async function() {
   const novoValor = parseFloat(document.getElementById('ads-modal-orc-valor').value);
   const msg = document.getElementById('ads-modal-orc-msg');
-  if (isNaN(novoValor) || novoValor < 0) { msg.textContent = '⚠️ Valor inválido'; msg.style.color = '#dc2626'; return; }
+  if (isNaN(novoValor) || novoValor < 0) { msg.textContent = '⚠️ Valor inválido'; msg.style.color = 'var(--red)'; return; }
   msg.textContent = 'Salvando...'; msg.style.color = 'var(--text-secondary)';
   try {
     if (_adsEhML()) {
@@ -1851,9 +1851,9 @@ window._adsSalvarOrcamento = async function() {
       // campaign_id também no nível de cima (o conector valida ali).
       await MarketplaceAPI.call('shopee_ads_edit_campaign', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: Number(_adsModalCampId), params: { campaign_id: Number(_adsModalCampId), budget: novoValor, edit_action: 'change_budget', reference_id: `glr-ads-${Date.now()}-${_adsModalCampId}` } });
     }
-    msg.textContent = '✅ Orçamento atualizado!'; msg.style.color = '#16a34a';
+    msg.textContent = '✅ Orçamento atualizado!'; msg.style.color = 'var(--green)';
     setTimeout(() => { document.getElementById('ads-modal-orc').style.display = 'none'; buscarDados(true); }, 1200);
-  } catch(e) { msg.textContent = '❌ Erro: ' + e.message; msg.style.color = '#dc2626'; }
+  } catch(e) { msg.textContent = '❌ Erro: ' + e.message; msg.style.color = 'var(--red)'; }
 };
 
 window._adsEditarRoas = function(campaignId, nome, roasAtual) {
@@ -1868,13 +1868,13 @@ window._adsEditarRoas = function(campaignId, nome, roasAtual) {
 window._adsSalvarRoas = async function() {
   const novoValor = parseInt(document.getElementById('ads-modal-roas-valor').value);
   const msg = document.getElementById('ads-modal-roas-msg');
-  if (!novoValor || novoValor < 1) { msg.textContent = '⚠️ Informe um valor válido (ex: 45 para meta 4.5x)'; msg.style.color = '#dc2626'; return; }
+  if (!novoValor || novoValor < 1) { msg.textContent = '⚠️ Informe um valor válido (ex: 45 para meta 4.5x)'; msg.style.color = 'var(--red)'; return; }
   if (_adsEhML()) {
     // Ainda não temos uma ação confirmada pra alterar a meta ROAS de campanha ML
     // por aqui — melhor avisar claramente do que chamar a ação da Shopee errada
     // (que é o que acontecia antes: parecia salvar, mas não mudava nada no ML).
     msg.textContent = '⚠️ Edição de meta ROAS pra Mercado Livre ainda não está disponível por aqui — ajuste direto no Ads Manager do ML.';
-    msg.style.color = '#dc2626';
+    msg.style.color = 'var(--red)';
     return;
   }
   msg.textContent = 'Salvando...'; msg.style.color = 'var(--text-secondary)';
@@ -1884,9 +1884,9 @@ window._adsSalvarRoas = async function() {
     // específico (edit_manual_product_ads / change_roas_target) que só a ação
     // dedicada shopee_ads_roi_target monta certo.
     await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: contaAtual?.param_to_use?.shopId || contaAtual?.external_id, campaign_id: _adsModalCampId, roas_target: novoValor });
-    msg.textContent = `✅ Meta ROAS atualizada para ${novoValor}x!`; msg.style.color = '#16a34a';
+    msg.textContent = `✅ Meta ROAS atualizada para ${novoValor}x!`; msg.style.color = 'var(--green)';
     setTimeout(() => { document.getElementById('ads-modal-roas').style.display = 'none'; buscarDados(true); }, 1500);
-  } catch(e) { msg.textContent = '❌ Erro: ' + e.message; msg.style.color = '#dc2626'; }
+  } catch(e) { msg.textContent = '❌ Erro: ' + e.message; msg.style.color = 'var(--red)'; }
 };
 
 // Sinal de concorrência (ML) — só funciona pra item elegível a catálogo do ML
@@ -2033,7 +2033,7 @@ REGRAS:
     alert('Erro ao gerar sugestões: ' + e.message);
     console.warn('[ADS Sugestões]', e);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🎯 Gerar Sugestões'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Gerar Sugestões'; }
   }
 };
 
@@ -2057,7 +2057,7 @@ window._adsEnviarMensagem = async function(msgPredef) {
   // Bolha usuário
   const divU = document.createElement('div');
   divU.style.cssText = 'display:flex;justify-content:flex-end;';
-  divU.innerHTML = `<div style="background:linear-gradient(135deg,var(--accent),#8b5cf6);color:#fff;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:85%;font-size:13px;line-height:1.5;">${texto}</div>`;
+  divU.innerHTML = `<div style="background:linear-gradient(135deg,var(--accent),var(--purple));color:#fff;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:85%;font-size:13px;line-height:1.5;">${texto}</div>`;
   msgs.appendChild(divU);
   msgs.scrollTop = msgs.scrollHeight;
 
@@ -2193,7 +2193,7 @@ ${ctx}${ctxRanking}`,
       <div style="background:var(--bg-surface);border:1px solid #6366f122;border-radius:0 12px 12px 12px;padding:14px 18px;max-width:92%;font-size:13px;color:var(--text-primary);line-height:1.7;">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);">
           <span style="font-size:16px;">🤖</span>
-          <span style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;">Consultor IA</span>
+          <span style="font-size:11px;font-weight:700;color:var(--accent);text-transform:none;letter-spacing:0;">Consultor IA</span>
           <span style="font-size:10px;color:var(--text-secondary);margin-left:auto;">${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
         </div>
         <div>${_mdToHtml(resposta)}</div>
@@ -2204,7 +2204,7 @@ ${ctx}${ctxRanking}`,
   } catch(e) {
     document.getElementById('ads-ia-typing')?.remove();
     const divE = document.createElement('div');
-    divE.innerHTML = `<div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:10px;padding:12px 16px;font-size:12px;color:var(--red);">❌ Erro ao conectar com o Consultor IA: ${e.message}${e.message.includes('401') ? ' — verifique a API Key do Claude nas configurações do Vercel' : ''}</div>`;
+    divE.innerHTML = `<div style="background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:10px;padding:12px 16px;font-size:12px;color:var(--red);">❌ Erro ao conectar com o Consultor IA: ${e.message}${e.message.includes('401') ? ' — verifique a API Key do Claude nas configurações do Vercel' : ''}</div>`;
     msgs.appendChild(divE);
     msgs.scrollTop = msgs.scrollHeight;
   }
@@ -2218,7 +2218,7 @@ function renderRanqueamento() {
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">
       <div style="margin-bottom:16px;">
-        <h3 style="font-size:14px;font-weight:700;margin:0 0 2px;color:var(--text-primary);">🔍 Ranqueamento de Mercado</h3>
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 2px;color:var(--text-primary);">Ranqueamento de Mercado</h3>
         <p style="font-size:12px;color:var(--text-secondary);margin:0;">Pesquise uma palavra-chave e veja onde seus produtos aparecem nos resultados do marketplace</p>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:16px;">
@@ -2248,7 +2248,7 @@ window._adsBuscarRanking = async function() {
   const keyword = input.value.trim();
   if (!keyword) return;
 
-  body.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-secondary);">🔍 Pesquisando "<strong>${keyword}</strong>" no marketplace...</div>`;
+  body.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-secondary);">Pesquisando "<strong>${keyword}</strong>" no marketplace...</div>`;
 
   try {
     const mkt = contaAtual.marketplace;
@@ -2326,7 +2326,7 @@ function _renderRankingResultado(keyword, total, posicoes) {
 
   if (posicoes.length === 0) {
     body.innerHTML = `
-      <div style="background:var(--yellow-bg);border:1px solid #fde68a;border-radius:8px;padding:16px;font-size:13px;color:#92400e;">
+      <div style="background:var(--yellow-bg);border:1px solid color-mix(in srgb,var(--yellow) 28%,transparent);border-radius:8px;padding:16px;font-size:13px;color:var(--yellow);">
         <strong>Nenhum produto seu encontrado</strong> nos primeiros ${total} resultados para "<strong>${keyword}</strong>".<br>
         <span style="font-size:12px;display:block;margin-top:6px;">Isso pode indicar oportunidade de melhoria nos títulos ou necessidade de aumentar investimento em ADS para esta keyword.</span>
       </div>`;
@@ -2348,10 +2348,10 @@ function _renderRankingResultado(keyword, total, posicoes) {
                : d < 0 ? `<span style="color:var(--red);font-size:11px;font-weight:700;">▼ ${d}</span>`
                : `<span style="color:var(--text-secondary);font-size:11px;">—</span>`;
       } else {
-        delta = `<span style="color:#9333ea;font-size:11px;font-weight:700;">✨ Novo</span>`;
+        delta = `<span style="color:var(--purple);font-size:11px;font-weight:700;">Novo</span>`;
       }
     }
-    const corPos = p.pos <= 3 ? '#16a34a' : p.pos <= 10 ? '#d97706' : 'var(--text-secondary)';
+    const corPos = p.pos <= 3 ? 'var(--green)' : p.pos <= 10 ? 'var(--yellow)' : 'var(--text-secondary)';
     return `<tr style="border-bottom:1px solid var(--border);">
       <td style="padding:10px 12px;text-align:center;"><span style="font-size:18px;font-weight:700;color:${corPos};">#${p.pos}</span></td>
       <td style="padding:10px 12px;font-size:12px;color:var(--text-primary);">${p.nome || p.id}</td>
@@ -2362,10 +2362,10 @@ function _renderRankingResultado(keyword, total, posicoes) {
 
   const bestPos = Math.min(...posicoes.map(p => p.pos));
   const alerta = bestPos <= 3
-    ? `<div style="background:var(--green-bg);border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#15803d;margin-bottom:12px;font-weight:600;">✅ Excelente! Seu melhor produto está na posição #${bestPos} para "<strong>${keyword}</strong>"</div>`
+    ? `<div style="background:var(--green-bg);border:1px solid color-mix(in srgb,var(--green) 28%,transparent);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--green);margin-bottom:12px;font-weight:600;">✅ Excelente! Seu melhor produto está na posição #${bestPos} para "<strong>${keyword}</strong>"</div>`
     : bestPos <= 10
-    ? `<div style="background:var(--yellow-bg);border:1px solid #fde68a;border-radius:8px;padding:10px 14px;font-size:12px;color:#92400e;margin-bottom:12px;">⚠️ Melhor posição: #${bestPos}. Aumentar lance de ADS pode ajudar a chegar ao Top 3.</div>`
-    : `<div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:12px;color:var(--red);margin-bottom:12px;font-weight:600;">🔴 Melhor posição: #${bestPos}. Revise títulos e invista em ADS para esta keyword.</div>`;
+    ? `<div style="background:var(--yellow-bg);border:1px solid color-mix(in srgb,var(--yellow) 28%,transparent);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--yellow);margin-bottom:12px;">⚠️ Melhor posição: #${bestPos}. Aumentar lance de ADS pode ajudar a chegar ao Top 3.</div>`
+    : `<div style="background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--red);margin-bottom:12px;font-weight:600;">🔴 Melhor posição: #${bestPos}. Revise títulos e invista em ADS para esta keyword.</div>`;
 
   const comparativo = prevSnap ? `<span style="font-size:10px;color:var(--text-secondary);margin-left:8px;">vs pesquisa de ${new Date(prevSnap.ts).toLocaleDateString('pt-BR')}</span>` : '';
 
@@ -2398,7 +2398,7 @@ function _renderRankingHistorico() {
   const kws = Object.keys(snaps);
   if (!kws.length) return;
   el.innerHTML = `
-    <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px;">Pesquisas Salvas</div>
+    <div style="font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:6px;text-transform:none;letter-spacing:0;">Pesquisas Salvas</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;">
       ${kws.map(kw => {
         const s = snaps[kw];

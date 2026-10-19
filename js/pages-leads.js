@@ -8,8 +8,8 @@
 let leads = [];
 let filtroStatus = 'todos';
 
-const STATUS_LABEL = { novo: '🆕 Novo', contatado: '📞 Contatado', em_analise: '🔎 Em Análise', reuniao_agendada: '📅 Reunião Agendada', fechado: '✅ Fechado', desqualificado: '🚫 Desqualificado', perdido: '❌ Perdido' };
-const STATUS_COR = { novo: '#60a5fa', contatado: '#fbbf24', em_analise: '#a78bfa', reuniao_agendada: '#38bdf8', fechado: '#34d399', desqualificado: '#94a3b8', perdido: '#f87171' };
+const STATUS_LABEL = { novo: '🆕 Novo', contatado: 'Contatado', em_analise: 'Em Análise', reuniao_agendada: 'Reunião Agendada', fechado: '✅ Fechado', desqualificado: 'Desqualificado', perdido: '❌ Perdido' };
+const STATUS_COR = { novo: '#60a5fa', contatado: 'var(--yellow)', em_analise: 'var(--purple)', reuniao_agendada: 'var(--cyan)', fechado: 'var(--green)', desqualificado: 'var(--text-muted)', perdido: 'var(--red)' };
 
 function renderPage(params, container) {
   container.innerHTML = `<div id="leads-root" style="padding:24px;max-width:1200px;margin:0 auto;"></div>`;
@@ -23,7 +23,7 @@ function renderShell() {
   root.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
       <div>
-        <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">📇 Leads</h2>
+        <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">Leads</h2>
         <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0;">Contatos capturados na landing page e nas páginas de campanha.</p>
       </div>
       <button class="btn btn-secondary btn-sm" onclick="window._leadsRecarregar()">Atualizar</button>
@@ -104,7 +104,7 @@ function renderTabela() {
     return;
   }
   el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
-    <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;">
+    <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:none;">
       <th style="text-align:left;padding:8px;">Quando</th>
       <th style="text-align:left;padding:8px;">Nome</th>
       <th style="text-align:left;padding:8px;">WhatsApp</th>
@@ -131,7 +131,7 @@ function renderTabela() {
         </select>
       </td>
       <td style="padding:8px;text-align:center;">
-        <a href="${waLink(l)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary" style="white-space:nowrap;">💬 Chamar</a>
+        <a href="${waLink(l)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary" style="white-space:nowrap;">Chamar</a>
       </td>
     </tr>`).join('')}</tbody>
   </table>`;

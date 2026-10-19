@@ -95,9 +95,9 @@ Router.register('analytics-conteudo', async (params, el) => {
 
   function statusDe(pctMeta) {
     if (pctMeta === null) return { label: 'Sem meta', cor: 'var(--text-muted)', bg: 'rgba(148,163,184,0.12)' };
-    if (pctMeta >= LIMITE_SAUDAVEL) return { label: 'Saudável', cor: '#10b981', bg: 'rgba(16,185,129,0.12)' };
-    if (pctMeta >= LIMITE_ATENCAO)  return { label: 'Atenção',  cor: '#f59e0b', bg: 'rgba(245,158,11,0.12)' };
-    return { label: 'Crítico', cor: '#ef4444', bg: 'rgba(239,68,68,0.12)' };
+    if (pctMeta >= LIMITE_SAUDAVEL) return { label: 'Saudável', cor: 'var(--green)', bg: 'rgba(16,185,129,0.12)' };
+    if (pctMeta >= LIMITE_ATENCAO)  return { label: 'Atenção',  cor: 'var(--yellow)', bg: 'rgba(245,158,11,0.12)' };
+    return { label: 'Crítico', cor: 'var(--red)', bg: 'rgba(239,68,68,0.12)' };
   }
 
   function fmtQtdeDias() {
@@ -350,15 +350,15 @@ Router.register('analytics-conteudo', async (params, el) => {
     const ultima = semanas[semanas.length-1];
     const primeira = semanas[0];
     if (pico === 0) return null; // nunca vendeu no mês — não é "queda"
-    if (ultima === 0 && semanas.slice(0,-1).some(v=>v>0)) return { label:'Zerou', cor:'#ef4444' };
+    if (ultima === 0 && semanas.slice(0,-1).some(v=>v>0)) return { label:'Zerou', cor:'var(--red)' };
     // Queda contínua: cada semana <= anterior, com pelo menos uma queda real
     const monotonicaQueda = semanas.every((v,i) => i===0 || v <= semanas[i-1]) && ultima < primeira;
-    if (monotonicaQueda && primeira > 0) return { label:'Queda contínua', cor:'#f97316' };
+    if (monotonicaQueda && primeira > 0) return { label:'Queda contínua', cor:'var(--orange)' };
     // Despencou: teve um pico bem maior que a última semana (queda abrupta ≥70% do pico)
-    if (pico > 0 && ultima <= pico*0.3 && pico >= 4) return { label:'Despencou', cor:'#ef4444' };
+    if (pico > 0 && ultima <= pico*0.3 && pico >= 4) return { label:'Despencou', cor:'var(--red)' };
     // Queda forte: última semana bem menor que a média das anteriores (≥40% abaixo)
     const mediaAnteriores = semanas.slice(0,-1).reduce((s,v)=>s+v,0) / (semanas.length-1);
-    if (mediaAnteriores > 0 && ultima <= mediaAnteriores*0.6) return { label:'Queda forte', cor:'#f59e0b' };
+    if (mediaAnteriores > 0 && ultima <= mediaAnteriores*0.6) return { label:'Queda forte', cor:'var(--yellow)' };
     return null; // sem queda relevante — não entra na lista
   }
 
@@ -563,7 +563,7 @@ Router.register('analytics-conteudo', async (params, el) => {
     if (!dadosClientes.length) {
       return `<div style="text-align:center;padding:60px;color:var(--text-muted);">
         <div style="font-size:32px;margin-bottom:12px;">📊</div>
-        Nenhum dado carregado ainda. Clique em <strong>🔄 Atualizar dados</strong> para puxar as vendas reais do mês via API.
+        Nenhum dado carregado ainda. Clique em <strong>Atualizar dados</strong> para puxar as vendas reais do mês via API.
       </div>`;
     }
 
@@ -613,7 +613,7 @@ Router.register('analytics-conteudo', async (params, el) => {
           ${saudaveis.length ? saudaveis.map(d=>`<div style="padding:6px 0;font-size:13px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${d.clienteId}})">${d.nome} <span style="float:right;color:var(--green);font-weight:700;">${d.pctMeta!=null?d.pctMeta.toFixed(0)+'%':'—'}</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:12px;">Nenhuma ainda</div>'}
         </div>
         <div class="card">
-          <div class="section-title mb-10" style="font-size:13px;">🏆 Ranking Rápido</div>
+          <div class="section-title mb-10" style="font-size:13px;">Ranking Rápido</div>
           <div style="padding:8px 0;font-size:13px;">Melhor: <strong style="color:var(--green);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${melhor?.clienteId||0}})">${melhor ? `${melhor.nome} (${melhor.pctMeta.toFixed(0)}%)` : '—'}</strong></div>
           <div style="padding:8px 0;font-size:13px;border-top:1px solid var(--border);">Pior: <strong style="color:var(--red);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${pior?.clienteId||0}})">${pior && pior!==melhor ? `${pior.nome} (${pior.pctMeta.toFixed(0)}%)` : '—'}</strong></div>
         </div>
@@ -622,17 +622,17 @@ Router.register('analytics-conteudo', async (params, el) => {
 
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:24px;">
       <div class="card">
-        <div class="section-title mb-10" style="font-size:13px;">📊 Meta vs Projeção (todas as contas)</div>
+        <div class="section-title mb-10" style="font-size:13px;">Meta vs Projeção (todas as contas)</div>
         <div style="height:260px;"><canvas id="analytics-chart-meta"></canvas></div>
       </div>
       <div class="card">
-        <div class="section-title mb-10" style="font-size:13px;">🚦 Distribuição por Status</div>
+        <div class="section-title mb-10" style="font-size:13px;">Distribuição por Status</div>
         <div style="height:260px;"><canvas id="analytics-chart-status"></canvas></div>
       </div>
     </div>
 
     <div class="card" style="padding:0;overflow:hidden;">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;">🚦 Semáforo por Conta</div>
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;">Semáforo por Conta</div>
       <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:800px;">
         <thead>
@@ -677,11 +677,11 @@ Router.register('analytics-conteudo', async (params, el) => {
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--green);border-radius:3px;"></span> Saudável (≥${LIMITE_SAUDAVEL}% da meta)</span>
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--yellow);border-radius:3px;"></span> Atenção (${LIMITE_ATENCAO}–${LIMITE_SAUDAVEL}%)</span>
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--red);border-radius:3px;"></span> Crítico (&lt;${LIMITE_ATENCAO}%)</span>
-      <span style="margin-left:auto;">🎯 Configure Meta e ADS Ideal em Carteira de Clientes → editar cliente</span>
+      <span style="margin-left:auto;">Configure Meta e ADS Ideal em Carteira de Clientes → editar cliente</span>
     </div>
 
     <div class="card" style="padding:0;overflow:hidden;">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;">🔍 Diagnóstico Automático por Conta</div>
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;">Diagnóstico Automático por Conta</div>
       ${dadosClientes.slice().sort((a,b)=>(a.pctMeta??999)-(b.pctMeta??999)).map(d => `
         <div style="padding:12px 18px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${d.clienteId}})">
           <div style="font-weight:700;font-size:13px;margin-bottom:4px;color:${statusDe(d.pctMeta).cor};">${d.nome}</div>
@@ -696,7 +696,7 @@ Router.register('analytics-conteudo', async (params, el) => {
     if (!produtosQueda.length) {
       return `<div style="text-align:center;padding:60px;color:var(--text-muted);">
         <div style="font-size:32px;margin-bottom:12px;">📉</div>
-        ${carregandoQueda ? 'Analisando produtos...' : 'Nenhum dado carregado ainda. Clique em <strong>🔄 Atualizar dados</strong> para ver a tendência semana a semana, produto a produto.'}
+        ${carregandoQueda ? 'Analisando produtos...' : 'Nenhum dado carregado ainda. Clique em <strong>Atualizar dados</strong> para ver a tendência semana a semana, produto a produto.'}
       </div>`;
     }
 
@@ -767,7 +767,7 @@ Router.register('analytics-conteudo', async (params, el) => {
 
     return `
     <div class="card mb-16">
-      <div class="section-title mb-10" style="font-size:13px;">➕ Nova Ação</div>
+      <div class="section-title mb-10" style="font-size:13px;">Nova Ação</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 2fr 1fr auto;gap:8px;align-items:end;">
         <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Cliente</div>
           <select id="pa-cliente" class="form-input" style="width:100%;"><option value="">Selecione</option>${clientesOpts}</select></div>
@@ -831,21 +831,21 @@ Router.register('analytics-conteudo', async (params, el) => {
     <div class="page">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
         <div>
-          <h1 style="font-size:20px;font-weight:700;margin:0;">📊 Analytics — Painel Executivo</h1>
+          <h1 style="font-size:20px;font-weight:700;margin:0;">Analytics — Painel Executivo</h1>
           <div id="analytics-status" style="font-size:12px;color:var(--text-muted);margin-top:4px;">
             ${abaAtiva==='executivo' ? (atualizadoExecEm?`Atualizado em ${new Date(atualizadoExecEm).toLocaleString('pt-BR')}`:'Nenhum dado carregado ainda') : ''}
             ${abaAtiva==='queda' ? (atualizadoQuedaEm?`Atualizado em ${new Date(atualizadoQuedaEm).toLocaleString('pt-BR')}`:'Nenhum dado carregado ainda') : ''}
           </div>
         </div>
-        ${abaAtiva==='executivo' ? `<button class="btn-primary" style="padding:8px 16px;" ${carregandoExec?'disabled':''} onclick="_analyticsBuscarExec()">${carregandoExec?'⏳ Buscando...':'🔄 Atualizar dados'}</button>` : ''}
-        ${abaAtiva==='queda' ? `<button class="btn-primary" style="padding:8px 16px;" ${carregandoQueda?'disabled':''} onclick="_analyticsBuscarQueda()">${carregandoQueda?'⏳ Analisando...':'🔄 Atualizar dados'}</button>` : ''}
+        ${abaAtiva==='executivo' ? `<button class="btn-primary" style="padding:8px 16px;" ${carregandoExec?'disabled':''} onclick="_analyticsBuscarExec()">${carregandoExec?'⏳ Buscando...':'Atualizar dados'}</button>` : ''}
+        ${abaAtiva==='queda' ? `<button class="btn-primary" style="padding:8px 16px;" ${carregandoQueda?'disabled':''} onclick="_analyticsBuscarQueda()">${carregandoQueda?'⏳ Analisando...':'Atualizar dados'}</button>` : ''}
       </div>
 
       <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
-        ${tabBtn('executivo','🚦 Painel Executivo')}
-        ${tabBtn('queda','📉 Produtos em Queda')}
+        ${tabBtn('executivo','Painel Executivo')}
+        ${tabBtn('queda','Produtos em Queda')}
         ${tabBtn('plano','✅ Plano de Ação')}
-        ${tabBtn('checklist','☑ Checklist Diário')}
+        ${tabBtn('checklist','Checklist Diário')}
       </div>
 
       <div id="analytics-conteudo">

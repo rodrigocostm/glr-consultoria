@@ -12,7 +12,7 @@ function nomeGestor(gestorId) {
   return g ? g.nome : '—';
 }
 function corGestor(gestorId) {
-  return GLR.gestores.find(g => g.id === gestorId)?.cor || '#6366f1';
+  return GLR.gestores.find(g => g.id === gestorId)?.cor || 'var(--accent)';
 }
 function iniciaisGestor(gestorId) {
   const n = nomeGestor(gestorId);
@@ -75,7 +75,7 @@ Router.register('clientes', (params, el) => {
         </td>
         <td>
           ${c.gestorId ? `<div style="display:flex;align-items:center;gap:8px;">
-            <div style="width:28px;height:28px;border-radius:50%;background:${corGestor(c.gestorId)}20;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${corGestor(c.gestorId)};">${iniciaisGestor(c.gestorId)}</div>
+            <div style="width:28px;height:28px;border-radius:50%;background:color-mix(in srgb,${corGestor(c.gestorId)} 13%,transparent);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${corGestor(c.gestorId)};">${iniciaisGestor(c.gestorId)}</div>
             <span style="font-size:13px;">${nomeGestor(c.gestorId)}</span>
           </div>` : '<span style="color:var(--text-muted);">—</span>'}
         </td>
@@ -192,7 +192,7 @@ function setupClienteHandlers() {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">💰 Valor por Venda (R$)</label>
+          <label class="form-label">Valor por Venda (R$)</label>
           <input class="form-input" id="c-valor-venda" type="number" step="0.01" min="0"
             placeholder="Ex: 150.00" value="${c?.valorPorVenda || ''}">
         </div>
@@ -206,12 +206,12 @@ function setupClienteHandlers() {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">🎯 Meta Mensal (R$)</label>
+          <label class="form-label">Meta Mensal (R$)</label>
           <input class="form-input" id="c-meta-mensal" type="number" step="0.01" min="0"
             placeholder="Ex: 100000.00" value="${c?.metaMensal || ''}">
         </div>
         <div class="form-group">
-          <label class="form-label">📢 ADS Ideal (% do faturamento)</label>
+          <label class="form-label">ADS Ideal (% do faturamento)</label>
           <input class="form-input" id="c-ads-ideal" type="number" step="0.1" min="0" max="100"
             placeholder="Ex: 4 (padrão)" value="${c?.adsIdeal != null ? (c.adsIdeal*100) : ''}">
         </div>
@@ -336,7 +336,7 @@ Router.register('cliente-perfil', (params, el) => {
       tabContent.innerHTML = `
         <div class="grid-2 mb-16">
           <div class="card">
-            <div class="section-title mb-16">📊 Indicadores</div>
+            <div class="section-title mb-16">Indicadores</div>
             <div class="grid-2" style="gap:12px;">
               ${indicadorCard('Faturamento', fat ? GLR.formatCurrencyFull(fat) : '—', cresc >= 0 ? 'text-green' : 'text-red', `${cresc >= 0 ? '+' : ''}${cresc}% vs mês ant.`)}
               ${indicadorCard('Valor por Venda', c.valorPorVenda ? `R$ ${parseFloat(c.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—', 'text-green', 'Por venda realizada')}
@@ -366,7 +366,7 @@ Router.register('cliente-perfil', (params, el) => {
                 const extId = ct.external_id || ct.id || '';
                 const icon = platIcon[mp] || '🏪';
                 const nome = ct.nickname || platNome[mp] || mp;
-                const cor  = platColor[mp] || '#9ca3af';
+                const cor  = platColor[mp] || 'var(--text-muted)';
                 const aliq = aliquotas[extId] || '';
                 return `<div id="conta-card-${extId}" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px;">
                   <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
@@ -379,13 +379,13 @@ Router.register('cliente-perfil', (params, el) => {
 
                   <!-- Alíquota de imposto -->
                   <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;padding:8px 10px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:7px;">
-                    <span style="font-size:11px;color:#fbbf24;font-weight:600;white-space:nowrap;">🧾 Imposto</span>
+                    <span style="font-size:11px;color:var(--yellow);font-weight:600;white-space:nowrap;">Imposto</span>
                     <input type="number" min="0" max="100" step="0.1" placeholder="0"
                       value="${aliq}"
                       id="aliq-${extId}"
                       onchange="window.salvarAliquota('${extId}', this.value)"
-                      style="flex:1;background:var(--bg-subtle);border:1px solid rgba(251,191,36,0.3);border-radius:5px;padding:4px 8px;color:#fbbf24;font-size:13px;font-weight:700;text-align:right;width:100%;box-sizing:border-box;">
-                    <span style="font-size:12px;color:#fbbf24;font-weight:600;">%</span>
+                      style="flex:1;background:var(--bg-subtle);border:1px solid rgba(251,191,36,0.3);border-radius:5px;padding:4px 8px;color:var(--yellow);font-size:13px;font-weight:700;text-align:right;width:100%;box-sizing:border-box;">
+                    <span style="font-size:12px;color:var(--yellow);font-weight:600;">%</span>
                   </div>
 
                   <div id="dados-${extId}" style="font-size:12px;color:var(--text-muted);">Clique em "Carregar dados"</div>
@@ -406,7 +406,7 @@ Router.register('cliente-perfil', (params, el) => {
 
         <div class="grid-2">
           <div class="card">
-            <div class="section-title mb-16">📋 Tarefas Ativas</div>
+            <div class="section-title mb-16">Tarefas Ativas</div>
             ${tarefas.filter(t=>t.status!=='concluida').length
               ? tarefas.filter(t=>t.status!=='concluida').slice(0,4).map(t => `
                 <div class="task-card">
@@ -414,7 +414,7 @@ Router.register('cliente-perfil', (params, el) => {
                     <div class="task-title">${t.titulo}</div>
                     <span class="badge ${GLR.prioridadeColor[t.prioridade]}">${t.prioridade}</span>
                   </div>
-                  <div class="task-meta"><span>👤 ${t.responsavel}</span><span>📅 ${formatDate(t.prazo)}</span></div>
+                  <div class="task-meta"><span>${t.responsavel}</span><span>${formatDate(t.prazo)}</span></div>
                 </div>
               `).join('')
               : '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">Nenhuma tarefa ativa</div>'}
@@ -444,17 +444,17 @@ Router.register('cliente-perfil', (params, el) => {
       tabContent.innerHTML = `
         <div class="timeline">
           ${acoes.length ? acoes.sort((a,b) => new Date(b.data)-new Date(a.data)).map(a => {
-            const cor = GLR.tipoAcaoColor[a.categoria] || '#6366f1';
+            const cor = GLR.tipoAcaoColor[a.categoria] || 'var(--accent)';
             const icons = { Reunião:'🤝', Campanha:'📣', Otimização:'⚡', Precificação:'💲', Estratégia:'♟️', Análise:'🔍', Onboarding:'🚀', Relatório:'📄', Catálogo:'📂', NPS:'⭐', Interno:'🏠' };
             return `<div class="timeline-item">
-              <div class="timeline-dot" style="background:${cor}20;color:${cor};">${icons[a.categoria] || '📌'}</div>
+              <div class="timeline-dot" style="background:color-mix(in srgb,${cor} 13%,transparent);color:${cor};">${icons[a.categoria] || '📌'}</div>
               <div class="timeline-content">
                 <div class="timeline-header">
-                  <span class="badge" style="background:${cor}20;color:${cor};">${a.categoria}</span>
+                  <span class="badge" style="background:color-mix(in srgb,${cor} 13%,transparent);color:${cor};">${a.categoria}</span>
                   <span class="badge ${a.status === 'concluida' ? 'status-crescimento' : 'status-ativo'}">${a.status === 'concluida' ? 'Concluída' : 'Em andamento'}</span>
                 </div>
                 <div style="font-size:13.5px;color:var(--text-primary);margin:8px 0;">${a.descricao}</div>
-                <div class="timeline-meta"><span>👤 ${a.responsavel}</span><span>📅 ${formatDate(a.data)}</span></div>
+                <div class="timeline-meta"><span>${a.responsavel}</span><span>${formatDate(a.data)}</span></div>
               </div>
             </div>`;
           }).join('') : '<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-title">Nenhuma ação registrada</div></div>'}
@@ -486,9 +486,9 @@ Router.register('cliente-perfil', (params, el) => {
             ${ci.valorPorVenda ? `<span style="font-size:12px;padding:3px 10px;border-radius:99px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.2);color:var(--green);font-weight:600;">R$ ${parseFloat(ci.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2})} / venda</span>` : ''}
           </div>
           <div style="font-size:13px;color:var(--text-muted);display:flex;gap:16px;flex-wrap:wrap;">
-            ${ci.responsavel ? `<span>👤 ${ci.responsavel}</span>` : ''}
+            ${ci.responsavel ? `<span>${ci.responsavel}</span>` : ''}
             ${ci.gestorId ? `<span>🧑‍💼 ${nomeGestor(ci.gestorId)}</span>` : ''}
-            ${ci.categoria ? `<span>🏷️ ${ci.categoria}</span>` : ''}
+            ${ci.categoria ? `<span>${ci.categoria}</span>` : ''}
             <span id="perfil-fat-header" style="color:var(--green);font-weight:600;">${ci.faturamento ? '💰 ' + GLR.formatCurrency(ci.faturamento) : ''}</span>
           </div>
         </div>
@@ -518,7 +518,7 @@ Router.register('cliente-perfil', (params, el) => {
     // Feedback visual
     const inp = document.getElementById(`aliq-${extId}`);
     if (inp) {
-      inp.style.borderColor = '#34d399';
+      inp.style.borderColor = 'var(--green)';
       setTimeout(() => { inp.style.borderColor = 'rgba(251,191,36,0.3)'; }, 1000);
     }
   };
@@ -592,21 +592,21 @@ Router.register('cliente-perfil', (params, el) => {
             </div>
             <div>
               <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Projeção mês</div>
-              <div style="font-size:13px;font-weight:600;color:#a78bfa;">${R$(projecao)}</div>
+              <div style="font-size:13px;font-weight:600;color:var(--purple);">${R$(projecao)}</div>
             </div>
             ${adsPct ? `<div>
               <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">ADS%</div>
-              <div style="font-size:13px;font-weight:600;color:#fbbf24;">${adsPct}%</div>
+              <div style="font-size:13px;font-weight:600;color:var(--yellow);">${adsPct}%</div>
             </div>` : ''}
           </div>
-          <div style="margin-top:8px;font-size:10px;color:#4b5563;">Base: 01/${pad(hoje.getMonth()+1)} até ${pad(ontem.getDate())}/${pad(ontem.getMonth()+1)}</div>`;
+          <div style="margin-top:8px;font-size:10px;color:var(--text-secondary);">Base: 01/${pad(hoje.getMonth()+1)} até ${pad(ontem.getDate())}/${pad(ontem.getMonth()+1)}</div>`;
 
       } catch(e) {
         if (elDiv) elDiv.innerHTML = `<span style="color:var(--red);font-size:12px;">Erro: ${e.message}</span>`;
       }
     }
 
-    if (btn) { btn.disabled = false; btn.textContent = '🔄 Atualizar'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Atualizar'; }
   };
 
   setupClienteHandlers();
@@ -629,7 +629,7 @@ function scoreLabel(s) {
 
 function indicadorCard(label, value, colorClass, sub) {
   return `<div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;">
-    <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${label}</div>
+    <div style="font-size:11px;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-bottom:6px;">${label}</div>
     <div style="font-size:20px;font-weight:700;margin-bottom:4px;" class="${colorClass}">${value}</div>
     <div style="font-size:11.5px;color:var(--text-muted);">${sub}</div>
   </div>`;
@@ -688,7 +688,7 @@ function openModalNovaAcao(clienteId, acaoId) {
         localStorage.setItem('glr_acoes',JSON.stringify(GLR.acoes));
         document.querySelector('.modal-overlay').remove();
         Router.resolve();
-      })()">🗑️ Excluir</button>` : ''}
+      })()">Excluir</button>` : ''}
       <div style="display:flex;gap:10px;">
         <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
         <button class="btn btn-primary" onclick="(function(){

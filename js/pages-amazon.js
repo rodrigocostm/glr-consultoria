@@ -124,17 +124,17 @@ Router.register('anuncios-amazon', (params, el) => {
     const den = 1 - it.taxaPct - aliquota() / 100 - margem / 100;
     return den > 0 ? Math.ceil(c / den * 100) / 100 : null;
   }
-  const corMargem = m => m == null ? 'var(--text-muted)' : m < 0 ? '#dc2626' : m < st.margemMin ? '#d97706' : '#16a34a';
+  const corMargem = m => m == null ? 'var(--text-muted)' : m < 0 ? 'var(--red)' : m < st.margemMin ? 'var(--yellow)' : 'var(--green)';
 
   // ── Situação da Buy Box ──
   function situacao(it) {
-    if (it.bbStatus === 'NO_COMPETING_OFFER') return { k: 'livre', txt: 'Sem concorrente', cor: '#2a78d6' };
+    if (it.bbStatus === 'NO_COMPETING_OFFER') return { k: 'livre', txt: 'Sem concorrente', cor: 'var(--accent)' };
     if (it.ganhar != null && it.preco != null) {
-      if (it.preco > it.ganhar + 0.004) return { k: 'perdendo', txt: 'Perdendo', cor: '#dc2626' };
-      return { k: 'ganhando', txt: 'Ganhando', cor: '#16a34a' };
+      if (it.preco > it.ganhar + 0.004) return { k: 'perdendo', txt: 'Perdendo', cor: 'var(--red)' };
+      return { k: 'ganhando', txt: 'Ganhando', cor: 'var(--green)' };
     }
-    if (/WIN|WINNING|OWNER/i.test(it.bbStatus || '')) return { k: 'ganhando', txt: 'Ganhando', cor: '#16a34a' };
-    return { k: 'sem', txt: it.bbStatus ? it.bbStatus.replace(/_/g, ' ').toLowerCase() : 'sem dado', cor: '#64748b' };
+    if (/WIN|WINNING|OWNER/i.test(it.bbStatus || '')) return { k: 'ganhando', txt: 'Ganhando', cor: 'var(--green)' };
+    return { k: 'sem', txt: it.bbStatus ? it.bbStatus.replace(/_/g, ' ').toLowerCase() : 'sem dado', cor: 'var(--text-muted)' };
   }
 
   // ── Telas ──
@@ -150,7 +150,7 @@ Router.register('anuncios-amazon', (params, el) => {
     const ORD = { perdendo: 0, ganhando: 1, livre: 2, sem: 3 };
     const vis = lista.filter(x => F === 'todos' || x.s.k === F).sort((a, b) => ORD[a.s.k] - ORD[b.s.k]);
     const chip = (k, t, c) => `<button class="az-chip ${F === k ? 'on' : ''}" style="--c:${c}" onclick="window._azFiltro('${k}')">${t} <b>${k === 'todos' ? lista.length : n(k)}</b></button>`;
-    return `<div class="az-chips">${chip('todos', 'Todos', '#64748b')}${chip('perdendo', '🔴 Perdendo', '#dc2626')}${chip('ganhando', '🟢 Ganhando', '#16a34a')}${chip('livre', '🔵 Sem concorrente', '#2a78d6')}${n('sem') ? chip('sem', 'Sem dado', '#64748b') : ''}</div>
+    return `<div class="az-chips">${chip('todos', 'Todos', 'var(--text-muted)')}${chip('perdendo', '🔴 Perdendo', 'var(--red)')}${chip('ganhando', '🟢 Ganhando', 'var(--green)')}${chip('livre', '🔵 Sem concorrente', 'var(--accent)')}${n('sem') ? chip('sem', 'Sem dado', 'var(--text-muted)') : ''}</div>
       <div class="az-mut" style="margin-bottom:10px">O preço que ganha vem da Amazon <b>antes</b> de promoções e não é garantia: ela também pesa prazo de entrega. <b>Sem concorrente</b> = só você vende esse ASIN, o preço é seu para decidir (dá para testar subir).</div>
       <div class="card" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table class="az-tab">
         <thead><tr><th>Produto</th><th>Situação</th><th class="n">Seu preço</th><th class="n">Preço que ganha</th><th class="n">Margem no seu preço</th><th>O que fazer</th></tr></thead>
@@ -226,7 +226,7 @@ Router.register('anuncios-amazon', (params, el) => {
   function render() {
     const box = document.getElementById('az-root'); if (!box) return;
     if (!st.contas.length) { box.innerHTML = `<div class="card az-vazio">${st.erro ? '⚠️ ' + h(st.erro) : '⏳ Carregando contas Amazon…'}</div>`; return; }
-    const ABAS = [['buybox', '🏆 Buy Box'], ['promo', '🏷️ Promoções'], ['margem', '💰 Margem']];
+    const ABAS = [['buybox', 'Buy Box'], ['promo', 'Promoções'], ['margem', 'Margem']];
     const atualizado = lerJSON(`glr_amz_cache_${st.conta}`, null)?.em;
     box.innerHTML = `
       <div class="az-topo">

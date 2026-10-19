@@ -225,7 +225,7 @@
         // pede pra IA pensar em termos mais descritivos (tipo de produto) e
         // tenta cada um, um de cada vez, até achar alguma coisa.
         if (!state.categoriaResultados.length) {
-          state.categoriaAvisoIA = '🧠 IA pensando em termos alternativos...';
+          state.categoriaAvisoIA = 'IA pensando em termos alternativos...';
           render();
           const termos = await sugerirTermosAlternativos(state.titulo || q, state.descricao);
           for (const termo of termos) {
@@ -486,7 +486,7 @@
           <div style="font-size:44px;margin-bottom:12px;">✅</div>
           <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Anúncio criado no Mercado Livre!</div>
           <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">ID: ${esc(state.resultado.id || '—')}</div>
-          ${state.resultado.permalink ? `<a href="${state.resultado.permalink}" target="_blank" rel="noopener" class="btn btn-primary" style="width:100%;margin-bottom:10px;">🔗 Ver anúncio no Mercado Livre</a>` : ''}
+          ${state.resultado.permalink ? `<a href="${state.resultado.permalink}" target="_blank" rel="noopener" class="btn btn-primary" style="width:100%;margin-bottom:10px;">Ver anúncio no Mercado Livre</a>` : ''}
           <button class="btn btn-secondary" style="width:100%;" onclick="window._anMlReset()">Criar outro anúncio</button>
         </div>`;
         return;
@@ -508,8 +508,8 @@
 
         <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:16px;" class="an-grid-resp">
           <div class="card" style="padding:20px;">
-            <div class="form-label" style="margin-bottom:10px;">📸 Foto do produto</div>
-            <div id="an-dropzone" ondragover="event.preventDefault();this.style.borderColor='#6366f1';" ondragleave="this.style.borderColor='var(--border)';"
+            <div class="form-label" style="margin-bottom:10px;">Foto do produto</div>
+            <div id="an-dropzone" ondragover="event.preventDefault();this.style.borderColor='var(--accent)';" ondragleave="this.style.borderColor='var(--border)';"
                  ondrop="event.preventDefault();this.style.borderColor='var(--border)';window._anMlDropRef(event);"
                  onclick="document.getElementById('an-ref-input').click()"
                  style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,var(--bg-subtle));">
@@ -520,10 +520,10 @@
             </div>
 
             <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:10px;" ${(!state.fotoRefBase64 || state.iaCarregando) ? 'disabled' : ''} onclick="window._anMlSugerirIA()">
-              ${state.iaCarregando ? '⏳ Analisando...' : '✨ Autopreencher com IA (título, descrição, categoria)'}
+              ${state.iaCarregando ? '⏳ Analisando...' : 'Autopreencher com IA (título, descrição, categoria)'}
             </button>
             <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:8px;" ${(!state.fotoRefBase64 || state.gerandoFoto) ? 'disabled' : ''} onclick="window._anMlGerarFotoIA()">
-              ${state.gerandoFoto ? '⏳ Gerando foto...' : '🎨 Gerar foto profissional com IA'}
+              ${state.gerandoFoto ? '⏳ Gerando foto...' : 'Gerar foto profissional com IA'}
             </button>
 
             <div class="form-label" style="margin-top:16px;margin-bottom:6px;">Mais fotos (opcional)</div>
@@ -541,7 +541,7 @@
           </div>
 
           <div class="card" style="padding:20px;">
-            <div class="form-label" style="margin-bottom:6px;">🗂️ Categoria</div>
+            <div class="form-label" style="margin-bottom:6px;">Categoria</div>
 
             ${state.categoriaEscolhida ? `
               <div style="background:var(--accent-soft,rgba(99,102,241,0.08));border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px;">
@@ -623,14 +623,14 @@
 
             ${state.carregandoAtributos ? `<div style="font-size:12px;color:var(--text-muted);">⏳ Carregando ficha técnica da categoria...</div>` : ''}
             ${!state.carregandoAtributos && state.categoriaEscolhida ? `
-              ${renderBlocoAtributos(state.atributosObrigatorios, '📋 Ficha técnica — obrigatórios pro SEO/catálogo', false)}
+              ${renderBlocoAtributos(state.atributosObrigatorios, 'Ficha técnica — obrigatórios pro SEO/catálogo', false)}
               ${renderBlocoAtributos(state.atributosOpcionais, 'Ver mais atributos (opcionais, melhoram a busca)', true)}
             ` : ''}
 
             ${state.erro ? `<div style="font-size:12.5px;color:var(--red);margin-top:14px;">⚠️ ${esc(state.erro)}</div>` : ''}
 
             <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:18px;" ${state.criando ? 'disabled' : ''} onclick="window._anMlCriar()">
-              ${state.criando ? '⏳ Criando anúncio...' : '🚀 Criar anúncio no Mercado Livre'}
+              ${state.criando ? '⏳ Criando anúncio...' : 'Criar anúncio no Mercado Livre'}
             </button>
           </div>
         </div>
@@ -903,7 +903,7 @@
         // de produto, material) em vez de simplesmente desistir, e tenta cada
         // um até achar categoria.
         if (!state.categoriaSugestoes.length) {
-          state.categoriaAvisoIA = '🧠 IA pensando em termos alternativos...';
+          state.categoriaAvisoIA = 'IA pensando em termos alternativos...';
           render();
           const termos = await sugerirTermosAlternativos(state.nomeProduto, state.descricao);
           for (const termo of termos) {
@@ -1165,7 +1165,7 @@
 
         <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:16px;" class="an-grid-resp">
           <div class="card" style="padding:20px;">
-            <div class="form-label" style="margin-bottom:10px;">📸 Foto do produto</div>
+            <div class="form-label" style="margin-bottom:10px;">Foto do produto</div>
             <div id="an-sp-dropzone" ondragover="event.preventDefault();this.style.borderColor='#ee4d2d';" ondragleave="this.style.borderColor='var(--border)';"
                  ondrop="event.preventDefault();this.style.borderColor='var(--border)';window._anSpDropRef(event);"
                  onclick="document.getElementById('an-sp-ref-input').click()"
@@ -1177,10 +1177,10 @@
             </div>
 
             <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:10px;" ${(!state.fotoRefBase64 || state.iaCarregando) ? 'disabled' : ''} onclick="window._anSpSugerirIA()">
-              ${state.iaCarregando ? '⏳ Analisando...' : '✨ Autopreencher com IA (nome, descrição, categoria)'}
+              ${state.iaCarregando ? '⏳ Analisando...' : 'Autopreencher com IA (nome, descrição, categoria)'}
             </button>
             <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:8px;" ${(!state.fotoRefBase64 || state.gerandoFoto) ? 'disabled' : ''} onclick="window._anSpGerarFotoIA()">
-              ${state.gerandoFoto ? '⏳ Gerando foto...' : '🎨 Gerar foto profissional com IA'}
+              ${state.gerandoFoto ? '⏳ Gerando foto...' : 'Gerar foto profissional com IA'}
             </button>
 
             <div class="form-label" style="margin-top:16px;margin-bottom:6px;">Mais fotos (opcional)</div>
@@ -1232,7 +1232,7 @@
                 <summary style="cursor:pointer;font-size:11.5px;color:var(--text-muted);">Prefere buscar por nome? (opcional)</summary>
                 <div style="margin-top:8px;">
                   <button class="btn btn-secondary btn-sm" style="margin-bottom:8px;" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anSpSugerirCategoria()">
-                    ${state.buscandoCategoria ? '⏳ Buscando...' : '✨ Sugerir categoria pra esse nome (IA)'}
+                    ${state.buscandoCategoria ? '⏳ Buscando...' : 'Sugerir categoria pra esse nome (IA)'}
                   </button>
                   <div style="display:flex;gap:8px;margin-bottom:8px;">
                     <input type="text" class="form-input" id="an-sp-cat-manual" placeholder="Buscar categoria manualmente (ex: armário)" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();window._anSpBuscarCategoriaManual();}">
@@ -1286,14 +1286,14 @@
 
             ${state.carregandoAtributos ? `<div style="font-size:12px;color:var(--text-muted);">⏳ Carregando ficha técnica da categoria...</div>` : ''}
             ${!state.carregandoAtributos && state.categoriaEscolhida ? `
-              ${renderBlocoAtributos(state.atributosObrigatorios, '📋 Ficha técnica — obrigatórios pro SEO/catálogo', false)}
+              ${renderBlocoAtributos(state.atributosObrigatorios, 'Ficha técnica — obrigatórios pro SEO/catálogo', false)}
               ${renderBlocoAtributos(state.atributosOpcionais, 'Ver mais atributos (opcionais, melhoram a busca)', true)}
             ` : ''}
 
             ${state.erro ? `<div style="font-size:12.5px;color:var(--red);margin-top:14px;">⚠️ ${esc(state.erro)}</div>` : ''}
 
             <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:18px;background:#ee4d2d;" ${state.criando ? 'disabled' : ''} onclick="window._anSpCriar()">
-              ${state.criando ? '⏳ Criando anúncio...' : '🚀 Criar anúncio na Shopee'}
+              ${state.criando ? '⏳ Criando anúncio...' : 'Criar anúncio na Shopee'}
             </button>
           </div>
         </div>
@@ -1569,7 +1569,7 @@
 
         let achada = await buscar(termoBase);
         if (!achada) {
-          state.categoriaAvisoIA = '🧠 IA pensando em termos alternativos...';
+          state.categoriaAvisoIA = 'IA pensando em termos alternativos...';
           render();
           const termos = await sugerirTermosAlternativos(state.nomeProduto, state.descricao);
           for (const termo of termos) {
@@ -1810,7 +1810,7 @@
 
         <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:16px;" class="an-grid-resp">
           <div class="card" style="padding:20px;">
-            <div class="form-label" style="margin-bottom:10px;">📸 Foto do produto</div>
+            <div class="form-label" style="margin-bottom:10px;">Foto do produto</div>
             <div id="an-tt-dropzone" ondragover="event.preventDefault();this.style.borderColor='#25F4EE';" ondragleave="this.style.borderColor='var(--border)';"
                  ondrop="event.preventDefault();this.style.borderColor='var(--border)';window._anTtDropRef(event);"
                  onclick="document.getElementById('an-tt-ref-input').click()"
@@ -1822,10 +1822,10 @@
             </div>
 
             <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:10px;" ${(!state.fotoRefBase64 || state.iaCarregando) ? 'disabled' : ''} onclick="window._anTtSugerirIA()">
-              ${state.iaCarregando ? '⏳ Analisando...' : '✨ Autopreencher com IA (nome, descrição, categoria)'}
+              ${state.iaCarregando ? '⏳ Analisando...' : 'Autopreencher com IA (nome, descrição, categoria)'}
             </button>
             <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:8px;" ${(!state.fotoRefBase64 || state.gerandoFoto) ? 'disabled' : ''} onclick="window._anTtGerarFotoIA()">
-              ${state.gerandoFoto ? '⏳ Gerando foto...' : '🎨 Gerar foto profissional com IA'}
+              ${state.gerandoFoto ? '⏳ Gerando foto...' : 'Gerar foto profissional com IA'}
             </button>
 
             <div class="form-label" style="margin-top:16px;margin-bottom:6px;">Mais fotos (opcional)</div>
@@ -1877,7 +1877,7 @@
                 <summary style="cursor:pointer;font-size:11.5px;color:var(--text-muted);">Prefere buscar por nome? (opcional)</summary>
                 <div style="margin-top:8px;">
                   <button class="btn btn-secondary btn-sm" ${state.buscandoCategoria ? 'disabled' : ''} onclick="window._anTtSugerirCategoria()">
-                    ${state.buscandoCategoria ? '⏳ Buscando...' : '✨ Sugerir categoria pra esse nome (IA)'}
+                    ${state.buscandoCategoria ? '⏳ Buscando...' : 'Sugerir categoria pra esse nome (IA)'}
                   </button>
                   ${state.categoriaAvisoIA ? `<div style="font-size:11px;color:#25b0aa;margin-top:8px;">${esc(state.categoriaAvisoIA)}</div>` : ''}
                 </div>
@@ -1917,14 +1917,14 @@
 
             ${state.carregandoAtributos ? `<div style="font-size:12px;color:var(--text-muted);">⏳ Carregando ficha técnica da categoria...</div>` : ''}
             ${!state.carregandoAtributos && state.categoriaEscolhida ? `
-              ${renderBlocoAtributos(state.atributosObrigatorios, '📋 Ficha técnica — obrigatórios pro SEO/catálogo', false)}
+              ${renderBlocoAtributos(state.atributosObrigatorios, 'Ficha técnica — obrigatórios pro SEO/catálogo', false)}
               ${renderBlocoAtributos(state.atributosOpcionais, 'Ver mais atributos (opcionais, melhoram a busca)', true)}
             ` : ''}
 
             ${state.erro ? `<div style="font-size:12.5px;color:var(--red);margin-top:14px;">⚠️ ${esc(state.erro)}</div>` : ''}
 
             <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:18px;background:#000;" ${state.criando ? 'disabled' : ''} onclick="window._anTtCriar()">
-              ${state.criando ? '⏳ Criando anúncio...' : '🚀 Criar anúncio no TikTok Shop'}
+              ${state.criando ? '⏳ Criando anúncio...' : 'Criar anúncio no TikTok Shop'}
             </button>
           </div>
         </div>

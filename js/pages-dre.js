@@ -493,7 +493,7 @@ Router.register('dre', (params, el) => {
               style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;
                      border:1px solid ${ocultarGLR?'rgba(251,191,36,.5)':'var(--border)'};
                      background:${ocultarGLR?'rgba(251,191,36,.12)':'var(--bg-surface)'};
-                     color:${ocultarGLR?'#fbbf24':'var(--text-muted)'};display:flex;align-items:center;gap:5px;">
+                     color:${ocultarGLR?'var(--yellow)':'var(--text-muted)'};display:flex;align-items:center;gap:5px;">
               ${ocultarGLR
                 ? `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg> GLR oculta`
                 : `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Ocultar GLR`}
@@ -583,10 +583,10 @@ Router.register('dre', (params, el) => {
 
       ${modoAuto ? `
       <div style="margin-bottom:16px;padding:10px 14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px;">
-        <svg width="15" height="15" fill="none" stroke="#10b981" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        <svg width="15" height="15" fill="none" stroke="var(--green)" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
         <span style="font-size:13px;color:var(--green);">
           ${vals._semTaxa != null
-            ? `<strong>⚡ Preenchido da base automática</strong> — pedidos com as taxas reais e ADS desta conta (Shopee com GMV Max), atualizado pelo servidor a cada 15 min.${vals._semTaxa ? ` ${vals._semTaxa} pedido${vals._semTaxa !== 1 ? 's' : ''} ainda sem taxa real (o servidor está buscando) — por ora entram com a estimativa.` : ''}`
+            ? `<strong>Preenchido da base automática</strong> — pedidos com as taxas reais e ADS desta conta (Shopee com GMV Max), atualizado pelo servidor a cada 15 min.${vals._semTaxa ? ` ${vals._semTaxa} pedido${vals._semTaxa !== 1 ? 's' : ''} ainda sem taxa real (o servidor está buscando) — por ora entram com a estimativa.` : ''}`
             : `<strong>Preenchido automaticamente da API</strong> — Faturamento, Comissão+Frete, ADS, Imposto e Comissão GLR vêm dos dados sincronizados no Financeiro.`}
           Campos manuais (Juros, Custo Fixo) ficam em aberto. Salve para fixar.
         </span>
@@ -599,7 +599,7 @@ Router.register('dre', (params, el) => {
 
       ${preenchidoDaProjecao ? `
       <div style="margin-bottom:16px;padding:10px 14px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px;">
-        <svg width="15" height="15" fill="none" stroke="#6366f1" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <svg width="15" height="15" fill="none" stroke="var(--accent)" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span style="font-size:13px;color:var(--accent-light);">
           <strong>Pré-preenchido da Projeção</strong> — Dados da Projeção de Crescimento. Sincronize o Financeiro para puxar dados reais da API.
         </span>
@@ -607,7 +607,7 @@ Router.register('dre', (params, el) => {
 
       ${preenchidoGeral ? `
       <div style="margin-bottom:16px;padding:10px 14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px;">
-        <svg width="15" height="15" fill="none" stroke="#10b981" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <svg width="15" height="15" fill="none" stroke="var(--green)" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span style="font-size:13px;color:var(--green);">
           <strong>DRE Geral consolidado</strong> — Soma automática de todos os DREs de plataforma salvos neste período.
         </span>
@@ -620,11 +620,11 @@ Router.register('dre', (params, el) => {
 
       ${!temCache && !modoAuto && !preenchidoGeral && !preenchidoDaProjecao ? `
       <div style="margin-bottom:16px;padding:10px 14px;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.2);border-radius:var(--radius-sm);font-size:13px;color:var(--text-muted);">
-        💡 Sincronize <strong>${meses[estado.mes]} ${estado.ano}</strong> na página Financeiro para preencher o DRE automaticamente.
+        Sincronize <strong>${meses[estado.mes]} ${estado.ano}</strong> na página Financeiro para preencher o DRE automaticamente.
       </div>` : ''}
 
       ${isGeral && !preenchidoGeral && !modoAuto && !findDRE(estado.clienteId,'GERAL',estado.mes,estado.ano) ? `
-      <div style="margin-bottom:16px;padding:10px 14px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:var(--radius-sm);font-size:13px;color:#fbbf24;">
+      <div style="margin-bottom:16px;padding:10px 14px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:var(--radius-sm);font-size:13px;color:var(--yellow);">
         ⚠️ Nenhum DRE individual salvo e sem dados da API para este período. Sincronize o Financeiro ou salve os DREs por plataforma primeiro.
       </div>` : ''}
 
@@ -640,7 +640,7 @@ Router.register('dre', (params, el) => {
           <p style="color:var(--text-muted);margin:4px 0 0;font-size:13px;">${platLabel} · ${mesLabel} ${estado.ano} · ${dias} dias</p>
         </div>
         <div style="text-align:right;">
-          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Resultado</div>
+          <div style="font-size:11px;color:var(--text-muted);text-transform:none;letter-spacing:0;">Resultado</div>
           <div id="res-display" style="font-size:24px;font-weight:700;color:${rc};">${fmt(calc.resultado)}</div>
           <div id="res-pct-display" style="font-size:12px;color:${rc};">${fmtPct(calc.pct)} sobre faturamento</div>
         </div>
@@ -686,7 +686,7 @@ Router.register('dre', (params, el) => {
             <tr class="dre-custom-row">
               <td>
                 <div style="display:flex;align-items:center;gap:6px;">
-                  <span style="font-size:10px;color:${corTipo};font-weight:700;text-transform:uppercase;">${l.tipo==='receita'?'↑':'↓'}</span>
+                  <span style="font-size:10px;color:${corTipo};font-weight:700;text-transform:none;">${l.tipo==='receita'?'↑':'↓'}</span>
                   <input class="dre-inp-label" id="lbl-custom-${l.id}" type="text"
                     value="${l.label}" placeholder="Nome da linha" oninput="dreCalc()">
                   <button class="btn-rem-linha" onclick="dreRemoverLinha(${l.id})"
@@ -730,7 +730,7 @@ Router.register('dre', (params, el) => {
 
       <!-- Métricas -->
       <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:18px;">
-        <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-bottom:12px;">
           Métricas Operacionais · ${dias} dias no mês
         </div>
         <table class="dre-tbl">
@@ -800,7 +800,7 @@ Router.register('dre', (params, el) => {
         const isG  = d.plataforma === 'GERAL';
         return `<tr>
           <td>${c?c.nome:'—'}</td>
-          <td>${isG?'<span style="color:var(--green);font-weight:700;">📊 Geral</span>':d.plataforma}</td>
+          <td>${isG?'<span style="color:var(--green);font-weight:700;">Geral</span>':d.plataforma}</td>
           <td>${meses[d.mes]} ${d.ano}</td>
           <td style="text-align:right;">${fmt(calc.fat)}</td>
           <td style="text-align:right;color:${rc};">${fmt(calc.resultado)}</td>

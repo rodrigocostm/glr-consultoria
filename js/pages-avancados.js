@@ -90,16 +90,16 @@ Router.register('performance', (params, el) => {
   // Cor da célula de % meta
   function corMeta(pct) {
     if (pct === null) return { bg: 'transparent', text: 'var(--text-muted)' };
-    if (pct >= 100)   return { bg: '#10b98120', text: '#10b981' };
-    if (pct >= 85)    return { bg: '#f59e0b20', text: '#f59e0b' };
-    return                   { bg: '#ef444420', text: '#ef4444' };
+    if (pct >= 100)   return { bg: '#10b98120', text: 'var(--green)' };
+    if (pct >= 85)    return { bg: '#f59e0b20', text: 'var(--yellow)' };
+    return                   { bg: '#ef444420', text: 'var(--red)' };
   }
 
   function corCrescimento(pct) {
     if (pct === null) return 'var(--text-muted)';
-    if (pct >= 10)    return '#10b981';
-    if (pct >= 0)     return '#f59e0b';
-    return '#ef4444';
+    if (pct >= 10)    return 'var(--green)';
+    if (pct >= 0)     return 'var(--yellow)';
+    return 'var(--red)';
   }
 
   function renderTabela(gestorNome) {
@@ -211,7 +211,7 @@ Router.register('performance', (params, el) => {
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--green);border-radius:3px;"></span> Batendo a meta (≥100%)</span>
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--yellow);border-radius:3px;"></span> Quase batendo (85–99%)</span>
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--red);border-radius:3px;"></span> Abaixo da meta (&lt;85%)</span>
-      <span style="margin-left:auto;">📡 Dados atualizados em tempo real · Clique em um cliente para ver o perfil</span>
+      <span style="margin-left:auto;">Dados atualizados em tempo real · Clique em um cliente para ver o perfil</span>
     </div>`;
   }
 
@@ -269,33 +269,33 @@ Router.register('performance', (params, el) => {
       <div class="card" style="padding:0;overflow:hidden;margin-bottom:24px;">
 
         <!-- Header do gestor -->
-        <div style="padding:16px 20px;background:linear-gradient(135deg,#1a2744,#23305a);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div style="padding:16px 20px;background:var(--bg-subtle);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
           <div style="display:flex;align-items:center;gap:12px;">
             <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:700;color:white;font-size:18px;">${g.nome.charAt(0)}</div>
             <div>
-              <div style="font-size:16px;font-weight:700;color:white;">${g.nome}</div>
-              <div style="font-size:12px;color:rgba(255,255,255,0.6);">${clientes.length} cliente${clientes.length!==1?'s':''} · ${meses[hoje.getMonth()]} ${hoje.getFullYear()}</div>
+              <div style="font-size:16px;font-weight:700;color:var(--text-primary);">${g.nome}</div>
+              <div style="font-size:12px;color:var(--text-muted);">${clientes.length} cliente${clientes.length!==1?'s':''} · ${meses[hoje.getMonth()]} ${hoje.getFullYear()}</div>
             </div>
           </div>
           <div style="display:flex;gap:20px;flex-wrap:wrap;">
             <div style="text-align:center;">
-              <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:2px;">Meta Total</div>
-              <div style="font-size:15px;font-weight:700;color:white;">${tot.fatBase > 0 ? fmtR(tot.fatBase) : '—'}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Meta Total</div>
+              <div style="font-size:15px;font-weight:700;color:var(--text-primary);">${tot.fatBase > 0 ? fmtR(tot.fatBase) : '—'}</div>
             </div>
             <div style="text-align:center;">
-              <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:2px;">Projeção</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Projeção</div>
               <div style="font-size:15px;font-weight:700;color:var(--accent-light);">${tot.fatProj > 0 ? fmtR(tot.fatProj) : '—'}</div>
             </div>
             ${tot.fatReal > 0 ? `<div style="text-align:center;">
-              <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:2px;">Realizado</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Realizado</div>
               <div style="font-size:15px;font-weight:700;color:var(--green);">${fmtR(tot.fatReal)}</div>
             </div>` : ''}
             <div style="text-align:center;">
-              <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:2px;">% Meta</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">% Meta</div>
               <div style="font-size:15px;font-weight:700;color:${corTot.text};">${totPctMeta !== null ? totPctMeta.toFixed(0)+'%' : '—'}</div>
             </div>
             ${tot.recGLR > 0 ? `<div style="text-align:center;">
-              <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:2px;">Receita GLR</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Receita GLR</div>
               <div style="font-size:15px;font-weight:700;color:var(--green);">${fmtR(tot.recGLR)}</div>
             </div>` : ''}
           </div>
@@ -306,20 +306,20 @@ Router.register('performance', (params, el) => {
         <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1000px;">
           <thead>
             <tr style="background:var(--bg-base);border-bottom:2px solid var(--border);">
-              <th style="padding:9px 14px;text-align:left;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Empresa</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;">Meta Base</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">ADS%</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">Projeção</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">Fat. Real</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">vs Mês Ant.</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">Falta p/ Meta</th>
-              <th style="padding:9px 8px;text-align:center;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">% Meta</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">ADS Proj.</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">%ADS</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">Rec. GLR</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">${mesN(3)}</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">${mesN(2)}</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">${mesN(1)}</th>
+              <th style="padding:9px 14px;text-align:left;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;letter-spacing:0;">Empresa</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;letter-spacing:0;white-space:nowrap;">Meta Base</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">ADS%</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">Projeção</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">Fat. Real</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">vs Mês Ant.</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">Falta p/ Meta</th>
+              <th style="padding:9px 8px;text-align:center;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">% Meta</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">ADS Proj.</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">%ADS</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">Rec. GLR</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">${mesN(3)}</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">${mesN(2)}</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">${mesN(1)}</th>
             </tr>
           </thead>
           <tbody>
@@ -338,7 +338,7 @@ Router.register('performance', (params, el) => {
                 <td style="padding:10px 8px;text-align:right;font-weight:600;color:var(--accent-light);">${d.fatProj > 0 ? fmtR(d.fatProj) : '—'}</td>
                 <td style="padding:10px 8px;text-align:right;font-weight:${d.fatReal>0?'700':'400'};color:${d.fatReal>0?'var(--text-primary)':'var(--text-muted)'};">${d.fatReal > 0 ? fmtR(d.fatReal) : '<span style="font-size:10px;">sem DRE</span>'}</td>
                 <td style="padding:10px 8px;text-align:right;font-weight:600;color:${corCrescimento(d.compMesAnt)};">${d.compMesAnt !== null ? fmtPct(d.compMesAnt) : '—'}</td>
-                <td style="padding:10px 8px;text-align:right;color:${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? 'var(--green)' : '#f97316') : 'var(--text-muted)'};">${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? '✅ Batida' : fmtR(d.faltaMeta)) : '—'}</td>
+                <td style="padding:10px 8px;text-align:right;color:${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? 'var(--green)' : 'var(--orange)') : 'var(--text-muted)'};">${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? '✅ Batida' : fmtR(d.faltaMeta)) : '—'}</td>
                 <td style="padding:10px 8px;text-align:center;">
                   ${d.pctMeta !== null
                     ? `<span style="background:${cor.bg};color:${cor.text};font-weight:700;padding:3px 10px;border-radius:99px;font-size:11px;white-space:nowrap;">${d.pctMeta.toFixed(1)}%</span>`
@@ -483,7 +483,7 @@ function gerarAlertasAutomaticos() {
           c.id, conta);
       }
 
-      // ── 📉 QUEDA ────────────────────────────────────────────────
+      // ── QUEDA ────────────────────────────────────────────────
       if (pctADS > 20 && pctADS <= 30) {
         add('queda',
           `ADS elevado — ${plat.nome}`,
@@ -503,7 +503,7 @@ function gerarAlertasAutomaticos() {
           c.id, conta);
       }
 
-      // ── 🎯 METAS / ATENÇÃO ──────────────────────────────────────
+      // ── METAS / ATENÇÃO ──────────────────────────────────────
       if (fatDRE > 0 && fatProj > 0 && fatDRE >= fatProj * 0.80 && fatDRE < fatProj * 0.95) {
         add('meta',
           `Próximo da meta — ${plat.nome}`,
@@ -598,7 +598,7 @@ Router.register('alertas', (params, el) => {
   const atencao   = alertas.filter(a => a.tipo === 'atrasada' || a.tipo === 'meta');
   const positivos = alertas.filter(a => a.tipo === 'positivo');
 
-  const cores  = { risco:'#ef4444', queda:'#f97316', atrasada:'#f59e0b', meta:'#6366f1', positivo:'#10b981' };
+  const cores  = { risco:'var(--red)', queda:'var(--orange)', atrasada:'var(--yellow)', meta:'var(--accent)', positivo:'var(--green)' };
   const icons  = { risco:'🚨', queda:'📉', atrasada:'⏰', meta:'🎯', positivo:'✅' };
   const labels = { risco:'Risco', queda:'Queda', atrasada:'Atrasada', meta:'Meta', positivo:'Positivo' };
 
@@ -614,17 +614,17 @@ Router.register('alertas', (params, el) => {
 
     return `<div class="alert-card" style="cursor:${cliente?'pointer':'default'}"
               onclick="${cliente ? `Router.navigate('cliente-perfil',{id:${a.clienteId}})` : ''}">
-      <div class="alert-icon" style="background:${cor}20;">
+      <div class="alert-icon" style="background:color-mix(in srgb,${cor} 13%,transparent);">
         <span style="font-size:18px;">${icons[a.tipo]}</span>
       </div>
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
           <div class="alert-title">${a.titulo}</div>
-          <span style="font-size:10px;background:${cor}20;color:${cor};padding:1px 7px;border-radius:99px;font-weight:600;">${labels[a.tipo]}</span>
+          <span style="font-size:10px;background:color-mix(in srgb,${cor} 13%,transparent);color:${cor};padding:1px 7px;border-radius:99px;font-weight:600;">${labels[a.tipo]}</span>
           ${contaNome ? `<span style="font-size:10px;background:rgba(255,255,255,0.07);color:var(--text-muted);padding:1px 7px;border-radius:99px;">${platEmoji} ${contaNome}</span>` : ''}
         </div>
         <div class="alert-desc">${a.descricao}</div>
-        <div style="margin-top:5px;font-size:11px;color:var(--text-muted);">📅 Hoje${cliente ? ` · ${cliente.nome}` : ''}</div>
+        <div style="margin-top:5px;font-size:11px;color:var(--text-muted);">Hoje${cliente ? ` · ${cliente.nome}` : ''}</div>
       </div>
       ${cliente ? `<button class="btn btn-ghost btn-sm" style="flex-shrink:0;" onclick="event.stopPropagation();Router.navigate('cliente-perfil',{id:${a.clienteId}})">Ver cliente →</button>` : ''}
     </div>`;
@@ -651,8 +651,8 @@ Router.register('alertas', (params, el) => {
         { tipo:'meta',     label:'Metas',     v: alertas.filter(a=>a.tipo==='meta').length },
         { tipo:'positivo', label:'Positivos', v: alertas.filter(a=>a.tipo==='positivo').length },
       ].map(k => `
-        <div class="kpi-card" style="border-color:${cores[k.tipo]}30;">
-          <div class="kpi-icon" style="background:${cores[k.tipo]}20;"><span style="font-size:18px;">${icons[k.tipo]}</span></div>
+        <div class="kpi-card" style="border-color:color-mix(in srgb,${cores[k.tipo]} 19%,transparent);">
+          <div class="kpi-icon" style="background:color-mix(in srgb,${cores[k.tipo]} 13%,transparent);"><span style="font-size:18px;">${icons[k.tipo]}</span></div>
           <div class="kpi-label">${k.label}</div>
           <div class="kpi-value" style="color:${cores[k.tipo]};">${k.v}</div>
         </div>`).join('')}
@@ -883,7 +883,7 @@ Router.register('projecao', (params, el) => {
       box.id = 'diag-api-box';
       box.style.cssText = 'position:fixed;bottom:12px;right:12px;width:520px;max-height:70vh;overflow-y:auto;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;z-index:99999;font-family:monospace;font-size:11px;color:#e5e7eb;box-shadow:0 10px 40px rgba(0,0,0,.5);';
       box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <strong style="color:var(--accent-light);">🔍 Diagnóstico Projeção (temporário)</strong>
+        <strong style="color:var(--accent-light);">Diagnóstico Projeção (temporário)</strong>
         <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button>
       </div><div id="diag-api-conteudo"></div>`;
       document.body.appendChild(box);
@@ -900,7 +900,7 @@ Router.register('projecao', (params, el) => {
     let vinculos = {};
     try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
     const contasVinc = vinculos[String(cidAtivo)] || [];
-    if (!contasVinc.length) { if (!silencioso) alert('Nenhuma conta vinculada. Use 🔗 Vincular conta primeiro.'); return; }
+    if (!contasVinc.length) { if (!silencioso) alert('Nenhuma conta vinculada. Use Vincular conta primeiro.'); return; }
     const apiKey = localStorage.getItem('glr_mc_apikey')||'';
     if (!apiKey) { if (!silencioso) alert('Configure a API Key nas Integrações.'); return; }
 
@@ -1185,7 +1185,7 @@ Router.register('projecao', (params, el) => {
       if (!silencioso) alert('Erro ao buscar dados: '+e.message);
       else console.warn('[Projeção] Erro na busca automática:', e.message);
     } finally {
-      if (btn) { btn.disabled=false; btn.textContent='🔄 Buscar dados'; }
+      if (btn) { btn.disabled=false; btn.textContent='Buscar dados'; }
     }
   }
 
@@ -1292,8 +1292,8 @@ Router.register('projecao', (params, el) => {
     const tagMes = document.getElementById('pn-mes'); if (tagMes) tagMes.textContent = projecaoAtiva.mes;
     const inpDb = document.getElementById('inp-data-base'); if (inpDb && projecaoAtiva.dataBase && inpDb.value !== projecaoAtiva.dataBase) inpDb.value = projecaoAtiva.dataBase;
     const badge = document.getElementById('pn-fonte');
-    if (badge) badge.innerHTML = r.nBase ? `⚡ base automática · ${r.nBase} conta${r.nBase === 1 ? '' : 's'}` : (r.nContas ? 'contas sem base — use Buscar dados' : 'nenhuma conta vinculada');
-    const mkt = l => { const m = String(l.p.marketplace || l.p._platNome || '').toLowerCase(); return m.includes('shopee') ? { t: 'Shopee', c: '#eb6834' } : (m.includes('ml') || m.includes('meli') || m.includes('mercado')) ? { t: 'Mercado Livre', c: '#d9a400' } : { t: l.p.contaId ? 'Conta' : 'Manual', c: '#64748b' }; };
+    if (badge) badge.innerHTML = r.nBase ? `base automática · ${r.nBase} conta${r.nBase === 1 ? '' : 's'}` : (r.nContas ? 'contas sem base — use Buscar dados' : 'nenhuma conta vinculada');
+    const mkt = l => { const m = String(l.p.marketplace || l.p._platNome || '').toLowerCase(); return m.includes('shopee') ? { t: 'Shopee', c: '#eb6834' } : (m.includes('ml') || m.includes('meli') || m.includes('mercado')) ? { t: 'Mercado Livre', c: '#d9a400' } : { t: l.p.contaId ? 'Conta' : 'Manual', c: 'var(--text-muted)' }; };
     const inp = (i, campo, v, ph) => `<input class="pn-inp" value="${v ?? ''}" placeholder="${ph || '0'}" onchange="updatePlat(${i},'${campo}',this.value)">`;
 
     box.innerHTML = `
@@ -1334,7 +1334,7 @@ Router.register('projecao', (params, el) => {
           <div class="card pn-conta" style="--m:${m.c}">
             <div class="pn-conta-top">
               <div style="min-width:0"><div class="pn-conta-nome">${l.p.contaId ? _pnEsc(l.p.nome) : inp(l.i, 'nome', _pnEsc(l.p.nome), 'Nome da fonte')}</div>
-              <div class="pn-sub"><span class="pn-mkt">${m.t}</span>${l.base ? ' · ⚡ base automática' : l.p.contaId ? ' · fora da base' : ' · digitado'}</div></div>
+              <div class="pn-sub"><span class="pn-mkt">${m.t}</span>${l.base ? ' · base automática' : l.p.contaId ? ' · fora da base' : ' · digitado'}</div></div>
               ${l.p.contaId ? '' : `<button class="pn-x" onclick="removePlat(${l.i})" title="Remover esta fonte">✕</button>`}
             </div>
             <div class="pn-conta-num"><div><div class="pn-rot">Projeção</div><div class="pn-val">${_pnFmt0(l.proj)}</div></div><div style="text-align:right">${chip(`vs ${_pnEsc(m1Nome)}`, l.evo)}</div></div>
@@ -1345,7 +1345,7 @@ Router.register('projecao', (params, el) => {
               <div><span>TACOS</span><b>${l.tacos != null ? l.tacos.toFixed(1).replace('.', ',') + '%' : '—'}</b></div>
             </div>
             <div class="pn-conta-meses">${[['marco', l.m3, projecaoAtiva.labelM3 || _labelM3Default], ['abril', l.m2, projecaoAtiva.labelM2 || _labelM2Default], ['maio', l.m1, projecaoAtiva.labelM1 || _labelM1Default]].map(([campo, v, lb]) => `<div><span>${_pnEsc(lb.split(' ')[0].slice(0, 3))}</span>${l.base ? `<b>${v ? _pnFmt0(v) : '—'}</b>` : inp(l.i, campo, l.p[campo], '0,00')}</div>`).join('')}</div>
-          </div>`; }).join('') || '<div class="card pn-vazio">Nenhuma conta nesta projeção. Use <b>🔗 Vincular contas</b> para puxar os números da base automática.</div>'}
+          </div>`; }).join('') || '<div class="card pn-vazio">Nenhuma conta nesta projeção. Use <b>Vincular contas</b> para puxar os números da base automática.</div>'}
       </div>`;
     setTimeout(atualizarGrafico, 0);
   }
@@ -1385,7 +1385,7 @@ Router.register('projecao', (params, el) => {
     </div>
     <div id="pn-conteudo"></div>
     <div class="card" style="margin-top:18px;padding:16px 18px;">
-      <div class="pn-graf-t" style="margin-bottom:8px;">📝 Observações</div>
+      <div class="pn-graf-t" style="margin-bottom:8px;">Observações</div>
       <textarea id="proj-obs" class="form-textarea" placeholder="Contexto do mês, eventos, campanhas, rupturas de estoque…" style="min-height:70px;">${_pnEsc(projecaoAtiva.obs || '')}</textarea>
     </div>
   </div>`;
@@ -1394,7 +1394,7 @@ Router.register('projecao', (params, el) => {
     const st = document.createElement('style');
     st.id = 'pn-styles';
     st.textContent = `
-      .pn{--pn-azul:#2a78d6;--pn-cinza:#94a3b8;--pn-bom:#16a34a;--pn-ruim:#dc2626;}
+      .pn{--pn-azul:var(--accent);--pn-cinza:var(--text-muted);--pn-bom:var(--green);--pn-ruim:var(--red);}
       .pn-mut{font-size:12px;color:var(--text-muted);}
       .pn-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:10px;}
       .pn-head-l{min-width:0;}
@@ -1453,7 +1453,7 @@ Router.register('projecao', (params, el) => {
       .pn-conta-nome{font-weight:800;color:var(--text-primary);font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
       .pn-mkt{color:var(--m);font-weight:700;}
       .pn-conta .pn-sub{font-size:13px;}
-      .pn-x{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:6px;} .pn-x:hover{color:#dc2626;background:rgba(220,38,38,.08);}
+      .pn-x{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:6px;} .pn-x:hover{color:var(--red);background:rgba(220,38,38,.08);}
       .pn-conta-num{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;margin:6px 0 16px;}
       .pn-conta-num .pn-val{font-size:30px;letter-spacing:-.5px;}
       .pn-conta-num .pn-chip{font-size:15px;padding:7px 11px;}
@@ -1503,7 +1503,7 @@ Router.register('projecao', (params, el) => {
   window.toggleGLRProjecao = () => {
     ocultarGLR = !ocultarGLR;
     const btn = document.getElementById('btn-toggle-glr');
-    if (btn) btn.textContent = ocultarGLR ? '🙈 GLR oculta' : '👁 Ocultar GLR';
+    if (btn) btn.textContent = ocultarGLR ? 'GLR oculta' : 'Ocultar GLR';
     renderTabela();
   };
 
@@ -1649,7 +1649,7 @@ Router.register('projecao', (params, el) => {
 
     // Mini-toast de confirmação
     const toast = document.createElement('div');
-    toast.style.cssText = `position:fixed;bottom:24px;right:24px;background:#10b981;color:white;padding:12px 20px;border-radius:10px;font-size:13.5px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.3);animation:fadeIn 0.2s ease;`;
+    toast.style.cssText = `position:fixed;bottom:24px;right:24px;background:var(--green);color:white;padding:12px 20px;border-radius:10px;font-size:13.5px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.3);animation:fadeIn 0.2s ease;`;
     toast.innerHTML = `✅ Projeção salva — dados sincronizados com o cliente`;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
@@ -1747,7 +1747,7 @@ Router.register('projecao', (params, el) => {
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:28px 32px;max-width:520px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.5);max-height:85vh;overflow-y:auto;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
             <div>
-              <div style="font-size:16px;font-weight:700;color:var(--text-primary);">🔗 Contas vinculadas</div>
+              <div style="font-size:16px;font-weight:700;color:var(--text-primary);">Contas vinculadas</div>
               <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${cliente?.nome || 'Cliente #'+cidAtivo}</div>
             </div>
             <button id="btn-fechar-vinculos" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted);">✕</button>
@@ -1756,7 +1756,7 @@ Router.register('projecao', (params, el) => {
           ${vinculadas.length === 0
             ? `<div style="padding:16px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;font-size:13px;color:var(--yellow);margin-bottom:16px;">⚠️ Nenhuma conta vinculada ainda</div>`
             : `<div style="margin-bottom:16px;">
-                <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Contas vinculadas (${vinculadas.length})</div>
+                <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-bottom:8px;">Contas vinculadas (${vinculadas.length})</div>
                 <div style="display:flex;flex-direction:column;gap:8px;">
                   ${vinculadas.map(c => {
                     const tag = (c.tags||[]).map(t=>t.name||t.value).filter(Boolean).join(' · ');
@@ -1776,7 +1776,7 @@ Router.register('projecao', (params, el) => {
 
           ${contasDisponiveis.length > 0 ? `
           <div>
-            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Adicionar conta</div>
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-bottom:8px;">Adicionar conta</div>
             <div style="display:flex;flex-direction:column;gap:6px;">
               ${contasDisponiveis.map(c => {
                 const tag = (c.tags||[]).map(t=>t.name||t.value).filter(Boolean).join(' · ');
@@ -2057,7 +2057,7 @@ Router.register('relatorios', (params, el) => {
       <!-- Cabeçalho -->
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:3px solid #1a2744;">
         <div>
-          <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Relatório de Gestão · Confidencial</div>
+          <div style="font-size:11px;color:#888;text-transform:none;letter-spacing:0;margin-bottom:6px;">Relatório de Gestão · Confidencial</div>
           <div style="font-size:26px;font-weight:700;color:#1a2744;">${c.nome}</div>
           <div style="font-size:13px;color:#666;margin-top:4px;">${mesAtual} ${anoAtual} · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
           <div style="margin-top:8px;">
@@ -2075,7 +2075,7 @@ Router.register('relatorios', (params, el) => {
       <!-- KPIs da Projeção -->
       ${plats.length ? `
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:14px;color:#1a2744;">📊 Projeção do Mês — ${proj?.mes || mesAtual+' '+anoAtual}</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:14px;color:#1a2744;">Projeção do Mês — ${proj?.mes || mesAtual+' '+anoAtual}</div>
         <div style="display:grid;grid-template-columns:repeat(${receitaGLR>0?5:4},1fr);gap:10px;">
           ${[
             { l:'Faturamento Projetado', v: fmtFull(fatProj), icon:'💰', c:'#6366f1' },
@@ -2087,7 +2087,7 @@ Router.register('relatorios', (params, el) => {
             <div style="background:var(--bg-subtle);border:1px solid #e5e7eb;border-radius:8px;padding:14px;text-align:center;">
               <div style="font-size:20px;margin-bottom:4px;">${k.icon}</div>
               <div style="font-size:15px;font-weight:700;color:${k.c};">${k.v}</div>
-              <div style="font-size:10px;color:#888;margin-top:2px;text-transform:uppercase;letter-spacing:0.3px;">${k.l}</div>
+              <div style="font-size:10px;color:#888;margin-top:2px;text-transform:none;letter-spacing:0;">${k.l}</div>
             </div>`).join('')}
         </div>
         ${pctADS>0?`<div style="margin-top:10px;font-size:12px;color:#888;text-align:right;">% ADS sobre Faturamento: <strong style="color:var(--yellow);">${pctADS.toFixed(1)}%</strong> · Dias decorridos: <strong>${dd}</strong> de <strong>${dm}</strong></div>`:''}
@@ -2099,7 +2099,7 @@ Router.register('relatorios', (params, el) => {
       <!-- Plataformas -->
       ${plats.length ? `
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#1a2744;">🏪 Desempenho por Plataforma</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#1a2744;">Desempenho por Plataforma</div>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
           <thead>
             <tr style="background:var(--bg-subtle);color:var(--text-secondary);">
@@ -2141,7 +2141,7 @@ Router.register('relatorios', (params, el) => {
       <!-- Comparativo de Faturamento -->
       ${(fatAtual > 0 || fatProj > 0 || histAnteriores.length > 0) ? `
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:14px;color:#1a2744;">📅 Comparativo de Faturamento — ${mesAnoAtual}</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:14px;color:#1a2744;">Comparativo de Faturamento — ${mesAnoAtual}</div>
 
         ${(()=>{
           // Monta todas as linhas: Atual + Projeção + meses anteriores
@@ -2189,7 +2189,7 @@ Router.register('relatorios', (params, el) => {
       <!-- DRE mais recente -->
       ${dreRecente ? `
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#1a2744;">📑 DRE — ${meses[dreRecente.mes]} ${dreRecente.ano} · ${dreRecente.plataforma}</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#1a2744;">DRE — ${meses[dreRecente.mes]} ${dreRecente.ano} · ${dreRecente.plataforma}</div>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
           ${[
             { l:'Faturamento', v: dreRecente.valores.faturamento, receita: true },
@@ -2230,7 +2230,7 @@ Router.register('relatorios', (params, el) => {
 
       <!-- Ações Executadas -->
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#1a2744;">⚡ Ações Executadas</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#1a2744;">Ações Executadas</div>
         ${acoes.length ? `
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
           ${acoes.slice(0,10).map((a,i)=>`
@@ -2246,7 +2246,7 @@ Router.register('relatorios', (params, el) => {
       <!-- Oportunidades -->
       ${opps.length ? `
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:var(--green);">💡 Oportunidades</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:var(--green);">Oportunidades</div>
         ${opps.map(o=>`
           <div style="padding:10px 14px;background:#10b98108;border:1px solid #10b98133;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
             <div>
@@ -2259,7 +2259,7 @@ Router.register('relatorios', (params, el) => {
 
       <!-- Próximos Passos -->
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:var(--yellow);">📋 Próximos Passos</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:var(--yellow);">Próximos Passos</div>
         ${tarefasPend.length ? `
         <div style="display:flex;flex-direction:column;gap:8px;">
           ${tarefasPend.map((t,i)=>`
@@ -2418,7 +2418,7 @@ Router.register('ia', (params, el) => {
     <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;">
       <div class="card" style="flex-shrink:0;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-          <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:16px;">🤖</div>
+          <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:16px;">🤖</div>
           <div>
             <div style="font-size:14px;font-weight:700;">GLR IA Copiloto</div>
             <div style="font-size:11px;color:var(--green);">● Online</div>
@@ -2428,7 +2428,7 @@ Router.register('ia', (params, el) => {
       </div>
 
       <div class="card" style="flex:1;overflow-y:auto;">
-        <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Perguntas Sugeridas</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-bottom:10px;">Perguntas Sugeridas</div>
         <div style="display:flex;flex-direction:column;gap:6px;">
           ${sugestoes.map(s => `
             <button class="ia-chip" style="text-align:left;justify-content:flex-start;border-radius:var(--radius-sm);" onclick="sendIAMessage('${s.replace(/'/g, "\\'")}')">
@@ -2443,7 +2443,7 @@ Router.register('ia', (params, el) => {
     <div class="card" style="flex:1;display:flex;flex-direction:column;padding:0;overflow:hidden;">
       <div id="ia-messages" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;">
         <div style="display:flex;gap:10px;">
-          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
+          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
           <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;max-width:80%;">
             <div style="font-size:14px;font-weight:600;margin-bottom:6px;color:var(--accent-light);">Olá! Sou o Copiloto da GLR 👋</div>
             <div style="font-size:13.5px;color:var(--text-secondary);line-height:1.6;">Analiso os dados reais cadastrados no sistema — sem inventar nada. Clientes, tarefas, gestores e faturamentos. Pergunte o que quiser!</div>
@@ -2475,7 +2475,7 @@ Router.register('ia', (params, el) => {
 
     const typingId = 'typing-' + Date.now();
     messagesDiv.innerHTML += `<div id="${typingId}" style="display:flex;gap:10px;">
-      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
+      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;">
         <div style="display:flex;gap:4px;align-items:center;">
           <div style="width:6px;height:6px;border-radius:50%;background:var(--text-muted);animation:pulse 1s infinite;"></div>
@@ -2496,7 +2496,7 @@ Router.register('ia', (params, el) => {
         .replace(/\n/g, '<br>');
 
       messagesDiv.innerHTML += `<div style="display:flex;gap:10px;">
-        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
+        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
         <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;max-width:85%;font-size:13.5px;line-height:1.7;color:var(--text-secondary);">${formatted}</div>
       </div>`;
       messagesDiv.scrollTop = messagesDiv.scrollHeight;

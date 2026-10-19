@@ -280,11 +280,11 @@ Router.register('conciliacao', async (params, el) => {
 
   function statusRepasseLabel(p) {
     if (p.plataforma === 'Mercado Livre') {
-      if (p.dataRepasse) return { label: `Pago em ${p.dataRepasse}`, cor: '#10b981' };
+      if (p.dataRepasse) return { label: `Pago em ${p.dataRepasse}`, cor: 'var(--green)' };
       return { label: 'Sem data (API não retornou)', cor: 'var(--text-muted)' };
     }
-    if (p.statusPagamentoRaw === 'released') return { label: `Liberado em ${p.dataRepasse}`, cor: '#10b981' };
-    if (p.statusPagamentoRaw === 'scheduled') return { label: `Agendado p/ ${p.dataRepasse}`, cor: '#f59e0b' };
+    if (p.statusPagamentoRaw === 'released') return { label: `Liberado em ${p.dataRepasse}`, cor: 'var(--green)' };
+    if (p.statusPagamentoRaw === 'scheduled') return { label: `Agendado p/ ${p.dataRepasse}`, cor: 'var(--yellow)' };
     return { label: 'Sem previsão', cor: 'var(--text-muted)' };
   }
 
@@ -307,10 +307,10 @@ Router.register('conciliacao', async (params, el) => {
     <div class="page">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
         <div>
-          <h1 style="font-size:20px;font-weight:700;margin:0;">🧾 Conciliação Financeira</h1>
+          <h1 style="font-size:20px;font-weight:700;margin:0;">Conciliação Financeira</h1>
           <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">${atualizadoEm?`Atualizado em ${new Date(atualizadoEm).toLocaleString('pt-BR')}`:'Selecione uma conta e clique em Buscar.'}</div>
         </div>
-        <button id="conc-btn-buscar" class="btn-primary" style="padding:8px 16px;" ${carregando||!contaSel?'disabled':''} onclick="_conciliacaoBuscar()">${carregando?'⏳ Buscando...':'🔄 Buscar'}</button>
+        <button id="conc-btn-buscar" class="btn-primary" style="padding:8px 16px;" ${carregando||!contaSel?'disabled':''} onclick="_conciliacaoBuscar()">${carregando?'⏳ Buscando...':'Buscar'}</button>
       </div>
 
       <div class="card mb-16">
@@ -321,7 +321,7 @@ Router.register('conciliacao', async (params, el) => {
             <option value="7" ${filtroPeriodo==='7'?'selected':''}>Últimos 7 dias</option>
             <option value="15" ${filtroPeriodo==='15'?'selected':''}>Últimos 15 dias</option>
             <option value="30" ${filtroPeriodo==='30'?'selected':''}>Últimos 30 dias</option>
-            <option value="custom" ${filtroPeriodo==='custom'?'selected':''}>📅 Personalizado</option>
+            <option value="custom" ${filtroPeriodo==='custom'?'selected':''}>Personalizado</option>
           </select>
           <div id="conc-custom-range" style="display:${filtroPeriodo==='custom'?'flex':'none'};align-items:center;gap:6px;">
             <input type="date" id="conc-date-from" class="form-input" value="${customFrom}" style="width:140px;">
@@ -346,7 +346,7 @@ Router.register('conciliacao', async (params, el) => {
         <div class="kpi-card"><div class="kpi-label">Pedidos</div><div class="kpi-value">${totalPedidos}</div></div>
         <div class="kpi-card"><div class="kpi-label">✅ Batem</div><div class="kpi-value" style="color:var(--green);">${totalBatem}</div></div>
         <div class="kpi-card"><div class="kpi-label">⚠️ Divergem</div><div class="kpi-value" style="color:var(--red);">${totalDivergem}</div></div>
-        <div class="kpi-card"><div class="kpi-label">💰 Pagos</div><div class="kpi-value" style="color:var(--green);">${totalPago}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Pagos</div><div class="kpi-value" style="color:var(--green);">${totalPago}</div></div>
         <div class="kpi-card"><div class="kpi-label">⏳ Pendentes</div><div class="kpi-value" style="color:var(--yellow);">${totalPendente}</div></div>
         <div class="kpi-card"><div class="kpi-label">Diferença total</div><div class="kpi-value" style="color:${Math.abs(somaDiff)<1?'var(--green)':'var(--red)'};font-size:15px;">${R$(somaDiff)}</div></div>
       </div>

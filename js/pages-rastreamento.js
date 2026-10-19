@@ -35,7 +35,7 @@ function renderShell() {
   if (!root) return;
   root.innerHTML = `
     <div style="margin-bottom:24px;">
-      <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">🕵️ Histórico de Alterações</h2>
+      <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">Histórico de Alterações</h2>
       <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0;">
         Compara o estado atual com o último retrato salvo pra detectar mudanças de orçamento/status de ADS e de preço.
         Só enxerga diferença entre uma atualização e outra — os marketplaces não têm log de alterações pra consultar.
@@ -219,7 +219,7 @@ window._trackEscanearAds = async function() {
   const logFinal = logArr.slice(0, 3000); // guarda só as 3000 mudanças mais recentes
   salvarJSON(K_ADS_LOG, logFinal);
 
-  if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar mudanças agora'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Verificar mudanças agora'; }
   const novasMudancas = logArr.length - totalAntes;
   if (statusEl) statusEl.textContent = `Verificado em ${new Date().toLocaleString('pt-BR')} — ${contasVerificadas} conta(s), ${novasMudancas} mudança(s) nova(s) detectada(s).`;
   renderAdsLog();
@@ -234,7 +234,7 @@ function renderAdsLog() {
     return;
   }
   el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
-    <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;">
+    <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:none;">
       <th style="text-align:left;padding:6px 8px;">Quando</th><th style="text-align:left;padding:6px 8px;">Conta</th><th style="text-align:left;padding:6px 8px;">Campanha</th><th style="text-align:left;padding:6px 8px;">Campo</th><th style="text-align:right;padding:6px 8px;">De</th><th style="text-align:right;padding:6px 8px;">Para</th>
     </tr></thead>
     <tbody>${logArr.slice(0, 150).map(l => `<tr style="border-top:1px solid var(--border);">
@@ -311,7 +311,7 @@ window._trackEscanearPrecos = async function() {
   salvarJSON(K_PRECO_SNAP, snapPorConta);
   salvarJSON(K_PRECO_LOG, logArr.slice(0, 3000));
 
-  if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar mudanças agora'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Verificar mudanças agora'; }
   if (statusEl) {
     statusEl.innerHTML = erro
       ? `<span style="color:var(--red);">⚠️ Erro em ${nomeConta}: ${erro}</span>`
@@ -329,7 +329,7 @@ function renderPrecoLog() {
     return;
   }
   el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
-    <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;">
+    <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:none;">
       <th style="text-align:left;padding:6px 8px;">Quando</th><th style="text-align:left;padding:6px 8px;">Anúncio</th><th style="text-align:right;padding:6px 8px;">De</th><th style="text-align:right;padding:6px 8px;">Para</th>
     </tr></thead>
     <tbody>${logArr.slice(0, 150).map(l => `<tr style="border-top:1px solid var(--border);">
@@ -391,7 +391,7 @@ window._trackEscanearPrevendaShopee = async function() {
   salvarJSON(K_PREVENDA_SNAP, snapPorConta);
   salvarJSON(K_PREVENDA_LOG, logArr.slice(0, 3000));
 
-  if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar pré-venda Shopee (todas as contas)'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Verificar pré-venda Shopee (todas as contas)'; }
   if (statusEl) {
     statusEl.innerHTML = erro
       ? `<span style="color:var(--red);">⚠️ ${contasVerificadas}/${contasShopee.length} conta(s) Shopee verificada(s), ${totalItens} anúncio(s) — último erro: ${erro}</span>`
@@ -425,9 +425,9 @@ function renderPrevendaAtual() {
   }
   const badge = mp => mp === 'shopee' ? '<span style="color:#ee4d2d;font-weight:600;">🟠 Shopee</span>' : mp === 'ml' ? '<span style="color:#ffd100;background:#3483fa;padding:1px 6px;border-radius:3px;font-weight:600;">ML</span>' : '—';
   el.innerHTML = `<div style="margin-bottom:14px;">
-    <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">📦 Em pré-venda agora (${atuais.length})</div>
+    <div style="font-size:11px;color:var(--text-muted);text-transform:none;margin-bottom:6px;">Em pré-venda agora (${atuais.length})</div>
     <table style="width:100%;border-collapse:collapse;">
-      <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;">
+      <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:none;">
         <th style="text-align:left;padding:6px 8px;">Plataforma</th><th style="text-align:left;padding:6px 8px;">ID</th><th style="text-align:left;padding:6px 8px;">Conta</th><th style="text-align:left;padding:6px 8px;">Anúncio</th>
       </tr></thead>
       <tbody>${atuais.map(a => `<tr style="border-top:1px solid var(--border);">
@@ -449,7 +449,7 @@ function renderPrevendaLog() {
     return;
   }
   el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
-    <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;">
+    <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:none;">
       <th style="text-align:left;padding:6px 8px;">Quando</th><th style="text-align:left;padding:6px 8px;">Anúncio</th><th style="text-align:right;padding:6px 8px;">De</th><th style="text-align:right;padding:6px 8px;">Para</th>
     </tr></thead>
     <tbody>${logArr.slice(0, 150).map(l => `<tr style="border-top:1px solid var(--border);">
@@ -527,7 +527,7 @@ window._trackEscanearPrevendaML = async function() {
   salvarJSON(K_PREVENDA_SNAP, snapPorConta);
   salvarJSON(K_PREVENDA_LOG, logArr.slice(0, 3000));
 
-  if (btn) { btn.disabled = false; btn.textContent = '🔄 Verificar pré-venda ML (todas as contas)'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Verificar pré-venda ML (todas as contas)'; }
   if (statusEl) {
     statusEl.innerHTML = erro
       ? `<span style="color:var(--red);">⚠️ ${contasVerificadas}/${contasML.length} conta(s) ML verificada(s), ${totalItens} anúncio(s) — último erro: ${erro} (contas com esse erro específico precisam reconectar em marketplaces.tiops.com.br)</span>`
@@ -566,7 +566,7 @@ window._trackListarEstoqueML = async function() {
   todos.sort((a, b) => (typeof a.estoque === 'number' ? a.estoque : 999999) - (typeof b.estoque === 'number' ? b.estoque : 999999));
   const mostrar = todos.slice(0, 300);
 
-  if (btn) { btn.disabled = false; btn.textContent = '📋 Ver estoque de todos os anúncios ML'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Ver estoque de todos os anúncios ML'; }
 
   if (!todos.length) {
     el.innerHTML = `<div style="padding:14px;text-align:center;color:var(--red);font-size:12.5px;">Nenhum anúncio encontrado${erro ? ' — ' + erro : ''}.</div>`;
@@ -574,12 +574,12 @@ window._trackListarEstoqueML = async function() {
   }
 
   el.innerHTML = `
-    <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">
-      📋 Estoque de todos os anúncios ML (${todos.length} total, mostrando os ${mostrar.length} com menor estoque)${erro ? ' — algumas contas deram erro' : ''}
+    <div style="font-size:11px;color:var(--text-muted);text-transform:none;margin-bottom:6px;">
+      Estoque de todos os anúncios ML (${todos.length} total, mostrando os ${mostrar.length} com menor estoque)${erro ? ' — algumas contas deram erro' : ''}
     </div>
     <div style="max-height:400px;overflow-y:auto;">
       <table style="width:100%;border-collapse:collapse;">
-        <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;position:sticky;top:0;background:var(--bg-card);">
+        <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:none;position:sticky;top:0;background:var(--bg-card);">
           <th style="text-align:left;padding:6px 8px;">MLB</th><th style="text-align:left;padding:6px 8px;">Conta</th><th style="text-align:left;padding:6px 8px;">Anúncio</th><th style="text-align:right;padding:6px 8px;">Estoque</th><th style="text-align:left;padding:6px 8px;">Sub-status</th>
         </tr></thead>
         <tbody>${mostrar.map(it => `<tr style="border-top:1px solid var(--border);${it.estoque === 0 ? 'background:rgba(220,38,38,0.08);' : ''}">

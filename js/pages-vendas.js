@@ -136,7 +136,7 @@ Router.register('vendas', async (params, el) => {
       box.id = 'diag-api-box';
       box.style.cssText = 'position:fixed;bottom:12px;right:12px;width:520px;max-height:70vh;overflow-y:auto;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;z-index:99999;font-family:monospace;font-size:11px;color:#e5e7eb;box-shadow:0 10px 40px rgba(0,0,0,.5);';
       box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <strong style="color:var(--accent-light);">🔍 Diagnóstico API (temporário)</strong>
+        <strong style="color:var(--accent-light);">Diagnóstico API (temporário)</strong>
         <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button>
       </div><div id="diag-api-conteudo"></div>`;
       document.body.appendChild(box);
@@ -180,10 +180,10 @@ Router.register('vendas', async (params, el) => {
   const platCor = { 'Mercado Livre':'#f59e0b', 'Shopee':'#f97316', 'Amazon':'#94a3b8', 'TikTok Shop':'#25d4d0', 'Magalu':'#0086ff', 'Shein':'#222222' };
 
   function corMargem(m) {
-    if (m>=20) return '#34d399';
-    if (m>=10) return '#fbbf24';
-    if (m>=0)  return '#f97316';
-    return '#ef4444';
+    if (m>=20) return 'var(--green)';
+    if (m>=10) return 'var(--yellow)';
+    if (m>=0)  return 'var(--orange)';
+    return 'var(--red)';
   }
 
   // ── Cálculo de lucro ────────────────────────────────────────
@@ -340,7 +340,7 @@ Router.register('vendas', async (params, el) => {
       const btn = document.getElementById(`tab-${a}`);
       const sec = document.getElementById(`sec-${a}`);
       if (btn) btn.style.cssText = a===aba
-        ? 'padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:#6366f1;color:var(--text-primary);'
+        ? 'padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:var(--accent);color:var(--text-primary);'
         : 'padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);';
       if (sec) sec.style.display = a===aba ? 'block' : 'none';
     });
@@ -589,7 +589,7 @@ Router.register('vendas', async (params, el) => {
       if (status) status.textContent = `⚠️ Erro: ${e.message}`;
     } finally {
       buscandoOportunidades = false;
-      if (btn) { btn.disabled = false; btn.textContent = '🔍 Buscar oportunidades'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Buscar oportunidades'; }
       renderOportunidades();
     }
   }
@@ -744,7 +744,7 @@ Router.register('vendas', async (params, el) => {
       if (status) status.textContent = `⚠️ Erro: ${e.message}`;
     } finally {
       buscandoForaDoAds = false;
-      if (btn) { btn.disabled = false; btn.textContent = '🚫 Buscar produtos fora do ADS'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Buscar produtos fora do ADS'; }
       renderOportunidades();
     }
   }
@@ -863,9 +863,9 @@ Router.register('vendas', async (params, el) => {
     const multiConta = new Set(prods.map(x => x.contaId)).size > 1;
     const nomeConta = id => { const c = contas.find(c => c.external_id === id); return c ? contaNome(c) : id; };
     const TEND = {
-      queda_forte: { t: '▼▼ Queda forte', c: '#dc2626' }, queda: { t: '▼ Queda', c: '#ea580c' },
-      parou: { t: '■ Parou de vender', c: '#dc2626' }, alta_forte: { t: '▲▲ Alta forte', c: '#16a34a' },
-      alta: { t: '▲ Alta', c: '#16a34a' }, novo: { t: '★ Novo', c: '#2a78d6' }, estavel: { t: '● Estável', c: '#64748b' }, baixo: { t: '· Pouco volume', c: '#94a3b8' },
+      queda_forte: { t: '▼▼ Queda forte', c: 'var(--red)' }, queda: { t: '▼ Queda', c: 'var(--orange)' },
+      parou: { t: '■ Parou de vender', c: 'var(--red)' }, alta_forte: { t: '▲▲ Alta forte', c: 'var(--green)' },
+      alta: { t: '▲ Alta', c: 'var(--green)' }, novo: { t: '★ Novo', c: 'var(--accent)' }, estavel: { t: '● Estável', c: 'var(--text-muted)' }, baixo: { t: '· Pouco volume', c: 'var(--text-muted)' },
     };
     const caindo = x => ['queda', 'queda_forte', 'parou'].includes(x.tend);
     const subindo = x => ['alta', 'alta_forte', 'novo'].includes(x.tend);
@@ -882,8 +882,8 @@ Router.register('vendas', async (params, el) => {
 
     // O que olhar primeiro
     const foco = [
-      ...aCaindo.sort((a, b) => a.deltaRs - b.deltaRs).slice(0, 4).map(x => ({ x, txt: `Curva A ${x.tend === 'parou' ? 'parou de vender' : 'em queda'}: ${x.ult} un. na última semana contra média de ${x.media.toFixed(1).replace('.', ',')} — ${R$(Math.abs(x.deltaRs))} a menos. Revisar estoque, preço, anúncio e ADS.`, cor: '#dc2626' })),
-      ...prods.filter(x => (x.classe === 'B' || x.classe === 'C') && ['alta', 'alta_forte'].includes(x.tend) && x.ult >= 3).sort((a, b) => b.deltaRs - a.deltaRs).slice(0, 3).map(x => ({ x, txt: `Curva ${x.classe} subindo (${varTxt(x.var)}): candidato a virar A — vale reforçar ADS e estoque.`, cor: '#16a34a' })),
+      ...aCaindo.sort((a, b) => a.deltaRs - b.deltaRs).slice(0, 4).map(x => ({ x, txt: `Curva A ${x.tend === 'parou' ? 'parou de vender' : 'em queda'}: ${x.ult} un. na última semana contra média de ${x.media.toFixed(1).replace('.', ',')} — ${R$(Math.abs(x.deltaRs))} a menos. Revisar estoque, preço, anúncio e ADS.`, cor: 'var(--red)' })),
+      ...prods.filter(x => (x.classe === 'B' || x.classe === 'C') && ['alta', 'alta_forte'].includes(x.tend) && x.ult >= 3).sort((a, b) => b.deltaRs - a.deltaRs).slice(0, 3).map(x => ({ x, txt: `Curva ${x.classe} subindo (${varTxt(x.var)}): candidato a virar A — vale reforçar ADS e estoque.`, cor: 'var(--green)' })),
     ];
 
     // Filtro / busca / ordenação
@@ -908,7 +908,7 @@ Router.register('vendas', async (params, el) => {
     const spark = x => {
       const v = (semMetrica === 'rs' ? x.rs : x.un).slice().reverse(); // antiga → recente
       const mx = Math.max(...v, 1), W = 8, G = 3, H = 26;
-      const corUlt = caindo(x) ? '#dc2626' : subindo(x) ? '#16a34a' : 'var(--text-secondary)';
+      const corUlt = caindo(x) ? 'var(--red)' : subindo(x) ? 'var(--green)' : 'var(--text-secondary)';
       return `<svg width="${NSEM * (W + G)}" height="${H}" aria-hidden="true">${v.map((q, i) => { const hh = q > 0 ? Math.max(2, q / mx * H) : 1; return `<rect x="${i * (W + G)}" y="${H - hh}" width="${W}" height="${hh}" rx="2" fill="${i === NSEM - 1 ? corUlt : 'var(--text-muted)'}" opacity="${i === NSEM - 1 ? 1 : 0.45}"/>`; }).join('')}</svg>`;
     };
     const cel = (x, w) => { const v = semMetrica === 'rs' ? x.rs[w] : x.un[w]; return v ? (semMetrica === 'rs' ? R$(v).replace(/,\d{2}$/, '') : v) : '<span class="cs-mut">—</span>'; };
@@ -930,10 +930,10 @@ Router.register('vendas', async (params, el) => {
         <div class="cs-mut">Semanas fechadas de 7 dias até ontem (${dm(fimTs)}) · curva ABC pelo faturamento das últimas 4 semanas (${R$(total4).replace(/,\d{2}$/, '')}) · tendência = última semana × média das 3 anteriores${semanal.viaBase ? '' : ' · <b>conta fora da base: usando só os pedidos já buscados</b>'}</div>
       </div>
       <div class="cs-cards">
-        ${card('Curva A', `${A.length} produto${A.length === 1 ? '' : 's'}`, `${(fatA / total4 * 100).toFixed(0)}% do faturamento de 4 semanas`, '#2a78d6')}
-        ${card('Curva A em queda', `${aCaindo.length}`, aCaindo.length ? `${R$(Math.abs(perdaA)).replace(/,\d{2}$/, '')} a menos na última semana` : 'nenhum produto A caindo', aCaindo.length ? '#dc2626' : '#64748b')}
-        ${card('Em alta', `${sobem.length}`, sobem.length ? `+${R$(ganho).replace(/,\d{2}$/, '')} na última semana` : 'nenhum produto subindo', '#16a34a')}
-        ${card('Pararam de vender', `${parados.length}`, 'vendiam e zeraram na última semana', parados.length ? '#ea580c' : '#64748b')}
+        ${card('Curva A', `${A.length} produto${A.length === 1 ? '' : 's'}`, `${(fatA / total4 * 100).toFixed(0)}% do faturamento de 4 semanas`, 'var(--accent)')}
+        ${card('Curva A em queda', `${aCaindo.length}`, aCaindo.length ? `${R$(Math.abs(perdaA)).replace(/,\d{2}$/, '')} a menos na última semana` : 'nenhum produto A caindo', aCaindo.length ? 'var(--red)' : 'var(--text-muted)')}
+        ${card('Em alta', `${sobem.length}`, sobem.length ? `+${R$(ganho).replace(/,\d{2}$/, '')} na última semana` : 'nenhum produto subindo', 'var(--green)')}
+        ${card('Pararam de vender', `${parados.length}`, 'vendiam e zeraram na última semana', parados.length ? 'var(--orange)' : 'var(--text-muted)')}
       </div>
       ${foco.length ? `<div class="card cs-foco"><div class="cs-foco-t">O que olhar primeiro</div>${foco.map(f => `<div class="cs-foco-i" style="--c:${f.cor}"><b>${h(f.x.nome)}</b>${multiConta ? ` <span class="cs-mut">(${h(nomeConta(f.x.contaId))})</span>` : ''}<div>${h(f.txt)}</div></div>`).join('')}</div>` : ''}
       <div class="cs-ctrl">
@@ -1032,7 +1032,7 @@ Router.register('vendas', async (params, el) => {
     if (semanal.pedidos && !semanal.carregando) calcularCurvaSemanal(semanal.pedidos).prods.forEach(x => { abc[`${x.contaId}|${x.nome}`] = x; });
     else if (!semanal.carregando) { const ch = `${[...filtroContasSel].sort().join(',')}|${fmtDate(ontem)}|${contas.length}`; if (semanal.chave !== ch) carregarSemanal(ch).then(() => { if (abaAtiva === 'oportunidades') renderOportunidadesAuto(); }); }
     const TEND = { queda_forte: '▼▼ queda forte', queda: '▼ queda', parou: '■ parou', alta_forte: '▲▲ alta forte', alta: '▲ alta', novo: '★ novo', estavel: '● estável', baixo: '· pouco volume' };
-    const corT = t => ['queda', 'queda_forte', 'parou'].includes(t) ? '#dc2626' : ['alta', 'alta_forte'].includes(t) ? '#16a34a' : t === 'novo' ? '#2a78d6' : '#64748b';
+    const corT = t => ['queda', 'queda_forte', 'parou'].includes(t) ? 'var(--red)' : ['alta', 'alta_forte'].includes(t) ? 'var(--green)' : t === 'novo' ? 'var(--accent)' : 'var(--text-muted)';
 
     const itens = [];
     let ultima = null, semDado = 0;
@@ -1062,14 +1062,14 @@ Router.register('vendas', async (params, el) => {
 
     box.innerHTML = `
       <div class="op-head">
-        <div><div class="op-tit">⚡ Vendendo fora do ADS</div>
+        <div><div class="op-tit">Vendendo fora do ADS</div>
         <div class="op-sub">Produtos com 2+ vendas nos últimos 30 dias que não estão em campanha (ML: anúncio fora do Product Ads; Shopee: fora de campanha individual). Calculado sozinho 1x por dia pela sincronização${ultima ? ` · atualizado ${fmtAgo(Date.parse(ultima))}` : ''}${semDado ? ` · ${semDado} conta(s) ainda sem a 1ª leitura` : ''}.</div></div>
       </div>
       <div class="op-cards">
-        ${card('Produtos fora do ADS vendendo', itens.length, `${R$(rsTot).replace(/,\d{2}$/, '')} vendidos em 30 dias`, '#2a78d6')}
+        ${card('Produtos fora do ADS vendendo', itens.length, `${R$(rsTot).replace(/,\d{2}$/, '')} vendidos em 30 dias`, 'var(--accent)')}
         ${card('Mercado Livre', nML, 'anúncios fora do Product Ads', '#eb6834')}
-        ${card('Shopee', nSh, 'fora de campanha individual', '#1baf7a')}
-        ${card('Sugestões dos agentes', ag.length, 'curva ABC e “colocar em campanha”, pendentes', ag.length ? '#d97706' : '#64748b')}
+        ${card('Shopee', nSh, 'fora de campanha individual', 'var(--green)')}
+        ${card('Sugestões dos agentes', ag.length, 'curva ABC e “colocar em campanha”, pendentes', ag.length ? 'var(--yellow)' : 'var(--text-muted)')}
       </div>
       ${ag.length ? `<details class="card op-ag"><summary>Sugestões pendentes dos agentes (${ag.length})</summary>${ag.slice(0, 12).map(l => {
         const c = contas.find(c => idNaBase(c) === String(l.conta_id));
@@ -1157,7 +1157,7 @@ Router.register('vendas', async (params, el) => {
 
     sec.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período ${oportAtualizadoEm?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(oportAtualizadoEm)}</span>`:''}${falhasOport ? `<div style="font-size:12px;font-weight:600;color:var(--red);margin-top:3px;">⚠️ ${falhasOport} anúncio(s) não responderam à consulta de visitas (limite da API) — clique em Buscar de novo.</div>` : ''}${diagOport ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">ML: ${diagOport.ativos} anúncios ativos · ${diagOport.vendidos} venderam no período · ${diagOport.checados} sem venda checados · ${diagOport.comVisita} com visita${diagOport.erro ? ` · erro: ${diagOport.erro.replace(/</g,'&lt;')}` : ''}${!diagOport.comVisita && diagOport.exemplo ? ` · resposta da API: <code>${diagOport.exemplo.replace(/</g,'&lt;')}</code>` : ''}</div>` : ''}</div>
+        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período ${oportAtualizadoEm?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">${fmtAgo(oportAtualizadoEm)}</span>`:''}${falhasOport ? `<div style="font-size:12px;font-weight:600;color:var(--red);margin-top:3px;">⚠️ ${falhasOport} anúncio(s) não responderam à consulta de visitas (limite da API) — clique em Buscar de novo.</div>` : ''}${diagOport ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">ML: ${diagOport.ativos} anúncios ativos · ${diagOport.vendidos} venderam no período · ${diagOport.checados} sem venda checados · ${diagOport.comVisita} com visita${diagOport.erro ? ` · erro: ${diagOport.erro.replace(/</g,'&lt;')}` : ''}${!diagOport.comVisita && diagOport.exemplo ? ` · resposta da API: <code>${diagOport.exemplo.replace(/</g,'&lt;')}</code>` : ''}</div>` : ''}</div>
         <button id="btn-buscar-oport" class="btn" onclick="buscarOportunidades()" style="padding:7px 14px;font-size:12px;">Buscar de novo</button>
       </div>
       ${oportunidades.length === 0 ? `
@@ -1166,12 +1166,12 @@ Router.register('vendas', async (params, el) => {
         <div class="card" style="padding:0;overflow:hidden;">
           <table style="width:100%;border-collapse:collapse;font-size:13px;">
             <thead><tr style="background:var(--bg-card-hover);">
-              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Produto</th>
-              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Conta</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Visitas</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Preço</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;">Estoque</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:uppercase;"></th>
+              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:none;">Produto</th>
+              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:none;">Conta</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:none;">Visitas</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:none;">Preço</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:none;">Estoque</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:none;"></th>
             </tr></thead>
             <tbody>${linhas}</tbody>
           </table>
@@ -1203,13 +1203,13 @@ Router.register('vendas', async (params, el) => {
     const conv = o => o.visitas > 0 && o.vendasTotal != null ? o.vendasTotal / o.visitas * 100 : null;
     const potencial = o => {
       const c = conv(o), v30 = o.vendas30 || 0;
-      if (v30 >= 3 || (o.visitas >= 300 && c >= 1)) return { t: '🔥 Alto', cor: '#16a34a', n: 3 };
-      if (v30 >= 1 || (o.vendasTotal || 0) >= 5 || o.visitas >= 150) return { t: '▲ Médio', cor: '#d97706', n: 2 };
-      return { t: '· Baixo', cor: '#94a3b8', n: 1 };
+      if (v30 >= 3 || (o.visitas >= 300 && c >= 1)) return { t: 'Alto', cor: 'var(--green)', n: 3 };
+      if (v30 >= 1 || (o.vendasTotal || 0) >= 5 || o.visitas >= 150) return { t: '▲ Médio', cor: 'var(--yellow)', n: 2 };
+      return { t: '· Baixo', cor: 'var(--text-muted)', n: 1 };
     };
     const lista = [...foraDoAds].sort((a, b) => potencial(b).n - potencial(a).n || (b.vendas30 || 0) - (a.vendas30 || 0) || (b.vendasTotal || 0) - (a.vendasTotal || 0) || (b.visitas || 0) - (a.visitas || 0));
     const nAlto = lista.filter(o => potencial(o).n === 3).length;
-    const th = (t, dir, tip) => `<th style="padding:10px 12px;text-align:${dir || 'left'};color:var(--text-secondary);font-size:11px;text-transform:uppercase;white-space:nowrap;"${tip ? ` title="${tip}"` : ''}>${t}</th>`;
+    const th = (t, dir, tip) => `<th style="padding:10px 12px;text-align:${dir || 'left'};color:var(--text-secondary);font-size:11px;text-transform:none;white-space:nowrap;"${tip ? ` title="${tip}"` : ''}>${t}</th>`;
     const td = (v, forte) => `<td style="padding:10px 12px;text-align:right;color:${forte ? 'var(--text-primary)' : 'var(--text-secondary)'};${forte ? 'font-weight:700;' : ''}font-variant-numeric:tabular-nums;white-space:nowrap;">${v}</td>`;
     const num = v => v == null ? '<span style="color:var(--text-muted);">—</span>' : Number(v).toLocaleString('pt-BR');
     const linhas = lista.map(o => {
@@ -1231,7 +1231,7 @@ Router.register('vendas', async (params, el) => {
 
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 16px;gap:10px;flex-wrap:wrap;">
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary);">🚫 ${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS${nAlto ? ` · <span style="color:var(--green);">${nAlto} com potencial alto</span>` : ''} ${foraAdsAtualizadoEm?`<span style="font-size:11px;font-weight:400;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">📦 ${fmtAgo(foraAdsAtualizadoEm)}</span>`:''}
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary);">${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS${nAlto ? ` · <span style="color:var(--green);">${nAlto} com potencial alto</span>` : ''} ${foraAdsAtualizadoEm?`<span style="font-size:11px;font-weight:400;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">${fmtAgo(foraAdsAtualizadoEm)}</span>`:''}
           ${falhasForaAds ? `<div style="font-size:12px;font-weight:600;color:var(--red);margin-top:3px;">⚠️ ${falhasForaAds} anúncio(s) não responderam à checagem de ADS (limite da API) — clique em Buscar de novo.</div>` : ''}
           <div style="font-size:11.5px;font-weight:400;color:var(--text-muted);margin-top:3px;">Visitas e vendas totais = desde a criação do anúncio (ML). Vendas 30 dias = base automática. Potencial alto: 3+ vendas em 30 dias, ou 300+ visitas convertendo 1% ou mais.</div></div>
         <button id="btn-buscar-fora-ads" class="btn" style="padding:7px 14px;font-size:12px;">Buscar de novo</button>
@@ -1377,14 +1377,14 @@ Router.register('vendas', async (params, el) => {
     <!-- KPI Cards — grid único de 4 colunas: financeiro + ADS + visitas/pedidos, tudo no
     mesmo padrão de card pequeno (antes eram 3 grids separados com blocos grandes) -->
     <div id="dash-kpi-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
-      ${kpiCard('💰 Faturamento',   R$(t.fat),    `${nVendas} vendas`,  '#60a5fa')}
-      ${kpiCard('🏦 Líq. Marketplace', R$(t.liq!=null?t.liq:0), t.fat>0?pct(liqPct)+' do fat.':'—', '#a78bfa')}
+      ${kpiCard('Faturamento',   R$(t.fat),    `${nVendas} vendas`,  '#60a5fa')}
+      ${kpiCard('Líq. Marketplace', R$(t.liq!=null?t.liq:0), t.fat>0?pct(liqPct)+' do fat.':'—', 'var(--purple)')}
       ${kpiCard('✅ Lucro Bruto',    R$(t.lucro),  'Margem: '+pct(t.margem), corMargem(t.margem))}
-      ${kpiCard('📊 Margem',         pct(t.margem),'',                   corMargem(t.margem))}
-      ${kpiCard('🛒 Nº de Vendas',   nVendas,      `${unidades} unidades`,'#34d399')}
-      ${kpiCard('📦 Unidades Vend.', unidades,     '',                   '#34d399')}
-      ${kpiCard('🎯 Ticket Médio',   R$(ticketMedio),'',                 '#fbbf24')}
-      ${kpiCard('📦 Custo Produto',  R$(t.custo),  '',                   '#f87171')}
+      ${kpiCard('Margem',         pct(t.margem),'',                   corMargem(t.margem))}
+      ${kpiCard('Nº de Vendas',   nVendas,      `${unidades} unidades`,'var(--green)')}
+      ${kpiCard('Unidades Vend.', unidades,     '',                   'var(--green)')}
+      ${kpiCard('Ticket Médio',   R$(ticketMedio),'',                 'var(--yellow)')}
+      ${kpiCard('Custo Produto',  R$(t.custo),  '',                   'var(--red)')}
     </div>
 
     <!-- Gráfico -->
@@ -1403,27 +1403,27 @@ Router.register('vendas', async (params, el) => {
     mesmo estilo de card pequeno do bloco acima (visualmente é uma continuação dele) -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
       <div class="kpi-card">
-        <div class="kpi-label">💰 Investimento em ADS</div>
+        <div class="kpi-label">Investimento em ADS</div>
         <div class="kpi-value" style="color:var(--red);font-size:18px;" id="dashboard-ads">R$ 0,00</div>
         <div class="kpi-sub" id="dashboard-ads-pct">0% do faturamento</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">📊 Lucro Depois ADS</div>
-        <div class="kpi-value" style="color:#22c55e;font-size:18px;" id="dashboard-lucro-ads">R$ 0,00</div>
+        <div class="kpi-label">Lucro Depois ADS</div>
+        <div class="kpi-value" style="color:var(--green);font-size:18px;" id="dashboard-lucro-ads">R$ 0,00</div>
         <div class="kpi-sub" id="dashboard-lucro-ads-pct">Margem: 0%</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">👁️ Visitas Total</div>
+        <div class="kpi-label">Visitas Total</div>
         <div class="kpi-value" style="font-size:18px;" id="card-visitas">—</div>
         <div class="kpi-sub"><span id="card-visitas-ml">—</span> ML · <span id="card-visitas-shopee">—</span> Shopee</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">🛍️ Pedidos Total</div>
+        <div class="kpi-label">Pedidos Total</div>
         <div class="kpi-value" style="color:#3b82f6;font-size:18px;" id="card-vendas">—</div>
         <div class="kpi-sub"><span id="card-vendas-ml">—</span> ML · <span id="card-vendas-shopee">—</span> Shopee</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">💵 Faturamento Total</div>
+        <div class="kpi-label">Faturamento Total</div>
         <div class="kpi-value" style="color:var(--green);font-size:18px;" id="card-fat">—</div>
         <div class="kpi-sub"><span id="card-fat-ml">—</span> ML · <span id="card-fat-shopee">—</span> Shopee</div>
       </div>
@@ -1432,7 +1432,7 @@ Router.register('vendas', async (params, el) => {
     <!-- Tabela: Comparativo por Marketplace -->
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
       <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
-        <div style="font-size:14px;font-weight:700;color:var(--text-primary);">📊 Comparativo por Marketplace</div>
+        <div style="font-size:14px;font-weight:700;color:var(--text-primary);">Comparativo por Marketplace</div>
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -1457,7 +1457,7 @@ Router.register('vendas', async (params, el) => {
     <!-- Top 15 Produtos -->
     <div class="card" style="padding:0;overflow:hidden;">
       <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-size:14px;font-weight:700;color:var(--text-primary);">🏆 Top ${top15.length} Produtos</div>
+        <div style="font-size:14px;font-weight:700;color:var(--text-primary);">Top ${top15.length} Produtos</div>
         <div style="font-size:11px;color:var(--text-muted);">Comparação de vendas nos últimos dias</div>
       </div>
       <div style="overflow-x:auto;">
@@ -1472,7 +1472,7 @@ Router.register('vendas', async (params, el) => {
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">60 DIAS</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">90 DIAS</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">120 DIAS</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--yellow);font-weight:600;white-space:nowrap;border-left:1px solid var(--border);">💰 CUSTO UNIT.</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--yellow);font-weight:600;white-space:nowrap;border-left:1px solid var(--border);">CUSTO UNIT.</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">LÍQ. MP</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">LUCRO</th>
               <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;white-space:nowrap;">MARGEM</th>
@@ -1517,10 +1517,10 @@ Router.register('vendas', async (params, el) => {
                     style="width:90px;background:var(--bg-input);border:1px solid ${custoMisto?'rgba(96,165,250,0.5)':'rgba(245,158,11,0.4)'};border-radius:6px;padding:5px 8px;color:${custoMisto?'#60a5fa':'var(--yellow)'};font-size:12px;text-align:right;"
                     title="${custoMisto ? 'Os pedidos deste produto têm custos diferentes entre si — digite um valor pra sobrescrever todos com o mesmo custo' : 'Custo unitário — aplica a todos os '+p.n+' pedidos deste produto'}">
                 </td>
-                <td style="padding:10px 12px;text-align:right;color:#8b5cf6;">${p.liq>0?R$(p.liq):'—'}</td>
+                <td style="padding:10px 12px;text-align:right;color:var(--purple);">${p.liq>0?R$(p.liq):'—'}</td>
                 <td style="padding:10px 12px;text-align:right;color:${corMargem(margem)};font-weight:600;">${R$(p.lucro)}</td>
                 <td style="padding:10px 12px;text-align:right;">
-                  <span style="background:${corMargem(margem)}22;color:${corMargem(margem)};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">${pct(margem)}</span>
+                  <span style="background:color-mix(in srgb,${corMargem(margem)} 13%,transparent);color:${corMargem(margem)};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">${pct(margem)}</span>
                 </td>
               </tr>`;
             }).join('')}
@@ -1549,7 +1549,7 @@ Router.register('vendas', async (params, el) => {
 
       if (!semCusto.length) return `<div class="card" style="padding:16px 20px;display:flex;align-items:center;gap:10px;border:1px solid rgba(34,197,94,0.3);background:rgba(34,197,94,0.05);">
         <span style="font-size:18px;">✅</span>
-        <span style="font-size:13px;color:#22c55e;font-weight:600;">Todos os produtos têm custo preenchido!</span>
+        <span style="font-size:13px;color:var(--green);font-weight:600;">Todos os produtos têm custo preenchido!</span>
       </div>`;
 
       return `<div class="card" style="padding:0;overflow:hidden;">
@@ -1568,7 +1568,7 @@ Router.register('vendas', async (params, el) => {
                 <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;">UNID.</th>
                 <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;">PEDIDOS</th>
                 <th style="padding:10px 12px;text-align:right;color:var(--text-muted);font-weight:600;">FATURADO</th>
-                <th style="padding:10px 12px;text-align:right;color:var(--yellow);font-weight:600;border-left:1px solid var(--border);">💰 CUSTO UNIT.</th>
+                <th style="padding:10px 12px;text-align:right;color:var(--yellow);font-weight:600;border-left:1px solid var(--border);">CUSTO UNIT.</th>
               </tr>
             </thead>
             <tbody>
@@ -1614,7 +1614,7 @@ Router.register('vendas', async (params, el) => {
       if (lpEl) {
         const lucroPosAds = t.lucro - totalAds;
         lpEl.textContent = R$(lucroPosAds);
-        lpEl.style.color = lucroPosAds >= 0 ? '#22c55e' : '#ef4444';
+        lpEl.style.color = lucroPosAds >= 0 ? 'var(--green)' : 'var(--red)';
         if (lpPctEl) lpPctEl.textContent = `Margem: ${(t.fat>0?(lucroPosAds/t.fat)*100:0).toFixed(1).replace('.',',')}%`;
       }
     }).catch(() => {
@@ -1650,7 +1650,7 @@ Router.register('vendas', async (params, el) => {
             setTimeout(() => renderDashboard(), 450);
           }
         } else {
-          inp.style.borderColor = '#34d399';
+          inp.style.borderColor = 'var(--green)';
           setTimeout(() => { inp.style.borderColor = 'rgba(245,158,11,0.4)'; }, 1200);
           atualizarKpiCards();
         }
@@ -1686,14 +1686,14 @@ Router.register('vendas', async (params, el) => {
     const ticketMedio = nVendas > 0 ? t.fat/nVendas : 0;
     const liqPct = t.fat > 0 ? t.liq/t.fat*100 : 0;
     grid.innerHTML = `
-      ${kpiCard('💰 Faturamento',      R$(t.fat),                `${nVendas} vendas`,          '#60a5fa')}
-      ${kpiCard('🏦 Líq. Marketplace', R$(t.liq!=null?t.liq:0), t.fat>0?pct(liqPct)+' do fat.':'—', '#a78bfa')}
+      ${kpiCard('Faturamento',      R$(t.fat),                `${nVendas} vendas`,          '#60a5fa')}
+      ${kpiCard('Líq. Marketplace', R$(t.liq!=null?t.liq:0), t.fat>0?pct(liqPct)+' do fat.':'—', 'var(--purple)')}
       ${kpiCard('✅ Lucro Bruto',      R$(t.lucro),              'Margem: '+pct(t.margem),      corMargem(t.margem))}
-      ${kpiCard('📊 Margem',           pct(t.margem),            '',                            corMargem(t.margem))}
-      ${kpiCard('🛒 Nº de Vendas',     nVendas,                  `${unidades} unidades`,        '#34d399')}
-      ${kpiCard('📦 Unidades Vend.',   unidades,                 '',                            '#34d399')}
-      ${kpiCard('🎯 Ticket Médio',     R$(ticketMedio),          '',                            '#fbbf24')}
-      ${kpiCard('📦 Custo Produto',    R$(t.custo),              '',                            '#f87171')}`;
+      ${kpiCard('Margem',           pct(t.margem),            '',                            corMargem(t.margem))}
+      ${kpiCard('Nº de Vendas',     nVendas,                  `${unidades} unidades`,        'var(--green)')}
+      ${kpiCard('Unidades Vend.',   unidades,                 '',                            'var(--green)')}
+      ${kpiCard('Ticket Médio',     R$(ticketMedio),          '',                            'var(--yellow)')}
+      ${kpiCard('Custo Produto',    R$(t.custo),              '',                            'var(--red)')}`;
   }
 
   async function renderMarketplaceComparison() {
@@ -1754,21 +1754,21 @@ Router.register('vendas', async (params, el) => {
 
     tableBody.innerHTML = `
       <tr style="border-bottom:1px solid var(--border);background:rgba(245,158,11,0.05);">
-        <td style="padding:12px 16px;color:var(--text-primary);font-weight:500;">🟧 Mercado Livre</td>
+        <td style="padding:12px 16px;color:var(--text-primary);font-weight:500;">Mercado Livre</td>
         <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${mlVisitas.toLocaleString('pt-BR')}</td>
         <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${mlVendas}</td>
         <td style="padding:12px 12px;text-align:right;color:#60a5fa;font-weight:600;">${R$(mlFat)}</td>
         <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${R$(mlTicket)}</td>
       </tr>
       <tr style="border-bottom:1px solid var(--border);background:rgba(249,115,22,0.05);">
-        <td style="padding:12px 16px;color:var(--text-primary);font-weight:500;">🟧 Shopee</td>
+        <td style="padding:12px 16px;color:var(--text-primary);font-weight:500;">Shopee</td>
         <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${shopeeVisitas.toLocaleString('pt-BR')}</td>
         <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${shopeeVendas}</td>
         <td style="padding:12px 12px;text-align:right;color:#60a5fa;font-weight:600;">${R$(shopeeFat)}</td>
         <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${R$(shopeeTicket)}</td>
       </tr>
       <tr style="background:var(--bg-card-hover);">
-        <td style="padding:12px 16px;color:var(--text-primary);font-weight:700;">📊 TOTAL</td>
+        <td style="padding:12px 16px;color:var(--text-primary);font-weight:700;">TOTAL</td>
         <td style="padding:12px 12px;text-align:right;color:var(--text-primary);font-weight:700;">${totalVisitas.toLocaleString('pt-BR')}</td>
         <td style="padding:12px 12px;text-align:right;color:var(--text-primary);font-weight:700;">${totalVendas}</td>
         <td style="padding:12px 12px;text-align:right;color:var(--green);font-weight:700;">${R$(totalFat)}</td>
@@ -1784,10 +1784,10 @@ Router.register('vendas', async (params, el) => {
     const el = document.getElementById('vendas-kpis');
     if (!el) return;
     el.innerHTML = `
-      <div class="kpi-card"><div class="kpi-label">💰 Faturamento Bruto</div><div class="kpi-value" style="color:#60a5fa;">${R$(t.fat)}</div><div class="kpi-sub">${lista.length} pedidos</div></div>
-      ${t.liq!=null?`<div class="kpi-card"><div class="kpi-label">🏦 Líquido Marketplace</div><div class="kpi-value" style="color:#a78bfa;">${R$(t.liq)}</div><div class="kpi-sub">${t.fat>0?pct(t.liq/t.fat*100):''} do fat.</div></div>`:''}
-      <div class="kpi-card"><div class="kpi-label">📦 Custo Produto</div><div class="kpi-value" style="color:var(--red);">${R$(t.custo)}</div></div>
-      <div class="kpi-card"><div class="kpi-label">➕ Outros Custos</div><div class="kpi-value" style="color:#f97316;">${R$(t.out)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Faturamento Bruto</div><div class="kpi-value" style="color:#60a5fa;">${R$(t.fat)}</div><div class="kpi-sub">${lista.length} pedidos</div></div>
+      ${t.liq!=null?`<div class="kpi-card"><div class="kpi-label">Líquido Marketplace</div><div class="kpi-value" style="color:var(--purple);">${R$(t.liq)}</div><div class="kpi-sub">${t.fat>0?pct(t.liq/t.fat*100):''} do fat.</div></div>`:''}
+      <div class="kpi-card"><div class="kpi-label">Custo Produto</div><div class="kpi-value" style="color:var(--red);">${R$(t.custo)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Outros Custos</div><div class="kpi-value" style="color:var(--orange);">${R$(t.out)}</div></div>
       <div class="kpi-card"><div class="kpi-label">✅ Lucro Bruto</div><div class="kpi-value" style="color:${corMargem(t.margem)};">${R$(t.lucro)}</div><div class="kpi-sub">Margem: ${pct(t.margem)}</div></div>
     `;
   }
@@ -1822,10 +1822,10 @@ Router.register('vendas', async (params, el) => {
       return `
       <div style="margin-bottom:14px;">
         <div style="display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--bg-card-hover);border-radius:8px 8px 0 0;border-bottom:1px solid var(--border);">
-          <span style="font-size:13px;font-weight:700;color:var(--text-primary);">📅 ${data}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--text-primary);">${data}</span>
           <span style="font-size:11px;color:var(--text-muted);">${peds.length} pedidos</span>
           <span style="margin-left:auto;font-size:12px;color:#60a5fa;font-weight:600;">${R$(t.fat)}</span>
-          ${t.liq!=null?`<span style="font-size:12px;color:#a78bfa;">Líq. ${R$(t.liq)}</span>`:''}
+          ${t.liq!=null?`<span style="font-size:12px;color:var(--purple);">Líq. ${R$(t.liq)}</span>`:''}
           <span style="font-size:12px;font-weight:700;color:${corMargem(t.margem)};">Lucro ${R$(t.lucro)} · ${pct(t.margem)}</span>
         </div>
         <div style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px 90px 90px 80px;padding:6px 16px;background:var(--bg-card-hover);border-bottom:1px solid var(--border);">
@@ -1865,7 +1865,7 @@ Router.register('vendas', async (params, el) => {
     const l   = calcLucro(p);
     const c   = custos[p.id]||{};
     const exp = expandido===p.id;
-    const cor = platCor[p.plataforma]||'#9ca3af';
+    const cor = platCor[p.plataforma]||'var(--text-muted)';
     const img = p.imagem
       ? `<img src="${p.imagem}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">`
       : `<div style="width:44px;height:44px;background:var(--border);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;">${p.plataforma==='Shopee'?'🟠':p.plataforma==='Amazon'?'⚫':p.plataforma==='TikTok Shop'?'🎵':p.plataforma==='Magalu'?'🔵':p.plataforma==='Shein'?'⬛':'🟡'}</div>`;
@@ -1878,7 +1878,7 @@ Router.register('vendas', async (params, el) => {
     const aliqConta = parseFloat(aliquotas[p.contaId] || 0);
     const impCell = taxasAuto
       ? `<div style="text-align:right;">
-           <span style="font-size:12px;color:#fbbf24;font-weight:600;">${R$(l.impVal)}</span><br>
+           <span style="font-size:12px;color:var(--yellow);font-weight:600;">${R$(l.impVal)}</span><br>
            <span style="font-size:9px;color:var(--text-muted);">${impVeioDeAPI ? 'escrow' : (l.impPct ? l.impPct+'% conta' : 'escrow')}</span>
          </div>`
       : `<div style="text-align:right;" onclick="event.stopPropagation()">
@@ -1887,12 +1887,12 @@ Router.register('vendas', async (params, el) => {
                style="width:50px;background:var(--bg-input);border:1px solid var(--border);border-radius:5px;padding:4px 6px;color:var(--text-primary);font-size:12px;text-align:right;">
              <span style="color:var(--text-muted);font-size:10px;">%</span>
            </div>
-           ${aliqConta && !c.imposto ? `<div style="font-size:9px;color:#fbbf24;text-align:right;">${aliqConta}% (conta)</div>` : ''}
+           ${aliqConta && !c.imposto ? `<div style="font-size:9px;color:var(--yellow);text-align:right;">${aliqConta}% (conta)</div>` : ''}
          </div>`;
 
     const liqCell = l.liquido != null
-      ? `<div style="text-align:right;font-size:13px;font-weight:700;color:#a78bfa;">${R$(l.liquido)}<br><span style="font-size:9px;color:var(--text-muted);font-weight:400;">após taxas</span></div>`
-      : `<div style="text-align:right;font-size:12px;color:#4b5563;">—</div>`;
+      ? `<div style="text-align:right;font-size:13px;font-weight:700;color:var(--purple);">${R$(l.liquido)}<br><span style="font-size:9px;color:var(--text-muted);font-weight:400;">após taxas</span></div>`
+      : `<div style="text-align:right;font-size:12px;color:var(--text-secondary);">—</div>`;
 
     return `
     <div style="border-bottom:1px solid var(--border);">
@@ -1908,7 +1908,7 @@ Router.register('vendas', async (params, el) => {
               <span style="color:${cor};font-weight:600;">${p.plataforma}</span>
               <span>${p.id}</span>
               ${isCancelled ? '<span style="background:rgba(239,68,68,0.15);color:var(--red);padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;">● Cancelado</span>' : ''}
-              ${taxasAuto && !isCancelled ? '<span style="background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 5px;border-radius:8px;font-size:9px;">taxas auto</span>' : ''}
+              ${taxasAuto && !isCancelled ? '<span style="background:rgba(167,139,250,0.15);color:var(--purple);padding:1px 5px;border-radius:8px;font-size:9px;">taxas auto</span>' : ''}
             </div>
           </div>
         </div>
@@ -1942,7 +1942,7 @@ Router.register('vendas', async (params, el) => {
 
         <!-- Margem -->
         <div style="text-align:right;">
-          <span style="background:${corMargem(l.margem)}22;color:${corMargem(l.margem)};padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;">${pct(l.margem)}</span>
+          <span style="background:color-mix(in srgb,${corMargem(l.margem)} 13%,transparent);color:${corMargem(l.margem)};padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;">${pct(l.margem)}</span>
           <button class="btn-exp" data-id="${p.id}" style="display:none;"></button>
         </div>
       </div>
@@ -1970,15 +1970,15 @@ Router.register('vendas', async (params, el) => {
         ? Math.max(0, (l.receita - l.liquido) - totalConhecido)
         : 0;
       linhasBreakdown = [
-        { label:'🛒 Total do Pedido',                 v: l.receita,        cor:'#60a5fa', sinal:'+' },
-        freteML>0    ? { label:'🚚 Valor do Frete (pago pelo vendedor)', v: -freteML,   cor:'#f97316', sinal:'-' } : null,
-        comissaoML>0 ? { label:'🏦 Comissão',          v: -comissaoML,      cor:'#f87171', sinal:'-' } : null,
-        outrasML>0.01? { label:'➕ Outras taxas ML',   v: -outrasML,        cor:'#f87171', sinal:'-' } : null,
-        l.liquido!=null? { label:'🏦 Líquido do Marketplace', v: l.liquido, cor:'#a78bfa', sinal:'=', bold:true } : null,
-        { label:'📦 Custo do Produto',                 v: -l.custo,         cor:'#f87171', sinal:'-' },
-        l.impVal>0 ? { label:`🧾 Imposto (${l.impPct}%)`,    v: -l.impVal,  cor:'#fbbf24', sinal:'-' } : null,
-        l.outros>0 ? { label:'➕ Custos Extras',       v: -l.outros,        cor:'#f97316', sinal:'-' } : null,
-        l.extra>0  ? { label:'🔗 Linhas Extras',      v: -l.extra,         cor:'#a78bfa', sinal:'-' } : null,
+        { label:'Total do Pedido',                 v: l.receita,        cor:'#60a5fa', sinal:'+' },
+        freteML>0    ? { label:'Valor do Frete (pago pelo vendedor)', v: -freteML,   cor:'var(--orange)', sinal:'-' } : null,
+        comissaoML>0 ? { label:'Comissão',          v: -comissaoML,      cor:'var(--red)', sinal:'-' } : null,
+        outrasML>0.01? { label:'Outras taxas ML',   v: -outrasML,        cor:'var(--red)', sinal:'-' } : null,
+        l.liquido!=null? { label:'Líquido do Marketplace', v: l.liquido, cor:'var(--purple)', sinal:'=', bold:true } : null,
+        { label:'Custo do Produto',                 v: -l.custo,         cor:'var(--red)', sinal:'-' },
+        l.impVal>0 ? { label:`Imposto (${l.impPct}%)`,    v: -l.impVal,  cor:'var(--yellow)', sinal:'-' } : null,
+        l.outros>0 ? { label:'Custos Extras',       v: -l.outros,        cor:'var(--orange)', sinal:'-' } : null,
+        l.extra>0  ? { label:'Linhas Extras',      v: -l.extra,         cor:'var(--purple)', sinal:'-' } : null,
         { label:'✅ Lucro do Pedido',                  v: l.lucro,          cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
       ].filter(Boolean);
     } else if (hasEscrow) {
@@ -1987,27 +1987,27 @@ Router.register('vendas', async (params, el) => {
       // exclusivo da Shopee (a Magalu também popula p.taxas com esse formato).
       const nomePlat = p.plataforma || 'Marketplace';
       linhasBreakdown = [
-        { label:'💰 Valor dos Produtos',           v: l.receita,            cor:'#60a5fa', sinal:'+' },
-        (p.freteComprador||0)>0 ? { label:'🛒 Frete pago pelo comprador (não soma)', v: p.freteComprador, cor:'#6b7280', sinal:'·' } : null,
-        l.comissao>0   ? { label:`🏦 Comissão ${nomePlat}`,        v: -l.comissao,          cor:'#f87171', sinal:'-' } : null,
-        l.taxaServico>0? { label:'⚙️ Taxa de Serviço',             v: -l.taxaServico,       cor:'#f87171', sinal:'-' } : null,
-        tx.frete>0     ? { label:'🚚 Frete (descontado)',           v: -Math.abs(tx.frete),  cor:'#f97316', sinal:'-' } : null,
-        tx.voucher>0   ? { label:'🎟️ Voucher/Desconto (reembolso)', v: tx.voucher,           cor:'#34d399', sinal:'+' } : null,
-        impDeEscrowDetalhe ? { label:'🧾 Imposto (API)',            v: -tx.imposto,          cor:'#fbbf24', sinal:'-' } : null,
-        l.liquido!=null? { label:`💳 Líquido ${nomePlat} (API)`,     v: l.liquido,            cor:'#a78bfa', sinal:'=', bold:true } : null,
-        { label:'📦 Custo do Produto',              v: -l.custo,             cor:'#f87171', sinal:'-' },
-        !impDeEscrowDetalhe && l.impVal>0 ? { label:`🧾 Imposto (${l.impPct}%)`, v: -l.impVal, cor:'#fbbf24', sinal:'-' } : null,
-        l.outros>0 ? { label:'➕ Outros Custos',    v: -l.outros,            cor:'#f97316', sinal:'-' } : null,
-        l.extra>0  ? { label:'🔗 Linhas Extras',   v: -l.extra,             cor:'#a78bfa', sinal:'-' } : null,
+        { label:'Valor dos Produtos',           v: l.receita,            cor:'#60a5fa', sinal:'+' },
+        (p.freteComprador||0)>0 ? { label:'Frete pago pelo comprador (não soma)', v: p.freteComprador, cor:'var(--text-muted)', sinal:'·' } : null,
+        l.comissao>0   ? { label:`Comissão ${nomePlat}`,        v: -l.comissao,          cor:'var(--red)', sinal:'-' } : null,
+        l.taxaServico>0? { label:'Taxa de Serviço',             v: -l.taxaServico,       cor:'var(--red)', sinal:'-' } : null,
+        tx.frete>0     ? { label:'Frete (descontado)',           v: -Math.abs(tx.frete),  cor:'var(--orange)', sinal:'-' } : null,
+        tx.voucher>0   ? { label:'Voucher/Desconto (reembolso)', v: tx.voucher,           cor:'var(--green)', sinal:'+' } : null,
+        impDeEscrowDetalhe ? { label:'Imposto (API)',            v: -tx.imposto,          cor:'var(--yellow)', sinal:'-' } : null,
+        l.liquido!=null? { label:`Líquido ${nomePlat} (API)`,     v: l.liquido,            cor:'var(--purple)', sinal:'=', bold:true } : null,
+        { label:'Custo do Produto',              v: -l.custo,             cor:'var(--red)', sinal:'-' },
+        !impDeEscrowDetalhe && l.impVal>0 ? { label:`Imposto (${l.impPct}%)`, v: -l.impVal, cor:'var(--yellow)', sinal:'-' } : null,
+        l.outros>0 ? { label:'Outros Custos',    v: -l.outros,            cor:'var(--orange)', sinal:'-' } : null,
+        l.extra>0  ? { label:'Linhas Extras',   v: -l.extra,             cor:'var(--purple)', sinal:'-' } : null,
         { label:'✅ Lucro Bruto',                   v: l.lucro,              cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
       ].filter(Boolean);
     } else {
       linhasBreakdown = [
-        { label:'💰 Total do Pedido',               v: l.receita,            cor:'#60a5fa', sinal:'+' },
-        { label:'📦 Custo do Produto',              v: -l.custo,             cor:'#f87171', sinal:'-' },
-        l.impVal>0 ? { label:`🧾 Imposto (${l.impPct}%)`, v: -l.impVal,     cor:'#fbbf24', sinal:'-' } : null,
-        l.outros>0 ? { label:'➕ Outros Custos',    v: -l.outros,            cor:'#f97316', sinal:'-' } : null,
-        l.extra>0  ? { label:'🔗 Linhas Extras',   v: -l.extra,             cor:'#a78bfa', sinal:'-' } : null,
+        { label:'Total do Pedido',               v: l.receita,            cor:'#60a5fa', sinal:'+' },
+        { label:'Custo do Produto',              v: -l.custo,             cor:'var(--red)', sinal:'-' },
+        l.impVal>0 ? { label:`Imposto (${l.impPct}%)`, v: -l.impVal,     cor:'var(--yellow)', sinal:'-' } : null,
+        l.outros>0 ? { label:'Outros Custos',    v: -l.outros,            cor:'var(--orange)', sinal:'-' } : null,
+        l.extra>0  ? { label:'Linhas Extras',   v: -l.extra,             cor:'var(--purple)', sinal:'-' } : null,
         { label:'✅ Lucro Bruto',                   v: l.lucro,              cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
       ].filter(Boolean);
     }
@@ -2016,7 +2016,7 @@ Router.register('vendas', async (params, el) => {
     <div style="display:flex;background:var(--bg-card-hover);border-top:1px solid var(--border);">
       <!-- Info + itens -->
       <div style="flex:1;padding:16px 20px;border-right:1px solid var(--border);min-width:0;">
-        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:10px;">Detalhes do Pedido</div>
+        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:none;margin-bottom:10px;">Detalhes do Pedido</div>
         <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px;">
           <div><div style="font-size:10px;color:var(--text-muted);">ID</div><div style="font-size:12px;color:var(--text-primary);">${p.id}</div></div>
           <div><div style="font-size:10px;color:var(--text-muted);">Plataforma</div><div style="font-size:12px;color:${platCor[p.plataforma]||'#fff'};font-weight:600;">${p.plataforma}</div></div>
@@ -2025,7 +2025,7 @@ Router.register('vendas', async (params, el) => {
           ${tx.instalment ? `<div><div style="font-size:10px;color:var(--text-muted);">Parcelamento</div><div style="font-size:12px;color:var(--text-primary);">${tx.instalment}</div></div>` : ''}
         </div>
         ${p.itens && p.itens.length ? `
-        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:8px;">Itens</div>
+        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:none;margin-bottom:8px;">Itens</div>
         ${p.itens.map(it=>`
           <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
             ${it.imagem?`<img src="${it.imagem}" style="width:36px;height:36px;object-fit:cover;border-radius:5px;flex-shrink:0;">` : ''}
@@ -2036,8 +2036,8 @@ Router.register('vendas', async (params, el) => {
       </div>
       <!-- Breakdown financeiro -->
       <div style="width:300px;flex-shrink:0;padding:16px 20px;">
-        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-bottom:10px;">
-          Composição do Lucro ${hasEscrow ? '<span style="color:#a78bfa;font-size:9px;background:rgba(167,139,250,0.15);padding:1px 6px;border-radius:8px;margin-left:4px;">dados da API</span>' : ''}
+        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:none;margin-bottom:10px;">
+          Composição do Lucro ${hasEscrow ? '<span style="color:var(--purple);font-size:9px;background:rgba(167,139,250,0.15);padding:1px 6px;border-radius:8px;margin-left:4px;">dados da API</span>' : ''}
         </div>
         ${linhasBreakdown.map(r=>`
           <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
@@ -2676,8 +2676,8 @@ Router.register('vendas', async (params, el) => {
       _backfillCatalogoCusto();
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
       const selo = viaBase.cobertas.size && !contasParaBuscar.length
-        ? `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">⚡ base automática · atualiza sozinha</span>`
-        : `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">💾 salvo</span>`;
+        ? `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">base automática · atualiza sozinha</span>`
+        : `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">salvo</span>`;
       if (statusEl) statusEl.innerHTML=`${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;${selo}${await avisoContas(dataFrom).catch(() => '')}`;
       renderLista();
       completarImagens();
@@ -2686,7 +2686,7 @@ Router.register('vendas', async (params, el) => {
       if (statusEl) statusEl.textContent=`Erro: ${e.message}`;
     } finally {
       _buscandoPedidos = false;
-      if (btnEl){ btnEl.disabled=false; btnEl.textContent='🔄 Atualizar'; }
+      if (btnEl){ btnEl.disabled=false; btnEl.textContent='Atualizar'; }
       if (_recarregarDepois) { const o = _recarregarDepois; _recarregarDepois = null; buscarPedidos(o); }
     }
   }
@@ -2740,15 +2740,15 @@ Router.register('vendas', async (params, el) => {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
     overlay.innerHTML = `
       <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:28px 32px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-        <div style="font-size:18px;font-weight:700;color:var(--red);margin-bottom:6px;">🗑️ Limpar dados manuais</div>
+        <div style="font-size:18px;font-weight:700;color:var(--red);margin-bottom:6px;">Limpar dados manuais</div>
         <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Os seguintes dados serão removidos permanentemente:</div>
         <div style="background:var(--bg-base);border-radius:8px;padding:14px;margin-bottom:20px;font-size:13px;display:flex;flex-direction:column;gap:8px;">
-          <div style="display:flex;justify-content:space-between;"><span>📦 Custos de produto por pedido</span><strong style="color:${nCustos?'var(--red)':'var(--text-muted)'};">${nCustos ? nCustos+' pedidos' : 'vazio'}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>🏷️ Catálogo de custo por produto</span><strong style="color:${nCatalogo?'var(--red)':'var(--text-muted)'};">${nCatalogo ? nCatalogo+' produtos' : 'vazio'}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>➕ Linhas extras de custo</span><strong style="color:${nLinhas?'var(--red)':'var(--text-muted)'};">${nLinhas ? nLinhas+' linhas' : 'vazio'}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>💰 Dados manuais do Financeiro</span><strong style="color:${temFin?'var(--red)':'var(--text-muted)'};">${temFin?'sim':'vazio'}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>📊 Entradas manuais do DRE</span><strong style="color:${temDre?'var(--red)':'var(--text-muted)'};">${temDre?'sim':'vazio'}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>📈 Dados manuais da Projeção</span><strong style="color:${temProj?'var(--red)':'var(--text-muted)'};">${temProj?'sim':'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Custos de produto por pedido</span><strong style="color:${nCustos?'var(--red)':'var(--text-muted)'};">${nCustos ? nCustos+' pedidos' : 'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Catálogo de custo por produto</span><strong style="color:${nCatalogo?'var(--red)':'var(--text-muted)'};">${nCatalogo ? nCatalogo+' produtos' : 'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Linhas extras de custo</span><strong style="color:${nLinhas?'var(--red)':'var(--text-muted)'};">${nLinhas ? nLinhas+' linhas' : 'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Dados manuais do Financeiro</span><strong style="color:${temFin?'var(--red)':'var(--text-muted)'};">${temFin?'sim':'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Entradas manuais do DRE</span><strong style="color:${temDre?'var(--red)':'var(--text-muted)'};">${temDre?'sim':'vazio'}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Dados manuais da Projeção</span><strong style="color:${temProj?'var(--red)':'var(--text-muted)'};">${temProj?'sim':'vazio'}</strong></div>
         </div>
         <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:12px;color:var(--green);">
           ✅ Mantidos: vínculos de contas, API key, alíquotas, apelidos, cache da API
@@ -2791,7 +2791,7 @@ Router.register('vendas', async (params, el) => {
 
       // Feedback e re-render
       const toast = document.createElement('div');
-      toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#10b981;color:white;font-weight:700;padding:12px 20px;border-radius:10px;z-index:9999;font-size:14px;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+      toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--green);color:white;font-weight:700;padding:12px 20px;border-radius:10px;z-index:9999;font-size:14px;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
       toast.textContent = '✅ Dados manuais removidos com sucesso';
       document.body.appendChild(toast);
       setTimeout(() => toast.remove(), 3500);
@@ -2833,7 +2833,7 @@ Router.register('vendas', async (params, el) => {
           <option value="mes">Esse mês</option>
           <option value="mes-passado">Mês passado</option>
           <option value="ano">Esse ano</option>
-          <option value="custom" selected>📅 Personalizado</option>
+          <option value="custom" selected>Personalizado</option>
         </select>
         <div id="custom-range" style="display:flex;align-items:center;gap:6px;">
           <input type="date" id="inp-date-from" class="form-input" value="${customFrom}" style="width:140px;padding:7px 10px;">
@@ -2847,7 +2847,7 @@ Router.register('vendas', async (params, el) => {
           <option value="Mercado Livre">🟡 Mercado Livre</option>
           <option value="Shopee">🟠 Shopee</option>
           <option value="Amazon">⚫ Amazon</option>
-          <option value="TikTok Shop">🎵 TikTok Shop</option>
+          <option value="TikTok Shop">TikTok Shop</option>
           <option value="Magalu">🔵 Magalu</option>
           <option value="Shein">⬛ Shein</option>
         </select>
@@ -2885,7 +2885,7 @@ Router.register('vendas', async (params, el) => {
         </summary>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
           <div class="card">
-            <div class="section-title mb-10" style="font-size:13px;">➕ Linhas de Custo Extra (por pedido)</div>
+            <div class="section-title mb-10" style="font-size:13px;">Linhas de Custo Extra (por pedido)</div>
             <div id="linhas-extras-lista" style="margin-bottom:12px;"></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;">
               <input id="inp-linha-nome" class="form-input" placeholder="Nome (ex: Taxa ML)" style="flex:2;min-width:100px;">
@@ -2898,7 +2898,7 @@ Router.register('vendas', async (params, el) => {
             </div>
           </div>
           <div class="card">
-            <div class="section-title mb-10" style="font-size:13px;">⚡ Aplicar em Massa</div>
+            <div class="section-title mb-10" style="font-size:13px;">Aplicar em Massa</div>
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Aplica custo a todos os pedidos filtrados.</div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
               <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Custo Prod. (R$)</div><input id="inp-global-custo" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
@@ -2912,7 +2912,7 @@ Router.register('vendas', async (params, el) => {
         <!-- Zona de limpeza -->
         <div style="margin-top:12px;padding:14px 18px;background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.2);border-radius:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
           <div>
-            <div style="font-size:13px;font-weight:700;color:var(--red);">🗑️ Limpar todos os dados manuais</div>
+            <div style="font-size:13px;font-weight:700;color:var(--red);">Limpar todos os dados manuais</div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Remove custos de produto, impostos manuais, linhas extras, armazenamento, despesas e entradas do DRE. Mantém vínculos, API key, alíquotas e cache da API.</div>
           </div>
           <button onclick="confirmarLimpezaManuais()" style="background:var(--red);color:white;border:none;border-radius:8px;padding:8px 16px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;">Limpar dados manuais</button>
@@ -2976,7 +2976,7 @@ Router.register('vendas', async (params, el) => {
       catalogoCusto = JSON.parse(localStorage.getItem(STORAGE_CATALOGO)||'{}');
       _backfillCatalogoCusto();
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
-      if (statusEl) statusEl.innerHTML = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;">📦 cache ${fmtAgo(at)}</span>`;
+      if (statusEl) statusEl.innerHTML = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;">cache ${fmtAgo(at)}</span>`;
       renderLista();
     }
     // A base é leitura rápida (sem API pedido a pedido): já carrega ao abrir. Contas

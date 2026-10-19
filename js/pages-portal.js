@@ -8,7 +8,7 @@ const _PORTAL_CFG_KEY = 'glr_portal_configs';
 const _pR$ = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const _pN  = (v,d=0) => (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const _pPad = n => String(n).padStart(2,'0');
-const _pCorMargem = m => m >= 15 ? '#16a34a' : m >= 5 ? '#d97706' : '#dc2626';
+const _pCorMargem = m => m >= 15 ? 'var(--green)' : m >= 5 ? 'var(--yellow)' : 'var(--red)';
 
 // Cache próprio do portal (por acesso de cliente) — populado pela busca real na API,
 // scoped somente às contas vinculadas a esse cliente
@@ -199,7 +199,7 @@ function _portalFiltroBar(pageAtual) {
     <div style="position:relative;">
       <button type="button" onclick="event.stopPropagation();const p=this.nextElementSibling;document.querySelectorAll('.pf-conta-panel').forEach(x=>{if(x!==p)x.style.display='none'});p.style.display=p.style.display==='none'?'block':'none';"
         style="font-size:11px;border-radius:8px;padding:7px 12px;cursor:pointer;border:1px solid var(--border);background:var(--bg-base);color:var(--text-primary);display:flex;align-items:center;gap:6px;">
-        🏬 ${textoBotaoConta} <span style="font-size:9px;opacity:0.6;">▾</span>
+        ${textoBotaoConta} <span style="font-size:9px;opacity:0.6;">▾</span>
       </button>
       <div class="pf-conta-panel" onclick="event.stopPropagation()" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:200px;padding:6px;">
         ${contas.map(c => `
@@ -226,7 +226,7 @@ function _portalFiltroBar(pageAtual) {
   const mostrarDatas = presetSel === 'custom';
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">📅 Período:</span>
+      <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">Período:</span>
       <select onchange="window._portalFiltroRapido(this.value)" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
         <option value="hoje" ${presetSel==='hoje'?'selected':''}>Hoje</option>
         <option value="ontem" ${presetSel==='ontem'?'selected':''}>Ontem</option>
@@ -237,7 +237,7 @@ function _portalFiltroBar(pageAtual) {
         <option value="mes-passado" ${presetSel==='mes-passado'?'selected':''}>Mês passado</option>
         <option value="ano" ${presetSel==='ano'?'selected':''}>Esse ano</option>
         <option value="tudo" ${presetSel==='tudo'?'selected':''}>Tudo</option>
-        <option value="custom" ${presetSel==='custom'?'selected':''}>📅 Personalizado</option>
+        <option value="custom" ${presetSel==='custom'?'selected':''}>Personalizado</option>
       </select>
       <div style="display:${mostrarDatas?'flex':'none'};align-items:center;gap:6px;">
         <input type="date" id="pf-de" value="${f.de}" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:12px;">
@@ -971,12 +971,12 @@ function _configurarSidebarCliente(cfg) {
 // ── Kpi card helper ───────────────────────────────────────────
 // Cor só nos rótulos que carregam um sinal real (lucro/margem/cancelamento/roas) —
 // o resto fica neutro, sem cada card vindo de uma cor diferente sem motivo
-function _pKpi(label, valor, sub, cor='#6366f1') {
+function _pKpi(label, valor, sub, cor='var(--accent)') {
   const semantico = /lucro|margem|cancelamento|roas|tacos/i.test(label);
   const corLabel = semantico ? cor : 'var(--text-secondary)';
   return `
     <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
-      <div style="font-size:11px;font-weight:600;color:${corLabel};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">${label}</div>
+      <div style="font-size:11px;font-weight:600;color:${corLabel};text-transform:none;letter-spacing:0;margin-bottom:6px;">${label}</div>
       <div style="font-size:20px;font-weight:700;color:var(--text-primary);">${valor}</div>
       ${sub ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${sub}</div>` : ''}
     </div>`;
@@ -1080,7 +1080,7 @@ Router.register('portal-dashboard', (params, el) => {
   el.innerHTML = `
     <div style="padding:24px;max-width:1200px;margin:0 auto;">
       <div style="margin-bottom:16px;">
-        <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">📊 Dashboard de Vendas</h2>
+        <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">Dashboard de Vendas</h2>
         <div style="font-size:13px;color:var(--text-secondary);">${cfg.clienteNome || 'Minha Conta'}</div>
       </div>
 
@@ -1088,31 +1088,31 @@ Router.register('portal-dashboard', (params, el) => {
 
       <!-- KPIs principais -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:16px;">
-        ${_pKpi('💰 Faturamento', _pR$(fat), `${_pN(qtd)} pedidos`, '#16a34a')}
-        ${_pKpi('🏦 Líq. do Marketplace', _pR$(liquido), temLiquido?'após taxas':'estimado', '#0ea5e9')}
-        ${_pKpi('📈 Lucro Bruto', _pR$(lucroBruto), temCusto?'líquido − custo produto':'sem custo cadastrado', lucroBruto>=0?'#16a34a':'#dc2626')}
-        ${_pKpi('🎯 Margem', _pN(margem,1)+'%', 'lucro bruto / faturamento', _pCorMargem(margem))}
+        ${_pKpi('Faturamento', _pR$(fat), `${_pN(qtd)} pedidos`, 'var(--green)')}
+        ${_pKpi('Líq. do Marketplace', _pR$(liquido), temLiquido?'após taxas':'estimado', 'var(--cyan)')}
+        ${_pKpi('Lucro Bruto', _pR$(lucroBruto), temCusto?'líquido − custo produto':'sem custo cadastrado', lucroBruto>=0?'var(--green)':'var(--red)')}
+        ${_pKpi('Margem', _pN(margem,1)+'%', 'lucro bruto / faturamento', _pCorMargem(margem))}
       </div>
 
       <!-- KPIs ADS -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:16px;">
-        ${_pKpi('📢 Investimento em ADS', _pR$(adsInvestimento), 'no período selecionado', '#9333ea')}
-        ${_pKpi('🎯 TACoS', adsInvestimento>0?_pN(tacos,1)+'%':'—', 'investido em ADS / faturamento', tacos>0&&tacos<=10?'#16a34a':tacos<=20?'#d97706':'#dc2626')}
-        ${_pKpi('📉 Lucro Pós-ADS', _pR$(lucroPosAds), 'lucro bruto − investimento ADS', lucroPosAds>=0?'#16a34a':'#dc2626')}
-        ${_pKpi('🧮 Margem Pós-ADS', _pN(margemPosAds,1)+'%', 'considerando o gasto com anúncios', _pCorMargem(margemPosAds))}
+        ${_pKpi('Investimento em ADS', _pR$(adsInvestimento), 'no período selecionado', 'var(--purple)')}
+        ${_pKpi('TACoS', adsInvestimento>0?_pN(tacos,1)+'%':'—', 'investido em ADS / faturamento', tacos>0&&tacos<=10?'var(--green)':tacos<=20?'var(--yellow)':'var(--red)')}
+        ${_pKpi('Lucro Pós-ADS', _pR$(lucroPosAds), 'lucro bruto − investimento ADS', lucroPosAds>=0?'var(--green)':'var(--red)')}
+        ${_pKpi('Margem Pós-ADS', _pN(margemPosAds,1)+'%', 'considerando o gasto com anúncios', _pCorMargem(margemPosAds))}
       </div>
 
       <!-- KPIs secundários -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px;">
-        ${_pKpi('🛒 Número de Vendas', _pN(qtd), '', '#6366f1')}
-        ${_pKpi('📦 Unidades Vendidas', _pN(unidades), 'itens despachados', '#8b5cf6')}
-        ${_pKpi('🎫 Ticket Médio', _pR$(ticket), 'por pedido', '#0ea5e9')}
+        ${_pKpi('Número de Vendas', _pN(qtd), '', 'var(--accent)')}
+        ${_pKpi('Unidades Vendidas', _pN(unidades), 'itens despachados', 'var(--purple)')}
+        ${_pKpi('Ticket Médio', _pR$(ticket), 'por pedido', 'var(--cyan)')}
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
         <!-- Gráfico diário -->
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
-          <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">📅 Faturamento Diário</h3>
+          <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">Faturamento Diário</h3>
           ${dias.length > 0 ? `
             <div style="display:flex;align-items:flex-end;gap:2px;height:100px;">${bars}</div>
             <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--text-secondary);">
@@ -1122,10 +1122,10 @@ Router.register('portal-dashboard', (params, el) => {
 
         <!-- Top produtos -->
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
-          <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">🏆 Top 5 Produtos</h3>
+          <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">Top 5 Produtos</h3>
           ${top5.length > 0 ? top5.map(([nome,d],i) => {
             const pct = fat > 0 ? (d.fat/fat*100) : 0;
-            const cores = ['#6366f1','#8b5cf6','#0ea5e9','#16a34a','#d97706'];
+            const cores = ['var(--accent)','var(--purple)','var(--cyan)','var(--green)','var(--yellow)'];
             return `
               <div style="margin-bottom:12px;">
                 <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
@@ -1148,7 +1148,7 @@ Router.register('portal-dashboard', (params, el) => {
         </div>` : ''}
 
       ${!temCusto && ativos.length > 0 ? `
-        <div style="background:var(--yellow-bg);border:1px solid #fde68a;border-radius:10px;padding:12px 16px;margin-top:16px;font-size:12px;color:#92400e;">
+        <div style="background:var(--yellow-bg);border:1px solid color-mix(in srgb,var(--yellow) 28%,transparent);border-radius:10px;padding:12px 16px;margin-top:16px;font-size:12px;color:var(--yellow);">
           ℹ️ Lucro Bruto e Margem ficam mais precisos quando o custo dos produtos é cadastrado na página Vendas.
         </div>` : ''}
     </div>
@@ -1200,7 +1200,7 @@ Router.register('portal-vendas', (params, el) => {
   el.innerHTML = `
     <div style="padding:24px;max-width:1300px;margin:0 auto;">
       <div style="margin-bottom:16px;">
-        <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">🛒 Minhas Vendas</h2>
+        <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">Minhas Vendas</h2>
         <div style="font-size:13px;color:var(--text-secondary);">${todos.length} pedidos · Faturamento: ${_pR$(fat)}</div>
       </div>
 
@@ -1241,9 +1241,9 @@ function _renderPortalVendasLista(todos, custos) {
       return `
       <div>
         <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--bg-base);border-bottom:1px solid var(--border);">
-          <span style="font-size:13px;font-weight:700;color:var(--text-primary);">📅 ${data}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--text-primary);">${data}</span>
           <span style="font-size:11px;color:var(--text-secondary);">${peds.length} pedidos</span>
-          <span style="margin-left:auto;font-size:12px;color:#0ea5e9;font-weight:600;">${_pR$(fatGrupo)}</span>
+          <span style="margin-left:auto;font-size:12px;color:var(--cyan);font-weight:600;">${_pR$(fatGrupo)}</span>
           <span style="font-size:12px;font-weight:700;color:${_pCorMargem(margemGrupo)};">Lucro ${_pR$(lucroGrupo)} · ${_pN(margemGrupo,1)}%</span>
         </div>
         <div style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px;padding:6px 16px;background:var(--bg-base);border-bottom:1px solid var(--border);">
@@ -1267,7 +1267,7 @@ function _renderPortalVendasLista(todos, custos) {
 function _renderPortalVendaRow(p, custos) {
   const l = _portalCalcLucro(p, custos);
   const exp = _portalVendasExpandido === p.id;
-  const cor = _PORTAL_PLAT_COR[p.plataforma] || '#9ca3af';
+  const cor = _PORTAL_PLAT_COR[p.plataforma] || 'var(--text-muted)';
   const isCancelled = _isCancelPortal(p.status);
   const img = p.imagem
     ? `<img src="${p.imagem}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">`
@@ -1288,11 +1288,11 @@ function _renderPortalVendaRow(p, custos) {
         </div>
       </div>
       <div style="text-align:left;font-size:13px;color:var(--text-secondary);">${p.qtd||1}</div>
-      <div style="text-align:right;font-size:13px;font-weight:700;color:#0ea5e9;">${_pR$(l.receita)}</div>
-      <div style="text-align:right;font-size:13px;font-weight:700;color:#8b5cf6;">${l.liquido!=null?_pR$(l.liquido):'—'}</div>
+      <div style="text-align:right;font-size:13px;font-weight:700;color:var(--cyan);">${_pR$(l.receita)}</div>
+      <div style="text-align:right;font-size:13px;font-weight:700;color:var(--purple);">${l.liquido!=null?_pR$(l.liquido):'—'}</div>
       <div style="text-align:right;font-size:13px;font-weight:700;color:${_pCorMargem(l.margem)};">${_pR$(l.lucro)}</div>
       <div style="text-align:right;">
-        <span style="background:${_pCorMargem(l.margem)}22;color:${_pCorMargem(l.margem)};padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;">${_pN(l.margem,1)}%</span>
+        <span style="background:color-mix(in srgb,${_pCorMargem(l.margem)} 13%,transparent);color:${_pCorMargem(l.margem)};padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;">${_pN(l.margem,1)}%</span>
       </div>
     </div>
     ${exp ? _renderPortalVendaDetalhe(p, l) : ''}
@@ -1303,23 +1303,23 @@ function _renderPortalVendaDetalhe(p, l) {
   const tx = p.taxas || {};
   const hasEscrow = p.taxas != null;
   const linhas = [
-    { label:'💰 Total do Pedido', v: l.receita, cor:'#0ea5e9', sinal:'+' },
-    tx.comissao>0    ? { label:'🏦 Comissão',       v:-tx.comissao,    cor:'#dc2626', sinal:'-' } : null,
-    tx.taxaServico>0 ? { label:'⚙️ Taxa de Serviço', v:-tx.taxaServico, cor:'#dc2626', sinal:'-' } : null,
-    tx.frete>0       ? { label:'🚚 Frete',           v:-Math.abs(tx.frete), cor:'#f97316', sinal:'-' } : null,
-    tx.voucher>0     ? { label:'🎟️ Voucher',         v: tx.voucher,     cor:'#16a34a', sinal:'+' } : null,
-    l.liquido!=null  ? { label:'💳 Líquido (após taxas)', v:l.liquido, cor:'#8b5cf6', sinal:'=', bold:true } : null,
-    { label:'📦 Custo do Produto', v:-l.custo, cor:'#dc2626', sinal:'-' },
-    l.impVal>0 ? { label:`🧾 Imposto${l.impDeEscrow?' (escrow)':l.impPct?` (${l.impPct}%)`:''}`, v:-l.impVal, cor:'#fbbf24', sinal:'-' } : null,
-    l.outros>0 ? { label:'➕ Outros custos', v:-l.outros, cor:'#dc2626', sinal:'-' } : null,
-    l.extra   ? { label:'➕ Linhas extras', v:-l.extra, cor: l.extra>0?'#dc2626':'#16a34a', sinal: l.extra>0?'-':'+' } : null,
+    { label:'Total do Pedido', v: l.receita, cor:'var(--cyan)', sinal:'+' },
+    tx.comissao>0    ? { label:'Comissão',       v:-tx.comissao,    cor:'var(--red)', sinal:'-' } : null,
+    tx.taxaServico>0 ? { label:'Taxa de Serviço', v:-tx.taxaServico, cor:'var(--red)', sinal:'-' } : null,
+    tx.frete>0       ? { label:'Frete',           v:-Math.abs(tx.frete), cor:'var(--orange)', sinal:'-' } : null,
+    tx.voucher>0     ? { label:'Voucher',         v: tx.voucher,     cor:'var(--green)', sinal:'+' } : null,
+    l.liquido!=null  ? { label:'Líquido (após taxas)', v:l.liquido, cor:'var(--purple)', sinal:'=', bold:true } : null,
+    { label:'Custo do Produto', v:-l.custo, cor:'var(--red)', sinal:'-' },
+    l.impVal>0 ? { label:`Imposto${l.impDeEscrow?' (escrow)':l.impPct?` (${l.impPct}%)`:''}`, v:-l.impVal, cor:'var(--yellow)', sinal:'-' } : null,
+    l.outros>0 ? { label:'Outros custos', v:-l.outros, cor:'var(--red)', sinal:'-' } : null,
+    l.extra   ? { label:'Linhas extras', v:-l.extra, cor: l.extra>0?'var(--red)':'var(--green)', sinal: l.extra>0?'-':'+' } : null,
     { label:'✅ Lucro Bruto', v:l.lucro, cor:_pCorMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
   ].filter(Boolean);
 
   return `
   <div style="display:flex;background:var(--bg-base);border-top:1px solid var(--border);flex-wrap:wrap;">
     <div style="flex:1;min-width:260px;padding:16px 20px;border-right:1px solid var(--border);">
-      <div style="font-size:10px;color:var(--text-secondary);font-weight:700;text-transform:uppercase;margin-bottom:10px;">Detalhes do Pedido</div>
+      <div style="font-size:10px;color:var(--text-secondary);font-weight:700;text-transform:none;margin-bottom:10px;">Detalhes do Pedido</div>
       <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px;">
         <div><div style="font-size:10px;color:var(--text-secondary);">ID</div><div style="font-size:12px;color:var(--text-primary);">${p.id}</div></div>
         <div><div style="font-size:10px;color:var(--text-secondary);">Plataforma</div><div style="font-size:12px;color:var(--text-primary);font-weight:600;">${p.plataforma}</div></div>
@@ -1327,18 +1327,18 @@ function _renderPortalVendaDetalhe(p, l) {
         <div><div style="font-size:10px;color:var(--text-secondary);">Status</div><div style="font-size:12px;color:var(--text-primary);">${p.status||'—'}</div></div>
       </div>
       ${p.itens && p.itens.length ? `
-      <div style="font-size:10px;color:var(--text-secondary);font-weight:700;text-transform:uppercase;margin-bottom:8px;">Itens</div>
+      <div style="font-size:10px;color:var(--text-secondary);font-weight:700;text-transform:none;margin-bottom:8px;">Itens</div>
       ${p.itens.map(it=>`
         <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
           ${it.imagem?`<img src="${it.imagem}" style="width:32px;height:32px;object-fit:cover;border-radius:5px;flex-shrink:0;">` : ''}
           <div style="flex:1;font-size:12px;color:var(--text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.nome}</div>
           <div style="font-size:11px;color:var(--text-secondary);flex-shrink:0;">x${it.qtd}</div>
-          <div style="font-size:12px;color:#0ea5e9;font-weight:600;flex-shrink:0;">${_pR$(it.preco)}</div>
+          <div style="font-size:12px;color:var(--cyan);font-weight:600;flex-shrink:0;">${_pR$(it.preco)}</div>
         </div>`).join('')}` : ''}
     </div>
     <div style="width:280px;flex-shrink:0;padding:16px 20px;">
-      <div style="font-size:10px;color:var(--text-secondary);font-weight:700;text-transform:uppercase;margin-bottom:10px;">
-        Composição do Lucro ${hasEscrow ? '<span style="color:#8b5cf6;font-size:9px;background:#8b5cf622;padding:1px 6px;border-radius:8px;margin-left:4px;">dados da API</span>' : ''}
+      <div style="font-size:10px;color:var(--text-secondary);font-weight:700;text-transform:none;margin-bottom:10px;">
+        Composição do Lucro ${hasEscrow ? '<span style="color:var(--purple);font-size:9px;background:#8b5cf622;padding:1px 6px;border-radius:8px;margin-left:4px;">dados da API</span>' : ''}
       </div>
       ${linhas.map(r=>`
         <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
@@ -1392,9 +1392,9 @@ Router.register('portal-abc', (params, el) => {
   const fatC   = classificados.filter(p=>p.cls==='C').reduce((s,p)=>s+p.fat,0);
 
   const clsCfg = {
-    A: {cor:'#16a34a', bg:'#f0fdf4', desc:'80% do faturamento'},
-    B: {cor:'#d97706', bg:'#fffbeb', desc:'15% do faturamento'},
-    C: {cor:'#dc2626', bg:'#fef2f2', desc:'5% do faturamento'},
+    A: {cor:'var(--green)', bg:'var(--green-bg)', desc:'80% do faturamento'},
+    B: {cor:'var(--yellow)', bg:'var(--yellow-bg)', desc:'15% do faturamento'},
+    C: {cor:'var(--red)', bg:'var(--red-bg)', desc:'5% do faturamento'},
   };
 
   const rows = classificados.map((p, i) => {
@@ -1424,7 +1424,7 @@ Router.register('portal-abc', (params, el) => {
   el.innerHTML = `
     <div style="padding:24px;max-width:1200px;margin:0 auto;">
       <div style="margin-bottom:16px;">
-        <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">📈 Curva ABC de Produtos</h2>
+        <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">Curva ABC de Produtos</h2>
         <div style="font-size:13px;color:var(--text-secondary);">${sorted.length} produtos analisados · Faturamento total: ${_pR$(total)}</div>
       </div>
 
@@ -1432,19 +1432,19 @@ Router.register('portal-abc', (params, el) => {
 
       <!-- Resumo ABC -->
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;">
-        <div style="background:var(--green-bg);border:1px solid #bbf7d0;border-radius:12px;padding:20px;text-align:center;">
+        <div style="background:var(--green-bg);border:1px solid color-mix(in srgb,var(--green) 28%,transparent);border-radius:12px;padding:20px;text-align:center;">
           <div style="font-size:32px;font-weight:700;color:var(--green);">A</div>
           <div style="font-size:13px;font-weight:700;color:var(--green);margin:4px 0;">${countA} produto(s)</div>
           <div style="font-size:18px;font-weight:700;color:var(--text-primary);">${_pR$(fatA)}</div>
           <div style="font-size:11px;color:var(--green);margin-top:4px;">Foco total — ${_pN(total>0?fatA/total*100:0,1)}% do faturamento</div>
         </div>
-        <div style="background:var(--yellow-bg);border:1px solid #fde68a;border-radius:12px;padding:20px;text-align:center;">
+        <div style="background:var(--yellow-bg);border:1px solid color-mix(in srgb,var(--yellow) 28%,transparent);border-radius:12px;padding:20px;text-align:center;">
           <div style="font-size:32px;font-weight:700;color:var(--yellow);">B</div>
           <div style="font-size:13px;font-weight:700;color:var(--yellow);margin:4px 0;">${countB} produto(s)</div>
           <div style="font-size:18px;font-weight:700;color:var(--text-primary);">${_pR$(fatB)}</div>
           <div style="font-size:11px;color:var(--yellow);margin-top:4px;">Monitorar — ${_pN(total>0?fatB/total*100:0,1)}% do faturamento</div>
         </div>
-        <div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:12px;padding:20px;text-align:center;">
+        <div style="background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:12px;padding:20px;text-align:center;">
           <div style="font-size:32px;font-weight:700;color:var(--red);">C</div>
           <div style="font-size:13px;font-weight:700;color:var(--red);margin:4px 0;">${countC} produto(s)</div>
           <div style="font-size:18px;font-weight:700;color:var(--text-primary);">${_pR$(fatC)}</div>

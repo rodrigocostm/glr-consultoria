@@ -22,7 +22,7 @@ function renderShell() {
   root.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
       <div>
-        <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">🏷️ Central de Promoções</h2>
+        <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">Central de Promoções</h2>
         <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0;">Mercado Livre — promoções por anúncio com a margem real, campanhas e cupons</p>
       </div>
       <select id="promo-sel-conta" class="form-input" style="border-radius:99px;padding:7px 14px;min-width:200px;">
@@ -367,7 +367,7 @@ const PM = (() => {
     const abaixo = itens.filter(it => custoDe(it.id) != null && it.opcoes?.length && !it.melhor?.bate);
     const F = { todos: itens, batem, abaixo, semcusto: semCusto, ativa: emPromo };
     const lista = (F[st.filtro] || itens).slice().sort((a, b) => (b.vendidos || 0) - (a.vendidos || 0));
-    const corM = mg => mg == null ? 'var(--text-muted)' : mg >= m ? '#16a34a' : mg >= 0 ? '#d97706' : '#dc2626';
+    const corM = mg => mg == null ? 'var(--text-muted)' : mg >= m ? 'var(--green)' : mg >= 0 ? 'var(--yellow)' : 'var(--red)';
     const chipM = mg => mg == null ? '<span class="pm-chip" style="--c:var(--text-muted)">sem custo</span>' : `<span class="pm-chip" style="--c:${corM(mg)}">${mg.toFixed(1).replace('.', ',')}%</span>`;
     const card = (k, rot, n, sub, cor) => `<button class="pm-card ${st.filtro === k ? 'on' : ''}" style="--c:${cor}" onclick="window._pmFiltro('${k}')"><span class="pm-rot">${rot}</span><b>${n}</b><span class="pm-sub">${sub}</span></button>`;
 
@@ -382,11 +382,11 @@ const PM = (() => {
       ${st.carregando || st.emLote ? `<div class="pm-prog">⏳ ${h(st.progresso)}</div>` : ''}
       ${itens.length ? `
       <div class="pm-cards">
-        ${card('todos', 'Anúncios ativos', itens.length, 'com promoções avaliadas', '#2a78d6')}
-        ${card('batem', 'Batem a margem', batem.length, `promoção disponível ≥ ${m}%`, '#16a34a')}
-        ${card('abaixo', 'Abaixo da margem', abaixo.length, 'nenhuma promoção dá a margem', '#d97706')}
-        ${card('semcusto', 'Sem custo', semCusto.length, 'cadastre para ver a margem', '#dc2626')}
-        ${card('ativa', 'Em promoção', emPromo.length, 'promoção em vigor', '#64748b')}
+        ${card('todos', 'Anúncios ativos', itens.length, 'com promoções avaliadas', 'var(--accent)')}
+        ${card('batem', 'Batem a margem', batem.length, `promoção disponível ≥ ${m}%`, 'var(--green)')}
+        ${card('abaixo', 'Abaixo da margem', abaixo.length, 'nenhuma promoção dá a margem', 'var(--yellow)')}
+        ${card('semcusto', 'Sem custo', semCusto.length, 'cadastre para ver a margem', 'var(--red)')}
+        ${card('ativa', 'Em promoção', emPromo.length, 'promoção em vigor', 'var(--text-muted)')}
       </div>
       <div class="pm-acoes">
         <span class="pm-mut">${lista.length} anúncio(s) · ordenado por vendas</span>
@@ -523,7 +523,7 @@ async function buscarPromocoes() {
     promocoes = r?.data?.results || r?.results || [];
   } catch(e) {
     promocoes = [];
-    body.innerHTML = `<div style="background:var(--red-bg);border:1px solid #fecaca;border-radius:12px;padding:24px;text-align:center;color:var(--red);">
+    body.innerHTML = `<div style="background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:12px;padding:24px;text-align:center;color:var(--red);">
       <div style="font-weight:600;">Erro ao buscar promoções: ${e.message}</div>
     </div>`;
     return;
@@ -660,7 +660,7 @@ window._promoVerItens = async function(promotionId, promotionType) {
     const itens = r?.data?.results || r?.results || [];
     if (!itens.length) { el.innerHTML = `<div style="font-size:12px;color:var(--text-secondary);">Nenhum item participante encontrado.</div>`; return; }
     el.innerHTML = `<table style="width:100%;border-collapse:collapse;margin-top:6px;">
-      <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;">
+      <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:none;">
         <th style="text-align:left;padding:4px 8px;">Item</th><th style="text-align:right;padding:4px 8px;">De</th><th style="text-align:right;padding:4px 8px;">Por</th><th style="text-align:right;padding:4px 8px;">Desconto</th>
       </tr></thead>
       <tbody>${itens.map(it => {

@@ -80,10 +80,10 @@ Router.register('relatorios', (params, el) => {
     const catTop = Object.entries(contagemCat).sort((a, b) => b[1] - a[1])[0];
 
     document.getElementById('rel-kpis').innerHTML = `
-      ${kpiCard('Ações no Dia', acoes.length, acoes.length ? 'registradas' : 'nenhuma ainda', acoes.length > 0, 'rgba(99,102,241,0.15)', '📋', '#6366f1')}
-      ${kpiCard('Analistas Ativos', `${ativos}/${GLR.gestores.length}`, ativos === GLR.gestores.length ? 'todos registraram' : `${GLR.gestores.length - ativos} sem registro`, ativos === GLR.gestores.length, 'rgba(16,185,129,0.12)', '👥', '#10b981')}
-      ${kpiCard('Clientes Atendidos', clientesUnicos, 'clientes únicos no dia', clientesUnicos > 0, 'rgba(245,158,11,0.12)', '🏢', '#f59e0b')}
-      ${kpiCard('Categoria Mais Comum', catTop ? catTop[0] : '—', catTop ? `${catTop[1]} ação${catTop[1] !== 1 ? 'ões' : ''}` : 'sem dados', !!catTop, 'rgba(139,92,246,0.12)', '🏷️', '#8b5cf6')}
+      ${kpiCard('Ações no Dia', acoes.length, acoes.length ? 'registradas' : 'nenhuma ainda', acoes.length > 0, 'rgba(99,102,241,0.15)', '📋', 'var(--accent)')}
+      ${kpiCard('Analistas Ativos', `${ativos}/${GLR.gestores.length}`, ativos === GLR.gestores.length ? 'todos registraram' : `${GLR.gestores.length - ativos} sem registro`, ativos === GLR.gestores.length, 'rgba(16,185,129,0.12)', '👥', 'var(--green)')}
+      ${kpiCard('Clientes Atendidos', clientesUnicos, 'clientes únicos no dia', clientesUnicos > 0, 'rgba(245,158,11,0.12)', '🏢', 'var(--yellow)')}
+      ${kpiCard('Categoria Mais Comum', catTop ? catTop[0] : '—', catTop ? `${catTop[1]} ação${catTop[1] !== 1 ? 'ões' : ''}` : 'sem dados', !!catTop, 'rgba(139,92,246,0.12)', '🏷️', 'var(--purple)')}
     `;
 
     document.getElementById('rel-lista').innerHTML = GLR.gestores.map(g => {
@@ -93,7 +93,7 @@ Router.register('relatorios', (params, el) => {
         <div class="card" style="margin-bottom:14px;${semAtividade ? 'opacity:.7;' : ''}">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${lista.length ? '14px' : '0'};">
             <div style="display:flex;align-items:center;gap:10px;">
-              <div style="width:34px;height:34px;border-radius:50%;background:${g.cor || '#4f46e5'}22;color:${g.cor || 'var(--accent)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">${g.avatar || g.nome?.slice(0,2).toUpperCase() || ''}</div>
+              <div style="width:34px;height:34px;border-radius:50%;background:color-mix(in srgb,${g.cor || 'var(--accent)'} 13%,transparent);color:${g.cor || 'var(--accent)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">${g.avatar || g.nome?.slice(0,2).toUpperCase() || ''}</div>
               <div style="font-size:14px;font-weight:700;color:var(--text-primary);">${g.nome}</div>
             </div>
             <span class="badge" style="background:${semAtividade ? 'var(--red-bg)' : 'var(--green-bg)'};color:${semAtividade ? 'var(--red)' : 'var(--green)'};">${lista.length} ${lista.length === 1 ? 'ação' : 'ações'}</span>
@@ -102,14 +102,14 @@ Router.register('relatorios', (params, el) => {
             ? `<div style="font-size:12.5px;color:var(--text-muted);padding:4px 0 2px;">⚠️ Nenhuma ação registrada nesse dia.</div>`
             : lista.map(a => {
                 const c = GLR.clientes.find(cl => cl.id === a.clienteId);
-                const cor = GLR.tipoAcaoColor[a.categoria] || '#6366f1';
+                const cor = GLR.tipoAcaoColor[a.categoria] || 'var(--accent)';
                 const icone = ICONE_ACAO_REL[a.categoria] || '📌';
                 return `
                   <div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--border);">
                     <div style="font-size:16px;">${icone}</div>
                     <div style="flex:1;min-width:0;">
                       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                        <span class="badge" style="background:${cor}20;color:${cor};">${a.categoria}</span>
+                        <span class="badge" style="background:color-mix(in srgb,${cor} 13%,transparent);color:${cor};">${a.categoria}</span>
                         ${c ? `<span style="font-size:12px;color:var(--text-muted);">${c.nome}</span>` : ''}
                         <span class="badge ${a.status === 'concluida' ? 'status-crescimento' : 'status-ativo'}" style="margin-left:auto;">${a.status === 'concluida' ? 'Concluída' : 'Em andamento'}</span>
                         <button onclick="openModalNovaAcao(${a.clienteId ?? 'null'}, ${a.id})" title="Editar ação" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px;padding:2px 4px;">✏️</button>
@@ -149,7 +149,7 @@ Router.register('relatorios', (params, el) => {
 
     <div id="rel-kpis" class="kpi-grid" style="margin-bottom:24px;"></div>
 
-    <div class="section-title mb-16">👥 Ações por Analista</div>
+    <div class="section-title mb-16">Ações por Analista</div>
     <div id="rel-lista"></div>
   </div>`;
 

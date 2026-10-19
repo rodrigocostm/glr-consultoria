@@ -3,7 +3,7 @@
 // ============================================================
 
 // ---- Helpers visuais ----
-function sparkline(data, color = '#6366f1') {
+function sparkline(data, color = 'var(--accent)') {
   const max = Math.max(...data);
   return `<div class="sparkline">${data.map(v => `
     <div class="spark-bar" style="height:${Math.round((v/max)*100)}%;background:${color};opacity:0.8;"></div>
@@ -18,10 +18,10 @@ function delta(val, suffix = '%') {
 }
 
 function scoreColor(s) {
-  if (s >= 80) return '#10b981';
-  if (s >= 60) return '#6366f1';
-  if (s >= 40) return '#f59e0b';
-  return '#ef4444';
+  if (s >= 80) return 'var(--green)';
+  if (s >= 60) return 'var(--accent)';
+  if (s >= 40) return 'var(--yellow)';
+  return 'var(--red)';
 }
 
 // ---- Dashboard (Executivo + Diretoria fundidos numa página só) ----
@@ -272,7 +272,7 @@ async function _dashBuscarVendasPorDia() {
   }));
 
   window._dashBuscandoVendasDia = false;
-  if (btn) { btn.disabled = false; btn.textContent = '🔄 Atualizar'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Atualizar'; }
   // Só redesenha se ainda estiver no Dashboard (a busca pode terminar depois
   // que o usuário já foi para outra tela — não pode redesenhar a tela dele).
   if (Router.currentPage === 'dashboard') Router.resolve();
@@ -553,7 +553,7 @@ Router.register('dashboard', (params, el) => {
             ${['crescimento', 'ativo', 'queda', 'risco'].map(s => {
               const count = clientes.filter(c => c.status === s).length;
               const pct = clientes.length ? Math.round(count / clientes.length * 100) : 0;
-              return `<div class="dx-leg"><i style="background:${{ crescimento: 'var(--green)', ativo: 'var(--accent)', queda: '#f97316', risco: 'var(--red)' }[s]}"></i><span>${GLR.statusLabel[s]}</span><b>${count}</b><small>${pct}%</small></div>`;
+              return `<div class="dx-leg"><i style="background:${{ crescimento: 'var(--green)', ativo: 'var(--accent)', queda: 'var(--orange)', risco: 'var(--red)' }[s]}"></i><span>${GLR.statusLabel[s]}</span><b>${count}</b><small>${pct}%</small></div>`;
             }).join('')}
           </div>
         </div>
@@ -1036,8 +1036,8 @@ function tooltipStyle() {
     backgroundColor: '#16161f',
     borderColor: 'rgba(255,255,255,0.07)',
     borderWidth: 1,
-    titleColor: '#f1f1f8',
-    bodyColor: '#9192a8',
+    titleColor: 'var(--bg-subtle)',
+    bodyColor: 'var(--text-muted)',
     padding: 10,
     cornerRadius: 8,
     callbacks: {

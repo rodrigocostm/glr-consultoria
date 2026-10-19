@@ -319,6 +319,24 @@
       borderColor: v('--border-strong'), borderWidth: 1, padding: 10, cornerRadius: 10,
       boxPadding: 4, usePointStyle: true, titleFont: { weight: '600' },
     });
+    if (!aplicarTemaGraficos.reg) {
+      aplicarTemaGraficos.reg = true;
+      // Segurança: o canvas não entende var(--token); converte para a cor real antes de desenhar
+      const resolver = c => {
+        if (typeof c !== 'string' || c.indexOf('var(') < 0) return c;
+        return c.replace(/var\((--[\w-]+)\)/g, (m, n) => getComputedStyle(document.body).getPropertyValue(n).trim() || m);
+      };
+      const PROPS = ['borderColor', 'backgroundColor', 'pointBackgroundColor', 'pointBorderColor', 'hoverBackgroundColor', 'hoverBorderColor'];
+      Chart.register({ id: 'glrCoresTema', beforeUpdate(ch) {
+        (ch.config.data?.datasets || []).forEach(ds => PROPS.forEach(p => {
+          const v = ds[p];
+          if (v == null) return;
+          if (Array.isArray(v)) ds[p] = v.map(resolver);
+          else if (typeof v === 'function' && !v.__glr) { const f = v; ds[p] = (...a) => resolver(f(...a)); ds[p].__glr = true; }
+          else ds[p] = resolver(v);
+        }));
+      } });
+    }
     Object.values(Chart.instances || {}).forEach(c => { try { c.update('none'); } catch (e) {} });
   }
   function toggleTheme() {
@@ -428,36 +446,36 @@
   atualizarBadges();
 </script>
 <script src="js/router.js?v=15"></script>
-<script src="js/pages-dashboard.js?v=36"></script>
-<script src="js/pages-gestores.js?v=18"></script>
-<script src="js/pages-clientes.js?v=20"></script>
-<script src="js/pages-operacional.js?v=13"></script>
-<script src="js/pages-avancados.js?v=61"></script>
-<script src="js/pages-dre.js?v=12"></script>
+<script src="js/pages-dashboard.js?v=37"></script>
+<script src="js/pages-gestores.js?v=19"></script>
+<script src="js/pages-clientes.js?v=21"></script>
+<script src="js/pages-operacional.js?v=14"></script>
+<script src="js/pages-avancados.js?v=62"></script>
+<script src="js/pages-dre.js?v=13"></script>
 <script src="js/marketplace-api.js?v=26"></script>
-<script src="js/pages-integracoes.js?v=12"></script>
+<script src="js/pages-integracoes.js?v=13"></script>
 <script src="js/margem-lucro.js?v=1"></script>
-<script src="js/pages-vendas.js?v=99"></script>
-<script src="js/pages-analytics.js?v=13"></script>
-<script src="js/pages-diagnostico.js?v=12"></script>
-<script src="js/pages-conciliacao.js?v=8"></script>
-<script src="js/pages-financeiro.js?v=87"></script>
-<script src="js/pages-ads.js?v=45"></script>
-<script src="js/pages-agente.js?v=61"></script>
-<script src="js/pages-agente-ml.js?v=9"></script>
-<script src="js/pages-afiliados.js?v=8"></script>
-<script src="js/pages-promocoes.js?v=6"></script>
+<script src="js/pages-vendas.js?v=100"></script>
+<script src="js/pages-analytics.js?v=14"></script>
+<script src="js/pages-diagnostico.js?v=13"></script>
+<script src="js/pages-conciliacao.js?v=9"></script>
+<script src="js/pages-financeiro.js?v=88"></script>
+<script src="js/pages-ads.js?v=46"></script>
+<script src="js/pages-agente.js?v=62"></script>
+<script src="js/pages-agente-ml.js?v=10"></script>
+<script src="js/pages-afiliados.js?v=9"></script>
+<script src="js/pages-promocoes.js?v=7"></script>
 <script src="js/pages-produtos.js?v=6"></script>
 <script src="js/pages-vendometro.js?v=6"></script>
-<script src="js/pages-rastreamento.js?v=16"></script>
-<script src="js/pages-leads.js?v=4"></script>
-<script src="js/pages-anuncios.js?v=9"></script>
-<script src="js/pages-amazon.js?v=3"></script>
-<script src="js/pages-precos-ml.js?v=3"></script>
-<script src="js/pages-portal.js?v=27"></script>
-<script src="js/pages-portal-admin.js?v=2"></script>
-<script src="js/pages-relatorios.js?v=3"></script>
-<script src="js/pages-fotos.js?v=3"></script>
+<script src="js/pages-rastreamento.js?v=17"></script>
+<script src="js/pages-leads.js?v=5"></script>
+<script src="js/pages-anuncios.js?v=10"></script>
+<script src="js/pages-amazon.js?v=4"></script>
+<script src="js/pages-precos-ml.js?v=4"></script>
+<script src="js/pages-portal.js?v=28"></script>
+<script src="js/pages-portal-admin.js?v=3"></script>
+<script src="js/pages-relatorios.js?v=4"></script>
+<script src="js/pages-fotos.js?v=4"></script>
 <script>
   // ---- App Init ----
   document.addEventListener('DOMContentLoaded', () => {

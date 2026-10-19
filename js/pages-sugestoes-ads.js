@@ -13,13 +13,13 @@ let filtroStatus = 'pendente';
 const TIPO_LABEL = {
   pausar: '⏸️ Pausar campanha',
   retomar: '▶️ Retomar campanha',
-  ajustar_orcamento: '💰 Ajustar orçamento',
-  ajustar_roas_target: '🎯 Ajustar meta ROAS',
-  revisar_anuncio: '🛍️ Revisar anúncio (fora do ADS)',
-  outro: '💡 Outro',
+  ajustar_orcamento: 'Ajustar orçamento',
+  ajustar_roas_target: 'Ajustar meta ROAS',
+  revisar_anuncio: 'Revisar anúncio (fora do ADS)',
+  outro: 'Outro',
 };
-const PRIORIDADE_COR = { alta: '#dc2626', media: '#d97706', baixa: '#64748b' };
-const STATUS_LABEL = { pendente: '🕐 Pendente', aprovado: '✅ Aprovado', rejeitado: '❌ Rejeitado', executado: '🚀 Executado', erro: '⚠️ Erro' };
+const PRIORIDADE_COR = { alta: 'var(--red)', media: 'var(--yellow)', baixa: 'var(--text-muted)' };
+const STATUS_LABEL = { pendente: 'Pendente', aprovado: '✅ Aprovado', rejeitado: '❌ Rejeitado', executado: 'Executado', erro: '⚠️ Erro' };
 
 function renderPage(params, container) {
   container.innerHTML = `<div id="sug-root" style="padding:24px;max-width:1200px;margin:0 auto;"></div>`;
@@ -32,7 +32,7 @@ function renderShell() {
   if (!root) return;
   root.innerHTML = `
     <div style="margin-bottom:20px;">
-      <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">🎯 Sugestões de ADS</h2>
+      <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">Sugestões de ADS</h2>
       <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0;">
         Otimizações que a IA identificou na Central de ADS. Nada é executado sozinho — você aprova ou rejeita cada uma.
         Ao aprovar uma ação de pausar/retomar/orçamento, a mudança é feita de verdade na conta.
@@ -64,7 +64,7 @@ function renderFiltros() {
   const el = document.getElementById('sug-filtros');
   if (!el) return;
   const cont = st => sugestoes.filter(s => st === 'todos' || s.status === st).length;
-  const opcoes = [['pendente', `🕐 Pendentes (${cont('pendente')})`], ['aprovado', `✅ Aprovadas (${cont('aprovado')})`], ['executado', `🚀 Executadas (${cont('executado')})`], ['rejeitado', `❌ Rejeitadas (${cont('rejeitado')})`], ['todos', `Todas (${sugestoes.length})`]];
+  const opcoes = [['pendente', `Pendentes (${cont('pendente')})`], ['aprovado', `✅ Aprovadas (${cont('aprovado')})`], ['executado', `Executadas (${cont('executado')})`], ['rejeitado', `❌ Rejeitadas (${cont('rejeitado')})`], ['todos', `Todas (${sugestoes.length})`]];
   el.innerHTML = opcoes.map(([val, label]) => `
     <button class="btn btn-sm ${filtroStatus === val ? 'btn-primary' : 'btn-secondary'}" onclick="window._sugFiltrar('${val}')">${label}</button>
   `).join('');
@@ -85,7 +85,7 @@ function renderLista() {
   if (!el) return;
   const lista = filtroStatus === 'todos' ? sugestoes : sugestoes.filter(s => s.status === filtroStatus);
   if (!lista.length) {
-    el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-secondary);font-size:13px;background:var(--bg-card);border-radius:10px;">Nenhuma sugestão ${filtroStatus === 'todos' ? 'ainda' : 'nesse status'}. Gere na Central de ADS com "🎯 Gerar Sugestões".</div>`;
+    el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-secondary);font-size:13px;background:var(--bg-card);border-radius:10px;">Nenhuma sugestão ${filtroStatus === 'todos' ? 'ainda' : 'nesse status'}. Gere na Central de ADS com "Gerar Sugestões".</div>`;
     return;
   }
 
@@ -110,7 +110,7 @@ function renderLista() {
           <div style="font-size:14px;font-weight:700;">${TIPO_LABEL[s.tipo] || s.tipo}${s.campanha_nome ? ' — ' + s.campanha_nome : ''}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:${PRIORIDADE_COR[s.prioridade] || 'var(--text-muted)'};">${s.prioridade || 'media'}</span>
+          <span style="font-size:10.5px;font-weight:700;text-transform:none;color:${PRIORIDADE_COR[s.prioridade] || 'var(--text-muted)'};">${s.prioridade || 'media'}</span>
           <span style="font-size:11px;background:var(--bg-card-hover);padding:3px 10px;border-radius:99px;">${STATUS_LABEL[s.status] || s.status}</span>
         </div>
       </div>

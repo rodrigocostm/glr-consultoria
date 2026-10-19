@@ -391,7 +391,7 @@ Router.register('financeiro', async (params, el) => {
     );
 
     // ── 3. DETALHAMENTO COMPLETO DE TAXAS ──
-    const sDetalheTaxas = secao('detalhe-taxas', '📊 Detalhamento Completo de Taxas',
+    const sDetalheTaxas = secao('detalhe-taxas', 'Detalhamento Completo de Taxas',
       {num:-(totDeducoes + totArmaz), txt:R$s(-(totDeducoes + totArmaz))},
       `<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;padding:10px;background:rgba(99,102,241,0.05);border-radius:8px;">
         <strong>Aviso:</strong> Este detalhamento mostra todas as taxas e deduções aplicadas. Valores negativos representam custos.
@@ -410,27 +410,27 @@ Router.register('financeiro', async (params, el) => {
 
               <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(99,102,241,0.2);">
                 <div style="font-size:10px;color:var(--orange);font-weight:600;margin-bottom:6px;">TAXAS MARKETPLACE:</div>
-                ${a.comissao > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">💳 Comissão:</span><strong style="color:var(--red);">- ${R$(a.comissao)}</strong></div>` : ''}
-                ${a.taxaServico > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">⚙️ Taxa de Serviço:</span><strong style="color:var(--red);">- ${R$(a.taxaServico)}</strong></div>` : ''}
-                ${a.frete > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🚚 Frete Descontado:</span><strong style="color:var(--red);">- ${R$(a.frete)}</strong></div>` : ''}
-                ${a.taxaCartao > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">💳 Taxa Cartão de Crédito:</span><strong style="color:var(--red);">- ${R$(a.taxaCartao)}</strong></div>` : ''}
+                ${a.comissao > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">Comissão:</span><strong style="color:var(--red);">- ${R$(a.comissao)}</strong></div>` : ''}
+                ${a.taxaServico > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">Taxa de Serviço:</span><strong style="color:var(--red);">- ${R$(a.taxaServico)}</strong></div>` : ''}
+                ${a.frete > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">Frete Descontado:</span><strong style="color:var(--red);">- ${R$(a.frete)}</strong></div>` : ''}
+                ${a.taxaCartao > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">Taxa Cartão de Crédito:</span><strong style="color:var(--red);">- ${R$(a.taxaCartao)}</strong></div>` : ''}
                 ${Object.entries(a.detalhesOutros||{}).filter(([,v])=>Math.abs(v)>0.01).sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).map(([k,v]) =>
-                  `<div class="fin-row"><span style="padding-left:12px;">🔸 ${_shopeeFeeLabel(k)}:</span><strong style="color:${v>=0?'var(--green)':'var(--red)'};">${v>=0?'+':'-'} ${R$(Math.abs(v))}</strong></div>`
+                  `<div class="fin-row"><span style="padding-left:12px;">${_shopeeFeeLabel(k)}:</span><strong style="color:${v>=0?'var(--green)':'var(--red)'};">${v>=0?'+':'-'} ${R$(Math.abs(v))}</strong></div>`
                 ).join('')}
               </div>
               ${(a.voucher > 0.01 || a.rebate > 0.01 || a.taxaMoedas > 0.01) ? `
               <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(99,102,241,0.2);opacity:.65;">
                 <div style="font-size:10px;font-style:italic;margin-bottom:4px;">ℹ️ Informativo (não afeta seu repasse):</div>
-                ${a.voucher > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🎟️ Voucher Shopee (custeado pela Shopee):</span><strong>+ ${R$(a.voucher)}</strong></div>` : ''}
-                ${a.rebate > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🔄 Rebate de comissão (já embutido acima):</span><strong>+ ${R$(a.rebate)}</strong></div>` : ''}
-                ${a.taxaMoedas > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">🪙 Moedas Shopee (cobertas pela Shopee):</span><strong>+ ${R$(a.taxaMoedas)}</strong></div>` : ''}
+                ${a.voucher > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">Voucher Shopee (custeado pela Shopee):</span><strong>+ ${R$(a.voucher)}</strong></div>` : ''}
+                ${a.rebate > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">Rebate de comissão (já embutido acima):</span><strong>+ ${R$(a.rebate)}</strong></div>` : ''}
+                ${a.taxaMoedas > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">Moedas Shopee (cobertas pela Shopee):</span><strong>+ ${R$(a.taxaMoedas)}</strong></div>` : ''}
               </div>` : ''}
 
               <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(99,102,241,0.2);">
                 <div style="font-size:10px;color:var(--blue);font-weight:600;margin-bottom:6px;">CUSTOS OPERACIONAIS:</div>
-                ${a.custoProd > 0 ? `<div class="fin-row"><span style="padding-left:12px;">📦 Custo dos Produtos:</span><strong style="color:var(--red);">- ${R$(a.custoProd)}</strong></div>` : ''}
-                ${a.custoExtra > 0 ? `<div class="fin-row"><span style="padding-left:12px;">📋 Custos Variáveis/Extras:</span><strong style="color:var(--red);">- ${R$(a.custoExtra)}</strong></div>` : ''}
-                ${a.imposto > 0 ? `<div class="fin-row"><span style="padding-left:12px;">📊 Impostos:</span><strong style="color:var(--red);">- ${R$(a.imposto)}</strong></div>` : ''}
+                ${a.custoProd > 0 ? `<div class="fin-row"><span style="padding-left:12px;">Custo dos Produtos:</span><strong style="color:var(--red);">- ${R$(a.custoProd)}</strong></div>` : ''}
+                ${a.custoExtra > 0 ? `<div class="fin-row"><span style="padding-left:12px;">Custos Variáveis/Extras:</span><strong style="color:var(--red);">- ${R$(a.custoExtra)}</strong></div>` : ''}
+                ${a.imposto > 0 ? `<div class="fin-row"><span style="padding-left:12px;">Impostos:</span><strong style="color:var(--red);">- ${R$(a.imposto)}</strong></div>` : ''}
               </div>
 
               <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(99,102,241,0.2);">
@@ -444,7 +444,7 @@ Router.register('financeiro', async (params, el) => {
 
     // ── 3b. Cancelamentos (ignorados) ──
     const totalCancelados = nomes.reduce((s,n)=>s+plats[n].nReemb, 0);
-    const sPedidosCancelados = totalCancelados > 0 ? secao('cancelados', '⛔ Pedidos Cancelados (não contabilizados)',
+    const sPedidosCancelados = totalCancelados > 0 ? secao('cancelados', 'Pedidos Cancelados (não contabilizados)',
       {num:totalCancelados, txt:R$(nomes.reduce((s,n)=>s+plats[n].valorReemb, 0))},
       nomes.map(n => {
         const a = plats[n];
@@ -453,8 +453,8 @@ Router.register('financeiro', async (params, el) => {
           <div class="fin-grupo">
             <div class="fin-row"><span style="font-weight:600;">${n}</span></div>
             <div style="padding-left:16px;border-left:2px solid rgba(239,68,68,0.3);">
-              <div class="fin-row"><span>📦 Pedidos cancelados:</span><strong>${a.nReemb}</strong></div>
-              <div class="fin-row"><span>💰 Valor cancelado (não entrou):</span><strong style="color:var(--text-muted);">${R$(a.valorReemb)}</strong></div>
+              <div class="fin-row"><span>Pedidos cancelados:</span><strong>${a.nReemb}</strong></div>
+              <div class="fin-row"><span>Valor cancelado (não entrou):</span><strong style="color:var(--text-muted);">${R$(a.valorReemb)}</strong></div>
               <div style="font-size:11px;color:var(--text-muted);padding:4px 0;">Cancelados antes do envio — sem impacto financeiro.</div>
             </div>
           </div>
@@ -464,7 +464,7 @@ Router.register('financeiro', async (params, el) => {
 
     // ── 3c. Devoluções (custo real) ──
     const totalDevolv = nomes.reduce((s,n)=>s+plats[n].nDevolv, 0);
-    const sPedidosDevolvidos = totalDevolv > 0 ? secao('devolucoes', '🔄 Devoluções (após envio)',
+    const sPedidosDevolvidos = totalDevolv > 0 ? secao('devolucoes', 'Devoluções (após envio)',
       {num:totalDevolv, txt:'- '+R$(nomes.reduce((s,n)=>s+plats[n].valorDevolv, 0))},
       nomes.map(n => {
         const a = plats[n];
@@ -474,9 +474,9 @@ Router.register('financeiro', async (params, el) => {
           <div class="fin-grupo">
             <div class="fin-row"><span style="font-weight:600;">${n}</span></div>
             <div style="padding-left:16px;border-left:2px solid rgba(239,68,68,0.3);">
-              <div class="fin-row"><span>🔄 Pedidos devolvidos:</span><strong>${a.nDevolv}</strong></div>
-              <div class="fin-row"><span>💰 Valor devolvido ao comprador:</span><strong style="color:var(--red);">- ${R$(a.valorDevolv)}</strong></div>
-              ${custoTotal>0 ? `<div class="fin-row"><span>📦 Custo de produto (não recuperado):</span><strong style="color:var(--red);">- ${R$(custoTotal)}</strong></div>` : ''}
+              <div class="fin-row"><span>Pedidos devolvidos:</span><strong>${a.nDevolv}</strong></div>
+              <div class="fin-row"><span>Valor devolvido ao comprador:</span><strong style="color:var(--red);">- ${R$(a.valorDevolv)}</strong></div>
+              ${custoTotal>0 ? `<div class="fin-row"><span>Custo de produto (não recuperado):</span><strong style="color:var(--red);">- ${R$(custoTotal)}</strong></div>` : ''}
             </div>
           </div>
         `;
@@ -512,7 +512,7 @@ Router.register('financeiro', async (params, el) => {
       const api = parseFloat(adsAPI[n])||0;
       const man = parseFloat(m.ads[n])||0;
       const efetivo = adsEfetivo(n);
-      const statusAds = api > 0 ? '✅ API' : (man > 0 ? '📝 Manual' : '⚠️ Sem dados');
+      const statusAds = api > 0 ? '✅ API' : (man > 0 ? 'Manual' : '⚠️ Sem dados');
       const corStatus = api > 0 ? 'var(--green)' : (man > 0 ? 'var(--blue)' : 'var(--orange)');
       return `
         <div class="fin-grupo">
@@ -525,26 +525,26 @@ Router.register('financeiro', async (params, el) => {
             value="${man>0?man:''}" placeholder="${api>0?'API: '+R$(api):'Manual'}" style="width:100%;"></div>
         </div>`;
     }).join('');
-    const sAds = secao('ads','💰 Investimento em ADS',{num:-totAds,txt:R$s(-totAds)},
+    const sAds = secao('ads','Investimento em ADS',{num:-totAds,txt:R$s(-totAds)},
       `<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;padding:8px;background:rgba(99,102,241,0.05);border-radius:8px;">
         Valores puxados automaticamente da API. Edite para sobrescrever.
       </div>${adsRows}`, true);
 
     // ── 5b. ADS Detalhados (cliques, impressões, ROI, etc) ──
-    const sAdsDetalhados = secao('ads-det','📈 Métricas Detalhadas de ADS',
+    const sAdsDetalhados = secao('ads-det','Métricas Detalhadas de ADS',
       {num:0, txt:''},
       Object.keys(adsDetalhados).length > 0
         ? Object.entries(adsDetalhados).map(([plat, dados]) => `
             <div class="fin-grupo">
               <div class="fin-row" style="font-weight:600;"><span>${plat}</span></div>
-              ${dados.investimento ? `<div class="fin-row"><span style="padding-left:12px;">💰 Investimento:</span><strong>${R$(dados.investimento)}</strong></div>` : ''}
-              ${dados.cliques ? `<div class="fin-row"><span style="padding-left:12px;">🖱️ Cliques:</span><strong>${dados.cliques}</strong></div>` : ''}
-              ${dados.impressoes ? `<div class="fin-row"><span style="padding-left:12px;">👁️ Impressões:</span><strong>${dados.impressoes}</strong></div>` : ''}
-              ${dados.ctr ? `<div class="fin-row"><span style="padding-left:12px;">📊 CTR:</span><strong>${dados.ctr.toFixed(2)}%</strong></div>` : ''}
-              ${dados.cpc ? `<div class="fin-row"><span style="padding-left:12px;">💵 CPC:</span><strong>${R$(dados.cpc)}</strong></div>` : ''}
-              ${dados.vendas ? `<div class="fin-row"><span style="padding-left:12px;">🛒 Vendas ADS:</span><strong>${dados.vendas}</strong></div>` : ''}
-              ${dados.faturamentoAds ? `<div class="fin-row"><span style="padding-left:12px;">💸 Faturamento ADS:</span><strong>${R$(dados.faturamentoAds)}</strong></div>` : ''}
-              ${dados.roas ? `<div class="fin-row"><span style="padding-left:12px;">📈 ROAS:</span><strong style="color:var(--green);">${dados.roas.toFixed(2)}</strong></div>` : ''}
+              ${dados.investimento ? `<div class="fin-row"><span style="padding-left:12px;">Investimento:</span><strong>${R$(dados.investimento)}</strong></div>` : ''}
+              ${dados.cliques ? `<div class="fin-row"><span style="padding-left:12px;">Cliques:</span><strong>${dados.cliques}</strong></div>` : ''}
+              ${dados.impressoes ? `<div class="fin-row"><span style="padding-left:12px;">Impressões:</span><strong>${dados.impressoes}</strong></div>` : ''}
+              ${dados.ctr ? `<div class="fin-row"><span style="padding-left:12px;">CTR:</span><strong>${dados.ctr.toFixed(2)}%</strong></div>` : ''}
+              ${dados.cpc ? `<div class="fin-row"><span style="padding-left:12px;">CPC:</span><strong>${R$(dados.cpc)}</strong></div>` : ''}
+              ${dados.vendas ? `<div class="fin-row"><span style="padding-left:12px;">Vendas ADS:</span><strong>${dados.vendas}</strong></div>` : ''}
+              ${dados.faturamentoAds ? `<div class="fin-row"><span style="padding-left:12px;">Faturamento ADS:</span><strong>${R$(dados.faturamentoAds)}</strong></div>` : ''}
+              ${dados.roas ? `<div class="fin-row"><span style="padding-left:12px;">ROAS:</span><strong style="color:var(--green);">${dados.roas.toFixed(2)}</strong></div>` : ''}
             </div>
           `).join('')
         : '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:10px;">Nenhum dado de ADS detalhado disponível</div>',
@@ -552,16 +552,16 @@ Router.register('financeiro', async (params, el) => {
     );
 
     // ── 5c. Afiliados (comissão) ──
-    const sAfiliados = secao('afil','👥 Comissão de Afiliados',
+    const sAfiliados = secao('afil','Comissão de Afiliados',
       {num:afiliados.totalComissao||0, txt:R$(afiliados.totalComissao||0)},
       afiliados.totalComissao > 0
         ? `
           <div class="fin-grupo">
-            <div class="fin-row"><span>💰 Total Comissão:</span><strong style="color:var(--green);">${R$(afiliados.totalComissao)}</strong></div>
-            <div class="fin-row"><span>🛍️ Total Vendas:</span><strong>${R$(afiliados.totalVendas||0)}</strong></div>
-            <div class="fin-row"><span>📦 Total Pedidos:</span><strong>${afiliados.totalPedidos||0}</strong></div>
-            <div class="fin-row"><span>👤 Total Afiliados:</span><strong>${afiliados.totalAfiliados||0}</strong></div>
-            <div class="fin-row"><span>📊 Taxa Média:</span><strong>${(afiliados.taxaMedia||0).toFixed(2)}%</strong></div>
+            <div class="fin-row"><span>Total Comissão:</span><strong style="color:var(--green);">${R$(afiliados.totalComissao)}</strong></div>
+            <div class="fin-row"><span>Total Vendas:</span><strong>${R$(afiliados.totalVendas||0)}</strong></div>
+            <div class="fin-row"><span>Total Pedidos:</span><strong>${afiliados.totalPedidos||0}</strong></div>
+            <div class="fin-row"><span>Total Afiliados:</span><strong>${afiliados.totalAfiliados||0}</strong></div>
+            <div class="fin-row"><span>Taxa Média:</span><strong>${(afiliados.taxaMedia||0).toFixed(2)}%</strong></div>
           </div>
         `
         : '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:10px;">Nenhuma comissão de afiliado registrada</div>',
@@ -569,17 +569,17 @@ Router.register('financeiro', async (params, el) => {
     );
 
     // ── 5d. Payout/Carteira ──
-    const sPayout = secao('payout','💳 Payout & Carteira',
+    const sPayout = secao('payout','Payout & Carteira',
       {num:0, txt:''},
       Object.keys(payout).length > 0
         ? Object.entries(payout).map(([chave, dados]) => `
             <div class="fin-grupo">
               <div class="fin-row" style="font-weight:600;"><span>${chave}</span></div>
-              ${dados.saldo != null ? `<div class="fin-row"><span style="padding-left:12px;">💵 Saldo:</span><strong style="color:var(--green);">${R$(dados.saldo)}</strong></div>` : ''}
+              ${dados.saldo != null ? `<div class="fin-row"><span style="padding-left:12px;">Saldo:</span><strong style="color:var(--green);">${R$(dados.saldo)}</strong></div>` : ''}
               ${dados.totalReceito ? `<div class="fin-row"><span style="padding-left:12px;">✅ Total Recebido:</span><strong>${R$(dados.totalReceito)}</strong></div>` : ''}
-              ${dados.totalSacado ? `<div class="fin-row"><span style="padding-left:12px;">🏦 Total Sacado:</span><strong>${R$(dados.totalSacado)}</strong></div>` : ''}
-              ${dados.bank_name ? `<div class="fin-row"><span style="padding-left:12px;">🏪 Banco:</span><strong>${dados.bank_name}</strong></div>` : ''}
-              ${dados.bank_account_number ? `<div class="fin-row"><span style="padding-left:12px;">🔐 Conta:</span><strong>***${String(dados.bank_account_number).slice(-4)}</strong></div>` : ''}
+              ${dados.totalSacado ? `<div class="fin-row"><span style="padding-left:12px;">Total Sacado:</span><strong>${R$(dados.totalSacado)}</strong></div>` : ''}
+              ${dados.bank_name ? `<div class="fin-row"><span style="padding-left:12px;">Banco:</span><strong>${dados.bank_name}</strong></div>` : ''}
+              ${dados.bank_account_number ? `<div class="fin-row"><span style="padding-left:12px;">Conta:</span><strong>***${String(dados.bank_account_number).slice(-4)}</strong></div>` : ''}
             </div>
           `).join('')
         : '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:10px;">Nenhuma informação de payout disponível</div>',
@@ -592,7 +592,7 @@ Router.register('financeiro', async (params, el) => {
       <div class="fin-head" style="cursor:default;flex-direction:column;align-items:flex-start;gap:8px;">
         <div style="display:flex;align-items:center;gap:12px;width:100%;">
           <span class="fin-ico" style="background:${lucroDepoisAds>=0?'var(--green)':'var(--red)'};">${lucroDepoisAds>=0?'+':'−'}</span>
-          <span class="fin-titulo" style="font-size:17px;">📊 Lucro Bruto depois de ADS</span>
+          <span class="fin-titulo" style="font-size:17px;">Lucro Bruto depois de ADS</span>
         </div>
         <span class="fin-valor" style="color:${lucroDepoisAds>=0?'var(--green)':'var(--red)'};;font-size:22px;align-self:flex-end;">${R$(lucroDepoisAds)} <span style="font-size:13px;">(${pctDepoisAds.toFixed(2).replace('.',',')}%)</span></span>
       </div>
@@ -742,7 +742,7 @@ Router.register('financeiro', async (params, el) => {
 
     // IMPORTANTE: Guardar contaReprocess ANTES de resetar flags
     const contaReprocessLocal = contaReprocess;
-    const forcarAPI = forceReprocess; // ♻️ Reprocessar = busca direto na API, ignorando a base
+    const forcarAPI = forceReprocess; // Reprocessar = busca direto na API, ignorando a base
 
     forceReprocess = false; // reseta flag
     contaReprocess = null; // reseta conta a reprocessar
@@ -807,7 +807,7 @@ Router.register('financeiro', async (params, el) => {
       const contasSelecionadas = contasParaBuscar.slice();
       let viaBase = { contas: [], pedidos: [], ads: {}, det: {} };
       if (!forcarAPI) {
-        if (statusEl) statusEl.textContent = '⚡ Lendo a base automática...';
+        if (statusEl) statusEl.textContent = 'Lendo a base automática...';
         try { viaBase = await carregarDaBase(contasParaBuscar, primeiroDia, dataTo); }
         catch (eBase) { console.warn('[Financeiro] base indisponível, seguindo pela API:', eBase.message); }
       }
@@ -826,7 +826,7 @@ Router.register('financeiro', async (params, el) => {
           // ── Mercado Livre ──────────────────────────────────
           if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
             const meliId = conta.param_to_use?.meliUserId||conta.external_id;
-            if (statusEl) statusEl.textContent=`📦 Mercado Livre (${conta.nickname||meliId}): buscando pedidos...`;
+            if (statusEl) statusEl.textContent=`Mercado Livre (${conta.nickname||meliId}): buscando pedidos...`;
 
             const orders = await MarketplaceAPI.mlOrders(meliId, primeiroDia, dataTo);
 
@@ -870,7 +870,7 @@ Router.register('financeiro', async (params, el) => {
             const mlCancel = mlPedidos.filter(p => isReembolsado(p)).length;
             log.push(`ML: ${mlPedidos.length} pedidos (${mlCancel} cancelados/reembolsos)`);
 
-            if (statusEl) statusEl.textContent=`📦 ML: buscando taxas (${mlPedidos.length} pedidos)...`;
+            if (statusEl) statusEl.textContent=`ML: buscando taxas (${mlPedidos.length} pedidos)...`;
 
             // Busca net_received_amount com concorrência limitada a 3 para não sobrecarregar a API.
             // Tudo aqui é best-effort: qualquer falha NÃO afeta o faturamento já contabilizado.
@@ -903,7 +903,7 @@ Router.register('financeiro', async (params, el) => {
                     .finally(()=>{
                       colAtivos--; colDone++;
                       if (statusEl && colDone % 25 === 0)
-                        statusEl.textContent = `📦 ML: taxas ${colDone}/${pedidosComPayment.length}...`;
+                        statusEl.textContent = `ML: taxas ${colDone}/${pedidosComPayment.length}...`;
                       if(colIdx>=pedidosComPayment.length&&colAtivos===0) colResolve(); else colNext();
                     });
                 }
@@ -934,7 +934,7 @@ Router.register('financeiro', async (params, el) => {
           // ── Shopee ────────────────────────────────────────
           if (conta.marketplace==='shopee') {
             const shopId = conta.param_to_use?.shopId||conta.external_id;
-            if (statusEl) statusEl.textContent=`🛒 Shopee (${conta.nickname||shopId}): listando pedidos...`;
+            if (statusEl) statusEl.textContent=`Shopee (${conta.nickname||shopId}): listando pedidos...`;
 
             const snsList = await MarketplaceAPI.shopeeListOrderSns(
               shopId,
@@ -948,7 +948,7 @@ Router.register('financeiro', async (params, el) => {
               continue;
             }
 
-            if (statusEl) statusEl.textContent=`🛒 Shopee: detalhes (${snsList.length} pedidos)...`;
+            if (statusEl) statusEl.textContent=`Shopee: detalhes (${snsList.length} pedidos)...`;
 
             // Detalhes em lotes de 50 — extrai dados financeiros direto do order_detail
             const uniq = [];
@@ -986,7 +986,7 @@ Router.register('financeiro', async (params, el) => {
               }
             }
 
-            if (statusEl) statusEl.textContent=`🛒 Shopee: escrow (${uniq.length} pedidos COMPLETED)...`;
+            if (statusEl) statusEl.textContent=`Shopee: escrow (${uniq.length} pedidos COMPLETED)...`;
 
             // Busca escrow só para pedidos COMPLETED — sobrescreve com dados precisos
             const parseEscrow = oi => {
@@ -1131,7 +1131,7 @@ Router.register('financeiro', async (params, el) => {
             console.log(`[Shopee] ${uniq.length} pedidos, ${comEscrow} com dados de escrow`);
 
             // Buscar devoluções/reembolsos Shopee
-            if (statusEl) statusEl.textContent = `🛒 Shopee (${conta.nickname||shopId}): buscando devoluções...`;
+            if (statusEl) statusEl.textContent = `Shopee (${conta.nickname||shopId}): buscando devoluções...`;
             try {
               const retUrl = await MarketplaceAPI.call('shopee_returns_list', { shopId, page_size: 100 });
               const returns = retUrl.data?.response?.returns || retUrl.data?.returns || [];
@@ -1157,7 +1157,7 @@ Router.register('financeiro', async (params, el) => {
       adsAPI = { ...viaBase.ads };
       adsDetalhados = { ...viaBase.det };
       console.log('[ADS] Base:', viaBase.ads, '| API para', contasParaBuscar.length, 'contas');
-      if (statusEl) statusEl.textContent = '📢 Buscando investimento em ADS...';
+      if (statusEl) statusEl.textContent = 'Buscando investimento em ADS...';
       for (const conta of contasParaBuscar) {
         try {
           if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
@@ -1233,7 +1233,7 @@ Router.register('financeiro', async (params, el) => {
 
       // ── Afiliados: comissão via API (best-effort) ──
       afiliados = {};
-      if (statusEl) statusEl.textContent = '👥 Buscando dados de afiliados...';
+      if (statusEl) statusEl.textContent = 'Buscando dados de afiliados...';
       try {
         console.log('[Afiliados] Chamando API:', primeiroDia, 'a', dataTo);
         const af = await MarketplaceAPI.affiliateReports(primeiroDia, dataTo);
@@ -1250,7 +1250,7 @@ Router.register('financeiro', async (params, el) => {
 
       // ── Payout/Carteira: informações de pagamento ──
       payout = {};
-      if (statusEl) statusEl.textContent = '💳 Buscando informações de payout...';
+      if (statusEl) statusEl.textContent = 'Buscando informações de payout...';
       for (const conta of contasSelecionadas) {
         try {
           if (conta.marketplace === 'shopee') {
@@ -1279,7 +1279,7 @@ Router.register('financeiro', async (params, el) => {
           ? ` <span style="font-size:10px;background:rgba(239,68,68,0.15);color:var(--red);padding:2px 8px;border-radius:8px;">⚠️ ${errosConta.join(' · ')}</span>`
           : ` <span style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--green);padding:2px 8px;border-radius:8px;">✓ salvo</span>`;
         const semTaxa = pedidos.filter(p => p._semTaxa).length;
-        const fonteBase = viaBase.contas.length ? `⚡ ${viaBase.contas.length} conta${viaBase.contas.length !== 1 ? 's' : ''} da base automática${semTaxa ? ` (${semTaxa} pedido${semTaxa !== 1 ? 's' : ''} ainda sem taxa real — o servidor está buscando)` : ''}` : '';
+        const fonteBase = viaBase.contas.length ? `${viaBase.contas.length} conta${viaBase.contas.length !== 1 ? 's' : ''} da base automática${semTaxa ? ` (${semTaxa} pedido${semTaxa !== 1 ? 's' : ''} ainda sem taxa real — o servidor está buscando)` : ''}` : '';
         statusEl.innerHTML = `${pedidos.length} pedidos · ${[fonteBase, ...log].filter(Boolean).join(' | ')} · ${primeiroDia} a ${dataTo}${erroHtml}`;
       }
       renderConteudo();
@@ -1291,9 +1291,9 @@ Router.register('financeiro', async (params, el) => {
       if (pedidos.length) renderConteudo();
     } finally {
       buscando = false;
-      if (btnEl){ btnEl.disabled=false; btnEl.textContent='🔄 Atualizar'; }
+      if (btnEl){ btnEl.disabled=false; btnEl.textContent='Atualizar'; }
       const reprocessBtn = document.getElementById('fin-btn-reprocessar');
-      if (reprocessBtn){ reprocessBtn.disabled=false; reprocessBtn.textContent='♻️ Reprocessar'; }
+      if (reprocessBtn){ reprocessBtn.disabled=false; reprocessBtn.textContent='Reprocessar'; }
     }
   }
 

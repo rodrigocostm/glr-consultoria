@@ -58,10 +58,10 @@ Router.register('tarefas', (params, el) => {
 
   function avatarCell(t) {
     const g   = GLR.gestores.find(g => g.nome === t.responsavel);
-    const cor = g?.cor || '#6366f1';
+    const cor = g?.cor || 'var(--accent)';
     return `
       <select onchange="_tarefaSetCampo(${t.id},'responsavel',this.value)" title="${t.responsavel || 'Sem responsável'}"
-        style="width:30px;height:30px;border:none;border-radius:50%;text-align:center;text-align-last:center;background:${cor}22;color:${cor};font-weight:700;font-size:10px;cursor:pointer;appearance:none;-webkit-appearance:none;">
+        style="width:30px;height:30px;border:none;border-radius:50%;text-align:center;text-align-last:center;background:color-mix(in srgb,${cor} 13%,transparent);color:${cor};font-weight:700;font-size:10px;cursor:pointer;appearance:none;-webkit-appearance:none;">
         ${!t.responsavel ? `<option value="">—</option>` : ''}
         ${GLR.gestores.map(g2 => `<option value="${g2.nome}" ${t.responsavel===g2.nome?'selected':''}>${g2.avatar || g2.nome}</option>`).join('')}
       </select>`;
@@ -81,7 +81,7 @@ Router.register('tarefas', (params, el) => {
       <td style="padding:8px 10px;min-width:220px;">
         <input value="${(t.titulo || '').replace(/"/g,'&quot;')}" onblur="_tarefaSetCampo(${t.id},'titulo',this.value)"
           style="width:100%;background:transparent;border:none;color:${concluida?'var(--text-muted)':'var(--text-primary)'};font-size:13px;font-weight:600;padding:4px 2px;${concluida?'text-decoration:line-through;':''}">
-        ${t.cliente && t.cliente !== 'Interno' ? `<div style="font-size:10.5px;color:var(--text-muted);margin:0 0 0 4px;">🏢 ${t.cliente}</div>` : ''}
+        ${t.cliente && t.cliente !== 'Interno' ? `<div style="font-size:10.5px;color:var(--text-muted);margin:0 0 0 4px;">${t.cliente}</div>` : ''}
       </td>
       <td style="padding:8px 6px;text-align:center;">${avatarCell(t)}</td>
       <td style="padding:8px 6px;min-width:130px;">
@@ -127,7 +127,7 @@ Router.register('tarefas', (params, el) => {
 
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:10px;">
-        <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;">📆 Prioridades da semana ${total ? `(${total} aberta${total!==1?'s':''})` : ''}</div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:none;letter-spacing:0;">Prioridades da semana ${total ? `(${total} aberta${total!==1?'s':''})` : ''}</div>
         <div style="display:flex;align-items:center;gap:8px;">
           <button class="btn btn-ghost btn-sm" onclick="_tarefaSemana(-1)" style="padding:4px 10px;">‹</button>
           <span style="font-size:12.5px;font-weight:600;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:4px 14px;">${range.label}</span>
@@ -317,7 +317,7 @@ Router.register('calendario', (params, el) => {
 
     <!-- Próximos eventos list -->
     <div class="card" style="margin-top:20px;">
-      <div class="section-title mb-16">📋 Próximos Compromissos</div>
+      <div class="section-title mb-16">Próximos Compromissos</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">
         ${GLR.eventos.map(e => {
           const c = GLR.clientes.find(cl => cl.id === e.clienteId);
@@ -326,7 +326,7 @@ Router.register('calendario', (params, el) => {
             <div>
               <div style="font-size:13.5px;font-weight:600;color:var(--text-primary);">${e.titulo}</div>
               <div style="font-size:12px;color:var(--text-muted);">${formatDate(e.data)} às ${e.hora}</div>
-              <div style="font-size:12px;color:var(--text-muted);">👤 ${e.responsavel}</div>
+              <div style="font-size:12px;color:var(--text-muted);">${e.responsavel}</div>
             </div>
           </div>`;
         }).join('')}
@@ -379,22 +379,22 @@ Router.register('timeline', (params, el) => {
 
     return acoes.map(a => {
       const c = GLR.clientes.find(cl => cl.id === a.clienteId);
-      const cor = GLR.tipoAcaoColor[a.categoria] || '#6366f1';
+      const cor = GLR.tipoAcaoColor[a.categoria] || 'var(--accent)';
       const icons = { Reunião:'🤝', Campanha:'📣', Otimização:'⚡', Precificação:'💲', Estratégia:'♟️', Análise:'🔍', Onboarding:'🚀', Relatório:'📄', Catálogo:'📂', NPS:'⭐', Interno:'🏠' };
       return `<div class="timeline-item">
-        <div class="timeline-dot" style="background:${cor}20;color:${cor};">${icons[a.categoria] || '📌'}</div>
+        <div class="timeline-dot" style="background:color-mix(in srgb,${cor} 13%,transparent);color:${cor};">${icons[a.categoria] || '📌'}</div>
         <div class="timeline-content">
           <div class="timeline-header">
             <div>
-              <span class="badge" style="background:${cor}20;color:${cor};">${a.categoria}</span>
+              <span class="badge" style="background:color-mix(in srgb,${cor} 13%,transparent);color:${cor};">${a.categoria}</span>
               ${c ? `<span style="font-size:12px;color:var(--text-muted);margin-left:8px;">${c.nome}</span>` : ''}
             </div>
             <span class="badge ${a.status === 'concluida' ? 'status-crescimento' : 'status-ativo'}">${a.status === 'concluida' ? 'Concluída' : 'Em andamento'}</span>
           </div>
           <div style="font-size:13.5px;color:var(--text-primary);margin:8px 0;">${a.descricao}</div>
           <div class="timeline-meta">
-            <span>👤 ${a.responsavel}</span>
-            <span>📅 ${formatDate(a.data)}</span>
+            <span>${a.responsavel}</span>
+            <span>${formatDate(a.data)}</span>
           </div>
         </div>
       </div>`;
@@ -569,7 +569,7 @@ Router.register('score', (params, el) => {
             </div>
             <div style="font-size:13px;font-weight:700;margin-bottom:3px;">${cr.key}</div>
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${cr.desc}</div>
-            <div style="font-size:10px;color:var(--text-muted);background:var(--bg-card);padding:2px 7px;border-radius:99px;display:inline-block;">📡 ${cr.fonte}</div>
+            <div style="font-size:10px;color:var(--text-muted);background:var(--bg-card);padding:2px 7px;border-radius:99px;display:inline-block;">${cr.fonte}</div>
           </div>
         `).join('')}
       </div>
@@ -620,7 +620,7 @@ Router.register('score', (params, el) => {
                 if (cr.key==='Conversão')     info = meta.pctConversao !== null ? `${meta.pctConversao.toFixed(0)}% meta` : '—';
                 if (cr.key==='Organização')   info = `${v}%`;
                 return `
-                <div style="background:var(--bg-base);border-radius:var(--radius-sm);padding:8px;text-align:center;border:1px solid ${scoreColor(v)}22;">
+                <div style="background:var(--bg-base);border-radius:var(--radius-sm);padding:8px;text-align:center;border:1px solid color-mix(in srgb,${scoreColor(v)} 13%,transparent);">
                   <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${cr.icon} ${cr.key}</div>
                   <div style="font-size:13px;font-weight:700;color:${scoreColor(v)};">${v}</div>
                   <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">${info}</div>
