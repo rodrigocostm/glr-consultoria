@@ -70,6 +70,24 @@ async function sbInsert(table, row) {
   }
 }
 
+// Atualiza linhas existentes (PATCH) — usado pelo agente do ML para marcar
+// sugestão aplicada (detectada pela leitura das campanhas) e gravar a medição.
+async function sbUpdate(table, qs, patch) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${qs}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`,
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    throw new Error(`Supabase update ${table} falhou: HTTP ${r.status} ${t}`);
+  }
+}
+
 // Upsert por (data,conta_id) — se o cron rodar 2x no mesmo dia (reteste manual,
 // retry), atualiza o relatório existente em vez de quebrar com 409.
 async function sbUpsert(table, row, onConflict) {
@@ -289,7 +307,7 @@ async function contextoNegocio(shopId, ontemIso) {
 
 // Ferramentas compartilhadas que o agente do ML (api/_agente-ml.js) usa.
 function ajudantesML() {
-  return { sbSelect, sbInsert, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall };
+  return { sbSelect, sbInsert, sbUpdate, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall };
 }
 
 // Trava de rodada agendada: a mesma rodada (dia + horário) roda uma vez só,

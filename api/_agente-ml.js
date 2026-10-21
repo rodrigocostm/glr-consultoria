@@ -98,7 +98,7 @@ async function vendasPorItem(sbSelect, contaId, desdeIso) {
 }
 
 async function processarContaML(cfg, mcApiKey, h) {
-  const { sbSelect, sbInsert, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall } = h;
+  const { sbSelect, sbInsert, sbUpdate, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall } = h;
   const contaId = String(cfg.conta_id);
   const sugestoes = [];
   async function logar(tipo, titulo, explicacao, dados, resultado) {
@@ -135,18 +135,19 @@ async function processarContaML(cfg, mcApiKey, h) {
     const tacosOk = tacosMes == null || !meta || tacosMes <= meta * 1.1;
     const limitePausa = Math.round(Math.max(50, ticketRef && meta ? ticketRef * (meta / 100) * 3 : 0) * 100) / 100;
 
-    // O que já está pendente / foi aplicado nos últimos 3 dias não é sugerido de novo
-    const desde3d = new Date(Date.now() - 3 * 86400000).toISOString();
-    const logs = await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(contaId)}&tipo=eq.alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 30 * 86400000).toISOString())}&select=resultado,criado_em,dados&limit=500`).catch(() => []);
-    const ocupadas = new Set(logs
-      .filter(l => l.resultado === 'so_alerta' || (l.resultado === 'executado' && l.criado_em >= desde3d))
-      .map(l => l.dados?.chave || (l.dados?.campaign_id != null ? `c:${l.dados.campaign_id}` : null)).filter(Boolean));
-    // Avisos da curva ABC: um por produto a cada 7 dias (mesmo se descartado)
-    const desde7d = new Date(Date.now() - 6.5 * 86400000).toISOString();
-    logs.filter(l => String(l.dados?.chave || '').startsWith('abc:') && l.criado_em >= desde7d).forEach(l => ocupadas.add(l.dados.chave));
+    // Sugestões dos últimos 45 dias: pendentes (conferir se já foram aplicadas),
+    // aplicadas (medir o resultado) e as recentes (não repetir)
+    const logs = await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(contaId)}&tipo=eq.alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 45 * 86400000).toISOString())}&select=id,titulo,resultado,criado_em,dados&order=criado_em.desc&limit=800`).catch(() => []);
+    const ocupadas = new Set();
     const livre = chave => !ocupadas.has(chave) && sugestoes.length < MAX_SUGESTOES;
+    // Prioridade: primeiro estancar gasto (economia/semana), depois ganhar venda
+    // (vendas/semana em jogo valem ~10% — margem aproximada do que voltaria)
     async function sugerir(chave, titulo, explicacao, dados) {
       if (!livre(chave)) return false;
+      if (dados && dados.impacto != null) {
+        dados.impacto = Math.max(0, Math.round(dados.impacto));
+        dados.prioridade = Math.round(dados.impacto * (dados.impacto_tipo === 'economia' ? 1 : 0.1));
+      }
       ocupadas.add(chave);
       await logar('alerta', titulo, explicacao + instrucao, { chave, ...dados }, 'so_alerta');
       sugestoes.push(titulo);
@@ -180,6 +181,124 @@ async function processarContaML(cfg, mcApiKey, h) {
       };
     });
     const anunciados = new Set(C.flatMap(x => x.anuncios.filter(a => a.status === 'active').map(a => a.item_id)));
+
+    // ── 0) ACOMPANHAMENTO — o ML não deixa a integração aplicar, mas deixa LER:
+    //  • confere sozinho o que o analista já aplicou no painel (sem precisar marcar "Feito");
+    //  • sugestão pendente há mais de 7 dias vence (números velhos) e é refeita se ainda valer;
+    //  • 7 dias depois de aplicada, compara a campanha 7 dias antes × 7 dias depois.
+    const hojeIso = dataBRT(0).iso;
+    const diaBRT = iso => new Date(new Date(iso).getTime() - 3 * 3600e3).toISOString().slice(0, 10);
+    const campPorId = new Map(campanhas.map(c => [String(c.id), c]));
+    const xPorId = new Map(C.map(x => [String(x.id), x]));
+    const roasDe = c => parseFloat(c?.roas_target) || (parseFloat(c?.acos_target) ? 100 / parseFloat(c.acos_target) : 0);
+    const ativa = c => String(c?.status || '').toLowerCase() === 'active';
+    // anúncios ativos de uma campanha (null = não consegui ler → não conclui nada)
+    const ativosEm = id => { const x = xPorId.get(String(id)); return x && x.anuncios.length ? new Set(x.anuncios.filter(a => a.status === 'active').map(a => String(a.item_id))) : null; };
+    const anunciadosStr = new Set([...anunciados].map(String));
+    // valor andou pelo menos metade do caminho sugerido (ou chegou no sugerido)
+    const andou = (atual, de, para) => atual > 0 && de > 0 && para > 0 && (Math.abs(atual - para) <= Math.max(0.15, para * 0.03) || ((atual - de) * (para - de) > 0 && Math.abs(atual - de) >= Math.abs(para - de) * 0.5));
+    function conferir(d) {
+      const camp = campPorId.get(String(d.campaign_id));
+      const ids = (d.item_ids || []).map(String);
+      switch (d.acao) {
+        case 'pausar': return camp && !ativa(camp) ? 'campanha pausada' : null;
+        case 'roas_target': return camp && andou(roasDe(camp), +d.de, +d.para) ? `ROAS objetivo agora ${r1(roasDe(camp))}x` : null;
+        case 'orcamento': return camp && andou(parseFloat(camp.budget) || 0, +d.de, +d.para) ? `orçamento agora ${R$(camp.budget)}/dia` : null;
+        case 'retirar_produto': {
+          if (!ids.length || !camp) return null;
+          if (!ativa(camp)) return 'campanha pausada';
+          const at = ativosEm(d.campaign_id);
+          return at && ids.every(i => !at.has(i)) ? 'anúncio fora da campanha' : null;
+        }
+        case 'mover_produto': {
+          if (!ids.length || !camp) return null;
+          const at = ativa(camp) ? ativosEm(d.campaign_id) : new Set();
+          if (!at || ids.some(i => at.has(i))) return null;
+          const dest = d.destino_id ? ativosEm(d.destino_id) : anunciadosStr;
+          return dest && ids.some(i => dest.has(i)) ? (d.destino_id ? 'anúncio na campanha de destino' : 'anúncio em outra campanha') : null;
+        }
+        case 'adicionar_produto': return ids.length && ids.some(i => anunciadosStr.has(i)) ? 'anúncio em campanha ativa' : null;
+      }
+      return null;
+    }
+    let detectadas = 0, expiradas = 0, medidas = 0;
+    for (const l of logs) {
+      if (l.resultado !== 'so_alerta' || !l.id) continue;
+      const d = l.dados || {};
+      const obs = d.acao && d.acao !== 'abc_queda' ? conferir(d) : null;
+      try {
+        if (obs) {
+          // aplicado entre a sugestão e esta leitura — a análise roda 1x por dia, então "ontem"
+          const dados = { ...d, aplicado_em: new Date().toISOString(), aplicado_dia: diaBRT(l.criado_em) < ontem ? ontem : hojeIso, aplicado_por: 'detectado', deteccao: obs };
+          await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { resultado: 'executado', dados });
+          l.resultado = 'executado'; l.dados = dados; detectadas++;
+        } else if (Date.now() - new Date(l.criado_em).getTime() > 7 * 86400000) {
+          const dados = { ...d, expirado_em: new Date().toISOString() };
+          await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { resultado: 'expirado', dados });
+          l.resultado = 'expirado'; l.dados = dados; expiradas++;
+        }
+      } catch (e) { /* segue: tenta de novo na próxima análise */ }
+    }
+
+    // Medição: campanha 7 dias antes × 7 dias depois do dia aplicado
+    const CONTER = d => ['pausar', 'retirar_produto', 'mover_produto'].includes(d.acao) || (d.acao === 'roas_target' && +d.para > +d.de) || (d.acao === 'orcamento' && +d.para < +d.de);
+    const aMedir = logs.filter(l => {
+      const d = l.dados || {};
+      if (l.resultado !== 'executado' || d.medicao || !d.acao || d.acao === 'abc_queda') return false;
+      const ap = d.aplicado_dia || (d.aplicado_em ? diaBRT(d.aplicado_em) : null);
+      return ap && isoMenos(ap, -7) <= ontem;
+    });
+    const porDia = new Map();
+    for (const l of aMedir) { const d = l.dados; const ap = d.aplicado_dia || diaBRT(d.aplicado_em); (porDia.get(ap) || porDia.set(ap, []).get(ap)).push(l); }
+    for (const ap of [...porDia.keys()].sort().slice(0, 4)) {
+      try {
+        const [antes, depois] = await Promise.all([
+          listarCampanhasML(mcpCall, mcApiKey, contaId, isoMenos(ap, 7), isoMenos(ap, 1)),
+          listarCampanhasML(mcpCall, mcApiKey, contaId, isoMenos(ap, -1), isoMenos(ap, -7)),
+        ]);
+        const met = (lista, id) => {
+          const c = lista.find(x => String(x.id) === String(id)); if (!c) return null;
+          const m = c.metrics || {}, g = parseFloat(m.cost) || 0, v = (parseFloat(m.total_amount) || 0) * (1 - taxaCancel);
+          // ACOS: sem gasto = 0; gasto sem venda = ∞ (guardado como semVenda, JSON não tem Infinity)
+          return { gastoDia: r1(g / 7), vendasDia: r1(v / 7), acos: g <= 0 ? 0 : v > 0 ? r1(g / v * 100) : null, semVenda: g > 0 && v <= 0 };
+        };
+        for (const l of porDia.get(ap)) {
+          const d = l.dados;
+          const alvo = d.acao === 'adicionar_produto' ? (d.destino_id || d.campaign_id) : d.campaign_id;
+          const a = met(antes, alvo), b = met(depois, alvo);
+          let veredito = 'sem_dados', resumo = 'campanha sem dados de ADS nas duas semanas';
+          if (a && b && (a.gastoDia > 0 || b.gastoDia > 0)) {
+            const acosA = a.semVenda ? Infinity : a.acos, acosB = b.semVenda ? Infinity : b.acos;
+            const vend = `vendas/dia ${R$(a.vendasDia)} → ${R$(b.vendasDia)}`;
+            if (d.acao === 'pausar') {
+              veredito = b.gastoDia < a.gastoDia * 0.2 ? 'melhorou' : 'neutro';
+              resumo = `deixou de gastar ~${R$(Math.max(0, a.gastoDia - b.gastoDia) * 7)}/semana`;
+            } else if (CONTER(d)) {
+              const acosOk = acosA === Infinity ? acosB !== Infinity : acosB <= acosA * 0.9;
+              veredito = acosOk && b.vendasDia >= a.vendasDia * 0.7 ? 'melhorou'
+                : (acosB > acosA * 1.05 || b.vendasDia < a.vendasDia * 0.5) ? 'piorou' : 'neutro';
+              resumo = `ACOS ${pctTxt(acosA)} → ${pctTxt(acosB)} · ${vend}`;
+            } else {
+              const dentro = meta ? acosB <= meta * 1.1 : acosB <= acosA * 1.1;
+              veredito = b.vendasDia >= a.vendasDia * 1.1 && dentro ? 'melhorou'
+                : (b.vendasDia < a.vendasDia * 0.95 || (meta && acosB > meta * 1.3)) ? 'piorou' : 'neutro';
+              resumo = `${vend} · ACOS ${pctTxt(acosA)} → ${pctTxt(acosB)}`;
+            }
+          }
+          const dados = { ...d, medicao: { campaign_id: alvo, aplicado_dia: ap, antes: a, depois: b, veredito, resumo, medido_em: new Date().toISOString() } };
+          try { await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { dados }); l.dados = dados; medidas++; } catch (e) {}
+        }
+      } catch (e) { /* medição é bônus — tenta de novo amanhã */ }
+    }
+
+    // O que está pendente / foi aplicado nos últimos 3 dias não é sugerido de novo
+    const desde3d = new Date(Date.now() - 3 * 86400000).toISOString();
+    logs.filter(l => l.resultado === 'so_alerta' || (l.resultado === 'executado' && (l.dados?.aplicado_em || l.criado_em) >= desde3d))
+      .forEach(l => { const k = l.dados?.chave || (l.dados?.campaign_id != null ? `c:${l.dados.campaign_id}` : null); if (k) ocupadas.add(k); });
+    // Avisos da curva ABC: um por produto a cada 7 dias (mesmo se descartado)
+    const desde7d = new Date(Date.now() - 6.5 * 86400000).toISOString();
+    logs.filter(l => String(l.dados?.chave || '').startsWith('abc:') && l.criado_em >= desde7d).forEach(l => ocupadas.add(l.dados.chave));
+
     const naLoja = item => vendasLoja.get(item) || null;
     const lojaFam = f => f.itens.reduce((s, it) => { const v = naLoja(it); return v ? { un: s.un + v.unidades, rec: s.rec + v.receita } : s; }, { un: 0, rec: 0 });
     const comFolga = x => x.budget > 0 && x.gastoDia < x.budget * 0.7;
@@ -204,7 +323,7 @@ async function processarContaML(cfg, mcApiKey, h) {
         if (f.gasto >= limProd && (f.unidades === 0 || f.vendasAj < f.gasto)) {
           const ok = await sugerir(chave, `Sugestão: tirar produto da campanha — ${f.nome.slice(0, 60)}`,
             `Na campanha "${x.nome}", ${f.itens.length > 1 ? `as ${f.ativos.length} variações ativas deste produto gastaram` : 'este anúncio gastou'} ${R$(f.gasto)} em ${diasProd} dias com ${f.unidades === 0 ? 'nenhuma venda pelo ADS' : `só ${R$(f.vendasAj)} em vendas sem cancelados`} — mais que ${R$(limProd)} (ADS de ~2 vendas no preço de ${R$(f.preco)}).${lojaTxt}${loja.un >= 5 ? ' Vende sem o ADS — o anúncio pago não está somando.' : ''} Tirar da campanha (pausar o anúncio) para o orçamento ir para quem vende.`,
-            { ...base0, acao: 'retirar_produto' });
+            { ...base0, acao: 'retirar_produto', impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia' });
           if (ok) tirar(x, f);
           continue;
         }
@@ -219,7 +338,7 @@ async function processarContaML(cfg, mcApiKey, h) {
           const roasNova = r1(Math.max(roasMeta, x.roasAlvo * 1.25)); // campanha nova: sempre mais conservadora que a atual
           const ok = await sugerir(chave, `Sugestão: mover produto para campanha mais conservadora — ${f.nome.slice(0, 50)}`,
             `"${f.nome.slice(0, 70)}" vende, mas com ACOS de ${pctTxt(f.acos)} (sem cancelados) em ${diasProd} dias — bem acima da meta (${meta}%) — e responde por ${Math.round(f.gasto / (x.gasto || f.gasto) * 100)}% do gasto da campanha "${x.nome}" (ROAS objetivo ${roasTxt(x.roasAlvo)}). Em vez de apertar a campanha inteira, ${destino ? `mover este produto para "${destino.nome}" (ROAS objetivo ${roasTxt(destino.roasAlvo)}, lance mais conservador)` : `criar uma campanha só para ele com ROAS objetivo de ${roasTxt(roasNova)} (lance mais conservador)`}. Não pausar: o produto vende.`,
-            { ...base0, acao: 'mover_produto', destino_id: destino?.id || null, destino: destino?.nome || null, de: x.roasAlvo, para: destino ? destino.roasAlvo : roasNova });
+            { ...base0, acao: 'mover_produto', destino_id: destino?.id || null, destino: destino?.nome || null, de: x.roasAlvo, para: destino ? destino.roasAlvo : roasNova, impacto: Math.max(0, f.gasto - f.vendasAj * meta / 100) / diasProd * 7, impacto_tipo: 'economia' });
           if (ok) tirar(x, f);
           continue;
         }
@@ -232,7 +351,7 @@ async function processarContaML(cfg, mcApiKey, h) {
           if (destino) {
             const ok = await sugerir(chave, `Sugestão: mover produto campeão para campanha com verba — ${f.nome.slice(0, 50)}`,
               `"${f.nome.slice(0, 70)}" vendeu ${f.unidades} un. pelo ADS com ACOS de ${pctTxt(f.acos)} em ${diasProd} dias, mas "${x.nome}" já gasta todo o orçamento (${R$(x.gastoDia)}/dia de ${R$(x.budget)}, no teto configurado). Mover para "${destino.nome}", que usa só ${R$(destino.gastoDia)}/dia de ${R$(destino.budget)}.`,
-              { ...base0, acao: 'mover_produto', destino_id: destino.id, destino: destino.nome, de: x.roasAlvo, para: destino.roasAlvo });
+              { ...base0, acao: 'mover_produto', destino_id: destino.id, destino: destino.nome, de: x.roasAlvo, para: destino.roasAlvo, impacto: f.vendasAj / diasProd * 7, impacto_tipo: 'ganho' });
             if (ok) tirar(x, f);
           }
         }
@@ -256,7 +375,7 @@ async function processarContaML(cfg, mcApiKey, h) {
           x.unidades === 0
             ? `Gastou ${R$(x.gasto)} nos últimos ${dias} dias sem nenhuma venda atribuída — acima do limite de ${R$(limitePausa)} (ADS de ~3 vendas no ticket médio${ticketRef ? ` de ${R$(ticketRef)}` : ''}). Gasta muito sem retorno.`
             : `Gastou ${R$(x.gasto)} e vendeu só ${R$(x.vendasAj)} sem cancelados nos últimos ${dias} dias — gasta mais do que vende, acima do limite de ${R$(limitePausa)}.`,
-          { ...base0, acao: 'pausar' });
+          { ...base0, acao: 'pausar', impacto: x.gasto / dias * 7, impacto_tipo: 'economia' });
         continue;
       }
       if (!meta || acos == null || acos === Infinity) continue;
@@ -269,12 +388,12 @@ async function processarContaML(cfg, mcApiKey, h) {
           const novo = r1(x.roasAlvo / (1 - passo));
           await sugerir(chave, `Sugestão: subir ROAS objetivo — ${x.nome}`,
             `ACOS de ${acosTxt} nos últimos ${dias} dias, acima da meta (${meta}%, equivale a ROAS ${roasTxt(roasMeta)})${forte ? ` e da contenção forte (${cfg.regra_pausa_acos}%)` : ''}, mas a campanha vende — conter em vez de pausar. Subir o ROAS objetivo de ${roasTxt(x.roasAlvo)} para ${roasTxt(novo)} (lance mais conservador).`,
-            { ...base0, acao: 'roas_target', de: r1(x.roasAlvo), para: novo });
+            { ...base0, acao: 'roas_target', de: r1(x.roasAlvo), para: novo, impacto: Math.max(0, gasto - vendasAj * meta / 100) / dias * 7, impacto_tipo: 'economia' });
         } else if (x.budget > (cfg.orcamento_min || 0)) {
           const novo = Math.max(cfg.orcamento_min || 0, Math.round(x.budget * (1 - passo) * 100) / 100);
           if (novo < x.budget) await sugerir(chave, `Sugestão: reduzir orçamento — ${x.nome}`,
             `ACOS de ${acosTxt} nos últimos ${dias} dias, acima da meta (${meta}%), mas a campanha vende — conter em vez de pausar. Reduzir o orçamento diário de ${R$(x.budget)} para ${R$(novo)}.`,
-            { ...base0, acao: 'orcamento', de: x.budget, para: novo });
+            { ...base0, acao: 'orcamento', de: x.budget, para: novo, impacto: Math.max(0, gasto - vendasAj * meta / 100) / dias * 7, impacto_tipo: 'economia' });
         }
         continue;
       }
@@ -285,12 +404,12 @@ async function processarContaML(cfg, mcApiKey, h) {
           const novo = Math.round(Math.min(cfg.orcamento_max || Infinity, x.budget * 1.2) * 100) / 100;
           await sugerir(chave, `Sugestão: aumentar orçamento — ${x.nome}`,
             `ACOS de ${acosTxt}, bem abaixo da meta (${meta}%)${tacosMes != null ? `, TACOS do mês em ${r1(tacosMes)}%` : ''}, e o orçamento está quase todo consumido (média de ${R$(x.gastoDia)}/dia de ${R$(x.budget)}). Aumentar o orçamento diário para ${R$(novo)}.`,
-            { ...base0, acao: 'orcamento', de: x.budget, para: novo });
+            { ...base0, acao: 'orcamento', de: x.budget, para: novo, impacto: vendasAj / dias * 7, impacto_tipo: 'ganho' });
         } else if (x.rentab && x.roasAlvo > roasMeta * 1.02) {
           const novo = r1(Math.max(roasMeta, x.roasAlvo / 1.15));
           if (novo < x.roasAlvo) await sugerir(chave, `Sugestão: baixar ROAS objetivo — ${x.nome}`,
             `ACOS de ${acosTxt}, bem abaixo da meta (${meta}%)${tacosMes != null ? ` e TACOS do mês em ${r1(tacosMes)}%` : ''}. Baixar o ROAS objetivo de ${roasTxt(x.roasAlvo)} para ${roasTxt(novo)} para o ML disputar mais leilões e trazer volume (sem passar do ROAS ${roasTxt(roasMeta)} da meta).`,
-            { ...base0, acao: 'roas_target', de: r1(x.roasAlvo), para: novo });
+            { ...base0, acao: 'roas_target', de: r1(x.roasAlvo), para: novo, impacto: vendasAj / dias * 7, impacto_tipo: 'ganho' });
         }
       }
     }
@@ -311,7 +430,7 @@ async function processarContaML(cfg, mcApiKey, h) {
           const ads = camp ? `Está na campanha "${camp.nome}" (ROAS objetivo ${roasTxt(camp.roasAlvo)}, ACOS da campanha ${pctTxt(camp.acos)}).` : 'Não está em nenhuma campanha ativa de Product Ads.';
           await sugerir(`abc:${p.chave}`, `Curva A ${p.tend === 'parou' ? 'parou de vender' : 'em queda'} — ${p.nome.slice(0, 60)}`,
             `Produto curva A (${curvaABC.n1(p.part)}% do faturamento das últimas 4 semanas): ${linhaSemana(p)}. ${ads} Vale revisar juntos: estoque, preço/concorrência, anúncio e ADS${camp ? '' : ' — se o resto estiver ok, colocar numa campanha ajuda a recuperar'}.`,
-            { ...base1(p), acao: 'abc_queda', ...(camp ? { campaign_id: camp.id, campanha: camp.nome } : {}) });
+            { ...base1(p), acao: 'abc_queda', ...(camp ? { campaign_id: camp.id, campanha: camp.nome } : {}), impacto: Math.max(0, (p.mediaRs || 0) - (p.ultRs || 0)), impacto_tipo: 'risco' });
         }
         if (tacosOk && meta) {
           const destino = C.filter(o => comFolga(o) && dentroMeta(o)).sort((a, b) => a.acos - b.acos)[0] || C.filter(o => dentroMeta(o)).sort((a, b) => a.acos - b.acos)[0];
@@ -319,7 +438,7 @@ async function processarContaML(cfg, mcApiKey, h) {
             if (campDoItem[p.item_id] || !destino || !p.item_id) continue;
             const ok = await sugerir(`p:${p.item_id}`, `Curva ${p.classe} subindo — colocar em campanha: ${p.nome.slice(0, 50)}`,
               `Produto curva ${p.classe} em ${curvaABC.TEND_TXT[p.tend]}: ${linhaSemana(p)} — candidato a virar curva A e está fora de campanha. Colocar na campanha "${destino.nome}" (ACOS de ${pctTxt(destino.acos)}, dentro da meta${comFolga(destino) ? `, usando ${R$(destino.gastoDia)}/dia de ${R$(destino.budget)}` : ''}) para aproveitar a alta. Confira o estoque antes.`,
-              { ...base1(p), acao: 'adicionar_produto', destino_id: destino.id, destino: destino.nome, campaign_id: destino.id, campanha: destino.nome });
+              { ...base1(p), acao: 'adicionar_produto', destino_id: destino.id, destino: destino.nome, campaign_id: destino.id, campanha: destino.nome, impacto: p.ultRs || 0, impacto_tipo: 'ganho' });
             if (ok) ocupadas.add(`abc:${p.chave}`);
           }
         }
@@ -336,16 +455,16 @@ async function processarContaML(cfg, mcApiKey, h) {
         if (!destino || colocados >= 5) break;
         const ok = await sugerir(`p:${v.item_id}`, `Sugestão: colocar produto em campanha — ${String(v.nome).slice(0, 60)}`,
           `"${String(v.nome).slice(0, 80)}" (${v.item_id}) vendeu ${v.unidades} un. (${R$(v.receita)}) na loja nos últimos 30 dias e não está em nenhuma campanha ativa de Product Ads. Colocar na campanha "${destino.nome}" (ACOS de ${pctTxt(destino.acos)}, dentro da meta${comFolga(destino) ? `, usando ${R$(destino.gastoDia)}/dia de ${R$(destino.budget)}` : ''}). Confira o estoque antes.`,
-          { acao: 'adicionar_produto', item_ids: [v.item_id], produto: String(v.nome).slice(0, 90), unidades_loja_30d: v.unidades, receita_loja_30d: r1(v.receita), destino_id: destino.id, destino: destino.nome, campaign_id: destino.id, campanha: destino.nome });
+          { acao: 'adicionar_produto', item_ids: [v.item_id], produto: String(v.nome).slice(0, 90), unidades_loja_30d: v.unidades, receita_loja_30d: r1(v.receita), destino_id: destino.id, destino: destino.nome, campaign_id: destino.id, campanha: destino.nome, impacto: v.receita / 30 * 7, impacto_tipo: 'ganho' });
         if (ok) colocados++;
       }
     }
 
     const nProdutos = C.reduce((s, x) => s + x.familias.length, 0);
     await logar('sistema', `Análise ML concluída — ${sugestoes.length} sugestão(ões)`,
-      `Analisadas ${C.length} campanhas ativas e ${nProdutos} produtos dentro delas (campanhas: ${dias} dias; produtos: ${diasProd} dias; ${R$(C.reduce((s, x) => s + x.gasto, 0))} investidos na janela da campanha). ${tacosMes != null ? `TACOS do mês: ${r1(tacosMes)}% (meta ${meta ?? '—'}%). ` : ''}${taxaCancel > 0.005 ? `ACOS sem cancelados (cancelamentos/devoluções da loja: ${r1(taxaCancel * 100)}%). ` : ''}${sugestoes.length >= MAX_SUGESTOES ? `Parou em ${MAX_SUGESTOES} sugestões para não lotar a fila — o resto vem na próxima análise. ` : ''}Modo copiloto: aplique no painel do ML.`,
-      { campanhas: C.length, produtos: nProdutos, sugestoes: sugestoes.length, tacos_mes: tacosMes, limite_pausa: limitePausa, taxa_cancelamento: taxaCancel }, 'executado');
-    return { conta_id: contaId, marketplace: 'ml', campanhas: C.length, produtos: nProdutos, sugestoes: sugestoes.length, tacos_mes: tacosMes };
+      `Analisadas ${C.length} campanhas ativas e ${nProdutos} produtos dentro delas (campanhas: ${dias} dias; produtos: ${diasProd} dias; ${R$(C.reduce((s, x) => s + x.gasto, 0))} investidos na janela da campanha). ${tacosMes != null ? `TACOS do mês: ${r1(tacosMes)}% (meta ${meta ?? '—'}%). ` : ''}${taxaCancel > 0.005 ? `ACOS sem cancelados (cancelamentos/devoluções da loja: ${r1(taxaCancel * 100)}%). ` : ''}${sugestoes.length >= MAX_SUGESTOES ? `Parou em ${MAX_SUGESTOES} sugestões para não lotar a fila — o resto vem na próxima análise. ` : ''}${detectadas ? `${detectadas} sugestão(ões) já aplicada(s) no painel detectada(s) pela leitura das campanhas. ` : ''}${medidas ? `${medidas} resultado(s) medido(s) (7 dias antes × 7 dias depois). ` : ''}${expiradas ? `${expiradas} sugestão(ões) com mais de 7 dias venceram e foram refeitas com números novos quando ainda valiam. ` : ''}Modo copiloto: aplique no painel do ML.`,
+      { campanhas: C.length, produtos: nProdutos, sugestoes: sugestoes.length, tacos_mes: tacosMes, limite_pausa: limitePausa, taxa_cancelamento: taxaCancel, detectadas, medidas, expiradas }, 'executado');
+    return { conta_id: contaId, marketplace: 'ml', campanhas: C.length, produtos: nProdutos, sugestoes: sugestoes.length, tacos_mes: tacosMes, detectadas, medidas, expiradas };
   } catch (e) {
     await logar('sistema', 'Erro na análise ML', e.message || String(e), {}, 'erro');
     return { conta_id: contaId, marketplace: 'ml', erro: e.message };

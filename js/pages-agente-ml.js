@@ -40,7 +40,7 @@ Router.register('agente-ml', (params, el) => {
       const [contas, cfg, logs] = await Promise.all([
         MarketplaceAPI.listAccounts().catch(() => []),
         _sb.from('glr_agente_config').select('*').eq('marketplace', 'ml'),
-        _sb.from('glr_agente_log').select('*').eq('dados->>marketplace', 'ml').order('criado_em', { ascending: false }).limit(400),
+        _sb.from('glr_agente_log').select('*').eq('dados->>marketplace', 'ml').order('criado_em', { ascending: false }).limit(800),
       ]);
       state.contasML = (contas || []).filter(c => ['meli', 'ml', 'mercadolivre'].includes(String(c.marketplace || '').toLowerCase()));
       state.configs = cfg.data || [];
@@ -133,6 +133,10 @@ Router.register('agente-ml', (params, el) => {
       l.resultado = resultado; l.dados = dados;
     } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
     state.processando = null; render();
+  }
+
+  async function marcarGrupo(ids) {
+    for (const id of String(ids).split(',').filter(Boolean)) await marcar(id, 'executado');
   }
 
   async function salvarConfig() {
@@ -295,26 +299,36 @@ Router.register('agente-ml', (params, el) => {
     const contagem = {}; todas.forEach(x => { contagem[x.d.acao] = (contagem[x.d.acao] || 0) + 1; });
     const chips = [['todas', 'Todas', todas.length], ...Object.entries(contagem).sort((a, b) => (TIPOS[a[0]]?.ordem || 8) - (TIPOS[b[0]]?.ordem || 8)).map(([k, n]) => [k, TIPOS[k]?.rot || k, n])];
     const fazerNoMl = todas.filter(x => x.d.acao !== 'abc_queda').length;
-    return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
-      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
-        <div style="font-weight:700;font-size:15px;">O que fazer no Mercado Livre</div>
-        <div class="aml-sub">${fazerNoMl} para aplicar no painel do ML · ${todas.length - fazerNoMl} para revisar</div>
-      </div>
-      <div class="aml-sub" style="margin-bottom:12px;">Aplique em Publicidade → Product Ads → campanha e marque <b>✓ Feito</b>. O ML não deixa a integração alterar o ADS.</div>
-      ${quadroNova}
-      ${todas.length ? `<div class="aml-filtros">${chips.map(([k, t, n]) => `<button class="aml-fchip ${filtro === k ? 'on' : ''}" style="--c:${TIPOS[k]?.cor || 'var(--text-muted)'}" onclick="window._amlFiltroSug('${k}')">${t} <b>${n}</b></button>`).join('')}</div>` : ''}
-      ${lista.length ? `<div class="aml-lista">${lista.map(({ l, d }) => {
-        const t = TIPOS[d.acao] || { rot: 'Ação', cor: 'var(--text-muted)' };
-        const ids = d.item_ids || [];
-        return `<div class="aml-li" style="--c:${t.cor}">
+    // Pacote do dia: agrupa por campanha (abre cada campanha uma vez no painel e faz tudo nela);
+    // produtos antes da campanha; campanhas na ordem do que mais custa dinheiro
+    const PASSO = { retirar_produto: 1, mover_produto: 2, adicionar_produto: 3, roas_target: 4, acos_target: 4, orcamento: 5, pausar: 6 };
+    const grupos = new Map();
+    for (const x of lista) {
+      const d = x.d, revisar = d.acao === 'abc_queda';
+      const k = revisar ? '__revisar' : String((d.acao === 'adicionar_produto' ? (d.destino_id || d.campaign_id) : d.campaign_id) ?? '__sem');
+      const g = grupos.get(k) || { k, nome: revisar ? 'Para revisar (estoque, preço e anúncio)' : (d.acao === 'adicionar_produto' ? (d.destino || d.campanha) : d.campanha) || 'Sem campanha', itens: [], prio: 0, economia: 0, ganho: 0 };
+      g.itens.push(x); g.prio += +d.prioridade || 0;
+      if (d.impacto_tipo === 'economia') g.economia += +d.impacto || 0; else if (!revisar) g.ganho += +d.impacto || 0;
+      grupos.set(k, g);
+    }
+    const ordGrupos = [...grupos.values()].sort((a, b) => (a.k === '__revisar') - (b.k === '__revisar') || b.prio - a.prio || b.itens.length - a.itens.length);
+    ordGrupos.forEach(g => g.itens.sort((a, b) => (PASSO[a.d.acao] || 9) - (PASSO[b.d.acao] || 9) || (+b.d.prioridade || 0) - (+a.d.prioridade || 0)));
+    const campAtual = k => (state.campanhas[id]?.lista || []).find(c => String(c.id) === String(k));
+    const estadoCamp = k => { const c = campAtual(k); if (!c) return ''; const r = parseFloat(c.roas_target) || (c.acos_target ? 100 / c.acos_target : 0); return [c.status !== 'active' ? 'pausada' : '', r ? `ROAS objetivo ${roasX(r)}` : '', c.budget ? `orçamento ${R$(c.budget)}/dia` : ''].filter(Boolean).join(' · '); };
+    const R0 = v => R$(v).replace(/,\d{2}$/, '');
+    const linhaPasso = ({ l, d }) => {
+      const t = TIPOS[d.acao] || { rot: 'Ação', cor: 'var(--text-muted)' };
+      const ids = d.item_ids || [];
+      const ehProduto = !['roas_target', 'orcamento', 'acos_target', 'pausar'].includes(d.acao);
+      return `<div class="aml-li" style="--c:${t.cor}">
           <span class="aml-tipo">${t.rot}</span>
           <div class="aml-li-txt">
-            <div class="aml-li-ass" title="${h(assunto(d))}">${h(assunto(d))}</div>
+            ${ehProduto ? `<div class="aml-li-ass" title="${h(assunto(d))}">${h(assunto(d))}</div>` : ''}
             <div class="aml-li-faz">${fazer(d)}</div>${comoFazer(d)}
           </div>
-          <div class="aml-li-pq">${porque(d)}</div>
+          <div class="aml-li-pq">${porque(d)}${d.impacto ? `<div class="aml-imp">${d.impacto_tipo === 'economia' ? `~${R0(d.impacto)}/sem de gasto a cortar` : d.impacto_tipo === 'risco' ? `~${R0(d.impacto)}/sem a menos` : `~${R0(d.impacto)}/sem em vendas`}</div>` : ''}</div>
           <div class="aml-li-bt">
-            <button class="btn btn-primary btn-sm" ${state.processando ? 'disabled' : ''} title="${d.acao === 'abc_queda' ? 'Já revisei' : 'Já apliquei no painel do ML'}" onclick="window._amlMarcar('${l.id}','executado')">${d.acao === 'abc_queda' ? 'Revisado' : 'Feito'}</button>
+            <button class="btn btn-secondary btn-sm" ${state.processando ? 'disabled' : ''} title="${d.acao === 'abc_queda' ? 'Já revisei' : 'Já apliquei no painel do ML (opcional: o agente confere sozinho amanhã)'}" onclick="window._amlMarcar('${l.id}','executado')">${d.acao === 'abc_queda' ? 'Revisado' : 'Feito'}</button>
             <button class="aml-x" ${state.processando ? 'disabled' : ''} title="Descartar" onclick="window._amlMarcar('${l.id}','descartado')">✕</button>
           </div>
           <details class="aml-det"><summary>detalhes</summary>
@@ -322,7 +336,31 @@ Router.register('agente-ml', (params, el) => {
             ${ids.length ? `<div class="aml-sub" style="margin-top:4px;">Anúncios: ${ids.slice(0, 12).map(x => `<a href="https://produto.mercadolivre.com.br/${h(String(x).replace(/^MLB/, 'MLB-'))}" target="_blank" rel="noopener">${h(x)}</a>`).join(', ')}${ids.length > 12 ? '…' : ''}</div>` : ''}
           </details>
         </div>`;
-      }).join('')}</div>` : '<div class="aml-sub">Nada pendente agora. ✅</div>'}
+    };
+    const pacote = ordGrupos.map((g, i) => {
+      const est = g.k.startsWith('__') ? '' : estadoCamp(g.k);
+      const impTxt = [g.economia ? `<b>~${R0(g.economia)}/sem</b> de gasto a cortar` : '', g.ganho ? `~${R0(g.ganho)}/sem em vendas` : ''].filter(Boolean).join(' · ');
+      const idsGrupo = g.itens.map(x => x.l.id).join(',');
+      return `<div class="aml-grupo">
+        <div class="aml-grupo-top">
+          <div style="min-width:0;flex:1;">
+            <div class="aml-grupo-nome">${i === 0 && g.k !== '__revisar' ? '<span class="aml-comece">Comece por aqui</span>' : ''}${h(g.nome)}${g.k.startsWith('__') ? '' : ` <span class="aml-sub">#${h(g.k)}</span>`}</div>
+            <div class="aml-sub">${[est ? `agora: ${est}` : '', `${g.itens.length} passo${g.itens.length > 1 ? 's' : ''}`, impTxt].filter(Boolean).join(' · ')}</div>
+          </div>
+          ${g.k === '__revisar' ? '' : `<button class="btn btn-primary btn-sm" ${state.processando ? 'disabled' : ''} title="Marca todos os passos desta campanha como aplicados" onclick="window._amlMarcarGrupo('${idsGrupo}')">Fiz tudo desta campanha</button>`}
+        </div>
+        <div class="aml-lista">${g.itens.map(linhaPasso).join('')}</div>
+      </div>`;
+    }).join('');
+    return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+        <div style="font-weight:700;font-size:15px;">O que fazer no Mercado Livre</div>
+        <div class="aml-sub">${fazerNoMl} para aplicar no painel do ML · ${todas.length - fazerNoMl} para revisar</div>
+      </div>
+      <div class="aml-sub" style="margin-bottom:12px;">Um bloco por campanha, na ordem do que mais custa dinheiro: abra a campanha em Publicidade → Product Ads e faça todos os passos dela. <b>Não precisa marcar Feito</b> — na análise da manhã seguinte o agente lê as campanhas e marca sozinho o que mudou (o ML não deixa a integração alterar, mas deixa ler).</div>
+      ${quadroNova}
+      ${todas.length ? `<div class="aml-filtros">${chips.map(([k, t, n]) => `<button class="aml-fchip ${filtro === k ? 'on' : ''}" style="--c:${TIPOS[k]?.cor || 'var(--text-muted)'}" onclick="window._amlFiltroSug('${k}')">${t} <b>${n}</b></button>`).join('')}</div>` : ''}
+      ${lista.length ? pacote : '<div class="aml-sub">Nada pendente agora.</div>'}
     </div>`;
   }
   window._amlFiltroSug = k => { state.filtroSug = k; render(); };
@@ -375,10 +413,44 @@ Router.register('agente-ml', (params, el) => {
           <td>${f.gasto > 0 ? roasX(v / f.gasto) : '—'}</td><td style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td></tr>`;
       }).join('')}</tbody></table></div>`;
   }
+  // Resultado do que foi aplicado: 7 dias antes × 7 dias depois, por campanha
+  function renderResultados(id) {
+    const aplicadas = state.logs.filter(l => String(l.conta_id) === String(id) && l.tipo === 'alerta' && l.resultado === 'executado' && l.dados?.acao && l.dados.acao !== 'abc_queda');
+    const medidas = aplicadas.filter(l => ['melhorou', 'piorou', 'neutro'].includes(l.dados?.medicao?.veredito));
+    const aguardando = aplicadas.filter(l => !l.dados?.medicao).length;
+    const detectadas = aplicadas.filter(l => l.dados?.aplicado_por === 'detectado').length;
+    const n = v => medidas.filter(l => l.dados.medicao.veredito === v).length;
+    const taxa = medidas.length ? Math.round(n('melhorou') / medidas.length * 100) : null;
+    const porTipo = {};
+    medidas.forEach(l => { const t = l.dados.acao; porTipo[t] = porTipo[t] || { ok: 0, tot: 0 }; porTipo[t].tot++; if (l.dados.medicao.veredito === 'melhorou') porTipo[t].ok++; });
+    const VER = { melhorou: ['Melhorou', 'var(--green)'], piorou: ['Piorou', 'var(--red)'], neutro: ['Sem mudança clara', 'var(--text-muted)'] };
+    const dm = s => s ? s.split('-').reverse().slice(0, 2).join('/') : '';
+    return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+        <div style="font-weight:700;font-size:15px;">Deu resultado?</div>
+        <div class="aml-sub">cada sugestão aplicada é medida na campanha: 7 dias antes × 7 dias depois</div>
+      </div>
+      <div class="aml-res-kpis">
+        <div><div class="aml-rot">Taxa de acerto</div><div class="aml-val" style="color:${taxa == null ? 'inherit' : taxa >= 70 ? 'var(--green)' : taxa >= 50 ? 'var(--yellow)' : 'var(--red)'}">${taxa == null ? '—' : taxa + '%'}</div><div class="aml-sub">${medidas.length ? `${n('melhorou')} de ${medidas.length} medidas melhoraram` : 'nada medido ainda'}</div></div>
+        <div><div class="aml-rot">Pioraram</div><div class="aml-val">${n('piorou')}</div><div class="aml-sub">${n('neutro')} sem mudança clara</div></div>
+        <div><div class="aml-rot">Aguardando 7 dias</div><div class="aml-val">${aguardando}</div><div class="aml-sub">aplicadas, ainda sem medição</div></div>
+        <div><div class="aml-rot">Detectadas sozinho</div><div class="aml-val">${detectadas}</div><div class="aml-sub">de ${aplicadas.length} aplicadas (sem clicar Feito)</div></div>
+      </div>
+      ${Object.keys(porTipo).length ? `<div class="aml-filtros" style="margin-top:12px;">${Object.entries(porTipo).sort((a, b) => b[1].tot - a[1].tot).map(([t, v]) => `<span class="aml-fchip" style="cursor:default">${h(TIPOS_ROT[t] || t)}: <b>${Math.round(v.ok / v.tot * 100)}%</b> <span class="aml-sub">(${v.ok}/${v.tot})</span></span>`).join('')}</div>` : ''}
+      ${medidas.length ? `<div class="aml-lista" style="margin-top:10px;">${medidas.slice(0, 8).map(l => { const d = l.dados, v = VER[d.medicao.veredito]; return `<div class="aml-res" style="--c:${v[1]}">
+          <span class="aml-tipo">${h(TIPOS_ROT[d.acao] || d.acao)}</span>
+          <div style="min-width:0"><div class="aml-li-ass">${h(d.produto || d.campanha || '—')}</div><div class="aml-sub">${h(d.medicao.resumo || '')}</div></div>
+          <span class="aml-sub">aplicada ${dm(d.medicao.aplicado_dia)}${d.aplicado_por === 'detectado' ? ' · detectada' : ''}</span>
+          <span class="aml-ver">${v[0]}</span>
+        </div>`; }).join('')}</div>` : `<div class="aml-sub" style="margin-top:10px;">Ainda não há resultados: cada sugestão aplicada é medida 7 dias depois.${aguardando ? ` ${aguardando} aguardando.` : ''}</div>`}
+    </div>`;
+  }
+  const TIPOS_ROT = { retirar_produto: 'Tirar produto', pausar: 'Pausar campanha', mover_produto: 'Mover produto', roas_target: 'Ajustar ROAS', acos_target: 'Meta de ACOS', orcamento: 'Orçamento', adicionar_produto: 'Colocar no ADS' };
+
   function renderHistorico(id) {
     const lista = state.logs.filter(l => String(l.conta_id) === String(id) && !(l.tipo === 'alerta' && l.resultado === 'so_alerta')).slice(0, 15);
     const quando = s => new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    const rot = l => l.tipo === 'sistema' ? '🧠' : l.resultado === 'executado' ? '✅ aplicada' : l.resultado === 'descartado' ? '✖ descartada' : '';
+    const rot = l => l.tipo === 'sistema' ? 'análise ·' : l.resultado === 'executado' ? (l.dados?.aplicado_por === 'detectado' ? 'aplicada (detectada no painel) ·' : 'aplicada ·') : l.resultado === 'descartado' ? 'descartada ·' : l.resultado === 'expirado' ? 'venceu (refeita se ainda valia) ·' : '';
     return `<details class="card" style="padding:14px 20px;margin-bottom:18px;"><summary style="cursor:pointer;font-weight:700;">Registro</summary>
       ${lista.length ? lista.map(l => `<div class="aml-hist"><span class="aml-sub">${quando(l.criado_em)}</span> ${rot(l)} <b>${h(l.titulo)}</b><div class="aml-sub">${h(semInstrucao(l.explicacao).slice(0, 260))}</div></div>`).join('') : '<div class="aml-sub" style="margin-top:8px;">Nada registrado ainda.</div>'}
     </details>`;
@@ -425,6 +497,7 @@ Router.register('agente-ml', (params, el) => {
         ${kpi('TACOS do mês vs meta', pct(m?.tacos), `meta ${pct(cfg?.meta_acos)}`, corTacos(m?.tacos, cfg?.meta_acos))}
       </div>
       ${renderSugestoes(id)}
+      ${renderResultados(id)}
       ${renderCampanhas(id)}
       ${renderHistorico(id)}`;
   }
@@ -440,6 +513,7 @@ Router.register('agente-ml', (params, el) => {
   window._amlAtivo = alternarAtivo;
   window._amlAnalisar = analisarAgora;
   window._amlMarcar = marcar;
+  window._amlMarcarGrupo = marcarGrupo;
   window._amlCampanhas = () => { state.produtos = {}; carregarCampanhas(state.aberta, true); };
   window._amlProdutos = campId => {
     campId = String(campId);
@@ -452,7 +526,7 @@ Router.register('agente-ml', (params, el) => {
       <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;">ADS Mercado Livre</div>
       <span class="aml-chip" title="Analisa e sugere; você aplica no painel do ML">Copiloto</span>
     </div>
-    <div class="aml-sub" style="margin-bottom:18px;max-width:900px;">Analisa os anúncios patrocinados (Product Ads) de cada conta com as mesmas regras do agente da Shopee e sugere o que ajustar. O Mercado Livre não libera alteração de campanhas por integração — então você aplica no painel do ML e marca aqui. Quando o ML liberar, ele passa a executar sozinho.</div>
+    <div class="aml-sub" style="margin-bottom:18px;max-width:900px;">Analisa os anúncios patrocinados (Product Ads) de cada conta com as mesmas regras do agente da Shopee e sugere o que ajustar. O Mercado Livre não libera alteração de campanhas por integração — então você aplica no painel do ML; o agente confere sozinho o que mudou e, 7 dias depois, mede se deu resultado. Quando o ML liberar, ele passa a executar sozinho.</div>
     <div id="aml-root"></div>
     <div id="aml-desempenho"></div>
   </div>
@@ -497,6 +571,17 @@ Router.register('agente-ml', (params, el) => {
     .aml-seta{display:inline-block;width:12px;color:var(--text-muted);}
     .aml-prods{background:rgba(99,102,241,.04);padding:6px 10px 10px 26px;overflow-x:auto;}
     .aml-prods a{color:inherit;text-decoration:underline;text-decoration-color:var(--border);}
+    .aml-grupo{border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;}
+    .aml-grupo .aml-lista{border:none;border-radius:0;border-top:1px solid var(--border);}
+    .aml-grupo-top{display:flex;gap:12px;align-items:center;padding:10px 14px;background:var(--bg-subtle);flex-wrap:wrap;}
+    .aml-grupo-nome{font-weight:700;font-size:14px;color:var(--text-primary);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .aml-comece{font-size:11px;font-weight:650;color:var(--on-accent,#fff);background:var(--accent);border-radius:99px;padding:2px 8px;}
+    .aml-imp{font-size:11.5px;color:var(--text-muted);margin-top:2px;}
+    .aml-res-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;}
+    .aml-res{display:grid;grid-template-columns:130px minmax(0,1fr) auto auto;gap:4px 14px;align-items:center;padding:9px 14px;border-left:4px solid var(--c);border-bottom:1px solid var(--border);}
+    .aml-res:last-child{border-bottom:none;}
+    .aml-ver{font-size:12px;font-weight:650;color:var(--c);white-space:nowrap;}
+    @media (max-width:900px){.aml-res{grid-template-columns:1fr auto}.aml-res>div{grid-column:1/-1}}
     .aml-hist{padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
   </style>`;
   carregar();
