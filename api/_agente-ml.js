@@ -27,6 +27,7 @@
 
 const MAX_SUGESTOES = 15;
 const curvaABC = require('./_curva-abc');
+const medicaoAds = require('./_medicao-ads');
 
 async function listarCampanhasML(mcpCall, apiKey, meliUserId, de, ate) {
   const todas = [];
@@ -258,33 +259,14 @@ async function processarContaML(cfg, mcApiKey, h) {
         ]);
         const met = (lista, id) => {
           const c = lista.find(x => String(x.id) === String(id)); if (!c) return null;
-          const m = c.metrics || {}, g = parseFloat(m.cost) || 0, v = (parseFloat(m.total_amount) || 0) * (1 - taxaCancel);
-          // ACOS: sem gasto = 0; gasto sem venda = ∞ (guardado como semVenda, JSON não tem Infinity)
-          return { gastoDia: r1(g / 7), vendasDia: r1(v / 7), acos: g <= 0 ? 0 : v > 0 ? r1(g / v * 100) : null, semVenda: g > 0 && v <= 0 };
+          const m = c.metrics || {};
+          return medicaoAds.metricas(parseFloat(m.cost) || 0, (parseFloat(m.total_amount) || 0) * (1 - taxaCancel));
         };
         for (const l of porDia.get(ap)) {
           const d = l.dados;
           const alvo = d.acao === 'adicionar_produto' ? (d.destino_id || d.campaign_id) : d.campaign_id;
           const a = met(antes, alvo), b = met(depois, alvo);
-          let veredito = 'sem_dados', resumo = 'campanha sem dados de ADS nas duas semanas';
-          if (a && b && (a.gastoDia > 0 || b.gastoDia > 0)) {
-            const acosA = a.semVenda ? Infinity : a.acos, acosB = b.semVenda ? Infinity : b.acos;
-            const vend = `vendas/dia ${R$(a.vendasDia)} → ${R$(b.vendasDia)}`;
-            if (d.acao === 'pausar') {
-              veredito = b.gastoDia < a.gastoDia * 0.2 ? 'melhorou' : 'neutro';
-              resumo = `deixou de gastar ~${R$(Math.max(0, a.gastoDia - b.gastoDia) * 7)}/semana`;
-            } else if (CONTER(d)) {
-              const acosOk = acosA === Infinity ? acosB !== Infinity : acosB <= acosA * 0.9;
-              veredito = acosOk && b.vendasDia >= a.vendasDia * 0.7 ? 'melhorou'
-                : (acosB > acosA * 1.05 || b.vendasDia < a.vendasDia * 0.5) ? 'piorou' : 'neutro';
-              resumo = `ACOS ${pctTxt(acosA)} → ${pctTxt(acosB)} · ${vend}`;
-            } else {
-              const dentro = meta ? acosB <= meta * 1.1 : acosB <= acosA * 1.1;
-              veredito = b.vendasDia >= a.vendasDia * 1.1 && dentro ? 'melhorou'
-                : (b.vendasDia < a.vendasDia * 0.95 || (meta && acosB > meta * 1.3)) ? 'piorou' : 'neutro';
-              resumo = `${vend} · ACOS ${pctTxt(acosA)} → ${pctTxt(acosB)}`;
-            }
-          }
+          const { veredito, resumo } = medicaoAds.avaliar(d.acao === 'pausar' ? 'pausar' : CONTER(d) ? 'conter' : 'acelerar', a, b, meta, R$);
           const dados = { ...d, medicao: { campaign_id: alvo, aplicado_dia: ap, antes: a, depois: b, veredito, resumo, medido_em: new Date().toISOString() } };
           try { await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { dados }); l.dados = dados; medidas++; } catch (e) {}
         }

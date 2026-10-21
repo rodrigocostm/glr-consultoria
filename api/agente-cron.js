@@ -41,6 +41,8 @@ const { agoraBRT } = require('./_agenda-agente');
 const { processarContaML } = require('./_agente-ml');
 // Curva ABC semana a semana (mesma regra da aba Vendas) — alertas diários dos agentes
 const curvaABC = require('./_curva-abc');
+// Medição de resultado (7 dias antes × 7 dias depois) — mesma régua do ML
+const medicaoAds = require('./_medicao-ads');
 const ehML = cfg => String(cfg.marketplace || '').toLowerCase() === 'ml';
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
@@ -416,6 +418,60 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: e.message || String(e) });
   }
 };
+
+// Resultado das ações que o agente (ou o analista) aplicou na Shopee: a campanha
+// 7 dias antes × 7 dias depois do dia da ação. Mede ações de 8 a 45 dias atrás
+// ainda sem medição — até 4 dias de ação por revisão, para não pesar o cron.
+function tipoAcaoShopee(l) {
+  const d = l.dados || {};
+  if (d.pausada === true || /pausad/i.test(l.titulo || '')) return 'pausar';
+  if (d.retomada === true) return 'acelerar';
+  if (d.roas_de != null && d.roas_para != null && +d.roas_de !== +d.roas_para) return +d.roas_para > +d.roas_de ? 'conter' : 'acelerar';
+  if (d.budget_de != null && d.budget_para != null && +d.budget_de !== +d.budget_para) return +d.budget_para < +d.budget_de ? 'conter' : 'acelerar';
+  return null;
+}
+async function medirResultadosShopee(cfg, mcApiKey, shopId, taxaCancel) {
+  const ontem = dataBRT(1).iso;
+  const diaBRT = iso => new Date(new Date(iso).getTime() - 3 * 3600e3).toISOString().slice(0, 10);
+  const ddmm = iso => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`;
+  const isoDe = dd => `${dd.slice(6, 10)}-${dd.slice(3, 5)}-${dd.slice(0, 2)}`;
+  const desde = new Date(Date.now() - 45 * 86400000).toISOString(), ate = new Date(Date.now() - 7.5 * 86400000).toISOString();
+  const logs = await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.decisao&resultado=eq.executado&criado_em=gte.${encodeURIComponent(desde)}&criado_em=lte.${encodeURIComponent(ate)}&select=id,titulo,criado_em,dados&limit=500`).catch(() => []);
+  const porDia = new Map();
+  for (const l of logs) {
+    const tipo = tipoAcaoShopee(l);
+    if (!l.dados?.campaign_id || l.dados.medicao || !tipo) continue;
+    const ap = diaBRT(l.criado_em);
+    if (isoMenos(ap, -7) > ontem) continue;
+    (porDia.get(ap) || porDia.set(ap, []).get(ap)).push({ l, tipo });
+  }
+  let medidas = 0;
+  for (const ap of [...porDia.keys()].sort().slice(0, 4)) {
+    const itens = porDia.get(ap);
+    const ids = [...new Set(itens.map(x => String(x.l.dados.campaign_id)))];
+    const met = {};
+    await Promise.all(chunk(ids, 20).map(async lote => {
+      const r = await mcpCall(mcApiKey, 'shopee_ads_campaign_daily', { shopId, campaign_id_list: lote.join(','), start_date: ddmm(isoMenos(ap, 7)), end_date: ddmm(isoMenos(ap, -7)) }).catch(() => null);
+      (r?.data?.response?.campaign_list || r?.response?.campaign_list || []).forEach(c => {
+        const soma = { a: { g: 0, v: 0 }, b: { g: 0, v: 0 } };
+        for (const d of c.metrics_list || []) {
+          const dia = isoDe(String(d.date || ''));
+          const lado = dia < ap ? soma.a : dia > ap ? soma.b : null;
+          if (!lado) continue;
+          lado.g += parseFloat(d.expense) || 0; lado.v += (parseFloat(d.broad_gmv) || 0) * (1 - taxaCancel);
+        }
+        met[String(c.campaign_id)] = { a: medicaoAds.metricas(soma.a.g, soma.a.v), b: medicaoAds.metricas(soma.b.g, soma.b.v) };
+      });
+    }));
+    for (const { l, tipo } of itens) {
+      const m = met[String(l.dados.campaign_id)];
+      const { veredito, resumo } = medicaoAds.avaliar(tipo, m?.a, m?.b, cfg.meta_acos, R$);
+      const dados = { ...l.dados, medicao: { campaign_id: l.dados.campaign_id, tipo, aplicado_dia: ap, antes: m?.a || null, depois: m?.b || null, veredito, resumo, medido_em: new Date().toISOString() } };
+      try { await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { dados }); medidas++; } catch (e) {}
+    }
+  }
+  return medidas;
+}
 
 async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) {
   const shopId = cfg.conta_id;
@@ -936,11 +992,15 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       }
     } catch (e) { /* curva ABC é bônus — não derruba a revisão diária */ }
 
+    // Resultado das ações de 8+ dias atrás (7 dias antes × 7 depois)
+    let medidas = 0;
+    try { medidas = await medirResultadosShopee(cfg, mcApiKey, shopId, taxaCancel); } catch (e) { /* medição é bônus */ }
+
     // Resumo de execução do dia (sempre grava, mesmo sem nenhuma ação — é o
     // registro de que o agente rodou e revisou a conta)
     await logar('sistema', `Revisão diária concluída — ${decisoes.length} ação(ões), ${alertas.length} alerta(s)`,
       `Revisadas ${campanhasAtivas} campanhas ativas (de ${campanhas.length} listadas, incluindo histórico antigo). ${rotuloTacos}: ${tacosConta === Infinity ? '∞' : tacosConta.toFixed(1) + '%'} (meta: ${cfg.meta_acos ?? '—'}%). ${decisoes.length} decisão(ões) executada(s) automaticamente, ${alertas.length} alerta(s) aguardando aprovação manual.`,
-      { campanhas: campanhasAtivas, campanhas_listadas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta }, 'executado');
+      { campanhas: campanhasAtivas, campanhas_listadas: campanhas.length, decisoes: decisoes.length, alertas: alertas.length, tacos_conta: tacosConta === Infinity ? null : tacosConta, medidas }, 'executado');
 
     // 2) Relatório diário com IA
     const contexto = await contextoNegocio(shopId, ontem.iso).catch(() => ({}));

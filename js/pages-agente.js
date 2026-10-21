@@ -82,6 +82,7 @@
 
     async function carregarTudo() {
       state.carregando = true;
+      state.resultadosAds = {}; // recarrega o "Deu resultado?" junto
       render();
       try {
         const [contas, cfgResp, logsResp, relResp] = await Promise.all([
@@ -1907,6 +1908,52 @@
     }
 
     // ── 4. O que o agente fez (timeline) ──
+    // ── Deu resultado? — cada ação aplicada é medida na campanha: 7 dias antes ×
+    // 7 dias depois (feito pelo cron em api/_medicao-ads.js, mesma régua do ML) ──
+    function carregarResultadosAds(contaId) {
+      const st = state.resultadosAds || (state.resultadosAds = {});
+      if (st[contaId]) return;
+      st[contaId] = { carregando: true };
+      _sb.from('glr_agente_log').select('id,titulo,criado_em,dados,origem').eq('conta_id', contaId).eq('tipo', 'decisao').eq('resultado', 'executado')
+        .gte('criado_em', new Date(Date.now() - 45 * 86400000).toISOString()).order('criado_em', { ascending: false }).limit(500)
+        .then(({ data }) => { st[contaId] = { lista: data || [] }; render(); }, () => { st[contaId] = { lista: [] }; render(); });
+    }
+    function renderResultadosAds(contaId) {
+      carregarResultadosAds(contaId);
+      const st = state.resultadosAds?.[contaId];
+      const hx = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const cab = `<div class="ag-sec-head"><div class="ag-sec-titulo">Deu resultado? <span class="ag-sec-sub">cada ação aplicada é medida na campanha: 7 dias antes × 7 dias depois</span></div></div>`;
+      if (!st || st.carregando) return `<div class="ag-hud-card" style="margin-bottom:20px;">${cab}<div class="ag-vazio">Carregando…</div></div>`;
+      const medivel = l => { const d = l.dados || {}; return d.campaign_id && (d.pausada === true || /pausad/i.test(l.titulo || '') || d.retomada === true || (d.roas_de != null && d.roas_para != null) || (d.budget_de != null && d.budget_para != null)); };
+      const acoes = st.lista.filter(medivel);
+      const medidas = acoes.filter(l => ['melhorou', 'piorou', 'neutro'].includes(l.dados?.medicao?.veredito));
+      const aguardando = acoes.filter(l => !l.dados?.medicao).length;
+      const n = v => medidas.filter(l => l.dados.medicao.veredito === v).length;
+      const taxa = medidas.length ? Math.round(n('melhorou') / medidas.length * 100) : null;
+      const TIPO = { pausar: 'Pausar', conter: 'Conter gasto', acelerar: 'Acelerar' };
+      const porTipo = {};
+      medidas.forEach(l => { const t = l.dados.medicao.tipo || 'outro'; porTipo[t] = porTipo[t] || { ok: 0, tot: 0 }; porTipo[t].tot++; if (l.dados.medicao.veredito === 'melhorou') porTipo[t].ok++; });
+      const VER = { melhorou: ['Melhorou', 'var(--green)'], piorou: ['Piorou', 'var(--red)'], neutro: ['Sem mudança clara', 'var(--text-muted)'] };
+      const dm = s => s ? s.split('-').reverse().slice(0, 2).join('/') : '';
+      const auto = medidas.filter(l => l.origem === 'cron'), autoOk = auto.filter(l => l.dados.medicao.veredito === 'melhorou').length;
+      const kpi = (rot, val, sub, cor) => `<div><div class="ag-res-rot">${rot}</div><div class="ag-res-val" style="color:${cor || 'inherit'}">${val}</div><div class="ag-res-sub">${sub}</div></div>`;
+      return `<div class="ag-hud-card" style="margin-bottom:20px;">${cab}
+        <div class="ag-res-kpis">
+          ${kpi('Taxa de acerto', taxa == null ? '—' : taxa + '%', medidas.length ? `${n('melhorou')} de ${medidas.length} ações melhoraram` : 'nada medido ainda', taxa == null ? '' : taxa >= 70 ? 'var(--green)' : taxa >= 50 ? 'var(--yellow)' : 'var(--red)')}
+          ${kpi('Automáticas do agente', auto.length ? Math.round(autoOk / auto.length * 100) + '%' : '—', auto.length ? `${autoOk} de ${auto.length} melhoraram` : 'sem medição ainda')}
+          ${kpi('Pioraram', n('piorou'), `${n('neutro')} sem mudança clara`)}
+          ${kpi('Aguardando 7 dias', aguardando, 'aplicadas, ainda sem medição')}
+        </div>
+        ${Object.keys(porTipo).length ? `<div class="ag-res-tipos">${Object.entries(porTipo).map(([t, v]) => `<span>${TIPO[t] || t}: <b>${Math.round(v.ok / v.tot * 100)}%</b> (${v.ok}/${v.tot})</span>`).join('')}</div>` : ''}
+        ${medidas.length ? `<div class="ag-res-lista">${medidas.slice(0, 8).map(l => { const d = l.dados, v = VER[d.medicao.veredito]; return `<div class="ag-res-li" style="--c:${v[1]}">
+            <span class="ag-res-tipo">${TIPO[d.medicao.tipo] || ''}</span>
+            <div style="min-width:0"><div class="ag-res-nome">${hx(String(l.titulo || '').replace(/^.*? — /, ''))}</div><div class="ag-res-sub">${hx(d.medicao.resumo || '')}</div></div>
+            <span class="ag-res-sub">${dm(d.medicao.aplicado_dia)} · ${l.origem === 'cron' ? 'automática' : 'manual'}</span>
+            <span class="ag-res-ver">${v[0]}</span></div>`; }).join('')}</div>` : `<div class="ag-vazio">Ainda não há resultados: cada ação é medida 7 dias depois de aplicada.${aguardando ? ` ${aguardando} aguardando.` : ''}</div>`}
+        <div class="ag-nota">Conter gasto (subir meta de ROAS, cortar orçamento): melhorou se o ACOS caiu 10% ou mais sem perder mais de 30% das vendas. Acelerar (baixar meta, subir orçamento, retomar): melhorou se as vendas subiram 10% ou mais com ACOS dentro da meta. Pausar: melhorou se o gasto parou.</div>
+      </div>`;
+    }
+
     function renderTimeline(contaId) {
       const trintaDias = Date.now() - 30 * 86400000;
       const todas = logsDaConta(contaId).filter(l => l.tipo === 'decisao' && new Date(l.criado_em).getTime() > trintaDias).sort(maisRecente);
@@ -2287,7 +2334,7 @@
       </div>`;
       let corpo = '';
       if (aba === 'geral') corpo = `${renderKPIs(cfg)}${resumoPendencias(cfg.conta_id, nPend)}${renderComparativoVisualizacoes(cfg)}`;
-      else if (aba === 'acoes') corpo = `${renderPrecisaDeVoce(cfg.conta_id)}${renderTimeline(cfg.conta_id)}<div class="ag-secundarias">${renderAcaoManual(cfg.conta_id)}</div>`;
+      else if (aba === 'acoes') corpo = `${renderPrecisaDeVoce(cfg.conta_id)}${renderResultadosAds(cfg.conta_id)}${renderTimeline(cfg.conta_id)}<div class="ag-secundarias">${renderAcaoManual(cfg.conta_id)}</div>`;
       else if (aba === 'campanhas') { const funil = renderImpressoesCliquesVendas(cfg.conta_id); corpo = `${renderTabelaCampanhas(cfg)}${renderGmvLoja(cfg.conta_id)}<div class="ag-secundarias">${secaoColapsavel('funil', 'Funil de ADS (impressões → cliques → pedidos)', funil || '<div class="ag-vazio">Sem dados de ADS no período.</div>')}</div>`; }
       else if (aba === 'produtos') corpo = `<div class="ag-secundarias">${blocoABC(cfg.conta_id)}</div>`;
       else if (aba === 'config') corpo = renderRegras(cfg);
@@ -2385,6 +2432,18 @@
         .ag-aviso-aten { background:#d977061a; border:1px solid var(--yellow); color:var(--yellow); margin:10px 0 0; }
         .ag-nada { margin-bottom:14px; padding:8px 14px; font-size:12.5px; color:var(--green); background:#16a34a12; border:1px solid #16a34a33; border-radius:10px; }
         .ag-nota { margin-top:10px; font-size:11.5px; line-height:1.6; color:var(--text-muted); }
+        .ag-res-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; margin-top:6px; }
+        .ag-res-rot { font-size:12px; color:var(--text-secondary); }
+        .ag-res-val { font-size:20px; font-weight:650; font-variant-numeric:tabular-nums; }
+        .ag-res-sub { font-size:11.5px; color:var(--text-muted); }
+        .ag-res-tipos { display:flex; gap:14px; flex-wrap:wrap; margin-top:12px; font-size:12.5px; color:var(--text-secondary); }
+        .ag-res-lista { margin-top:12px; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+        .ag-res-li { display:grid; grid-template-columns:110px minmax(0,1fr) auto auto; gap:4px 14px; align-items:center; padding:9px 14px; border-left:4px solid var(--c); border-bottom:1px solid var(--border); }
+        .ag-res-li:last-child { border-bottom:none; }
+        .ag-res-tipo { font-size:11.5px; font-weight:650; color:var(--text-secondary); }
+        .ag-res-nome { font-size:13px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ag-res-ver { font-size:12px; font-weight:650; color:var(--c); white-space:nowrap; }
+        @media (max-width:800px) { .ag-res-li { grid-template-columns:1fr auto; } .ag-res-li > div { grid-column:1/-1; } }
         .ag-vazio { padding:18px 6px; font-size:13px; color:var(--text-muted); text-align:center; }
         .ag-sec-head { display:flex; align-items:center; justify-content:space-between; gap:10px 16px; flex-wrap:wrap; margin-bottom:14px; }
         .ag-sec-titulo { font-size:14px; font-weight:700; }
