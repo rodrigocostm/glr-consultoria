@@ -33,7 +33,7 @@ Router.register('dre', (params, el) => {
     const vendasBase    = parseFloat(linha.vendasBase) || 0;
     const fatBase       = parseFloat(linha.fatBase)    || 0;
     const adsBase       = parseFloat(linha.adsBase)    || 0;
-    const comissaoGLR   = vendasBase * valorPorVenda;
+    const comissaoGLR   = GLR.linhaGeraComissao(clienteId, linha) ? vendasBase * valorPorVenda : 0;
     if (!fatBase && !adsBase && !vendasBase) return null;
     return { faturamento: fatBase, ads: adsBase, comissaoGLR, produtosVendidos: vendasBase };
   }
@@ -100,7 +100,7 @@ Router.register('dre', (params, el) => {
 
     let imposto  = 0;
     let custoProd = 0;
-    let qtdTotal  = 0;
+    let qtdTotal  = 0, qtdComissao = 0;
     for (const p of filtrados) {
       const tx = p.taxas || {};
       const impAPI = parseFloat(tx.imposto) || 0;
@@ -113,6 +113,7 @@ Router.register('dre', (params, el) => {
       }
       custoProd += parseFloat((custos[p.id] || {}).custo) || 0;
       qtdTotal  += parseInt(p.qtd) || 1;
+      if (GLR.contaGeraComissao(p.contaId)) qtdComissao += parseInt(p.qtd) || 1;
     }
 
     // ADS por plataforma
@@ -127,7 +128,7 @@ Router.register('dre', (params, el) => {
     // Comissão GLR
     const cliente       = clientes.find(c => c.id === parseInt(clienteId));
     const valorPorVenda = parseFloat(cliente?.valorPorVenda) || 0;
-    const comissaoGLR   = qtdTotal * valorPorVenda;
+    const comissaoGLR   = qtdComissao * valorPorVenda; // só contas que contam comissão
 
     return {
       faturamento:    fat,
@@ -220,7 +221,7 @@ Router.register('dre', (params, el) => {
     let aliquotas = {}, custos = {};
     try { aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas') || '{}'); } catch(e) {}
     try { custos    = JSON.parse(localStorage.getItem('glr_vendas_custos') || '{}'); } catch(e) {}
-    let fat = 0, liq = 0, imposto = 0, custoProd = 0, qtd = 0, ads = 0, semTaxa = 0;
+    let fat = 0, liq = 0, imposto = 0, custoProd = 0, qtd = 0, qtdCom = 0, ads = 0, semTaxa = 0;
     for (const c of contas) {
       const d = baseDRE.porConta[String(c.external_id)];
       ads += d.ads;
@@ -235,7 +236,8 @@ Router.register('dre', (params, el) => {
         const cst = custos[p.pedido_id] || {};
         imposto += impAPI > 0 ? impAPI : valor * (parseFloat(cst.imposto) || parseFloat(aliquotas[c.external_id] || 0)) / 100;
         custoProd += parseFloat(cst.custo) || 0;
-        qtd += (p.itens || []).reduce((s, i) => s + (parseInt(i.qtd) || 1), 0) || 1;
+        const q = (p.itens || []).reduce((s, i) => s + (parseInt(i.qtd) || 1), 0) || 1;
+        qtd += q; if (GLR.contaGeraComissao(c)) qtdCom += q;
       }
     }
     if (!fat && !ads) return null;
@@ -243,7 +245,7 @@ Router.register('dre', (params, el) => {
     return {
       faturamento: fat, comissaoFrete: Math.max(0, fat - liq), imposto, ads,
       produtos: custoProd, produtosVendidos: qtd,
-      comissaoGLR: qtd * (parseFloat(cliente?.valorPorVenda) || 0),
+      comissaoGLR: qtdCom * (parseFloat(cliente?.valorPorVenda) || 0), // só contas que contam comissão
       juros: 0, custoFixo: 0,
       _semTaxa: semTaxa,
     };

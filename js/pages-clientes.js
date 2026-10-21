@@ -339,7 +339,7 @@ Router.register('cliente-perfil', (params, el) => {
             <div class="section-title mb-16">Indicadores</div>
             <div class="grid-2" style="gap:12px;">
               ${indicadorCard('Faturamento', fat ? GLR.formatCurrencyFull(fat) : '—', cresc >= 0 ? 'text-green' : 'text-red', `${cresc >= 0 ? '+' : ''}${cresc}% vs mês ant.`)}
-              ${indicadorCard('Valor por Venda', c.valorPorVenda ? `R$ ${parseFloat(c.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—', 'text-green', 'Por venda realizada')}
+              ${indicadorCard('Valor por Venda', c.valorPorVenda ? `R$ ${parseFloat(c.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—', 'text-green', (() => { const cts = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}')[String(c.id)] || []; const fora = cts.filter(ct => !GLR.contaGeraComissao(ct)).length; return fora ? `Por venda · ${cts.length - fora} de ${cts.length} contas contam comissão` : 'Por venda realizada'; })())}
               ${indicadorCard('Invest. Mídia (ADS)', investMidia > 0 ? GLR.formatCurrencyFull(investMidia) : '—', 'text-accent', roas ? `ROAS: ${roas}x` : 'Da projeção do mês')}
               ${indicadorCard('Status', GLR.statusLabel[c.status] || '—', c.status === 'crescimento' ? 'text-green' : c.status === 'risco' ? 'text-red' : 'text-accent', 'Atualizado pela projeção')}
             </div>
@@ -368,7 +368,8 @@ Router.register('cliente-perfil', (params, el) => {
                 const nome = ct.nickname || platNome[mp] || mp;
                 const cor  = platColor[mp] || 'var(--text-muted)';
                 const aliq = aliquotas[extId] || '';
-                return `<div id="conta-card-${extId}" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px;">
+                const contaCom = GLR.contaGeraComissao(ct);
+                return `<div id="conta-card-${extId}" class="${contaCom ? '' : 'conta-sem-comissao'}" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px;">
                   <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
                     <span style="font-size:20px;">${icon}</span>
                     <div style="flex:1;min-width:0;">
@@ -387,6 +388,13 @@ Router.register('cliente-perfil', (params, el) => {
                       style="flex:1;background:var(--bg-subtle);border:1px solid rgba(251,191,36,0.3);border-radius:5px;padding:4px 8px;color:var(--yellow);font-size:13px;font-weight:700;text-align:right;width:100%;box-sizing:border-box;">
                     <span style="font-size:12px;color:var(--yellow);font-weight:600;">%</span>
                   </div>
+
+                  <!-- Comissão GLR nesta conta -->
+                  <label class="conta-comissao" title="Desmarque se as vendas desta conta não entram na comissão (valor por venda) da GLR">
+                    <input type="checkbox" id="com-${extId}" ${contaCom ? 'checked' : ''} onchange="window.salvarComissaoConta('${extId}', this.checked)">
+                    <span>Conta comissão GLR</span>
+                    <small id="com-txt-${extId}">${contaCom ? (c.valorPorVenda ? `R$ ${parseFloat(c.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2})} por venda` : 'sem valor por venda no cadastro') : 'vendas desta conta não geram comissão'}</small>
+                  </label>
 
                   <div id="dados-${extId}" style="font-size:12px;color:var(--text-muted);">Clique em "Carregar dados"</div>
                 </div>`;
@@ -511,6 +519,16 @@ Router.register('cliente-perfil', (params, el) => {
   window.switchTab = (tab) => { activeTab = tab; renderTab(); };
 
   // ── Salvar alíquota de imposto por conta ────────────────────
+  window.salvarComissaoConta = (extId, conta) => {
+    const m = GLR.comissaoContas();
+    if (conta) delete m[extId]; else m[extId] = false;
+    localStorage.setItem('glr_comissao_contas', JSON.stringify(m));
+    const c = GLR.clientes.find(x => (JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}')[String(x.id)] || []).some(ct => String(ct.external_id || ct.id) === String(extId)));
+    const t = document.getElementById(`com-txt-${extId}`);
+    if (t) t.textContent = conta ? (c?.valorPorVenda ? `R$ ${parseFloat(c.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2})} por venda` : 'sem valor por venda no cadastro') : 'vendas desta conta não geram comissão';
+    const card = document.getElementById(`conta-card-${extId}`); if (card) card.classList.toggle('conta-sem-comissao', !conta);
+  };
+
   window.salvarAliquota = (extId, valor) => {
     const aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas') || '{}');
     aliquotas[extId] = parseFloat(valor) || 0;

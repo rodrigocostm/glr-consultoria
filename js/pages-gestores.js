@@ -51,7 +51,7 @@ Router.register('gestores', (params, el) => {
     let vinculos = {};
     try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
     const contas = vinculos[String(c.id)] || [];
-    const r = { fat: 0, ads: 0, temAds: false, unid: 0, m: [0, 0, 0, 0], contas: contas.length, cobertas: 0 };
+    const r = { fat: 0, ads: 0, temAds: false, unid: 0, unidCom: 0, m: [0, 0, 0, 0], contas: contas.length, cobertas: 0 };
     for (const ct of contas) {
       const mkt = BaseDados.mktDe(ct.marketplace);
       const id = String(ct.param_to_use?.shopId || ct.param_to_use?.meliUserId || ct.contaId || ct.external_id);
@@ -60,6 +60,7 @@ Router.register('gestores', (params, el) => {
       r.cobertas++;
       const t = BaseDados.somar(info, mesIniG, isoD(ontemG));
       r.fat += t.faturamento; r.unid += t.unidades || t.pedidos;
+      if (GLR.contaGeraComissao(ct)) r.unidCom += t.unidades || t.pedidos;
       if (BaseDados.cobreAds(info, mesIniG)) { r.ads += t.ads; r.temAds = true; }
       for (const off of [1, 2, 3]) { const mf = mesFechado(off); if (BaseDados.cobre(info, mf.de)) r.m[off] += BaseDados.somar(info, mf.de, mf.ate).faturamento; }
     }
@@ -84,7 +85,7 @@ Router.register('gestores', (params, el) => {
     let adsProj  = plats.reduce((s,p)=>s+calcP(p.adsBase),0);
     let pctADS   = fatBase > 0 ? (adsBase/fatBase)*100 : 0;
     let pctADSProj = fatProj > 0 ? (adsProj/fatProj)*100 : 0;
-    let vendasProjBase = null;
+    let vendasProjBase = null, vendasComBase = null;
 
     const dresMes = dres.filter(d =>
       parseInt(d.clienteId)===c.id &&
@@ -117,6 +118,7 @@ Router.register('gestores', (params, el) => {
       fatProj = b.fat / diasDecG * diasMesG;
       if (b.temAds) { adsBase = b.ads; adsProj = b.ads / diasDecG * diasMesG; pctADS = b.fat > 0 ? b.ads / b.fat * 100 : 0; pctADSProj = pctADS; }
       vendasProjBase = b.unid / diasDecG * diasMesG;
+      vendasComBase = b.unidCom / diasDecG * diasMesG;
       if (b.m[1] > 0) fatM1 = b.m[1]; if (b.m[2] > 0) fatM2 = b.m[2]; if (b.m[3] > 0) fatM3 = b.m[3];
     }
 
@@ -132,7 +134,8 @@ Router.register('gestores', (params, el) => {
     const faltaMeta = metaFinal>0 ? metaFinal-fatRef : null;
     const compM1    = fatM1>0 ? ((fatRef-fatM1)/fatM1)*100 : null;
     const vendasProj = vendasProjBase != null ? vendasProjBase : plats.reduce((s,p)=>s+calcP(p.vendasBase),0);
-    const recGLR    = Math.round(vendasProj)*(parseFloat(c.valorPorVenda)||0);
+    const vendasCom = vendasComBase != null ? vendasComBase : plats.reduce((s,p)=>s+(GLR.linhaGeraComissao(c.id, p) ? calcP(p.vendasBase) : 0),0);
+    const recGLR    = Math.round(vendasCom)*(parseFloat(c.valorPorVenda)||0); // só contas que contam comissão
 
     return { fatBase, metaFinal, adsBase, pctADS, fatProj, adsProj, pctADSProj,
              fatReal: viaBase ? fatMes : fatReal, adsReal, fatM1, fatM2, fatM3, viaBase, semVinculo: !b,

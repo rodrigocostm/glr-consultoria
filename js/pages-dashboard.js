@@ -145,9 +145,10 @@ async function _dashBuscarVendasPorDia() {
   let lojasBase = 0, lojasAPI = 0;
 
   await _mapLimit(clientesComConta, 3, async (c) => {
-    const valorPorVenda = parseFloat(c.valorPorVenda) || 0;
+    const valorCliente = parseFloat(c.valorPorVenda) || 0;
     const contas = vinculos[String(c.id)] || [];
     await _mapLimit(contas, 3, async (conta) => {
+      const valorPorVenda = GLR.contaGeraComissao(conta) ? valorCliente : 0;
       const mkt = (conta.marketplace||'').toLowerCase();
       const infoBase = base && BaseDados.mktDe(mkt) ? base[BaseDados.chave(mkt, conta.param_to_use?.shopId || conta.param_to_use?.meliUserId || conta.external_id)] : null;
       if (infoBase && BaseDados.cobre(infoBase, primeiroDia)) {

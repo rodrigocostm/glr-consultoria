@@ -1172,3 +1172,11 @@ tbody td { padding: 12px 14px; font-variant-numeric: tabular-nums; }
 #ag-root .ag-nada { color: var(--text-secondary); background: var(--bg-card); border-color: var(--border); }
 #ag-root .ag-hud-card, #ag-desempenho .ag-hud-card { background: var(--bg-card); box-shadow: var(--shadow-xs); }
 #ag-root .ag-hud-card::before { display: none; }
+
+/* Perfil do cliente — conta comissão GLR por conta */
+.conta-comissao { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 8px; row-gap: 1px; margin-bottom: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--green-bg); cursor: pointer; }
+.conta-comissao input { accent-color: var(--green); width: 15px; height: 15px; margin: 0; cursor: pointer; }
+.conta-comissao span { font-size: 12px; font-weight: 600; color: var(--green); }
+.conta-comissao small { grid-column: 2; font-size: 11px; color: var(--text-muted); }
+.conta-sem-comissao .conta-comissao { background: var(--bg-subtle); }
+.conta-sem-comissao .conta-comissao span { color: var(--text-secondary); }

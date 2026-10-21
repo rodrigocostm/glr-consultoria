@@ -45,6 +45,27 @@ GLR.prioridadeColor = {
   baixa:   'prio-baixa',
 };
 
+// Comissão GLR por conta: o valor por venda só conta nas contas marcadas como "conta comissão".
+// Guarda só as exceções ({ id_da_conta: false }); conta sem registro conta comissão.
+GLR.comissaoContas = () => { try { return JSON.parse(localStorage.getItem('glr_comissao_contas') || '{}'); } catch (e) { return {}; } };
+GLR.contaGeraComissao = conta => {
+  const m = GLR.comissaoContas();
+  const ids = conta && typeof conta === 'object'
+    ? [conta.external_id, conta.contaId, conta.param_to_use?.shopId, conta.param_to_use?.meliUserId, conta.param_to_use?.magalu_account_id, conta.id]
+    : [conta];
+  return !ids.some(i => i != null && i !== '' && m[String(i)] === false);
+};
+// Linha da Projeção: com conta definida usa a conta; por plataforma, só fica fora se todas as contas daquela plataforma estão fora
+GLR.linhaGeraComissao = (clienteId, linha) => {
+  if (!linha) return true;
+  if (linha.contaId) return GLR.contaGeraComissao(linha.contaId);
+  const plat = x => { x = String(x || '').toLowerCase(); return /meli|mercado|^ml$/.test(x) ? 'ml' : /shopee/.test(x) ? 'shopee' : /amazon/.test(x) ? 'amazon' : /magalu/.test(x) ? 'magalu' : /tiktok/.test(x) ? 'tiktok' : /shein/.test(x) ? 'shein' : x; };
+  let vinc = {}; try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
+  const alvo = plat(linha.marketplace || linha._platNome || linha.nome);
+  const contas = (vinc[String(clienteId)] || []).filter(c => plat(c.marketplace) === alvo);
+  return !contas.length || contas.some(c => GLR.contaGeraComissao(c));
+};
+
 GLR.tipoAcaoColor = {
   Reunião: '#6366f1', Campanha: '#f59e0b', Otimização: '#10b981',
   Precificação: '#3b82f6', Estratégia: '#8b5cf6', Análise: '#06b6d4',

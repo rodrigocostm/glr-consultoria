@@ -80,7 +80,8 @@ Router.register('performance', (params, el) => {
 
     // Receita GLR
     const vendasProj = plats.reduce((s,p) => s + calcP(p.vendasBase), 0);
-    const receitaGLR = Math.round(vendasProj) * (parseFloat(c.valorPorVenda) || 0);
+    const vendasCom  = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcP(p.vendasBase) : 0), 0);
+    const receitaGLR = Math.round(vendasCom) * (parseFloat(c.valorPorVenda) || 0);
 
     return { fatBase, adsBase, pctADSBase, fatProj, adsProj, pctADSProj,
              fatReal, adsReal, fatM1, fatM2, fatM3,
@@ -1271,7 +1272,8 @@ Router.register('projecao', (params, el) => {
     let clientes = []; try { clientes = JSON.parse(localStorage.getItem('glr_clientes') || '[]'); } catch (e) {}
     const cli = clientes.find(c => c.id === cid);
     const valorVenda = parseFloat(cli?.valorPorVenda) || 0;
-    tot.receitaGLR = Math.round(tot.vendasProj) * valorVenda;
+    tot.vendasCom = linhas.reduce((s, l) => s + (GLR.linhaGeraComissao(cid, l.p) ? l.vendasProj || 0 : 0), 0);
+    tot.receitaGLR = Math.round(tot.vendasCom) * valorVenda; // só linhas/contas que contam comissão
     let metas = {}; try { metas = JSON.parse(localStorage.getItem('glr_metas') || '{}'); } catch (e) {}
     tot.meta = metas[cid] ? parseFloat(metas[cid]) : null;
     return { linhas, tot, dd, dm, valorVenda, nBase: linhas.filter(l => l.base).length, nContas: linhas.filter(l => l.p.contaId).length };
@@ -2013,7 +2015,8 @@ Router.register('relatorios', (params, el) => {
     const fatProj    = plats.reduce((s,p) => s + calcProj(p.fatBase), 0);
     const adsProj    = plats.reduce((s,p) => s + calcProj(p.adsBase), 0);
     const vendasProj = plats.reduce((s,p) => s + calcProj(p.vendasBase), 0);
-    const receitaGLR = Math.round(vendasProj) * (parseFloat(c.valorPorVenda) || 0);
+    const vendasCom  = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcProj(p.vendasBase) : 0), 0);
+    const receitaGLR = Math.round(vendasCom) * (parseFloat(c.valorPorVenda) || 0);
     const pctADS     = fatProj > 0 ? (adsProj / fatProj) * 100 : 0;
     const ticketMedio = vendasProj > 0 ? fatProj / vendasProj : 0;
 
