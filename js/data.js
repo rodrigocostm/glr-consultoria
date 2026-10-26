@@ -66,6 +66,31 @@ GLR.linhaGeraComissao = (clienteId, linha) => {
   return !contas.length || contas.some(c => GLR.contaGeraComissao(c));
 };
 
+// Nome de uma conta de marketplace para mostrar nas telas: "Cliente · ML Etiqueta".
+// Usa o vínculo cliente ↔ conta e a etiqueta (tag) da conta conectada; o apelido
+// genérico ("Mercado Livre 123…") é ignorado. Calcule na hora de mostrar — os
+// clientes carregam do banco depois que a tela abre.
+GLR.nomeConta = (mkt, id) => {
+  id = String(id || '');
+  const ler = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
+  const vinc = ler('glr_mc_vinculos') || {}, contas = ler('glr_mc_contas'), nicks = ler('glr_mc_nicknames') || {};
+  const ids = c => [c?.external_id, c?.param_to_use?.shopId, c?.param_to_use?.meliUserId, c?.param_to_use?.amazon_account_id, c?.param_to_use?.magalu_account_id, c?.param_to_use?.shein_supplier_id, c?.contaId].filter(Boolean).map(String);
+  const generico = n => !n || /^(mercado ?livre|meli|ml|shopee|amazon|magalu|tiktok( shop)?|shein)\s*[\d-]*$/i.test(String(n).trim());
+  const limpa = n => String(n || '').replace(/\s*[-–]\s*(mercado ?livre|ml|shopee|amazon|magalu|tiktok|shein)\s*$/i, '').trim();
+  let cli = null, ct = null;
+  for (const [cid, lista] of Object.entries(vinc)) { const x = (lista || []).find(c => ids(c).includes(id)); if (x) { ct = x; cli = (GLR.clientes || []).find(c => String(c.id) === String(cid)) || null; break; } }
+  const conn = (Array.isArray(contas) ? contas : []).find(c => ids(c).includes(id));
+  const m = String(mkt || ct?.marketplace || conn?.marketplace || '').toLowerCase();
+  const MK = { ml: 'ML', meli: 'ML', mercadolivre: 'ML', shopee: 'Shopee', amazon: 'Amazon', magalu: 'Magalu', tiktok: 'TikTok', shein: 'Shein' }[m] || '';
+  const etiqueta = [ct, conn].map(c => c?.tags?.find?.(t => t && t.name)?.name).find(Boolean);
+  const apelido = [nicks[id], ct?.nickname, conn?.nickname].find(n => !generico(n));
+  const conta = limpa(etiqueta || apelido || '');
+  if (cli) return `${cli.nome} · ${MK}${conta && conta.toLowerCase() !== String(cli.nome).toLowerCase() ? ' ' + conta : ''}`.trim();
+  return conta ? `${conta}${MK ? ' · ' + MK : ''} (sem cliente)` : `${MK || 'Conta'} ${id} (sem cliente)`;
+};
+// Chama fn quando a lista de clientes já carregou do banco (ou depois de 10 s)
+GLR.quandoClientes = fn => { let n = 0; const t = () => ((GLR.clientes || []).length || ++n > 20) ? fn() : setTimeout(t, 500); t(); };
+
 GLR.tipoAcaoColor = {
   Reunião: '#6366f1', Campanha: '#f59e0b', Otimização: '#10b981',
   Precificação: '#3b82f6', Estratégia: '#8b5cf6', Análise: '#06b6d4',

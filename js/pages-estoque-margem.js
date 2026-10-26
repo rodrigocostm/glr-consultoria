@@ -19,23 +19,17 @@ Router.register('estoque-margem', (params, el) => {
     dados: null, carregando: true, erro: null, filtro: 'risco', busca: '',
   };
 
-  function nomes() {
-    const vinc = lerJSON('glr_mc_vinculos', {}), m = new Map();
-    for (const c of (window.GLR?.clientes || [])) for (const ct of (vinc[String(c.id)] || [])) {
-      [ct.external_id, ct.param_to_use?.shopId, ct.param_to_use?.meliUserId].filter(Boolean).forEach(i => m.set(String(i), `${c.nome} · ${ct.nickname || ct.external_id}`));
-    }
-    return m;
-  }
 
   async function carregarContas() {
     st.carregando = true; render();
     try {
       const { data, error } = await _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultimo_erro,resumo:cursor->resumo').eq('recurso', 'sinais');
       if (error) throw error;
-      const nm = nomes();
-      st.contas = (data || []).map(r => ({ ...r, nome: nm.get(String(r.conta_id)) || `${r.marketplace === 'ml' ? 'Mercado Livre' : 'Shopee'} ${r.conta_id}` }))
+      st.contas = (data || []).map(r => ({ ...r, nome: GLR.nomeConta(r.marketplace, r.conta_id) }))
         .sort((a, b) => ((b.resumo?.zerados || 0) + (b.resumo?.criticos || 0) + (b.resumo?.negativos || 0)) - ((a.resumo?.zerados || 0) + (a.resumo?.criticos || 0) + (a.resumo?.negativos || 0)) || a.nome.localeCompare(b.nome));
       if (!st.contas.some(c => `${c.marketplace}:${c.conta_id}` === st.conta)) st.conta = st.contas[0] ? `${st.contas[0].marketplace}:${st.contas[0].conta_id}` : '';
+      // nomes de novo quando os clientes terminarem de carregar
+      GLR.quandoClientes(() => { st.contas.forEach(c => { c.nome = GLR.nomeConta(c.marketplace, c.conta_id); }); render(); });
       st.erro = null;
     } catch (e) { st.erro = e.message || String(e); }
     await carregarConta();

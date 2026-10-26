@@ -305,8 +305,9 @@ Router.register('precos-ml', (params, el) => {
     try {
       const lista = await MarketplaceAPI.listAccounts();
       st.contas = (lista || []).filter(c => ['meli', 'ml', 'mercadolivre'].includes(String(c.marketplace).toLowerCase())).map(c => ({
-        id: String(c.param_to_use?.meliUserId || c.external_id), nome: c.tags?.find?.(t => t?.name)?.name || c.nickname || c.external_id,
+        id: String(c.param_to_use?.meliUserId || c.external_id), nome: GLR.nomeConta('ml', c.param_to_use?.meliUserId || c.external_id),
       })).sort((a, b) => a.nome.localeCompare(b.nome));
+      GLR.quandoClientes(() => { st.contas.forEach(c => { c.nome = GLR.nomeConta('ml', c.id); }); render(); });
       if (!st.contas.length) { st.erro = 'Nenhuma conta do Mercado Livre conectada.'; render(); return; }
       if (!st.contas.some(c => c.id === st.conta)) st.conta = st.contas[0].id;
       carregar();

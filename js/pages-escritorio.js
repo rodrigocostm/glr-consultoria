@@ -45,18 +45,6 @@ Router.register('escritorio', (params, el) => {
     atualizadoEm: 0, novos: new Set(), vistos: new Set(),
   };
 
-  // Nome da conta pelo vínculo cliente ↔ conta (cai no id quando não acha)
-  function mapaContas() {
-    let vinc = {}; try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
-    const m = new Map();
-    for (const c of (window.GLR?.clientes || [])) {
-      for (const ct of (vinc[String(c.id)] || [])) {
-        const ids = [ct.external_id, ct.param_to_use?.shopId, ct.param_to_use?.meliUserId, ct.param_to_use?.amazon_account_id, ct.param_to_use?.magalu_account_id, ct.param_to_use?.shein_supplier_id, ct.contaId];
-        ids.filter(Boolean).forEach(i => m.set(String(i), c.nome));
-      }
-    }
-    return m;
-  }
 
   async function carregar() {
     const desde = new Date(Date.now() - 48 * HORA).toISOString();
@@ -95,8 +83,7 @@ Router.register('escritorio', (params, el) => {
 
   // ── Conversa: uma mensagem por evento real (agrupando o que acontece junto) ──
   function montarConversa() {
-    const contas = mapaContas();
-    const nomeConta = (id, fallback) => fallback || contas.get(String(id)) || `conta ${id}`;
+    const nomeConta = (id, fallback) => fallback || GLR.nomeConta(null, id);
     const msgs = [];
     const add = (de, t, texto, extra = {}) => { if (t && !isNaN(t)) msgs.push({ de, t, texto, ...extra }); };
     const limite = Date.now() - 48 * HORA;
@@ -461,6 +448,7 @@ Router.register('escritorio', (params, el) => {
   </style>`;
 
   carregar();
+  GLR.quandoClientes(() => render()); // nomes das contas quando os clientes terminarem de carregar
   // Atualiza sozinho: a cada 60 s e quando um agente grava algo novo (tempo real do Supabase)
   let canal = null, espera = null;
   const timer = setInterval(() => {
