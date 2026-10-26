@@ -160,8 +160,12 @@ async function reputacaoShopee(ctx, conta, ant) {
   out.itens = Object.fromEntries(Object.entries(porItem).filter(([, x]) => x.rec >= PROBLEMA_SHOPEE).map(([id, x]) => [id, { rec: x.rec, produto: x.produto, motivo: `${x.rec} devoluções em 30 dias` }]));
   out.pedemResposta = (out.devolucoes || []).filter(d => /PENDING/.test(d.negociacao) || (d.prazo && d.status === 'PROCESSING')).length;
   const rep = out.reputacao;
-  out.risco = !rep ? null : (rep.notaLoja != null && rep.notaLoja <= 1) || (rep.falhas || []).length >= 2 ? 'alto' : (rep.falhas || []).length === 1 ? 'atencao' : 'ok';
-  out.riscoMotivo = rep?.falhas?.length ? `fora da meta da Shopee: ${rep.falhas.join(', ')}` : '';
+  // Só as métricas que penalizam a loja seguram o ADS; as operacionais (sábado,
+  // tempo de preparo, pré-venda, resposta do chat) viram só atenção.
+  const GRAVES = new Set(['Não cumprimento', 'Envio atrasado', 'Avaliação da loja', 'Cancelamento', 'Devolução/reembolso']);
+  const graves = (rep?.falhas || []).filter(f => GRAVES.has(f)), leves = (rep?.falhas || []).filter(f => !GRAVES.has(f));
+  out.risco = !rep ? null : (rep.notaLoja != null && rep.notaLoja <= 1) || graves.length ? 'alto' : leves.length ? 'atencao' : 'ok';
+  out.riscoMotivo = graves.length ? `fora da meta da Shopee: ${graves.join(', ')}` : rep?.notaLoja != null && rep.notaLoja <= 1 ? 'nota geral da loja no mínimo' : leves.length ? `fora da meta (operação): ${leves.join(', ')}` : '';
   return out;
 }
 
