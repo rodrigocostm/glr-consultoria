@@ -82,7 +82,7 @@ function acoesDaLoja(L, log) {
   }
   // Qualidade de anúncio
   if (qa) {
-    const ruins = Object.values(qa.itens || {}).filter(x => x.nivel === 'ruim').sort((a, b) => (b.u30 || 0) - (a.u30 || 0)).slice(0, 3);
+    const ruins = Object.values(qa.itens || {}).filter(x => x.nivel === 'ruim' && !/experiência de compra -\d/.test(x.qa || '')).sort((a, b) => (b.u30 || 0) - (a.u30 || 0)).slice(0, 3);
     if (ruins.length) add({ id: `qa:${L.conta}`, quando: 'semana', quem: 'analista', tipo: 'qualidade', tela: 'qualidade-anuncios',
       titulo: `Consertar ${ruins.length} anúncio(s): ${ruins.map(x => corta(x.n, 26)).join(', ')}`, porque: ruins.map(x => corta(x.qa, 70)).join('; '), impacto: 'conversão e exposição', peso: 500 });
     const com = (qa.destaques?.comuns || []).find(c => c.n >= 3);

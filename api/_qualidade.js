@@ -53,7 +53,7 @@ async function qualidadeML(ctx, conta, sinais, ant) {
     const vis = v?.total_visits != null ? parseInt(v.total_visits) || 0 : null;
     itens[x.id] = {
       n: x.n, u30: x.u30, em: Date.now(),
-      nota: e?.nota ?? null, nivelExp: e?.nivel || null, pausado: !!e?.pausado_pelo_mercado_livre, congelado: !!e?.congelado,
+      nota: e?.nota != null && e.nota >= 0 ? e.nota : null, // -1 = o ML ainda não deu nota (poucas vendas) nivelExp: e?.nivel || null, pausado: !!e?.pausado_pelo_mercado_livre, congelado: !!e?.congelado,
       causa: e?.causa ? corta(e.causa, 160) : null, remedio: e?.remedio ? corta(e.remedio, 220) : null, reclamacoes: e?.reclamacoes ?? null,
       score: p?.score ?? null, nivelAnuncio: p?.level_wording || p?.level || null, pend: pend.slice(0, 6),
       vis, conv: vis && vis > 0 ? r1(x.u30 / vis * 100) : null,
@@ -62,6 +62,7 @@ async function qualidadeML(ctx, conta, sinais, ant) {
   // conversão comparada com a mediana da própria conta (só quem tem visita suficiente)
   const med = mediana(Object.values(itens).filter(i => (i.vis || 0) >= VISITAS_MIN).map(i => i.conv));
   for (const i of Object.values(itens)) {
+    if (i.nota != null && i.nota < 0) i.nota = null; // revisões antigas guardaram o -1 do ML
     const motivos = [];
     if (i.pausado || i.congelado) motivos.push(i.pausado ? 'pausado pelo Mercado Livre' : 'congelado pelo Mercado Livre');
     if (i.nota != null && i.nota < 50) motivos.push(`experiência de compra ${i.nota}/100${i.causa ? ` (${i.causa})` : ''}`);

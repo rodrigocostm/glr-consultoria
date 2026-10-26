@@ -76,7 +76,7 @@ Router.register('qualidade-anuncios', (params, el) => {
             <td class="qa-prod"><a href="${link(x.id)}" target="_blank" rel="noopener">${h(x.n)}</a><div class="qa-sub">${h(x.id)}${x.pausado ? ' · <b style="color:var(--red)">pausado pelo ML</b>' : x.congelado ? ' · <b style="color:var(--red)">congelado pelo ML</b>' : ''}</div></td>
             <td>${N(x.u30)}</td>
             ${ml ? `<td>${N(x.vis)}</td><td style="color:${/conversão/.test(x.qa || '') ? 'var(--red)' : 'inherit'}">${pct(x.conv)}</td>
-            <td>${x.nota == null ? '—' : `<b style="color:${x.nota < 50 ? 'var(--red)' : x.nota < 70 ? 'var(--yellow)' : 'var(--green)'}">${x.nota}/100</b>`}${x.causa ? `<div class="qa-sub">${h(x.causa)}</div>` : ''}</td>
+            <td>${x.nota == null || x.nota < 0 ? '<span class="qa-sub">sem nota ainda</span>' : `<b style="color:${x.nota < 50 ? 'var(--red)' : x.nota < 70 ? 'var(--yellow)' : 'var(--green)'}">${x.nota}/100</b>`}${x.causa ? `<div class="qa-sub">${h(x.causa)}</div>` : ''}</td>
             <td>${x.score == null ? '—' : `${x.score}/100`}${x.nivelAnuncio ? `<div class="qa-sub">${h(x.nivelAnuncio)}</div>` : ''}</td>` : `<td>${h(x.nivelTxt || '—')}</td>`}
             <td class="qa-prod">${x.qa ? `<div style="color:var(--red);font-size:12.5px">${h(x.qa)}</div>` : ''}${x.remedio ? `<div class="qa-sub">${h(x.remedio)}</div>` : ''}${(x.pend || []).length ? `<ul class="qa-pend">${x.pend.map(p => `<li>${h(p)}</li>`).join('')}</ul>` : (!x.qa && !x.remedio ? '<span class="qa-sub">nada pendente</span>' : '')}</td>
             <td>${chip(NIVEL[x.nivel][1], NIVEL[x.nivel][0])}</td>
