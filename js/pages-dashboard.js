@@ -53,8 +53,18 @@ function computarClientesAPI() {
     const faturamento = d ? d.projecao : (c.faturamento || 0);
     const crescimento = d?.compMesAnt != null ? parseFloat(d.compMesAnt.toFixed(1)) : (c.crescimento || 0);
     const status = d ? _dashStatusDe(d.compMesAnt, d.pctMeta) : (c.status || 'ativo');
-    return { ...c, faturamento, crescimento, status, _temAPI: temAPI, _pctMeta: d?.pctMeta ?? null, _meta: d?.meta ?? 0 };
+    return { ...c, faturamento, crescimento, status, _temAPI: temAPI, _pctMeta: d?.pctMeta ?? null, _meta: d?.meta ?? 0, _fatM1: d?.fatM1 || 0 };
   });
+}
+
+// Crescimento de um grupo de clientes = projeção do mês somada × mês passado
+// fechado somado (só quem tem mês passado). Média simples das % deixava um
+// cliente que começou no fim do mês passado (R$ 150 → R$ 22 mil = +14.622%)
+// puxar a carteira inteira do gestor para +1.000%.
+function _dashCrescGrupo(lista) {
+  const comp = lista.filter(c => c._fatM1 > 0);
+  const ant = comp.reduce((s, c) => s + c._fatM1, 0), atual = comp.reduce((s, c) => s + (c.faturamento || 0), 0);
+  return ant > 0 ? { pct: (atual - ant) / ant * 100, ganho: atual - ant } : null;
 }
 
 // Executa promessas com concorrência limitada (mesmo padrão usado em Vendas/Analytics)
@@ -412,9 +422,7 @@ Router.register('dashboard', (params, el) => {
 
   const faturamentoTotal = clientes.reduce((s, c) => s + (c.faturamento || 0), 0);
   const metaTotal = clientes.reduce((s, c) => s + (c._meta || 0), 0);
-  const crescMedioAPI = clientes.length
-    ? (clientes.reduce((s, c) => s + (c.crescimento || 0), 0) / clientes.length)
-    : null;
+  const crescMedioAPI = _dashCrescGrupo(clientes)?.pct ?? null;
 
   // Receita GLR = soma real da comissão dia a dia (gráfico "Vendas por Dia &
   // Comissão GLR" logo abaixo) — trocado da fonte antiga (Projeção de Crescimento),
@@ -451,8 +459,8 @@ Router.register('dashboard', (params, el) => {
   // então filtrar por nome deixava esse painel sempre zerado após qualquer edição).
   const gestoresComDados = GLR.gestores.map(g => {
     const clientesDoGestor = clientes.filter(c => c.gestorId === g.id);
-    const crescMedioG = clientesDoGestor.length
-      ? (clientesDoGestor.reduce((s,c)=>s+(c.crescimento||0),0)/clientesDoGestor.length) : 0;
+    const cg = _dashCrescGrupo(clientesDoGestor);
+    const crescMedioG = cg ? cg.pct : null;
     const tarefasG  = GLR.tarefas.filter(t=>t.responsavel===g.nome&&t.status!=='concluida').length;
     const fatG      = clientesDoGestor.reduce((s,c)=>s+(c.faturamento||0),0);
     const avatar    = g.nome.split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase();
@@ -615,17 +623,17 @@ Router.register('dashboard', (params, el) => {
         <div class="section-header">
           <div>
             <div class="section-title">Melhor desempenho</div>
-            <div class="section-subtitle">Maior crescimento vs mês anterior</div>
+            <div class="section-subtitle">Quem mais ganhou faturamento: projeção do mês × mês passado fechado</div>
           </div>
           <button class="btn btn-ghost btn-sm" onclick="Router.navigate('clientes')">Ver todos</button>
         </div>
         ${clientes.length === 0
           ? vazioTxt('Nenhum cliente com dados ainda.')
-          : `<div class="dx-lista">${[...clientes].sort((a, b) => (b.crescimento || 0) - (a.crescimento || 0)).slice(0, 6).map((c, i) => `
+          : `<div class="dx-lista">${clientes.filter(c => c._fatM1 > 0).sort((a, b) => ((b.faturamento || 0) - b._fatM1) - ((a.faturamento || 0) - a._fatM1)).slice(0, 6).map((c, i) => `
           <div class="dx-li" onclick="Router.navigate('cliente-perfil', {id: ${c.id}})">
             <span class="dx-pos-n">${i + 1}</span>
             <div class="dx-li-txt"><b>${c.nome}</b><span>${nomeGestorDe(c)} · ${GLR.formatCurrency(c.faturamento || 0)}</span></div>
-            <div class="dx-li-val"><span class="${(c.crescimento || 0) >= 0 ? 'dx-pos' : 'dx-neg'}">${(c.crescimento || 0) >= 0 ? '+' : ''}${c.crescimento || 0}%</span></div>
+            <div class="dx-li-val" style="flex-direction:column;align-items:flex-end;gap:0" title="Projeção ${GLR.formatCurrencyFull(c.faturamento || 0)} × mês passado ${GLR.formatCurrencyFull(c._fatM1)}"><span class="${(c.faturamento || 0) >= c._fatM1 ? 'dx-pos' : 'dx-neg'}">${(c.faturamento || 0) >= c._fatM1 ? '+' : '−'}${GLR.formatCurrency(Math.abs((c.faturamento || 0) - c._fatM1))}</span><small>${(c.crescimento || 0) >= 0 ? '+' : ''}${(c.crescimento || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</small></div>
           </div>`).join('')}</div>`}
       </div>
 
@@ -633,7 +641,7 @@ Router.register('dashboard', (params, el) => {
         <div class="section-header">
           <div>
             <div class="section-title">Desempenho dos gestores</div>
-            <div class="section-subtitle">Crescimento médio dos clientes de cada um</div>
+            <div class="section-subtitle">Carteira de cada um somada: projeção do mês × mês passado fechado</div>
           </div>
         </div>
         ${gestoresComDados.length === 0
@@ -642,7 +650,7 @@ Router.register('dashboard', (params, el) => {
           <div class="dx-li" style="cursor:default">
             <span class="dx-av">${g.avatar}</span>
             <div class="dx-li-txt"><b>${g.nome}</b><span>${g.cargo ? g.cargo + ' · ' : ''}${g.qtdClientes} cliente${g.qtdClientes !== 1 ? 's' : ''} · ${g.tarefasPend} tarefa${g.tarefasPend !== 1 ? 's' : ''} pendente${g.tarefasPend !== 1 ? 's' : ''}</span></div>
-            <div class="dx-li-val" style="flex-direction:column;align-items:flex-end;gap:0"><span class="${g.crescMedio >= 0 ? 'dx-pos' : 'dx-neg'}">${g.crescMedio >= 0 ? '+' : ''}${g.crescMedio.toFixed(1).replace('.', ',')}%</span><small>${GLR.formatCurrency(g.fat)}</small></div>
+            <div class="dx-li-val" style="flex-direction:column;align-items:flex-end;gap:0">${g.crescMedio == null ? '<span>—</span>' : `<span class="${g.crescMedio >= 0 ? 'dx-pos' : 'dx-neg'}">${g.crescMedio >= 0 ? '+' : ''}${g.crescMedio.toFixed(1).replace('.', ',')}%</span>`}<small>${GLR.formatCurrency(g.fat)}</small></div>
           </div>`).join('')}</div>`}
       </div>
     </div>
