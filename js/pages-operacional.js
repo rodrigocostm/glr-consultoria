@@ -489,7 +489,7 @@ function calcularScoreCliente(c) {
 
   // Perfil do cliente completo (organização)
   const camposPreenchidos = ['nome','gestor','responsavel','categoria','valorPorVenda','status']
-                            .filter(k => c[k]).length;
+                            .filter(k => k === 'valorPorVenda' ? GLR.comissao.temComissao(c) : c[k]).length;
   const pctOrganizacao = (camposPreenchidos / 6) * 100;
 
   // ── Pontuação por critério (0-100 cada) ─────────────────────

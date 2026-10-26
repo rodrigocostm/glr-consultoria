@@ -155,7 +155,7 @@ async function gerarPlanos(h, filtroCliente) {
       const a = somarDias(L.resumo?.dias, antIni, antFim); if (!a.cobre) cobreAnt = false; fatAnt += a.faturamento;
     }
     const proj = dd > 0 ? fat / dd * dm : 0;
-    const meta = parseFloat(metas[c.id] ?? metas[String(c.id)]) || null;
+    const meta = parseFloat(metas[c.id] ?? metas[String(c.id)]) || parseFloat(c.metaMensal) || null; // meta da Projeção ou do cadastro
     const tacos = fat > 0 ? ads / fat * 100 : null;
     const metasTacos = lojas.map(L => parseFloat(cfgDe[L.conta]?.meta_acos)).filter(v => v > 0);
     const metaTacos = metasTacos.length ? Math.min(...metasTacos) : null;

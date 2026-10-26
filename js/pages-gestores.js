@@ -135,7 +135,7 @@ Router.register('gestores', (params, el) => {
     const compM1    = fatM1>0 ? ((fatRef-fatM1)/fatM1)*100 : null;
     const vendasProj = vendasProjBase != null ? vendasProjBase : plats.reduce((s,p)=>s+calcP(p.vendasBase),0);
     const vendasCom = vendasComBase != null ? vendasComBase : plats.reduce((s,p)=>s+(GLR.linhaGeraComissao(c.id, p) ? calcP(p.vendasBase) : 0),0);
-    const recGLR    = Math.round(vendasCom)*(parseFloat(c.valorPorVenda)||0); // só contas que contam comissão
+    const recGLR    = GLR.comissao.estimar(c, vendasCom, vendasProj > 0 ? fatProj * vendasCom / vendasProj : 0); // modelo de comissão do cliente; só contas que contam comissão
 
     return { fatBase, metaFinal, adsBase, pctADS, fatProj, adsProj, pctADSProj,
              fatReal: viaBase ? fatMes : fatReal, adsReal, fatM1, fatM2, fatM3, viaBase, semVinculo: !b,

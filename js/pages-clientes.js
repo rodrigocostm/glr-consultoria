@@ -80,7 +80,7 @@ Router.register('clientes', (params, el) => {
           </div>` : '<span style="color:var(--text-muted);">—</span>'}
         </td>
         <td>
-          ${c.valorPorVenda ? `<span style="font-size:13px;font-weight:600;color:var(--green);">R$ ${parseFloat(c.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>` : '<span style="color:var(--text-muted);">—</span>'}
+          ${GLR.comissao.temComissao(c) ? `<span style="font-size:13px;font-weight:600;color:var(--green);">${GLR.comissao.descricao(c, true)}</span>` : '<span style="color:var(--text-muted);">—</span>'}
         </td>
         <td><span class="badge ${GLR.statusColor[c.status] || 'status-ativo'}">${GLR.statusLabel[c.status] || c.status}</span></td>
         <td>${fat !== null && fat > 0 ? GLR.formatCurrency(fat) : '<span style="color:var(--text-muted);">—</span>'}</td>
@@ -154,6 +154,37 @@ Router.register('clientes', (params, el) => {
 
 // ---- Modal Novo/Editar Cliente ----
 function setupClienteHandlers() {
+  // ── Formulário: modelo de comissão (venda / fixo mensal / faixa de ticket) ──
+  window._cliComLer = () => {
+    const v = id => parseFloat(document.getElementById(id)?.value) || 0;
+    const modelo = document.getElementById('c-com-modelo')?.value || 'venda';
+    if (modelo === 'fixo') return { valorPorVenda: 0, comissao: { modelo, fixo: v('c-com-fixo-v'), franquia: Math.round(v('c-com-franquia')), excedente: v('c-com-exc') } };
+    if (modelo === 'ticket') {
+      const ac = [...document.querySelectorAll('#c-com-faixas .c-fx-acima')].map(i => parseFloat(i.value) || 0), vl = [...document.querySelectorAll('#c-com-faixas .c-fx-valor')].map(i => parseFloat(i.value) || 0);
+      const faixas = ac.map((a, i) => ({ acima: a, valor: vl[i] })).filter((f, i, arr) => arr.findIndex(x => x.acima === f.acima) === i).sort((a, b) => b.acima - a.acima);
+      if (!faixas.some(f => f.acima === 0)) faixas.push({ acima: 0, valor: 0 });
+      return { valorPorVenda: 0, comissao: { modelo, faixas } };
+    }
+    return { valorPorVenda: v('c-valor-venda'), comissao: { modelo: 'venda', valor: v('c-valor-venda') } };
+  };
+  window._cliComModelo = () => {
+    const m = document.getElementById('c-com-modelo').value;
+    ['venda', 'fixo', 'ticket'].forEach(k => { const el = document.getElementById(`c-com-${k}`); if (el) el.hidden = k !== m; });
+    window._cliComPrevia();
+  };
+  window._cliComFaixa = () => {
+    const box = document.getElementById('c-com-faixas'); if (!box) return;
+    const d = document.createElement('div'); d.className = 'cli-faixa';
+    d.innerHTML = `<label>Pedido a partir de R$ <input class="form-input c-fx-acima" type="number" step="0.01" min="0" value="100" oninput="window._cliComPrevia()"></label><label>R$ por pedido <input class="form-input c-fx-valor" type="number" step="0.01" min="0" value="1.5" oninput="window._cliComPrevia()"></label>`;
+    box.insertBefore(d, box.firstChild); window._cliComPrevia();
+  };
+  window._cliComPrevia = () => {
+    const el = document.getElementById('c-com-previa'); if (!el) return;
+    const c = window._cliComLer(), m = GLR.comissao.modelo(c), R = x => 'R$ ' + x.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (m.modelo === 'fixo') { const n1 = Math.max(1, Math.round(m.franquia * 0.6)), n2 = Math.round(m.franquia * 1.2) || 1; el.textContent = `Ex.: ${n1} pedidos no mês → ${R(GLR.comissao.fixoDoMes(m, n1))} · ${n2} pedidos → ${R(GLR.comissao.fixoDoMes(m, n2))}`; }
+    else if (m.modelo === 'ticket') el.textContent = `Ex.: pedido de R$ 35 → ${R(GLR.comissao.dePedido(c, 35, 1))} · pedido de R$ 120 → ${R(GLR.comissao.dePedido(c, 120, 1))}`;
+    else el.textContent = m.valor ? `Ex.: 100 unidades vendidas → ${R(100 * m.valor)}` : '';
+  };
   window.openModalNovoCliente = (clienteId = null) => {
     const c = clienteId ? GLR.clientes.find(cl => cl.id === clienteId) : null;
 
@@ -191,10 +222,31 @@ function setupClienteHandlers() {
             ${GLR.gestores.map(g => `<option value="${g.id}" ${c?.gestorId === g.id ? 'selected' : ''}>${g.nome}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">Valor por Venda (R$)</label>
-          <input class="form-input" id="c-valor-venda" type="number" step="0.01" min="0"
-            placeholder="Ex: 150.00" value="${c?.valorPorVenda || ''}">
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Comissão GLR</label>
+          ${(() => {
+            const m = GLR.comissao.modelo(c || {}), cm = c?.comissao || {};
+            const fx = (cm.modelo === 'ticket' ? cm.faixas : null) || [{ acima: 50, valor: 1 }, { acima: 0, valor: 0.3 }];
+            return `<select class="form-select" id="c-com-modelo" onchange="window._cliComModelo()">
+              <option value="venda" ${m.modelo === 'venda' ? 'selected' : ''}>Por venda — R$ por unidade vendida</option>
+              <option value="fixo" ${m.modelo === 'fixo' ? 'selected' : ''}>Fixo mensal — até uma quantidade de pedidos, depois por pedido</option>
+              <option value="ticket" ${m.modelo === 'ticket' ? 'selected' : ''}>Por faixa de ticket — R$ por pedido conforme o valor do pedido</option>
+            </select>
+            <div id="c-com-venda" class="cli-com" ${m.modelo === 'venda' ? '' : 'hidden'}>
+              <label>R$ por venda <input class="form-input" id="c-valor-venda" type="number" step="0.01" min="0" placeholder="Ex: 2.00" value="${m.modelo === 'venda' && m.valor ? m.valor : (c?.valorPorVenda || '')}" oninput="window._cliComPrevia()"></label>
+            </div>
+            <div id="c-com-fixo" class="cli-com" ${m.modelo === 'fixo' ? '' : 'hidden'}>
+              <label>Fixo por mês (R$) <input class="form-input" id="c-com-fixo-v" type="number" step="0.01" min="0" placeholder="1500" value="${cm.modelo === 'fixo' ? cm.fixo : ''}" oninput="window._cliComPrevia()"></label>
+              <label>Até quantos pedidos <input class="form-input" id="c-com-franquia" type="number" step="1" min="0" placeholder="500" value="${cm.modelo === 'fixo' ? cm.franquia : ''}" oninput="window._cliComPrevia()"></label>
+              <label>Acima disso, R$ por pedido <input class="form-input" id="c-com-exc" type="number" step="0.01" min="0" placeholder="3.00" value="${cm.modelo === 'fixo' ? cm.excedente : ''}" oninput="window._cliComPrevia()"></label>
+            </div>
+            <div id="c-com-ticket" class="cli-com" ${m.modelo === 'ticket' ? '' : 'hidden'}>
+              <div id="c-com-faixas">${fx.map((f, i) => `<div class="cli-faixa"><label>Pedido a partir de R$ <input class="form-input c-fx-acima" type="number" step="0.01" min="0" value="${f.acima}" ${i === fx.length - 1 && +f.acima === 0 ? 'readonly title="faixa de baixo: todo o resto"' : ''} oninput="window._cliComPrevia()"></label><label>R$ por pedido <input class="form-input c-fx-valor" type="number" step="0.01" min="0" value="${f.valor}" oninput="window._cliComPrevia()"></label></div>`).join('')}</div>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="window._cliComFaixa()">+ faixa</button>
+            </div>
+            <div id="c-com-previa" class="cli-com-previa"></div>
+            <style>.cli-com{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}.cli-com label,.cli-faixa label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-secondary);min-width:150px}.cli-faixa{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px}.cli-com-previa{font-size:12px;color:var(--text-muted);margin-top:6px}</style>`;
+          })()}
         </div>
         <div class="form-group">
           <label class="form-label">Status</label>
@@ -227,6 +279,7 @@ function setupClienteHandlers() {
     </div>`;
     document.body.appendChild(overlay);
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    window._cliComPrevia();
   };
 
   window.salvarCliente = (id) => {
@@ -243,7 +296,7 @@ function setupClienteHandlers() {
       responsavel:  document.getElementById('c-responsavel').value.trim(),
       categoria:    document.getElementById('c-categoria').value.trim(),
       gestorId,
-      valorPorVenda: parseFloat(document.getElementById('c-valor-venda').value) || 0,
+      ...window._cliComLer(),
       status:       document.getElementById('c-status').value,
       metaMensal:   parseFloat(document.getElementById('c-meta-mensal').value) || 0,
       adsIdeal:     document.getElementById('c-ads-ideal').value !== '' ? parseFloat(document.getElementById('c-ads-ideal').value)/100 : 0.04,
@@ -279,6 +332,7 @@ function setupClienteHandlers() {
 
 // ---- Perfil do Cliente ----
 Router.register('cliente-perfil', (params, el) => {
+  setupClienteHandlers(); // "Editar" funciona mesmo abrindo o perfil direto
   const clienteId = parseInt(params.id);
 
   // Sempre relê do localStorage para garantir dados atualizados
@@ -339,7 +393,7 @@ Router.register('cliente-perfil', (params, el) => {
             <div class="section-title mb-16">Indicadores</div>
             <div class="grid-2" style="gap:12px;">
               ${indicadorCard('Faturamento', fat ? GLR.formatCurrencyFull(fat) : '—', cresc >= 0 ? 'text-green' : 'text-red', `${cresc >= 0 ? '+' : ''}${cresc}% vs mês ant.`)}
-              ${indicadorCard('Valor por Venda', c.valorPorVenda ? `R$ ${parseFloat(c.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2})}` : '—', 'text-green', (() => { const cts = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}')[String(c.id)] || []; const fora = cts.filter(ct => !GLR.contaGeraComissao(ct)).length; return fora ? `Por venda · ${cts.length - fora} de ${cts.length} contas contam comissão` : 'Por venda realizada'; })())}
+              ${indicadorCard('Comissão GLR', GLR.comissao.temComissao(c) ? GLR.comissao.descricao(c, true) : '—', 'text-green', (() => { const cts = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}')[String(c.id)] || []; const fora = cts.filter(ct => !GLR.contaGeraComissao(ct)).length; return fora ? `Por venda · ${cts.length - fora} de ${cts.length} contas contam comissão` : 'Por venda realizada'; })())}
               ${indicadorCard('Invest. Mídia (ADS)', investMidia > 0 ? GLR.formatCurrencyFull(investMidia) : '—', 'text-accent', roas ? `ROAS: ${roas}x` : 'Da projeção do mês')}
               ${indicadorCard('Status', GLR.statusLabel[c.status] || '—', c.status === 'crescimento' ? 'text-green' : c.status === 'risco' ? 'text-red' : 'text-accent', 'Atualizado pela projeção')}
             </div>
@@ -393,7 +447,7 @@ Router.register('cliente-perfil', (params, el) => {
                   <label class="conta-comissao" title="Desmarque se as vendas desta conta não entram na comissão (valor por venda) da GLR">
                     <input type="checkbox" id="com-${extId}" ${contaCom ? 'checked' : ''} onchange="window.salvarComissaoConta('${extId}', this.checked)">
                     <span>Conta comissão GLR</span>
-                    <small id="com-txt-${extId}">${contaCom ? (c.valorPorVenda ? `R$ ${parseFloat(c.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2})} por venda` : 'sem valor por venda no cadastro') : 'vendas desta conta não geram comissão'}</small>
+                    <small id="com-txt-${extId}">${contaCom ? (GLR.comissao.temComissao(c) ? GLR.comissao.descricao(c) : 'sem comissão no cadastro') : 'vendas desta conta não geram comissão'}</small>
                   </label>
 
                   <div id="dados-${extId}" style="font-size:12px;color:var(--text-muted);">Clique em "Carregar dados"</div>
@@ -491,7 +545,7 @@ Router.register('cliente-perfil', (params, el) => {
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
             <h2 style="font-size:20px;font-weight:700;">${ci.nome}</h2>
             <span class="badge ${GLR.statusColor[ci.status] || 'status-ativo'}" id="perfil-status-badge">${GLR.statusLabel[ci.status] || ci.status}</span>
-            ${ci.valorPorVenda ? `<span style="font-size:12px;padding:3px 10px;border-radius:99px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.2);color:var(--green);font-weight:600;">R$ ${parseFloat(ci.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2})} / venda</span>` : ''}
+            ${GLR.comissao.temComissao(ci) ? `<span style="font-size:12px;padding:3px 10px;border-radius:99px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.2);color:var(--green);font-weight:600;">${GLR.comissao.descricao(ci, true)}</span>` : ''}
           </div>
           <div style="font-size:13px;color:var(--text-muted);display:flex;gap:16px;flex-wrap:wrap;">
             ${ci.responsavel ? `<span>${ci.responsavel}</span>` : ''}
@@ -525,7 +579,7 @@ Router.register('cliente-perfil', (params, el) => {
     localStorage.setItem('glr_comissao_contas', JSON.stringify(m));
     const c = GLR.clientes.find(x => (JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}')[String(x.id)] || []).some(ct => String(ct.external_id || ct.id) === String(extId)));
     const t = document.getElementById(`com-txt-${extId}`);
-    if (t) t.textContent = conta ? (c?.valorPorVenda ? `R$ ${parseFloat(c.valorPorVenda).toLocaleString('pt-BR',{minimumFractionDigits:2})} por venda` : 'sem valor por venda no cadastro') : 'vendas desta conta não geram comissão';
+    if (t) t.textContent = conta ? (c && GLR.comissao.temComissao(c) ? GLR.comissao.descricao(c) : 'sem comissão no cadastro') : 'vendas desta conta não geram comissão';
     const card = document.getElementById(`conta-card-${extId}`); if (card) card.classList.toggle('conta-sem-comissao', !conta);
   };
 

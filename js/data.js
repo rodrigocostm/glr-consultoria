@@ -66,6 +66,59 @@ GLR.linhaGeraComissao = (clienteId, linha) => {
   return !contas.length || contas.some(c => GLR.contaGeraComissao(c));
 };
 
+// ── Comissão GLR por cliente (cliente.comissao; sem ele, vale o valorPorVenda antigo)
+//  venda  → R$ por UNIDADE vendida (o modelo de sempre)
+//  fixo   → R$ fixo por mês até N pedidos; passou de N, R$ por pedido sobre TODOS os
+//           pedidos do mês — nunca menos que o fixo (ex.: 1.500 até 500; 600 pedidos × 3 = 1.800)
+//  ticket → R$ por PEDIDO conforme o valor do pedido (faixas "a partir de R$ X → R$ Y";
+//           ex.: a partir de R$ 50 → R$ 1,00; abaixo → R$ 0,30)
+// Só entram as contas marcadas "Conta comissão GLR" (GLR.contaGeraComissao).
+GLR.comissao = {
+  modelo(c) {
+    const m = c?.comissao || {};
+    if (m.modelo === 'fixo') return { modelo: 'fixo', fixo: +m.fixo || 0, franquia: +m.franquia || 0, excedente: +m.excedente || 0 };
+    if (m.modelo === 'ticket') return { modelo: 'ticket', faixas: (m.faixas || []).map(f => ({ acima: +f.acima || 0, valor: +f.valor || 0 })).sort((a, b) => b.acima - a.acima) };
+    return { modelo: 'venda', valor: parseFloat(m.modelo === 'venda' && m.valor != null ? m.valor : c?.valorPorVenda) || 0 };
+  },
+  // valor de UM pedido (venda: por unidade; ticket: pela faixa; fixo: entra no total do mês)
+  dePedido(c, valorPedido, unidades) {
+    const m = GLR.comissao.modelo(c);
+    if (m.modelo === 'venda') return (parseInt(unidades) || 1) * m.valor;
+    if (m.modelo === 'ticket') { const v = parseFloat(valorPedido) || 0; return (m.faixas.find(f => v >= f.acima) || { valor: 0 }).valor; }
+    return 0;
+  },
+  // fixo: total do mês pelo número de pedidos
+  fixoDoMes(m, nPedidos) { return nPedidos > m.franquia ? Math.max(m.fixo, nPedidos * m.excedente) : m.fixo; },
+  // total de um conjunto de pedidos [{valor, qtd}] do mês
+  doMes(c, pedidos) {
+    const m = GLR.comissao.modelo(c);
+    if (m.modelo === 'fixo') return GLR.comissao.fixoDoMes(m, pedidos.length);
+    return pedidos.reduce((s, p) => s + GLR.comissao.dePedido(c, p.valor, p.qtd), 0);
+  },
+  // parte de um conjunto (ex.: uma plataforma do DRE) — o fixo é dividido pela parte dos pedidos
+  daParte(c, parte, todos) {
+    const m = GLR.comissao.modelo(c);
+    if (m.modelo !== 'fixo') return GLR.comissao.doMes(c, parte);
+    if (!todos.length || parte.length >= todos.length) return GLR.comissao.fixoDoMes(m, todos.length);
+    return GLR.comissao.fixoDoMes(m, todos.length) * parte.length / todos.length;
+  },
+  // estimativa a partir de totais (Projeção, Gestores): vendas ≈ pedidos; ticket pelo ticket médio
+  estimar(c, vendas, faturamento) {
+    const m = GLR.comissao.modelo(c), n = Math.round(vendas || 0);
+    if (m.modelo === 'fixo') return GLR.comissao.fixoDoMes(m, n);
+    if (m.modelo === 'ticket') return n > 0 ? n * GLR.comissao.dePedido(c, (faturamento || 0) / n, 1) : 0;
+    return n * m.valor;
+  },
+  temComissao(c) { const m = GLR.comissao.modelo(c); return m.modelo === 'fixo' ? m.fixo > 0 || m.excedente > 0 : m.modelo === 'ticket' ? m.faixas.some(f => f.valor > 0) : m.valor > 0; },
+  descricao(c, curta) {
+    const m = GLR.comissao.modelo(c), R = v => 'R$ ' + (+v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const R0 = v => 'R$ ' + (+v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+    if (m.modelo === 'fixo') return curta ? `${R0(m.fixo)}/mês até ${m.franquia} pedidos` : `${R0(m.fixo)} por mês até ${m.franquia} pedidos; acima disso, ${R(m.excedente)} por pedido`;
+    if (m.modelo === 'ticket') { const fs = m.faixas.slice().sort((a, b) => b.acima - a.acima); return fs.map((f, i) => f.acima > 0 ? `${R(f.valor)} a partir de ${R0(f.acima)}` : `${R(f.valor)} abaixo de ${R0(fs[i - 1]?.acima || 0)}`).join(' · ') + (curta ? '' : ' por pedido'); }
+    return `${R(m.valor)} ${curta ? '/ venda' : 'por venda'}`;
+  },
+};
+
 // Nome de uma conta de marketplace para mostrar nas telas: "Cliente · ML Etiqueta".
 // Usa o vínculo cliente ↔ conta e a etiqueta (tag) da conta conectada; o apelido
 // genérico ("Mercado Livre 123…") é ignorado. Calcule na hora de mostrar — os

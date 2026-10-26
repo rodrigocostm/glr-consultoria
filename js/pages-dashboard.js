@@ -121,17 +121,22 @@ async function _dashBuscarVendasPorDia() {
   const NOME_CANAL = { meli:'Mercado Livre', ml:'Mercado Livre', mercadolivre:'Mercado Livre', shopee:'Shopee', amazon:'Amazon', magalu:'Magalu' };
   // Comissão da GLR é por UNIDADE vendida (valorPorVenda × quantidade), não um valor
   // fixo por pedido — um pedido com 3 unidades do mesmo produto conta 3x, não 1x.
-  const addPedido = (dataStr, unidades, valorPorVenda, valorPedido, mkt) => {
+  // Comissão por cliente conforme o modelo dele (GLR.comissao: por venda, fixo
+  // mensal com franquia ou por faixa de ticket). Cada pedido de conta que conta
+  // comissão vai para um "balde" (cliente, dia, canal); no fim o fixo é rateado
+  // pelos pedidos do mês e os outros modelos somam pedido a pedido.
+  const baldes = {}; // clienteId → { cli, b: { 'dia|canal': { n, var } }, n }
+  const balde = (cli, dataStr, canal) => { const B = baldes[cli.id] = baldes[cli.id] || { cli, b: {}, n: 0 }; const k = `${dataStr}|${canal}`; return (B.b[k] = B.b[k] || { n: 0, var: 0 }); };
+  const addPedido = (dataStr, unidades, ctxCom, valorPedido, mkt) => {
     if (!porDia[dataStr]) porDia[dataStr] = { pedidos: 0, comissao: 0, faturamento: 0 };
     porDia[dataStr].pedidos += 1;
-    porDia[dataStr].comissao += unidades * valorPorVenda;
     porDia[dataStr].faturamento += valorPedido || 0;
 
     const canal = NOME_CANAL[mkt] || mkt || 'Outro';
     if (!porCanal[canal]) porCanal[canal] = { pedidos: 0, comissao: 0, faturamento: 0 };
     porCanal[canal].pedidos += 1;
-    porCanal[canal].comissao += unidades * valorPorVenda;
     porCanal[canal].faturamento += valorPedido || 0;
+    if (ctxCom?.com) { const x = balde(ctxCom.cli, dataStr, canal); x.n += 1; x.var += GLR.comissao.dePedido(ctxCom.cli, valorPedido, unidades); baldes[ctxCom.cli.id].n += 1; }
   };
 
   const clientesComConta = GLR.clientes.filter(c => (vinculos[String(c.id)]||[]).length > 0);
@@ -145,10 +150,9 @@ async function _dashBuscarVendasPorDia() {
   let lojasBase = 0, lojasAPI = 0;
 
   await _mapLimit(clientesComConta, 3, async (c) => {
-    const valorCliente = parseFloat(c.valorPorVenda) || 0;
     const contas = vinculos[String(c.id)] || [];
     await _mapLimit(contas, 3, async (conta) => {
-      const valorPorVenda = GLR.contaGeraComissao(conta) ? valorCliente : 0;
+      const ctxCom = { cli: c, com: GLR.contaGeraComissao(conta) && GLR.comissao.temComissao(c) };
       const mkt = (conta.marketplace||'').toLowerCase();
       const infoBase = base && BaseDados.mktDe(mkt) ? base[BaseDados.chave(mkt, conta.param_to_use?.shopId || conta.param_to_use?.meliUserId || conta.external_id)] : null;
       if (infoBase && BaseDados.cobre(infoBase, primeiroDia)) {
@@ -159,13 +163,28 @@ async function _dashBuscarVendasPorDia() {
           const dataStr = `${dd}/${mm}`;
           if (!porDia[dataStr]) porDia[dataStr] = { pedidos: 0, comissao: 0, faturamento: 0 };
           porDia[dataStr].pedidos += v.pedidos;
-          porDia[dataStr].comissao += (v.unidades || v.pedidos) * valorPorVenda;
           porDia[dataStr].faturamento += v.faturamento || 0;
           const canal = NOME_CANAL[mkt] || mkt;
           if (!porCanal[canal]) porCanal[canal] = { pedidos: 0, comissao: 0, faturamento: 0 };
           porCanal[canal].pedidos += v.pedidos;
-          porCanal[canal].comissao += (v.unidades || v.pedidos) * valorPorVenda;
           porCanal[canal].faturamento += v.faturamento || 0;
+          if (ctxCom.com) {
+            const x = balde(c, dataStr, canal); x.n += v.pedidos; baldes[c.id].n += v.pedidos;
+            if (GLR.comissao.modelo(c).modelo === 'venda') x.var += (v.unidades || v.pedidos) * GLR.comissao.modelo(c).valor;
+          }
+        }
+        // Comissão por faixa de ticket precisa do valor de cada pedido (o resumo é por dia)
+        if (ctxCom.com && GLR.comissao.modelo(c).modelo === 'ticket') {
+          const idB = String(conta.param_to_use?.shopId || conta.param_to_use?.meliUserId || conta.external_id);
+          for (let off = 0; off < 50000; off += 1000) {
+            const { data } = await _sb.from('glr_pedidos').select('criado_em,valor_bruto').eq('marketplace', BaseDados.mktDe(mkt)).eq('conta_id', idB).eq('situacao', 'valido')
+              .gte('criado_em', new Date(`${primeiroDia}T00:00:00-03:00`).toISOString()).lt('criado_em', new Date(new Date(`${dataTo}T00:00:00-03:00`).getTime() + 864e5).toISOString()).range(off, off + 999);
+            for (const p of data || []) {
+              const d = new Date(new Date(p.criado_em).getTime() - 3 * 3600e3);
+              balde(c, `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}`, NOME_CANAL[mkt] || mkt).var += GLR.comissao.dePedido(c, p.valor_bruto, 1);
+            }
+            if (!data || data.length < 1000) break;
+          }
         }
         return;
       }
@@ -184,7 +203,7 @@ async function _dashBuscarVendasPorDia() {
             if (isNaN(d)) continue;
             const unidades = (o.order_items||[]).reduce((s,i) => s + (parseInt(i.quantity)||1), 0) || 1;
             const valorPedido = parseFloat(o.total_amount) || 0;
-            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda, valorPedido, mkt);
+            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, ctxCom, valorPedido, mkt);
           }
         } else if (mkt === 'shopee') {
           const shopId = conta.param_to_use?.shopId || conta.external_id;
@@ -233,7 +252,7 @@ async function _dashBuscarVendasPorDia() {
                   return s + p*q;
                 }, 0);
                 const valorPedido = subtotal > 0 ? subtotal : (parseFloat(ord.total_amount)||0);
-                addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda, valorPedido, mkt);
+                addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, ctxCom, valorPedido, mkt);
               }
             } catch(e) {}
           }
@@ -250,7 +269,7 @@ async function _dashBuscarVendasPorDia() {
             const unidades = (o.deliveries||[]).reduce((s,dl) => s + (dl.items||[]).reduce((s2,it) => s2 + (parseInt(it.quantity)||1), 0), 0) || 1;
             // Valores da API Magalu vêm em centavos (normalizer:100)
             const valorPedido = (parseFloat(o.amounts?.total) || 0) / 100;
-            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, valorPorVenda, valorPedido, mkt);
+            addPedido(`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, unidades, ctxCom, valorPedido, mkt);
           }
         }
       } catch(e) { console.warn('[Dashboard] vendas/dia erro conta', conta.nickname, e.message); }
@@ -258,6 +277,22 @@ async function _dashBuscarVendasPorDia() {
     doneN++;
     if (status) status.textContent = `⏳ Buscando... ${doneN}/${clientesComConta.length} clientes`;
   });
+
+  // Fecha a comissão de cada cliente: fixo mensal rateado pelos pedidos; os demais, pedido a pedido
+  for (const B of Object.values(baldes)) {
+    const m = GLR.comissao.modelo(B.cli);
+    const totalFixo = m.modelo === 'fixo' ? GLR.comissao.fixoDoMes(m, B.n) : 0;
+    const entradas = Object.entries(B.b);
+    if (m.modelo === 'fixo' && !B.n) entradas.push([`01/${pad(mesN)}|${Object.keys(porCanal)[0] || 'Outro'}`, { n: 0, var: 0 }]);
+    for (const [k, x] of entradas) {
+      const [dataStr, canal] = k.split('|');
+      const v = m.modelo === 'fixo' ? (B.n ? totalFixo * x.n / B.n : totalFixo) : x.var;
+      if (!porDia[dataStr]) porDia[dataStr] = { pedidos: 0, comissao: 0, faturamento: 0 };
+      porDia[dataStr].comissao += v;
+      if (!porCanal[canal]) porCanal[canal] = { pedidos: 0, comissao: 0, faturamento: 0 };
+      porCanal[canal].comissao += v;
+    }
+  }
 
   const dias = Object.keys(porDia).sort((a,b) => {
     const [da,ma] = a.split('/').map(Number), [db,mb] = b.split('/').map(Number);

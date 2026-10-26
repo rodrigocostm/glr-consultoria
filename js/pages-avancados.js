@@ -81,7 +81,8 @@ Router.register('performance', (params, el) => {
     // Receita GLR
     const vendasProj = plats.reduce((s,p) => s + calcP(p.vendasBase), 0);
     const vendasCom  = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcP(p.vendasBase) : 0), 0);
-    const receitaGLR = Math.round(vendasCom) * (parseFloat(c.valorPorVenda) || 0);
+    const fatCom     = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcP(p.fatBase) : 0), 0);
+    const receitaGLR = GLR.comissao.estimar(c, vendasCom, fatCom); // modelo de comissão do cliente
 
     return { fatBase, adsBase, pctADSBase, fatProj, adsProj, pctADSProj,
              fatReal, adsReal, fatM1, fatM2, fatM3,
@@ -1273,7 +1274,8 @@ Router.register('projecao', (params, el) => {
     const cli = clientes.find(c => c.id === cid);
     const valorVenda = parseFloat(cli?.valorPorVenda) || 0;
     tot.vendasCom = linhas.reduce((s, l) => s + (GLR.linhaGeraComissao(cid, l.p) ? l.vendasProj || 0 : 0), 0);
-    tot.receitaGLR = Math.round(tot.vendasCom) * valorVenda; // só linhas/contas que contam comissão
+    tot.fatCom = linhas.reduce((s, l) => s + (GLR.linhaGeraComissao(cid, l.p) ? l.proj || 0 : 0), 0);
+    tot.receitaGLR = cli ? GLR.comissao.estimar(cli, tot.vendasCom, tot.fatCom) : 0; // modelo de comissão do cliente; só linhas/contas que contam comissão
     let metas = {}; try { metas = JSON.parse(localStorage.getItem('glr_metas') || '{}'); } catch (e) {}
     tot.meta = metas[cid] ? parseFloat(metas[cid]) : null;
     return { linhas, tot, dd, dm, valorVenda, nBase: linhas.filter(l => l.base).length, nContas: linhas.filter(l => l.p.contaId).length };
@@ -2016,7 +2018,8 @@ Router.register('relatorios', (params, el) => {
     const adsProj    = plats.reduce((s,p) => s + calcProj(p.adsBase), 0);
     const vendasProj = plats.reduce((s,p) => s + calcProj(p.vendasBase), 0);
     const vendasCom  = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcProj(p.vendasBase) : 0), 0);
-    const receitaGLR = Math.round(vendasCom) * (parseFloat(c.valorPorVenda) || 0);
+    const fatCom     = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcProj(p.fatBase) : 0), 0);
+    const receitaGLR = GLR.comissao.estimar(c, vendasCom, fatCom); // modelo de comissão do cliente
     const pctADS     = fatProj > 0 ? (adsProj / fatProj) * 100 : 0;
     const ticketMedio = vendasProj > 0 ? fatProj / vendasProj : 0;
 
@@ -2071,7 +2074,7 @@ Router.register('relatorios', (params, el) => {
           <div style="width:60px;height:60px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:white;margin-left:auto;">${c.nome.charAt(0)}</div>
           <div style="font-size:12px;color:#888;margin-top:8px;">Gestor: <strong style="color:#333;">${c.gestor||'—'}</strong></div>
           <div style="font-size:12px;color:#888;">Responsável: <strong style="color:#333;">${c.responsavel||'—'}</strong></div>
-          ${c.valorPorVenda ? `<div style="font-size:12px;color:#888;">Valor por Venda: <strong style="color:#333;">${fmtFull(c.valorPorVenda)}</strong></div>` : ''}
+          ${GLR.comissao.temComissao(c) ? `<div style="font-size:12px;color:#888;">Comissão GLR: <strong style="color:#333;">${GLR.comissao.descricao(c)}</strong></div>` : ''}
         </div>
       </div>
 
