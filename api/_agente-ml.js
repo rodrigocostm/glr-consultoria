@@ -53,7 +53,23 @@ async function listarAnunciosML(mcpCall, apiKey, meliUserId, campaignId, de, ate
     const total = parseInt(d.paging?.total) || 0;
     if (res.length < 100 || (total && offset + 100 >= total)) break;
   }
-  return todos;
+  return normalizarAnuncios(todos, campaignId);
+}
+
+// O ML continua listando na campanha antiga o anúncio que foi movido — às vezes
+// duas vezes: um "deleted" da campanha antiga e um "idle" já com o campaign_id
+// novo, os dois com o mesmo gasto. Fica 1 registro por anúncio (o da própria
+// campanha quando existir, gasto contado uma vez) e quem foi para outra campanha
+// vem com status 'moved' e movido_para.
+function normalizarAnuncios(lista, campaignId) {
+  const cid = String(campaignId), por = new Map();
+  const daqui = a => a.campaign_id == null || String(a.campaign_id) === cid;
+  const peso = a => (daqui(a) ? 2 : 0) + (a.status === 'active' ? 1 : 0);
+  for (const a of lista) {
+    const k = String(a.item_id), o = por.get(k);
+    por.set(k, { a: !o || peso(a) > peso(o.a) ? a : o.a, fora: daqui(a) ? o?.fora : String(a.campaign_id) });
+  }
+  return [...por.values()].map(({ a, fora }) => a.status === 'active' && daqui(a) ? a : fora ? { ...a, status: 'moved', movido_para: fora } : a);
 }
 
 // Soma os anúncios por família (variações do mesmo produto)
@@ -502,4 +518,4 @@ async function processarContaML(cfg, mcApiKey, h) {
   }
 }
 
-module.exports = { processarContaML, agruparFamilias, listarAnunciosML };
+module.exports = { processarContaML, agruparFamilias, listarAnunciosML, normalizarAnuncios };

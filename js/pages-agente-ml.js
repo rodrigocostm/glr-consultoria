@@ -94,12 +94,24 @@ Router.register('agente-ml', (params, el) => {
         todos.push(...res);
         if (res.length < 100 || offset + 100 >= (parseInt(d.paging?.total) || 0)) break;
       }
-      const fam = new Map();
+      // O ML segue listando aqui o anúncio que foi movido para outra campanha —
+      // às vezes em dobro ("deleted" daqui + "idle" já com o campaign_id novo, os
+      // dois com o mesmo gasto). Fica 1 registro por anúncio, gasto contado uma vez.
+      const cid = String(campId), porItem = new Map();
+      const daqui = a => a.campaign_id == null || String(a.campaign_id) === cid;
+      const peso = a => (daqui(a) ? 2 : 0) + (a.status === 'active' ? 1 : 0);
       for (const a of todos) {
+        const o = porItem.get(String(a.item_id));
+        porItem.set(String(a.item_id), { a: !o || peso(a) > peso(o.a) ? a : o.a, fora: daqui(a) ? o?.fora : String(a.campaign_id) });
+      }
+      const fam = new Map();
+      for (const { a, fora } of porItem.values()) {
+        const movido = !(a.status === 'active' && daqui(a)) && fora;
         const key = String(a.family_id || a.item_id), m = a.metrics || {};
-        const f = fam.get(key) || { chave: key, nome: a.family_name || a.title, itens: [], ativos: 0, gasto: 0, vendas: 0, unidades: 0, cliques: 0, recomendado: false, permalink: a.permalink, thumb: a.thumbnail };
-        f.itens.push({ id: a.item_id, status: a.status, titulo: a.title });
-        if (a.status === 'active') f.ativos++;
+        const f = fam.get(key) || { chave: key, nome: a.family_name || a.title, itens: [], ativos: 0, movidos: {}, gasto: 0, vendas: 0, unidades: 0, cliques: 0, recomendado: false, permalink: a.permalink, thumb: a.thumbnail };
+        f.itens.push({ id: a.item_id, status: movido ? 'moved' : a.status, titulo: a.title, movido_para: movido || null });
+        if (movido) f.movidos[movido] = (f.movidos[movido] || 0) + 1;
+        else if (a.status === 'active') f.ativos++;
         f.gasto += parseFloat(m.cost) || 0; f.vendas += parseFloat(m.total_amount) || 0;
         f.unidades += parseInt(m.units_quantity) || 0; f.cliques += parseInt(m.clicks) || 0;
         f.recomendado = f.recomendado || !!a.recommended;
@@ -407,9 +419,12 @@ Router.register('agente-ml', (params, el) => {
       ${p.lista.map(f => {
         const v = f.vendas * (1 - tx), acos = v > 0 ? f.gasto / v * 100 : (f.gasto > 0 ? Infinity : null);
         const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity ? 'var(--red)' : acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? 'var(--red)' : acos > cfg.meta_acos ? 'var(--yellow)' : 'var(--green)';
-        const pausados = f.itens.length - f.ativos;
+        const nMov = Object.values(f.movidos || {}).reduce((x, y) => x + y, 0);
+        const pausados = f.itens.length - nMov - f.ativos;
+        const nomeCamp = id => (state.campanhas[contaId]?.lista || []).find(c => String(c.id) === String(id))?.name || `campanha ${id}`;
+        const movTxt = Object.entries(f.movidos || {}).map(([id, n]) => `${n} movido${n > 1 ? 's' : ''} para ${h(nomeCamp(id))}`).join(', ');
         return `<tr><td style="white-space:normal;min-width:240px;">${f.permalink ? `<a href="${h(f.permalink)}" target="_blank" rel="noopener">${h(f.nome)}</a>` : h(f.nome)}${f.recomendado ? ' <span class="aml-chip" title="O ML recomenda anunciar">recomendado ML</span>' : ''}${pend.has(f.chave) ? ' <span class="aml-chip">sugestão</span>' : ''}</td>
-          <td>${f.ativos}/${f.itens.length}${pausados ? ` <span class="aml-sub">(${pausados} fora)</span>` : ''}</td><td>${R$(f.gasto)}</td><td>${Math.round(f.gasto / gastoCamp * 100)}%</td><td>${R$(v)}</td><td>${f.unidades}</td>
+          <td style="white-space:normal;">${f.itens.length - nMov ? `${f.ativos}/${f.itens.length - nMov}` : '—'}${pausados ? ` <span class="aml-sub">(${pausados} fora)</span>` : ''}${movTxt ? `<div class="aml-sub" title="O gasto ao lado é o que ficou nesta campanha antes de mover">→ ${movTxt}</div>` : ''}</td><td>${R$(f.gasto)}</td><td>${Math.round(f.gasto / gastoCamp * 100)}%</td><td>${R$(v)}</td><td>${f.unidades}</td>
           <td>${f.gasto > 0 ? roasX(v / f.gasto) : '—'}</td><td style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td></tr>`;
       }).join('')}</tbody></table></div>`;
   }
