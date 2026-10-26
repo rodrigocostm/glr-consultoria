@@ -159,7 +159,7 @@ function avisosDe(sinais, ids) {
   const comMargem = its.filter(i => i.aa != null);
   const aa = comMargem.length ? Math.min(...comMargem.map(i => i.aa)) : null;
   const m = comMargem.length ? Math.min(...comMargem.map(i => i.m)) : null;
-  return { ne, dias: principal?.d ?? null, nome: principal?.n || its[0].n, estoque: principal?.e ?? null, aa, m, nm: m == null ? null : m <= 0 ? 'negativa' : aa < 3 ? 'apertada' : 'ok' };
+  return { ne, dias: principal?.d ?? null, nome: principal?.n || its[0].n, estoque: principal?.e ?? null, aa, m, promo: its.find(i => i.pr)?.pr || null, nm: m == null ? null : m <= 0 ? 'negativa' : aa < 3 ? 'apertada' : 'ok' };
 }
 
 module.exports = { calcularSinais, avisosDe, MARGEM_MINIMA_PADRAO };

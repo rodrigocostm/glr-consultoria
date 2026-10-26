@@ -477,7 +477,7 @@ Router.register('agente-ml', (params, el) => {
     if (!state.aberta) { root.innerHTML = renderPortfolio(); return; }
     if (state.aberta === '__novo__') { root.innerHTML = `<button class="btn btn-secondary btn-sm" style="margin-bottom:14px;" onclick="window._amlAbrir(null)">← Voltar</button>${renderConfig(null)}`; return; }
     const id = state.aberta, cfg = cfgDe(id), m = mesDe(id);
-    const ultima = state.logs.find(l => String(l.conta_id) === String(id) && l.tipo === 'sistema');
+    const ultima = state.logs.find(l => String(l.conta_id) === String(id) && l.tipo === 'sistema' && /^Análise ML|^Erro na análise ML/.test(l.titulo || ''));
     root.innerHTML = `
       <div class="card aml-topo">
         <button class="btn btn-secondary btn-sm" onclick="window._amlAbrir(null)" title="Todas as contas">←</button>

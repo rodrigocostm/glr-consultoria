@@ -28,6 +28,7 @@ Router.register('escritorio', (params, el) => {
     precos: { nome: 'Vigia de Preços', cargo: 'Confere o preço dos anúncios do Mercado Livre a cada 4 h', cor: '#b7791f', rot: 'Dados' },
     estoque: { nome: 'Estoque', cargo: 'Calcula em quantos dias cada produto acaba, a cada 3 h', cor: '#0f9f6e', rot: 'Dados' },
     margem: { nome: 'Margem', cargo: 'Calcula a margem e o ACOS máximo de cada produto, a cada 3 h', cor: '#d93f3f', rot: 'Dados' },
+    promo:  { nome: 'Promoções', cargo: 'Escolhe, 1x por dia, as promoções que cabem na margem e no estoque', cor: '#db2777', rot: 'Vendas' },
     oport:  { nome: 'Caçador de Oportunidades', cargo: 'Procura produtos com espaço para crescer', cor: '#7c3aed', rot: 'Dados' },
     shopee: { nome: 'ADS Shopee', cargo: 'Revisa as campanhas às 07:30 e ajusta sozinho dentro dos limites', cor: '#d9622b', rot: 'ADS' },
     ml:     { nome: 'Copiloto ADS ML', cargo: 'Analisa as campanhas às 07:30 e monta o pacote do dia', cor: '#d9a400', rot: 'ADS' },
@@ -95,7 +96,7 @@ Router.register('escritorio', (params, el) => {
     // Agentes de ADS (Shopee e ML)
     const sugestoesPor = new Map(); // conta + janela de 10 min → sugestões criadas juntas
     for (const l of state.logs) {
-      const d = l.dados || {}, ml = d.marketplace === 'ml', ag = ml ? 'ml' : 'shopee';
+      const d = l.dados || {}, ml = d.marketplace === 'ml', ag = d.agente === 'promocoes' ? 'promo' : ml ? 'ml' : 'shopee';
       const t = new Date(l.criado_em).getTime(), cli = nomeConta(l.conta_id, l.cliente_nome);
       const humano = l.origem && l.origem !== 'cron';
       const recente = t >= limite; // ação antiga entra só pela detecção/medição de agora
@@ -110,9 +111,19 @@ Router.register('escritorio', (params, el) => {
           if (d.medidas) partes.push(`Medi o resultado de ${N(d.medidas)}.`);
           add('ml', t, partes.join(' '), { conta: cli });
         } else if (l.resultado === 'erro') add(ag, t, `Tive um problema na <b>${h(cli)}</b>: ${h(corta(l.explicacao || l.titulo, 160))}`, { erro: true, conta: cli });
+        else if (/^Promoções do dia/.test(l.titulo)) {
+          const r = d.resumo || {}, dq = d.destaques || {}, s0 = dq.sugeridas?.[0];
+          const ads = d.marketplace === 'ml' ? '@Copiloto ADS ML' : '@ADS Shopee';
+          const partes = [`Escolhi as promoções do dia da <b>${h(cli)}</b>: ${N(r.sugeridas || 0)} cabem na margem${s0 ? ` — a melhor é <b>${h(corta(s0.n, 45))}</b> (${h(s0.rot)}${s0.desconto != null ? `, −${String(s0.desconto).replace('.', ',')}%` : ''}, margem ${String(s0.m).replace('.', ',')}%)` : ''}.`];
+          if (r.parados) partes.push(`${N(r.parados)} são para girar estoque parado que o @Estoque apontou.`);
+          if (r.emPromo) partes.push(`${N(r.emPromo)} produto(s) já estão em promoção: ${ads}, usem o ACOS do preço promocional.`);
+          if (r.promoApertada) partes.push(`@Analista, ${N(r.promoApertada)} promoção(ões) em vigor deixam margem abaixo da mínima.`);
+          if ((d.colaboracoes || []).length) partes.push(`Não sugeri ${N(d.colaboracoes.length)} por falta de estoque.`);
+          add('promo', t, partes.join(' '), { conta: cli, chama: !!r.promoApertada, menor: !r.sugeridas && !r.promoApertada });
+        }
         else if (/^Colaboração com Estoque e Margem/.test(l.titulo)) {
           const cs = d.colaboracoes || [];
-          const quem = [cs.some(x => x.de === 'estoque') ? '@Estoque' : '', cs.some(x => x.de === 'margem') ? '@Margem' : ''].filter(Boolean).join(' e ');
+          const quem = [cs.some(x => x.de === 'estoque') ? '@Estoque' : '', cs.some(x => x.de === 'margem') ? '@Margem' : '', cs.some(x => x.de === 'promocoes') ? '@Promoções' : ''].filter(Boolean).join(', ');
           add(ag, t, `Levei em conta os avisos de ${quem || '@Estoque'} na <b>${h(cli)}</b>: ${cs.slice(0, 3).map(x => h(x.texto)).join('; ')}${cs.length > 3 ? ` (+${cs.length - 3})` : ''}.`, { conta: cli, colab: true });
         }
         else if (/Aumento represado|Maturação segurando/.test(l.titulo)) add(ag, t, `${h(corta(l.titulo, 90))} (<b>${h(cli)}</b>) — ${h(primeiraFrase(l.explicacao))}`, { conta: cli, menor: true });
@@ -217,8 +228,8 @@ Router.register('escritorio', (params, el) => {
       const hoje = minhas.filter(m => new Date(m.t).toDateString() === new Date().toDateString());
       const erroRecente = minhas.filter(m => m.erro && agora - m.t < 6 * HORA).length;
       let tentativa = 0;
-      if (['sync', 'precos', 'oport', 'estoque', 'margem'].includes(k)) {
-        const rec = k === 'sync' ? ['pedidos', 'ads', 'resumo'] : k === 'estoque' || k === 'margem' ? ['sinais'] : [k === 'precos' ? 'precos' : 'oportunidades'];
+      if (['sync', 'precos', 'oport', 'estoque', 'margem', 'promo'].includes(k)) {
+        const rec = k === 'sync' ? ['pedidos', 'ads', 'resumo'] : k === 'estoque' || k === 'margem' ? ['sinais'] : k === 'promo' ? ['promocoes'] : [k === 'precos' ? 'precos' : 'oportunidades'];
         state.sync.filter(s => rec.includes(s.recurso)).forEach(s => { const t = s.ultima_tentativa ? new Date(s.ultima_tentativa).getTime() : 0; if (t > tentativa) tentativa = t; });
       }
       const ativo = (ult && agora - ult.t < 4 * MIN) || (tentativa && agora - tentativa < 3 * MIN);
@@ -226,6 +237,7 @@ Router.register('escritorio', (params, el) => {
       if (k === 'sync') prox = tentativa ? `próxima rodada em ~${Math.max(1, Math.round((tentativa + 15 * MIN - agora) / MIN))} min` : '';
       else if (k === 'precos') prox = 'confere de novo a cada 4 h';
       else if (k === 'estoque' || k === 'margem') prox = 'recalcula a cada 3 h e antes das 07:00';
+      else if (k === 'promo') prox = 'analisa 1x por dia, depois das 06:00';
       else if (k === 'rel') prox = hoje.length ? 'próximo relatório amanhã, logo após a revisão' : 'escreve logo após a revisão das 07:30';
       else if (k === 'shopee' || k === 'ml') {
         const feitaHoje = hoje.some(m => /revisão diária|Analisei/i.test(m.texto));
@@ -291,7 +303,7 @@ Router.register('escritorio', (params, el) => {
       const id = `${m.de}|${m.t}|${m.texto.length}`;
       const novo = state.vistos.size && !state.vistos.has(id);
       state.novos.add(id);
-      const texto = m.texto.replace(/@(Analista|ADS Shopee|Coletor|Copiloto ADS ML|Redator|Estoque|Margem)/g, '<span class="esc-mencao">@$1</span>');
+      const texto = m.texto.replace(/@(Analista|ADS Shopee|Coletor|Copiloto ADS ML|Redator|Estoque|Margem|Promoções)/g, '<span class="esc-mencao">@$1</span>');
       return `${sep}<div class="esc-msg ${m.de === 'analista' ? 'humano' : ''} ${m.menor ? 'menor' : ''} ${m.erro ? 'erro' : ''} ${novo ? 'novo' : ''}" style="--c:${a.cor}">
         <div class="esc-av">${h(a.nome.split(' ').filter(p => p.length > 2).map(p => p[0]).join('').slice(0, 2).toUpperCase())}</div>
         <div class="esc-bal"><div class="esc-de"><b>${h(a.nome)}</b><span>${hora(m.t)}</span></div><div class="esc-txt">${texto}</div></div>

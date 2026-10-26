@@ -46,8 +46,20 @@ const medicaoAds = require('./_medicao-ads');
 // Mural dos agentes de Estoque e de Margem (calculado pelo sincronizador)
 const estoqueMargem = require('./_estoque-margem');
 async function lerSinais(mkt, conta) {
-  const c = (await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${encodeURIComponent(conta)}&recurso=eq.sinais&select=cursor`).catch(() => []))[0]?.cursor;
-  return c && Date.now() - (c.em || 0) < 12 * 3600 * 1000 ? c : null; // aviso velho não decide nada
+  const rows = await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${encodeURIComponent(conta)}&recurso=in.(sinais,promocoes)&select=recurso,cursor`).catch(() => []);
+  const c = rows.find(r => r.recurso === 'sinais')?.cursor;
+  if (!c || Date.now() - (c.em || 0) > 12 * 3600 * 1000) return null; // aviso velho não decide nada
+  // Agente de Promoções: produto em promoção usa a margem NO PREÇO DA PROMOÇÃO (menor)
+  const pr = rows.find(r => r.recurso === 'promocoes')?.cursor;
+  if (pr && Date.now() - (pr.em || 0) < 36 * 3600 * 1000) {
+    for (const [id, x] of Object.entries(pr.itens || {})) {
+      const it = c.itens?.[id], ep = x.emPromo;
+      if (!it || !ep || ep.aa == null) continue;
+      if (it.aa == null || ep.aa < it.aa) { it.aa = ep.aa; it.m = ep.m; it.nm = ep.m <= 0 ? 'negativa' : ep.aa < 3 ? 'apertada' : 'ok'; }
+      it.pr = { tipo: ep.tipo, preco: ep.preco, fim: ep.fim || null };
+    }
+  }
+  return c;
 }
 const ehML = cfg => String(cfg.marketplace || '').toLowerCase() === 'ml';
 
@@ -727,7 +739,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       const aviso = sinais ? estoqueMargem.avisosDe(sinais, settings.item_id_list) : null;
       const metaMargem = aviso?.aa != null && cfg.meta_acos && aviso.aa < cfg.meta_acos ? Math.max(0.5, aviso.aa) : null;
       const metaEf = metaMargem ?? cfg.meta_acos;
-      const txtMeta = metaMargem != null ? `meta do produto (${metaEf}% — limite da margem de ${aviso.m}%, pelo agente de Margem)` : `meta (${cfg.meta_acos}%)`;
+      const txtMeta = metaMargem != null ? `meta do produto (${metaEf}% — limite da margem de ${aviso.m}%${aviso.promo ? ' no preço da promoção' : ''}, pelo agente de ${aviso.promo ? 'Promoções' : 'Margem'})` : `meta (${cfg.meta_acos}%)`;
       const estoqueSegura = aviso && (aviso.ne === 'zerado' || aviso.ne === 'critico' || (aviso.dias != null && aviso.dias <= 10));
 
       // Produto sem estoque e a campanha ainda gastando → sugere pausar (aprovação)
@@ -841,7 +853,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       // do "ACOS de contenção forte" (antigo limite de pausa) o passo é 25% em
       // vez de 15%. Corte é seguro independente do TACOS geral.
       if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > metaEf && !emMaturacao) {
-        if (metaMargem != null && acosJanela * 100 <= cfg.meta_acos) colaboracoes.push({ de: 'margem', campanha: nome, texto: `contive "${nome}": ACOS ${acosTxt} cabe na meta da conta, mas passa do limite da margem do produto (${metaEf}%)` });
+        if (metaMargem != null && acosJanela * 100 <= cfg.meta_acos) colaboracoes.push({ de: aviso.promo ? 'promocoes' : 'margem', campanha: nome, texto: `contive "${nome}": ACOS ${acosTxt} cabe na meta da conta, mas passa do limite da margem do produto (${metaEf}%)` });
         const forte = !!cfg.regra_pausa_acos && acosJanela * 100 > cfg.regra_pausa_acos;
         const passo = forte ? 0.25 : 0.15;
         const motivoConter = forte ? `bem acima da meta (${cfg.meta_acos}%) e do limite de contenção forte (${cfg.regra_pausa_acos}%), mas a campanha vende — então contenho com mais força em vez de pausar` : `acima da ${txtMeta}, mas a campanha vende — contenho o gasto em vez de pausar`;

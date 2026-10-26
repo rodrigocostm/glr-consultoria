@@ -8,12 +8,14 @@ let contasSel  = [];   // contas ML carregadas
 let contaAtual = null; // conta selecionada
 let promocoes  = [];   // últimas promoções buscadas
 
-let abaPromo = (() => { try { return localStorage.getItem('glr_promo_aba') || 'auto'; } catch (e) { return 'auto'; } })();
+let abaPromo = (() => { try { return localStorage.getItem('glr_promo_aba') || (window._portalConfig ? 'auto' : 'agente'); } catch (e) { return 'auto'; } })();
 
 function renderPage(params, container) {
   container.innerHTML = `<div id="promo-root" style="padding:24px;max-width:1400px;margin:0 auto;"></div>`;
+  if (window._portalConfig && abaPromo === 'agente') abaPromo = 'auto'; // sugestões do agente são da GLR
   renderShell();
   carregarContas();
+  if (abaPromo === 'agente') carregarAgentePromo();
 }
 
 function renderShell() {
@@ -30,9 +32,12 @@ function renderShell() {
       </select>
     </div>
     <div class="pm-abas">
+      ${window._portalConfig ? '' : `<button id="pm-aba-agente" class="pm-aba ${abaPromo === 'agente' ? 'on' : ''}" onclick="window._pmAba('agente')">Sugestões do agente</button>`}
       <button id="pm-aba-auto" class="pm-aba ${abaPromo === 'auto' ? 'on' : ''}" onclick="window._pmAba('auto')">Promoções por anúncio</button>
       <button id="pm-aba-camp" class="pm-aba ${abaPromo === 'camp' ? 'on' : ''}" onclick="window._pmAba('camp')">Campanhas e cupons</button>
     </div>
+    <style>.pm-abas{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}.pm-aba{border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);border-radius:99px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}.pm-aba.on{background:var(--accent);border-color:var(--accent);color:#fff}</style>
+    <div id="pm-agente" style="${abaPromo === 'agente' ? '' : 'display:none'}"></div>
     <div id="pm-auto" style="${abaPromo === 'auto' ? '' : 'display:none'}"></div>
     <div id="promo-body" style="${abaPromo === 'camp' ? '' : 'display:none'}">
       <div style="text-align:center;padding:80px;color:var(--text-secondary);">
@@ -452,8 +457,11 @@ const PM = (() => {
     abaPromo = a; try { localStorage.setItem('glr_promo_aba', a); } catch (e) {}
     document.getElementById('pm-auto').style.display = a === 'auto' ? '' : 'none';
     document.getElementById('promo-body').style.display = a === 'camp' ? '' : 'none';
+    const ag = document.getElementById('pm-agente'); if (ag) ag.style.display = a === 'agente' ? '' : 'none';
     document.getElementById('pm-aba-auto').classList.toggle('on', a === 'auto');
     document.getElementById('pm-aba-camp').classList.toggle('on', a === 'camp');
+    document.getElementById('pm-aba-agente')?.classList.toggle('on', a === 'agente');
+    if (a === 'agente') carregarAgentePromo();
   };
   window._pmFiltro = f => { st.filtro = f; render(); };
   window._pmAtualizar = () => carregar(true);
@@ -742,6 +750,117 @@ window._promoCriarCupom = async function() {
   } catch(e) {
     resDiv.innerHTML = `<span style="color:var(--red);">❌ Erro: ${e.message}</span>`;
   }
+};
+
+// ── Sugestões do Agente de Promoções (api/_promocoes.js, 1x por dia por loja) ──
+// A margem do agente é estimada pelo repasse médio do produto; o "Aplicar" do ML
+// usa a mesma chamada da aba "Promoções por anúncio". Shopee: só orienta.
+const pa = { contas: [], conta: (() => { try { return localStorage.getItem('glr_pa_conta') || ''; } catch (e) { return ''; } })(), dados: null, carregando: false, erro: null, feito: {}, aplicando: {} };
+const paH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const paR = v => v == null ? '—' : 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const paP = v => v == null ? '—' : `${String(Math.round(v * 10) / 10).replace('.', ',')}%`;
+async function carregarAgentePromo(forcarConta) {
+  const el = document.getElementById('pm-agente'); if (!el) return;
+  pa.carregando = true; renderAgentePromo();
+  try {
+    if (!pa.contas.length || forcarConta) {
+      const { data, error } = await _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultimo_erro,resumo:cursor->resumo').eq('recurso', 'promocoes');
+      if (error) throw error;
+      let vinc = {}; try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
+      const nomes = new Map();
+      for (const c of (window.GLR?.clientes || [])) for (const ct of (vinc[String(c.id)] || [])) [ct.external_id, ct.param_to_use?.shopId, ct.param_to_use?.meliUserId].filter(Boolean).forEach(i => nomes.set(String(i), `${c.nome} · ${ct.nickname || ct.external_id}`));
+      pa.contas = (data || []).map(r => ({ ...r, nome: nomes.get(String(r.conta_id)) || `${r.marketplace === 'ml' ? 'Mercado Livre' : 'Shopee'} ${r.conta_id}` }))
+        .sort((a, b) => (b.resumo?.sugeridas || 0) - (a.resumo?.sugeridas || 0) || a.nome.localeCompare(b.nome));
+      if (!pa.contas.some(c => `${c.marketplace}:${c.conta_id}` === pa.conta)) pa.conta = pa.contas[0] ? `${pa.contas[0].marketplace}:${pa.contas[0].conta_id}` : '';
+    }
+    pa.dados = null;
+    if (pa.conta) {
+      const [mkt, id] = pa.conta.split(':');
+      const { data, error } = await _sb.from('glr_sync_estado').select('cursor').eq('recurso', 'promocoes').eq('marketplace', mkt).eq('conta_id', id).limit(1);
+      if (error) throw error;
+      pa.dados = data?.[0]?.cursor || null;
+    }
+    pa.erro = null;
+  } catch (e) { pa.erro = e.message || String(e); }
+  pa.carregando = false; renderAgentePromo();
+}
+function renderAgentePromo() {
+  const el = document.getElementById('pm-agente'); if (!el) return;
+  if (pa.carregando && !pa.dados) { el.innerHTML = '<div class="pa-sub" style="padding:30px">Carregando sugestões…</div>'; return; }
+  if (!pa.contas.length) { el.innerHTML = `<div class="card" style="padding:22px"><b>O Agente de Promoções ainda não rodou.</b><div class="pa-sub" style="margin-top:6px">Ele analisa cada loja uma vez por dia, depois das 06:00, usando o cálculo de estoque e margem (tela Estoque e margem). Sem custo cadastrado, o produto fica de fora.</div>${pa.erro ? `<div class="pa-sub" style="color:var(--red)">${paH(pa.erro)}</div>` : ''}</div>`; return; }
+  const d = pa.dados, mkt = d?.mkt;
+  const itens = d ? Object.entries(d.itens || {}).map(([id, x]) => ({ id, ...x })) : [];
+  const sug = itens.filter(x => x.melhor).sort((a, b) => (b.parado - a.parado) || (b.melhor.m - a.melhor.m));
+  const emPromo = itens.filter(x => x.emPromo).sort((a, b) => (a.emPromo.m ?? 999) - (b.emPromo.m ?? 999));
+  const mMin = d?.margem_minima ?? 5;
+  const quando = d?.em ? new Date(d.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+  const link = x => mkt === 'ml' ? `https://produto.mercadolivre.com.br/${String(x.id).replace(/^MLB/, 'MLB-')}` : `https://shopee.com.br/product/${paH(d.conta)}/${paH(x.id)}`;
+  const est = x => x.e == null ? '—' : `${x.e} un.${x.d != null ? ` · ${x.d > 365 ? '+1 ano' : Math.round(x.d) + ' d'}` : ''}`;
+  const fim = s => s ? new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
+  el.innerHTML = `
+    <div class="card pa-topo">
+      <select class="form-control" style="max-width:340px" onchange="window._paConta(this.value)">
+        ${pa.contas.map(c => { const k = `${c.marketplace}:${c.conta_id}`; return `<option value="${paH(k)}" ${k === pa.conta ? 'selected' : ''}>${paH(c.nome)}${c.resumo?.sugeridas ? ` — ${c.resumo.sugeridas} sugestão(ões)` : ''}</option>`; }).join('')}
+      </select>
+      <span class="pa-sub">analisado em ${quando} · margem mínima ${paP(mMin)} + 3 pontos de folga para o ADS · margem estimada pelo repasse médio do produto</span>
+    </div>
+    ${!d ? '<div class="pa-sub" style="padding:20px">Sem dados desta conta.</div>' : `
+    <div class="card pa-card">
+      <div class="pa-tit">Promoções que cabem na margem <span class="pa-sub">${sug.length} produto(s) · estoque parado primeiro</span></div>
+      ${sug.length ? `<div style="overflow-x:auto"><table class="pa-tab"><thead><tr><th>Produto</th><th>Estoque</th><th>Promoção sugerida</th><th>Preço</th><th>Desconto</th><th>Você recebe</th><th>Margem estimada</th><th>ACOS alvo na promoção</th><th></th></tr></thead><tbody>
+        ${sug.map(x => { const o = x.melhor, f = pa.feito[x.id]; return `<tr>
+          <td class="pa-prod"><a href="${link(x)}" target="_blank" rel="noopener">${paH(x.n)}</a><div class="pa-sub">${paH(x.id)}${x.parado ? ' · <b style="color:var(--yellow)">estoque parado</b>' : ''}</div></td>
+          <td>${est(x)}</td>
+          <td>${paH(o.rot)}${o.nome ? `<div class="pa-sub">${paH(o.nome)}${o.fim ? ` · até ${fim(o.fim)}` : ''}</div>` : ''}</td>
+          <td><b>${paR(o.preco)}</b><div class="pa-sub">de ${paR(x.p)}</div></td><td>${paP(o.desconto)}</td><td>${paR(o.recebido)}${o.recebido > o.preco + 0.01 ? '<div class="pa-sub">o ML banca parte</div>' : ''}</td>
+          <td>${paP(o.m)}</td><td>${paP(o.aa)}</td>
+          <td>${mkt === 'ml' && o.tipo === 'SMART_LIGHTNING' ? '<span class="pa-sub">relâmpago co-participado: aplique na aba “Promoções por anúncio”</span>' : mkt === 'ml' ? (f ? `<span class="pa-sub" style="color:${f.ok ? 'var(--green)' : 'var(--red)'}">${paH(f.txt)}</span>` : `<button class="btn btn-primary btn-sm" ${pa.aplicando[x.id] ? 'disabled' : ''} onclick="window._paAplicar('${paH(x.id)}')">${pa.aplicando[x.id] ? 'Aplicando…' : 'Aplicar'}</button>`) : '<span class="pa-sub">coloque num desconto da loja na Shopee</span>'}</td>
+        </tr>`; }).join('')}
+      </tbody></table></div>` : '<div class="pa-sub" style="padding:10px 0">Nenhuma promoção nova cabe na margem hoje.</div>'}
+      ${(d.colab || []).length ? `<div class="pa-sub" style="margin-top:10px">Com o agente de Estoque: ${(d.colab || []).slice(0, 5).map(c => paH(c.texto)).join(' · ')}</div>` : ''}
+    </div>
+    <div class="card pa-card">
+      <div class="pa-tit">Já em promoção <span class="pa-sub">margem no preço atual — o ADS usa o ACOS alvo abaixo enquanto a promoção durar</span></div>
+      ${emPromo.length ? `<div style="overflow-x:auto"><table class="pa-tab"><thead><tr><th>Produto</th><th>Promoção</th><th>Preço</th><th>Você recebe</th><th>Margem estimada</th><th>ACOS alvo</th></tr></thead><tbody>
+        ${emPromo.map(x => { const p = x.emPromo, baixa = p.m != null && p.m < mMin; return `<tr><td class="pa-prod"><a href="${link(x)}" target="_blank" rel="noopener">${paH(x.n)}</a></td><td>${paH(p.tipo)}${p.fim ? `<div class="pa-sub">até ${fim(p.fim)}</div>` : ''}</td><td>${paR(p.preco)}</td><td>${paR(p.recebido)}</td><td style="color:${baixa ? 'var(--red)' : 'inherit'}">${paP(p.m)}${baixa ? '<div class="pa-sub" style="color:var(--red)">abaixo da mínima</div>' : ''}</td><td>${paP(p.aa)}</td></tr>`; }).join('')}
+      </tbody></table></div>` : '<div class="pa-sub" style="padding:10px 0">Nenhum produto analisado está em promoção.</div>'}
+    </div>`}
+    <style>
+      .pa-sub{font-size:12px;color:var(--text-muted)} .pa-topo{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin-bottom:14px}
+      .pa-card{padding:14px 16px;margin-bottom:14px} .pa-tit{font-weight:650;font-size:14px;margin-bottom:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+      .pa-tab{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums} .pa-tab th,.pa-tab td{padding:8px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;vertical-align:middle}
+      .pa-prod{white-space:normal!important;min-width:220px;max-width:360px} .pa-prod a{color:var(--text-primary);text-decoration:none;font-weight:550} .pa-prod a:hover{text-decoration:underline}
+    </style>`;
+}
+window._paConta = k => { pa.conta = k; try { localStorage.setItem('glr_pa_conta', k); } catch (e) {} carregarAgentePromo(); };
+window._paAplicar = async id => {
+  const d = pa.dados, x = d?.itens?.[id], o = x?.melhor; if (!o || d.mkt !== 'ml') return;
+  if (!confirm(`Aplicar "${o.rot}${o.nome ? ' — ' + o.nome : ''}" em ${x.n.slice(0, 60)} por ${paR(o.preco)} (${paP(o.desconto)} de desconto)?
+
+Margem estimada ${paP(o.m)}. O valor exato (tarifa e frete no preço novo) aparece na aba "Promoções por anúncio".`)) return;
+  pa.aplicando[id] = true; renderAgentePromo();
+  try {
+    const base = { meliUserId: d.conta, promotion_type: o.tipo }; // mesmo formato da aba "Promoções por anúncio"
+    let params;
+    if (o.tipo === 'PRICE_DISCOUNT') {
+      const fmt = dt => dt.toISOString().slice(0, 19);
+      const ini = new Date(Date.now() - 3 * 3600000 + 5 * 60000), fimD = new Date(ini.getTime() + 13 * 86400000);
+      params = { ...base, items: [id], deal_price: o.preco, start_date: fmt(ini), finish_date: fmt(fimD) };
+    } else if (['SMART', 'PRICE_MATCHING', 'PRE_NEGOTIATED', 'UNHEALTHY_STOCK'].includes(o.tipo)) {
+      params = { ...base, promotion_id: o.id, items: [{ id, offer_id: o.ref }] };
+    } else {
+      params = { ...base, promotion_id: o.id, items: [{ id, deal_price: o.preco, ...(o.ref ? { offer_id: o.ref } : {}) }] };
+    }
+    const r = await MarketplaceAPI.call('ml_add_promotion_items', params);
+    const res = (r?.results || r?.data?.results || [])[0] || {};
+    if (res.error || res.erro) throw new Error(res.error || res.erro);
+    const aplicado = parseFloat(res.aplicado?.price) || o.preco;
+    pa.feito[id] = { ok: true, txt: `Aplicado a ${paR(aplicado)}${res.atencao ? ` — ${res.atencao}` : ''}` };
+    _sb.from('glr_agente_log').insert({ conta_id: String(d.conta), tipo: 'decisao', origem: 'analista', resultado: 'executado',
+      titulo: `Promoção aplicada — ${x.n.slice(0, 70)}`, explicacao: `${o.rot}${o.nome ? ' "' + o.nome + '"' : ''} a ${paR(aplicado)} (${paP(o.desconto)} de desconto), sugerida pelo Agente de Promoções com margem estimada de ${paP(o.m)}.`,
+      dados: { agente: 'promocoes', marketplace: 'ml', item_id: id, preco: aplicado, tipo_promocao: o.tipo } }).then(() => {}, () => {});
+  } catch (e) { pa.feito[id] = { ok: false, txt: `Não aplicou: ${e.message || e}` }; }
+  pa.aplicando[id] = false; renderAgentePromo();
 };
 
 if (typeof Router !== 'undefined') {
