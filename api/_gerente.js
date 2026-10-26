@@ -103,6 +103,15 @@ function acoesDaLoja(L, log) {
 // Texto com IA (diagnóstico + pauta) a partir dos fatos; null se não der
 async function escrever(Anthropic, anthropicKey, fatos) {
   if (!anthropicKey || !Anthropic) return null;
+  // até 3 tentativas: com vários clientes ao mesmo tempo a API pode recusar por limite (429/529)
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    const r = await escreverUmaVez(Anthropic, anthropicKey, fatos);
+    if (r) return r;
+    await new Promise(ok => setTimeout(ok, 1500 * tentativa));
+  }
+  return null;
+}
+async function escreverUmaVez(Anthropic, anthropicKey, fatos) {
   try {
     const client = new Anthropic({ apiKey: anthropicKey });
     const r = await client.messages.create({
@@ -190,8 +199,8 @@ async function gerarPlanos(h, filtroCliente) {
     await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `cliente:${c.id}`, recurso: 'plano', ultimo_sucesso: new Date().toISOString(), ultima_tentativa: new Date().toISOString(), ultimo_erro: null, registros: acoes.length, cursor: plano }, 'marketplace,conta_id,recurso');
     saida.push({ cliente: c.nome, semaforo, acoes: acoes.length });
   };
-  // 4 clientes por vez (a IA leva alguns segundos por cliente)
-  await Promise.all(Array.from({ length: Math.min(4, alvo.length) }, async () => { while (iCli < alvo.length) { const c = alvo[iCli++]; try { await processar(c); } catch (e) { saida.push({ cliente: c.nome, erro: e.message }); } } }));
+  // 2 clientes por vez (a IA leva alguns segundos por cliente; mais que isso esbarra no limite da API)
+  await Promise.all(Array.from({ length: Math.min(2, alvo.length) }, async () => { while (iCli < alvo.length) { const c = alvo[iCli++]; try { await processar(c); } catch (e) { saida.push({ cliente: c.nome, erro: e.message }); } } }));
   return saida;
 }
 
