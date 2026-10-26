@@ -144,6 +144,8 @@ async function processarContaML(cfg, mcApiKey, h) {
     // Agente de Reputação: conta em risco / produto com reclamações repetidas não acelera
     const repConta = sinais?.reputacao?.risco === 'alto' ? `a reputação da conta está em risco (${sinais.reputacao.motivo})` : null;
     const repTxt = a => repConta || (a?.rp ? `${String(a.nome).slice(0, 40)} tem ${a.rp}` : null);
+    // Agente de Qualidade: anúncio que não converte não recebe mais verba — conserta o anúncio antes
+    const qaTxt = a => a?.qa ? `o anúncio precisa de conserto antes (${a.qa})` : null;
     const limitePausa = Math.round(Math.max(50, ticketRef && meta ? ticketRef * (meta / 100) * 3 : 0) * 100) / 100;
 
     // Sugestões dos últimos 45 dias: pendentes (conferir se já foram aplicadas),
@@ -356,6 +358,7 @@ async function processarContaML(cfg, mcApiKey, h) {
         if (tacosOk && travada && semComoSubir && f.unidades >= 3 && f.acos <= metaFam * 0.6) {
           if (seguraEstoque(aviso)) { colaboracoes.push({ de: 'estoque', texto: `não sugeri dar mais verba a "${f.nome.slice(0, 50)}": ${estoqueTxt(aviso)}` }); continue; }
           if (repTxt(aviso)) { colaboracoes.push({ de: 'reputacao', texto: `não sugeri dar mais verba a "${f.nome.slice(0, 50)}": ${repTxt(aviso)}` }); continue; }
+          if (qaTxt(aviso)) { colaboracoes.push({ de: 'qualidade', texto: `não sugeri dar mais verba a "${f.nome.slice(0, 50)}": ${qaTxt(aviso)}` }); continue; }
           const destino = C.filter(o => o.id !== x.id && comFolga(o) && (dentroMeta(o) || !o.gasto) && o.roasAlvo <= x.roasAlvo).sort((a, b) => (b.budget - b.gastoDia) - (a.budget - a.gastoDia))[0];
           if (destino) {
             const ok = await sugerir(chave, `Sugestão: mover produto campeão para campanha com verba — ${f.nome.slice(0, 50)}`,
@@ -415,6 +418,8 @@ async function processarContaML(cfg, mcApiKey, h) {
         colaboracoes.push({ de: 'estoque', texto: `segurei a aceleração de "${x.nome}": o principal produto dela, "${String(principal.nome).slice(0, 40)}", ${estoqueTxt(avisoCamp)}` });
       } else if (acos <= meta * 0.7 && tacosOk && repTxt(avisoCamp)) {
         colaboracoes.push({ de: 'reputacao', texto: `segurei a aceleração de "${x.nome}": ${repTxt(avisoCamp)}` });
+      } else if (acos <= meta * 0.7 && tacosOk && qaTxt(avisoCamp)) {
+        colaboracoes.push({ de: 'qualidade', texto: `segurei a aceleração de "${x.nome}": ${qaTxt(avisoCamp)}` });
       } else if (acos <= meta * 0.7 && tacosOk) {
         if (x.budget > 0 && x.gastoDia >= x.budget * 0.8 && (!cfg.orcamento_max || x.budget < cfg.orcamento_max)) {
           const novo = Math.round(Math.min(cfg.orcamento_max || Infinity, x.budget * 1.2) * 100) / 100;
@@ -454,7 +459,7 @@ async function processarContaML(cfg, mcApiKey, h) {
             if (campDoItem[p.item_id] || !destino || !p.item_id) continue;
             const av = avisoDe([p.item_id]);
             if (seguraEstoque(av) || av?.nm === 'negativa') { colaboracoes.push({ de: av?.nm === 'negativa' ? 'margem' : 'estoque', texto: `não sugeri colocar "${String(p.nome).slice(0, 50)}" no ADS: ${av?.nm === 'negativa' ? `margem negativa (${av.m}%)` : estoqueTxt(av)}` }); continue; }
-            if (repTxt(av)) { colaboracoes.push({ de: 'reputacao', texto: `não sugeri colocar "${String(p.nome).slice(0, 50)}" no ADS: ${repTxt(av)}` }); continue; }
+            if (repTxt(av) || qaTxt(av)) { colaboracoes.push({ de: repTxt(av) ? 'reputacao' : 'qualidade', texto: `não sugeri colocar "${String(p.nome).slice(0, 50)}" no ADS: ${repTxt(av) || qaTxt(av)}` }); continue; }
             const ok = await sugerir(`p:${p.item_id}`, `Curva ${p.classe} subindo — colocar em campanha: ${p.nome.slice(0, 50)}`,
               `Produto curva ${p.classe} em ${curvaABC.TEND_TXT[p.tend]}: ${linhaSemana(p)} — candidato a virar curva A e está fora de campanha. Colocar na campanha "${destino.nome}" (ACOS de ${pctTxt(destino.acos)}, dentro da meta${comFolga(destino) ? `, usando ${R$(destino.gastoDia)}/dia de ${R$(destino.budget)}` : ''}) para aproveitar a alta. Confira o estoque antes.`,
               { ...base1(p), acao: 'adicionar_produto', destino_id: destino.id, destino: destino.nome, campaign_id: destino.id, campanha: destino.nome, impacto: p.ultRs || 0, impacto_tipo: 'ganho' });
@@ -474,7 +479,7 @@ async function processarContaML(cfg, mcApiKey, h) {
         if (!destino || colocados >= 5) break;
         const av = avisoDe([v.item_id]);
         if (seguraEstoque(av) || av?.nm === 'negativa') { colaboracoes.push({ de: av?.nm === 'negativa' ? 'margem' : 'estoque', texto: `não sugeri colocar "${String(v.nome).slice(0, 50)}" no ADS: ${av?.nm === 'negativa' ? `margem negativa (${av.m}%)` : estoqueTxt(av)}` }); continue; }
-        if (repTxt(av)) { colaboracoes.push({ de: 'reputacao', texto: `não sugeri colocar "${String(v.nome).slice(0, 50)}" no ADS: ${repTxt(av)}` }); continue; }
+        if (repTxt(av) || qaTxt(av)) { colaboracoes.push({ de: repTxt(av) ? 'reputacao' : 'qualidade', texto: `não sugeri colocar "${String(v.nome).slice(0, 50)}" no ADS: ${repTxt(av) || qaTxt(av)}` }); continue; }
         const ok = await sugerir(`p:${v.item_id}`, `Sugestão: colocar produto em campanha — ${String(v.nome).slice(0, 60)}`,
           `"${String(v.nome).slice(0, 80)}" (${v.item_id}) vendeu ${v.unidades} un. (${R$(v.receita)}) na loja nos últimos 30 dias e não está em nenhuma campanha ativa de Product Ads. Colocar na campanha "${destino.nome}" (ACOS de ${pctTxt(destino.acos)}, dentro da meta${comFolga(destino) ? `, usando ${R$(destino.gastoDia)}/dia de ${R$(destino.budget)}` : ''}). Confira o estoque antes.`,
           { acao: 'adicionar_produto', item_ids: [v.item_id], produto: String(v.nome).slice(0, 90), unidades_loja_30d: v.unidades, receita_loja_30d: r1(v.receita), destino_id: destino.id, destino: destino.nome, campaign_id: destino.id, campanha: destino.nome, impacto: v.receita / 30 * 7, impacto_tipo: 'ganho' });

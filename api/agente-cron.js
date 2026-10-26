@@ -46,7 +46,7 @@ const medicaoAds = require('./_medicao-ads');
 // Mural dos agentes de Estoque e de Margem (calculado pelo sincronizador)
 const estoqueMargem = require('./_estoque-margem');
 async function lerSinais(mkt, conta) {
-  const rows = await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${encodeURIComponent(conta)}&recurso=in.(sinais,promocoes,reputacao)&select=recurso,cursor`).catch(() => []);
+  const rows = await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${encodeURIComponent(conta)}&recurso=in.(sinais,promocoes,reputacao,qualidade)&select=recurso,cursor`).catch(() => []);
   const c = rows.find(r => r.recurso === 'sinais')?.cursor;
   if (!c || Date.now() - (c.em || 0) > 12 * 3600 * 1000) return null; // aviso velho não decide nada
   // Agente de Promoções: produto em promoção usa a margem NO PREÇO DA PROMOÇÃO (menor)
@@ -65,6 +65,11 @@ async function lerSinais(mkt, conta) {
     c.reputacao = { risco: rp.risco || null, motivo: rp.riscoMotivo || '' };
     c.itens = c.itens || {};
     for (const [id, x] of Object.entries(rp.itens || {})) { c.itens[id] = c.itens[id] || { n: x.produto || id, vd: 0 }; c.itens[id].rp = x.motivo; }
+  }
+  // Agente de Qualidade: anúncio que não converte / experiência ruim / pausado pelo ML
+  const qa = rows.find(r => r.recurso === 'qualidade')?.cursor;
+  if (qa && Date.now() - (qa.em || 0) < 4 * 86400000) {
+    for (const [id, x] of Object.entries(qa.itens || {})) if (x.qa && c.itens?.[id]) c.itens[id].qa = x.qa;
   }
   return c;
 }
@@ -750,6 +755,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       const estoqueSegura = aviso && (aviso.ne === 'zerado' || aviso.ne === 'critico' || (aviso.dias != null && aviso.dias <= 10));
       // Reputação: conta em risco ou produto com reclamações repetidas não recebe aceleração
       const reputacaoSegura = sinais?.reputacao?.risco === 'alto' ? `a reputação da conta está em risco (${sinais.reputacao.motivo})` : aviso?.rp ? `${aviso.nome} tem ${aviso.rp}` : null;
+      const qualidadeSegura = aviso?.qa ? `o anúncio de ${aviso.nome} precisa de conserto antes (${aviso.qa})` : null;
 
       // Produto sem estoque e a campanha ainda gastando → sugere pausar (aprovação)
       if (aviso?.ne === 'zerado' && diario.gastoOntem > 0 && pausaEstoquePendente.has(String(c.campaign_id))) continue;
@@ -813,6 +819,10 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       // eficiente — a conta como um todo já estaria investindo mais que o
       // saudável em ADS.
       if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= metaEf * 0.7 && (budgetAtual > 0 || temRoas)) {
+        if (qualidadeSegura && !reputacaoSegura) {
+          colaboracoes.push({ de: 'qualidade', campanha: nome, texto: `segurei o aumento de "${nome}" (ACOS ${acosTxt}): ${qualidadeSegura}` });
+          continue;
+        }
         if (reputacaoSegura) {
           colaboracoes.push({ de: 'reputacao', campanha: nome, texto: `segurei o aumento de "${nome}" (ACOS ${acosTxt}): ${reputacaoSegura}` });
           continue;

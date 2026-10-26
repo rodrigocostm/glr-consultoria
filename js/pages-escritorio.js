@@ -30,6 +30,7 @@ Router.register('escritorio', (params, el) => {
     margem: { nome: 'Margem', cargo: 'Calcula a margem e o ACOS máximo de cada produto, a cada 3 h', cor: '#d93f3f', rot: 'Dados' },
     promo:  { nome: 'Promoções', cargo: 'Escolhe, 1x por dia, as promoções que cabem na margem e no estoque', cor: '#db2777', rot: 'Vendas' },
     rep:    { nome: 'Reputação e Atendimento', cargo: 'Vigia perguntas, reclamações e a saúde das contas a cada 30 min', cor: '#0891b2', rot: 'Clientes' },
+    qa:     { nome: 'Qualidade', cargo: 'Revisa nota, conversão e pendências dos anúncios, 1x por dia', cor: '#65a30d', rot: 'Vendas' },
     oport:  { nome: 'Caçador de Oportunidades', cargo: 'Procura produtos com espaço para crescer', cor: '#7c3aed', rot: 'Dados' },
     shopee: { nome: 'ADS Shopee', cargo: 'Revisa as campanhas às 07:30 e ajusta sozinho dentro dos limites', cor: '#d9622b', rot: 'ADS' },
     ml:     { nome: 'Copiloto ADS ML', cargo: 'Analisa as campanhas às 07:30 e monta o pacote do dia', cor: '#d9a400', rot: 'ADS' },
@@ -38,7 +39,7 @@ Router.register('escritorio', (params, el) => {
   const ANALISTA = { nome: 'Analista', cor: 'var(--text-secondary)' };
 
   const state = {
-    carregando: true, erro: null, logs: [], sync: [], sinais: [], repu: [], rels: [], agenda: {}, pendentes: 0,
+    carregando: true, erro: null, logs: [], sync: [], sinais: [], repu: [], quali: [], rels: [], agenda: {}, pendentes: 0,
     filtro: (() => { try { return localStorage.getItem('glr_esc_filtro') || 'todos'; } catch (e) { return 'todos'; } })(),
     atualizadoEm: 0, novos: new Set(), vistos: new Set(),
   };
@@ -60,7 +61,7 @@ Router.register('escritorio', (params, el) => {
     const desde = new Date(Date.now() - 48 * HORA).toISOString();
     try {
       const COLS = 'id,conta_id,cliente_nome,tipo,titulo,explicacao,dados,resultado,origem,criado_em';
-      const [logs, antigos, sync, rels, agenda, pend, sinais, repu] = await Promise.all([
+      const [logs, antigos, sync, rels, agenda, pend, sinais, repu, quali] = await Promise.all([
         _sb.from('glr_agente_log').select(COLS).gte('criado_em', desde).order('criado_em', { ascending: false }).limit(800),
         // ações antigas que foram detectadas no painel ou medidas nas últimas 48 h
         _sb.from('glr_agente_log').select(COLS).lt('criado_em', desde).gte('criado_em', new Date(Date.now() - 46 * DIA).toISOString())
@@ -71,6 +72,7 @@ Router.register('escritorio', (params, el) => {
         _sb.from('glr_agente_log').select('id', { count: 'exact', head: true }).eq('tipo', 'alerta').eq('resultado', 'so_alerta'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,registros,resumo:cursor->resumo,destaques:cursor->destaques').eq('recurso', 'sinais'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,resumo:cursor->resumo').eq('recurso', 'reputacao'),
+        _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,resumo:cursor->resumo,destaques:cursor->destaques').eq('recurso', 'qualidade'),
       ]);
       if (logs.error) throw logs.error;
       const vistos = new Set();
@@ -78,6 +80,7 @@ Router.register('escritorio', (params, el) => {
       state.sync = sync.data || [];
       state.sinais = sinais.error ? [] : sinais.data || [];
       state.repu = repu.error ? [] : repu.data || [];
+      state.quali = quali.error ? [] : quali.data || [];
       state.rels = (rels.data || []).map(({ resumo, ...r }) => r); // o texto do relatório não é usado aqui
       state.agenda = agenda.data?.[0]?.cursor?.rodadas || {};
       state.pendentes = pend.count || 0;
@@ -126,7 +129,7 @@ Router.register('escritorio', (params, el) => {
         }
         else if (/^Colaboração com Estoque e Margem/.test(l.titulo)) {
           const cs = d.colaboracoes || [];
-          const quem = [cs.some(x => x.de === 'estoque') ? '@Estoque' : '', cs.some(x => x.de === 'margem') ? '@Margem' : '', cs.some(x => x.de === 'promocoes') ? '@Promoções' : '', cs.some(x => x.de === 'reputacao') ? '@Reputação' : ''].filter(Boolean).join(', ');
+          const quem = [cs.some(x => x.de === 'estoque') ? '@Estoque' : '', cs.some(x => x.de === 'margem') ? '@Margem' : '', cs.some(x => x.de === 'promocoes') ? '@Promoções' : '', cs.some(x => x.de === 'reputacao') ? '@Reputação' : '', cs.some(x => x.de === 'qualidade') ? '@Qualidade' : ''].filter(Boolean).join(', ');
           add(ag, t, `Levei em conta os avisos de ${quem || '@Estoque'} na <b>${h(cli)}</b>: ${cs.slice(0, 3).map(x => h(x.texto)).join('; ')}${cs.length > 3 ? ` (+${cs.length - 3})` : ''}.`, { conta: cli, colab: true });
         }
         else if (/Aumento represado|Maturação segurando/.test(l.titulo)) add(ag, t, `${h(corta(l.titulo, 90))} (<b>${h(cli)}</b>) — ${h(primeiraFrase(l.explicacao))}`, { conta: cli, menor: true });
@@ -194,6 +197,19 @@ Router.register('escritorio', (params, el) => {
       } else add('margem', ok, `@Analista, não consegui calcular a margem da <b>${h(cli)}</b>: nenhum dos ${N(r.produtos)} produtos que venderam tem custo cadastrado na tela Produtos.`, { menor: true, chama: true });
     }
 
+    // Qualidade: último dia de cada loja
+    for (const s of state.quali) {
+      const ok = s.ultimo_sucesso ? new Date(s.ultimo_sucesso).getTime() : 0, tent = s.ultima_tentativa ? new Date(s.ultima_tentativa).getTime() : 0;
+      const cli = nomeConta(s.conta_id);
+      if (s.ultimo_erro && tent >= limite && tent >= ok) { add('qa', tent, `@Analista, não consegui revisar a qualidade dos anúncios da <b>${h(cli)}</b>: ${h(corta(s.ultimo_erro, 120))}`, { erro: true, chama: true }); continue; }
+      if (ok < limite || !s.resumo) continue;
+      const r = s.resumo, dq = s.destaques || {}, ads = s.marketplace === 'ml' ? '@Copiloto ADS ML' : '@ADS Shopee';
+      const r0 = dq.ruins?.[0], com = dq.comuns?.[0];
+      add('qa', ok, r.ruins
+        ? `Revisei ${N(r.analisados)} anúncios da <b>${h(cli)}</b>: ${N(r.ruins)} a consertar${r0 ? ` — <b>${h(corta(r0.n, 45))}</b>: ${h(corta(r0.qa, 110))}` : ''}. ${ads}, não acelerem esses até o conserto.${com && com.n >= 3 ? ` A pendência mais comum é "${h(corta(com.t, 60))}" (${com.n} anúncios).` : ''}`
+        : `Revisei ${N(r.analisados)} anúncios da <b>${h(cli)}</b>: nenhum a consertar${r.melhorar ? `, ${N(r.melhorar)} podem melhorar` : ''}.`, { menor: !r.ruins, chama: !!r.ruins });
+    }
+
     // Reputação e Atendimento: último estado de cada loja
     for (const s of state.repu) {
       const ok = s.ultimo_sucesso ? new Date(s.ultimo_sucesso).getTime() : 0, tent = s.ultima_tentativa ? new Date(s.ultima_tentativa).getTime() : 0;
@@ -249,8 +265,8 @@ Router.register('escritorio', (params, el) => {
       const hoje = minhas.filter(m => new Date(m.t).toDateString() === new Date().toDateString());
       const erroRecente = minhas.filter(m => m.erro && agora - m.t < 6 * HORA).length;
       let tentativa = 0;
-      if (['sync', 'precos', 'oport', 'estoque', 'margem', 'promo', 'rep'].includes(k)) {
-        const rec = k === 'sync' ? ['pedidos', 'ads', 'resumo'] : k === 'estoque' || k === 'margem' ? ['sinais'] : k === 'promo' ? ['promocoes'] : k === 'rep' ? ['reputacao'] : [k === 'precos' ? 'precos' : 'oportunidades'];
+      if (['sync', 'precos', 'oport', 'estoque', 'margem', 'promo', 'rep', 'qa'].includes(k)) {
+        const rec = k === 'sync' ? ['pedidos', 'ads', 'resumo'] : k === 'estoque' || k === 'margem' ? ['sinais'] : k === 'promo' ? ['promocoes'] : k === 'rep' ? ['reputacao'] : k === 'qa' ? ['qualidade'] : [k === 'precos' ? 'precos' : 'oportunidades'];
         state.sync.filter(s => rec.includes(s.recurso)).forEach(s => { const t = s.ultima_tentativa ? new Date(s.ultima_tentativa).getTime() : 0; if (t > tentativa) tentativa = t; });
       }
       const ativo = (ult && agora - ult.t < 4 * MIN) || (tentativa && agora - tentativa < 3 * MIN);
@@ -260,6 +276,7 @@ Router.register('escritorio', (params, el) => {
       else if (k === 'estoque' || k === 'margem') prox = 'recalcula a cada 3 h e antes das 07:00';
       else if (k === 'promo') prox = 'analisa 1x por dia, depois das 06:00';
       else if (k === 'rep') prox = 'confere de novo a cada 30 min';
+      else if (k === 'qa') prox = 'revisa 1x por dia, depois das 06:00';
       else if (k === 'rel') prox = hoje.length ? 'próximo relatório amanhã, logo após a revisão' : 'escreve logo após a revisão das 07:30';
       else if (k === 'shopee' || k === 'ml') {
         const feitaHoje = hoje.some(m => /revisão diária|Analisei/i.test(m.texto));
@@ -325,7 +342,7 @@ Router.register('escritorio', (params, el) => {
       const id = `${m.de}|${m.t}|${m.texto.length}`;
       const novo = state.vistos.size && !state.vistos.has(id);
       state.novos.add(id);
-      const texto = m.texto.replace(/@(Analista|ADS Shopee|Coletor|Copiloto ADS ML|Redator|Estoque|Margem|Promoções|Reputação)/g, '<span class="esc-mencao">@$1</span>');
+      const texto = m.texto.replace(/@(Analista|ADS Shopee|Coletor|Copiloto ADS ML|Redator|Estoque|Margem|Promoções|Reputação|Qualidade)/g, '<span class="esc-mencao">@$1</span>');
       return `${sep}<div class="esc-msg ${m.de === 'analista' ? 'humano' : ''} ${m.menor ? 'menor' : ''} ${m.erro ? 'erro' : ''} ${novo ? 'novo' : ''}" style="--c:${a.cor}">
         <div class="esc-av">${h(a.nome.split(' ').filter(p => p.length > 2).map(p => p[0]).join('').slice(0, 2).toUpperCase())}</div>
         <div class="esc-bal"><div class="esc-de"><b>${h(a.nome)}</b><span>${hora(m.t)}</span></div><div class="esc-txt">${texto}</div></div>

@@ -22,6 +22,8 @@ const promocoesAg = require('./_promocoes');
 // Agente de Reputação e Atendimento (a cada 30 min por loja; métricas da conta a cada 6 h)
 const reputacaoAg = require('./_reputacao');
 const REPUTACAO_A_CADA_MS = 30 * 60 * 1000;
+// Agente de Qualidade de Anúncio (1x por dia por loja, depois das 06:00)
+const qualidadeAg = require('./_qualidade');
 
 // Dispara a rodada do Agente nos horários da agenda (o próprio agente trava
 // pelo horário, então disparo repetido não roda duas vezes).
@@ -1129,6 +1131,17 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
       }
     } catch (e) { await salvarEstado(mkt, shopId, 'promocoes', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
   }
+  // Qualidade de anúncio — 1x por dia, depois das 06:00, com o mural de Estoque e Margem
+  if ((mkt === 'shopee' || mkt === 'ml') && horaPromo >= 6 && estadoAtual?.qualDia !== dataBR(t) && Date.now() < prazo - 25000) {
+    try {
+      const rows = await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${shopId}&recurso=in.(sinais,qualidade)&select=recurso,cursor`).catch(() => []);
+      const sinais = sinaisAgora || rows.find(r => r.recurso === 'sinais')?.cursor, ant = rows.find(r => r.recurso === 'qualidade')?.cursor || null;
+      if (sinais && Date.now() - (sinais.em || 0) < 12 * 3600 * SEG) {
+        const cur = await qualidadeAg.calcularQualidade({ mcpCall, apiKey, prazo: Math.min(prazo - 10000, Date.now() + 40000) }, mkt, shopId, sinais, ant);
+        await salvarEstado(mkt, shopId, 'qualidade', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: cur.resumo.ruins, cursor: cur });
+      }
+    } catch (e) { await salvarEstado(mkt, shopId, 'qualidade', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
+  }
   // Reputação e atendimento — perguntas, reclamações, mensagens e saúde da conta
   if ((mkt === 'shopee' || mkt === 'ml') && Date.now() - (estadoAtual?.repEm || 0) > REPUTACAO_A_CADA_MS && Date.now() < prazo - 20000) {
     try {
@@ -1146,7 +1159,8 @@ async function executar(apiKey, soConta) {
   const prazo = Date.now() + ORCAMENTO_MS;
   let contas = await contasParaSincronizar(apiKey);
   if (soConta) contas = contas.filter(c => c.id === String(soConta));
-  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor&recurso=not.in.(oportunidades,precos,sinais,promocoes,reputacao)');
+  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor&recurso=not.in.(oportunidades,precos,sinais,promocoes,reputacao,qualidade)');
+  const qualEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.qualidade').catch(() => []);
   const repEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,em:cursor->>em&recurso=eq.reputacao').catch(() => []);
   const promoEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.promocoes').catch(() => []);
   // Estoque e margem: só a hora do último cálculo (o cursor tem todos os produtos)
@@ -1157,6 +1171,7 @@ async function executar(apiKey, soConta) {
   const oports = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.oportunidades').catch(() => []);
   const porConta = {};
   for (const o of oports) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].oport = { dia: o.dia }; }
+  for (const o of qualEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].qualDia = o.dia; }
   for (const o of repEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].repEm = parseInt(o.em) || 0; }
   for (const o of promoEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].promoDia = o.dia; }
   for (const o of sinaisEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].sinaisEm = parseInt(o.em) || 0; }
