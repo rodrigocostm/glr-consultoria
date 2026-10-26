@@ -14,6 +14,9 @@
 // ============================================================
 const { waitUntil } = require('@vercel/functions');
 const { AGENDA_AGENTE, agoraBRT } = require('./_agenda-agente');
+// Agentes de Estoque e de Margem por produto (mural que os agentes de ADS leem)
+const estoqueMargem = require('./_estoque-margem');
+const SINAIS_A_CADA_MS = 3 * 3600 * 1000;
 
 // Dispara a rodada do Agente nos horários da agenda (o próprio agente trava
 // pelo horário, então disparo repetido não roda duas vezes).
@@ -1089,6 +1092,19 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
       await salvarEstado(mkt, shopId, 'oportunidades', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {});
     }
   }
+  // Estoque e margem por produto — a cada 3 h e sempre antes da revisão das 07:00
+  if ((mkt === 'shopee' || mkt === 'ml') && Date.now() < prazo - 25000) {
+    const ultimo = estadoAtual?.sinaisEm || 0;
+    const horaBRT = new Date((t - 3 * 3600) * SEG).getUTCHours();
+    const inicioDia6h = Date.UTC(...dataBR(t).split('-').map((v, i) => i === 1 ? v - 1 : +v)) + 9 * 3600 * SEG; // 06:00 BRT de hoje
+    if (Date.now() - ultimo > SINAIS_A_CADA_MS || (horaBRT === 6 && ultimo < inicioDia6h)) {
+      try {
+        const lerStorage = async chave => (await sbSelect('glr_storage', `chave=eq.${chave}&select=dados`).catch(() => []))[0]?.dados;
+        const cur = await estoqueMargem.calcularSinais({ sbSelect, mcpCall, apiKey, lerStorage, prazo: Math.min(prazo - 10000, Date.now() + 50000) }, mkt, shopId);
+        await salvarEstado(mkt, shopId, 'sinais', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: Object.keys(cur.itens).length, cursor: cur });
+      } catch (e) { await salvarEstado(mkt, shopId, 'sinais', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
+    }
+  }
   try { await atualizarResumo(mkt, shopId, estadoAtual?.resumo, t); }
   catch (e) { await salvarEstado(mkt, shopId, 'resumo', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
   return { mkt, conta: shopId, pedidos: gravados };
@@ -1098,13 +1114,16 @@ async function executar(apiKey, soConta) {
   const prazo = Date.now() + ORCAMENTO_MS;
   let contas = await contasParaSincronizar(apiKey);
   if (soConta) contas = contas.filter(c => c.id === String(soConta));
-  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor&recurso=not.in.(oportunidades,precos)');
+  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor&recurso=not.in.(oportunidades,precos,sinais)');
+  // Estoque e margem: só a hora do último cálculo (o cursor tem todos os produtos)
+  const sinaisEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,em:cursor->>em&recurso=eq.sinais').catch(() => []);
   // Monitor de preços: só a hora da última foto (o cursor tem todos os anúncios — é grande)
   const precosEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,em:cursor->>em&recurso=eq.precos').catch(() => []);
   // Oportunidades: só o dia da última atualização (o resto do cursor é grande e não precisa aqui)
   const oports = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.oportunidades').catch(() => []);
   const porConta = {};
   for (const o of oports) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].oport = { dia: o.dia }; }
+  for (const o of sinaisEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].sinaisEm = parseInt(o.em) || 0; }
   for (const o of precosEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].precosEm = parseInt(o.em) || 0; }
   for (const e of estados) {
     const k = `${e.marketplace}:${e.conta_id}`;

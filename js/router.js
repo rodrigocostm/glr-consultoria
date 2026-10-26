@@ -69,6 +69,7 @@ const Router = {
       'produtos': 'Produtos',
       'vendometro': 'Vendômetro',
       'escritorio': 'Escritório dos agentes',
+      'estoque-margem': 'Estoque e margem',
       'precos-ml': 'Monitor de preços ML',
       'meu-dashboard': 'Dashboard', 'meus-pedidos': 'Pedidos', 'minha-curva-abc': 'Curva ABC', 'minhas-oportunidades': 'Oportunidades',
       financeiro: 'Financeiro',

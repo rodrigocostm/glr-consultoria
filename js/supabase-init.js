@@ -20,6 +20,7 @@ const GLR_KEYS = [
   'glr_vendas_custo_catalogo', // custo unitário fixo por produto (SKU/itemId) — aplica a pedidos antigos e novos
   'glr_aliquotas',      // % de imposto padrão por conta
   'glr_comissao_contas', // contas que NÃO contam comissão GLR ({ id: false })
+  'glr_margem_minima',   // margem mínima de lucro por conta (agente de Margem → ACOS alvo)
   'glr_vendas_linhas',  // linhas extras de custo/desconto lançadas no admin
   'glr_fin_manual',     // lançamentos manuais do Financeiro (antes ficavam só no navegador de quem lançou)
   'glr_mc_apikey',      // API Key do Marketplace Connect — precisa funcionar em qualquer PC do admin

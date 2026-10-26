@@ -43,6 +43,12 @@ const { processarContaML } = require('./_agente-ml');
 const curvaABC = require('./_curva-abc');
 // Medição de resultado (7 dias antes × 7 dias depois) — mesma régua do ML
 const medicaoAds = require('./_medicao-ads');
+// Mural dos agentes de Estoque e de Margem (calculado pelo sincronizador)
+const estoqueMargem = require('./_estoque-margem');
+async function lerSinais(mkt, conta) {
+  const c = (await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${encodeURIComponent(conta)}&recurso=eq.sinais&select=cursor`).catch(() => []))[0]?.cursor;
+  return c && Date.now() - (c.em || 0) < 12 * 3600 * 1000 ? c : null; // aviso velho não decide nada
+}
 const ehML = cfg => String(cfg.marketplace || '').toLowerCase() === 'ml';
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
@@ -309,7 +315,7 @@ async function contextoNegocio(shopId, ontemIso) {
 
 // Ferramentas compartilhadas que o agente do ML (api/_agente-ml.js) usa.
 function ajudantesML() {
-  return { sbSelect, sbInsert, sbUpdate, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall };
+  return { sbSelect, sbInsert, sbUpdate, lerSinais, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall };
 }
 
 // Trava de rodada agendada: a mesma rodada (dia + horário) roda uma vez só,
@@ -597,6 +603,11 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // vs R$ 193,9 mil com cancelados) — o TACOS saía menor que o real.
     // Base sincronizada primeiro (instantâneo); sem cobertura, API sem CANCELLED.
     const base = await lerBase('shopee', shopId);
+    const sinais = await lerSinais('shopee', shopId);
+    const colaboracoes = []; // o que mudou por causa do Estoque/Margem (vai para o registro e o Escritório)
+    // sugestão de pausa por estoque ainda pendente não é repetida
+    const pausaEstoquePendente = new Set((await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 7 * 86400000).toISOString())}&select=dados&limit=300`).catch(() => []))
+      .filter(l => l.dados?.pausar === true && l.dados?.colaboracao?.de === 'estoque').map(l => String(l.dados.campaign_id)));
     let faturamentoTotalLoja = 0, fonteFaturamento = 'api';
     if (baseCobre(base, inicioJanela.iso)) {
       faturamentoTotalLoja = somarBase(base, inicioJanela.iso, ontem.iso).faturamento;
@@ -712,6 +723,23 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       const inicioTs = settings.campaign_duration?.start_time || 0;
       const idadeDias = inicioTs ? (agoraTs - inicioTs) / 86400 : Infinity;
       const emMaturacao = idadeDias < diasMaturacao;
+      // Estoque e margem dos produtos da campanha (mural): margem vira teto de ACOS
+      const aviso = sinais ? estoqueMargem.avisosDe(sinais, settings.item_id_list) : null;
+      const metaMargem = aviso?.aa != null && cfg.meta_acos && aviso.aa < cfg.meta_acos ? Math.max(0.5, aviso.aa) : null;
+      const metaEf = metaMargem ?? cfg.meta_acos;
+      const txtMeta = metaMargem != null ? `meta do produto (${metaEf}% — limite da margem de ${aviso.m}%, pelo agente de Margem)` : `meta (${cfg.meta_acos}%)`;
+      const estoqueSegura = aviso && (aviso.ne === 'zerado' || aviso.ne === 'critico' || (aviso.dias != null && aviso.dias <= 10));
+
+      // Produto sem estoque e a campanha ainda gastando → sugere pausar (aprovação)
+      if (aviso?.ne === 'zerado' && diario.gastoOntem > 0 && pausaEstoquePendente.has(String(c.campaign_id))) continue;
+      if (aviso?.ne === 'zerado' && diario.gastoOntem > 0) {
+        await logar('alerta', `Sugestão de pausar — ${nome} (produto sem estoque)`,
+          `O agente de Estoque avisou que "${aviso.nome}" está sem estoque, mas a campanha gastou ${R$(diario.gastoOntem)} ontem. Pausar até repor — anúncio sem estoque não converte e o clique é pago.`,
+          { campaign_id: c.campaign_id, pausar: true, colaboracao: { de: 'estoque', produto: aviso.nome } }, 'so_alerta');
+        alertas.push(nome);
+        colaboracoes.push({ de: 'estoque', campanha: nome, texto: `sugeri pausar "${nome}": ${aviso.nome} está sem estoque` });
+        continue;
+      }
 
       // Regras 1 e 2 — pausa SÓ por gasto alto sem retorno: gastou acima do
       // limite na janela e (a) não vendeu nada ou (b) vendeu menos do que gastou
@@ -763,7 +791,11 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       // folga de TACOS, não aumenta automaticamente mesmo com campanha
       // eficiente — a conta como um todo já estaria investindo mais que o
       // saudável em ADS.
-      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= cfg.meta_acos * 0.7 && (budgetAtual > 0 || temRoas)) {
+      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= metaEf * 0.7 && (budgetAtual > 0 || temRoas)) {
+        if (estoqueSegura) {
+          colaboracoes.push({ de: 'estoque', campanha: nome, texto: `segurei o aumento de "${nome}" (ACOS ${acosTxt}): ${aviso.nome} ${aviso.ne === 'zerado' ? 'está sem estoque' : `acaba em ~${Math.round(aviso.dias)} dia(s)`}` });
+          continue;
+        }
         if (!tacosDentroDaMeta) {
           await logar('sistema', `Aumento represado por TACOS — ${nome}`,
             `ACOS da campanha (${acosTxt}) sugeriria acelerar a campanha, mas o ${rotuloTacos} (${tacosConta.toFixed(1)}%) já está acima da meta (${cfg.meta_acos}%) — não aumenta automaticamente enquanto isso não normalizar.`,
@@ -774,7 +806,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           // Meta de ROI menor = lance mais agressivo = mais gasto/volume.
           // Nunca desce abaixo da meta de ROI da própria conta (100/meta_acos)
           // nem abaixo de 1.0 (mínimo aceito pela Shopee).
-          const metaRoasConta = 100 / cfg.meta_acos;
+          const metaRoasConta = 100 / metaEf; // com limite de margem, não desce o ROAS abaixo do que a margem aguenta
           const roasAtual = settings.roas_target;
           const novoRoas = Math.round(Math.max(1, metaRoasConta, roasAtual * 0.85) * 10) / 10;
           if (novoRoas < roasAtual) {
@@ -808,10 +840,11 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       // pausar: sobe a meta de ROI (lance automático) ou corta orçamento. Acima
       // do "ACOS de contenção forte" (antigo limite de pausa) o passo é 25% em
       // vez de 15%. Corte é seguro independente do TACOS geral.
-      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > cfg.meta_acos && !emMaturacao) {
+      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > metaEf && !emMaturacao) {
+        if (metaMargem != null && acosJanela * 100 <= cfg.meta_acos) colaboracoes.push({ de: 'margem', campanha: nome, texto: `contive "${nome}": ACOS ${acosTxt} cabe na meta da conta, mas passa do limite da margem do produto (${metaEf}%)` });
         const forte = !!cfg.regra_pausa_acos && acosJanela * 100 > cfg.regra_pausa_acos;
         const passo = forte ? 0.25 : 0.15;
-        const motivoConter = forte ? `bem acima da meta (${cfg.meta_acos}%) e do limite de contenção forte (${cfg.regra_pausa_acos}%), mas a campanha vende — então contenho com mais força em vez de pausar` : `acima da meta (${cfg.meta_acos}%), mas a campanha vende — contenho o gasto em vez de pausar`;
+        const motivoConter = forte ? `bem acima da meta (${cfg.meta_acos}%) e do limite de contenção forte (${cfg.regra_pausa_acos}%), mas a campanha vende — então contenho com mais força em vez de pausar` : `acima da ${txtMeta}, mas a campanha vende — contenho o gasto em vez de pausar`;
         if (usarRoasConter) {
           const roasAtual = settings.roas_target;
           const novoRoas = Math.min(SHOPEE_ROAS_TARGET_MAX, Math.round(roasAtual * (1 + passo) * 10) / 10);
@@ -991,6 +1024,12 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
         }
       }
     } catch (e) { /* curva ABC é bônus — não derruba a revisão diária */ }
+
+    // Colaboração com os agentes de Estoque e de Margem (um registro por revisão)
+    if (colaboracoes.length) {
+      await logar('sistema', `Colaboração com Estoque e Margem — ${colaboracoes.length} decisão(ões)`,
+        colaboracoes.slice(0, 12).map(x => `• ${x.texto}`).join('\n'), { colaboracoes: colaboracoes.slice(0, 30) }, 'executado');
+    }
 
     // Resultado das ações de 8+ dias atrás (7 dias antes × 7 depois)
     let medidas = 0;
