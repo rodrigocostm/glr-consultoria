@@ -57,7 +57,23 @@ async function configsPortal() {
   return lista;
 }
 
+// Medidor de consumo da cota (api/_consumo.js): as telas também gastam ações da
+// Tiops. Conta em memória e grava no máximo 1x por minuto por instância.
+const consumo = require('./_consumo');
+const { waitUntil } = require('@vercel/functions');
+let ultimaGravacao = Date.now();
+const sbSvc = (path, init = {}) => { const key = process.env.SUPABASE_SERVICE_ROLE_KEY; return fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...init, headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', ...(init.headers || {}) } }); };
+function gravarConsumoTelas() {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || Date.now() - ultimaGravacao < 60000) return;
+  ultimaGravacao = Date.now();
+  waitUntil(consumo.gravar(
+    (t, qs) => sbSvc(`${t}?${qs}`).then(r => r.json()),
+    (t, rows, oc) => sbSvc(`${t}?on_conflict=${oc}`, { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows) }),
+    'telas').catch(() => {}));
+}
+
 async function tiops(apiKey, action, params) {
+  consumo.contar(action);
   const r = await fetch('https://mcp.tiops.com.br', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey }, body: JSON.stringify({ action, params }) });
   const j = await r.json().catch(() => null);
   if (!r.ok) throw new Error(j?.error || `Tiops ${r.status}`);
@@ -161,6 +177,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    consumo.contar(action); gravarConsumoTelas();
     const resp = await fetch('https://mcp.tiops.com.br', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },

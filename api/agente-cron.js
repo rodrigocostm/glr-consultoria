@@ -37,6 +37,7 @@ const { waitUntil } = require('@vercel/functions');
 const sdk = require('@anthropic-ai/sdk');
 const Anthropic = sdk.default || sdk;
 const { agoraBRT } = require('./_agenda-agente');
+const consumo = require('./_consumo');
 // Agente do Mercado Livre (copiloto) — código separado do da Shopee
 const { processarContaML } = require('./_agente-ml');
 // Curva ABC semana a semana (mesma regra da aba Vendas) — alertas diários dos agentes
@@ -141,6 +142,7 @@ async function sbUpsert(table, row, onConflict) {
 }
 
 async function mcpCall(apiKey, action, params) {
+  consumo.contar(action);
   const r = await fetch('https://mcp.tiops.com.br', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
@@ -157,6 +159,7 @@ async function mcpCall(apiKey, action, params) {
   }
   return json;
 }
+const gravarConsumo = () => consumo.gravar(sbSelect, (t, rows, oc) => sbUpsert(t, rows, oc), 'agentes');
 
 // Converte um timestamp unix (segundos) pro formato "AAAA-MM-DD HH:MM:SS" em
 // horário de Brasília — é o formato que shopee_sales_summary espera no
@@ -428,6 +431,7 @@ module.exports = async function handler(req, res) {
           ? processarConta(cfg, mcApiKey, anthropicKey, ontem, dataBRT(Math.max(1, cfg.regra_pausa_dias || 3)))
           : processarAcompanhamento(cfg, mcApiKey)))
         .then(r => console.log('[agente]', slot, JSON.stringify(r)))
+        .finally(gravarConsumo)
         .catch(e => console.error('[agente] rodada falhou', slot, e)));
       return res.status(202).json({ ok: true, rodada, slot, contas: configs.length });
     } catch (e) {
@@ -458,6 +462,7 @@ module.exports = async function handler(req, res) {
       const inicioJanela = dataBRT(Math.max(1, cfg.regra_pausa_dias || 3));
       return processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela);
     }));
+    await gravarConsumo();
     return res.status(200).json({ ok: true, processadas: resultados.length, resultados });
   } catch (e) {
     return res.status(500).json({ error: e.message || String(e) });

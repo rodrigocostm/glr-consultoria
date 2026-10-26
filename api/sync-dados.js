@@ -14,6 +14,7 @@
 // ============================================================
 const { waitUntil } = require('@vercel/functions');
 const { AGENDA_AGENTE, agoraBRT } = require('./_agenda-agente');
+const consumo = require('./_consumo');
 // Agentes de Estoque e de Margem por produto (mural que os agentes de ADS leem)
 const estoqueMargem = require('./_estoque-margem');
 const SINAIS_A_CADA_MS = 3 * 3600 * 1000;
@@ -65,6 +66,9 @@ async function sbUpsert(table, rows, onConflict) {
 }
 
 async function mcpCall(apiKey, action, params) {
+  // Cota do plano estourou nesta rodada: não gasta mais chamada até a próxima
+  if (consumo.limiteAtingido()) throw new Error('Limite diário do plano atingido (Tiops) — aguardando renovação às 21h');
+  consumo.contar(action);
   const r = await fetch('https://mcp.tiops.com.br', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
@@ -72,6 +76,7 @@ async function mcpCall(apiKey, action, params) {
   });
   const json = await r.json();
   if (!r.ok || (json.status && json.status !== 200) || (json.error && String(json.error).trim())) {
+    if (json.code === 'PLAN_LIMIT_REACHED' || consumo.ehLimite(json.error)) consumo.marcarLimite();
     throw new Error(json.error || json.message || `Erro na ação ${action}`);
   }
   return json;
@@ -79,7 +84,7 @@ async function mcpCall(apiKey, action, params) {
 async function comRetry(fn, tentativas = 3) {
   let erro;
   for (let t = 0; t < tentativas; t++) {
-    try { return await fn(); } catch (e) { erro = e; await new Promise(r => setTimeout(r, 800 * (t + 1))); }
+    try { return await fn(); } catch (e) { erro = e; if (consumo.limiteAtingido()) break; await new Promise(r => setTimeout(r, 800 * (t + 1))); }
   }
   throw erro;
 }
@@ -1190,12 +1195,13 @@ async function executar(apiKey, soConta) {
   const resultados = [];
   let i = 0;
   const trabalhador = async () => {
-    while (i < contas.length && Date.now() < prazo - 45000) {
+    while (i < contas.length && Date.now() < prazo - 45000 && !consumo.limiteAtingido()) {
       const conta = contas[i++];
       resultados.push(await sincronizarConta(apiKey, conta.mkt, conta.id, porConta[chave(conta)], prazo));
     }
   };
   await Promise.all(Array.from({ length: CONCORRENCIA }, trabalhador));
+  await consumo.gravar(sbSelect, sbUpsert, 'sync');
   return { contas: contas.length, processadas: resultados.length, resultados };
 }
 
