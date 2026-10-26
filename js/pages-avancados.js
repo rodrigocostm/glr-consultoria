@@ -810,6 +810,14 @@ Router.register('projecao', (params, el) => {
     const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
     let mudou = false;
     projecaoAtiva.plataformas = projecaoAtiva.plataformas || [];
+    // Conta que saiu do cliente (desvinculada ou passada para outro) não pode
+    // continuar somando na projeção dele
+    if (contasVinc.length) {
+      const ids = new Set(contasVinc.map(c => String(c.external_id)));
+      const antes = projecaoAtiva.plataformas.length;
+      projecaoAtiva.plataformas = projecaoAtiva.plataformas.filter(p => !p.contaId || ids.has(String(p.contaId)));
+      if (projecaoAtiva.plataformas.length !== antes) mudou = true;
+    }
     // Data Base segue ontem enquanto não for editada à mão
     if (!projecaoAtiva._diasEditadosManualmente) {
       const ontemIso = `${_ontem.getFullYear()}-${_padP(_ontem.getMonth()+1)}-${_padP(_ontem.getDate())}`;
@@ -1146,10 +1154,10 @@ Router.register('projecao', (params, el) => {
       const platMap = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling' };
       const nicks = (() => { try { return JSON.parse(localStorage.getItem('glr_mc_nicknames')||'{}'); } catch(e) { return {}; } })();
 
-      // Remove TODAS as linhas sem contaId (antigas/manuais por plataforma) e
-      // as que têm contaId vinculado (serão recriadas com dados frescos)
-      const contaIdsSet = new Set(contasVinc.map(c => String(c.external_id)));
-      projecaoAtiva.plataformas = (projecaoAtiva.plataformas||[]).filter(p => p.contaId && !contaIdsSet.has(String(p.contaId)));
+      // Remove TODAS as linhas: as sem contaId (antigas/manuais por plataforma), as
+      // das contas vinculadas (recriadas abaixo com dados frescos) e as de contas que
+      // não são mais deste cliente
+      projecaoAtiva.plataformas = [];
 
       contasVinc.forEach(c => {
         const mktKey = (c.marketplace||'').toLowerCase();
