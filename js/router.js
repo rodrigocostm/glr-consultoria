@@ -72,6 +72,7 @@ const Router = {
       'estoque-margem': 'Estoque e margem',
       'atendimento': 'Reputação e atendimento',
       'qualidade-anuncios': 'Qualidade dos anúncios',
+      'plano-acao': 'Plano de ação',
       'precos-ml': 'Monitor de preços ML',
       'meu-dashboard': 'Dashboard', 'meus-pedidos': 'Pedidos', 'minha-curva-abc': 'Curva ABC', 'minhas-oportunidades': 'Oportunidades',
       financeiro: 'Financeiro',

@@ -45,6 +45,8 @@ const curvaABC = require('./_curva-abc');
 const medicaoAds = require('./_medicao-ads');
 // Mural dos agentes de Estoque e de Margem (calculado pelo sincronizador)
 const estoqueMargem = require('./_estoque-margem');
+// Gerente de Conta: plano do dia por cliente (rodada 'gerente', 08:00)
+const gerente = require('./_gerente');
 async function lerSinais(mkt, conta) {
   const rows = await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${encodeURIComponent(conta)}&recurso=in.(sinais,promocoes,reputacao,qualidade)&select=recurso,cursor`).catch(() => []);
   const c = rows.find(r => r.recurso === 'sinais')?.cursor;
@@ -392,6 +394,19 @@ module.exports = async function handler(req, res) {
         });
       }
     }
+  }
+
+  // Gerente de Conta: ?rodada=gerente (agenda das 08:00, uma vez por dia) ou
+  // ?rodada=gerente&cliente_id=X ("Gerar plano agora" na tela Plano de ação)
+  if (req.query?.rodada === 'gerente') {
+    const ajud = { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic };
+    try {
+      if (req.query?.cliente_id) return res.status(200).json({ ok: true, planos: await gerente.gerarPlanos(ajud, req.query.cliente_id) });
+      const slot = `${agoraBRT().dia}-gerente`;
+      if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      waitUntil(gerente.gerarPlanos(ajud).then(r => console.log('[gerente]', JSON.stringify(r))).catch(e => console.error('[gerente] falhou', e)));
+      return res.status(202).json({ ok: true, rodada: 'gerente', slot });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
 
   // Rodada agendada (?rodada=completa|acompanhamento, ou a cron da Vercel =

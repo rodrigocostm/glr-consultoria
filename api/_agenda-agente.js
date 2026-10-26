@@ -14,6 +14,7 @@
 // ============================================================
 const AGENDA_AGENTE = [
   { hora: 7, tipo: 'completa' },
+  { hora: 8, tipo: 'gerente' }, // Gerente de Conta: plano do dia por cliente (depois da revisão dos ADS)
   { hora: 12, tipo: 'acompanhamento' },
   { hora: 16, tipo: 'acompanhamento' },
   { hora: 20, tipo: 'acompanhamento' },

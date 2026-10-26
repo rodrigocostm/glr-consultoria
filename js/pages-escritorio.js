@@ -24,6 +24,7 @@ Router.register('escritorio', (params, el) => {
 
   // Quem trabalha no escritório (a ordem é a da planta: dados → análise → entrega)
   const AG = {
+    gerente: { nome: 'Gerente de Conta', cargo: 'Junta tudo e monta o plano do dia de cada cliente às 08:00', cor: '#111827', rot: 'Coordenação' },
     sync:   { nome: 'Coletor', cargo: 'Sincroniza pedidos, ADS e resumo das lojas a cada 15 min', cor: '#0e8aa6', rot: 'Dados' },
     precos: { nome: 'Vigia de Preços', cargo: 'Confere o preço dos anúncios do Mercado Livre a cada 4 h', cor: '#b7791f', rot: 'Dados' },
     estoque: { nome: 'Estoque', cargo: 'Calcula em quantos dias cada produto acaba, a cada 3 h', cor: '#0f9f6e', rot: 'Dados' },
@@ -39,7 +40,7 @@ Router.register('escritorio', (params, el) => {
   const ANALISTA = { nome: 'Analista', cor: 'var(--text-secondary)' };
 
   const state = {
-    carregando: true, erro: null, logs: [], sync: [], sinais: [], repu: [], quali: [], rels: [], agenda: {}, pendentes: 0,
+    carregando: true, erro: null, logs: [], sync: [], sinais: [], repu: [], quali: [], planos: [], rels: [], agenda: {}, pendentes: 0,
     filtro: (() => { try { return localStorage.getItem('glr_esc_filtro') || 'todos'; } catch (e) { return 'todos'; } })(),
     atualizadoEm: 0, novos: new Set(), vistos: new Set(),
   };
@@ -61,7 +62,7 @@ Router.register('escritorio', (params, el) => {
     const desde = new Date(Date.now() - 48 * HORA).toISOString();
     try {
       const COLS = 'id,conta_id,cliente_nome,tipo,titulo,explicacao,dados,resultado,origem,criado_em';
-      const [logs, antigos, sync, rels, agenda, pend, sinais, repu, quali] = await Promise.all([
+      const [logs, antigos, sync, rels, agenda, pend, sinais, repu, quali, planos] = await Promise.all([
         _sb.from('glr_agente_log').select(COLS).gte('criado_em', desde).order('criado_em', { ascending: false }).limit(800),
         // ações antigas que foram detectadas no painel ou medidas nas últimas 48 h
         _sb.from('glr_agente_log').select(COLS).lt('criado_em', desde).gte('criado_em', new Date(Date.now() - 46 * DIA).toISOString())
@@ -73,6 +74,7 @@ Router.register('escritorio', (params, el) => {
         _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,registros,resumo:cursor->resumo,destaques:cursor->destaques').eq('recurso', 'sinais'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,resumo:cursor->resumo').eq('recurso', 'reputacao'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,resumo:cursor->resumo,destaques:cursor->destaques').eq('recurso', 'qualidade'),
+        _sb.from('glr_sync_estado').select('ultimo_sucesso,cliente:cursor->cliente,semaforo:cursor->>semaforo,acoes:cursor->acoes').eq('marketplace', 'sistema').eq('recurso', 'plano'),
       ]);
       if (logs.error) throw logs.error;
       const vistos = new Set();
@@ -81,6 +83,7 @@ Router.register('escritorio', (params, el) => {
       state.sinais = sinais.error ? [] : sinais.data || [];
       state.repu = repu.error ? [] : repu.data || [];
       state.quali = quali.error ? [] : quali.data || [];
+      state.planos = planos.error ? [] : planos.data || [];
       state.rels = (rels.data || []).map(({ resumo, ...r }) => r); // o texto do relatório não é usado aqui
       state.agenda = agenda.data?.[0]?.cursor?.rodadas || {};
       state.pendentes = pend.count || 0;
@@ -197,6 +200,15 @@ Router.register('escritorio', (params, el) => {
       } else add('margem', ok, `@Analista, não consegui calcular a margem da <b>${h(cli)}</b>: nenhum dos ${N(r.produtos)} produtos que venderam tem custo cadastrado na tela Produtos.`, { menor: true, chama: true });
     }
 
+    // Gerente de Conta: plano do dia (uma fala por rodada)
+    const planosHoje = state.planos.filter(p => p.ultimo_sucesso && new Date(p.ultimo_sucesso).getTime() >= limite);
+    if (planosHoje.length) {
+      const t = Math.max(...planosHoje.map(p => new Date(p.ultimo_sucesso).getTime()));
+      const n = k => planosHoje.filter(p => p.semaforo === k).length;
+      const urg = planosHoje.filter(p => p.semaforo === 'vermelho').slice(0, 3).map(p => `<b>${h(p.cliente?.nome || '')}</b> (${h(corta((p.acoes || [])[0]?.titulo || '', 60))})`);
+      add('gerente', t, `Montei o plano do dia de ${N(planosHoje.length)} cliente(s): ${n('vermelho')} precisam de atenção hoje, ${n('amarelo')} em atenção, ${n('verde')} em dia. Juntei o que @Estoque, @Margem, @Promoções, @Reputação, @Qualidade e os agentes de ADS apontaram.${urg.length ? ` @Analista, comece por ${urg.join(', ')}.` : ''}`, { chama: urg.length > 0 });
+    }
+
     // Qualidade: último dia de cada loja
     for (const s of state.quali) {
       const ok = s.ultimo_sucesso ? new Date(s.ultimo_sucesso).getTime() : 0, tent = s.ultima_tentativa ? new Date(s.ultima_tentativa).getTime() : 0;
@@ -277,6 +289,7 @@ Router.register('escritorio', (params, el) => {
       else if (k === 'promo') prox = 'analisa 1x por dia, depois das 06:00';
       else if (k === 'rep') prox = 'confere de novo a cada 30 min';
       else if (k === 'qa') prox = 'revisa 1x por dia, depois das 06:00';
+      else if (k === 'gerente') prox = 'monta o plano todo dia às 08:00';
       else if (k === 'rel') prox = hoje.length ? 'próximo relatório amanhã, logo após a revisão' : 'escreve logo após a revisão das 07:30';
       else if (k === 'shopee' || k === 'ml') {
         const feitaHoje = hoje.some(m => /revisão diária|Analisei/i.test(m.texto));
