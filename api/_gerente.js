@@ -106,7 +106,8 @@ async function escrever(Anthropic, anthropicKey, fatos) {
   // até 3 tentativas: com vários clientes ao mesmo tempo a API pode recusar por limite (429/529)
   for (let tentativa = 1; tentativa <= 3; tentativa++) {
     const r = await escreverUmaVez(Anthropic, anthropicKey, fatos);
-    if (r) return r;
+    if (r && !r.falhou) return r;
+    if (r?.falhou) return null; // a API respondeu, mas fora do formato: fica o texto por regra
     await new Promise(ok => setTimeout(ok, 1500 * tentativa));
   }
   return null;
@@ -116,13 +117,15 @@ async function escreverUmaVez(Anthropic, anthropicKey, fatos) {
     const client = new Anthropic({ apiKey: anthropicKey });
     const r = await client.messages.create({
       model: 'claude-haiku-5-5',
-      max_tokens: 700,
-      system: 'Você é o gerente de conta de uma consultoria de marketplaces (Mercado Livre e Shopee). Escreve para o analista da própria consultoria, em português do Brasil, direto e prático. Use SOMENTE os números e fatos do JSON — nunca invente número, produto, prazo ou ação. Responda APENAS um JSON válido: {"diagnostico":"até 3 frases: como o cliente está no mês (faturamento x meta/projeção, TACOS) e os 1-2 pontos que mais pesam hoje","pauta":"pauta do dia para o analista conversar com o cliente, em tópicos curtos com hífen: 1) o que fizemos e o resultado medido (se houver), 2) o que precisamos do cliente (só as ações com quem=cliente), 3) próximos passos. Tom cordial, pronto para virar mensagem."}',
+      max_tokens: 2000,
+      system: 'Você é o gerente de conta de uma consultoria de marketplaces (Mercado Livre e Shopee). Escreve para o analista da própria consultoria, em português do Brasil, direto e prático. Use SOMENTE os números e fatos do JSON — nunca invente número, produto, prazo ou ação. Responda APENAS um JSON válido: {"diagnostico":"até 3 frases: como o cliente está no mês (faturamento x meta/projeção, TACOS) e os 1-2 pontos que mais pesam hoje","pauta":"pauta do dia para o analista conversar com o cliente, em tópicos curtos com hífen: 1) o que fizemos e o resultado medido (se houver), 2) o que precisamos do cliente (só as ações com quem=cliente), 3) próximos passos. Tom cordial, pronto para virar mensagem. No máximo 8 tópicos, cada um com até 2 frases."}',
       messages: [{ role: 'user', content: JSON.stringify(fatos) }],
     });
     const txt = r.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
-    const j = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
-    return j.diagnostico && j.pauta ? { diagnostico: String(j.diagnostico).slice(0, 900), pauta: String(j.pauta).slice(0, 2500) } : null;
+    let j = null;
+    try { j = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); } catch (e) { j = null; }
+    if (!j) return { falhou: 'resposta fora do formato' };
+    return j.diagnostico && j.pauta ? { diagnostico: String(j.diagnostico).slice(0, 900), pauta: String(j.pauta).slice(0, 3000) } : { falhou: 'resposta incompleta' };
   } catch (e) { return null; }
 }
 
