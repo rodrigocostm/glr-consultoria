@@ -24,7 +24,7 @@ GLR.formatCurrency = (v) => {
   if (!v) return 'R$ 0';
   return v >= 1000000
     ? `R$ ${(v / 1000000).toFixed(1)}M`
-    : v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${v}`;
+    : v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${Math.round(v).toLocaleString('pt-BR')}`;
 };
 
 GLR.formatCurrencyFull = (v) =>

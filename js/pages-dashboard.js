@@ -118,6 +118,13 @@ async function _dashBuscarVendasPorDia() {
 
   const porDia = {}; // 'DD/MM' -> { pedidos, comissao, faturamento }
   const porCanal = {}; // 'Mercado Livre'/'Shopee'/'Amazon'/... -> { pedidos, comissao, faturamento }
+  // Crescimento por canal: mesmo período do mês anterior (dia 1 até o mesmo dia),
+  // só com lojas da base que cobrem os dois meses — loja nova ou sem histórico
+  // entrando de um lado só faria o canal "crescer" sem ter crescido.
+  const cmpCanal = {}; // canal -> { atual, ant, lojas }
+  const iniAntD = new Date(ano, mesN - 2, 1), fimAntD = new Date(ano, mesN - 1, 0);
+  const iniAnt = `${iniAntD.getFullYear()}-${pad(iniAntD.getMonth()+1)}-01`;
+  const fimAnt = `${iniAntD.getFullYear()}-${pad(iniAntD.getMonth()+1)}-${pad(Math.min(parseInt(dataTo.slice(8)), fimAntD.getDate()))}`;
   const NOME_CANAL = { meli:'Mercado Livre', ml:'Mercado Livre', mercadolivre:'Mercado Livre', shopee:'Shopee', amazon:'Amazon', magalu:'Magalu' };
   // Comissão da GLR é por UNIDADE vendida (valorPorVenda × quantidade), não um valor
   // fixo por pedido — um pedido com 3 unidades do mesmo produto conta 3x, não 1x.
@@ -157,6 +164,12 @@ async function _dashBuscarVendasPorDia() {
       const infoBase = base && BaseDados.mktDe(mkt) ? base[BaseDados.chave(mkt, conta.param_to_use?.shopId || conta.param_to_use?.meliUserId || conta.external_id)] : null;
       if (infoBase && BaseDados.cobre(infoBase, primeiroDia)) {
         lojasBase++;
+        if (BaseDados.cobre(infoBase, iniAnt)) {
+          const x = cmpCanal[NOME_CANAL[mkt] || mkt] = cmpCanal[NOME_CANAL[mkt] || mkt] || { atual: 0, ant: 0, lojas: 0 };
+          x.atual += BaseDados.somar(infoBase, primeiroDia, dataTo).faturamento || 0;
+          x.ant += BaseDados.somar(infoBase, iniAnt, fimAnt).faturamento || 0;
+          x.lojas++;
+        }
         for (const [dia, v] of Object.entries(infoBase.dias || {})) {
           if (dia < primeiroDia || dia > dataTo || !(v.pedidos > 0)) continue;
           const [, mm, dd] = dia.split('-');
@@ -302,9 +315,9 @@ async function _dashBuscarVendasPorDia() {
   const atualizadoEm = Date.now();
   const mesKey = `${ano}-${pad(mesN)}`;
   localStorage.setItem(STORAGE_VENDAS_DIA, JSON.stringify({
-    mesKey, atualizadoEm, lojasBase, lojasAPI,
+    mesKey, atualizadoEm, lojasBase, lojasAPI, periodoAnt: { de: iniAnt, ate: fimAnt },
     dias: dias.map(d => ({ data: d, pedidos: porDia[d].pedidos, comissao: porDia[d].comissao, faturamento: porDia[d].faturamento })),
-    canais: Object.keys(porCanal).map(nome => ({ nome, pedidos: porCanal[nome].pedidos, comissao: porCanal[nome].comissao, faturamento: porCanal[nome].faturamento })),
+    canais: Object.keys(porCanal).map(nome => ({ nome, pedidos: porCanal[nome].pedidos, comissao: porCanal[nome].comissao, faturamento: porCanal[nome].faturamento, cmp: cmpCanal[nome] || null })),
   }));
 
   window._dashBuscandoVendasDia = false;
@@ -513,7 +526,7 @@ Router.register('dashboard', (params, el) => {
         <div class="section-header">
           <div>
             <div class="section-title">Faturamento por canal</div>
-            <div class="section-subtitle">Concentração no mesmo período</div>
+            <div class="section-subtitle" id="dash-canal-sub">Concentração no mesmo período</div>
           </div>
         </div>
         <div class="dx-canal">
@@ -789,6 +802,14 @@ Router.register('dashboard', (params, el) => {
           }
         });
         const totalFat = canais.reduce((s,c)=>s+c.faturamento,0);
+        const pa = vd.periodoAnt, dm = iso => iso.slice(8) + '/' + iso.slice(5, 7);
+        const sub = document.getElementById('dash-canal-sub');
+        if (sub && pa) sub.textContent = `Mês atual × mesmo período do mês passado (${dm(pa.de)} a ${dm(pa.ate)})`;
+        const variacao = x => {
+          if (!x || !(x.ant > 0)) return `<div style="font-size:11px;color:var(--text-muted);">sem histórico para comparar</div>`;
+          const v = (x.atual - x.ant) / x.ant * 100, cor = v >= 1 ? 'var(--green)' : v <= -1 ? 'var(--red)' : 'var(--text-muted)';
+          return `<div style="font-size:11px;font-weight:700;color:${cor};" title="${x.lojas} loja${x.lojas !== 1 ? 's' : ''} com os dois meses na base: ${GLR.formatCurrencyFull(x.atual)} agora × ${GLR.formatCurrencyFull(x.ant)} no mês passado">${v >= 1 ? '▲' : v <= -1 ? '▼' : '='} ${Math.abs(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% vs mês passado</div>`;
+        };
         legendaCanal.innerHTML = canais.map((c,i) => {
           const pct = totalFat>0 ? (c.faturamento/totalFat*100) : 0;
           return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
@@ -796,6 +817,7 @@ Router.register('dashboard', (params, el) => {
             <div style="flex:1;font-size:13px;font-weight:600;">${c.nome}</div>
             <div style="text-align:right;">
               <div style="font-size:13px;font-weight:700;">${GLR.formatCurrency(c.faturamento)}</div>
+              ${variacao(c.cmp)}
               <div style="font-size:11px;color:var(--text-muted);">${pct.toFixed(1)}% · comissão ${GLR.formatCurrency(c.comissao)}</div>
             </div>
           </div>`;
