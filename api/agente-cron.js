@@ -46,7 +46,7 @@ const medicaoAds = require('./_medicao-ads');
 // Mural dos agentes de Estoque e de Margem (calculado pelo sincronizador)
 const estoqueMargem = require('./_estoque-margem');
 async function lerSinais(mkt, conta) {
-  const rows = await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${encodeURIComponent(conta)}&recurso=in.(sinais,promocoes)&select=recurso,cursor`).catch(() => []);
+  const rows = await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${encodeURIComponent(conta)}&recurso=in.(sinais,promocoes,reputacao)&select=recurso,cursor`).catch(() => []);
   const c = rows.find(r => r.recurso === 'sinais')?.cursor;
   if (!c || Date.now() - (c.em || 0) > 12 * 3600 * 1000) return null; // aviso velho não decide nada
   // Agente de Promoções: produto em promoção usa a margem NO PREÇO DA PROMOÇÃO (menor)
@@ -58,6 +58,13 @@ async function lerSinais(mkt, conta) {
       if (it.aa == null || ep.aa < it.aa) { it.aa = ep.aa; it.m = ep.m; it.nm = ep.m <= 0 ? 'negativa' : ep.aa < 3 ? 'apertada' : 'ok'; }
       it.pr = { tipo: ep.tipo, preco: ep.preco, fim: ep.fim || null };
     }
+  }
+  // Agente de Reputação: conta em risco e produtos com reclamação/devolução repetida
+  const rp = rows.find(r => r.recurso === 'reputacao')?.cursor;
+  if (rp && Date.now() - (rp.em || 0) < 24 * 3600 * 1000) {
+    c.reputacao = { risco: rp.risco || null, motivo: rp.riscoMotivo || '' };
+    c.itens = c.itens || {};
+    for (const [id, x] of Object.entries(rp.itens || {})) { c.itens[id] = c.itens[id] || { n: x.produto || id, vd: 0 }; c.itens[id].rp = x.motivo; }
   }
   return c;
 }
@@ -741,6 +748,8 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       const metaEf = metaMargem ?? cfg.meta_acos;
       const txtMeta = metaMargem != null ? `meta do produto (${metaEf}% — limite da margem de ${aviso.m}%${aviso.promo ? ' no preço da promoção' : ''}, pelo agente de ${aviso.promo ? 'Promoções' : 'Margem'})` : `meta (${cfg.meta_acos}%)`;
       const estoqueSegura = aviso && (aviso.ne === 'zerado' || aviso.ne === 'critico' || (aviso.dias != null && aviso.dias <= 10));
+      // Reputação: conta em risco ou produto com reclamações repetidas não recebe aceleração
+      const reputacaoSegura = sinais?.reputacao?.risco === 'alto' ? `a reputação da conta está em risco (${sinais.reputacao.motivo})` : aviso?.rp ? `${aviso.nome} tem ${aviso.rp}` : null;
 
       // Produto sem estoque e a campanha ainda gastando → sugere pausar (aprovação)
       if (aviso?.ne === 'zerado' && diario.gastoOntem > 0 && pausaEstoquePendente.has(String(c.campaign_id))) continue;
@@ -804,6 +813,10 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       // eficiente — a conta como um todo já estaria investindo mais que o
       // saudável em ADS.
       if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= metaEf * 0.7 && (budgetAtual > 0 || temRoas)) {
+        if (reputacaoSegura) {
+          colaboracoes.push({ de: 'reputacao', campanha: nome, texto: `segurei o aumento de "${nome}" (ACOS ${acosTxt}): ${reputacaoSegura}` });
+          continue;
+        }
         if (estoqueSegura) {
           colaboracoes.push({ de: 'estoque', campanha: nome, texto: `segurei o aumento de "${nome}" (ACOS ${acosTxt}): ${aviso.nome} ${aviso.ne === 'zerado' ? 'está sem estoque' : `acaba em ~${Math.round(aviso.dias)} dia(s)`}` });
           continue;
@@ -1039,7 +1052,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
 
     // Colaboração com os agentes de Estoque e de Margem (um registro por revisão)
     if (colaboracoes.length) {
-      await logar('sistema', `Colaboração com Estoque e Margem — ${colaboracoes.length} decisão(ões)`,
+      await logar('sistema', `Colaboração com Estoque e Margem — ${colaboracoes.length} decisão(ões)`, // título mantido: o Escritório reconhece por ele
         colaboracoes.slice(0, 12).map(x => `• ${x.texto}`).join('\n'), { colaboracoes: colaboracoes.slice(0, 30) }, 'executado');
     }
 

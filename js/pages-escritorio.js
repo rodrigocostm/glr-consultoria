@@ -29,6 +29,7 @@ Router.register('escritorio', (params, el) => {
     estoque: { nome: 'Estoque', cargo: 'Calcula em quantos dias cada produto acaba, a cada 3 h', cor: '#0f9f6e', rot: 'Dados' },
     margem: { nome: 'Margem', cargo: 'Calcula a margem e o ACOS máximo de cada produto, a cada 3 h', cor: '#d93f3f', rot: 'Dados' },
     promo:  { nome: 'Promoções', cargo: 'Escolhe, 1x por dia, as promoções que cabem na margem e no estoque', cor: '#db2777', rot: 'Vendas' },
+    rep:    { nome: 'Reputação e Atendimento', cargo: 'Vigia perguntas, reclamações e a saúde das contas a cada 30 min', cor: '#0891b2', rot: 'Clientes' },
     oport:  { nome: 'Caçador de Oportunidades', cargo: 'Procura produtos com espaço para crescer', cor: '#7c3aed', rot: 'Dados' },
     shopee: { nome: 'ADS Shopee', cargo: 'Revisa as campanhas às 07:30 e ajusta sozinho dentro dos limites', cor: '#d9622b', rot: 'ADS' },
     ml:     { nome: 'Copiloto ADS ML', cargo: 'Analisa as campanhas às 07:30 e monta o pacote do dia', cor: '#d9a400', rot: 'ADS' },
@@ -37,7 +38,7 @@ Router.register('escritorio', (params, el) => {
   const ANALISTA = { nome: 'Analista', cor: 'var(--text-secondary)' };
 
   const state = {
-    carregando: true, erro: null, logs: [], sync: [], sinais: [], rels: [], agenda: {}, pendentes: 0,
+    carregando: true, erro: null, logs: [], sync: [], sinais: [], repu: [], rels: [], agenda: {}, pendentes: 0,
     filtro: (() => { try { return localStorage.getItem('glr_esc_filtro') || 'todos'; } catch (e) { return 'todos'; } })(),
     atualizadoEm: 0, novos: new Set(), vistos: new Set(),
   };
@@ -59,7 +60,7 @@ Router.register('escritorio', (params, el) => {
     const desde = new Date(Date.now() - 48 * HORA).toISOString();
     try {
       const COLS = 'id,conta_id,cliente_nome,tipo,titulo,explicacao,dados,resultado,origem,criado_em';
-      const [logs, antigos, sync, rels, agenda, pend, sinais] = await Promise.all([
+      const [logs, antigos, sync, rels, agenda, pend, sinais, repu] = await Promise.all([
         _sb.from('glr_agente_log').select(COLS).gte('criado_em', desde).order('criado_em', { ascending: false }).limit(800),
         // ações antigas que foram detectadas no painel ou medidas nas últimas 48 h
         _sb.from('glr_agente_log').select(COLS).lt('criado_em', desde).gte('criado_em', new Date(Date.now() - 46 * DIA).toISOString())
@@ -69,12 +70,14 @@ Router.register('escritorio', (params, el) => {
         _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('conta_id', 'agente').eq('recurso', 'agenda'),
         _sb.from('glr_agente_log').select('id', { count: 'exact', head: true }).eq('tipo', 'alerta').eq('resultado', 'so_alerta'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,registros,resumo:cursor->resumo,destaques:cursor->destaques').eq('recurso', 'sinais'),
+        _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,resumo:cursor->resumo').eq('recurso', 'reputacao'),
       ]);
       if (logs.error) throw logs.error;
       const vistos = new Set();
       state.logs = [...(logs.data || []), ...(antigos.error ? [] : antigos.data || [])].filter(l => !vistos.has(l.id) && vistos.add(l.id));
       state.sync = sync.data || [];
       state.sinais = sinais.error ? [] : sinais.data || [];
+      state.repu = repu.error ? [] : repu.data || [];
       state.rels = (rels.data || []).map(({ resumo, ...r }) => r); // o texto do relatório não é usado aqui
       state.agenda = agenda.data?.[0]?.cursor?.rodadas || {};
       state.pendentes = pend.count || 0;
@@ -96,7 +99,7 @@ Router.register('escritorio', (params, el) => {
     // Agentes de ADS (Shopee e ML)
     const sugestoesPor = new Map(); // conta + janela de 10 min → sugestões criadas juntas
     for (const l of state.logs) {
-      const d = l.dados || {}, ml = d.marketplace === 'ml', ag = d.agente === 'promocoes' ? 'promo' : ml ? 'ml' : 'shopee';
+      const d = l.dados || {}, ml = d.marketplace === 'ml', ag = d.agente === 'promocoes' ? 'promo' : d.agente === 'reputacao' ? 'rep' : ml ? 'ml' : 'shopee';
       const t = new Date(l.criado_em).getTime(), cli = nomeConta(l.conta_id, l.cliente_nome);
       const humano = l.origem && l.origem !== 'cron';
       const recente = t >= limite; // ação antiga entra só pela detecção/medição de agora
@@ -123,7 +126,7 @@ Router.register('escritorio', (params, el) => {
         }
         else if (/^Colaboração com Estoque e Margem/.test(l.titulo)) {
           const cs = d.colaboracoes || [];
-          const quem = [cs.some(x => x.de === 'estoque') ? '@Estoque' : '', cs.some(x => x.de === 'margem') ? '@Margem' : '', cs.some(x => x.de === 'promocoes') ? '@Promoções' : ''].filter(Boolean).join(', ');
+          const quem = [cs.some(x => x.de === 'estoque') ? '@Estoque' : '', cs.some(x => x.de === 'margem') ? '@Margem' : '', cs.some(x => x.de === 'promocoes') ? '@Promoções' : '', cs.some(x => x.de === 'reputacao') ? '@Reputação' : ''].filter(Boolean).join(', ');
           add(ag, t, `Levei em conta os avisos de ${quem || '@Estoque'} na <b>${h(cli)}</b>: ${cs.slice(0, 3).map(x => h(x.texto)).join('; ')}${cs.length > 3 ? ` (+${cs.length - 3})` : ''}.`, { conta: cli, colab: true });
         }
         else if (/Aumento represado|Maturação segurando/.test(l.titulo)) add(ag, t, `${h(corta(l.titulo, 90))} (<b>${h(cli)}</b>) — ${h(primeiraFrase(l.explicacao))}`, { conta: cli, menor: true });
@@ -191,6 +194,24 @@ Router.register('escritorio', (params, el) => {
       } else add('margem', ok, `@Analista, não consegui calcular a margem da <b>${h(cli)}</b>: nenhum dos ${N(r.produtos)} produtos que venderam tem custo cadastrado na tela Produtos.`, { menor: true, chama: true });
     }
 
+    // Reputação e Atendimento: último estado de cada loja
+    for (const s of state.repu) {
+      const ok = s.ultimo_sucesso ? new Date(s.ultimo_sucesso).getTime() : 0, tent = s.ultima_tentativa ? new Date(s.ultima_tentativa).getTime() : 0;
+      const cli = nomeConta(s.conta_id);
+      if (s.ultimo_erro && tent >= limite && tent >= ok) { add('rep', tent, `@Analista, não consegui ler reputação e atendimento da <b>${h(cli)}</b> (${h(s.marketplace)}): ${h(corta(s.ultimo_erro, 120))}`, { erro: true, chama: true }); continue; }
+      if (ok < limite || !s.resumo) continue;
+      const r = s.resumo, partes = [];
+      if (r.perguntas) partes.push(`${N(r.perguntas)} pergunta(s) sem resposta${r.perguntaMaisAntigaH != null ? ` (a mais antiga há ${r.perguntaMaisAntigaH} h)` : ''}${r.rascunhos ? `, ${N(r.rascunhos)} com rascunho pronto` : ''}`);
+      if (r.comPrazo) partes.push(`${N(r.comPrazo)} reclamação(ões) com ação obrigatória e prazo`);
+      if (r.pedemResposta) partes.push(`${N(r.pedemResposta)} devolução(ões) pedindo resposta`);
+      if (r.mensagens) partes.push(`${N(r.mensagens)} mensagem(ns) pós-venda não lida(s)`);
+      const ads = s.marketplace === 'ml' ? '@Copiloto ADS ML' : '@ADS Shopee';
+      const risco = r.risco === 'alto' ? ` Reputação em risco (${h(r.riscoMotivo || '')}): ${ads}, não acelerem esta conta.` : r.risco === 'atencao' && r.riscoMotivo ? ` Atenção: ${h(r.riscoMotivo)}.` : '';
+      const prob = r.produtosProblema ? ` ${N(r.produtosProblema)} produto(s) com reclamação repetida ficam sem aceleração no ADS.` : '';
+      if (partes.length || risco || prob) add('rep', ok, `${partes.length ? `@Analista, na <b>${h(cli)}</b>: ${partes.join('; ')}.` : `Na <b>${h(cli)}</b>:`}${risco}${prob}`, { chama: !!partes.length || r.risco === 'alto', erro: r.risco === 'alto' });
+      else add('rep', ok, `Atendimento em dia na <b>${h(cli)}</b>${r.nivel ? ` · reputação ${h(r.nivel.toLowerCase())}` : ''}.`, { menor: true });
+    }
+
     // Coletor / Vigia / Caçador: último estado de cada loja (agrupado por rodada)
     const rodadas = new Map();
     for (const s of state.sync) {
@@ -228,8 +249,8 @@ Router.register('escritorio', (params, el) => {
       const hoje = minhas.filter(m => new Date(m.t).toDateString() === new Date().toDateString());
       const erroRecente = minhas.filter(m => m.erro && agora - m.t < 6 * HORA).length;
       let tentativa = 0;
-      if (['sync', 'precos', 'oport', 'estoque', 'margem', 'promo'].includes(k)) {
-        const rec = k === 'sync' ? ['pedidos', 'ads', 'resumo'] : k === 'estoque' || k === 'margem' ? ['sinais'] : k === 'promo' ? ['promocoes'] : [k === 'precos' ? 'precos' : 'oportunidades'];
+      if (['sync', 'precos', 'oport', 'estoque', 'margem', 'promo', 'rep'].includes(k)) {
+        const rec = k === 'sync' ? ['pedidos', 'ads', 'resumo'] : k === 'estoque' || k === 'margem' ? ['sinais'] : k === 'promo' ? ['promocoes'] : k === 'rep' ? ['reputacao'] : [k === 'precos' ? 'precos' : 'oportunidades'];
         state.sync.filter(s => rec.includes(s.recurso)).forEach(s => { const t = s.ultima_tentativa ? new Date(s.ultima_tentativa).getTime() : 0; if (t > tentativa) tentativa = t; });
       }
       const ativo = (ult && agora - ult.t < 4 * MIN) || (tentativa && agora - tentativa < 3 * MIN);
@@ -238,6 +259,7 @@ Router.register('escritorio', (params, el) => {
       else if (k === 'precos') prox = 'confere de novo a cada 4 h';
       else if (k === 'estoque' || k === 'margem') prox = 'recalcula a cada 3 h e antes das 07:00';
       else if (k === 'promo') prox = 'analisa 1x por dia, depois das 06:00';
+      else if (k === 'rep') prox = 'confere de novo a cada 30 min';
       else if (k === 'rel') prox = hoje.length ? 'próximo relatório amanhã, logo após a revisão' : 'escreve logo após a revisão das 07:30';
       else if (k === 'shopee' || k === 'ml') {
         const feitaHoje = hoje.some(m => /revisão diária|Analisei/i.test(m.texto));
@@ -303,7 +325,7 @@ Router.register('escritorio', (params, el) => {
       const id = `${m.de}|${m.t}|${m.texto.length}`;
       const novo = state.vistos.size && !state.vistos.has(id);
       state.novos.add(id);
-      const texto = m.texto.replace(/@(Analista|ADS Shopee|Coletor|Copiloto ADS ML|Redator|Estoque|Margem|Promoções)/g, '<span class="esc-mencao">@$1</span>');
+      const texto = m.texto.replace(/@(Analista|ADS Shopee|Coletor|Copiloto ADS ML|Redator|Estoque|Margem|Promoções|Reputação)/g, '<span class="esc-mencao">@$1</span>');
       return `${sep}<div class="esc-msg ${m.de === 'analista' ? 'humano' : ''} ${m.menor ? 'menor' : ''} ${m.erro ? 'erro' : ''} ${novo ? 'novo' : ''}" style="--c:${a.cor}">
         <div class="esc-av">${h(a.nome.split(' ').filter(p => p.length > 2).map(p => p[0]).join('').slice(0, 2).toUpperCase())}</div>
         <div class="esc-bal"><div class="esc-de"><b>${h(a.nome)}</b><span>${hora(m.t)}</span></div><div class="esc-txt">${texto}</div></div>
