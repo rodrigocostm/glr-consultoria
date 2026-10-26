@@ -181,7 +181,7 @@ function setupClienteHandlers() {
   window._cliComPrevia = () => {
     const el = document.getElementById('c-com-previa'); if (!el) return;
     const c = window._cliComLer(), m = GLR.comissao.modelo(c), R = x => 'R$ ' + x.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    if (m.modelo === 'fixo') { const n1 = Math.max(1, Math.round(m.franquia * 0.6)), n2 = Math.round(m.franquia * 1.2) || 1; el.textContent = `Ex.: ${n1} pedidos no mês → ${R(GLR.comissao.fixoDoMes(m, n1))} · ${n2} pedidos → ${R(GLR.comissao.fixoDoMes(m, n2))}`; }
+    if (m.modelo === 'fixo') { if (!m.franquia || !m.excedente) { el.textContent = 'Preencha o fixo, a quantidade de pedidos e o valor por pedido acima dela.'; return; } const n1 = Math.max(1, Math.round(m.franquia * 0.6)), n2 = Math.round(m.franquia * 1.2) || 1; el.textContent = `Ex.: ${n1} pedidos no mês → ${R(GLR.comissao.fixoDoMes(m, n1))} · ${n2} pedidos → ${R(GLR.comissao.fixoDoMes(m, n2))}`; }
     else if (m.modelo === 'ticket') el.textContent = `Ex.: pedido de R$ 35 → ${R(GLR.comissao.dePedido(c, 35, 1))} · pedido de R$ 120 → ${R(GLR.comissao.dePedido(c, 120, 1))}`;
     else el.textContent = m.valor ? `Ex.: 100 unidades vendidas → ${R(100 * m.valor)}` : '';
   };
@@ -245,7 +245,7 @@ function setupClienteHandlers() {
               <button type="button" class="btn btn-secondary btn-sm" onclick="window._cliComFaixa()">+ faixa</button>
             </div>
             <div id="c-com-previa" class="cli-com-previa"></div>
-            <style>.cli-com{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}.cli-com label,.cli-faixa label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-secondary);min-width:150px}.cli-faixa{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px}.cli-com-previa{font-size:12px;color:var(--text-muted);margin-top:6px}</style>`;
+            <style>.cli-com{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}.cli-com[hidden]{display:none}.cli-com label,.cli-faixa label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-secondary);min-width:150px}.cli-faixa{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px}.cli-com-previa{font-size:12px;color:var(--text-muted);margin-top:6px}</style>`;
           })()}
         </div>
         <div class="form-group">
