@@ -46,9 +46,16 @@ function renderShell() {
     <div class="card" style="padding:20px;margin-bottom:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
         <div class="section-title" style="font-size:15px;">Campanhas de ADS</div>
-        <button class="btn btn-primary btn-sm" id="track-btn-ads" onclick="window._trackEscanearAds()">Verificar mudanças agora</button>
+        <button class="btn btn-secondary btn-sm" id="track-btn-ads" title="Compara orçamento, status e meta ROAS de agora com a última verificação — pega mudança feita direto no painel do marketplace" onclick="window._trackEscanearAds()">Procurar mudanças feitas fora do sistema</button>
       </div>
-      <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;">Varre orçamento, status e meta ROAS de todas as campanhas Mercado Livre e Shopee vinculadas.</p>
+      <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 12px;">Tudo que o agente mudou (e quando o analista aprovou ou executou pelo sistema) entra aqui sozinho, com a hora certa e o motivo. No Mercado Livre entra o que o agente conferiu que foi aplicado no painel. O botão ao lado procura o que foi mexido direto no Seller Center / Publicidade.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <select id="track-ads-f-conta" class="form-input" style="min-width:220px;" onchange="window._trackAdsFiltro()"><option value="">Todas as contas</option></select>
+        <select id="track-ads-f-campo" class="form-input" onchange="window._trackAdsFiltro()"><option value="">Tudo</option><option>Meta ROAS</option><option>Orçamento diário</option><option>Status</option><option>Produto na campanha</option></select>
+        <select id="track-ads-f-quem" class="form-input" onchange="window._trackAdsFiltro()"><option value="">Qualquer autor</option><option value="agente">Agente</option><option value="analista">Analista</option><option value="fora">Fora do sistema</option></select>
+        <select id="track-ads-f-dias" class="form-input" onchange="window._trackAdsFiltro()"><option value="7">Últimos 7 dias</option><option value="30" selected>Últimos 30 dias</option><option value="60">Últimos 60 dias</option></select>
+        <input id="track-ads-f-busca" class="form-input" placeholder="Buscar campanha…" style="min-width:180px;flex:1;" oninput="window._trackAdsFiltro()">
+      </div>
       <div id="track-ads-status" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
       <div id="track-ads-log"></div>
     </div>
@@ -138,7 +145,10 @@ async function carregarContas() {
       });
     }
 
+    const selC = document.getElementById('track-ads-f-conta');
+    if (selC) selC.innerHTML = `<option value="">Todas as contas</option>` + contasAds.map(c => `<option value="${c.external_id}">${c.marketplace === 'shopee' ? 'Shopee' : 'ML'} · ${nomeAdsConta(c.external_id)}</option>`).sort((a, b) => a.replace(/<[^>]+>/g, '').localeCompare(b.replace(/<[^>]+>/g, ''))).join('');
     renderAdsLog();
+    carregarAlteracoesServidor();
   } catch(e) {
     console.warn('[Track] Erro ao carregar contas:', e.message);
   }
@@ -219,33 +229,115 @@ window._trackEscanearAds = async function() {
   const logFinal = logArr.slice(0, 3000); // guarda só as 3000 mudanças mais recentes
   salvarJSON(K_ADS_LOG, logFinal);
 
-  if (btn) { btn.disabled = false; btn.textContent = 'Verificar mudanças agora'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Procurar mudanças feitas fora do sistema'; }
   const novasMudancas = logArr.length - totalAntes;
-  if (statusEl) statusEl.textContent = `Verificado em ${new Date().toLocaleString('pt-BR')} — ${contasVerificadas} conta(s), ${novasMudancas} mudança(s) nova(s) detectada(s).`;
   renderAdsLog();
+  if (statusEl) statusEl.textContent = `Verificado em ${new Date().toLocaleString('pt-BR')} — ${contasVerificadas} conta(s), ${novasMudancas} mudança(s) nova(s) achada(s) fora do registro do agente.`;
 };
+
+// ── ADS: alterações registradas no servidor (glr_agente_log) ──
+// O agente grava cada mudança que faz (e o analista, quando aprova ou executa
+// pelo sistema) — com hora exata, de → para e o motivo. No ML a integração não
+// altera, mas o agente confere e marca o que foi aplicado no painel.
+let adsServidor = [];
+const mktDaConta = id => { const c = contasAds.find(x => String(x.external_id) === String(id)); return c ? (c.marketplace === 'shopee' ? 'shopee' : 'ml') : null; };
+function nomeAdsConta(id) {
+  const mkt = mktDaConta(id);
+  const n = window.GLR?.nomeConta ? GLR.nomeConta(mkt || 'ml', id) : '';
+  if (n && !/sem cliente/.test(n)) return n;
+  const c = contasAds.find(x => String(x.external_id) === String(id));
+  return c && window._trackNomeConta ? window._trackNomeConta(c) : String(id);
+}
+const xRoas = v => v == null || v === '' ? '—' : `${String(Math.round(v * 10) / 10).replace('.', ',')}x`;
+function alteracoesDoLog(l) {
+  const d = l.dados || {}, out = [];
+  const camp = String(d.campaign_id ?? d.campanha_id ?? '');
+  const nomeTit = String(l.titulo || '').split(' — ').slice(1).join(' — ');
+  const base = { id: 'srv-' + (l.id || Math.random()), quando: d.aplicado_em || l.criado_em, contaId: String(l.conta_id), campanhaId: camp, campanhaNome: d.campanha || nomeTit || (camp ? `#${camp}` : '—'), porque: l.explicacao || '' };
+  if (l.tipo === 'decisao') {
+    const quem = l.origem === 'analista' ? 'Analista (pelo sistema)' : l.origem === 'aprovacao_manual' ? 'Agente · aprovado pelo analista' : 'Agente';
+    const tipoQuem = l.origem === 'analista' ? 'analista' : 'agente';
+    if (d.roas_para != null) out.push({ ...base, campo: 'Meta ROAS', de: xRoas(d.roas_de), para: xRoas(d.roas_para), quem, tipoQuem });
+    if (d.budget_para != null) out.push({ ...base, campo: 'Orçamento diário', de: d.budget_de != null ? fmtR(d.budget_de) : '—', para: fmtR(d.budget_para), quem, tipoQuem });
+    if (d.pausada || /^Campanha pausada/.test(l.titulo || '') || /Aprovado manualmente — .*paus/i.test(l.titulo || '')) out.push({ ...base, campo: 'Status', de: 'ativa', para: 'pausada', quem, tipoQuem });
+    if (d.retomada) out.push({ ...base, campo: 'Status', de: 'pausada', para: 'ativa', quem, tipoQuem });
+    return out;
+  }
+  // ML: sugestão do agente que foi aplicada no painel (conferida ou marcada como feita)
+  const quem = d.aplicado_por === 'detectado' ? 'Analista no ML · conferido pelo agente' : 'Analista no ML · marcado como feito';
+  const tipoQuem = 'analista';
+  const porque = base.porque + (d.deteccao ? ` (o agente conferiu: ${d.deteccao})` : '');
+  const prod = d.produto ? `"${String(d.produto).slice(0, 50)}"` : 'produto';
+  switch (d.acao) {
+    case 'roas_target': out.push({ ...base, porque, campo: 'Meta ROAS', de: xRoas(d.de), para: xRoas(d.para), quem, tipoQuem }); break;
+    case 'orcamento': out.push({ ...base, porque, campo: 'Orçamento diário', de: d.de != null ? fmtR(d.de) : '—', para: d.para != null ? fmtR(d.para) : '—', quem, tipoQuem }); break;
+    case 'pausar': out.push({ ...base, porque, campo: 'Status', de: 'ativa', para: 'pausada', quem, tipoQuem }); break;
+    case 'retirar_produto': out.push({ ...base, porque, campo: 'Produto na campanha', de: prod, para: 'retirado', quem, tipoQuem }); break;
+    case 'mover_produto': out.push({ ...base, porque, campo: 'Produto na campanha', de: prod, para: `movido para ${d.destino || 'outra campanha'}`, quem, tipoQuem }); break;
+    case 'adicionar_produto': out.push({ ...base, porque, campo: 'Produto na campanha', de: prod, para: `adicionado${d.destino ? ` em ${d.destino}` : ''}`, quem, tipoQuem }); break;
+  }
+  return out;
+}
+async function carregarAlteracoesServidor() {
+  const statusEl = document.getElementById('track-ads-status');
+  if (!window._sb) return;
+  try {
+    const desde = new Date(Date.now() - 60 * 864e5).toISOString();
+    const linhas = [];
+    for (let off = 0; off < 6000; off += 1000) {
+      const { data, error } = await _sb.from('glr_agente_log').select('id,conta_id,tipo,titulo,explicacao,criado_em,dados,origem')
+        .eq('resultado', 'executado').in('tipo', ['decisao', 'alerta']).gte('criado_em', desde).order('criado_em', { ascending: false }).range(off, off + 999);
+      if (error) throw error;
+      linhas.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    adsServidor = linhas.flatMap(alteracoesDoLog);
+    renderAdsLog();
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Não consegui ler as alterações do agente: ' + (e.message || e);
+  }
+}
+window._trackAdsFiltro = () => renderAdsLog();
 
 function renderAdsLog() {
   const el = document.getElementById('track-ads-log');
   if (!el) return;
-  const logArr = lerJSON(K_ADS_LOG, []);
-  if (!logArr.length) {
-    el.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:13px;background:var(--bg-card);border-radius:10px;">Nenhuma mudança registrada ainda. Clique em "Verificar mudanças agora" — a primeira vez só salva o retrato inicial, mudanças aparecem a partir da segunda verificação.</div>`;
+  const num = t => parseFloat(String(t).replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3})/g, '').replace(',', '.'));
+  // Mudança achada pela comparação de retratos que é a mesma que o agente já
+  // registrou (mesma campanha, mesmo campo, mesmo valor final, até 3 dias depois) sai da lista
+  const doServidor = adsServidor;
+  const locais = lerJSON(K_ADS_LOG, []).filter(l => !doServidor.some(s => s.campanhaId === String(l.campanhaId) && s.campo === l.campo
+    && (num(s.para) === num(l.para) || s.para === l.para) && Math.abs(new Date(l.quando) - new Date(s.quando)) < 3 * 864e5))
+    .map(l => ({ ...l, quem: 'Fora do sistema · achado na verificação', tipoQuem: 'fora', porque: 'Mudança encontrada comparando com a verificação anterior — a hora é a da verificação, não a da mudança.' }));
+  const v = id => document.getElementById(id)?.value || '';
+  const fConta = v('track-ads-f-conta'), fCampo = v('track-ads-f-campo'), fQuem = v('track-ads-f-quem'), fDias = parseInt(v('track-ads-f-dias')) || 30, fBusca = v('track-ads-f-busca').toLowerCase().trim();
+  const corte = Date.now() - fDias * 864e5;
+  const todas = [...doServidor, ...locais].filter(l => new Date(l.quando).getTime() >= corte
+    && (!fConta || String(l.contaId) === fConta) && (!fCampo || l.campo === fCampo) && (!fQuem || l.tipoQuem === fQuem)
+    && (!fBusca || String(l.campanhaNome || '').toLowerCase().includes(fBusca) || String(l.campanhaId).includes(fBusca)))
+    .sort((a, b) => new Date(b.quando) - new Date(a.quando));
+  const statusEl = document.getElementById('track-ads-status');
+  if (statusEl && !statusEl.dataset.fixo) statusEl.textContent = `${todas.length} alteração(ões) no período${todas.length > 400 ? ' — mostrando as 400 mais recentes' : ''}.`;
+  if (!todas.length) {
+    el.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:13px;background:var(--bg-card);border-radius:10px;">Nenhuma alteração no período com esses filtros.</div>`;
     return;
   }
-  el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const corQuem = { agente: 'var(--accent)', analista: 'var(--green)', fora: 'var(--orange)' };
+  el.innerHTML = `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">
     <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:none;">
-      <th style="text-align:left;padding:6px 8px;">Quando</th><th style="text-align:left;padding:6px 8px;">Conta</th><th style="text-align:left;padding:6px 8px;">Campanha</th><th style="text-align:left;padding:6px 8px;">Campo</th><th style="text-align:right;padding:6px 8px;">De</th><th style="text-align:right;padding:6px 8px;">Para</th>
+      <th style="text-align:left;padding:6px 8px;">Quando</th><th style="text-align:left;padding:6px 8px;">Conta</th><th style="text-align:left;padding:6px 8px;">Campanha</th><th style="text-align:left;padding:6px 8px;">O que mudou</th><th style="text-align:right;padding:6px 8px;">De</th><th style="text-align:right;padding:6px 8px;">Para</th><th style="text-align:left;padding:6px 8px;">Quem</th>
     </tr></thead>
-    <tbody>${logArr.slice(0, 150).map(l => `<tr style="border-top:1px solid var(--border);">
+    <tbody>${todas.slice(0, 400).map(l => `<tr style="border-top:1px solid var(--border);" title="${esc(l.porque)}">
       <td style="padding:6px 8px;font-size:12px;color:var(--text-muted);white-space:nowrap;">${fmtQuando(l.quando)}</td>
-      <td style="padding:6px 8px;font-size:12px;">${l.contaNome}</td>
-      <td style="padding:6px 8px;font-size:12px;">${l.campanhaNome}</td>
-      <td style="padding:6px 8px;font-size:12px;">${l.campo}</td>
-      <td style="padding:6px 8px;font-size:12px;text-align:right;color:var(--text-muted);">${l.de}</td>
-      <td style="padding:6px 8px;font-size:12px;text-align:right;font-weight:600;">${l.para}</td>
+      <td style="padding:6px 8px;font-size:12px;">${esc(l.contaNome || nomeAdsConta(l.contaId))}</td>
+      <td style="padding:6px 8px;font-size:12px;max-width:320px;">${esc(l.campanhaNome)}${l.campanhaId ? ` <span style="color:var(--text-muted);font-size:11px;">#${esc(l.campanhaId)}</span>` : ''}${l.porque ? `<div style="font-size:11px;color:var(--text-muted);white-space:normal;max-height:2.6em;overflow:hidden;">${esc(l.porque)}</div>` : ''}</td>
+      <td style="padding:6px 8px;font-size:12px;white-space:nowrap;">${esc(l.campo)}</td>
+      <td style="padding:6px 8px;font-size:12px;text-align:right;color:var(--text-muted);">${esc(l.de)}</td>
+      <td style="padding:6px 8px;font-size:12px;text-align:right;font-weight:600;">${esc(l.para)}</td>
+      <td style="padding:6px 8px;font-size:11.5px;white-space:nowrap;color:${corQuem[l.tipoQuem] || 'inherit'};font-weight:600;">${esc(l.quem || 'Fora do sistema')}</td>
     </tr>`).join('')}</tbody>
-  </table>`;
+  </table></div>`;
 }
 
 // ── Preços: watchlist manual + escaneio ──
