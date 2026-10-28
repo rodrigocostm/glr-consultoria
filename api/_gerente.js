@@ -34,8 +34,12 @@ function somarDias(dias, de, ate) {
 }
 
 // Ações candidatas de uma loja (cada agente contribui com o que sabe)
+const generico = n => !n || /^(mercado ?livre|meli|ml|shopee)\s*[\d-]*$/i.test(String(n).trim());
+const nomeLoja = L => `${MKT_NOME[L.mkt]} ${generico(L.nome) ? `(final ${String(L.conta).slice(-4)})` : L.nome}`;
+const horasTxt = h => h == null ? '?' : h >= 48 ? `${Math.round(h / 24)} dias` : `${Math.round(h)} h`;
+
 function acoesDaLoja(L, log) {
-  const A = [], tag = `${MKT_NOME[L.mkt]}${L.nome ? ' ' + L.nome : ''}`;
+  const A = [], tag = nomeLoja(L);
   const add = (a) => A.push({ ...a, conta: L.conta, mkt: L.mkt, loja: tag });
   const rp = L.reputacao, sn = L.sinais, pr = L.promocoes, qa = L.qualidade;
   // Reputação e atendimento
@@ -49,7 +53,7 @@ function acoesDaLoja(L, log) {
     }
     const np = rp.resumo?.perguntas || 0;
     if (np) add({ id: `perg:${L.conta}`, quando: 'hoje', quem: 'analista', tipo: 'atendimento', tela: 'atendimento',
-      titulo: `Responder ${np} pergunta(s) sem resposta`, porque: `a mais antiga está há ${rp.resumo.perguntaMaisAntigaH ?? '?'} h${rp.resumo.rascunhos ? `; ${rp.resumo.rascunhos} já com rascunho do agente` : ''} — pergunta parada é venda perdida`, impacto: 'conversão', peso: 600 + Math.min(400, (rp.resumo.perguntaMaisAntigaH || 0) * 10) });
+      titulo: `Responder ${np} pergunta(s) sem resposta`, porque: `a mais antiga está há ${horasTxt(rp.resumo.perguntaMaisAntigaH)}${rp.resumo.rascunhos ? `; ${rp.resumo.rascunhos} já com rascunho do agente` : ''} — pergunta parada é venda perdida`, impacto: 'conversão', peso: 450 + Math.min(200, np * 40) });
     if (rp.resumo?.pedemResposta) add({ id: `devol:${L.conta}`, quando: 'hoje', quem: 'analista', tipo: 'atendimento', tela: 'atendimento',
       titulo: `Responder ${rp.resumo.pedemResposta} devolução(ões) na Shopee`, porque: 'a Shopee pede resposta da loja dentro do prazo', impacto: 'reputação', peso: 900 });
     if (rp.risco === 'alto') add({ id: `rep:${L.conta}`, quando: 'hoje', quem: 'analista', tipo: 'reputacao', tela: 'atendimento',
@@ -87,7 +91,7 @@ function acoesDaLoja(L, log) {
       titulo: `Consertar ${ruins.length} anúncio(s): ${ruins.map(x => corta(x.n, 26)).join(', ')}`, porque: ruins.map(x => corta(x.qa, 70)).join('; '), impacto: 'conversão e exposição', peso: 500 });
     const com = (qa.destaques?.comuns || []).find(c => c.n >= 3);
     if (com) add({ id: `qa-comum:${L.conta}:${com.t.slice(0, 30)}`, quando: 'semana', quem: 'cliente', tipo: 'qualidade', tela: 'qualidade-anuncios',
-      titulo: `${corta(com.t, 60)} (${com.n} anúncios)`, porque: 'a mesma pendência em vários anúncios é ajuste de processo', impacto: 'conversão', peso: 300 + com.n * 10 });
+      titulo: `${corta(com.t, 60)} (${com.n} anúncios)`, porque: 'a mesma pendência em vários anúncios é ajuste de processo', impacto: 'conversão', peso: 150 + Math.min(100, com.n * 2) });
   }
   // ADS: o que espera o analista
   const pend = log.pendentes.filter(l => String(l.conta_id) === L.conta);
@@ -98,6 +102,132 @@ function acoesDaLoja(L, log) {
       porque: econ > 0 ? `~${R$(econ)}/sem de gasto a cortar` : 'passam do limite que o agente aplica sozinho', impacto: econ > 0 ? `~${R$(econ)}/sem` : 'ADS', valor: econ, peso: 800 + econ / 2 });
   }
   return A;
+}
+
+// ── Raio-X do faturamento ─────────────────────────────────────────────
+// De onde a venda veio e para onde foi: últimos 14 dias × os 14 anteriores,
+// produto a produto (pedidos válidos da base), e a causa provável de cada queda
+// cruzando o que os outros agentes sabem: estoque e status do anúncio (Estoque),
+// preço vendido (pedidos), mudança de ADS feita pelo agente ou aplicada no ML
+// (registro dos agentes) e qualidade do anúncio.
+const JANELA = 14;
+const diaDe = iso => new Date(Date.parse(iso) - 3 * 3600e3).toISOString().slice(0, 10);
+const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const dm = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+async function pedidosDaLoja(sbSelect, L, desdeIso) {
+  const rows = [];
+  for (let off = 0; off < 80000; off += 1000) {
+    const r = await sbSelect('glr_pedidos', `marketplace=eq.${L.mkt}&conta_id=eq.${encodeURIComponent(L.conta)}&situacao=eq.valido&criado_em=gte.${encodeURIComponent(desdeIso)}&select=criado_em,itens&order=criado_em.asc&limit=1000&offset=${off}`).catch(() => null);
+    if (!r) return null;
+    rows.push(...r);
+    if (r.length < 1000) break;
+  }
+  return rows;
+}
+
+function causasDaQueda(x, L, mudancas) {
+  const c = [];
+  const sn = L.sinais?.itens?.[x.id];
+  if (sn?.ne === 'zerado') c.push({ t: 'ficou sem estoque', tipo: 'estoque' });
+  else if (sn?.ne === 'critico') c.push({ t: `estoque acabando (~${Math.round(sn.d)} d)`, tipo: 'estoque' });
+  if (sn?.st && !/active|normal/i.test(sn.st)) c.push({ t: `anúncio ${String(sn.st).toLowerCase() === 'paused' ? 'pausado' : String(sn.st).toLowerCase()}`, tipo: 'anuncio' });
+  const pa = x.a.un ? x.a.rec / x.a.un : null, pb = x.b.un ? x.b.rec / x.b.un : null;
+  if (pa && pb && pb > pa * 1.05) c.push({ t: `preço vendido subiu de ${R$(pa)} para ${R$(pb)} (+${pct((pb / pa - 1) * 100)})`, tipo: 'preco' });
+  for (const m of mudancas) c.push(m);
+  const qa = L.qualidade?.itens?.[x.id]?.qa;
+  if (qa) c.push({ t: corta(qa, 90), tipo: 'qualidade' });
+  if (pa && pb && pb < pa * 0.95 && !c.length) c.push({ t: `caiu mesmo com o preço ${pct((1 - pb / pa) * 100)} menor — olhar concorrência e posição`, tipo: 'preco' });
+  return c;
+}
+
+// mudanças de ADS no período que tocam o produto (Shopee: campanha = produto, pelo nome;
+// ML: sugestão aplicada com o anúncio na lista)
+function mudancasAds(x, L, medidos, desdeIso) {
+  const out = [], nx = norm(x.nome).slice(0, 28);
+  for (const l of medidos) {
+    if (String(l.conta_id) !== L.conta || !l.criado_em || diaDe(l.criado_em) < desdeIso) continue;
+    const d = l.dados || {}, quando = dm(diaDe(d.aplicado_em || l.criado_em));
+    const ids = (d.item_ids || []).map(String);
+    if (L.mkt === 'ml' && ids.includes(String(x.id))) {
+      const t = { retirar_produto: 'saiu da campanha', mover_produto: `foi movido para ${d.destino || 'outra campanha'}`, pausar: 'campanha pausada' }[d.acao];
+      if (t) out.push({ t: `${t} em ${quando}`, tipo: 'ads' });
+      continue;
+    }
+    if (L.mkt !== 'shopee') continue;
+    const camp = norm(String(l.titulo || '').split(' — ').slice(1).join(' ')).slice(0, 28);
+    if (!camp || nx.length < 12 || !(camp.startsWith(nx.slice(0, 20)) || nx.startsWith(camp.slice(0, 20)))) continue;
+    if (d.roas_para != null && d.roas_de != null && +d.roas_para > +d.roas_de) out.push({ t: `ROAS da campanha subiu de ${r1(d.roas_de)}x para ${r1(d.roas_para)}x em ${quando} (lance mais conservador)`, tipo: 'ads' });
+    else if (d.budget_para != null && d.budget_de != null && +d.budget_para < +d.budget_de) out.push({ t: `orçamento cortado de ${R$(d.budget_de)} para ${R$(d.budget_para)}/dia em ${quando}`, tipo: 'ads' });
+    else if (/^Campanha pausada/.test(l.titulo || '') || d.pausada) out.push({ t: `campanha pausada em ${quando}`, tipo: 'ads' });
+  }
+  return out.slice(-2);
+}
+
+function calcularRaioX(lojas, pedidosPor, medidos) {
+  const bIni = isoBRT(JANELA), bFim = isoBRT(1), aIni = isoBRT(JANELA * 2), aFim = isoBRT(JANELA + 1);
+  const itens = new Map(), porLoja = [];
+  let totA = 0, totB = 0, lojasComp = 0;
+  for (const L of lojas) {
+    const peds = pedidosPor.get(L.conta);
+    if (!peds) continue;
+    // loja sem pedido antes da janela A (histórico ainda carregando) não entra na comparação
+    const temA = peds.some(p => diaDe(p.criado_em) <= aFim);
+    if (!temA) continue;
+    lojasComp++;
+    let la = 0, lb = 0;
+    for (const p of peds) {
+      const dia = diaDe(p.criado_em);
+      const lado = dia >= bIni && dia <= bFim ? 'b' : dia >= aIni && dia <= aFim ? 'a' : null;
+      if (!lado) continue;
+      for (const i of (p.itens || [])) {
+        if (!i.item_id) continue;
+        const q = parseInt(i.qtd) || 1, v = (parseFloat(i.preco) || 0) * q;
+        const k = `${L.conta}:${i.item_id}`;
+        const x = itens.get(k) || { id: String(i.item_id), nome: i.nome || String(i.item_id), L, a: { rec: 0, un: 0 }, b: { rec: 0, un: 0 } };
+        x[lado].rec += v; x[lado].un += q;
+        if (lado === 'a') la += v; else lb += v;
+        itens.set(k, x);
+      }
+    }
+    totA += la; totB += lb;
+    porLoja.push({ loja: nomeLoja(L), mkt: L.mkt, antes: Math.round(la / 2), agora: Math.round(lb / 2), var: la > 0 ? r1((lb - la) / la * 100) : null });
+  }
+  if (!lojasComp) return null;
+  const sem = v => Math.round(v / 2); // 14 dias → por semana
+  const lista = [...itens.values()].map(x => ({ ...x, delta: x.b.rec - x.a.rec }));
+  const minRelev = Math.max(150, (totA + totB) / 4 * 0.01); // ≥ 1% do faturamento semanal
+  const caiu = lista.filter(x => x.delta < 0 && -sem(x.delta) >= minRelev).sort((a, b) => a.delta - b.delta).slice(0, 6).map(x => ({
+    id: x.id, nome: corta(x.nome, 70), loja: nomeLoja(x.L), conta: x.L.conta, mkt: x.L.mkt, antes: sem(x.a.rec), agora: sem(x.b.rec), perdaSem: -sem(x.delta), unAntes: x.a.un, unAgora: x.b.un,
+    causas: causasDaQueda(x, x.L, mudancasAds(x, x.L, medidos, aIni)),
+  }));
+  const subiu = lista.filter(x => x.delta > 0 && sem(x.delta) >= minRelev).sort((a, b) => b.delta - a.delta).slice(0, 5).map(x => {
+    const sn = x.L.sinais?.itens?.[x.id];
+    return { id: x.id, nome: corta(x.nome, 70), loja: nomeLoja(x.L), antes: sem(x.a.rec), agora: sem(x.b.rec), ganhoSem: sem(x.delta), novo: x.a.rec === 0,
+      alerta: sn?.ne === 'zerado' || sn?.ne === 'critico' ? `estoque ${sn.ne === 'zerado' ? 'zerado' : `para ~${Math.round(sn.d)} d`} — repor antes de acelerar` : null };
+  });
+  const topB = lista.slice().sort((a, b) => b.b.rec - a.b.rec);
+  const conc = totB > 0 ? r1(topB.slice(0, 5).reduce((s, x) => s + x.b.rec, 0) / totB * 100) : null;
+  return {
+    periodo: { antes: `${dm(aIni)} a ${dm(aFim)}`, agora: `${dm(bIni)} a ${dm(bFim)}` },
+    semanaAntes: sem(totA), semanaAgora: sem(totB), var: totA > 0 ? r1((totB - totA) / totA * 100) : null,
+    lojas: porLoja.sort((a, b) => (a.agora - a.antes) - (b.agora - b.antes)), caiu, subiu, concentracaoTop5: conc,
+    produtosVendendo: lista.filter(x => x.b.un > 0).length, produtosQueZeraram: lista.filter(x => x.a.un >= 3 && x.b.un === 0).length,
+  };
+}
+
+// Queda relevante vira ação, com a causa já apontada
+function acoesDoRaioX(rx) {
+  if (!rx) return [];
+  return rx.caiu.slice(0, 3).map(x => {
+    const tipo = x.causas[0]?.tipo;
+    const tela = tipo === 'estoque' ? 'estoque-margem' : tipo === 'ads' ? (x.mkt === 'ml' ? 'agente-ml' : 'agente') : tipo === 'preco' ? (x.mkt === 'ml' ? 'precos-ml' : 'vendas') : tipo === 'qualidade' ? 'qualidade-anuncios' : 'vendas';
+    return { id: `fat:${x.conta}:${x.id}`, conta: x.conta, mkt: x.mkt, loja: x.loja, tipo: 'faturamento', tela,
+      quando: 'hoje', quem: tipo === 'estoque' ? 'cliente' : 'analista',
+      titulo: `Recuperar ${corta(x.nome, 50)}: caiu ${R$(x.perdaSem)}/sem`,
+      porque: `vendia ${R$(x.antes)}/sem (${x.unAntes} un. em 14 d), agora ${R$(x.agora)}/sem (${x.unAgora} un.) — ${x.causas.length ? x.causas.map(c => c.t).join('; ') : 'sem causa clara nos dados: conferir concorrência, posição na busca e avaliações'}`,
+      impacto: `~${R$(x.perdaSem)}/sem em vendas`, valor: x.perdaSem, peso: 1000 + x.perdaSem / 5 };
+  });
 }
 
 // Texto com IA (diagnóstico + pauta) a partir dos fatos; null se não der
@@ -117,8 +247,8 @@ async function escreverUmaVez(Anthropic, anthropicKey, fatos) {
     const client = new Anthropic({ apiKey: anthropicKey });
     const r = await client.messages.create({
       model: 'claude-haiku-5-5',
-      max_tokens: 2000,
-      system: 'Você é o gerente de conta de uma consultoria de marketplaces (Mercado Livre e Shopee). Escreve para o analista da própria consultoria, em português do Brasil, direto e prático. Use SOMENTE os números e fatos do JSON — nunca invente número, produto, prazo ou ação. Responda APENAS um JSON válido: {"diagnostico":"até 3 frases: como o cliente está no mês (faturamento x meta/projeção, TACOS) e os 1-2 pontos que mais pesam hoje","pauta":"pauta do dia para o analista conversar com o cliente, em tópicos curtos com hífen: 1) o que fizemos e o resultado medido (se houver), 2) o que precisamos do cliente (só as ações com quem=cliente), 3) próximos passos. Tom cordial, pronto para virar mensagem. No máximo 8 tópicos, cada um com até 2 frases."}',
+      max_tokens: 2500,
+      system: 'Você é o gerente de conta de uma consultoria de marketplaces (Mercado Livre e Shopee). Escreve para o analista da própria consultoria, em português do Brasil, direto e prático. Use SOMENTE os números e fatos do JSON — nunca invente número, produto, prazo ou ação. Responda APENAS um JSON válido: {"diagnostico":"até 4 frases: como o cliente está no mês (faturamento x meta/projeção, TACOS) e, pelo raio_x, DE ONDE o faturamento está vindo e PARA ONDE está indo — os produtos que mais caíram em R$/semana e a causa apontada, e os que mais cresceram. Cite produto e valor.","pauta":"pauta do dia para o analista conversar com o cliente, em tópicos curtos com hífen: 1) como o faturamento andou nas últimas 2 semanas e o que puxou/derrubou (raio_x), 2) o que fizemos e o resultado medido (se houver), 3) o que precisamos do cliente (só as ações com quem=cliente), 4) próximos passos. Tom cordial, pronto para virar mensagem. No máximo 8 tópicos, cada um com até 2 frases."}',
       messages: [{ role: 'user', content: JSON.stringify(fatos) }],
     });
     const txt = r.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
@@ -137,7 +267,7 @@ async function gerarPlanos(h, filtroCliente) {
     sbSelect('glr_sync_estado', 'recurso=in.(resumo,sinais,promocoes,reputacao,qualidade)&marketplace=in.(ml,shopee)&select=marketplace,conta_id,recurso,cursor').catch(() => []),
     sbSelect('glr_agente_config', 'select=conta_id,marketplace,meta_acos,cliente_nome').catch(() => []),
     sbSelect('glr_agente_log', `tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 10 * 864e5).toISOString())}&select=conta_id,titulo,dados&limit=3000`).catch(() => []),
-    sbSelect('glr_agente_log', `tipo=in.(decisao,alerta)&resultado=eq.executado&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 46 * 864e5).toISOString())}&select=conta_id,titulo,dados&limit=3000`).catch(() => []),
+    sbSelect('glr_agente_log', `tipo=in.(decisao,alerta)&resultado=eq.executado&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 46 * 864e5).toISOString())}&select=conta_id,titulo,dados,criado_em&order=criado_em.desc&limit=6000`).catch(() => []),
   ]);
   const est = {};
   for (const e of estados) { const k = `${e.marketplace}:${e.conta_id}`; (est[k] = est[k] || {})[e.recurso] = e.cursor; }
@@ -149,6 +279,7 @@ async function gerarPlanos(h, filtroCliente) {
   const antIni = ant.toISOString().slice(0, 10), antFim = (() => { const d = new Date(`${antIni}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + dd - 1); return d.toISOString().slice(0, 10); })();
   const gestorNome = id => (gestores.find(g => g.id === id) || {}).nome || '';
   const saida = [];
+  const prazo = Date.now() + 200000; // raio-x lê pedidos; depois disso os planos saem sem ele
   const alvo = clientes.filter(c => !filtroCliente || String(c.id) === String(filtroCliente));
   let iCli = 0;
   const processar = async (c) => {
@@ -172,8 +303,16 @@ async function gerarPlanos(h, filtroCliente) {
     const metasTacos = lojas.map(L => parseFloat(cfgDe[L.conta]?.meta_acos)).filter(v => v > 0);
     const metaTacos = metasTacos.length ? Math.min(...metasTacos) : null;
     const varMes = cobreAnt && fatAnt > 0 ? (fat - fatAnt) / fatAnt * 100 : null;
+    // Raio-X: pedidos dos últimos 28 dias de cada loja (em paralelo)
+    let raioX = null;
+    if (Date.now() < prazo) {
+      const desde = new Date(`${isoBRT(JANELA * 2)}T03:00:00Z`).toISOString();
+      const peds = await Promise.all(lojas.map(L => pedidosDaLoja(sbSelect, L, desde)));
+      const pedidosPor = new Map(lojas.map((L, i) => [L.conta, peds[i]]));
+      try { raioX = calcularRaioX(lojas, pedidosPor, medidos); } catch (e) { raioX = null; }
+    }
     // Ações de todas as lojas, sem repetir, as mais importantes primeiro
-    const todas = lojas.flatMap(L => acoesDaLoja(L, { pendentes })).sort((a, b) => b.peso - a.peso);
+    const todas = [...acoesDoRaioX(raioX), ...lojas.flatMap(L => acoesDaLoja(L, { pendentes }))].sort((a, b) => b.peso - a.peso);
     const acoes = []; const vistos = new Set();
     for (const a of todas) { if (vistos.has(a.id)) continue; vistos.add(a.id); acoes.push(a); if (acoes.length >= MAX_ACOES) break; }
     // Resultado medido dos últimos 7 dias (o que levar ao cliente)
@@ -187,9 +326,16 @@ async function gerarPlanos(h, filtroCliente) {
     const semaforo = repAlto || prazoCurto || (pctMeta != null && pctMeta < 80) || (metaTacos && tacos != null && tacos > metaTacos * 1.3) ? 'vermelho'
       : (pctMeta != null && pctMeta < 95) || (metaTacos && tacos != null && tacos > metaTacos) || acoes.filter(a => a.quando === 'hoje').length >= 3 ? 'amarelo' : 'verde';
     const metricas = { faturamento: Math.round(fat), projecao: Math.round(proj), meta, pctMeta: pctMeta == null ? null : r1(pctMeta), tacos: tacos == null ? null : r1(tacos), metaTacos, varMes: varMes == null ? null : r1(varMes), lojas: lojas.length, dia: dd, diasMes: dm };
-    const fatos = { cliente: c.nome, metricas, acoes: acoes.map(a => ({ quando: a.quando, quem: a.quem, titulo: a.titulo, porque: a.porque, impacto: a.impacto, loja: a.loja })), resultados_7_dias: resultados };
+    if (meta && proj < meta && dm > dd) metricas.faltaPorDia = Math.round((meta - fat) / (dm - dd));
+    if (dd > 0) metricas.ritmoDia = Math.round(fat / dd);
+    const fatos = { cliente: c.nome, metricas, raio_x: raioX && { periodo: raioX.periodo, semana_antes: raioX.semanaAntes, semana_agora: raioX.semanaAgora, variacao_pct: raioX.var,
+      caiu: raioX.caiu.map(x => ({ produto: x.nome, loja: x.loja, antes_sem: x.antes, agora_sem: x.agora, perda_sem: x.perdaSem, causas: x.causas.map(c => c.t) })),
+      subiu: raioX.subiu.map(x => ({ produto: x.nome, loja: x.loja, antes_sem: x.antes, agora_sem: x.agora, ganho_sem: x.ganhoSem, novo: x.novo, alerta: x.alerta })),
+      lojas: raioX.lojas, concentracao_top5_pct: raioX.concentracaoTop5 },
+      acoes: acoes.map(a => ({ quando: a.quando, quem: a.quem, titulo: a.titulo, porque: a.porque, impacto: a.impacto, loja: a.loja })), resultados_7_dias: resultados };
     const txt = await escrever(Anthropic, anthropicKey, fatos);
-    const diagRegra = `${pctMeta != null ? `Projeção do mês em ${pct(pctMeta)} da meta (${R$(proj)} de ${R$(meta)})` : `Projeção do mês ${R$(proj)}`}${varMes != null ? `, ${varMes >= 0 ? '+' : ''}${pct(varMes)} contra o mesmo período do mês passado` : ''}${tacos != null ? `; TACOS ${pct(tacos)}${metaTacos ? ` (meta ${pct(metaTacos)})` : ''}` : ''}. ${acoes[0] ? `Prioridade: ${acoes[0].titulo.toLowerCase()}.` : 'Nada urgente hoje.'}`;
+    const rxTxt = raioX ? ` Últimas 2 semanas: ${R$(raioX.semanaAgora)}/sem contra ${R$(raioX.semanaAntes)}/sem antes${raioX.var != null ? ` (${raioX.var >= 0 ? '+' : ''}${pct(raioX.var)})` : ''}${raioX.caiu[0] ? `; maior queda: ${raioX.caiu[0].nome} (−${R$(raioX.caiu[0].perdaSem)}/sem${raioX.caiu[0].causas[0] ? `, ${raioX.caiu[0].causas[0].t}` : ''})` : ''}${raioX.subiu[0] ? `; maior alta: ${raioX.subiu[0].nome} (+${R$(raioX.subiu[0].ganhoSem)}/sem)` : ''}.` : '';
+    const diagRegra = `${pctMeta != null ? `Projeção do mês em ${pct(pctMeta)} da meta (${R$(proj)} de ${R$(meta)})` : `Projeção do mês ${R$(proj)}`}${varMes != null ? `, ${varMes >= 0 ? '+' : ''}${pct(varMes)} contra o mesmo período do mês passado` : ''}${tacos != null ? `; TACOS ${pct(tacos)}${metaTacos ? ` (meta ${pct(metaTacos)})` : ''}` : ''}. ${rxTxt} ${acoes[0] ? `Prioridade: ${acoes[0].titulo.toLowerCase()}.` : 'Nada urgente hoje.'}`;
     const pautaRegra = [
       resultados.medidas ? `- O que fizemos: ${resultados.medidas} ajuste(s) medido(s) nos últimos 7 dias, ${resultados.melhoraram} melhoraram${resultados.exemplos[0] ? ` (ex.: ${resultados.exemplos[0]})` : ''}.` : '- O que fizemos: acompanhamento diário do ADS e da operação.',
       ...acoes.filter(a => a.quem === 'cliente').map(a => `- Precisamos de você: ${a.titulo} — ${a.porque}.`),
@@ -197,7 +343,7 @@ async function gerarPlanos(h, filtroCliente) {
     ].join('\n');
     const plano = {
       em: Date.now(), dia: isoBRT(0), cliente: { id: c.id, nome: c.nome, gestorId: c.gestorId ?? null, gestor: gestorNome(c.gestorId) },
-      semaforo, metricas, acoes, resultados, diagnostico: txt?.diagnostico || diagRegra, pauta: txt?.pauta || pautaRegra, fonteTexto: txt ? 'ia' : 'regra',
+      semaforo, metricas, acoes, resultados, raioX, diagnostico: txt?.diagnostico || diagRegra, pauta: txt?.pauta || pautaRegra, fonteTexto: txt ? 'ia' : 'regra',
     };
     await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `cliente:${c.id}`, recurso: 'plano', ultimo_sucesso: new Date().toISOString(), ultima_tentativa: new Date().toISOString(), ultimo_erro: null, registros: acoes.length, cursor: plano }, 'marketplace,conta_id,recurso');
     saida.push({ cliente: c.nome, semaforo, acoes: acoes.length });
@@ -207,4 +353,4 @@ async function gerarPlanos(h, filtroCliente) {
   return saida;
 }
 
-module.exports = { gerarPlanos, acoesDaLoja };
+module.exports = { gerarPlanos, acoesDaLoja, calcularRaioX };

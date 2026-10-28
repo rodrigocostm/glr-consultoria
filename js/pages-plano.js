@@ -85,6 +85,29 @@ Router.register('plano-acao', (params, el) => {
     </div>`;
   }
 
+  // Raio-X do faturamento: o que puxou e o que derrubou nas últimas 2 semanas
+  function renderRaioX(rx, m) {
+    if (!rx) return `<div class="card pl-bloco"><div class="pl-bloco-t">Raio-X do faturamento</div><div class="pl-sub">Sem pedidos suficientes na base para comparar as últimas 2 semanas.</div></div>`;
+    const sinal = v => v == null ? '' : `<span style="color:${v >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:650">${v >= 0 ? '+' : ''}${pct(v)}</span>`;
+    const linhaCaiu = x => `<tr><td><b>${h(x.nome)}</b><div class="pl-sub">${h(x.loja)}</div></td><td class="n">${R$(x.antes)}</td><td class="n">${R$(x.agora)}</td><td class="n" style="color:var(--red);font-weight:650">−${R$(x.perdaSem)}</td>
+      <td>${x.causas.length ? x.causas.map(c => `<span class="pl-causa pl-c-${h(c.tipo)}">${h(c.t)}</span>`).join(' ') : '<span class="pl-sub">sem causa clara nos dados — conferir concorrência, posição e avaliações</span>'}</td></tr>`;
+    const linhaSubiu = x => `<tr><td><b>${h(x.nome)}</b><div class="pl-sub">${h(x.loja)}</div></td><td class="n">${R$(x.antes)}</td><td class="n">${R$(x.agora)}</td><td class="n" style="color:var(--green);font-weight:650">+${R$(x.ganhoSem)}</td>
+      <td>${x.novo ? '<span class="pl-causa">começou a vender agora</span> ' : ''}${x.alerta ? `<span class="pl-causa pl-c-estoque">${h(x.alerta)}</span>` : '<span class="pl-sub">manter o que está funcionando</span>'}</td></tr>`;
+    const cab = `<thead><tr><th>Produto</th><th class="n">Antes /sem</th><th class="n">Agora /sem</th><th class="n">Diferença</th><th>Por quê</th></tr></thead>`;
+    return `<div class="card pl-bloco">
+      <div class="pl-bloco-t">Raio-X do faturamento <span class="pl-sub">${h(rx.periodo.agora)} × ${h(rx.periodo.antes)} · pedidos válidos, por semana</span></div>
+      <div class="pl-mets" style="margin-top:0">
+        <div><span>Faturamento por semana</span><b>${R$(rx.semanaAgora)}</b><small>antes ${R$(rx.semanaAntes)} ${sinal(rx.var)}</small></div>
+        ${m.faltaPorDia ? `<div><span>Para bater a meta</span><b>${R$(m.faltaPorDia)}/dia</b><small>hoje faz ${R$(m.ritmoDia)}/dia</small></div>` : ''}
+        <div><span>Concentração</span><b>${pct(rx.concentracaoTop5)}</b><small>do faturamento em 5 produtos</small></div>
+        <div><span>Produtos que pararam</span><b>${rx.produtosQueZeraram}</b><small>vendiam (3+ un.) e zeraram</small></div>
+      </div>
+      ${rx.lojas.length > 1 ? `<div class="pl-lojas">${rx.lojas.map(l => `<span>${h(l.loja)}: ${R$(l.agora)}/sem ${sinal(l.var)}</span>`).join('')}</div>` : ''}
+      ${rx.caiu.length ? `<div class="pl-rx-t">O que derrubou</div><div style="overflow-x:auto"><table class="pl-rx">${cab}<tbody>${rx.caiu.map(linhaCaiu).join('')}</tbody></table></div>` : '<div class="pl-sub" style="margin-top:8px">Nenhum produto com queda relevante.</div>'}
+      ${rx.subiu.length ? `<div class="pl-rx-t">O que puxou</div><div style="overflow-x:auto"><table class="pl-rx">${cab}<tbody>${rx.subiu.map(linhaSubiu).join('')}</tbody></table></div>` : ''}
+    </div>`;
+  }
+
   function renderPlano(p) {
     const s = SEM[p.semaforo], m = p.metricas || {};
     const grupos = [['Fazer hoje', a => a.quando === 'hoje' && a.quem !== 'cliente'], ['Esta semana', a => a.quando !== 'hoje' && a.quem !== 'cliente'], ['Pedir ao cliente', a => a.quem === 'cliente']];
@@ -107,6 +130,7 @@ Router.register('plano-acao', (params, el) => {
           <div><span>Resultados medidos (7 d)</span><b>${p.resultados?.medidas || 0}</b><small>${p.resultados?.melhoraram || 0} melhoraram</small></div>
         </div>
       </div>
+      ${renderRaioX(p.raioX, m)}
       <div class="pl-cols">
         <div>${grupos.map(([t, fn]) => { const as = (p.acoes || []).filter(fn); return as.length ? `<div class="card pl-bloco"><div class="pl-bloco-t">${t} <span class="pl-sub">${as.filter(a => !status()[a.id]).length} aberta(s)</span></div>${as.map(a => renderAcao(p, a)).join('')}</div>` : ''; }).join('') || '<div class="card pl-bloco"><div class="pl-sub">Nenhuma ação hoje — os agentes não encontraram nada urgente.</div></div>'}</div>
         <div class="card pl-pauta">
@@ -180,6 +204,9 @@ Router.register('plano-acao', (params, el) => {
     .pl-mets{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
     .pl-mets>div{background:var(--bg-subtle);border-radius:10px;padding:8px 11px;display:flex;flex-direction:column;gap:1px} .pl-mets span{font-size:12px;color:var(--text-secondary)} .pl-mets b{font-size:17px;font-weight:650;font-variant-numeric:tabular-nums} .pl-mets small{font-size:11px;color:var(--text-muted)}
     .pl-cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,1fr);gap:14px;align-items:start} @media (max-width:1050px){.pl-cols{grid-template-columns:1fr}}
+    .pl-rx{width:100%;border-collapse:collapse;font-size:12.5px} .pl-rx th{font-size:11px;font-weight:600;color:var(--text-muted);text-align:left;padding:5px 8px} .pl-rx td{padding:7px 8px;border-top:1px solid var(--border);vertical-align:top} .pl-rx .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .pl-rx-t{font-weight:650;font-size:13px;margin:14px 0 4px} .pl-lojas{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin-top:10px;color:var(--text-secondary)}
+    .pl-causa{display:inline-block;font-size:11.5px;padding:2px 7px;border-radius:6px;background:var(--bg-subtle);margin:1px 0} .pl-c-estoque{background:color-mix(in srgb,var(--orange) 15%,transparent)} .pl-c-ads{background:color-mix(in srgb,var(--accent) 14%,transparent)} .pl-c-preco{background:color-mix(in srgb,var(--purple) 14%,transparent)} .pl-c-anuncio,.pl-c-qualidade{background:color-mix(in srgb,var(--red) 12%,transparent)}
     .pl-bloco{padding:12px 14px;margin-bottom:12px} .pl-bloco-t{font-weight:650;font-size:14px;margin-bottom:8px;display:flex;gap:8px;align-items:baseline}
     .pl-acao{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:9px 0;border-top:1px solid var(--border)}
     .pl-acao.resolvida{opacity:.55} .pl-quem{font-size:11px;font-weight:650;color:var(--q)}
