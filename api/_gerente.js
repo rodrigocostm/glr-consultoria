@@ -158,7 +158,8 @@ function mudancasAds(x, L, medidos, desdeIso) {
     if (pr > melhorP || (pr === melhorP && melhorCamp == null)) { melhorP = pr; melhorCamp = String(l.dados?.campaign_id ?? nc); }
   }
   for (const l of medidos) {
-    if (String(l.conta_id) !== L.conta || !l.criado_em || diaDe(l.criado_em) < desdeIso) continue;
+    // só mudança dentro das 2 semanas comparadas (a de hoje ainda não explica queda nenhuma)
+    if (String(l.conta_id) !== L.conta || !l.criado_em || diaDe(l.criado_em) < desdeIso || diaDe(l.criado_em) > isoBRT(1)) continue;
     const d = l.dados || {}, quando = dm(diaDe(d.aplicado_em || l.criado_em));
     const ids = (d.item_ids || []).map(String);
     if (L.mkt === 'ml' && ids.includes(String(x.id))) {
