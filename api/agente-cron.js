@@ -649,6 +649,46 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     const base = await lerBase('shopee', shopId);
     const sinais = await lerSinais('shopee', shopId);
     const colaboracoes = []; // o que mudou por causa do Estoque/Margem (vai para o registro e o Escritório)
+    // ── Freio de volume (conversa com o Raio-X do faturamento do Gerente) ──
+    // Apertar ROAS/orçamento melhora o ACOS, mas pode derrubar a VENDA do produto
+    // (o Raio-X de 28/10 achou 22 das maiores quedas logo depois de apertos do
+    // próprio agente). Antes de conter, olha a venda do produto na loja inteira
+    // (orgânico + ADS): últimos 7 dias × 7 anteriores, e os apertos dos últimos 21 dias.
+    const vendasProd = new Map();
+    try {
+      const d7 = isoMenos(ontem.iso, 6), d14 = isoMenos(ontem.iso, 13);
+      for (let off = 0; off < 40000; off += 1000) {
+        const rows = await sbSelect('glr_pedidos', `marketplace=eq.shopee&conta_id=eq.${encodeURIComponent(shopId)}&situacao=eq.valido&criado_em=gte.${encodeURIComponent(new Date(`${d14}T03:00:00Z`).toISOString())}&select=criado_em,itens&order=criado_em.asc&limit=1000&offset=${off}`);
+        for (const p of rows) {
+          const dia = new Date(Date.parse(p.criado_em) - 3 * 3600e3).toISOString().slice(0, 10);
+          if (dia > ontem.iso) continue;
+          for (const i of (p.itens || [])) {
+            const v = vendasProd.get(String(i.item_id)) || { a: 0, b: 0 };
+            v[dia >= d7 ? 'b' : 'a'] += (parseFloat(i.preco) || 0) * (parseInt(i.qtd) || 1);
+            vendasProd.set(String(i.item_id), v);
+          }
+        }
+        if (rows.length < 1000) break;
+      }
+    } catch (e) { vendasProd.clear(); }
+    const apertos = new Map(); // campanha → { roasAntes, budgetAntes, desde }
+    for (const l of (await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.decisao&resultado=eq.executado&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 21 * 864e5).toISOString())}&select=criado_em,dados&order=criado_em.asc&limit=1000`).catch(() => []))) {
+      const d = l.dados || {}; if (d.campaign_id == null) continue;
+      const apertou = (d.roas_para != null && d.roas_de != null && +d.roas_para > +d.roas_de) || (d.budget_para != null && d.budget_de != null && +d.budget_para < +d.budget_de);
+      if (!apertou) continue;
+      const k = String(d.campaign_id), x = apertos.get(k) || { desde: l.criado_em };
+      if (x.roasAntes == null && d.roas_de != null) x.roasAntes = +d.roas_de;
+      if (x.budgetAntes == null && d.budget_de != null) x.budgetAntes = +d.budget_de;
+      apertos.set(k, x);
+    }
+    const voltaPendente = new Set((await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 7 * 864e5).toISOString())}&select=dados&limit=300`).catch(() => []))
+      .filter(l => l.dados?.freio_volume).map(l => String(l.dados.campaign_id)));
+    function quedaDeVenda(itemIds) {
+      if (!vendasProd.size) return null;
+      let a = 0, b = 0;
+      for (const id of (itemIds || [])) { const v = vendasProd.get(String(id)); if (v) { a += v.a; b += v.b; } }
+      return a >= 300 && b < a * 0.75 ? { a, b, pct: (1 - b / a) * 100 } : null;
+    }
     // sugestão de pausa por estoque ainda pendente não é repetida
     const pausaEstoquePendente = new Set((await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 7 * 86400000).toISOString())}&select=dados&limit=300`).catch(() => []))
       .filter(l => l.dados?.pausar === true && l.dados?.colaboracao?.de === 'estoque').map(l => String(l.dados.campaign_id)));
@@ -896,6 +936,24 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       // do "ACOS de contenção forte" (antigo limite de pausa) o passo é 25% em
       // vez de 15%. Corte é seguro independente do TACOS geral.
       if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > metaEf && !emMaturacao) {
+        const queda = quedaDeVenda(settings.item_id_list);
+        if (queda) {
+          const ap = apertos.get(String(c.campaign_id));
+          const quedaTxt = `as vendas do produto na loja (orgânico + ADS) caíram de ${R$(queda.a)} para ${R$(queda.b)} na última semana (−${queda.pct.toFixed(0)}%)`;
+          if (ap && !voltaPendente.has(String(c.campaign_id)) && ((ap.roasAntes && temRoas && settings.roas_target > ap.roasAntes) || (ap.budgetAntes && budgetAtual < ap.budgetAntes))) {
+            const dia = new Date(Date.parse(ap.desde) - 3 * 3600e3).toISOString().slice(5, 10).split('-').reverse().join('/');
+            const voltaRoas = ap.roasAntes && temRoas && settings.roas_target > ap.roasAntes;
+            await logar('alerta', `Sugestão de ${voltaRoas ? 'baixar meta de ROI' : 'aumento de orçamento'} — ${nome} (freio de volume)`,
+              `Desde ${dia} o agente apertou esta campanha (${voltaRoas ? `meta de ROAS de ${ap.roasAntes}x para ${settings.roas_target}x` : `orçamento de ${R$(ap.budgetAntes)} para ${R$(budgetAtual)}`}) por causa do ACOS (${acosTxt}), e ${quedaTxt}. Apertar mais derruba ainda mais a venda — a sugestão é voltar ${voltaRoas ? `a meta para ${ap.roasAntes}x` : `o orçamento para ${R$(ap.budgetAntes)}`} e acompanhar o faturamento do produto, não só o ACOS.`,
+              voltaRoas ? { campaign_id: c.campaign_id, roas_atual: settings.roas_target, roas_sugerido: ap.roasAntes, freio_volume: true, venda_antes: Math.round(queda.a), venda_agora: Math.round(queda.b), colaboracao: { de: 'faturamento' } }
+                : { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: ap.budgetAntes, freio_volume: true, venda_antes: Math.round(queda.a), venda_agora: Math.round(queda.b), colaboracao: { de: 'faturamento' } }, 'so_alerta');
+            alertas.push(nome);
+            colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `sugeri desfazer o aperto de "${nome}": ${quedaTxt}` });
+          } else {
+            colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `não apertei "${nome}" (ACOS ${acosTxt}): ${quedaTxt}` });
+          }
+          continue;
+        }
         if (metaMargem != null && acosJanela * 100 <= cfg.meta_acos) colaboracoes.push({ de: aviso.promo ? 'promocoes' : 'margem', campanha: nome, texto: `contive "${nome}": ACOS ${acosTxt} cabe na meta da conta, mas passa do limite da margem do produto (${metaEf}%)` });
         const forte = !!cfg.regra_pausa_acos && acosJanela * 100 > cfg.regra_pausa_acos;
         const passo = forte ? 0.25 : 0.15;
