@@ -280,7 +280,7 @@ function alteracoesDoLog(l) {
 }
 async function carregarAlteracoesServidor() {
   const statusEl = document.getElementById('track-ads-status');
-  if (!window._sb) return;
+  if (typeof _sb === 'undefined') return; // _sb é const global (não fica em window)
   try {
     const desde = new Date(Date.now() - 60 * 864e5).toISOString();
     const linhas = [];
