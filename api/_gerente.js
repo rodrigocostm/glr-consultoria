@@ -172,7 +172,7 @@ function mudancasAds(x, L, medidos, desdeIso) {
     else if (d.budget_para != null && d.budget_de != null && +d.budget_para < +d.budget_de) out.push({ t: `orçamento cortado de ${R$(d.budget_de)} para ${R$(d.budget_para)}/dia em ${quando}`, tipo: 'ads' });
     else if (/^Campanha pausada/.test(l.titulo || '') || d.pausada) out.push({ t: `campanha pausada em ${quando}`, tipo: 'ads' });
   }
-  return out.slice(-2);
+  return out.slice(0, 2); // medidos vem do mais recente para o mais antigo
 }
 
 function calcularRaioX(lojas, pedidosPor, medidos) {
