@@ -317,7 +317,7 @@ function renderAdsLog() {
     && (!fBusca || String(l.campanhaNome || '').toLowerCase().includes(fBusca) || String(l.campanhaId).includes(fBusca)))
     .sort((a, b) => new Date(b.quando) - new Date(a.quando));
   const statusEl = document.getElementById('track-ads-status');
-  if (statusEl && !statusEl.dataset.fixo) statusEl.textContent = `${todas.length} alteração(ões) no período${todas.length > 400 ? ' — mostrando as 400 mais recentes' : ''}.`;
+  if (statusEl && !statusEl.dataset.fixo) statusEl.textContent = `${todas.length} alteração(ões) no período${todas.length > 2000 ? " — mostrando as 2000 mais recentes (use os filtros)" : ""}.`;
   if (!todas.length) {
     el.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:13px;background:var(--bg-card);border-radius:10px;">Nenhuma alteração no período com esses filtros.</div>`;
     return;
@@ -328,7 +328,7 @@ function renderAdsLog() {
     <thead><tr style="font-size:10.5px;color:var(--text-muted);text-transform:none;">
       <th style="text-align:left;padding:6px 8px;">Quando</th><th style="text-align:left;padding:6px 8px;">Conta</th><th style="text-align:left;padding:6px 8px;">Campanha</th><th style="text-align:left;padding:6px 8px;">O que mudou</th><th style="text-align:right;padding:6px 8px;">De</th><th style="text-align:right;padding:6px 8px;">Para</th><th style="text-align:left;padding:6px 8px;">Quem</th>
     </tr></thead>
-    <tbody>${todas.slice(0, 400).map(l => `<tr style="border-top:1px solid var(--border);" title="${esc(l.porque)}">
+    <tbody>${todas.slice(0, 2000).map(l => `<tr style="border-top:1px solid var(--border);" title="${esc(l.porque)}">
       <td style="padding:6px 8px;font-size:12px;color:var(--text-muted);white-space:nowrap;">${fmtQuando(l.quando)}</td>
       <td style="padding:6px 8px;font-size:12px;">${esc(l.contaNome || nomeAdsConta(l.contaId))}</td>
       <td style="padding:6px 8px;font-size:12px;max-width:320px;">${esc(l.campanhaNome)}${l.campanhaId ? ` <span style="color:var(--text-muted);font-size:11px;">#${esc(l.campanhaId)}</span>` : ''}${l.porque ? `<div style="font-size:11px;color:var(--text-muted);white-space:normal;max-height:2.6em;overflow:hidden;">${esc(l.porque)}</div>` : ''}</td>
