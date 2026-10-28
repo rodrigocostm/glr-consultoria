@@ -131,7 +131,8 @@ function causasDaQueda(x, L, mudancas) {
   const sn = L.sinais?.itens?.[x.id];
   if (sn?.ne === 'zerado') c.push({ t: 'ficou sem estoque', tipo: 'estoque' });
   else if (sn?.ne === 'critico') c.push({ t: `estoque acabando (~${Math.round(sn.d)} d)`, tipo: 'estoque' });
-  if (sn?.st && !/active|normal/i.test(sn.st)) c.push({ t: `anúncio ${String(sn.st).toLowerCase() === 'paused' ? 'pausado' : String(sn.st).toLowerCase()}`, tipo: 'anuncio' });
+  const ST = { paused: 'pausado', under_review: 'em revisão pelo marketplace', reviewing: 'em revisão pelo marketplace', inactive: 'inativo', closed: 'finalizado', unlist: 'fora do ar', banned: 'bloqueado', deleted: 'excluído' };
+  if (sn?.st && !/active|normal/i.test(sn.st)) c.push({ t: `anúncio ${ST[String(sn.st).toLowerCase()] || String(sn.st).toLowerCase()}`, tipo: 'anuncio' });
   const pa = x.a.un ? x.a.rec / x.a.un : null, pb = x.b.un ? x.b.rec / x.b.un : null;
   if (pa && pb && pb > pa * 1.05) c.push({ t: `preço vendido subiu de ${R$(pa)} para ${R$(pb)} (+${pct((pb / pa - 1) * 100)})`, tipo: 'preco' });
   for (const m of mudancas) c.push(m);
@@ -143,8 +144,19 @@ function causasDaQueda(x, L, mudancas) {
 
 // mudanças de ADS no período que tocam o produto (Shopee: campanha = produto, pelo nome;
 // ML: sugestão aplicada com o anúncio na lista)
+const prefixo = (a, b) => { let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return i; };
 function mudancasAds(x, L, medidos, desdeIso) {
-  const out = [], nx = norm(x.nome).slice(0, 28);
+  const out = [], nx = norm(x.nome);
+  // Shopee: campanha de produto tem o nome do anúncio — fica só a campanha de
+  // nome mais parecido (prefixo comum ≥ 30 letras), para não pegar outro produto
+  // da mesma linha ("Balcão para Cozinha …")
+  let melhorCamp = null, melhorP = 29;
+  if (L.mkt === 'shopee') for (const l of medidos) {
+    if (String(l.conta_id) !== L.conta) continue;
+    const nc = norm(String(l.titulo || '').split(' — ').slice(1).join(' '));
+    const pr = prefixo(nx, nc);
+    if (pr > melhorP || (pr === melhorP && melhorCamp == null)) { melhorP = pr; melhorCamp = String(l.dados?.campaign_id ?? nc); }
+  }
   for (const l of medidos) {
     if (String(l.conta_id) !== L.conta || !l.criado_em || diaDe(l.criado_em) < desdeIso) continue;
     const d = l.dados || {}, quando = dm(diaDe(d.aplicado_em || l.criado_em));
@@ -154,9 +166,8 @@ function mudancasAds(x, L, medidos, desdeIso) {
       if (t) out.push({ t: `${t} em ${quando}`, tipo: 'ads' });
       continue;
     }
-    if (L.mkt !== 'shopee') continue;
-    const camp = norm(String(l.titulo || '').split(' — ').slice(1).join(' ')).slice(0, 28);
-    if (!camp || nx.length < 12 || !(camp.startsWith(nx.slice(0, 20)) || nx.startsWith(camp.slice(0, 20)))) continue;
+    if (L.mkt !== 'shopee' || melhorCamp == null) continue;
+    if (String(d.campaign_id ?? norm(String(l.titulo || '').split(' — ').slice(1).join(' '))) !== melhorCamp) continue;
     if (d.roas_para != null && d.roas_de != null && +d.roas_para > +d.roas_de) out.push({ t: `ROAS da campanha subiu de ${r1(d.roas_de)}x para ${r1(d.roas_para)}x em ${quando} (lance mais conservador)`, tipo: 'ads' });
     else if (d.budget_para != null && d.budget_de != null && +d.budget_para < +d.budget_de) out.push({ t: `orçamento cortado de ${R$(d.budget_de)} para ${R$(d.budget_para)}/dia em ${quando}`, tipo: 'ads' });
     else if (/^Campanha pausada/.test(l.titulo || '') || d.pausada) out.push({ t: `campanha pausada em ${quando}`, tipo: 'ads' });
@@ -262,8 +273,8 @@ async function escreverUmaVez(Anthropic, anthropicKey, fatos) {
 // h: { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic }
 async function gerarPlanos(h, filtroCliente) {
   const { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic } = h;
-  const [clientes, vinc, metas, gestores, estados, configs, pendentes, medidos] = await Promise.all([
-    lerStorage('glr_clientes').then(x => x || []), lerStorage('glr_mc_vinculos').then(x => x || {}), lerStorage('glr_metas').then(x => x || {}), lerStorage('glr_gestores').then(x => x || []),
+  const [clientes, vinc, metas, gestores, nicks, estados, configs, pendentes, medidos] = await Promise.all([
+    lerStorage('glr_clientes').then(x => x || []), lerStorage('glr_mc_vinculos').then(x => x || {}), lerStorage('glr_metas').then(x => x || {}), lerStorage('glr_gestores').then(x => x || []), lerStorage('glr_mc_nicknames').then(x => x || {}),
     sbSelect('glr_sync_estado', 'recurso=in.(resumo,sinais,promocoes,reputacao,qualidade)&marketplace=in.(ml,shopee)&select=marketplace,conta_id,recurso,cursor').catch(() => []),
     sbSelect('glr_agente_config', 'select=conta_id,marketplace,meta_acos,cliente_nome').catch(() => []),
     sbSelect('glr_agente_log', `tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 10 * 864e5).toISOString())}&select=conta_id,titulo,dados&limit=3000`).catch(() => []),
@@ -288,7 +299,7 @@ async function gerarPlanos(h, filtroCliente) {
       const mkt = mktDe(ct.marketplace); if (!mkt) continue;
       const conta = String(ct.param_to_use?.shopId || ct.param_to_use?.meliUserId || ct.external_id);
       const e = est[`${mkt}:${conta}`] || est[`${mkt}:${ct.external_id}`]; if (!e) continue;
-      lojas.push({ mkt, conta, nome: ct.nickname || '', resumo: e.resumo, sinais: e.sinais, promocoes: e.promocoes, reputacao: e.reputacao, qualidade: e.qualidade });
+      lojas.push({ mkt, conta, nome: nicks[ct.external_id] || ct.tags?.[0]?.name || ct.nickname || '', resumo: e.resumo, sinais: e.sinais, promocoes: e.promocoes, reputacao: e.reputacao, qualidade: e.qualidade });
     }
     if (!lojas.length) return;
     // Métricas do mês (todas as lojas)
