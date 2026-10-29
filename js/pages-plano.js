@@ -29,7 +29,9 @@ Router.register('plano-acao', (params, el) => {
     try {
       const { data, error } = await _sb.from('glr_sync_estado').select('conta_id,ultimo_sucesso,cursor').eq('marketplace', 'sistema').eq('recurso', 'plano');
       if (error) throw error;
-      st.planos = (data || []).map(r => r.cursor).filter(Boolean);
+      // só clientes que existem e ainda têm conta vinculada (cliente excluído ou sem contas deixava o plano antigo parado)
+      const vinc = lerJSON('glr_mc_vinculos', {}), ids = new Set((GLR.clientes || []).map(c => String(c.id)));
+      st.planos = (data || []).map(r => r.cursor).filter(p => p?.cliente && (!ids.size || ids.has(String(p.cliente.id))) && (vinc[String(p.cliente.id)] || []).length);
       try {
         const { data: { user } } = await _sb.auth.getUser();
         const email = String(user?.email || '').toLowerCase();

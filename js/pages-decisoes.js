@@ -89,6 +89,9 @@ Router.register('decisoes', (params, el) => {
         itens.push({ id, tipo: 'promocoes', mkt: r.marketplace, conta: String(r.conta_id), titulo: `Aplicar ${n} promoção(ões) que cabem na margem`,
           porque: ex ? `Ex.: ${corta(ex.n, 60)} — ${ex.rot}${ex.m != null ? `, margem ${String(ex.m).replace('.', ',')}%` : ''}${r.res.parados ? ` · ${r.res.parados} giram estoque parado` : ''}` : '', tela: 'promocoes' });
       }
+      // conta que não está mais em nenhum cliente (cliente excluído / conta desvinculada) sai da fila
+      const vinc = lerJSON('glr_mc_vinculos', {}), contasVinc = new Set(Object.values(vinc).flatMap(a => (a || []).flatMap(c => [c.external_id, c.param_to_use?.shopId, c.param_to_use?.meliUserId].filter(Boolean).map(String))));
+      if (contasVinc.size) for (let i = itens.length - 1; i >= 0; i--) if (!contasVinc.has(itens[i].conta)) itens.splice(i, 1);
       for (const it of itens) {
         it.loja = GLR.nomeConta(it.mkt, it.conta);
         it.clienteId = GLR.ctx?.clienteDaConta(it.mkt, it.conta) || '';
