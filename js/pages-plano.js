@@ -115,16 +115,17 @@ Router.register('plano-acao', (params, el) => {
 
   // Meta do mês + o caminho que o Gerente montou até ela
   const numBR = v => { const x = parseFloat(String(v ?? '').replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')); return isNaN(x) ? null : x; };
-  const metasDe = cid => ({ fat: lerJSON('glr_metas', {})[cid], ped: lerJSON('glr_metas_pedidos', {})[cid] });
+  const metasDe = cid => ({ fat: lerJSON('glr_metas', {})[cid], ped: lerJSON('glr_metas_pedidos', {})[cid], tac: lerJSON('glr_metas_tacos', {})[cid] });
   const CONF = { alta: 'var(--green)', 'média': 'var(--yellow)', baixa: 'var(--text-muted)' };
   const N = v => Math.round(v || 0).toLocaleString('pt-BR');
   const corPct = v => v == null ? 'var(--text-muted)' : v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--yellow)' : 'var(--red)';
   function formMeta(p) {
     const m = p.metricas || {}, cid = String(p.cliente.id), salvas = metasDe(cid);
-    const vFat = salvas.fat ?? m.meta, vPed = salvas.ped ?? m.metaPedidos;
+    const vFat = salvas.fat ?? m.meta, vPed = salvas.ped ?? m.metaPedidos, vTac = salvas.tac ?? m.tetoTacos;
     return `<div class="pl-meta-form">
       <label>Faturamento do mês <span class="pl-in">R$ <input id="pl-meta-fat" class="form-control" inputmode="decimal" placeholder="ex.: 300.000" value="${vFat ? Number(vFat).toLocaleString('pt-BR') : ''}"></span></label>
       <label>Pedidos do mês <span class="pl-in"><input id="pl-meta-ped" class="form-control" inputmode="numeric" placeholder="ex.: 2.000" value="${vPed ? Number(vPed).toLocaleString('pt-BR') : ''}"></span></label>
+      <label title="Quanto do faturamento pode ir para ADS. Acima disso os agentes não aceleram campanhas.">Teto de ADS (TACOS) <span class="pl-in"><input id="pl-meta-tac" class="form-control pl-in-curto" inputmode="decimal" placeholder="ex.: 8" value="${vTac ? String(vTac).replace('.', ',') : ''}"> %</span></label>
       <button class="btn btn-primary btn-sm" ${st.gerando ? 'disabled' : ''} onclick="window._plSalvarMeta('${h(cid)}')">${st.gerando ? 'Calculando o caminho…' : 'Salvar e calcular o caminho'}</button>
       <button class="pl-link" onclick="window._plMetaEd()">Cancelar</button>
     </div>`;
@@ -160,7 +161,7 @@ Router.register('plano-acao', (params, el) => {
       <div class="pl-stats">
         ${prox || !meta ? `<div><span>Faturado no mês</span><b>${R$(m.faturamento)}</b><small>até ontem · dia ${m.dia}/${m.diasMes}</small></div><div><span>Fecha o mês em</span><b>${R$(m.projecao)}</b><small>projeção</small></div>` : ''}
         ${m.metaPedidos ? `<div><span>Pedidos</span><b>${N(c?.projPedidos ?? m.projPedidos)}</b><small>de ${N(m.metaPedidos)} na meta</small></div>` : ''}
-        <div><span>TACOS do mês</span><b style="color:${tacosAlto ? 'var(--red)' : 'inherit'}">${pct(m.tacos)}</b><small>${m.metaTacos ? `meta ${pct(m.metaTacos)}` : 'sem meta'}</small></div>
+        <div><span>TACOS do mês</span><b style="color:${tacosAlto ? 'var(--red)' : 'inherit'}">${pct(m.tacos)}</b><small>${m.tetoTacos ? `teto ${pct(m.tetoTacos)}` : m.metaTacos ? `meta ${pct(m.metaTacos)}` : 'sem teto'}</small></div>
         <div><span>Contra o mês passado</span><b style="color:${m.varMes == null ? 'inherit' : m.varMes >= 0 ? 'var(--green)' : 'var(--red)'}">${m.varMes == null ? '—' : `${m.varMes >= 0 ? '+' : ''}${pct(m.varMes)}`}</b><small>mesmo período</small></div>
       </div>
       ${diag ? `<div class="pl-hero-diag">${h(lead)}${resto ? (st.diagAberto ? ` ${h(resto)} <button class="pl-link" onclick="window._plDiag()">resumir</button>` : ` <button class="pl-link" onclick="window._plDiag()">ler a análise completa</button>`) : ''}</div>` : ''}
@@ -181,7 +182,9 @@ Router.register('plano-acao', (params, el) => {
         ${a.tela ? `<button class="btn btn-secondary btn-sm" onclick="window._plIr('${h(a.tela)}')">Fazer</button>` : '<span></span>'}
       </div>`).join('')}</div>` : '<div class="pl-sub">Os agentes não acharam alavancas nos dados deste cliente agora.</div>'}
       ${(c.promosMeta || []).length ? `<div class="pl-meta-agentes"><b>Promoções preparadas pela meta:</b> ${c.promosMeta.length} nos últimos 7 dias, que cabem na margem — ${c.promosMeta.slice(0, 3).map(x => `${h(x.produto)} (${h(x.promo || '')}, margem ${String(x.margem ?? '—').replace('.', ',')}%)`).join('; ')}. Esperam a sua aprovação na <button class="pl-link" onclick="window._plIr('decisoes')">Caixa de decisões</button>.</div>` : ''}
-      ${c.resto > 0 ? `<div class="pl-meta-resto"><b>Ainda faltariam ~${R$(c.resto)}.</b> Isso pede ação comercial: lançar produtos ou variações, entrar numa data/campanha relâmpago do marketplace${c.adsExtra ? `, ou investir <b>~${R$(c.adsExtra)}</b> a mais de ADS no mês mantendo o TACOS de hoje` : ''}.</div>` : ''}`;
+      ${c.tetoTacos ? (c.folgaAds > 0 ? `<div class="pl-meta-agentes"><b>Teto de ADS ${pct(c.tetoTacos)}:</b> na meta, cabem até ${R$(c.tetoTacos / 100 * (p.metricas?.meta || 0))} de ADS no mês; no ritmo de hoje vão ${R$(c.adsMes)} — ainda há <b>~${R$(c.folgaAds)}</b> para os agentes acelerar.</div>`
+        : `<div class="pl-meta-resto"><b>ADS no limite do teto (${pct(c.tetoTacos)}):</b> no ritmo de hoje vão ${R$(c.adsMes)} de ADS no mês, acima do que o teto permite na meta. Os agentes não aceleram campanhas até o TACOS voltar ao teto — o caminho precisa vir de conversão, estoque e promoção.</div>`) : ''}
+      ${c.resto > 0 ? `<div class="pl-meta-resto"><b>Ainda faltariam ~${R$(c.resto)}.</b> Isso pede ação comercial: lançar produtos ou variações, entrar numa data/campanha relâmpago do marketplace${c.adsExtra ? (c.tetoTacos && c.adsExtra > (c.folgaAds || 0) ? `. Investir os ~${R$(c.adsExtra)} de ADS que isso pediria passaria do teto de ${pct(c.tetoTacos)}` : `, ou investir <b>~${R$(c.adsExtra)}</b> a mais de ADS no mês mantendo o TACOS de hoje`) : ''}.</div>` : ''}`;
   }
 
   // Contrato do cliente: perfil e o que o agente pode fazer sozinho (o agente lê glr_contratos no servidor)
@@ -313,14 +316,17 @@ Router.register('plano-acao', (params, el) => {
     st.ctrSalvo = cid; render();
   };
   window._plSalvarMeta = async cid => {
-    const fat = numBR(document.getElementById('pl-meta-fat')?.value), ped = numBR(document.getElementById('pl-meta-ped')?.value);
-    const mf = lerJSON('glr_metas', {}), mp = lerJSON('glr_metas_pedidos', {});
+    const fat = numBR(document.getElementById('pl-meta-fat')?.value), ped = numBR(document.getElementById('pl-meta-ped')?.value), tac = numBR(document.getElementById('pl-meta-tac')?.value);
+    if (tac != null && (tac <= 0 || tac > 60)) { alert('O teto de ADS é um percentual do faturamento — use um valor entre 0,5 e 60 (ex.: 8 para 8%).'); return; }
+    const mf = lerJSON('glr_metas', {}), mp = lerJSON('glr_metas_pedidos', {}), mt = lerJSON('glr_metas_tacos', {});
     if (fat > 0) mf[cid] = fat; else delete mf[cid];
     if (ped > 0) mp[cid] = Math.round(ped); else delete mp[cid];
+    if (tac > 0) mt[cid] = Math.round(tac * 10) / 10; else delete mt[cid];
+    localStorage.setItem('glr_metas_tacos', JSON.stringify(mt)); // sincroniza — os agentes de ADS leem no servidor
     localStorage.setItem('glr_metas', JSON.stringify(mf)); localStorage.setItem('glr_metas_pedidos', JSON.stringify(mp)); // sincronizam (supabase-init)
     st.gerando = true; st.metaEd = null; render();
     try {
-      const q = `&meta=${encodeURIComponent(fat > 0 ? fat : '')}&meta_pedidos=${encodeURIComponent(ped > 0 ? Math.round(ped) : '')}`;
+      const q = `&meta=${encodeURIComponent(fat > 0 ? fat : '')}&meta_pedidos=${encodeURIComponent(ped > 0 ? Math.round(ped) : '')}&meta_tacos=${encodeURIComponent(tac > 0 ? Math.round(tac * 10) / 10 : '')}`;
       const r = await fetch(`/api/agente-cron?rodada=gerente&cliente_id=${encodeURIComponent(cid)}${q}`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
@@ -401,7 +407,7 @@ Router.register('plano-acao', (params, el) => {
     .pl-tab .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
     .pl-tab .pl-queda{max-width:340px}
     .pl-meta-form{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;margin-bottom:12px} .pl-meta-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)}
-    .pl-in{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted)} .pl-in input{width:150px}
+    .pl-in{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted)} .pl-in input{width:150px} .pl-in input.pl-in-curto{width:80px}
     .pl-meta-ls{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:10px}
     .pl-meta-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--text-secondary)} .pl-meta-top b{font-size:16px;color:var(--text-primary);font-variant-numeric:tabular-nums} .pl-meta-top b small{font-size:12px;color:var(--text-muted);font-weight:500}
     .pl-barra{height:8px;border-radius:99px;background:var(--bg-subtle);overflow:hidden;margin:6px 0 4px} .pl-barra i{display:block;height:100%;border-radius:99px}

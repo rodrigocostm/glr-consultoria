@@ -346,8 +346,8 @@ async function escreverUmaVez(Anthropic, anthropicKey, fatos) {
 // h: { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic }
 async function gerarPlanos(h, filtroCliente, metaNova) {
   const { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic } = h;
-  const [clientes, vinc, metas, metasPed, gestores, nicks, estados, configs, pendentes, medidos] = await Promise.all([
-    lerStorage('glr_clientes').then(x => x || []), lerStorage('glr_mc_vinculos').then(x => x || {}), lerStorage('glr_metas').then(x => x || {}), lerStorage('glr_metas_pedidos').then(x => x || {}), lerStorage('glr_gestores').then(x => x || []), lerStorage('glr_mc_nicknames').then(x => x || {}),
+  const [clientes, vinc, metas, metasPed, metasTac, gestores, nicks, estados, configs, pendentes, medidos] = await Promise.all([
+    lerStorage('glr_clientes').then(x => x || []), lerStorage('glr_mc_vinculos').then(x => x || {}), lerStorage('glr_metas').then(x => x || {}), lerStorage('glr_metas_pedidos').then(x => x || {}), lerStorage('glr_metas_tacos').then(x => x || {}), lerStorage('glr_gestores').then(x => x || []), lerStorage('glr_mc_nicknames').then(x => x || {}),
     sbSelect('glr_sync_estado', 'recurso=in.(resumo,sinais,promocoes,reputacao,qualidade)&marketplace=in.(ml,shopee)&select=marketplace,conta_id,recurso,cursor').catch(() => []),
     sbSelect('glr_agente_config', 'select=conta_id,marketplace,meta_acos,cliente_nome').catch(() => []),
     sbSelect('glr_agente_log', `tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 10 * 864e5).toISOString())}&select=conta_id,titulo,dados,criado_em&limit=3000`).catch(() => []),
@@ -388,7 +388,9 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     const metaPedidos = (nova && nova.metaPedidos != null ? (parseFloat(nova.metaPedidos) || null) : null) ?? (parseFloat(metasPed[c.id] ?? metasPed[String(c.id)]) || null);
     const tacos = fat > 0 ? ads / fat * 100 : null;
     const metasTacos = lojas.map(L => parseFloat(cfgDe[L.conta]?.meta_acos)).filter(v => v > 0);
-    const metaTacos = metasTacos.length ? Math.min(...metasTacos) : null;
+    // teto de ADS do cliente (Plano de ação) > a menor meta de ACOS das contas
+    const tetoTacos = (nova && nova.metaTacos != null ? (parseFloat(nova.metaTacos) || null) : (parseFloat(metasTac[c.id] ?? metasTac[String(c.id)]) || null));
+    const metaTacos = tetoTacos || (metasTacos.length ? Math.min(...metasTacos) : null);
     const varMes = cobreAnt && fatAnt > 0 ? (fat - fatAnt) / fatAnt * 100 : null;
     // Raio-X: pedidos dos últimos 28 dias de cada loja (em paralelo)
     let raioX = null;
@@ -404,6 +406,8 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     const promosMeta = [...pendentes, ...medidos].filter(l => new Set(lojas.map(L => L.conta)).has(String(l.conta_id)) && /promoção pela meta|^Promoção aprovada/.test(l.titulo || '') && l.criado_em && Date.now() - Date.parse(l.criado_em) < 7 * 864e5)
       .map(l => ({ produto: corta(l.dados?.produto || '', 50), promo: l.dados?.promo, preco: l.dados?.preco, margem: l.dados?.margem, em: l.criado_em }));
     const caminho = calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos: fat > 0 ? ads / fat * 100 : null, mesNum, diasProxMes });
+    // teto de ADS: quanto ainda cabe de investimento no mês sem passar do teto (no ritmo de gasto de hoje)
+    if (caminho && tetoTacos && meta) { const adsMes = dd > 0 ? ads / dd * dm : 0; caminho.tetoTacos = tetoTacos; caminho.adsMes = Math.round(adsMes); caminho.folgaAds = Math.round(tetoTacos / 100 * meta - adsMes); }
     // as 2 maiores alavancas viram ações do plano (com o R$ que rendem até o fim do mês)
     const acoesMeta = (caminho?.alavancas || []).slice(0, 2).map((a, i) => ({ id: `meta:${c.id}:${a.id}`, tipo: 'meta', quando: 'hoje', quem: a.quem || 'analista', tela: a.tela,
       titulo: `Meta: ${a.titulo}`, porque: `${a.porque ? a.porque + ' — ' : ''}rende ~${R$(a.valor)} até o fim de ${caminho.mesAlvo} (confiança ${a.conf})`, impacto: `~${R$(a.valor)} em ${caminho.mesAlvo}`, valor: a.valor, peso: 1200 + a.valor / 10 - i }));
@@ -422,10 +426,10 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     const pctMeta = meta ? proj / meta * 100 : metaPedidos ? projPedidos / metaPedidos * 100 : null;
     const semaforo = repAlto || prazoCurto || (pctMeta != null && pctMeta < 80) || (metaTacos && tacos != null && tacos > metaTacos * 1.3) ? 'vermelho'
       : (pctMeta != null && pctMeta < 95) || (metaTacos && tacos != null && tacos > metaTacos) || acoes.filter(a => a.quando === 'hoje').length >= 3 ? 'amarelo' : 'verde';
-    const metricas = { faturamento: Math.round(fat), projecao: Math.round(proj), meta, metaPedidos, pedidos, projPedidos: Math.round(projPedidos), pctMetaPedidos: metaPedidos ? r1(projPedidos / metaPedidos * 100) : null, pctMeta: pctMeta == null ? null : r1(pctMeta), tacos: tacos == null ? null : r1(tacos), metaTacos, varMes: varMes == null ? null : r1(varMes), lojas: lojas.length, dia: dd, diasMes: dm };
+    const metricas = { faturamento: Math.round(fat), projecao: Math.round(proj), meta, metaPedidos, pedidos, projPedidos: Math.round(projPedidos), pctMetaPedidos: metaPedidos ? r1(projPedidos / metaPedidos * 100) : null, pctMeta: pctMeta == null ? null : r1(pctMeta), tacos: tacos == null ? null : r1(tacos), metaTacos, tetoTacos, varMes: varMes == null ? null : r1(varMes), lojas: lojas.length, dia: dd, diasMes: dm };
     if (meta && proj < meta && dm > dd) metricas.faltaPorDia = Math.round((meta - fat) / (dm - dd));
     if (dd > 0) metricas.ritmoDia = Math.round(fat / dd);
-    const fatos = { cliente: c.nome, metricas, caminho_para_meta: caminho && { mes_da_meta: caminho.mesAlvo, falta_rs: caminho.faltaR, falta_pedidos: caminho.faltaPedidos, precisa_por_dia: caminho.precisaDia, ritmo_por_dia: caminho.ritmoDia, alavancas: caminho.alavancas.map(a => ({ o_que: a.titulo, rende_ate_fim_do_mes: a.valor, confianca: a.conf })), soma_alavancas: caminho.soma, cobertura_pct: caminho.cobertura, falta_alem_das_alavancas: caminho.resto, ads_extra_mantendo_tacos: caminho.adsExtra }, raio_x: raioX && { periodo: raioX.periodo, semana_antes: raioX.semanaAntes, semana_agora: raioX.semanaAgora, variacao_pct: raioX.var,
+    const fatos = { cliente: c.nome, metricas, caminho_para_meta: caminho && { mes_da_meta: caminho.mesAlvo, falta_rs: caminho.faltaR, falta_pedidos: caminho.faltaPedidos, precisa_por_dia: caminho.precisaDia, ritmo_por_dia: caminho.ritmoDia, alavancas: caminho.alavancas.map(a => ({ o_que: a.titulo, rende_ate_fim_do_mes: a.valor, confianca: a.conf })), soma_alavancas: caminho.soma, cobertura_pct: caminho.cobertura, falta_alem_das_alavancas: caminho.resto, ads_extra_mantendo_tacos: caminho.adsExtra, teto_ads_tacos_pct: caminho.tetoTacos || null, folga_ads_ate_o_teto: caminho.folgaAds ?? null }, raio_x: raioX && { periodo: raioX.periodo, semana_antes: raioX.semanaAntes, semana_agora: raioX.semanaAgora, variacao_pct: raioX.var,
       caiu: raioX.caiu.map(x => ({ produto: x.nome, loja: x.loja, antes_sem: x.antes, agora_sem: x.agora, perda_sem: x.perdaSem, causas: x.causas.map(c => c.t) })),
       subiu: raioX.subiu.map(x => ({ produto: x.nome, loja: x.loja, antes_sem: x.antes, agora_sem: x.agora, ganho_sem: x.ganhoSem, novo: x.novo, alerta: x.alerta })),
       lojas: raioX.lojas, concentracao_top5_pct: raioX.concentracaoTop5 },

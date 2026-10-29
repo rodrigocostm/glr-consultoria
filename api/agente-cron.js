@@ -342,6 +342,9 @@ async function contextoNegocio(shopId, ontemIso) {
   return ctx;
 }
 
+// O agente do ML recebe o teto de ADS do cliente junto com a configuração da conta
+const comTetoML = async cfg => ({ ...cfg, teto_tacos: (await contratoDaConta(cfg.conta_id).catch(() => ({}))).tetoTacos || null });
+
 // Ferramentas compartilhadas que o agente do ML (api/_agente-ml.js) usa.
 function ajudantesML() {
   return { sbSelect, sbInsert, sbUpdate, lerSinais, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall };
@@ -425,7 +428,7 @@ module.exports = async function handler(req, res) {
     const ajud = { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic };
     try {
       // a tela manda a meta que acabou de salvar (o glr_storage pode ainda não ter recebido)
-      const metaNova = req.query?.meta != null || req.query?.meta_pedidos != null ? { cliente: req.query.cliente_id, meta: req.query.meta, metaPedidos: req.query.meta_pedidos } : null;
+      const metaNova = req.query?.meta != null || req.query?.meta_pedidos != null || req.query?.meta_tacos != null ? { cliente: req.query.cliente_id, meta: req.query.meta, metaPedidos: req.query.meta_pedidos, metaTacos: req.query.meta_tacos } : null;
       if (req.query?.cliente_id) return res.status(200).json({ ok: true, planos: await gerente.gerarPlanos(ajud, req.query.cliente_id, metaNova) });
       const slot = `${agoraBRT().dia}-gerente`;
       if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
@@ -448,7 +451,7 @@ module.exports = async function handler(req, res) {
       const configs = todas.filter(cfg => rodada === 'completa' || !ehML(cfg));
       const ontem = dataBRT(1);
       waitUntil((rodada === 'completa' ? avaliarAutonomia().catch(e => console.error('[autonomia]', e)).then(() => promocoesPelaMeta(mcApiKey).catch(e => console.error('[promo-meta]', e))) : Promise.resolve()).then(() => Promise.all(configs.map(cfg => ehML(cfg)
-        ? processarContaML(cfg, mcApiKey, ajudantesML())
+        ? comTetoML(cfg).then(c => processarContaML(c, mcApiKey, ajudantesML()))
         : rodada === 'completa'
           ? processarConta(cfg, mcApiKey, anthropicKey, ontem, dataBRT(Math.max(1, cfg.regra_pausa_dias || 3)))
           : processarAcompanhamento(cfg, mcApiKey))))
@@ -479,7 +482,7 @@ module.exports = async function handler(req, res) {
     // Contas em paralelo — sequencial estourava os 60s do plano com mais de
     // 1 conta ativa (cada conta já faz vários round-trips pra Tiops).
     const resultados = await Promise.all(configs.map(cfg => {
-      if (ehML(cfg)) return processarContaML(cfg, mcApiKey, ajudantesML());
+      if (ehML(cfg)) return comTetoML(cfg).then(c => processarContaML(c, mcApiKey, ajudantesML()));
       if (req.query?.rodada === 'acompanhamento') return processarAcompanhamento(cfg, mcApiKey);
       const inicioJanela = dataBRT(Math.max(1, cfg.regra_pausa_dias || 3));
       return processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela);
@@ -628,17 +631,19 @@ const PERFIS = {
 let _contratosCache = null;
 async function contratoDaConta(contaId) {
   if (!_contratosCache || Date.now() - _contratosCache.em > 5 * 60e3) { // instância quente da Vercel: no máx. 5 min de atraso
-    const [ctr, vinc, aut] = await Promise.all([lerStorage('glr_contratos').catch(() => null), lerStorage('glr_mc_vinculos').catch(() => null), lerStorage('glr_autonomia_auto').catch(() => null)]);
-    _contratosCache = { ctr: ctr || {}, vinc: vinc || {}, aut: aut || {}, em: Date.now() };
+    const [ctr, vinc, aut, tetos] = await Promise.all([lerStorage('glr_contratos').catch(() => null), lerStorage('glr_mc_vinculos').catch(() => null), lerStorage('glr_autonomia_auto').catch(() => null), lerStorage('glr_metas_tacos').catch(() => null)]);
+    _contratosCache = { ctr: ctr || {}, vinc: vinc || {}, aut: aut || {}, tetos: tetos || {}, em: Date.now() };
   }
-  const { ctr, vinc, aut } = _contratosCache;
+  const { ctr, vinc, aut, tetos } = _contratosCache;
   let cli = null;
   for (const [cid, arr] of Object.entries(vinc)) if ((arr || []).some(c => [c.external_id, c.param_to_use?.shopId, c.param_to_use?.meliUserId].filter(Boolean).map(String).includes(String(contaId)))) { cli = cid; break; }
   const c = (cli && ctr[cli]) || {};
   const perfil = PERFIS[c.perfil] ? c.perfil : 'equilibrio';
   // nível de cada ação: o do contrato quando "fixo"; senão o que o resultado medido decidiu (avaliarAutonomia)
   const nivel = k => (!c.fixo && aut?.[cli]?.[k]?.nivel) || (c.autonomia?.[k] === 'sugerir' ? 'sugerir' : 'executar');
-  return { cliente: cli, perfil, P: PERFIS[perfil], ajuste: nivel('ajuste'), pausar: nivel('pausar'), desfazer: nivel('desfazer') }; // promoção: sempre aprovação manual (não tem nível)
+  // teto de ADS do cliente (Plano de ação → meta): TACOS acima dele trava qualquer aceleração, sem a folga de 10% da meta da conta
+  const tetoTacos = (cli && parseFloat(tetos[cli])) || null;
+  return { cliente: cli, perfil, P: PERFIS[perfil], ajuste: nivel('ajuste'), pausar: nivel('pausar'), desfazer: nivel('desfazer'), tetoTacos }; // promoção: sempre aprovação manual (não tem nível)
 }
 
 // ── Situação da meta do cliente: o que todos os agentes leem ──
@@ -1025,7 +1030,9 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     }
     const tacosConta = tacosMes ?? tacosJanela;
     const rotuloTacos = tacosMes != null ? 'TACOS do mês' : 'TACOS da conta';
-    const tacosDentroDaMeta = !cfg.meta_acos || tacosConta <= cfg.meta_acos * 1.1; // 10% de folga antes de travar aumento de orçamento
+    // com teto de ADS do cliente, o teto manda; senão a meta da conta com 10% de folga antes de travar aumento de orçamento
+    const tacosDentroDaMeta = contrato.tetoTacos ? tacosConta <= contrato.tetoTacos : (!cfg.meta_acos || tacosConta <= cfg.meta_acos * 1.1);
+    const limiteTacosTxt = contrato.tetoTacos ? `do teto de ADS do cliente (${contrato.tetoTacos}%)` : `da meta (${cfg.meta_acos}%)`;
 
     // ACOS sem cancelados: a Shopee atribui ao ADS pedidos que depois foram
     // cancelados (na EAP, 24% do valor em out/2026), então o ACOS dela sai menor
@@ -1156,7 +1163,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
         }
         if (!tacosDentroDaMeta) {
           await logar('sistema', `Aumento represado por TACOS — ${nome}`,
-            `ACOS da campanha (${acosTxt}) sugeriria acelerar a campanha, mas o ${rotuloTacos} (${tacosConta.toFixed(1)}%) já está acima da meta (${cfg.meta_acos}%) — não aumenta automaticamente enquanto isso não normalizar.`,
+            `ACOS da campanha (${acosTxt}) sugeriria acelerar a campanha, mas o ${rotuloTacos} (${tacosConta.toFixed(1)}%) já está acima ${limiteTacosTxt} — não aumenta automaticamente enquanto isso não normalizar.`,
             { acos: acosJanela * 100, tacos_conta: tacosConta }, 'so_alerta');
           continue;
         }
@@ -1485,7 +1492,8 @@ async function processarAcompanhamento(cfg, mcApiKey) {
     const tacos7 = sMes && sMes.faturamento > 0 ? (sMes.ads / sMes.faturamento) * 100 : (s7 && s7.faturamento > 0 ? (s7.ads / s7.faturamento) * 100 : null);
     const rotuloTacosA = sMes && sMes.faturamento > 0 ? 'TACOS do mês' : 'TACOS dos últimos 7 dias';
     const ticket7 = s7 && s7.pedidos > 0 ? s7.faturamento / s7.pedidos : null;
-    const tacosOk = tacos7 == null || !cfg.meta_acos || tacos7 <= cfg.meta_acos * 1.1;
+    const tetoA = (await contratoDaConta(shopId)).tetoTacos;
+    const tacosOk = tacos7 == null || (tetoA ? tacos7 <= tetoA : (!cfg.meta_acos || tacos7 <= cfg.meta_acos * 1.1));
 
     // Campanhas ativas + desempenho de HOJE (parcial)
     const campanhas = await listarTodasCampanhas(mcApiKey, shopId);
@@ -1522,7 +1530,7 @@ async function processarAcompanhamento(cfg, mcApiKey) {
       if (budget > 0 && hora < 18 && h.gasto >= budget * 0.9 && acosHoje != null && cfg.meta_acos && acosHoje <= cfg.meta_acos * 0.8) {
         if (!tacosOk) {
           const titulo = `Orçamento esgotando, aumento represado por TACOS — ${nome}`;
-          if (!titulosHoje.has(titulo)) await logar('sistema', titulo, `Já gastou ${R$(h.gasto)} de ${R$(budget)} até as ${hora}h com ACOS de ${acosHoje.toFixed(1)}% hoje, mas o ${rotuloTacosA} (${tacos7.toFixed(1)}%) está acima da meta (${cfg.meta_acos}%). Não aumentei.`, { campaign_id: id, gasto_hoje: h.gasto, budget, tacos_7d: tacos7 }, 'so_alerta');
+          if (!titulosHoje.has(titulo)) await logar('sistema', titulo, `Já gastou ${R$(h.gasto)} de ${R$(budget)} até as ${hora}h com ACOS de ${acosHoje.toFixed(1)}% hoje, mas o ${rotuloTacosA} (${tacos7.toFixed(1)}%) está acima ${tetoA ? `do teto de ADS do cliente (${tetoA}%)` : `da meta (${cfg.meta_acos}%)`}. Não aumentei.`, { campaign_id: id, gasto_hoje: h.gasto, budget, tacos_7d: tacos7 }, 'so_alerta');
         } else if (!cfg.orcamento_max || budget < cfg.orcamento_max) {
           const novo = Math.round(Math.min(cfg.orcamento_max || Infinity, budget * 1.2) * 100) / 100;
           const varPct = ((novo - budget) / budget) * 100;

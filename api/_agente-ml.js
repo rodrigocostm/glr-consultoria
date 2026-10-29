@@ -150,7 +150,8 @@ async function processarContaML(cfg, mcApiKey, h) {
     if (baseCobre(base, de30)) { const t30 = somarBase(base, de30, ontem); if (t30.pedidos > 0) ticketRef = t30.faturamento / t30.pedidos; }
     const mesIni = ontem.slice(0, 8) + '01';
     if (baseCobre(base, mesIni) && baseCobreAds(base, mesIni)) { const sm = somarBase(base, mesIni, ontem); if (sm.faturamento > 0) tacosMes = sm.ads / sm.faturamento * 100; }
-    const tacosOk = tacosMes == null || !meta || tacosMes <= meta * 1.1;
+    // teto de ADS do cliente (Plano de ação) manda; sem ele, a meta da conta com 10% de folga
+    const tacosOk = tacosMes == null || (cfg.teto_tacos ? tacosMes <= cfg.teto_tacos : (!meta || tacosMes <= meta * 1.1));
     // Mural dos agentes de Estoque e de Margem (calculado pelo sincronizador)
     const sinais = h.lerSinais ? await h.lerSinais('ml', contaId).catch(() => null) : null;
     const avisoDe = ids => sinais ? estoqueMargem.avisosDe(sinais, ids) : null;
