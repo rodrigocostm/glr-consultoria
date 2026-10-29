@@ -395,11 +395,12 @@ Router.register('dashboard', (params, el) => {
   // rolagem, não mais em abas separadas.
   el.innerHTML = `<div class="page dash-v2">
     <div id="dash-aba-conteudo"></div>
-    <div style="margin:40px 0 20px;padding-top:20px;border-top:1px solid var(--border);">
-      <div class="dx-h1" style="font-size:18px">Análises da carteira</div>
-      <div class="section-subtitle">Painel executivo, produtos em queda, plano de ação e checklist diário</div>
-    </div>
-    <div id="dash-analises-conteudo"></div>
+    <!-- O painel antigo de análises continua carregando (é ele que atualiza as projeções
+         que os cards acima usam), mas fica fechado: repetia meta, projeção, ranking e status -->
+    <details class="dx-mais">
+      <summary>Mais análises <span>painel executivo por cliente, produtos em queda e checklist diário</span></summary>
+      <div id="dash-analises-conteudo"></div>
+    </details>
   </div>`;
 
   const contAba = document.getElementById('dash-aba-conteudo');
@@ -494,24 +495,12 @@ Router.register('dashboard', (params, el) => {
       </div>
     </div>
 
-    <!-- KPIs principais -->
-    <div class="kpi-grid dx-kpis">
-      <div class="kpi-flash" data-kpi="fatAtual" data-kpi-val="${faturamentoAtual}">${kpiCard('Faturamento do mês', faturamentoAtual > 0 ? GLR.formatCurrency(faturamentoAtual) : '—', faturamentoAtual > 0 ? 'real, mês até agora' : 'carregando…', true, '', '💵', '', false, 'neutro')}</div>
-      <div class="kpi-flash" data-kpi="qtdPedidos" data-kpi-val="${qtdPedidosAtual}">${kpiCard('Pedidos', qtdPedidosAtual > 0 ? qtdPedidosAtual.toLocaleString('pt-BR') : '—', qtdPedidosAtual > 0 ? 'real, mês até agora' : 'carregando…', true, '', '📦', '', false, 'neutro')}</div>
-      <div class="kpi-flash" data-kpi="receitaGLR" data-kpi-val="${receitaGLR}">${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', receitaGLR > 0 ? 'comissão real do mês' : 'carregando…', true, '', '💰', '', false, 'neutro')}</div>
-      ${kpiCard('Projeção de faturamento', GLR.formatCurrency(faturamentoTotal), crescMedioAPI != null ? `${crescMedioAPI >= 0 ? '+' : ''}${crescMedioAPI.toFixed(1).replace('.', ',')}% vs mês anterior` : (semAPI > 0 ? 'vincule contas para ver dados reais' : ''), crescMedioAPI == null || crescMedioAPI >= 0, '', '🏆', '', false, crescMedioAPI == null ? 'neutro' : '')}
-      ${kpiCard('Projeção da receita GLR', projecaoReceitaGLR > 0 ? GLR.formatCurrency(projecaoReceitaGLR) : '—', projecaoReceitaGLR > 0 ? 'estimativa para o fim do mês' : 'carregando…', true, '', '📈', '', false, 'neutro')}
-      ${kpiCard('Ticket médio por cliente', ticketMedioGLR > 0 ? GLR.formatCurrency(ticketMedioGLR) : '—', ticketMedioGLR > 0 ? `projeção ÷ ${clientes.length} clientes` : 'carregando…', true, '', '🎟️', '', false, 'neutro')}
-    </div>
-
-    <!-- Indicadores secundários -->
-    <div class="dx-stats">
-      ${stat('Clientes na carteira', clientesTodos.length, `${comAPI} com dados reais`)}
-      ${stat('Meta total', metaTotal > 0 ? GLR.formatCurrency(metaTotal) : '—', 'soma das metas')}
-      ${stat('Em crescimento', crescimento, `${clientes.length ? Math.round(crescimento / clientes.length * 100) : 0}% da carteira`, crescimento ? 'dx-pos' : '')}
-      ${stat('Em risco ou queda', risco + queda, `${risco} em risco · ${queda} em queda`, risco + queda ? 'dx-neg' : '')}
-      ${stat('Tarefas pendentes', tarefasPendentes, `${tasksAtras} atrasadas`, tasksAtras ? 'dx-neg' : '')}
-      ${stat('Reuniões na semana', reunioesSemana, 'próximos 7 dias')}
+    <!-- KPIs principais: 4 números, cada um com o contexto embaixo -->
+    <div class="kpi-grid dx-kpis dx-kpis-4">
+      <div class="kpi-flash" data-kpi="fatAtual" data-kpi-val="${faturamentoAtual}">${kpiCard('Faturamento do mês', faturamentoAtual > 0 ? GLR.formatCurrency(faturamentoAtual) : '—', faturamentoAtual > 0 ? `${qtdPedidosAtual.toLocaleString('pt-BR')} pedidos até agora` : 'carregando…', true, '', '💵', '', false, 'neutro')}</div>
+      ${kpiCard('Projeção do mês', GLR.formatCurrency(faturamentoTotal), [crescMedioAPI != null ? `${crescMedioAPI >= 0 ? '+' : ''}${crescMedioAPI.toFixed(1).replace('.', ',')}% vs mês anterior` : '', metaTotal > 0 ? `${Math.round(faturamentoTotal / metaTotal * 100)}% da meta` : ''].filter(Boolean).join(' · '), crescMedioAPI == null || crescMedioAPI >= 0, '', '🏆', '', false, crescMedioAPI == null ? 'neutro' : '')}
+      <div class="kpi-flash" data-kpi="receitaGLR" data-kpi-val="${receitaGLR}">${kpiCard('Receita GLR', receitaGLR > 0 ? GLR.formatCurrency(receitaGLR) : '—', projecaoReceitaGLR > 0 ? `projeção ${GLR.formatCurrency(projecaoReceitaGLR)} no fim do mês` : 'comissão real do mês', true, '', '💰', '', false, 'neutro')}</div>
+      <div onclick="Router.navigate('plano-acao')" style="cursor:pointer" title="Abrir o Plano de ação">${kpiCard('Clientes em atenção', String(risco + queda), `${risco} em risco · ${queda} em queda · de ${clientes.length}`, !(risco + queda), '', '🚦', '', false, risco + queda ? '' : 'neutro')}</div>
     </div>
 
     <!-- Vendas por dia + canais -->
@@ -543,7 +532,7 @@ Router.register('dashboard', (params, el) => {
       </div>
     </div>
 
-    <!-- Atenção: risco + alertas -->
+    <!-- Quem precisa de atenção × quem está puxando -->
     <div class="dx-linha dx-1-1">
       <div class="card">
         <div class="section-header">
@@ -551,73 +540,17 @@ Router.register('dashboard', (params, el) => {
             <div class="section-title">Clientes em risco ou queda</div>
             <div class="section-subtitle">Ordenados pela maior queda</div>
           </div>
-          ${clientesAtencao.length ? `<span class="badge status-risco">${clientesAtencao.length}</span>` : ''}
+          ${clientesAtencao.length ? `<button class="btn btn-ghost btn-sm" onclick="Router.navigate('plano-acao')">Ver no plano (${clientesAtencao.length})</button>` : ''}
         </div>
         ${clientesAtencao.length === 0
           ? vazioTxt('Nenhum cliente em risco — carteira saudável.')
-          : `<div class="dx-lista">${clientesAtencao.map(c => `
+          : `<div class="dx-lista">${clientesAtencao.slice(0, 8).map(c => `
           <div class="dx-li" onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
             <div class="dx-li-txt"><b>${c.nome}</b><span>Gestor: ${nomeGestorDe(c)} · ${GLR.formatCurrency(c.faturamento || 0)}</span></div>
             <div class="dx-li-val"><span class="dx-neg">${c.crescimento || 0}%</span><span class="badge ${GLR.statusColor[c.status]}">${GLR.statusLabel[c.status]}</span></div>
           </div>`).join('')}</div>`}
       </div>
 
-      <div class="card">
-        <div class="section-header">
-          <div>
-            <div class="section-title">Alertas recentes</div>
-            <div class="section-subtitle">Críticos primeiro</div>
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="Router.navigate('alertas')">Ver todos</button>
-        </div>
-        ${(() => {
-          const tom = { risco: 'dx-dot-neg', queda: 'dx-dot-neg', atrasada: 'dx-dot-ate', meta: 'dx-dot-neu', positivo: 'dx-dot-pos' };
-          const alertas = typeof gerarAlertasAutomaticos === 'function' ? gerarAlertasAutomaticos() : [];
-          const criticos = alertas.filter(a => a.tipo === 'risco' || a.tipo === 'queda');
-          const outros = alertas.filter(a => a.tipo !== 'risco' && a.tipo !== 'queda');
-          const lista = [...criticos, ...outros].slice(0, 6);
-          if (!lista.length) return vazioTxt('Nenhum alerta no momento.');
-          return `<div class="dx-lista">${lista.map(a => `<div class="dx-li" onclick="Router.navigate('alertas')">
-              <span class="dx-dot ${tom[a.tipo] || 'dx-dot-neu'}"></span>
-              <div class="dx-li-txt"><b>${a.titulo}</b><span>${a.descricao.substring(0, 110)}${a.descricao.length > 110 ? '…' : ''}</span></div>
-            </div>`).join('')}</div>`;
-        })()}
-      </div>
-    </div>
-
-    <!-- Evolução + status -->
-    <div class="dx-linha dx-2-1">
-      <div class="card">
-        <div class="section-header">
-          <div>
-            <div class="section-title">Evolução da carteira</div>
-            <div class="section-subtitle">Faturamento total nos últimos meses</div>
-          </div>
-        </div>
-        <div class="chart-wrapper"><canvas id="chart-evolucao"></canvas></div>
-      </div>
-      <div class="card">
-        <div class="section-header">
-          <div>
-            <div class="section-title">Distribuição por status</div>
-            <div class="section-subtitle">Situação atual da carteira</div>
-          </div>
-        </div>
-        <div class="dx-status">
-          <div class="dx-status-graf"><canvas id="chart-status"></canvas></div>
-          <div>
-            ${['crescimento', 'ativo', 'queda', 'risco'].map(s => {
-              const count = clientes.filter(c => c.status === s).length;
-              const pct = clientes.length ? Math.round(count / clientes.length * 100) : 0;
-              return `<div class="dx-leg"><i style="background:${{ crescimento: 'var(--green)', ativo: 'var(--accent)', queda: 'var(--orange)', risco: 'var(--red)' }[s]}"></i><span>${GLR.statusLabel[s]}</span><b>${count}</b><small>${pct}%</small></div>`;
-            }).join('')}
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Ranking + gestores -->
-    <div class="dx-linha dx-1-1">
       <div class="card">
         <div class="section-header">
           <div>
@@ -636,6 +569,10 @@ Router.register('dashboard', (params, el) => {
           </div>`).join('')}</div>`}
       </div>
 
+    </div>
+
+    <!-- Gestores -->
+    <div class="dx-linha dx-gest">
       <div class="card">
         <div class="section-header">
           <div>
@@ -648,95 +585,14 @@ Router.register('dashboard', (params, el) => {
           : `<div class="dx-lista">${gestoresComDados.map(g => `
           <div class="dx-li" style="cursor:default">
             <span class="dx-av">${g.avatar}</span>
-            <div class="dx-li-txt"><b>${g.nome}</b><span>${g.cargo ? g.cargo + ' · ' : ''}${g.qtdClientes} cliente${g.qtdClientes !== 1 ? 's' : ''} · ${g.tarefasPend} tarefa${g.tarefasPend !== 1 ? 's' : ''} pendente${g.tarefasPend !== 1 ? 's' : ''}</span></div>
+            <div class="dx-li-txt"><b>${g.nome}</b><span>${g.cargo ? g.cargo + ' · ' : ''}${g.qtdClientes} cliente${g.qtdClientes !== 1 ? 's' : ''}${g.tarefasPend ? ` · ${g.tarefasPend} tarefa${g.tarefasPend !== 1 ? 's' : ''} pendente${g.tarefasPend !== 1 ? 's' : ''}` : ''}</span></div>
             <div class="dx-li-val" style="flex-direction:column;align-items:flex-end;gap:0">${g.crescMedio == null ? '<span>—</span>' : `<span class="${g.crescMedio >= 0 ? 'dx-pos' : 'dx-neg'}">${g.crescMedio >= 0 ? '+' : ''}${g.crescMedio.toFixed(1).replace('.', ',')}%</span>`}<small>${GLR.formatCurrency(g.fat)}</small></div>
           </div>`).join('')}</div>`}
       </div>
     </div>
 
-    <!-- Tarefas + eventos -->
-    <div class="dx-linha dx-1-1">
-      <div class="card">
-        <div class="section-header">
-          <div>
-            <div class="section-title">Tarefas urgentes</div>
-            <div class="section-subtitle">Atrasadas ou com prioridade urgente</div>
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="Router.navigate('tarefas')">Ver todas</button>
-        </div>
-        ${(() => {
-          const urg = GLR.tarefas.filter(t => t.status !== 'concluida' && (t.status === 'atrasada' || (t.prazo && t.prazo < hojeIsoDash) || t.prioridade === 'urgente')).slice(0, 5);
-          if (!urg.length) return vazioTxt('Nenhuma tarefa urgente.');
-          return `<div class="dx-lista">${urg.map(t => {
-            const atras = t.status === 'atrasada' || (t.prazo && t.prazo < hojeIsoDash);
-            return `<div class="dx-li" onclick="Router.navigate('tarefas')">
-              <div class="dx-li-txt"><b>${t.titulo}</b><span>${t.responsavel || '—'} · ${formatDate(t.prazo)}${atras ? ' · <em class="dx-neg">atrasada</em>' : ''}</span></div>
-              <span class="badge ${GLR.prioridadeColor[t.prioridade]}">${t.prioridade}</span>
-            </div>`;
-          }).join('')}</div>`;
-        })()}
-      </div>
+`;
 
-      <div class="card">
-        <div class="section-header">
-          <div>
-            <div class="section-title">Próximos eventos</div>
-            <div class="section-subtitle">Reuniões, follow-ups e entregas</div>
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="Router.navigate('calendario')">Ver calendário</button>
-        </div>
-        ${!GLR.eventos.length ? vazioTxt('Nenhum evento agendado.') : `<div class="dx-lista">${GLR.eventos.slice(0, 5).map(e => `<div class="dx-li" style="cursor:default">
-            <span class="dx-dot" style="background:${GLR.eventoColor[e.tipo] || 'var(--accent)'}"></span>
-            <div class="dx-li-txt"><b>${e.titulo}</b><span>${formatDate(e.data)} às ${e.hora} · ${e.responsavel}</span></div>
-          </div>`).join('')}</div>`}
-      </div>
-    </div>
-
-    ${concentracao.some(c => c.faturamento > 0) ? `
-    <div class="card dx-bloco">
-      <div class="section-header">
-        <div>
-          <div class="section-title">Concentração de faturamento</div>
-          <div class="section-subtitle">Participação de cada cliente</div>
-        </div>
-      </div>
-      <div class="chart-wrapper"><canvas id="chart-concentracao"></canvas></div>
-    </div>` : ''}
-
-    <!-- Carteira completa -->
-    <div class="card dx-bloco" style="padding:0;overflow:hidden">
-      <div class="section-header" style="padding:18px 22px 0">
-        <div>
-          <div class="section-title">Carteira completa</div>
-          <div class="section-subtitle">${clientesTodos.length} clientes · ordenados por faturamento</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input class="form-input" style="width:220px" placeholder="Buscar cliente ou gestor" oninput="window._dashFiltrarCarteira(this.value)">
-          <button class="btn btn-secondary btn-sm" onclick="Router.navigate('clientes')">Gerenciar</button>
-        </div>
-      </div>
-      <div class="table-wrapper" style="padding:6px 0 0">
-      <table class="table" id="dx-carteira">
-        <thead><tr>
-          <th style="padding-left:22px">Cliente</th><th>Gestor</th><th>Status</th>
-          <th style="text-align:right;">Faturamento</th>
-          <th style="text-align:right;">Crescimento</th>
-          <th style="padding-right:22px"></th>
-        </tr></thead>
-        <tbody>
-        ${[...clientesTodos].sort((a, b) => (b.faturamento || 0) - (a.faturamento || 0)).map(c => `
-          <tr style="cursor:pointer;" data-busca="${String(c.nome + ' ' + nomeGestorDe(c)).toLowerCase().replace(/"/g, '')}" onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
-            <td style="font-weight:600;padding-left:22px">${c.nome}</td>
-            <td style="color:var(--text-muted);">${nomeGestorDe(c)}</td>
-            <td><span class="badge ${GLR.statusColor[c.status]}">${GLR.statusLabel[c.status]}</span></td>
-            <td style="text-align:right;">${c._temAPI ? GLR.formatCurrency(c.faturamento || 0) : '<span style="color:var(--text-muted);">sem dados</span>'}</td>
-            <td style="text-align:right;" class="${(c.crescimento || 0) >= 0 ? 'dx-pos' : 'dx-neg'}">${c._temAPI ? `${(c.crescimento || 0) >= 0 ? '+' : ''}${c.crescimento || 0}%` : '—'}</td>
-            <td style="text-align:right;padding-right:22px"><button class="btn btn-ghost btn-sm">Ver perfil</button></td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-      </div>
-    </div>`;
 
   window._dashFiltrarCarteira = q => {
     q = String(q || '').toLowerCase().trim();
