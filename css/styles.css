@@ -1237,3 +1237,8 @@ body.sidebar-mini .nav-grupo .nav-grupo-itens { display: block !important; }
 .skel { display: block; border-radius: 8px; background: linear-gradient(90deg, var(--bg-subtle) 25%, color-mix(in srgb, var(--border) 70%, transparent) 50%, var(--bg-subtle) 75%); background-size: 200% 100%; animation: skelBrilho 1.3s infinite linear; }
 @keyframes skelBrilho { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+.dvd-kpis:has(.dvd-linha) { display: block; margin: 2px 0 12px; }
+.dvd-linha { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12.5px; color: var(--text-secondary); }
+.dvd-linha-i { display: inline-flex; align-items: center; gap: 6px; }
+.dvd-linha-i i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dvd-linha b { color: var(--text-primary); font-weight: 650; font-variant-numeric: tabular-nums; }

@@ -125,7 +125,7 @@ async function reputacaoML(ctx, conta, ant) {
   const rep = out.reputacao;
   const maisAntiga = (out.perguntas || [])[0]?.criada ? (Date.now() - new Date(out.perguntas[0].criada).getTime()) / 3600e3 : null;
   out.risco = !rep ? null : rep.nota && rep.nota <= 3 ? 'alto' : (rep.nota === 4 || (maisAntiga != null && maisAntiga > 24)) ? 'atencao' : 'ok';
-  out.riscoMotivo = !rep ? null : rep.nota && rep.nota <= 4 ? `reputação ${rep.nivel.toLowerCase()}` : maisAntiga > 24 ? `pergunta sem resposta há ${Math.round(maisAntiga)} h` : '';
+  out.riscoMotivo = !rep ? null : rep.nota && rep.nota <= 4 ? `reputação ${rep.nivel.toLowerCase()}` : maisAntiga > 24 ? `pergunta sem resposta há ${maisAntiga >= 48 ? `${Math.round(maisAntiga / 24)} dias` : `${Math.round(maisAntiga)} h`}` : '';
   return out;
 }
 

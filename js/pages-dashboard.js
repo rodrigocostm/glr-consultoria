@@ -99,8 +99,8 @@ function _dashVendasDiaCache() {
 function _dashVendasDiaTxt() {
   const c = _dashVendasDiaCache();
   if (!c?.atualizadoEm) return '⏳ Carregando da base automática...';
-  const fonte = c.lojasBase != null ? ` · ${c.lojasBase} loja${c.lojasBase !== 1 ? 's' : ''} da base automática${c.lojasAPI ? `, ${c.lojasAPI} pela API (histórico ainda carregando ou marketplace fora da base)` : ''}` : '';
-  return `Atualizado em ${new Date(c.atualizadoEm).toLocaleString('pt-BR')}${fonte}`;
+  const n = (c.lojasBase || 0) + (c.lojasAPI || 0);
+  return `Atualizado às ${new Date(c.atualizadoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}${n ? ` · ${n} loja${n !== 1 ? 's' : ''}` : ''}`;
 }
 
 async function _dashBuscarVendasPorDia() {
@@ -483,7 +483,6 @@ Router.register('dashboard', (params, el) => {
   contAba.innerHTML = `
     <div class="dx-topo">
       <div>
-        <div class="dx-h1">Visão geral da carteira</div>
         <div class="dx-sub" id="dash-status-txt">${atualizadoTxt}</div>
       </div>
       <div class="dx-acoes">
@@ -1046,11 +1045,9 @@ function _dashGraficoVendasDia(canvas, dias) {
   const kpis = document.getElementById('dash-vd-kpis');
   if (kpis) {
     const tPed = soma('pedidos'), tCom = soma('comissao'), tFat = soma('faturamento');
-    const item = (rot, val, sub, c) => `<div class="dvd-kpi"><span class="dvd-rot"><i style="background:${c}"></i>${rot}</span><b>${val}</b><small>${sub}</small></div>`;
-    kpis.innerHTML = item('Comissão GLR', R(tCom), `média ${R(tCom / dias.length)}/dia`, VERDE)
-      + item('Vendas', tPed.toLocaleString('pt-BR'), `média ${Math.round(tPed / dias.length).toLocaleString('pt-BR')}/dia`, AZUL)
-      + (tFat > 0 ? item('Faturamento', R(tFat), `ticket ${R(tPed ? tFat / tPed : 0, 2)}`, 'var(--text-muted)') : '')
-      + (melhor ? item('Melhor dia', melhor.data, `${R(melhor.comissao)} de comissão`, '#eb6834') : '');
+    // o total do mês já está nos cards do topo — aqui só o que é novo: médias e melhor dia
+    const item = (c, txt) => `<span class="dvd-linha-i"><i style="background:${c}"></i>${txt}</span>`;
+    kpis.innerHTML = `<div class="dvd-linha">${item(VERDE, `<b>${R(tCom / dias.length)}</b>/dia de comissão`)}${item(AZUL, `<b>${Math.round(tPed / dias.length).toLocaleString('pt-BR')}</b> vendas/dia`)}${tFat > 0 ? item('var(--text-muted)', `ticket <b>${R(tPed ? tFat / tPed : 0, 2)}</b>`) : ''}${melhor ? item('#eb6834', `melhor dia <b>${melhor.data}</b> (${R(melhor.comissao)})`) : ''}</div>`;
   }
 
   const grad = (ctx, c, a1, a2) => { const { chartArea } = ctx.chart; if (!chartArea) return c; const g = ctx.chart.ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom); g.addColorStop(0, c + a1); g.addColorStop(1, c + a2); return g; };
