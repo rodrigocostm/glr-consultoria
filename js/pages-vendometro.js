@@ -35,7 +35,7 @@ Router.register('vendometro', (params, el) => {
   // Portal do cliente: só as contas dele (o banco e o /api/mcp já garantem), sem escolher cliente
   const cfgPortal = window._portalConfig || null;
   if (cfgPortal) { st.cliente = String(cfgPortal.clienteId); if (st.conta && !st.conta.includes(':')) st.conta = ''; }
-  else if (window.GLR?.ctx && GLR.ctx.cliente() !== st.cliente) { st.cliente = GLR.ctx.cliente(); st.conta = ''; } // cliente em foco
+  else if (typeof GLR !== 'undefined' && GLR.ctx && GLR.ctx.cliente() !== st.cliente) { st.cliente = GLR.ctx.cliente(); st.conta = ''; } // cliente em foco
 
   // ── Contas da carteira: "ml:123" → cliente ──
   function contasCarteira() {

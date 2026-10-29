@@ -73,7 +73,7 @@
   function todasOpcoes() {
     const telas = [...document.querySelectorAll('#sidebar .nav-item[data-page], .sidebar .nav-item[data-page]')].filter(b => getComputedStyle(b).display !== 'none' || b.closest('.nav-grupo'))
       .map(b => ({ tipo: 'Tela', nome: b.textContent.replace(/\s+/g, ' ').trim(), grupo: b.closest('.nav-grupo')?.querySelector('.nav-grupo-tit span')?.textContent || '', ir: () => Router.navigate(b.dataset.page) }));
-    const clientes = (window.GLR?.clientes || []).map(c => ({ tipo: 'Cliente', nome: c.nome, grupo: 'Perfil do cliente', ir: () => Router.navigate('cliente-perfil', { id: c.id }) }));
+    const clientes = ((typeof GLR !== 'undefined' ? GLR.clientes : null) || []).map(c => ({ tipo: 'Cliente', nome: c.nome, grupo: 'Perfil do cliente', ir: () => Router.navigate('cliente-perfil', { id: c.id }) }));
     return [...telas, ...clientes];
   }
   function filtrar(q) {
@@ -118,7 +118,7 @@
   function montarSeletorCliente() {
     if (document.getElementById('ctx-cliente') || window._portalConfig) return;
     const titulos = document.querySelector('.header-titulos');
-    if (!titulos || !window.GLR?.ctx) return;
+    if (!titulos || typeof GLR === 'undefined' || !GLR.ctx) return;
     const box = document.createElement('label');
     box.className = 'ctx-box';
     box.title = 'Cliente em foco — as telas abrem direto nas contas dele';
