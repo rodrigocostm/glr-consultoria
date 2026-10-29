@@ -399,6 +399,11 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  // ?rodada=autonomia — recalcula os níveis de autonomia pelo resultado medido (não mexe em campanha)
+  if (req.query?.rodada === 'autonomia') {
+    try { return res.status(200).json({ ok: true, ...(await avaliarAutonomia()) }); } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
+
   // Gerente de Conta: ?rodada=gerente (agenda das 08:00, uma vez por dia) ou
   // ?rodada=gerente&cliente_id=X ("Gerar plano agora" na tela Plano de ação)
   if (req.query?.rodada === 'gerente') {
@@ -427,11 +432,11 @@ module.exports = async function handler(req, res) {
       // ML (copiloto) só na revisão completa das 07h; acompanhamentos são da Shopee
       const configs = todas.filter(cfg => rodada === 'completa' || !ehML(cfg));
       const ontem = dataBRT(1);
-      waitUntil(Promise.all(configs.map(cfg => ehML(cfg)
+      waitUntil((rodada === 'completa' ? avaliarAutonomia().catch(e => console.error('[autonomia]', e)) : Promise.resolve()).then(() => Promise.all(configs.map(cfg => ehML(cfg)
         ? processarContaML(cfg, mcApiKey, ajudantesML())
         : rodada === 'completa'
           ? processarConta(cfg, mcApiKey, anthropicKey, ontem, dataBRT(Math.max(1, cfg.regra_pausa_dias || 3)))
-          : processarAcompanhamento(cfg, mcApiKey)))
+          : processarAcompanhamento(cfg, mcApiKey))))
         .then(r => console.log('[agente]', slot, JSON.stringify(r)))
         .finally(gravarConsumo)
         .catch(e => console.error('[agente] rodada falhou', slot, e)));
@@ -538,15 +543,62 @@ const PERFIS = {
 let _contratosCache = null;
 async function contratoDaConta(contaId) {
   if (!_contratosCache || Date.now() - _contratosCache.em > 5 * 60e3) { // instância quente da Vercel: no máx. 5 min de atraso
-    const [ctr, vinc] = await Promise.all([lerStorage('glr_contratos').catch(() => null), lerStorage('glr_mc_vinculos').catch(() => null)]);
-    _contratosCache = { ctr: ctr || {}, vinc: vinc || {}, em: Date.now() };
+    const [ctr, vinc, aut] = await Promise.all([lerStorage('glr_contratos').catch(() => null), lerStorage('glr_mc_vinculos').catch(() => null), lerStorage('glr_autonomia_auto').catch(() => null)]);
+    _contratosCache = { ctr: ctr || {}, vinc: vinc || {}, aut: aut || {}, em: Date.now() };
   }
-  const { ctr, vinc } = _contratosCache;
+  const { ctr, vinc, aut } = _contratosCache;
   let cli = null;
   for (const [cid, arr] of Object.entries(vinc)) if ((arr || []).some(c => [c.external_id, c.param_to_use?.shopId, c.param_to_use?.meliUserId].filter(Boolean).map(String).includes(String(contaId)))) { cli = cid; break; }
   const c = (cli && ctr[cli]) || {};
   const perfil = PERFIS[c.perfil] ? c.perfil : 'equilibrio';
-  return { cliente: cli, perfil, P: PERFIS[perfil], ajuste: c.autonomia?.ajuste === 'sugerir' ? 'sugerir' : 'executar', pausar: c.autonomia?.pausar === 'sugerir' ? 'sugerir' : 'executar', desfazer: c.autonomia?.desfazer === 'sugerir' ? 'sugerir' : 'executar' };
+  // nível de cada ação: o do contrato quando "fixo"; senão o que o resultado medido decidiu (avaliarAutonomia)
+  const nivel = k => (!c.fixo && aut?.[cli]?.[k]?.nivel) || (c.autonomia?.[k] === 'sugerir' ? 'sugerir' : 'executar');
+  return { cliente: cli, perfil, P: PERFIS[perfil], ajuste: nivel('ajuste'), pausar: nivel('pausar'), desfazer: nivel('desfazer') };
+}
+
+// ── Autonomia que sobe e desce pelo resultado medido ("Deu resultado?") ──
+// Por cliente e por tipo de ação (ajuste, pausar, desfazer), olhando os últimos
+// 30 casos medidos (decisões do agente e as aprovadas pelo analista):
+//  • rebaixa para "Só sugerir" quando 10+ casos e metade ou mais pioraram;
+//  • promove para "Executar" quando 30+ casos, 70%+ melhoraram e até 15% pioraram.
+// O contrato com "fixo" não muda sozinho. Resultado em glr_storage
+// 'glr_autonomia_auto' (só o servidor grava; a tela lê) — o agente usa no lugar
+// do que está no contrato.
+const CHAVE_AUT = l => (l.dados?.desfeito_auto ? 'desfazer' : tipoAcaoShopee(l) === 'pausar' ? 'pausar' : tipoAcaoShopee(l) ? 'ajuste' : null);
+const ROT_AUT = { ajuste: 'ajustar ROAS/orçamento', pausar: 'pausar campanha', desfazer: 'desfazer aperto' };
+async function avaliarAutonomia() {
+  const [vinc, contratos, antes, clientes] = await Promise.all([lerStorage('glr_mc_vinculos'), lerStorage('glr_contratos'), lerStorage('glr_autonomia_auto'), lerStorage('glr_clientes')]);
+  const clienteDe = {};
+  for (const [cid, arr] of Object.entries(vinc || {})) for (const c of (arr || [])) for (const id of [c.external_id, c.param_to_use?.shopId].filter(Boolean)) clienteDe[String(id)] = cid;
+  const logs = await sbSelect('glr_agente_log', `tipo=eq.decisao&resultado=eq.executado&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 75 * 864e5).toISOString())}&select=conta_id,titulo,dados&order=criado_em.desc&limit=8000`).catch(() => []);
+  const grupos = {};
+  for (const l of logs) {
+    const v = l.dados?.medicao?.veredito; if (!['melhorou', 'piorou', 'neutro'].includes(v) || l.dados?.marketplace === 'ml') continue;
+    const cli = clienteDe[String(l.conta_id)], k = CHAVE_AUT(l); if (!cli || !k) continue;
+    ((grupos[cli] = grupos[cli] || {})[k] = grupos[cli][k] || []).push({ v, em: l.dados.medicao.medido_em || '' });
+  }
+  const novo = {}, mudancas = [];
+  const nomeCli = cid => ((clientes || []).find(c => String(c.id) === String(cid)) || {}).nome || `cliente ${cid}`;
+  for (const [cli, porK] of Object.entries(grupos)) for (const [k, casos] of Object.entries(porK)) {
+    const ult = casos.sort((a, b) => String(b.em).localeCompare(String(a.em))).slice(0, 30);
+    const n = ult.length, mel = ult.filter(x => x.v === 'melhorou').length, pio = ult.filter(x => x.v === 'piorou').length;
+    const ctr = (contratos || {})[cli] || {}, base = ctr.autonomia?.[k] === 'sugerir' ? 'sugerir' : 'executar';
+    const prev = antes?.[cli]?.[k];
+    let nivel = ctr.fixo ? base : (prev?.nivel || base), motivo = prev?.motivo || null, mudouEm = prev?.mudou_em || null;
+    if (!ctr.fixo) {
+      if (nivel === 'executar' && n >= 10 && pio / n >= 0.5) { nivel = 'sugerir'; motivo = `${pio} de ${n} casos medidos pioraram`; mudouEm = new Date().toISOString(); mudancas.push({ cli, k, nivel, motivo }); }
+      else if (nivel === 'sugerir' && n >= 30 && mel / n >= 0.7 && pio / n <= 0.15) { nivel = 'executar'; motivo = `${mel} de ${n} casos medidos melhoraram`; mudouEm = new Date().toISOString(); mudancas.push({ cli, k, nivel, motivo }); }
+    }
+    (novo[cli] = novo[cli] || {})[k] = { nivel, base, n, melhorou: mel, piorou: pio, motivo: nivel !== base ? motivo : null, mudou_em: nivel !== base ? mudouEm : null, em: new Date().toISOString() };
+  }
+  await sbUpsert('glr_storage', { chave: 'glr_autonomia_auto', dados: novo, atualizado_em: new Date().toISOString() }, 'chave').catch(() => {});
+  _contratosCache = null;
+  for (const m of mudancas) {
+    const txt = `${nomeCli(m.cli)}: ${ROT_AUT[m.k]} passou para "${m.nivel === 'executar' ? 'Executar' : 'Só sugerir'}" — ${m.motivo}.`;
+    await sbInsert('glr_agente_log', { conta_id: `cliente:${m.cli}`, cliente_nome: nomeCli(m.cli), tipo: 'sistema', titulo: `Autonomia ${m.nivel === 'executar' ? 'promovida' : 'rebaixada'} — ${ROT_AUT[m.k]}`, explicacao: txt, dados: { autonomia: m }, resultado: 'executado', origem: 'cron' }).catch(() => {});
+  }
+  if (mudancas.length) await require('./_alerta').avisar(sbSelect, mudancas.length === 1 ? '🤖 Autonomia do agente mudou' : `🤖 Autonomia mudou em ${mudancas.length} caso(s)`, mudancas.slice(0, 3).map(m => `${nomeCli(m.cli)}: ${ROT_AUT[m.k]} → ${m.nivel === 'executar' ? 'Executar' : 'Só sugerir'} (${m.motivo})`).join('\n'), 'autonomia').catch(() => {});
+  return { clientes: Object.keys(novo).length, mudancas: mudancas.length };
 }
 
 async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) {

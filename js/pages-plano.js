@@ -132,18 +132,24 @@ Router.register('plano-acao', (params, el) => {
     ['equilibrio', 'Equilíbrio', 'o comportamento padrão: contém acima da meta, acelera com ACOS 30% abaixo dela; freio com queda de 25%'],
     ['lucrar', 'Lucrar', 'protege a margem: acelera só com ACOS 40% abaixo da meta; freio só com queda de 35%']];
   const AUTON = [['ajuste', 'Ajustar ROAS e orçamento (ADS Shopee)'], ['pausar', 'Pausar campanha (ADS Shopee)'], ['desfazer', 'Desfazer sozinho um aperto que derrubou a venda']];
-  const contratoDe = cid => { const c = lerJSON('glr_contratos', {})[cid] || {}; return { perfil: c.perfil || 'equilibrio', autonomia: { ajuste: 'executar', pausar: 'executar', desfazer: 'executar', ...(c.autonomia || {}) }, em: c.em }; };
+  const contratoDe = cid => { const c = lerJSON('glr_contratos', {})[cid] || {}; return { perfil: c.perfil || 'equilibrio', fixo: !!c.fixo, autonomia: { ajuste: 'executar', pausar: 'executar', desfazer: 'executar', ...(c.autonomia || {}) }, em: c.em }; };
+  // nível que o resultado medido decidiu (servidor grava glr_autonomia_auto; a sincronização traz)
+  const autoDe = cid => lerJSON('glr_autonomia_auto', {})[cid] || {};
+  const efetivo = (c, a, k) => (!c.fixo && a[k]?.nivel) || c.autonomia[k];
   function renderContrato(p) {
     const cid = String(p.cliente.id), c = contratoDe(cid);
-    const resumo = `${PERFIS.find(x => x[0] === c.perfil)[1]} · ${AUTON.filter(([k]) => c.autonomia[k] === 'executar').length} de 3 ações no automático`;
+    const a = autoDe(cid);
+    const resumo = `${PERFIS.find(x => x[0] === c.perfil)[1]} · ${AUTON.filter(([k]) => efetivo(c, a, k) === 'executar').length} de 3 ações no automático${AUTON.some(([k]) => !c.fixo && a[k]?.nivel && a[k].nivel !== c.autonomia[k]) ? ' · ajustado pelo resultado' : ''}`;
     return `<details class="card pl-bloco pl-ctr" ${st.ctrAberto ? 'open' : ''} ontoggle="window._plCtrToggle(this.open)">
       <summary class="pl-bloco-t">Contrato e autonomia <span class="pl-sub">${h(resumo)}</span></summary>
       <div class="pl-ctr-g">
         <div><div class="pl-ctr-t">Perfil do cliente</div>
           ${PERFIS.map(([k, t, d]) => `<label class="pl-ctr-op"><input type="radio" name="pl-perfil" value="${k}" ${c.perfil === k ? 'checked' : ''}><span><b>${t}</b><small>${d}</small></span></label>`).join('')}</div>
         <div><div class="pl-ctr-t">O que o agente faz sozinho</div>
-          ${AUTON.map(([k, t]) => `<div class="pl-ctr-a"><span>${t}</span><select id="pl-aut-${k}" class="form-control"><option value="executar" ${c.autonomia[k] === 'executar' ? 'selected' : ''}>Executar</option><option value="sugerir" ${c.autonomia[k] === 'sugerir' ? 'selected' : ''}>Só sugerir</option></select></div>`).join('')}
-          <div class="pl-sub" style="margin-top:6px">"Só sugerir" manda a ação para a Caixa de decisões. Os limites de cada conta (variação máxima, orçamento mínimo e máximo) continuam valendo.</div>
+          ${AUTON.map(([k, t]) => { const x = a[k], mudou = !c.fixo && x?.nivel && x.nivel !== c.autonomia[k];
+            return `<div class="pl-ctr-a"><span>${t}${x?.n ? `<small class="pl-ctr-res">${x.n} medido(s): <b style="color:var(--green)">${x.melhorou} melhoraram</b> · <b style="color:var(--red)">${x.piorou} pioraram</b></small>` : '<small class="pl-ctr-res">ainda sem casos medidos</small>'}${mudou ? `<small class="pl-ctr-mud">agora em <b>${x.nivel === 'executar' ? 'Executar' : 'Só sugerir'}</b> pelo resultado (${h(x.motivo || '')})</small>` : ''}</span><select id="pl-aut-${k}" class="form-control"><option value="executar" ${c.autonomia[k] === 'executar' ? 'selected' : ''}>Executar</option><option value="sugerir" ${c.autonomia[k] === 'sugerir' ? 'selected' : ''}>Só sugerir</option></select></div>`; }).join('')}
+          <label class="pl-ctr-fixo"><input type="checkbox" id="pl-aut-fixo" ${c.fixo ? 'checked' : ''}> Fixo — não mudar o nível sozinho pelo resultado</label>
+          <div class="pl-sub" style="margin-top:6px">Sem "Fixo", o nível sobe ou desce sozinho: rebaixa para "Só sugerir" se metade ou mais de 10+ casos medidos piorou; promove para "Executar" com 30+ casos, 70% melhorando e até 15% piorando. "Só sugerir" manda a ação para a Caixa de decisões. Os limites de cada conta continuam valendo.</div>
         </div>
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px"><button class="btn btn-primary btn-sm" onclick="window._plSalvarContrato('${h(cid)}')">Salvar contrato</button>${st.ctrSalvo === cid ? '<span class="pl-sub" style="color:var(--green)">Salvo — vale a partir da próxima revisão do agente</span>' : ''}</div>
@@ -239,7 +245,8 @@ Router.register('plano-acao', (params, el) => {
   window._plSalvarContrato = cid => {
     const perfil = document.querySelector('input[name="pl-perfil"]:checked')?.value || 'equilibrio';
     const autonomia = Object.fromEntries(AUTON.map(([k]) => [k, document.getElementById(`pl-aut-${k}`)?.value === 'sugerir' ? 'sugerir' : 'executar']));
-    const todos = lerJSON('glr_contratos', {}); todos[cid] = { perfil, autonomia, em: Date.now() };
+    const fixo = !!document.getElementById('pl-aut-fixo')?.checked;
+    const todos = lerJSON('glr_contratos', {}); todos[cid] = { perfil, autonomia, fixo, em: Date.now() };
     localStorage.setItem('glr_contratos', JSON.stringify(todos)); // sincroniza (supabase-init) — o agente lê no servidor
     st.ctrSalvo = cid; st.ctrAberto = true; render();
   };
@@ -319,7 +326,9 @@ Router.register('plano-acao', (params, el) => {
     .pl-ctr-t{font-size:12px;font-weight:650;color:var(--text-secondary);margin-bottom:6px}
     .pl-ctr-op{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;cursor:pointer} .pl-ctr-op:has(input:checked){border-color:var(--accent);background:var(--accent-glow)}
     .pl-ctr-op span{display:flex;flex-direction:column} .pl-ctr-op b{font-size:13px} .pl-ctr-op small{font-size:11.5px;color:var(--text-muted);line-height:1.45}
-    .pl-ctr-a{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px} .pl-ctr-a select{width:140px}
+    .pl-ctr-a{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px} .pl-ctr-a select{width:140px;flex-shrink:0}
+    .pl-ctr-a>span{display:flex;flex-direction:column;gap:1px} .pl-ctr-res{font-size:11.5px;color:var(--text-muted)} .pl-ctr-mud{font-size:11.5px;color:var(--accent)}
+    .pl-ctr-fixo{display:flex;gap:7px;align-items:center;font-size:12.5px;margin-top:8px;cursor:pointer}
     .pl-bloco{padding:12px 14px;margin-bottom:12px} .pl-bloco-t{font-weight:650;font-size:14px;margin-bottom:8px;display:flex;gap:8px;align-items:baseline}
     .pl-acao{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:9px 0;border-top:1px solid var(--border)}
     .pl-acao.resolvida{opacity:.55} .pl-quem{font-size:11px;font-weight:650;color:var(--q)}
