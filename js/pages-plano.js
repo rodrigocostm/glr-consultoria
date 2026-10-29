@@ -96,17 +96,20 @@ Router.register('plano-acao', (params, el) => {
   function renderAcao(p, a) {
     const s = status()[a.id], ab = st.acaoAberta === a.id, ehMeta = /^Meta:/.test(a.titulo || '');
     const cid = h(p.cliente.id), id = h(a.id);
-    const bt = s ? `<span class="pl-sub">${s.st === 'feito' ? 'Feito' : s.st === 'tarefa' ? 'Virou tarefa' : 'Descartada'}${s.motivo ? ` — ${h(s.motivo)}` : ''}</span><button class="pl-x" title="Reabrir" onclick="window._plReabrir('${id}')">↺</button>`
-      : `${a.tela ? `<button class="btn btn-primary btn-sm" onclick="window._plIr('${h(a.tela)}')">Fazer agora</button><button class="btn btn-secondary btn-sm" onclick="window._plTarefa('${cid}','${id}')">Virar tarefa</button>`
-        : `<button class="btn btn-primary btn-sm" onclick="window._plTarefa('${cid}','${id}')">Virar tarefa</button>`}<button class="btn btn-secondary btn-sm" onclick="window._plFeito('${id}')">Feito</button><button class="pl-x" title="Descartar" onclick="window._plDescartar('${id}')">✕</button>`;
+    const tarefa = `<button class="btn btn-${a.tela ? 'secondary' : 'primary'} btn-sm" onclick="window._plTarefa('${cid}','${id}')">Virar tarefa</button>`;
+    const principal = s ? `<span class="pl-sub">${s.st === 'feito' ? 'Feito' : s.st === 'tarefa' ? 'Virou tarefa' : 'Descartada'}${s.motivo ? ` — ${h(s.motivo)}` : ''}</span><button class="pl-x" title="Reabrir" onclick="window._plReabrir('${id}')">↺</button>`
+      : a.tela ? `<button class="btn btn-primary btn-sm" onclick="window._plIr('${h(a.tela)}')">Fazer agora</button>` : tarefa;
+    // o resto (virar tarefa, feito, descartar) fica no detalhe — a linha mostra só a ação principal
+    const outras = s ? '' : `${a.tela ? tarefa : ''}<button class="btn btn-secondary btn-sm" onclick="window._plFeito('${id}')">Marcar como feito</button><button class="btn btn-secondary btn-sm" onclick="window._plDescartar('${id}')">Descartar</button>`;
     return `<div class="pl-acao ${s ? 'resolvida' : ''} ${ab ? 'aberta' : ''}" style="--q:${a.quem === 'cliente' ? 'var(--purple)' : 'var(--accent)'}">
-      <button type="button" class="pl-acao-main" aria-expanded="${ab}" onclick="window._plAcaoTog('${id}')">
+      <button type="button" class="pl-acao-main" aria-expanded="${ab}" title="${ab ? 'Fechar' : 'Ver o porquê e mais opções'}" onclick="window._plAcaoTog('${id}')">
         <span class="pl-quem">${QUEM[a.quem] || h(a.quem)}</span>
         <span class="pl-acao-tit">${ehMeta ? '<span class="pl-tag">meta</span>' : ''}${h(tirarMeta(a.titulo))}</span>
         ${a.impacto ? `<span class="pl-imp">${h(a.impacto)}</span>` : ''}
+        <span class="pl-seta" aria-hidden="true">${ab ? '▴' : '▾'}</span>
       </button>
-      <div class="pl-acao-bt">${bt}</div>
-      ${ab ? `<div class="pl-acao-det">${h(a.porque || '')}${a.loja ? `<div class="pl-sub">${h(a.loja)}</div>` : ''}</div>` : ''}
+      <div class="pl-acao-bt">${principal}</div>
+      ${ab ? `<div class="pl-acao-det">${h(a.porque || '')}${a.loja ? `<div class="pl-sub">${h(a.loja)}</div>` : ''}${outras ? `<div class="pl-acao-mais">${outras}</div>` : ''}</div>` : ''}
     </div>`;
   }
 
@@ -369,7 +372,7 @@ Router.register('plano-acao', (params, el) => {
     .pl-grupo+.pl-grupo{margin-top:16px} .pl-grupo-t{display:flex;gap:8px;align-items:baseline;font-weight:650;font-size:13px;margin-bottom:2px}
     .pl-acao{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:7px 0;border-top:1px solid var(--border)}
     .pl-acao.resolvida{opacity:.55}
-    .pl-acao-main{all:unset;cursor:pointer;display:grid;grid-template-columns:62px minmax(0,1fr) auto;gap:10px;align-items:center;min-width:0;padding:3px 0;border-radius:6px}
+    .pl-acao-main{all:unset;cursor:pointer;display:grid;grid-template-columns:62px minmax(0,1fr) auto auto;gap:10px;align-items:center;min-width:0;padding:3px 0;border-radius:6px}
     .pl-acao-main:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     .pl-quem{font-size:11px;font-weight:650;color:var(--q)}
     .pl-acao-tit{font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -377,8 +380,9 @@ Router.register('plano-acao', (params, el) => {
     .pl-tag{font-size:10.5px;font-weight:700;color:var(--accent);background:var(--accent-glow);border-radius:5px;padding:1px 6px;margin-right:6px;vertical-align:1px}
     .pl-imp{font-size:12px;color:var(--text-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
     .pl-acao-bt{display:flex;gap:6px;align-items:center;justify-content:flex-end}
+    .pl-seta{font-size:10px;color:var(--text-muted);width:10px} .pl-acao-mais{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
     .pl-acao-det{grid-column:1/-1;font-size:12.5px;line-height:1.5;color:var(--text-secondary);padding:2px 0 6px 72px}
-    @media (max-width:760px){.pl-acao{grid-template-columns:1fr}.pl-acao-main{grid-template-columns:auto minmax(0,1fr)}.pl-imp{grid-column:2}.pl-acao-bt{justify-content:flex-start;flex-wrap:wrap}.pl-acao-det{padding-left:0}.pl-hero-em{text-align:left;flex-basis:100%}}
+    @media (max-width:760px){.pl-acao{grid-template-columns:1fr}.pl-acao-main{grid-template-columns:auto minmax(0,1fr) auto}.pl-imp{grid-column:2}.pl-acao-bt{justify-content:flex-start;flex-wrap:wrap}.pl-acao-det{padding-left:0}.pl-hero-em{text-align:left;flex-basis:100%}}
     .pl-cam-res{font-size:13.5px;color:var(--text-secondary);margin-bottom:12px} .pl-cam-res b{color:var(--text-primary)} .pl-cam-res small{font-size:11.5px;color:var(--text-muted)}
     .pl-cob{height:6px;border-radius:99px;background:var(--bg-subtle);overflow:hidden;margin:8px 0 3px;max-width:420px} .pl-cob i{display:block;height:100%;background:var(--green);border-radius:99px}
     .pl-alav-txt .pl-sub{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45}
@@ -389,9 +393,6 @@ Router.register('plano-acao', (params, el) => {
     .pl-ctr-reg{margin-top:10px}
     #pl-pauta{font-size:13px;line-height:1.5;resize:vertical}
     .pl-causa{display:inline-block;font-size:11.5px;padding:2px 7px;border-radius:6px;background:var(--bg-subtle);margin:1px 0} .pl-c-estoque{background:color-mix(in srgb,var(--orange) 15%,transparent)} .pl-c-ads{background:color-mix(in srgb,var(--accent) 14%,transparent)} .pl-c-preco{background:color-mix(in srgb,var(--purple) 14%,transparent)} .pl-c-anuncio,.pl-c-qualidade{background:color-mix(in srgb,var(--red) 12%,transparent)}
-    .pl-acao-bt>*:not(:first-child){opacity:0;transition:opacity .15s}
-    .pl-acao:hover .pl-acao-bt>*, .pl-acao:focus-within .pl-acao-bt>*, .pl-acao.resolvida .pl-acao-bt>*{opacity:1}
-    @media (hover:none){.pl-acao-bt>*:not(:first-child){opacity:1}}
     .pl-tab-wrap{padding:0;overflow-x:auto}
     .pl-tab{width:100%;border-collapse:collapse;font-size:13px}
     .pl-tab th{font-size:11.5px;font-weight:600;color:var(--text-muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
