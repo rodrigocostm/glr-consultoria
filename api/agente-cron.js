@@ -404,7 +404,9 @@ module.exports = async function handler(req, res) {
   if (req.query?.rodada === 'gerente') {
     const ajud = { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic };
     try {
-      if (req.query?.cliente_id) return res.status(200).json({ ok: true, planos: await gerente.gerarPlanos(ajud, req.query.cliente_id) });
+      // a tela manda a meta que acabou de salvar (o glr_storage pode ainda não ter recebido)
+      const metaNova = req.query?.meta != null || req.query?.meta_pedidos != null ? { cliente: req.query.cliente_id, meta: req.query.meta, metaPedidos: req.query.meta_pedidos } : null;
+      if (req.query?.cliente_id) return res.status(200).json({ ok: true, planos: await gerente.gerarPlanos(ajud, req.query.cliente_id, metaNova) });
       const slot = `${agoraBRT().dia}-gerente`;
       if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
       waitUntil(gerente.gerarPlanos(ajud).then(r => console.log('[gerente]', JSON.stringify(r))).catch(e => console.error('[gerente] falhou', e)));

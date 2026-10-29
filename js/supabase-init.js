@@ -21,6 +21,8 @@ const GLR_KEYS = [
   'glr_aliquotas',      // % de imposto padrão por conta
   'glr_comissao_contas', // contas que NÃO contam comissão GLR ({ id: false })
   'glr_margem_minima',   // margem mínima de lucro por conta (agente de Margem → ACOS alvo)
+  'glr_metas',           // meta de faturamento por cliente (Gestores, Projeção, Plano de ação) — o Gerente lê no servidor
+  'glr_metas_pedidos',   // meta de pedidos por cliente (Plano de ação)
   'glr_plano_status',    // Plano de ação: ação feita / virou tarefa / descartada (Gerente de Conta)
   'glr_vendas_linhas',  // linhas extras de custo/desconto lançadas no admin
   'glr_fin_manual',     // lançamentos manuais do Financeiro (antes ficavam só no navegador de quem lançou)
@@ -105,7 +107,7 @@ localStorage.setItem = function(key, value) {
 // espera: string simples fica como está, objeto/array vira JSON.stringify
 const _paraLocalStorage = dados => typeof dados === 'string' ? dados : JSON.stringify(dados);
 
-const CHAVES_MESCLAR_NA_1A_SYNC = ['glr_fin_manual'];
+const CHAVES_MESCLAR_NA_1A_SYNC = ['glr_fin_manual', 'glr_metas']; // glr_metas: cada PC tinha as suas (não sincronizava)
 // União profunda: objetos juntam as chaves dos dois lados; listas juntam os
 // itens sem repetir; em valor simples conflitante fica o do banco.
 function _mesclarProfundo(remoto, local) {

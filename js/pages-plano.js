@@ -94,6 +94,37 @@ Router.register('plano-acao', (params, el) => {
     </div>`;
   }
 
+  // Meta do mês + o caminho que o Gerente montou até ela
+  const numBR = v => { const x = parseFloat(String(v ?? '').replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')); return isNaN(x) ? null : x; };
+  const metasDe = cid => ({ fat: lerJSON('glr_metas', {})[cid], ped: lerJSON('glr_metas_pedidos', {})[cid] });
+  const CONF = { alta: 'var(--green)', 'média': 'var(--yellow)', baixa: 'var(--text-muted)' };
+  function barra(atual, alvo) { const p = alvo ? Math.min(100, atual / alvo * 100) : 0; return `<div class="pl-barra"><i style="width:${p}%;background:${p >= 100 ? 'var(--green)' : p >= 85 ? 'var(--yellow)' : 'var(--red)'}"></i></div>`; }
+  function renderMeta(p) {
+    const m = p.metricas || {}, c = p.caminho, cid = String(p.cliente.id), salvas = metasDe(cid);
+    const vFat = salvas.fat ?? m.meta, vPed = salvas.ped ?? m.metaPedidos;
+    const form = `<div class="pl-meta-form">
+      <label>Faturamento <span class="pl-in">R$ <input id="pl-meta-fat" class="form-control" inputmode="decimal" placeholder="ex.: 300.000" value="${vFat ? Number(vFat).toLocaleString('pt-BR') : ''}"></span></label>
+      <label>Pedidos <span class="pl-in"><input id="pl-meta-ped" class="form-control" inputmode="numeric" placeholder="ex.: 2.000" value="${vPed ? Number(vPed).toLocaleString('pt-BR') : ''}"></span></label>
+      <button class="btn btn-primary btn-sm" ${st.gerando ? 'disabled' : ''} onclick="window._plSalvarMeta('${h(cid)}')">${st.gerando ? 'Calculando o caminho…' : 'Salvar e calcular o caminho'}</button>
+    </div>`;
+    if (!c) return `<div class="card pl-bloco"><div class="pl-bloco-t">Meta do mês <span class="pl-sub">defina e o Gerente monta o caminho até ela</span></div>${form}</div>`;
+    const linhaMeta = (rot, atual, alvo, precisa, ritmo, fmt) => alvo ? `<div class="pl-meta-l"><div class="pl-meta-top"><span>${rot}</span><b>${fmt(atual)} <small>de ${fmt(alvo)}</small></b><small>${Math.round(atual / alvo * 100)}% na projeção</small></div>${barra(atual, alvo)}${precisa != null ? `<div class="pl-sub">precisa de <b>${fmt(precisa)}/dia</b> daqui até o fim do mês · hoje faz ${fmt(ritmo)}/dia</div>` : ''}</div>` : '';
+    const N = v => Math.round(v || 0).toLocaleString('pt-BR');
+    return `<div class="card pl-bloco pl-meta">
+      <div class="pl-bloco-t">Meta do mês <span class="pl-sub">${c.diasRest} dia(s) até o fim do mês</span></div>
+      ${form}
+      <div class="pl-meta-ls">${linhaMeta('Faturamento', c.proj, m.meta, c.precisaDia, c.ritmoDia, R$)}${linhaMeta('Pedidos', c.projPedidos, m.metaPedidos, c.precisaPedDia, c.ritmoPedDia, N)}</div>
+      ${c.atinge ? '<div class="pl-meta-ok">No ritmo de hoje a meta é batida. O plano abaixo segue para proteger o resultado.</div>' : `
+      <div class="pl-meta-falta">Faltam <b>${R$(c.falta)}</b>${c.faltaPedidos ? ` (≈ ${N(c.faltaPedidos)} pedidos a ${R$(c.ticket)})` : ''} na projeção. As alavancas abaixo somam <b>~${R$(c.soma)}</b> até o fim do mês — <b>${c.cobertura}%</b> do que falta.</div>
+      ${c.alavancas.length ? `<div class="pl-alav">${c.alavancas.map(a => `<div class="pl-alav-i">
+        <div class="pl-alav-txt"><b>${h(a.titulo)}</b>${a.porque ? `<div class="pl-sub">${h(a.porque)}</div>` : ''}</div>
+        <div class="pl-alav-v"><b>+${R$(a.valor)}</b><small style="color:${CONF[a.conf] || 'inherit'}">confiança ${h(a.conf)}</small></div>
+        ${a.tela ? `<button class="btn btn-secondary btn-sm" onclick="window._plIr('${h(a.tela)}')">Fazer</button>` : ''}
+      </div>`).join('')}</div>` : '<div class="pl-sub">Os agentes não acharam alavancas nos dados deste cliente agora.</div>'}
+      ${c.resto > 0 ? `<div class="pl-meta-resto"><b>Ainda faltariam ~${R$(c.resto)}.</b> Além das alavancas, isso pede ação comercial: lançar produtos ou variações, entrar numa data/campanha relâmpago do marketplace${c.adsExtra ? `, ou investir <b>~${R$(c.adsExtra)}</b> a mais de ADS no mês mantendo o TACOS de hoje` : ''}.</div>` : ''}`}
+    </div>`;
+  }
+
   // Raio-X do faturamento: o que puxou e o que derrubou nas últimas 2 semanas
   function renderRaioX(rx, m) {
     if (!rx) return `<div class="card pl-bloco"><div class="pl-bloco-t">Raio-X do faturamento</div><div class="pl-sub">Sem pedidos suficientes na base para comparar as últimas 2 semanas.</div></div>`;
@@ -139,6 +170,7 @@ Router.register('plano-acao', (params, el) => {
           <div><span>Resultados medidos (7 d)</span><b>${p.resultados?.medidas || 0}</b><small>${p.resultados?.melhoraram || 0} melhoraram</small></div>
         </div>
       </div>
+      ${renderMeta(p)}
       ${renderRaioX(p.raioX, m)}
       <div class="pl-cols">
         <div>${grupos.map(([t, fn]) => { const as = (p.acoes || []).filter(fn); return as.length ? `<div class="card pl-bloco"><div class="pl-bloco-t">${t} <span class="pl-sub">${as.filter(a => !status()[a.id]).length} aberta(s)</span></div>${as.map(a => renderAcao(p, a)).join('')}</div>` : ''; }).join('') || '<div class="card pl-bloco"><div class="pl-sub">Nenhuma ação hoje — os agentes não encontraram nada urgente.</div></div>'}</div>
@@ -177,6 +209,21 @@ Router.register('plano-acao', (params, el) => {
     render();
   };
   window._plCopiar = () => { const t = document.getElementById('pl-pauta')?.value || ''; navigator.clipboard?.writeText(t).then(() => { st.copiado = true; render(); }, () => alert('Não consegui copiar — selecione o texto e copie.')); };
+  window._plSalvarMeta = async cid => {
+    const fat = numBR(document.getElementById('pl-meta-fat')?.value), ped = numBR(document.getElementById('pl-meta-ped')?.value);
+    const mf = lerJSON('glr_metas', {}), mp = lerJSON('glr_metas_pedidos', {});
+    if (fat > 0) mf[cid] = fat; else delete mf[cid];
+    if (ped > 0) mp[cid] = Math.round(ped); else delete mp[cid];
+    localStorage.setItem('glr_metas', JSON.stringify(mf)); localStorage.setItem('glr_metas_pedidos', JSON.stringify(mp)); // sincronizam (supabase-init)
+    st.gerando = true; render();
+    try {
+      const q = `&meta=${encodeURIComponent(fat > 0 ? fat : '')}&meta_pedidos=${encodeURIComponent(ped > 0 ? Math.round(ped) : '')}`;
+      const r = await fetch(`/api/agente-cron?rodada=gerente&cliente_id=${encodeURIComponent(cid)}${q}`);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    } catch (e) { alert('Meta salva, mas não consegui recalcular o caminho agora: ' + (e.message || e)); }
+    st.gerando = false; await carregar();
+  };
   window._plGerar = async cid => {
     st.gerando = true; render();
     try {
@@ -222,6 +269,17 @@ Router.register('plano-acao', (params, el) => {
     .pl-tab tbody tr{cursor:pointer;box-shadow:inset 3px 0 0 var(--c)} .pl-tab tbody tr:hover{background:var(--bg-subtle)}
     .pl-tab .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
     .pl-tab .pl-queda{max-width:340px}
+    .pl-meta-form{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;margin-bottom:12px} .pl-meta-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)}
+    .pl-in{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted)} .pl-in input{width:150px}
+    .pl-meta-ls{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:10px}
+    .pl-meta-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--text-secondary)} .pl-meta-top b{font-size:16px;color:var(--text-primary);font-variant-numeric:tabular-nums} .pl-meta-top b small{font-size:12px;color:var(--text-muted);font-weight:500}
+    .pl-barra{height:8px;border-radius:99px;background:var(--bg-subtle);overflow:hidden;margin:6px 0 4px} .pl-barra i{display:block;height:100%;border-radius:99px}
+    .pl-meta-falta{font-size:13px;margin:6px 0 10px;color:var(--text-secondary)} .pl-meta-falta b{color:var(--text-primary)}
+    .pl-meta-ok{font-size:13px;color:var(--green);font-weight:600;margin-top:4px}
+    .pl-alav{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+    .pl-alav-i{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:9px 12px;border-top:1px solid var(--border)} .pl-alav-i:first-child{border-top:0}
+    .pl-alav-txt b{font-size:13px;font-weight:600} .pl-alav-v{text-align:right;display:flex;flex-direction:column} .pl-alav-v b{font-size:14px;color:var(--green);font-variant-numeric:tabular-nums} .pl-alav-v small{font-size:11px}
+    .pl-meta-resto{font-size:12.5px;color:var(--text-secondary);background:var(--bg-subtle);border-radius:10px;padding:9px 12px;margin-top:10px;line-height:1.5}
     .pl-bloco{padding:12px 14px;margin-bottom:12px} .pl-bloco-t{font-weight:650;font-size:14px;margin-bottom:8px;display:flex;gap:8px;align-items:baseline}
     .pl-acao{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:9px 0;border-top:1px solid var(--border)}
     .pl-acao.resolvida{opacity:.55} .pl-quem{font-size:11px;font-weight:650;color:var(--q)}

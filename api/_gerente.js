@@ -228,6 +228,71 @@ function calcularRaioX(lojas, pedidosPor, medidos) {
   };
 }
 
+// ── Caminho para a meta ──────────────────────────────────────────────
+// Quanto falta (R$ e pedidos) até o fim do mês e as alavancas que os dados já
+// mostram, cada uma com quanto rende até o fim do mês (estimativa conservadora,
+// com o grau de confiança). Se a soma não chega, diz quanto falta além disso e
+// quanto de ADS a mais seria preciso mantendo o TACOS de hoje.
+const FATOR = { estoque: [0.8, 'alta'], anuncio: [0.7, 'alta'], ads: [0.6, 'média'], preco: [0.5, 'média'], qualidade: [0.4, 'baixa'] };
+const ROTULO_CAUSA = {
+  estoque: n => `Repor o estoque de ${n} produto(s) que pararam de vender`, anuncio: n => `Reativar/consertar ${n} anúncio(s) pausados ou em revisão`,
+  ads: n => `Desfazer o aperto de ADS em ${n} produto(s) que perderam venda`, preco: n => `Rever o preço de ${n} produto(s) que subiram e caíram`, qualidade: n => `Consertar o anúncio de ${n} produto(s) com problema de qualidade`,
+};
+const TELA_CAUSA = { estoque: 'estoque-margem', anuncio: 'qualidade-anuncios', ads: 'decisoes', preco: 'precos-ml', qualidade: 'qualidade-anuncios' };
+function calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos }) {
+  if (!(meta > 0) && !(metaPedidos > 0)) return null;
+  const diasRest = Math.max(0, dm - dd), semRest = diasRest / 7;
+  const ticket = pedidos > 0 ? fat / pedidos : 0;
+  const proj = dd > 0 ? fat / dd * dm : 0, projPed = dd > 0 ? pedidos / dd * dm : 0;
+  const faltaR = meta > 0 ? Math.max(0, meta - proj) : 0;
+  const faltaPed = metaPedidos > 0 ? Math.max(0, metaPedidos - projPed) : 0;
+  // o que pesa mais: a meta em R$ ou a de pedidos (convertida pelo ticket do mês)
+  const falta = Math.max(faltaR, faltaPed * ticket);
+  const base = { diasRest, ticket: Math.round(ticket), proj: Math.round(proj), projPedidos: Math.round(projPed), faltaR: Math.round(faltaR), faltaPedidos: Math.round(faltaPed), falta: Math.round(falta),
+    precisaDia: diasRest > 0 && meta > 0 ? Math.round(Math.max(0, meta - fat) / diasRest) : null, ritmoDia: dd > 0 ? Math.round(fat / dd) : null,
+    precisaPedDia: diasRest > 0 && metaPedidos > 0 ? Math.round(Math.max(0, metaPedidos - pedidos) / diasRest) : null, ritmoPedDia: dd > 0 ? Math.round(pedidos / dd) : null };
+  if (!falta || !diasRest) return { ...base, atinge: true, alavancas: [], soma: 0, cobertura: 100 };
+  const alav = [];
+  // 1) recuperar as quedas que têm causa
+  const porCausa = {};
+  for (const x of raioX?.caiu || []) {
+    const t = x.causas?.[0]?.tipo; if (!FATOR[t]) continue;
+    (porCausa[t] = porCausa[t] || []).push(x);
+  }
+  const jaContados = new Set();
+  for (const [t, xs] of Object.entries(porCausa)) {
+    const v = xs.reduce((s, x) => s + x.perdaSem, 0) * semRest * FATOR[t][0];
+    xs.forEach(x => jaContados.add(`${x.conta}:${x.id}`));
+    alav.push({ id: `rec-${t}`, titulo: ROTULO_CAUSA[t](xs.length), porque: xs.slice(0, 2).map(x => `${corta(x.nome, 40)} (−${R$(x.perdaSem)}/sem)`).join(', '), valor: Math.round(v), conf: FATOR[t][1], tela: TELA_CAUSA[t] });
+  }
+  // 2) evitar a ruptura de quem acaba antes do fim do mês
+  let rupt = 0, nRupt = 0, exRupt = '';
+  for (const L of lojas) for (const [id, i] of Object.entries(L.sinais?.itens || {})) {
+    if (jaContados.has(`${L.conta}:${id}`) || !(i.vd > 0) || i.d == null || i.d >= diasRest) continue;
+    rupt += i.vd * i.p * (diasRest - Math.max(0, i.d)); nRupt++; if (!exRupt) exRupt = `${corta(i.n, 40)} acaba em ~${Math.round(i.d)} d`;
+  }
+  if (rupt > 0) alav.push({ id: 'ruptura', titulo: `Repor ${nRupt} produto(s) que vão acabar antes do fim do mês`, porque: exRupt, valor: Math.round(rupt * 0.8), conf: 'alta', tela: 'estoque-margem', quem: 'cliente' });
+  // 3) acelerar quem está crescendo (sem alerta de estoque)
+  const campeoes = (raioX?.subiu || []).filter(x => !x.alerta);
+  if (campeoes.length) alav.push({ id: 'campeoes', titulo: `Dar mais ADS/visibilidade aos ${campeoes.length} produto(s) que estão crescendo`, porque: campeoes.slice(0, 2).map(x => `${corta(x.nome, 40)} (+${R$(x.ganhoSem)}/sem)`).join(', '), valor: Math.round(campeoes.reduce((s, x) => s + x.agora, 0) * 0.2 * semRest), conf: 'média', tela: 'agente' });
+  // 4) sugestões de ADS que ganham venda (esperando aprovação)
+  const contas = new Set(lojas.map(L => L.conta));
+  const ganho = pendentes.filter(l => contas.has(String(l.conta_id)) && l.dados?.impacto_tipo === 'ganho' && parseFloat(l.dados?.impacto) > 0);
+  if (ganho.length) alav.push({ id: 'ads-ganho', titulo: `Aprovar ${ganho.length} sugestão(ões) de ADS para ganhar venda`, porque: corta(String(ganho[0].titulo || '').replace(/^Sugestão:?\s*/, ''), 80), valor: Math.round(ganho.reduce((s, l) => s + parseFloat(l.dados.impacto), 0) * semRest * 0.5), conf: 'média', tela: 'decisoes' });
+  // 5) promoções que cabem na margem
+  let promo = 0, nPromo = 0;
+  for (const L of lojas) for (const [id, x] of Object.entries(L.promocoes?.itens || {})) {
+    if (!x.melhor) continue; const sn = L.sinais?.itens?.[id];
+    promo += (sn?.vd || 0) * (sn?.p || x.p || 0) * 7 * 0.15 * semRest; nPromo++;
+  }
+  if (nPromo && promo > 0) alav.push({ id: 'promocoes', titulo: `Aplicar ${nPromo} promoção(ões) que cabem na margem`, porque: 'estimativa de +15% de venda nesses produtos', valor: Math.round(promo), conf: 'baixa', tela: 'promocoes' });
+  alav.sort((a, b) => b.valor - a.valor);
+  const soma = alav.reduce((s, a) => s + a.valor, 0);
+  const resto = Math.max(0, falta - soma);
+  return { ...base, atinge: false, alavancas: alav, soma: Math.round(soma), cobertura: Math.round(Math.min(100, soma / falta * 100)),
+    resto: Math.round(resto), adsExtra: resto > 0 && tacos > 0 ? Math.round(resto * tacos / 100) : null };
+}
+
 // Queda relevante vira ação, com a causa já apontada
 function acoesDoRaioX(rx) {
   if (!rx) return [];
@@ -260,7 +325,7 @@ async function escreverUmaVez(Anthropic, anthropicKey, fatos) {
     const r = await client.messages.create({
       model: 'claude-haiku-5-5',
       max_tokens: 2500,
-      system: 'Você é o gerente de conta de uma consultoria de marketplaces (Mercado Livre e Shopee). Escreve para o analista da própria consultoria, em português do Brasil, direto e prático. Use SOMENTE os números e fatos do JSON — nunca invente número, produto, prazo ou ação. Responda APENAS um JSON válido: {"diagnostico":"até 4 frases: como o cliente está no mês (faturamento x meta/projeção, TACOS) e, pelo raio_x, DE ONDE o faturamento está vindo e PARA ONDE está indo — os produtos que mais caíram em R$/semana e a causa apontada, e os que mais cresceram. Cite produto e valor.","pauta":"pauta do dia para o analista conversar com o cliente, em tópicos curtos com hífen: 1) como o faturamento andou nas últimas 2 semanas e o que puxou/derrubou (raio_x), 2) o que fizemos e o resultado medido (se houver), 3) o que precisamos do cliente (só as ações com quem=cliente), 4) próximos passos. Tom cordial, pronto para virar mensagem. No máximo 8 tópicos, cada um com até 2 frases."}',
+      system: 'Você é o gerente de conta de uma consultoria de marketplaces (Mercado Livre e Shopee). Escreve para o analista da própria consultoria, em português do Brasil, direto e prático. Use SOMENTE os números e fatos do JSON — nunca invente número, produto, prazo ou ação. Responda APENAS um JSON válido: {"diagnostico":"até 4 frases: como o cliente está no mês (faturamento x meta/projeção, TACOS) e, pelo raio_x, DE ONDE o faturamento está vindo e PARA ONDE está indo — os produtos que mais caíram em R$/semana e a causa apontada, e os que mais cresceram. Cite produto e valor. Se houver caminho_para_meta, diga quanto falta para a meta e se as alavancas cobrem (cobertura_pct), citando as 2 maiores.","pauta":"pauta do dia para o analista conversar com o cliente, em tópicos curtos com hífen: 1) como o faturamento andou nas últimas 2 semanas e o que puxou/derrubou (raio_x), 2) o que fizemos e o resultado medido (se houver), 3) o que precisamos do cliente (só as ações com quem=cliente), 4) próximos passos. Tom cordial, pronto para virar mensagem. No máximo 8 tópicos, cada um com até 2 frases."}',
       messages: [{ role: 'user', content: JSON.stringify(fatos) }],
     });
     const txt = r.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
@@ -272,10 +337,10 @@ async function escreverUmaVez(Anthropic, anthropicKey, fatos) {
 }
 
 // h: { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic }
-async function gerarPlanos(h, filtroCliente) {
+async function gerarPlanos(h, filtroCliente, metaNova) {
   const { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic } = h;
-  const [clientes, vinc, metas, gestores, nicks, estados, configs, pendentes, medidos] = await Promise.all([
-    lerStorage('glr_clientes').then(x => x || []), lerStorage('glr_mc_vinculos').then(x => x || {}), lerStorage('glr_metas').then(x => x || {}), lerStorage('glr_gestores').then(x => x || []), lerStorage('glr_mc_nicknames').then(x => x || {}),
+  const [clientes, vinc, metas, metasPed, gestores, nicks, estados, configs, pendentes, medidos] = await Promise.all([
+    lerStorage('glr_clientes').then(x => x || []), lerStorage('glr_mc_vinculos').then(x => x || {}), lerStorage('glr_metas').then(x => x || {}), lerStorage('glr_metas_pedidos').then(x => x || {}), lerStorage('glr_gestores').then(x => x || []), lerStorage('glr_mc_nicknames').then(x => x || {}),
     sbSelect('glr_sync_estado', 'recurso=in.(resumo,sinais,promocoes,reputacao,qualidade)&marketplace=in.(ml,shopee)&select=marketplace,conta_id,recurso,cursor').catch(() => []),
     sbSelect('glr_agente_config', 'select=conta_id,marketplace,meta_acos,cliente_nome').catch(() => []),
     sbSelect('glr_agente_log', `tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 10 * 864e5).toISOString())}&select=conta_id,titulo,dados&limit=3000`).catch(() => []),
@@ -304,13 +369,16 @@ async function gerarPlanos(h, filtroCliente) {
     }
     if (!lojas.length) return;
     // Métricas do mês (todas as lojas)
-    let fat = 0, ads = 0, fatAnt = 0, cobreAnt = true;
+    let fat = 0, ads = 0, fatAnt = 0, cobreAnt = true, pedidos = 0;
     for (const L of lojas) {
-      const m = somarDias(L.resumo?.dias, mesIni, ontem); fat += m.faturamento; ads += m.ads;
+      const m = somarDias(L.resumo?.dias, mesIni, ontem); fat += m.faturamento; ads += m.ads; pedidos += m.pedidos;
       const a = somarDias(L.resumo?.dias, antIni, antFim); if (!a.cobre) cobreAnt = false; fatAnt += a.faturamento;
     }
     const proj = dd > 0 ? fat / dd * dm : 0;
-    const meta = parseFloat(metas[c.id] ?? metas[String(c.id)]) || parseFloat(c.metaMensal) || null; // meta da Projeção ou do cadastro
+    // meta da tela do plano (acabou de salvar) > Projeção/Gestores (glr_metas) > cadastro do cliente
+    const nova = metaNova && String(metaNova.cliente) === String(c.id) ? metaNova : null;
+    const meta = (nova && nova.meta != null ? (parseFloat(nova.meta) || null) : null) ?? (parseFloat(metas[c.id] ?? metas[String(c.id)]) || parseFloat(c.metaMensal) || null);
+    const metaPedidos = (nova && nova.metaPedidos != null ? (parseFloat(nova.metaPedidos) || null) : null) ?? (parseFloat(metasPed[c.id] ?? metasPed[String(c.id)]) || null);
     const tacos = fat > 0 ? ads / fat * 100 : null;
     const metasTacos = lojas.map(L => parseFloat(cfgDe[L.conta]?.meta_acos)).filter(v => v > 0);
     const metaTacos = metasTacos.length ? Math.min(...metasTacos) : null;
@@ -323,8 +391,12 @@ async function gerarPlanos(h, filtroCliente) {
       const pedidosPor = new Map(lojas.map((L, i) => [L.conta, peds[i]]));
       try { raioX = calcularRaioX(lojas, pedidosPor, medidos); } catch (e) { raioX = null; }
     }
+    const caminho = calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos: fat > 0 ? ads / fat * 100 : null });
+    // as 2 maiores alavancas viram ações do plano (com o R$ que rendem até o fim do mês)
+    const acoesMeta = (caminho?.alavancas || []).slice(0, 2).map((a, i) => ({ id: `meta:${c.id}:${a.id}`, tipo: 'meta', quando: 'hoje', quem: a.quem || 'analista', tela: a.tela,
+      titulo: `Meta: ${a.titulo}`, porque: `${a.porque ? a.porque + ' — ' : ''}rende ~${R$(a.valor)} até o fim do mês (confiança ${a.conf})`, impacto: `~${R$(a.valor)} no mês`, valor: a.valor, peso: 1200 + a.valor / 10 - i }));
     // Ações de todas as lojas, sem repetir, as mais importantes primeiro
-    const todas = [...acoesDoRaioX(raioX), ...lojas.flatMap(L => acoesDaLoja(L, { pendentes }))].sort((a, b) => b.peso - a.peso);
+    const todas = [...acoesMeta, ...acoesDoRaioX(raioX), ...lojas.flatMap(L => acoesDaLoja(L, { pendentes }))].sort((a, b) => b.peso - a.peso);
     const acoes = []; const vistos = new Set();
     for (const a of todas) { if (vistos.has(a.id)) continue; vistos.add(a.id); acoes.push(a); if (acoes.length >= MAX_ACOES) break; }
     // Resultado medido dos últimos 7 dias (o que levar ao cliente)
@@ -334,13 +406,14 @@ async function gerarPlanos(h, filtroCliente) {
     // Semáforo
     const repAlto = lojas.some(L => L.reputacao?.risco === 'alto');
     const prazoCurto = acoes.some(a => a.id.startsWith('rec:') && a.peso >= 1800);
-    const pctMeta = meta ? proj / meta * 100 : null;
+    const projPedidos = dd > 0 ? pedidos / dd * dm : 0;
+    const pctMeta = meta ? proj / meta * 100 : metaPedidos ? projPedidos / metaPedidos * 100 : null;
     const semaforo = repAlto || prazoCurto || (pctMeta != null && pctMeta < 80) || (metaTacos && tacos != null && tacos > metaTacos * 1.3) ? 'vermelho'
       : (pctMeta != null && pctMeta < 95) || (metaTacos && tacos != null && tacos > metaTacos) || acoes.filter(a => a.quando === 'hoje').length >= 3 ? 'amarelo' : 'verde';
-    const metricas = { faturamento: Math.round(fat), projecao: Math.round(proj), meta, pctMeta: pctMeta == null ? null : r1(pctMeta), tacos: tacos == null ? null : r1(tacos), metaTacos, varMes: varMes == null ? null : r1(varMes), lojas: lojas.length, dia: dd, diasMes: dm };
+    const metricas = { faturamento: Math.round(fat), projecao: Math.round(proj), meta, metaPedidos, pedidos, projPedidos: Math.round(projPedidos), pctMetaPedidos: metaPedidos ? r1(projPedidos / metaPedidos * 100) : null, pctMeta: pctMeta == null ? null : r1(pctMeta), tacos: tacos == null ? null : r1(tacos), metaTacos, varMes: varMes == null ? null : r1(varMes), lojas: lojas.length, dia: dd, diasMes: dm };
     if (meta && proj < meta && dm > dd) metricas.faltaPorDia = Math.round((meta - fat) / (dm - dd));
     if (dd > 0) metricas.ritmoDia = Math.round(fat / dd);
-    const fatos = { cliente: c.nome, metricas, raio_x: raioX && { periodo: raioX.periodo, semana_antes: raioX.semanaAntes, semana_agora: raioX.semanaAgora, variacao_pct: raioX.var,
+    const fatos = { cliente: c.nome, metricas, caminho_para_meta: caminho && { falta_rs: caminho.faltaR, falta_pedidos: caminho.faltaPedidos, precisa_por_dia: caminho.precisaDia, ritmo_por_dia: caminho.ritmoDia, alavancas: caminho.alavancas.map(a => ({ o_que: a.titulo, rende_ate_fim_do_mes: a.valor, confianca: a.conf })), soma_alavancas: caminho.soma, cobertura_pct: caminho.cobertura, falta_alem_das_alavancas: caminho.resto, ads_extra_mantendo_tacos: caminho.adsExtra }, raio_x: raioX && { periodo: raioX.periodo, semana_antes: raioX.semanaAntes, semana_agora: raioX.semanaAgora, variacao_pct: raioX.var,
       caiu: raioX.caiu.map(x => ({ produto: x.nome, loja: x.loja, antes_sem: x.antes, agora_sem: x.agora, perda_sem: x.perdaSem, causas: x.causas.map(c => c.t) })),
       subiu: raioX.subiu.map(x => ({ produto: x.nome, loja: x.loja, antes_sem: x.antes, agora_sem: x.agora, ganho_sem: x.ganhoSem, novo: x.novo, alerta: x.alerta })),
       lojas: raioX.lojas, concentracao_top5_pct: raioX.concentracaoTop5 },
@@ -355,7 +428,7 @@ async function gerarPlanos(h, filtroCliente) {
     ].join('\n');
     const plano = {
       em: Date.now(), dia: isoBRT(0), cliente: { id: c.id, nome: c.nome, gestorId: c.gestorId ?? null, gestor: gestorNome(c.gestorId) },
-      semaforo, metricas, acoes, resultados, raioX, diagnostico: txt?.diagnostico || diagRegra, pauta: txt?.pauta || pautaRegra, fonteTexto: txt ? 'ia' : 'regra',
+      semaforo, metricas, acoes, resultados, raioX, caminho, diagnostico: txt?.diagnostico || diagRegra, pauta: txt?.pauta || pautaRegra, fonteTexto: txt ? 'ia' : 'regra',
     };
     await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `cliente:${c.id}`, recurso: 'plano', ultimo_sucesso: new Date().toISOString(), ultima_tentativa: new Date().toISOString(), ultimo_erro: null, registros: acoes.length, cursor: plano }, 'marketplace,conta_id,recurso');
     saida.push({ cliente: c.nome, semaforo, acoes: acoes.length });
@@ -365,4 +438,4 @@ async function gerarPlanos(h, filtroCliente) {
   return saida;
 }
 
-module.exports = { gerarPlanos, acoesDaLoja, calcularRaioX };
+module.exports = { gerarPlanos, acoesDaLoja, calcularRaioX, calcularCaminho };
