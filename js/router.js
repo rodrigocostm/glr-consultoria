@@ -13,7 +13,10 @@ const Router = {
 
   navigate(path, params = {}) {
     this.currentParams = params;
-    window.location.hash = path;
+    // o perfil guarda o cliente no endereço: recarregar a página não perde qual cliente estava aberto
+    const hash = path === 'cliente-perfil' && params.id != null ? `${path}?id=${encodeURIComponent(params.id)}` : path;
+    if (window.location.hash.replace('#', '') === hash) this.resolve(); // mesmo endereço não dispara hashchange
+    else window.location.hash = hash;
   },
 
   init() {
