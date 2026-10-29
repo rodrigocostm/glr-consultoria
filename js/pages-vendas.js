@@ -130,6 +130,7 @@ Router.register('vendas', async (params, el) => {
   // Remover depois que o frete do ML estiver batendo certinho.
   function _diagMostrar(grupo, pedidoId, obj) {
     if (window._portalConfig) return; // depuração interna: nunca no portal do cliente
+    try { if (localStorage.getItem('glr_debug') !== '1') return; } catch (e) { return; } // só com a depuração ligada (localStorage glr_debug=1)
     let box = document.getElementById('diag-api-box');
     if (!box) {
       box = document.createElement('div');

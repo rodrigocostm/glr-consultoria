@@ -887,6 +887,7 @@ Router.register('projecao', (params, el) => {
   // Painel de diagnóstico temporário — mesmo padrão já usado em Vendas pra achar
   // bug de campo/duplicação sem precisar abrir o console do navegador.
   function _diagMostrarAv(grupo, chaveId, obj) {
+    try { if (localStorage.getItem('glr_debug') !== '1') return; } catch (e) { return; } // só com a depuração ligada (localStorage glr_debug=1)
     let box = document.getElementById('diag-api-box');
     if (!box) {
       box = document.createElement('div');
