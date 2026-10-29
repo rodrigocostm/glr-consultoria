@@ -96,6 +96,11 @@
         state.contas = (cfgResp.data || []).filter(c => !c.marketplace || String(c.marketplace).toLowerCase() === 'shopee');
         state.logs = logsResp.data || [];
         state.relatorios = relResp.data || [];
+        // Cliente em foco (seletor da barra de cima) → abre direto a conta Shopee dele
+        if (state.contaAbertaId == null && GLR.ctx?.cliente()) {
+          const doCli = state.contas.find(x => GLR.ctx.clienteDaConta('shopee', x.conta_id) === GLR.ctx.cliente());
+          if (doCli) state.contaAbertaId = doCli.conta_id;
+        }
         // Só 1 conta configurada (ou nenhuma) → abre direto no detalhe, sem
         // forçar clique extra num portfólio de 1 card só.
         if (state.contaAbertaId == null && state.contas.length <= 1) {
@@ -2585,6 +2590,7 @@
       buscarDadosAoVivo(state.contaAbertaId, state.negocioPeriodo);
     };
     window._agAbrirConta = (id) => {
+      if (id && id !== '__novo__') GLR.ctx?.definirPorConta('shopee', id);
       state.contaAbertaId = id; state.chatMessages = []; render();
       if (id && id !== '__novo__') { buscarNegocio(id); buscarDadosAoVivo(id); abcCarregarDoCache(id); render(); }
     };
@@ -2657,7 +2663,7 @@
       alert(`Sugestão criada: "${rotulo} — ${nome}". Aprove (ou rejeite) na faixa "Precisa de você" lá em cima.`);
     };
     window._agAnalisarABC = () => abcAtualizar(state.contaAbertaId);
-    window._agVoltarPortfolio = () => { state.contaAbertaId = null; render(); };
+    window._agVoltarPortfolio = () => { state.contaAbertaId = null; GLR.ctx?.definir('', true); render(); };
     window._agExecutarAcaoManual = executarAcaoManual;
     window._agRodarAgora = rodarAgenteAgora;
     window._agAprovarAlerta = aprovarAlerta;

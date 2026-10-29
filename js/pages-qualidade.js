@@ -22,6 +22,7 @@ Router.register('qualidade-anuncios', (params, el) => {
       const vinc = lerJSON('glr_mc_vinculos', {}), nomes = new Map();
       for (const c of (window.GLR?.clientes || [])) for (const ct of (vinc[String(c.id)] || [])) [ct.external_id, ct.param_to_use?.shopId, ct.param_to_use?.meliUserId].filter(Boolean).forEach(i => nomes.set(String(i), `${c.nome} · ${ct.nickname || ct.external_id}`));
       st.contas = (data || []).map(r => ({ ...r, nome: GLR.nomeConta(r.marketplace, r.conta_id) })).sort((a, b) => (b.resumo?.ruins || 0) - (a.resumo?.ruins || 0) || a.nome.localeCompare(b.nome));
+      { const p = GLR.ctx?.escolher(st.contas.map(c => ({ k: `${c.marketplace}:${c.conta_id}`, mkt: c.marketplace, id: c.conta_id })), st.conta); if (p) st.conta = p; } // cliente em foco
       if (!st.contas.some(c => `${c.marketplace}:${c.conta_id}` === st.conta)) st.conta = st.contas[0] ? `${st.contas[0].marketplace}:${st.contas[0].conta_id}` : '';
       GLR.quandoClientes(() => { st.contas.forEach(c => { c.nome = GLR.nomeConta(c.marketplace, c.conta_id); }); render(); });
       st.erro = null;
@@ -84,7 +85,7 @@ Router.register('qualidade-anuncios', (params, el) => {
         </tbody></table></div>
       </div>`}`;
   }
-  window._qaConta = k => { st.conta = k; try { localStorage.setItem('glr_qa_conta', k); } catch (e) {} carregarConta(); };
+  window._qaConta = k => { st.conta = k; GLR.ctx?.definirPorConta(k.split(':')[0], k.split(':')[1]); try { localStorage.setItem('glr_qa_conta', k); } catch (e) {} carregarConta(); };
   window._qaFiltro = k => { st.filtro = k; render(); };
 
   el.innerHTML = `<div class="page">

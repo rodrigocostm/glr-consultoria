@@ -35,6 +35,7 @@ Router.register('vendometro', (params, el) => {
   // Portal do cliente: só as contas dele (o banco e o /api/mcp já garantem), sem escolher cliente
   const cfgPortal = window._portalConfig || null;
   if (cfgPortal) { st.cliente = String(cfgPortal.clienteId); if (st.conta && !st.conta.includes(':')) st.conta = ''; }
+  else if (window.GLR?.ctx && GLR.ctx.cliente() !== st.cliente) { st.cliente = GLR.ctx.cliente(); st.conta = ''; } // cliente em foco
 
   // ── Contas da carteira: "ml:123" → cliente ──
   function contasCarteira() {
@@ -262,7 +263,7 @@ Router.register('vendometro', (params, el) => {
 
   // ── Ações ──
   function salvarSel() { try { localStorage.setItem('glr_vm_sel', JSON.stringify({ cliente: st.cliente, conta: st.conta })); } catch (e) {} }
-  window._vmCliente = v => { st.cliente = v; st.conta = ''; st.todos = false; salvarSel(); render(); };
+  window._vmCliente = v => { st.cliente = v; GLR.ctx?.definir(v, true); st.conta = ''; st.todos = false; salvarSel(); render(); };
   window._vmConta = v => { st.conta = v; salvarSel(); render(); };
   // listas de cliente e conta (só clientes com conta vinculada)
   function montarSeletores() {

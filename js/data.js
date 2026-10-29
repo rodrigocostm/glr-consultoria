@@ -142,6 +142,43 @@ GLR.nomeConta = (mkt, id) => {
   return conta ? `${conta}${MK ? ' · ' + MK : ''} (sem cliente)` : `${MK || 'Conta'} ${id} (sem cliente)`;
 };
 // Chama fn quando a lista de clientes já carregou do banco (ou depois de 10 s)
+// ── Cliente em foco: um seletor só (barra de cima) para o sistema todo ──
+// Cada tela que escolhe conta abre na conta do cliente em foco; trocar a conta
+// dentro da tela muda o cliente em foco (sem redesenhar). '' = todos.
+GLR.ctx = (() => {
+  const K = 'glr_ctx_cliente';
+  const ler = () => { try { return localStorage.getItem(K) || ''; } catch (e) { return ''; } };
+  const mktN = m => { m = String(m || '').toLowerCase(); return ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : m; };
+  function clienteDaConta(mkt, id) {
+    let vinc = {}; try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
+    id = String(id || ''); const m = mktN(mkt);
+    if (!id) return '';
+    for (const [cid, arr] of Object.entries(vinc)) for (const c of (arr || [])) {
+      const ids = [c.external_id, c.param_to_use?.shopId, c.param_to_use?.meliUserId, c.param_to_use?.amazon_account_id, c.param_to_use?.magalu_account_id, c.param_to_use?.shein_supplier_id].filter(Boolean).map(String);
+      if (ids.includes(id) && (!m || !c.marketplace || mktN(c.marketplace) === m)) return String(cid);
+    }
+    return '';
+  }
+  return {
+    cliente: ler,
+    clienteDaConta,
+    definir(id, silencioso) {
+      id = String(id || '');
+      if (id === ler()) return;
+      try { id ? localStorage.setItem(K, id) : localStorage.removeItem(K); } catch (e) {}
+      window.dispatchEvent(new CustomEvent('glr:cliente', { detail: { id } }));
+      if (!silencioso && window.Router) Router.resolve();
+    },
+    definirPorConta(mkt, id) { const c = clienteDaConta(mkt, id); if (c) this.definir(c, true); },
+    // entre as contas da tela ({ k, mkt, id }), a do cliente em foco — mantém a atual se já for dele
+    escolher(opcoes, atual) {
+      const c = ler(); if (!c) return null;
+      const doCli = opcoes.filter(o => clienteDaConta(o.mkt, o.id) === c);
+      if (!doCli.length) return null;
+      return doCli.some(o => o.k === atual) ? atual : doCli[0].k;
+    },
+  };
+})();
 GLR.quandoClientes = fn => { let n = 0; const t = () => ((GLR.clientes || []).length || ++n > 20) ? fn() : setTimeout(t, 500); t(); };
 
 GLR.tipoAcaoColor = {

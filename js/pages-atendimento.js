@@ -26,6 +26,7 @@ Router.register('atendimento', (params, el) => {
       for (const c of (window.GLR?.clientes || [])) for (const ct of (vinc[String(c.id)] || [])) [ct.external_id, ct.param_to_use?.shopId, ct.param_to_use?.meliUserId].filter(Boolean).forEach(i => nomes.set(String(i), `${c.nome} · ${ct.nickname || ct.external_id}`));
       const peso = r => (r?.risco === 'alto' ? 1000 : r?.risco === 'atencao' ? 100 : 0) + (r?.perguntas || 0) + (r?.comPrazo || 0) * 5 + (r?.pedemResposta || 0) * 5;
       st.contas = (rows || []).map(r => ({ ...r, nome: GLR.nomeConta(r.marketplace, r.conta_id) })).sort((a, b) => peso(b.resumo) - peso(a.resumo) || a.nome.localeCompare(b.nome));
+      { const p = GLR.ctx?.escolher(st.contas.map(c => ({ k: `${c.marketplace}:${c.conta_id}`, mkt: c.marketplace, id: c.conta_id })), st.conta); if (p) st.conta = p; } // cliente em foco
       if (!st.contas.some(c => `${c.marketplace}:${c.conta_id}` === st.conta)) st.conta = st.contas[0] ? `${st.contas[0].marketplace}:${st.contas[0].conta_id}` : '';
       GLR.quandoClientes(() => { st.contas.forEach(c => { c.nome = GLR.nomeConta(c.marketplace, c.conta_id); }); render(); });
       st.erro = null;
@@ -123,7 +124,7 @@ Router.register('atendimento', (params, el) => {
       </div>`}`}`;
   }
 
-  window._atConta = k => { st.conta = k; try { localStorage.setItem('glr_at_conta', k); } catch (e) {} carregarConta(); };
+  window._atConta = k => { st.conta = k; GLR.ctx?.definirPorConta(k.split(':')[0], k.split(':')[1]); try { localStorage.setItem('glr_at_conta', k); } catch (e) {} carregarConta(); };
   window._atResponder = async id => {
     const p = (st.dados?.perguntas || []).find(x => x.id === id); if (!p) return;
     const txt = (document.getElementById(`at-r-${id}`)?.value || '').trim();

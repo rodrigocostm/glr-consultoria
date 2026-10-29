@@ -47,6 +47,8 @@ Router.register('agente-ml', (params, el) => {
       state.logs = logs.data || [];
       try { state.base = window.BaseDados ? await BaseDados.carregar() : null; } catch (e) { state.base = null; }
       if (state.aberta && !cfgDe(state.aberta) && state.aberta !== '__novo__') state.aberta = null;
+      const foco = GLR.ctx?.cliente(); // cliente em foco (barra de cima) → conta ML dele
+      if (foco && GLR.ctx.clienteDaConta('ml', state.aberta) !== foco) { const doCli = state.configs.find(x => GLR.ctx.clienteDaConta('ml', x.conta_id) === foco); if (doCli) state.aberta = String(doCli.conta_id); }
       if (!state.aberta && state.configs.length === 1) state.aberta = String(state.configs[0].conta_id);
     } catch (e) { console.warn('[Agente ML]', e); }
     state.carregando = false; render();
@@ -519,6 +521,7 @@ Router.register('agente-ml', (params, el) => {
 
   window._amlAbrir = id => {
     state.aberta = id || null; state.editando = false;
+    if (!id) GLR.ctx?.definir('', true); else if (id !== '__novo__') GLR.ctx?.definirPorConta('ml', id);
     try { if (id && id !== '__novo__') localStorage.setItem('glr_aml_conta', id); else localStorage.removeItem('glr_aml_conta'); } catch (e) {}
     render();
     if (id && id !== '__novo__') carregarCampanhas(id);

@@ -27,6 +27,7 @@ Router.register('estoque-margem', (params, el) => {
       if (error) throw error;
       st.contas = (data || []).map(r => ({ ...r, nome: GLR.nomeConta(r.marketplace, r.conta_id) }))
         .sort((a, b) => ((b.resumo?.zerados || 0) + (b.resumo?.criticos || 0) + (b.resumo?.negativos || 0)) - ((a.resumo?.zerados || 0) + (a.resumo?.criticos || 0) + (a.resumo?.negativos || 0)) || a.nome.localeCompare(b.nome));
+      { const p = GLR.ctx?.escolher(st.contas.map(c => ({ k: `${c.marketplace}:${c.conta_id}`, mkt: c.marketplace, id: c.conta_id })), st.conta); if (p) st.conta = p; } // cliente em foco
       if (!st.contas.some(c => `${c.marketplace}:${c.conta_id}` === st.conta)) st.conta = st.contas[0] ? `${st.contas[0].marketplace}:${st.contas[0].conta_id}` : '';
       // nomes de novo quando os clientes terminarem de carregar
       GLR.quandoClientes(() => { st.contas.forEach(c => { c.nome = GLR.nomeConta(c.marketplace, c.conta_id); }); render(); });
@@ -111,7 +112,7 @@ Router.register('estoque-margem', (params, el) => {
       </div>`}`;
   }
 
-  window._emConta = k => { st.conta = k; try { localStorage.setItem('glr_em_conta', k); } catch (e) {} carregarConta(); };
+  window._emConta = k => { st.conta = k; GLR.ctx?.definirPorConta(k.split(':')[0], k.split(':')[1]); try { localStorage.setItem('glr_em_conta', k); } catch (e) {} carregarConta(); };
   window._emFiltro = k => { st.filtro = k; render(); };
   let tBusca = null;
   window._emBusca = v => { st.busca = v; clearTimeout(tBusca); tBusca = setTimeout(() => { render(); const i = document.querySelector('.em-busca'); if (i) { i.focus(); i.setSelectionRange(v.length, v.length); } }, 250); };

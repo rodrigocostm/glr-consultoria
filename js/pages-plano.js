@@ -36,6 +36,7 @@ Router.register('plano-acao', (params, el) => {
         const g = (window.GLR?.gestores || []).find(x => [x.email, x.loginEmail].some(e => e && String(e).toLowerCase() === email));
         st.meuGestor = g ? g.id : null;
       } catch (e) {}
+      if (GLR.ctx) { const foco = GLR.ctx.cliente(); st.aberto = foco && st.planos.some(p => String(p.cliente.id) === foco) ? foco : foco ? st.aberto : ''; } // cliente em foco
       if (st.aberto && !st.planos.some(p => String(p.cliente.id) === st.aberto)) st.aberto = '';
       st.erro = null;
     } catch (e) { st.erro = e.message || String(e); }
@@ -150,7 +151,7 @@ Router.register('plano-acao', (params, el) => {
   }
 
   window._plFiltro = k => { st.filtro = k; try { localStorage.setItem('glr_plano_filtro', k); } catch (e) {} render(); };
-  window._plAbrir = id => { st.aberto = String(id || ''); st.copiado = false; try { localStorage.setItem('glr_plano_cliente', st.aberto); } catch (e) {} render(); window.scrollTo?.(0, 0); };
+  window._plAbrir = id => { st.aberto = String(id || ''); GLR.ctx?.definir(st.aberto, true); st.copiado = false; try { localStorage.setItem('glr_plano_cliente', st.aberto); } catch (e) {} render(); window.scrollTo?.(0, 0); };
   window._plIr = tela => Router.navigate(tela);
   window._plFeito = id => { salvarStatus(id, { st: 'feito', em: Date.now() }); render(); };
   window._plReabrir = id => { salvarStatus(id, null); render(); };

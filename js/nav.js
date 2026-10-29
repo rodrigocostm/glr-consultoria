@@ -114,11 +114,37 @@
   }
   function fecharPaleta() { paleta?.classList.remove('on'); }
   function escolher(i) { const o = opcoes[i]; if (!o) return; fecharPaleta(); o.ir(); }
+  // ── Cliente em foco (GLR.ctx, em data.js): um seletor na barra de cima ──
+  function montarSeletorCliente() {
+    if (document.getElementById('ctx-cliente') || window._portalConfig) return;
+    const titulos = document.querySelector('.header-titulos');
+    if (!titulos || !window.GLR?.ctx) return;
+    const box = document.createElement('label');
+    box.className = 'ctx-box';
+    box.title = 'Cliente em foco — as telas abrem direto nas contas dele';
+    box.innerHTML = '<span class="ctx-rot">Cliente</span><select id="ctx-cliente" class="ctx-sel" aria-label="Cliente em foco"><option value="">Todos os clientes</option></select>';
+    titulos.after(box);
+    const sel = box.querySelector('select');
+    const preencher = () => {
+      if (window._portalConfig) { box.remove(); return; }
+      const atual = GLR.ctx.cliente();
+      const cls = (GLR.clientes || []).slice().sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+      sel.innerHTML = '<option value="">Todos os clientes</option>' + cls.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('');
+      sel.value = cls.some(c => String(c.id) === atual) ? atual : '';
+      box.classList.toggle('on', !!sel.value);
+    };
+    sel.addEventListener('change', () => { box.classList.toggle('on', !!sel.value); GLR.ctx.definir(sel.value); });
+    window.addEventListener('glr:cliente', e => { if (sel.value !== e.detail.id) { sel.value = e.detail.id; box.classList.toggle('on', !!sel.value); } });
+    if (GLR.quandoClientes) GLR.quandoClientes(preencher); else preencher();
+    setTimeout(preencher, 4000); // clientes podem chegar depois (sincronização)
+  }
+
   window.GLRNav = { abrirPaleta, alternar };
 
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') { e.preventDefault(); paleta?.classList.contains('on') ? fecharPaleta() : abrirPaleta(); }
   });
   window.addEventListener('hashchange', () => { const g = grupoDe(paginaAtual()); if (g) alternar(g, true); });
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montar); else montar();
+  const iniciar = () => { montar(); montarSeletorCliente(); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
 })();
