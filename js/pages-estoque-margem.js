@@ -18,6 +18,7 @@ Router.register('estoque-margem', (params, el) => {
     contas: [], conta: (() => { try { return localStorage.getItem('glr_em_conta') || ''; } catch (e) { return ''; } })(),
     dados: null, carregando: true, erro: null, filtro: 'risco', busca: '',
   };
+  window._emSt = st;
 
 
   async function carregarContas() {
@@ -59,6 +60,7 @@ Router.register('estoque-margem', (params, el) => {
   ];
 
   function render() {
+    if (window._emSt !== st) return; // tela já foi redesenhada (ex.: troca do cliente em foco): carregamento antigo não pinta por cima
     const root = document.getElementById('em-root'); if (!root) return;
     if (st.carregando && !st.contas.length) { root.innerHTML = '<div class="em-sub" style="padding:30px">Carregando…</div>'; return; }
     if (!st.contas.length) { root.innerHTML = `<div class="card" style="padding:24px"><b>Ainda não há cálculo de estoque e margem.</b><div class="em-sub" style="margin-top:6px">Os agentes calculam a cada 3 horas, para as lojas da Shopee e do Mercado Livre que já estão na sincronização automática. Volte depois da próxima rodada.</div>${st.erro ? `<div class="em-sub" style="color:var(--red);margin-top:6px">${h(st.erro)}</div>` : ''}</div>`; return; }

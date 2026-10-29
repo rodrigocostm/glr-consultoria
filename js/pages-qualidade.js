@@ -13,6 +13,7 @@ Router.register('qualidade-anuncios', (params, el) => {
   const N = v => v == null ? '—' : (parseFloat(v) || 0).toLocaleString('pt-BR');
   const lerJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || '') ?? d; } catch (e) { return d; } };
   const st = { contas: [], conta: (() => { try { return localStorage.getItem('glr_qa_conta') || ''; } catch (e) { return ''; } })(), dados: null, carregando: true, erro: null, filtro: 'ruim' };
+  window._qaSt = st;
 
   async function carregarContas() {
     st.carregando = true; render();
@@ -46,6 +47,7 @@ Router.register('qualidade-anuncios', (params, el) => {
   const chip = (c, t) => `<span class="qa-chip" style="--c:${c}">${t}</span>`;
 
   function render() {
+    if (window._qaSt !== st) return; // tela já foi redesenhada (ex.: troca do cliente em foco): carregamento antigo não pinta por cima
     const root = document.getElementById('qa-root'); if (!root) return;
     if (st.carregando && !st.contas.length) { root.innerHTML = '<div class="qa-sub" style="padding:30px">Carregando…</div>'; return; }
     if (!st.contas.length) { root.innerHTML = `<div class="card" style="padding:22px"><b>O agente de Qualidade ainda não rodou.</b><div class="qa-sub" style="margin-top:6px">Ele analisa cada loja uma vez por dia, depois das 06:00, começando pelos anúncios que mais vendem.</div>${st.erro ? `<div class="qa-sub" style="color:var(--red)">${h(st.erro)}</div>` : ''}</div>`; return; }

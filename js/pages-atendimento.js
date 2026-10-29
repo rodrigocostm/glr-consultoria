@@ -16,6 +16,7 @@ Router.register('atendimento', (params, el) => {
   const lerJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || '') ?? d; } catch (e) { return d; } };
 
   const st = { contas: [], conta: (() => { try { return localStorage.getItem('glr_at_conta') || ''; } catch (e) { return ''; } })(), dados: null, carregando: true, erro: null, enviado: {}, enviando: {} };
+  window._atSt = st;
 
   async function carregarContas() {
     st.carregando = true; render();
@@ -58,6 +59,7 @@ Router.register('atendimento', (params, el) => {
   const MOTIVO_SH = { DAMAGED_OTHERS: 'Chegou danificado', NOT_RECEIPT: 'Não recebeu', WRONG_ITEM: 'Produto errado', ITEM_MISSING: 'Faltou item', DIFFERENT_DESCRIPTION: 'Diferente do anúncio', FUNCTIONAL_DMG: 'Defeito', CHANGE_MIND: 'Desistiu', ITEM_DAMAGED: 'Chegou danificado' };
 
   function render() {
+    if (window._atSt !== st) return; // tela já foi redesenhada (ex.: troca do cliente em foco): carregamento antigo não pinta por cima
     const root = document.getElementById('at-root'); if (!root) return;
     if (st.carregando && !st.contas.length) { root.innerHTML = '<div class="at-sub" style="padding:30px">Carregando…</div>'; return; }
     if (!st.contas.length) { root.innerHTML = `<div class="card" style="padding:22px"><b>O agente de Reputação e Atendimento ainda não rodou.</b><div class="at-sub" style="margin-top:6px">Ele visita cada loja da Shopee e do Mercado Livre a cada 30 minutos, junto com a sincronização automática.</div>${st.erro ? `<div class="at-sub" style="color:var(--red)">${h(st.erro)}</div>` : ''}</div>`; return; }
