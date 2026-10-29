@@ -88,6 +88,14 @@ const Router = {
     const content = document.getElementById('page-content');
     if (this.routes[path]) {
       content.innerHTML = '';
+      // Troca de tela: volta para o topo e entra com transição curta (a mesma tela
+      // redesenhando — ex.: Router.resolve() depois de salvar — não anima de novo)
+      const trocou = this._ultimaRenderizada !== path;
+      this._ultimaRenderizada = path;
+      if (trocou) {
+        window.scrollTo(0, 0); content.scrollTop = 0;
+        content.classList.remove('pg-entra'); void content.offsetWidth; content.classList.add('pg-entra');
+      }
       this.routes[path](this.currentParams, content);
     } else {
       content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-title">Página não encontrada</div></div>`;

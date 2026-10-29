@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=14">
+  <link rel="stylesheet" href="css/styles.css?v=15">
   <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Chart.js -->
@@ -273,7 +273,7 @@
       </div>
       <div class="search-box">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" placeholder="Buscar clientes, tarefas..." id="global-search" oninput="handleSearch(this.value)">
+        <input type="text" placeholder="Buscar clientes, tarefas…  ⌘K" id="global-search" oninput="handleSearch(this.value)">
       </div>
       <div class="header-actions">
         <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema claro/escuro">
@@ -465,7 +465,8 @@
   }
   atualizarBadges();
 </script>
-<script src="js/router.js?v=20"></script>
+<script src="js/router.js?v=21"></script>
+<script src="js/nav.js?v=1"></script>
 <script src="js/pages-dashboard.js?v=41"></script>
 <script src="js/pages-gestores.js?v=21"></script>
 <script src="js/pages-clientes.js?v=24"></script>
