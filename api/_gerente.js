@@ -239,18 +239,25 @@ const ROTULO_CAUSA = {
   ads: n => `Desfazer o aperto de ADS em ${n} produto(s) que perderam venda`, preco: n => `Rever o preço de ${n} produto(s) que subiram e caíram`, qualidade: n => `Consertar o anúncio de ${n} produto(s) com problema de qualidade`,
 };
 const TELA_CAUSA = { estoque: 'estoque-margem', anuncio: 'qualidade-anuncios', ads: 'decisoes', preco: 'precos-ml', qualidade: 'qualidade-anuncios' };
-function calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos }) {
+// Nos últimos 4 dias do mês quase nada mais muda: o caminho passa a ser o do mês
+// seguinte (mesma meta), partindo do ritmo diário de hoje.
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+function calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos, mesNum, diasProxMes }) {
   if (!(meta > 0) && !(metaPedidos > 0)) return null;
-  const diasRest = Math.max(0, dm - dd), semRest = diasRest / 7;
+  const proximo = dm - dd <= 4 && diasProxMes > 0;
+  const diasAlvo = proximo ? diasProxMes : dm;
+  const diasRest = proximo ? diasProxMes : Math.max(0, dm - dd), semRest = diasRest / 7;
   const ticket = pedidos > 0 ? fat / pedidos : 0;
-  const proj = dd > 0 ? fat / dd * dm : 0, projPed = dd > 0 ? pedidos / dd * dm : 0;
+  const ritmo = dd > 0 ? fat / dd : 0, ritmoPed = dd > 0 ? pedidos / dd : 0;
+  const proj = proximo ? ritmo * diasAlvo : ritmo * dm, projPed = proximo ? ritmoPed * diasAlvo : ritmoPed * dm;
   const faltaR = meta > 0 ? Math.max(0, meta - proj) : 0;
   const faltaPed = metaPedidos > 0 ? Math.max(0, metaPedidos - projPed) : 0;
   // o que pesa mais: a meta em R$ ou a de pedidos (convertida pelo ticket do mês)
   const falta = Math.max(faltaR, faltaPed * ticket);
-  const base = { diasRest, ticket: Math.round(ticket), proj: Math.round(proj), projPedidos: Math.round(projPed), faltaR: Math.round(faltaR), faltaPedidos: Math.round(faltaPed), falta: Math.round(falta),
-    precisaDia: diasRest > 0 && meta > 0 ? Math.round(Math.max(0, meta - fat) / diasRest) : null, ritmoDia: dd > 0 ? Math.round(fat / dd) : null,
-    precisaPedDia: diasRest > 0 && metaPedidos > 0 ? Math.round(Math.max(0, metaPedidos - pedidos) / diasRest) : null, ritmoPedDia: dd > 0 ? Math.round(pedidos / dd) : null };
+  const jaFeito = proximo ? 0 : fat, jaPed = proximo ? 0 : pedidos;
+  const base = { proximo, mesAlvo: MESES[((mesNum || 1) - 1 + (proximo ? 1 : 0)) % 12], diasRest, ticket: Math.round(ticket), proj: Math.round(proj), projPedidos: Math.round(projPed), faltaR: Math.round(faltaR), faltaPedidos: Math.round(faltaPed), falta: Math.round(falta),
+    precisaDia: diasRest > 0 && meta > 0 ? Math.round(Math.max(0, meta - jaFeito) / diasRest) : null, ritmoDia: dd > 0 ? Math.round(ritmo) : null,
+    precisaPedDia: diasRest > 0 && metaPedidos > 0 ? Math.round(Math.max(0, metaPedidos - jaPed) / diasRest) : null, ritmoPedDia: dd > 0 ? Math.round(ritmoPed) : null };
   if (!falta || !diasRest) return { ...base, atinge: true, alavancas: [], soma: 0, cobertura: 100 };
   const alav = [];
   // 1) recuperar as quedas que têm causa
@@ -269,9 +276,9 @@ function calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX
   let rupt = 0, nRupt = 0, exRupt = '';
   for (const L of lojas) for (const [id, i] of Object.entries(L.sinais?.itens || {})) {
     if (jaContados.has(`${L.conta}:${id}`) || !(i.vd > 0) || i.d == null || i.d >= diasRest) continue;
-    rupt += i.vd * i.p * (diasRest - Math.max(0, i.d)); nRupt++; if (!exRupt) exRupt = `${corta(i.n, 40)} acaba em ~${Math.round(i.d)} d`;
+    rupt += i.vd * i.p * (diasRest - Math.max(0, i.d)); nRupt++; if (!exRupt) exRupt = i.d < 1 ? `${corta(i.n, 40)} já está sem estoque` : `${corta(i.n, 40)} acaba em ~${Math.round(i.d)} d`;
   }
-  if (rupt > 0) alav.push({ id: 'ruptura', titulo: `Repor ${nRupt} produto(s) que vão acabar antes do fim do mês`, porque: exRupt, valor: Math.round(rupt * 0.8), conf: 'alta', tela: 'estoque-margem', quem: 'cliente' });
+  if (rupt > 0) alav.push({ id: 'ruptura', titulo: `Repor ${nRupt} produto(s) que acabam antes do fim de ${base.mesAlvo}`, porque: exRupt, valor: Math.round(rupt * 0.8), conf: 'alta', tela: 'estoque-margem', quem: 'cliente' });
   // 3) acelerar quem está crescendo (sem alerta de estoque)
   const campeoes = (raioX?.subiu || []).filter(x => !x.alerta);
   if (campeoes.length) alav.push({ id: 'campeoes', titulo: `Dar mais ADS/visibilidade aos ${campeoes.length} produto(s) que estão crescendo`, porque: campeoes.slice(0, 2).map(x => `${corta(x.nome, 40)} (+${R$(x.ganhoSem)}/sem)`).join(', '), valor: Math.round(campeoes.reduce((s, x) => s + x.agora, 0) * 0.2 * semRest), conf: 'média', tela: 'agente' });
@@ -391,10 +398,11 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
       const pedidosPor = new Map(lojas.map((L, i) => [L.conta, peds[i]]));
       try { raioX = calcularRaioX(lojas, pedidosPor, medidos); } catch (e) { raioX = null; }
     }
-    const caminho = calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos: fat > 0 ? ads / fat * 100 : null });
+    const mesNum = +ontem.slice(5, 7), diasProxMes = new Date(Date.UTC(+ontem.slice(0, 4), mesNum + 1, 0)).getUTCDate();
+    const caminho = calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos: fat > 0 ? ads / fat * 100 : null, mesNum, diasProxMes });
     // as 2 maiores alavancas viram ações do plano (com o R$ que rendem até o fim do mês)
     const acoesMeta = (caminho?.alavancas || []).slice(0, 2).map((a, i) => ({ id: `meta:${c.id}:${a.id}`, tipo: 'meta', quando: 'hoje', quem: a.quem || 'analista', tela: a.tela,
-      titulo: `Meta: ${a.titulo}`, porque: `${a.porque ? a.porque + ' — ' : ''}rende ~${R$(a.valor)} até o fim do mês (confiança ${a.conf})`, impacto: `~${R$(a.valor)} no mês`, valor: a.valor, peso: 1200 + a.valor / 10 - i }));
+      titulo: `Meta: ${a.titulo}`, porque: `${a.porque ? a.porque + ' — ' : ''}rende ~${R$(a.valor)} até o fim de ${caminho.mesAlvo} (confiança ${a.conf})`, impacto: `~${R$(a.valor)} em ${caminho.mesAlvo}`, valor: a.valor, peso: 1200 + a.valor / 10 - i }));
     // Ações de todas as lojas, sem repetir, as mais importantes primeiro
     const todas = [...acoesMeta, ...acoesDoRaioX(raioX), ...lojas.flatMap(L => acoesDaLoja(L, { pendentes }))].sort((a, b) => b.peso - a.peso);
     const acoes = []; const vistos = new Set();
@@ -413,7 +421,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     const metricas = { faturamento: Math.round(fat), projecao: Math.round(proj), meta, metaPedidos, pedidos, projPedidos: Math.round(projPedidos), pctMetaPedidos: metaPedidos ? r1(projPedidos / metaPedidos * 100) : null, pctMeta: pctMeta == null ? null : r1(pctMeta), tacos: tacos == null ? null : r1(tacos), metaTacos, varMes: varMes == null ? null : r1(varMes), lojas: lojas.length, dia: dd, diasMes: dm };
     if (meta && proj < meta && dm > dd) metricas.faltaPorDia = Math.round((meta - fat) / (dm - dd));
     if (dd > 0) metricas.ritmoDia = Math.round(fat / dd);
-    const fatos = { cliente: c.nome, metricas, caminho_para_meta: caminho && { falta_rs: caminho.faltaR, falta_pedidos: caminho.faltaPedidos, precisa_por_dia: caminho.precisaDia, ritmo_por_dia: caminho.ritmoDia, alavancas: caminho.alavancas.map(a => ({ o_que: a.titulo, rende_ate_fim_do_mes: a.valor, confianca: a.conf })), soma_alavancas: caminho.soma, cobertura_pct: caminho.cobertura, falta_alem_das_alavancas: caminho.resto, ads_extra_mantendo_tacos: caminho.adsExtra }, raio_x: raioX && { periodo: raioX.periodo, semana_antes: raioX.semanaAntes, semana_agora: raioX.semanaAgora, variacao_pct: raioX.var,
+    const fatos = { cliente: c.nome, metricas, caminho_para_meta: caminho && { mes_da_meta: caminho.mesAlvo, falta_rs: caminho.faltaR, falta_pedidos: caminho.faltaPedidos, precisa_por_dia: caminho.precisaDia, ritmo_por_dia: caminho.ritmoDia, alavancas: caminho.alavancas.map(a => ({ o_que: a.titulo, rende_ate_fim_do_mes: a.valor, confianca: a.conf })), soma_alavancas: caminho.soma, cobertura_pct: caminho.cobertura, falta_alem_das_alavancas: caminho.resto, ads_extra_mantendo_tacos: caminho.adsExtra }, raio_x: raioX && { periodo: raioX.periodo, semana_antes: raioX.semanaAntes, semana_agora: raioX.semanaAgora, variacao_pct: raioX.var,
       caiu: raioX.caiu.map(x => ({ produto: x.nome, loja: x.loja, antes_sem: x.antes, agora_sem: x.agora, perda_sem: x.perdaSem, causas: x.causas.map(c => c.t) })),
       subiu: raioX.subiu.map(x => ({ produto: x.nome, loja: x.loja, antes_sem: x.antes, agora_sem: x.agora, ganho_sem: x.ganhoSem, novo: x.novo, alerta: x.alerta })),
       lojas: raioX.lojas, concentracao_top5_pct: raioX.concentracaoTop5 },

@@ -108,14 +108,14 @@ Router.register('plano-acao', (params, el) => {
       <button class="btn btn-primary btn-sm" ${st.gerando ? 'disabled' : ''} onclick="window._plSalvarMeta('${h(cid)}')">${st.gerando ? 'Calculando o caminho…' : 'Salvar e calcular o caminho'}</button>
     </div>`;
     if (!c) return `<div class="card pl-bloco"><div class="pl-bloco-t">Meta do mês <span class="pl-sub">defina e o Gerente monta o caminho até ela</span></div>${form}</div>`;
-    const linhaMeta = (rot, atual, alvo, precisa, ritmo, fmt) => alvo ? `<div class="pl-meta-l"><div class="pl-meta-top"><span>${rot}</span><b>${fmt(atual)} <small>de ${fmt(alvo)}</small></b><small>${Math.round(atual / alvo * 100)}% na projeção</small></div>${barra(atual, alvo)}${precisa != null ? `<div class="pl-sub">precisa de <b>${fmt(precisa)}/dia</b> daqui até o fim do mês · hoje faz ${fmt(ritmo)}/dia</div>` : ''}</div>` : '';
+    const linhaMeta = (rot, atual, alvo, precisa, ritmo, fmt) => alvo ? `<div class="pl-meta-l"><div class="pl-meta-top"><span>${rot}</span><b>${fmt(atual)} <small>de ${fmt(alvo)}</small></b><small>${Math.round(atual / alvo * 100)}% ${c.proximo ? 'no ritmo de hoje' : 'na projeção'}</small></div>${barra(atual, alvo)}${precisa != null ? `<div class="pl-sub">precisa de <b>${fmt(precisa)}/dia</b> ${c.proximo ? `em ${h(c.mesAlvo)}` : 'daqui até o fim do mês'} · hoje faz ${fmt(ritmo)}/dia</div>` : ''}</div>` : '';
     const N = v => Math.round(v || 0).toLocaleString('pt-BR');
     return `<div class="card pl-bloco pl-meta">
-      <div class="pl-bloco-t">Meta do mês <span class="pl-sub">${c.diasRest} dia(s) até o fim do mês</span></div>
+      <div class="pl-bloco-t">${c.proximo ? `Meta de ${h(c.mesAlvo)}` : 'Meta do mês'} <span class="pl-sub">${c.proximo ? `este mês termina em ${(m.diasMes || 0) - (m.dia || 0)} dia(s) — o caminho já é para ${h(c.mesAlvo)}, partindo do ritmo de hoje` : `${c.diasRest} dia(s) até o fim do mês`}</span></div>
       ${form}
       <div class="pl-meta-ls">${linhaMeta('Faturamento', c.proj, m.meta, c.precisaDia, c.ritmoDia, R$)}${linhaMeta('Pedidos', c.projPedidos, m.metaPedidos, c.precisaPedDia, c.ritmoPedDia, N)}</div>
       ${c.atinge ? '<div class="pl-meta-ok">No ritmo de hoje a meta é batida. O plano abaixo segue para proteger o resultado.</div>' : `
-      <div class="pl-meta-falta">Faltam <b>${R$(c.falta)}</b>${c.faltaPedidos ? ` (≈ ${N(c.faltaPedidos)} pedidos a ${R$(c.ticket)})` : ''} na projeção. As alavancas abaixo somam <b>~${R$(c.soma)}</b> até o fim do mês — <b>${c.cobertura}%</b> do que falta.</div>
+      <div class="pl-meta-falta">Faltam <b>${R$(c.falta)}</b>${c.faltaPedidos ? ` (≈ ${N(c.faltaPedidos)} pedidos a ${R$(c.ticket)})` : ''} na projeção. As alavancas abaixo somam <b>~${R$(c.soma)}</b> até o fim de ${h(c.mesAlvo)} — <b>${c.cobertura}%</b> do que falta.</div>
       ${c.alavancas.length ? `<div class="pl-alav">${c.alavancas.map(a => `<div class="pl-alav-i">
         <div class="pl-alav-txt"><b>${h(a.titulo)}</b>${a.porque ? `<div class="pl-sub">${h(a.porque)}</div>` : ''}</div>
         <div class="pl-alav-v"><b>+${R$(a.valor)}</b><small style="color:${CONF[a.conf] || 'inherit'}">confiança ${h(a.conf)}</small></div>
