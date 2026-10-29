@@ -26,7 +26,7 @@
   const chevron = '<svg class="nav-grupo-seta" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>';
 
   function montar() {
-    const sidebar = document.querySelector('.sidebar');
+    const sidebar = document.getElementById('sidebar') || document.querySelector('.sidebar');
     if (!sidebar || sidebar.dataset.navMontado || window._portalConfig) return;
     const secoes = [...sidebar.querySelectorAll('.sidebar-section')];
     if (!secoes.length) return;
@@ -71,7 +71,7 @@
   const semAcento = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   function todasOpcoes() {
-    const telas = [...document.querySelectorAll('.sidebar .nav-item[data-page]')].filter(b => getComputedStyle(b).display !== 'none' || b.closest('.nav-grupo'))
+    const telas = [...document.querySelectorAll('#sidebar .nav-item[data-page], .sidebar .nav-item[data-page]')].filter(b => getComputedStyle(b).display !== 'none' || b.closest('.nav-grupo'))
       .map(b => ({ tipo: 'Tela', nome: b.textContent.replace(/\s+/g, ' ').trim(), grupo: b.closest('.nav-grupo')?.querySelector('.nav-grupo-tit span')?.textContent || '', ir: () => Router.navigate(b.dataset.page) }));
     const clientes = (window.GLR?.clientes || []).map(c => ({ tipo: 'Cliente', nome: c.nome, grupo: 'Perfil do cliente', ir: () => Router.navigate('cliente-perfil', { id: c.id }) }));
     return [...telas, ...clientes];
