@@ -82,7 +82,10 @@ const Router = {
       diretoria: 'Dashboard da Diretoria',
       ia: 'Inteligência Artificial',
     };
-    document.getElementById('page-title').textContent = titles[path] || 'GLR Consultoria';
+    // sem título na lista: usa o nome da tela no menu (Promoções, Leads, Afiliados…)
+    const doMenu = document.querySelector(`.nav-item[data-page="${path}"]`)?.childNodes;
+    const nomeMenu = doMenu ? [...doMenu].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').replace(/\s+/g, ' ').trim() : '';
+    document.getElementById('page-title').textContent = titles[path] || nomeMenu || 'GLR Consultoria';
 
     // Render page
     const content = document.getElementById('page-content');
