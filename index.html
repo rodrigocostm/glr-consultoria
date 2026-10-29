@@ -278,7 +278,6 @@
         </button>
         <button class="icon-btn" onclick="Router.navigate('decisoes')" title="Caixa de decisões">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
-          <span class="notif-dot"></span>
         </button>
         <button class="icon-btn" id="push-toggle" onclick="_handlePushToggle()" title="Notificações de vendas (push)">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
@@ -306,7 +305,7 @@
 
 <!-- Scripts -->
 <script src="js/data.js?v=7"></script>
-<script src="js/supabase-init.js?v=25"></script>
+<script src="js/supabase-init.js?v=26"></script>
 <script src="js/push-notifications.js?v=1"></script>
 <script src="js/base-dados.js?v=4"></script>
 <script>
@@ -444,31 +443,24 @@
   // Atualiza badges dinamicamente
   function atualizarBadges() {
     const badgeOpp = document.getElementById('badge-opp');
-    const badgeAlerta = document.getElementById('badge-alertas');
     const badgeTarefa = document.getElementById('badge-tarefas');
 
     const nOpp = GLR.oportunidades.length;
-    const nAlerta = GLR.alertas.filter(a => !a.lido).length;
     const nTarefa = GLR.tarefas.filter(t => t.status === 'pendente' || t.status === 'atrasada').length;
 
     if (badgeOpp)    { badgeOpp.textContent = nOpp;    badgeOpp.style.display    = nOpp    ? '' : 'none'; }
-    if (badgeAlerta) { badgeAlerta.textContent = nAlerta; badgeAlerta.style.display = nAlerta ? '' : 'none'; }
     if (badgeTarefa) { badgeTarefa.textContent = nTarefa; badgeTarefa.style.display = nTarefa ? '' : 'none'; }
-
-    // Notif dot no header
-    const dot = document.querySelector('.notif-dot');
-    if (dot) dot.style.display = nAlerta > 0 ? '' : 'none';
   }
   atualizarBadges();
 </script>
-<script src="js/router.js?v=24"></script>
+<script src="js/router.js?v=25"></script>
 <script src="js/nav.js?v=6"></script>
 <script src="js/ui.js?v=4"></script>
-<script src="js/pages-dashboard.js?v=44"></script>
+<script src="js/pages-dashboard.js?v=45"></script>
 <script src="js/pages-gestores.js?v=21"></script>
 <script src="js/pages-clientes.js?v=25"></script>
-<script src="js/pages-operacional.js?v=15"></script>
-<script src="js/pages-avancados.js?v=66"></script>
+<script src="js/pages-operacional.js?v=16"></script>
+<script src="js/pages-avancados.js?v=67"></script>
 <script src="js/pages-dre.js?v=15"></script>
 <script src="js/marketplace-api.js?v=26"></script>
 <script src="js/pages-integracoes.js?v=13"></script>

@@ -777,6 +777,9 @@ Router.register('dashboard', (params, el) => {
 // (js/pages-analytics.js), renderizado dentro da aba "Análises da Carteira".
 Router.register('diretoria', () => Router.navigate('dashboard'));
 Router.register('analytics', () => Router.navigate('dashboard'));
+// Central de Alertas e Calendário foram removidos: link salvo cai na tela que os substitui
+Router.register('alertas', () => Router.navigate('decisoes'));
+Router.register('calendario', () => Router.navigate('tarefas'));
 
 // Assinatura visual do Dashboard v2: quando um KPI marcado com [data-kpi] muda
 // de valor entre uma renderização e a próxima (refresh manual ou automático),

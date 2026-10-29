@@ -179,7 +179,7 @@ async function _ressincronizarSeVoltou() {
     await Promise.all(Object.values(_filaSync)); // termina o que estiver gravando antes
     await sincronizarDoSupabase();
     if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();
-    if (typeof Router !== 'undefined' && Router.currentPage && typeof Router.resolve === 'function' && ['relatorios', 'timeline', 'tarefas', 'calendario'].includes(Router.currentPage)) Router.resolve();
+    if (typeof Router !== 'undefined' && Router.currentPage && typeof Router.resolve === 'function' && ['relatorios', 'timeline', 'tarefas'].includes(Router.currentPage)) Router.resolve();
   } catch (e) { console.warn('[Supabase] Ressincronia falhou:', e.message); }
 }
 document.addEventListener('visibilitychange', _ressincronizarSeVoltou);
