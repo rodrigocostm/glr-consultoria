@@ -20,6 +20,7 @@ const estoqueMargem = require('./_estoque-margem');
 const SINAIS_A_CADA_MS = 3 * 3600 * 1000;
 // Agente de Promoções (1x por dia por loja, em cima do mural de Estoque e Margem)
 const promocoesAg = require('./_promocoes');
+const funilAg = require('./_funil');
 // Agente de Reputação e Atendimento (a cada 30 min por loja; métricas da conta a cada 6 h)
 const reputacaoAg = require('./_reputacao');
 const REPUTACAO_A_CADA_MS = 60 * 60 * 1000; // era 30 min — 1.571 chamadas/dia de cada ação (medidor de 28/10)
@@ -1132,6 +1133,16 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
       } catch (e) { await salvarEstado(mkt, shopId, 'sinais', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
     }
   }
+  // Funil (visitas por produto) — 1x por dia, depois das 05:00, antes da revisão das 07:00
+  const horaFunil = new Date((t - 3 * 3600) * SEG).getUTCHours();
+  if ((mkt === 'shopee' || mkt === 'ml') && horaFunil >= 5 && estadoAtual?.funilDia !== dataBR(t) && Date.now() < prazo - 25000) {
+    try {
+      // Shopee precisa das fotos anteriores (visitas acumuladas): lê o cursor de antes
+      const anterior = mkt === 'shopee' ? (await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${shopId}&recurso=eq.funil&select=cursor`).catch(() => []))[0]?.cursor : null;
+      const cur = await funilAg.calcularFunil({ sbSelect, mcpCall, apiKey, prazo: Math.min(prazo - 10000, Date.now() + 40000) }, mkt, shopId, anterior);
+      await salvarEstado(mkt, shopId, 'funil', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: Object.keys(cur.itens).length, cursor: cur });
+    } catch (e) { await salvarEstado(mkt, shopId, 'funil', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
+  }
   // Promoções — 1x por dia, depois das 06:00, com o mural de Estoque e Margem já calculado
   const horaPromo = new Date((t - 3 * 3600) * SEG).getUTCHours();
   if ((mkt === 'shopee' || mkt === 'ml') && horaPromo >= 6 && estadoAtual?.promoDia !== dataBR(t) && Date.now() < prazo - 25000) {
@@ -1181,6 +1192,7 @@ async function executar(apiKey, soConta) {
   const qualEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.qualidade').catch(() => []);
   const repEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,em:cursor->>em&recurso=eq.reputacao').catch(() => []);
   const promoEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.promocoes').catch(() => []);
+  const funilEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.funil').catch(() => []);
   // Estoque e margem: só a hora do último cálculo (o cursor tem todos os produtos)
   const sinaisEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,em:cursor->>em&recurso=eq.sinais').catch(() => []);
   // Monitor de preços: só a hora da última foto (o cursor tem todos os anúncios — é grande)
@@ -1192,6 +1204,7 @@ async function executar(apiKey, soConta) {
   for (const o of qualEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].qualDia = o.dia; }
   for (const o of repEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].repEm = parseInt(o.em) || 0; }
   for (const o of promoEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].promoDia = o.dia; }
+  for (const o of funilEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].funilDia = o.dia; }
   for (const o of sinaisEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].sinaisEm = parseInt(o.em) || 0; }
   for (const o of precosEst) { const k = `${o.marketplace}:${o.conta_id}`; porConta[k] = porConta[k] || {}; porConta[k].precosEm = parseInt(o.em) || 0; }
   for (const e of estados) {

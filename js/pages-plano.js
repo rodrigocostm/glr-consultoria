@@ -217,13 +217,39 @@ Router.register('plano-acao', (params, el) => {
       <div style="display:flex;gap:10px;align-items:center;margin-top:12px"><button class="btn btn-primary btn-sm" onclick="window._plSalvarContrato('${h(cid)}')">Salvar</button>${st.ctrSalvo === cid ? '<span class="pl-sub" style="color:var(--green)">Salvo — vale a partir da próxima revisão do agente</span>' : ''}</div>`;
   }
 
+  // Funil da conta: faturamento = visitas × conversão × preço médio (o que mudou entre as 2 semanas)
+  const pc = v => v == null ? '—' : `${String(Math.round(v * 100) / 100).replace('.', ',')}%`;
+  const varF = (a, b) => a > 0 && b != null ? (b / a - 1) * 100 : null;
+  const chipVar = v => v == null ? '' : `<small style="color:${v >= 0 ? 'var(--green)' : 'var(--red)'}">${v >= 0 ? '+' : '−'}${pct(Math.abs(v))}</small>`;
+  function renderFunil(rx) {
+    const f = rx.funil;
+    if (!f) return '<div class="pl-funil pl-funil-vazio">Funil (visitas × conversão × preço): começa a aparecer depois da sincronização da manhã. No ML a comparação já sai completa; na Shopee leva ~15 dias de histórico de visitas.</div>';
+    return `<div class="pl-funil">
+      <div class="pl-funil-t">Funil da conta <span class="pl-sub">por semana${f.cobertura ? ` · ${h(f.cobertura)}` : ''}</span></div>
+      <div class="pl-funil-g">
+        <div><span>Visitas</span><b>${N(f.visitas.a)} → ${N(f.visitas.b)}</b>${chipVar(varF(f.visitas.a, f.visitas.b))}</div>
+        <div><span>Conversão</span><b>${pc(f.conversao.a)} → ${pc(f.conversao.b)}</b>${chipVar(varF(f.conversao.a, f.conversao.b))}</div>
+        <div><span>Preço médio</span><b>${R$(f.precoMedio.a)} → ${R$(f.precoMedio.b)}</b>${chipVar(varF(f.precoMedio.a, f.precoMedio.b))}</div>
+      </div>
+      ${f.explica ? `<div class="pl-funil-x">${h(f.explica)}</div>` : ''}
+    </div>`;
+  }
+  function renderOportunidades(rx) {
+    const o = rx.oportunidades || {}, sc = o.semConversao || [], pv = o.poucaVisita || [];
+    if (!sc.length && !pv.length) return '';
+    const item = (x, txt) => `<div class="pl-rx-l"><div class="pl-rx-n"><b>${h(x.nome)}</b><span class="pl-sub">${h(x.loja)} · ${txt}</span></div><div class="pl-rx-v" style="color:var(--green)">+${R$(x.potencial)}<small>/sem</small></div></div>`;
+    return `<div class="pl-rx-t">Oportunidades do funil <span class="pl-sub" style="font-weight:500">últimos 7 dias</span></div>
+      ${sc.map(x => item(x, `${N(x.v7)} visitas, conversão ${pc(x.conv)} contra ${pc(x.convLoja)} da loja — visita que não vira venda (preço, frete, fotos, avaliações${x.nota && x.nota < 4.5 ? `; nota ${String(x.nota).replace('.', ',')}` : ''})`)).join('')}
+      ${pv.map(x => item(x, `converte ${pc(x.conv)} (${String(x.vezes).replace('.', ',')}x a loja) com só ${N(x.v7)} visitas — ${x.foraAds ? 'fora do ADS: colocar numa campanha' : 'subir o lance no ADS'}`)).join('')}`;
+  }
+
   // Raio-X do faturamento: o que puxou e o que derrubou nas últimas 2 semanas
   function renderRaioX(rx, m) {
     if (!rx) return '<div class="pl-vazio">Sem pedidos suficientes na base para comparar as últimas 2 semanas.</div>';
     const sinal = v => v == null ? '' : `<span style="color:${v >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:650">${v >= 0 ? '+' : ''}${pct(v)}</span>`;
     const chips = cs => { const vis = cs.slice(0, 2).map(c => `<span class="pl-causa pl-c-${h(c.tipo)}">${h(c.t)}</span>`).join(''); return vis + (cs.length > 2 ? `<span class="pl-causa" title="${h(cs.slice(2).map(c => c.t).join(' · '))}">+${cs.length - 2}</span>` : ''); };
     const linha = (x, neg) => `<div class="pl-rx-l">
-      <div class="pl-rx-n"><b>${h(x.nome)}</b><span class="pl-sub">${h(x.loja)} · ${R$(x.antes)} → ${R$(x.agora)} por semana</span>
+      <div class="pl-rx-n"><b>${h(x.nome)}</b><span class="pl-sub">${h(x.loja)} · ${R$(x.antes)} → ${R$(x.agora)} por semana${x.fn && x.fn.va != null && x.fn.vb != null ? ` · visitas ${N(x.fn.va / 2)} → ${N(x.fn.vb / 2)}/sem · conversão ${pc(x.fn.ca)} → ${pc(x.fn.cb)}` : ''}${x.precoAntes && x.precoAgora && Math.abs(x.precoAgora / x.precoAntes - 1) >= 0.03 ? ` · preço ${R$(x.precoAntes)} → ${R$(x.precoAgora)}` : ''}</span>
         ${neg ? `<div class="pl-rx-c">${x.causas.length ? chips(x.causas) : '<span class="pl-sub">sem causa clara nos dados — conferir concorrência, posição e avaliações</span>'}</div>`
           : (x.novo || x.alerta ? `<div class="pl-rx-c">${x.novo ? '<span class="pl-causa">começou a vender agora</span>' : ''}${x.alerta ? `<span class="pl-causa pl-c-estoque">${h(x.alerta)}</span>` : ''}</div>` : '')}</div>
       <div class="pl-rx-v" style="color:${neg ? 'var(--red)' : 'var(--green)'}">${neg ? '−' : '+'}${R$(neg ? x.perdaSem : x.ganhoSem)}<small>/sem</small></div>
@@ -236,9 +262,11 @@ Router.register('plano-acao', (params, el) => {
         <div><span>Produtos que pararam</span><b>${rx.produtosQueZeraram}</b><small>vendiam (3+ un.) e zeraram</small></div>
       </div>
       ${rx.lojas.length > 1 ? `<div class="pl-lojas">${rx.lojas.map(l => `<span>${h(l.loja)}: ${R$(l.agora)}/sem ${sinal(l.var)}</span>`).join('')}</div>` : ''}
+      ${renderFunil(rx)}
       <div class="pl-rx-t">O que derrubou</div>
       ${rx.caiu.length ? caiu.map(x => linha(x, true)).join('') + (rx.caiu.length > LIM ? `<button class="pl-link" style="margin-top:6px" onclick="window._plRxTodos()">${st.rxTodos ? 'mostrar menos' : `ver os ${rx.caiu.length} produtos`}</button>` : '') : '<div class="pl-sub">Nenhum produto com queda relevante.</div>'}
-      ${rx.subiu.length ? `<div class="pl-rx-t">O que puxou</div>${rx.subiu.slice(0, LIM).map(x => linha(x, false)).join('')}` : ''}`;
+      ${rx.subiu.length ? `<div class="pl-rx-t">O que puxou</div>${rx.subiu.slice(0, LIM).map(x => linha(x, false)).join('')}` : ''}
+      ${renderOportunidades(rx)}`;
   }
 
   function renderAcoes(p) {
@@ -397,6 +425,10 @@ Router.register('plano-acao', (params, el) => {
     .pl-rx-n{display:flex;flex-direction:column;gap:2px;min-width:0} .pl-rx-n b{font-size:13px;font-weight:600} .pl-rx-c{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
     .pl-rx-v{font-weight:700;font-size:13.5px;white-space:nowrap;font-variant-numeric:tabular-nums} .pl-rx-v small{font-weight:500;font-size:11px;color:var(--text-muted)}
     .pl-ctr-reg{margin-top:10px}
+    .pl-funil{margin-top:14px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-subtle)} .pl-funil-vazio{font-size:12.5px;color:var(--text-secondary)}
+    .pl-funil-t{font-weight:650;font-size:13px;margin-bottom:8px;display:flex;gap:8px;align-items:baseline}
+    .pl-funil-g{display:flex;flex-wrap:wrap;gap:10px 32px} .pl-funil-g>div{display:flex;flex-direction:column;gap:1px} .pl-funil-g span{font-size:11.5px;color:var(--text-muted)} .pl-funil-g b{font-size:15px;font-weight:650;font-variant-numeric:tabular-nums} .pl-funil-g small{font-size:11.5px;font-weight:600}
+    .pl-funil-x{font-size:13px;color:var(--text-primary);margin-top:8px}
     #pl-pauta{font-size:13px;line-height:1.5;resize:vertical}
     .pl-causa{display:inline-block;font-size:11.5px;padding:2px 7px;border-radius:6px;background:var(--bg-subtle);margin:1px 0} .pl-c-estoque{background:color-mix(in srgb,var(--orange) 15%,transparent)} .pl-c-ads{background:color-mix(in srgb,var(--accent) 14%,transparent)} .pl-c-preco{background:color-mix(in srgb,var(--purple) 14%,transparent)} .pl-c-anuncio,.pl-c-qualidade{background:color-mix(in srgb,var(--red) 12%,transparent)}
     .pl-tab-wrap{padding:0;overflow-x:auto}

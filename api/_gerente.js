@@ -16,6 +16,7 @@
 // ============================================================
 
 const MAX_ACOES = 7;
+const { visitasItem, visitasConta } = require('./_funil');
 const r1 = v => Math.round(v * 10) / 10;
 const R$ = v => 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const pct = v => v == null ? '—' : `${String(r1(v)).replace('.', ',')}%`;
@@ -114,6 +115,9 @@ const JANELA = 14;
 const diaDe = iso => new Date(Date.parse(iso) - 3 * 3600e3).toISOString().slice(0, 10);
 const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 const dm = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const N = v => Math.round(v || 0).toLocaleString('pt-BR');
+const pc = v => v == null ? '—' : `${String(Math.round(v * 100) / 100).replace('.', ',')}%`; // conversão: 2 casas
+const varTxt = (a, b) => a > 0 ? `${b >= a ? '+' : '−'}${pct(Math.abs(b / a - 1) * 100)}` : '';
 
 async function pedidosDaLoja(sbSelect, L, desdeIso) {
   const rows = [];
@@ -126,18 +130,37 @@ async function pedidosDaLoja(sbSelect, L, desdeIso) {
   return rows;
 }
 
+// Funil do produto: perdeu visita ou perdeu conversão? (null sem visitas nas 2 janelas)
+function diagFunil(fn) {
+  if (!fn || !(fn.va >= 30) || fn.vb == null) return null;
+  const dv = fn.vb / fn.va - 1, dc = fn.ca > 0 && fn.cb != null ? fn.cb / fn.ca - 1 : null;
+  const vTxt = `visitas ${N(fn.va)} → ${N(fn.vb)} (${varTxt(fn.va, fn.vb)})`, cTxt = `conversão ${pc(fn.ca)} → ${pc(fn.cb)}`;
+  if (dv <= -0.2 && dc != null && dc <= -0.15) return { t: `perdeu visitas e conversão: ${vTxt}, ${cTxt}`, tipo: 'trafego' };
+  if (dv <= -0.2) return { t: `perdeu visitas: ${vTxt}, com a conversão estável (${pc(fn.cb)})`, tipo: 'trafego' };
+  if (dc != null && dc <= -0.2) return { t: `converte menos: ${cTxt}, com as visitas ${dv >= 0.1 ? 'subindo' : 'estáveis'} (${N(fn.vb)})`, tipo: 'conversao' };
+  return null;
+}
+
 function causasDaQueda(x, L, mudancas) {
-  const c = [];
+  const base = [];
   const sn = L.sinais?.itens?.[x.id];
-  if (sn?.ne === 'zerado') c.push({ t: 'ficou sem estoque', tipo: 'estoque' });
-  else if (sn?.ne === 'critico') c.push({ t: `estoque acabando (~${Math.round(sn.d)} d)`, tipo: 'estoque' });
+  if (sn?.ne === 'zerado') base.push({ t: 'ficou sem estoque', tipo: 'estoque' });
+  else if (sn?.ne === 'critico') base.push({ t: `estoque acabando (~${Math.round(sn.d)} d)`, tipo: 'estoque' });
   const ST = { paused: 'pausado', under_review: 'em revisão pelo marketplace', reviewing: 'em revisão pelo marketplace', inactive: 'inativo', closed: 'finalizado', unlist: 'fora do ar', banned: 'bloqueado', deleted: 'excluído' };
-  if (sn?.st && !/active|normal/i.test(sn.st)) c.push({ t: `anúncio ${ST[String(sn.st).toLowerCase()] || String(sn.st).toLowerCase()}`, tipo: 'anuncio' });
+  if (sn?.st && !/active|normal/i.test(sn.st)) base.push({ t: `anúncio ${ST[String(sn.st).toLowerCase()] || String(sn.st).toLowerCase()}`, tipo: 'anuncio' });
   const pa = x.a.un ? x.a.rec / x.a.un : null, pb = x.b.un ? x.b.rec / x.b.un : null;
-  if (pa && pb && pb > pa * 1.05) c.push({ t: `preço vendido subiu de ${R$(pa)} para ${R$(pb)} (+${pct((pb / pa - 1) * 100)})`, tipo: 'preco' });
-  for (const m of mudancas) c.push(m);
+  const precoSubiu = pa && pb && pb > pa * 1.05 ? [{ t: `preço vendido subiu de ${R$(pa)} para ${R$(pb)} (+${pct((pb / pa - 1) * 100)})`, tipo: 'preco' }] : [];
+  const funil = diagFunil(x.fn);
+  // a explicação vem na frente do sintoma que ela explica: visita caiu → ADS; conversão caiu → preço
+  let meio;
+  if (funil?.tipo === 'trafego') meio = [...mudancas, funil, ...precoSubiu];
+  else if (funil?.tipo === 'conversao') meio = [...precoSubiu, funil, ...mudancas];
+  else meio = [...precoSubiu, ...mudancas];
+  const c = [...base, ...meio];
   const qa = L.qualidade?.itens?.[x.id]?.qa;
   if (qa) c.push({ t: corta(qa, 90), tipo: 'qualidade' });
+  const fi = L.funil?.itens?.[x.id];
+  if (funil?.tipo === 'conversao' && fi?.r && fi.r < 4.5) c.push({ t: `nota ${String(fi.r).replace('.', ',')} (${fi.nr} avaliações) — avaliação ruim derruba conversão`, tipo: 'qualidade' });
   if (pa && pb && pb < pa * 0.95 && !c.length) c.push({ t: `caiu mesmo com o preço ${pct((1 - pb / pa) * 100)} menor — olhar concorrência e posição`, tipo: 'preco' });
   return c;
 }
@@ -177,8 +200,8 @@ function mudancasAds(x, L, medidos, desdeIso) {
 }
 
 function calcularRaioX(lojas, pedidosPor, medidos) {
-  const bIni = isoBRT(JANELA), bFim = isoBRT(1), aIni = isoBRT(JANELA * 2), aFim = isoBRT(JANELA + 1);
-  const itens = new Map(), porLoja = [];
+  const bIni = isoBRT(JANELA), bFim = isoBRT(1), aIni = isoBRT(JANELA * 2), aFim = isoBRT(JANELA + 1), cIni = isoBRT(7);
+  const itens = new Map(), porLoja = [], comparadas = [];
   let totA = 0, totB = 0, lojasComp = 0;
   for (const L of lojas) {
     const peds = pedidosPor.get(L.conta);
@@ -187,7 +210,7 @@ function calcularRaioX(lojas, pedidosPor, medidos) {
     const temA = peds.some(p => diaDe(p.criado_em) <= aFim);
     if (!temA) continue;
     lojasComp++;
-    let la = 0, lb = 0;
+    let la = 0, lb = 0, ua = 0, ub = 0;
     for (const p of peds) {
       const dia = diaDe(p.criado_em);
       const lado = dia >= bIni && dia <= bFim ? 'b' : dia >= aIni && dia <= aFim ? 'a' : null;
@@ -196,35 +219,107 @@ function calcularRaioX(lojas, pedidosPor, medidos) {
         if (!i.item_id) continue;
         const q = parseInt(i.qtd) || 1, v = (parseFloat(i.preco) || 0) * q;
         const k = `${L.conta}:${i.item_id}`;
-        const x = itens.get(k) || { id: String(i.item_id), nome: i.nome || String(i.item_id), L, a: { rec: 0, un: 0 }, b: { rec: 0, un: 0 } };
+        const x = itens.get(k) || { id: String(i.item_id), nome: i.nome || String(i.item_id), L, a: { rec: 0, un: 0 }, b: { rec: 0, un: 0 }, c: { rec: 0, un: 0 } };
         x[lado].rec += v; x[lado].un += q;
-        if (lado === 'a') la += v; else lb += v;
+        if (lado === 'b' && dia >= cIni) { x.c.rec += v; x.c.un += q; } // últimos 7 dias (oportunidades)
+        if (lado === 'a') { la += v; ua += q; } else { lb += v; ub += q; }
         itens.set(k, x);
       }
     }
     totA += la; totB += lb;
+    comparadas.push({ L, la, lb, ua, ub });
     porLoja.push({ loja: nomeLoja(L), mkt: L.mkt, antes: Math.round(la / 2), agora: Math.round(lb / 2), var: la > 0 ? r1((lb - la) / la * 100) : null });
   }
   if (!lojasComp) return null;
   const sem = v => Math.round(v / 2); // 14 dias → por semana
-  const lista = [...itens.values()].map(x => ({ ...x, delta: x.b.rec - x.a.rec }));
+  // funil de cada produto: visitas nas duas janelas e conversão (unidades ÷ visitas)
+  const fnDe = x => {
+    if (!x.L.funil) return null;
+    const va = visitasItem(x.L.funil, x.id, aIni, aFim), vb = visitasItem(x.L.funil, x.id, bIni, bFim);
+    if (va == null && vb == null) return null;
+    return { va, vb, ca: va > 0 ? x.a.un / va * 100 : null, cb: vb > 0 ? x.b.un / vb * 100 : null };
+  };
+  const lista = [...itens.values()].map(x => ({ ...x, delta: x.b.rec - x.a.rec, fn: fnDe(x) }));
   const minRelev = Math.max(150, (totA + totB) / 4 * 0.01); // ≥ 1% do faturamento semanal
+  const fnOut = fn => fn && { va: fn.va, vb: fn.vb, ca: fn.ca == null ? null : Math.round(fn.ca * 100) / 100, cb: fn.cb == null ? null : Math.round(fn.cb * 100) / 100 };
   const caiu = lista.filter(x => x.delta < 0 && -sem(x.delta) >= minRelev).sort((a, b) => a.delta - b.delta).slice(0, 6).map(x => ({
     id: x.id, nome: corta(x.nome, 70), loja: nomeLoja(x.L), conta: x.L.conta, mkt: x.L.mkt, antes: sem(x.a.rec), agora: sem(x.b.rec), perdaSem: -sem(x.delta), unAntes: x.a.un, unAgora: x.b.un,
+    precoAntes: x.a.un ? Math.round(x.a.rec / x.a.un) : null, precoAgora: x.b.un ? Math.round(x.b.rec / x.b.un) : null, fn: fnOut(x.fn),
     causas: causasDaQueda(x, x.L, mudancasAds(x, x.L, medidos, aIni)),
   }));
   const subiu = lista.filter(x => x.delta > 0 && sem(x.delta) >= minRelev).sort((a, b) => b.delta - a.delta).slice(0, 5).map(x => {
     const sn = x.L.sinais?.itens?.[x.id];
-    return { id: x.id, nome: corta(x.nome, 70), loja: nomeLoja(x.L), antes: sem(x.a.rec), agora: sem(x.b.rec), ganhoSem: sem(x.delta), novo: x.a.rec === 0,
+    return { id: x.id, nome: corta(x.nome, 70), loja: nomeLoja(x.L), antes: sem(x.a.rec), agora: sem(x.b.rec), ganhoSem: sem(x.delta), novo: x.a.rec === 0, fn: fnOut(x.fn),
       alerta: sn?.ne === 'zerado' || sn?.ne === 'critico' ? `estoque ${sn.ne === 'zerado' ? 'zerado' : `para ~${Math.round(sn.d)} d`} — repor antes de acelerar` : null };
   });
   const topB = lista.slice().sort((a, b) => b.b.rec - a.b.rec);
   const conc = totB > 0 ? r1(topB.slice(0, 5).reduce((s, x) => s + x.b.rec, 0) / totB * 100) : null;
+
+  // ── Funil da conta: faturamento = visitas × conversão × preço médio ──
+  // ML: visitas da loja inteira; Shopee: soma dos produtos acompanhados que têm as duas janelas
+  const fl = [];
+  for (const { L, la, lb, ua, ub } of comparadas) {
+    if (!L.funil) continue;
+    if (L.mkt === 'ml') {
+      const va = visitasConta(L.funil, aIni, aFim), vb = visitasConta(L.funil, bIni, bFim);
+      if (va > 0 && vb > 0) fl.push({ L, va, vb, ua, ub, ra: la, rb: lb, base: 'loja' });
+    } else {
+      const xs = lista.filter(x => x.L === L && x.fn?.va > 0 && x.fn?.vb > 0);
+      if (xs.length >= 3) fl.push({ L, va: xs.reduce((s, x) => s + x.fn.va, 0), vb: xs.reduce((s, x) => s + x.fn.vb, 0), ua: xs.reduce((s, x) => s + x.a.un, 0), ub: xs.reduce((s, x) => s + x.b.un, 0), ra: xs.reduce((s, x) => s + x.a.rec, 0), rb: xs.reduce((s, x) => s + x.b.rec, 0), base: `${xs.length} produtos` });
+    }
+  }
+  let funil = null;
+  if (fl.length) {
+    const S = k => fl.reduce((s, f) => s + f[k], 0);
+    const va = S('va'), vb = S('vb'), ua = S('ua'), ub = S('ub'), ra = S('ra'), rb = S('rb');
+    if (va > 0 && vb > 0 && ua > 0 && ub > 0) {
+      const ca = ua / va * 100, cb = ub / vb * 100, ta = ra / ua, tb = rb / ub;
+      const fat = [['visitas', Math.log(vb / va), vb / va - 1], ['conversão', Math.log(cb / ca), cb / ca - 1], ['preço médio', Math.log(tb / ta), tb / ta - 1]];
+      const tot = Math.log(rb / ra);
+      // o fator que mais empurrou na direção do resultado
+      const principal = fat.filter(f => Math.sign(f[1]) === Math.sign(tot) || !tot).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
+      const fx = f => `${f[0]} ${f[2] >= 0 ? '+' : '−'}${pct(Math.abs(f[2] * 100))}`;
+      const explica = principal ? `${tot < 0 ? 'A queda' : 'O crescimento'} de ${pct(Math.abs((rb / ra - 1) * 100))} veio principalmente de ${fx(principal)}${fat.filter(f => f !== principal && Math.abs(f[2]) >= 0.05).map(f => `; ${fx(f)}`).join('')}.` : '';
+      funil = { visitas: { a: Math.round(va / 2), b: Math.round(vb / 2) }, conversao: { a: Math.round(ca * 100) / 100, b: Math.round(cb * 100) / 100 }, precoMedio: { a: Math.round(ta), b: Math.round(tb) },
+        explica, lojas: fl.map(f => ({ loja: nomeLoja(f.L), base: f.base, visitasSem: Math.round(f.vb / 2), conv: Math.round(f.ub / f.vb * 10000) / 100, varVisitas: r1((f.vb / f.va - 1) * 100) })),
+        cobertura: fl.length < comparadas.length ? `${fl.length} de ${comparadas.length} lojas (a Shopee completa o histórico de visitas em ~15 dias)` : null };
+    }
+  }
+
+  // ── Oportunidades do funil (últimos 7 dias) ──
+  // visita sem venda: tráfego que já existe e não converte; converte bem e quase não aparece: falta exposição
+  const semConversao = [], poucaVisita = [];
+  for (const { L } of comparadas) {
+    const f = L.funil; if (!f?.itens) continue;
+    const ps = Object.entries(f.itens).map(([id, fi]) => {
+      const v7 = visitasItem(f, id, cIni, bFim); if (v7 == null) return null;
+      const x = itens.get(`${L.conta}:${id}`), un = x?.c.un || 0, rec = x?.c.rec || 0;
+      const preco = un ? rec / un : (L.sinais?.itens?.[id]?.p || 0);
+      return { id, nome: corta(x?.nome || fi.n, 70), v7, un, rec, preco, conv: v7 > 0 ? un / v7 * 100 : null, nota: fi.r, nr: fi.nr };
+    }).filter(Boolean);
+    const vt = ps.reduce((s, x) => s + x.v7, 0), ut = ps.reduce((s, x) => s + x.un, 0);
+    if (ps.length < 5 || !(vt > 0) || !(ut > 0)) continue;
+    const ref = ut / vt * 100, medV = ps.map(x => x.v7).sort((a, b) => a - b)[Math.floor(ps.length / 2)];
+    const foraAds = new Set((L.oportunidades?.candidatos || []).map(c => String(c.item_id)));
+    for (const x of ps) {
+      const base = { ...x, conv: x.conv == null ? null : Math.round(x.conv * 100) / 100, convLoja: Math.round(ref * 100) / 100, loja: nomeLoja(L), conta: L.conta, mkt: L.mkt, preco: Math.round(x.preco), foraAds: foraAds.has(x.id) };
+      if (x.v7 >= 70 && x.conv < ref * 0.5 && x.preco > 0) {
+        const potencial = Math.round(x.v7 * (ref * 0.7 - x.conv) / 100 * x.preco);
+        if (potencial >= 150) semConversao.push({ ...base, potencial });
+      } else if (x.conv >= ref * 1.6 && x.un >= 3 && x.v7 <= medV) {
+        const potencial = Math.round(x.rec * 0.5); // +50% de visitas na mesma conversão
+        if (potencial >= 150) poucaVisita.push({ ...base, vezes: r1(x.conv / ref), potencial });
+      }
+    }
+  }
+  semConversao.sort((a, b) => b.potencial - a.potencial); poucaVisita.sort((a, b) => b.potencial - a.potencial);
+
   return {
     periodo: { antes: `${dm(aIni)} a ${dm(aFim)}`, agora: `${dm(bIni)} a ${dm(bFim)}` },
     semanaAntes: sem(totA), semanaAgora: sem(totB), var: totA > 0 ? r1((totB - totA) / totA * 100) : null,
     lojas: porLoja.sort((a, b) => (a.agora - a.antes) - (b.agora - b.antes)), caiu, subiu, concentracaoTop5: conc,
     produtosVendendo: lista.filter(x => x.b.un > 0).length, produtosQueZeraram: lista.filter(x => x.a.un >= 3 && x.b.un === 0).length,
+    funil, oportunidades: { semConversao: semConversao.slice(0, 3), poucaVisita: poucaVisita.slice(0, 3) },
   };
 }
 
@@ -233,12 +328,13 @@ function calcularRaioX(lojas, pedidosPor, medidos) {
 // mostram, cada uma com quanto rende até o fim do mês (estimativa conservadora,
 // com o grau de confiança). Se a soma não chega, diz quanto falta além disso e
 // quanto de ADS a mais seria preciso mantendo o TACOS de hoje.
-const FATOR = { estoque: [0.8, 'alta'], anuncio: [0.7, 'alta'], ads: [0.6, 'média'], preco: [0.5, 'média'], qualidade: [0.4, 'baixa'] };
+const FATOR = { estoque: [0.8, 'alta'], anuncio: [0.7, 'alta'], ads: [0.6, 'média'], preco: [0.5, 'média'], trafego: [0.5, 'média'], conversao: [0.4, 'baixa'], qualidade: [0.4, 'baixa'] };
 const ROTULO_CAUSA = {
   estoque: n => `Repor o estoque de ${n} produto(s) que pararam de vender`, anuncio: n => `Reativar/consertar ${n} anúncio(s) pausados ou em revisão`,
   ads: n => `Desfazer o aperto de ADS em ${n} produto(s) que perderam venda`, preco: n => `Rever o preço de ${n} produto(s) que subiram e caíram`, qualidade: n => `Consertar o anúncio de ${n} produto(s) com problema de qualidade`,
+  trafego: n => `Recuperar as visitas de ${n} produto(s) que perderam exposição`, conversao: n => `Recuperar a conversão de ${n} produto(s) que recebem visita e vendem menos`,
 };
-const TELA_CAUSA = { estoque: 'estoque-margem', anuncio: 'qualidade-anuncios', ads: 'decisoes', preco: 'precos-ml', qualidade: 'qualidade-anuncios' };
+const TELA_CAUSA = { estoque: 'estoque-margem', anuncio: 'qualidade-anuncios', ads: 'decisoes', preco: 'precos-ml', qualidade: 'qualidade-anuncios', trafego: 'agente', conversao: 'vendas' };
 // Nos últimos 4 dias do mês quase nada mais muda: o caminho passa a ser o do mês
 // seguinte (mesma meta), partindo do ritmo diário de hoje.
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -282,6 +378,9 @@ function calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX
   // 3) acelerar quem está crescendo (sem alerta de estoque)
   const campeoes = (raioX?.subiu || []).filter(x => !x.alerta);
   if (campeoes.length) alav.push({ id: 'campeoes', titulo: `Dar mais ADS/visibilidade aos ${campeoes.length} produto(s) que estão crescendo`, porque: campeoes.slice(0, 2).map(x => `${corta(x.nome, 40)} (+${R$(x.ganhoSem)}/sem)`).join(', '), valor: Math.round(campeoes.reduce((s, x) => s + x.agora, 0) * 0.2 * semRest), conf: 'média', tela: 'agente' });
+  // 3b) oportunidades do funil: visita que não converte e produto que converte e não aparece
+  const op = [...(raioX?.oportunidades?.semConversao || []), ...(raioX?.oportunidades?.poucaVisita || [])];
+  if (op.length) alav.push({ id: 'funil', titulo: `Trabalhar ${op.length} produto(s) do funil (visita sem venda / converte e não aparece)`, porque: op.slice(0, 2).map(x => `${corta(x.nome, 40)} (~${R$(x.potencial)}/sem)`).join(', '), valor: Math.round(op.reduce((s, x) => s + x.potencial, 0) * semRest * 0.4), conf: 'baixa', tela: 'vendas' });
   // 4) sugestões de ADS que ganham venda (esperando aprovação)
   const contas = new Set(lojas.map(L => L.conta));
   const ganho = pendentes.filter(l => contas.has(String(l.conta_id)) && l.dados?.impacto_tipo === 'ganho' && parseFloat(l.dados?.impacto) > 0);
@@ -301,17 +400,33 @@ function calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX
 }
 
 // Queda relevante vira ação, com a causa já apontada
+const FAZER = {
+  trafego: 'o problema é exposição: conferir posição na busca, se perdeu frete grátis/selo ou saiu de campanha do marketplace, e reforçar o ADS do produto',
+  conversao: 'as visitas continuam chegando e não compram: comparar preço e frete com o concorrente, conferir fotos, variações sem estoque e avaliações recentes',
+  preco: 'o preço subiu e a venda caiu: testar a volta ao preço anterior (ou uma promoção dentro da margem)',
+};
 function acoesDoRaioX(rx) {
   if (!rx) return [];
-  return rx.caiu.slice(0, 3).map(x => {
-    const tipo = x.causas[0]?.tipo;
-    const tela = tipo === 'estoque' ? 'estoque-margem' : tipo === 'ads' ? (x.mkt === 'ml' ? 'agente-ml' : 'agente') : tipo === 'preco' ? (x.mkt === 'ml' ? 'precos-ml' : 'vendas') : tipo === 'qualidade' ? 'qualidade-anuncios' : 'vendas';
+  const A = rx.caiu.slice(0, 3).map(x => {
+    const tipo = x.causas[0]?.tipo, nome = corta(x.nome, 50);
+    const tela = tipo === 'estoque' ? 'estoque-margem' : tipo === 'ads' || tipo === 'trafego' ? (x.mkt === 'ml' ? 'agente-ml' : 'agente') : tipo === 'preco' ? (x.mkt === 'ml' ? 'precos-ml' : 'vendas') : tipo === 'qualidade' ? 'qualidade-anuncios' : 'vendas';
+    const titulo = { estoque: `Repor ${nome}`, ads: `Devolver o lance do ADS de ${nome}`, preco: `Rever o preço de ${nome}`, trafego: `Recuperar as visitas de ${nome}`, conversao: `Recuperar a conversão de ${nome}`, anuncio: `Reativar o anúncio de ${nome}` }[tipo] || `Recuperar ${nome}`;
+    const fazer = FAZER[tipo] && !(tipo === 'trafego' && x.causas.some(c => c.tipo === 'ads')) ? ` O que fazer: ${FAZER[tipo]}.` : '';
     return { id: `fat:${x.conta}:${x.id}`, conta: x.conta, mkt: x.mkt, loja: x.loja, tipo: 'faturamento', tela,
       quando: 'hoje', quem: tipo === 'estoque' ? 'cliente' : 'analista',
-      titulo: `Recuperar ${corta(x.nome, 50)}: caiu ${R$(x.perdaSem)}/sem`,
-      porque: `vendia ${R$(x.antes)}/sem (${x.unAntes} un. em 14 d), agora ${R$(x.agora)}/sem (${x.unAgora} un.) — ${x.causas.length ? x.causas.map(c => c.t).join('; ') : 'sem causa clara nos dados: conferir concorrência, posição na busca e avaliações'}`,
+      titulo: `${titulo}: caiu ${R$(x.perdaSem)}/sem`,
+      porque: `vendia ${R$(x.antes)}/sem (${x.unAntes} un. em 14 d), agora ${R$(x.agora)}/sem (${x.unAgora} un.) — ${x.causas.length ? x.causas.map(c => c.t).join('; ') : 'sem causa clara nos dados: conferir concorrência, posição na busca e avaliações'}.${fazer}`,
       impacto: `~${R$(x.perdaSem)}/sem em vendas`, valor: x.perdaSem, peso: 1000 + x.perdaSem / 5 };
   });
+  for (const x of rx.oportunidades?.semConversao || []) A.push({ id: `conv:${x.conta}:${x.id}`, conta: x.conta, mkt: x.mkt, loja: x.loja, tipo: 'funil', tela: x.mkt === 'ml' ? 'precos-ml' : 'vendas', quando: 'semana', quem: 'analista',
+    titulo: `Converter melhor ${corta(x.nome, 45)}: ${N(x.v7)} visitas/sem e conversão de ${pc(x.conv)}`,
+    porque: `a loja converte ${pc(x.convLoja)}; chegando a 70% disso, rende ~${R$(x.potencial)}/sem. Revisar preço (${R$(x.preco)}) e frete contra o concorrente, fotos, título e variações${x.nota && x.nota < 4.5 ? `; a nota é ${String(x.nota).replace('.', ',')} (${x.nr} avaliações)` : ''}.`,
+    impacto: `~${R$(x.potencial)}/sem`, valor: x.potencial, peso: 600 + x.potencial / 5 });
+  for (const x of rx.oportunidades?.poucaVisita || []) A.push({ id: `exp:${x.conta}:${x.id}`, conta: x.conta, mkt: x.mkt, loja: x.loja, tipo: 'funil', tela: x.mkt === 'ml' ? 'agente-ml' : 'agente', quando: 'semana', quem: 'analista',
+    titulo: `Dar exposição a ${corta(x.nome, 45)}: converte ${pc(x.conv)} (${String(x.vezes).replace('.', ',')}x a loja) com ${N(x.v7)} visitas/sem`,
+    porque: `${x.foraAds ? 'não está em nenhuma campanha de ADS — colocar numa campanha' : 'já está no ADS — subir o lance/orçamento dele'}; +50% de visitas na mesma conversão rende ~${R$(x.potencial)}/sem.`,
+    impacto: `~${R$(x.potencial)}/sem`, valor: x.potencial, peso: 600 + x.potencial / 5 });
+  return A;
 }
 
 // Texto com IA (diagnóstico + pauta) a partir dos fatos; null se não der
@@ -332,7 +447,7 @@ async function escreverUmaVez(Anthropic, anthropicKey, fatos) {
     const r = await client.messages.create({
       model: 'claude-haiku-5-5',
       max_tokens: 2500,
-      system: 'Você é o gerente de conta de uma consultoria de marketplaces (Mercado Livre e Shopee). Escreve para o analista da própria consultoria, em português do Brasil, direto e prático. Use SOMENTE os números e fatos do JSON — nunca invente número, produto, prazo ou ação. Responda APENAS um JSON válido: {"diagnostico":"até 4 frases: como o cliente está no mês (faturamento x meta/projeção, TACOS) e, pelo raio_x, DE ONDE o faturamento está vindo e PARA ONDE está indo — os produtos que mais caíram em R$/semana e a causa apontada, e os que mais cresceram. Cite produto e valor. Se houver caminho_para_meta, diga quanto falta para a meta e se as alavancas cobrem (cobertura_pct), citando as 2 maiores.","pauta":"pauta do dia para o analista conversar com o cliente, em tópicos curtos com hífen: 1) como o faturamento andou nas últimas 2 semanas e o que puxou/derrubou (raio_x), 2) o que fizemos e o resultado medido (se houver), 3) o que precisamos do cliente (só as ações com quem=cliente), 4) próximos passos. Tom cordial, pronto para virar mensagem. No máximo 8 tópicos, cada um com até 2 frases."}',
+      system: 'Você é o gerente de conta de uma consultoria de marketplaces (Mercado Livre e Shopee). Escreve para o analista da própria consultoria, em português do Brasil, direto e prático. Use SOMENTE os números e fatos do JSON — nunca invente número, produto, prazo ou ação. Responda APENAS um JSON válido: {"diagnostico":"até 4 frases: como o cliente está no mês (faturamento x meta/projeção, TACOS) e, pelo raio_x, DE ONDE o faturamento está vindo e PARA ONDE está indo — os produtos que mais caíram em R$/semana e a causa apontada, e os que mais cresceram. Cite produto e valor. Pense como analista da conta: se houver funil_da_conta, diga se a variação veio de visitas, conversão ou preço médio (use a explicacao), e para os produtos use o funil (visitas e conversão) e o preço antes/agora para dizer se perderam exposição, conversão ou ficaram mais caros. Se houver oportunidades_funil, cite a maior. Se houver caminho_para_meta, diga quanto falta para a meta e se as alavancas cobrem (cobertura_pct), citando as 2 maiores.","pauta":"pauta do dia para o analista conversar com o cliente, em tópicos curtos com hífen: 1) como o faturamento andou nas últimas 2 semanas e o que puxou/derrubou (raio_x), 2) o que fizemos e o resultado medido (se houver), 3) o que precisamos do cliente (só as ações com quem=cliente), 4) próximos passos. Tom cordial, pronto para virar mensagem. No máximo 8 tópicos, cada um com até 2 frases."}',
       messages: [{ role: 'user', content: JSON.stringify(fatos) }],
     });
     const txt = r.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
@@ -348,7 +463,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
   const { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic } = h;
   const [clientes, vinc, metas, metasPed, metasTac, gestores, nicks, estados, configs, pendentes, medidos] = await Promise.all([
     lerStorage('glr_clientes').then(x => x || []), lerStorage('glr_mc_vinculos').then(x => x || {}), lerStorage('glr_metas').then(x => x || {}), lerStorage('glr_metas_pedidos').then(x => x || {}), lerStorage('glr_metas_tacos').then(x => x || {}), lerStorage('glr_gestores').then(x => x || []), lerStorage('glr_mc_nicknames').then(x => x || {}),
-    sbSelect('glr_sync_estado', 'recurso=in.(resumo,sinais,promocoes,reputacao,qualidade)&marketplace=in.(ml,shopee)&select=marketplace,conta_id,recurso,cursor').catch(() => []),
+    sbSelect('glr_sync_estado', 'recurso=in.(resumo,sinais,promocoes,reputacao,qualidade,funil,oportunidades)&marketplace=in.(ml,shopee)&select=marketplace,conta_id,recurso,cursor').catch(() => []),
     sbSelect('glr_agente_config', 'select=conta_id,marketplace,meta_acos,cliente_nome').catch(() => []),
     sbSelect('glr_agente_log', `tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 10 * 864e5).toISOString())}&select=conta_id,titulo,dados,criado_em&limit=3000`).catch(() => []),
     sbSelect('glr_agente_log', `tipo=in.(decisao,alerta)&resultado=eq.executado&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 46 * 864e5).toISOString())}&select=conta_id,titulo,dados,criado_em&order=criado_em.desc&limit=6000`).catch(() => []),
@@ -372,7 +487,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
       const mkt = mktDe(ct.marketplace); if (!mkt) continue;
       const conta = String(ct.param_to_use?.shopId || ct.param_to_use?.meliUserId || ct.external_id);
       const e = est[`${mkt}:${conta}`] || est[`${mkt}:${ct.external_id}`]; if (!e) continue;
-      lojas.push({ mkt, conta, nome: nicks[ct.external_id] || ct.tags?.[0]?.name || ct.nickname || '', resumo: e.resumo, sinais: e.sinais, promocoes: e.promocoes, reputacao: e.reputacao, qualidade: e.qualidade });
+      lojas.push({ mkt, conta, nome: nicks[ct.external_id] || ct.tags?.[0]?.name || ct.nickname || '', resumo: e.resumo, sinais: e.sinais, promocoes: e.promocoes, reputacao: e.reputacao, qualidade: e.qualidade, funil: e.funil, oportunidades: e.oportunidades });
     }
     if (!lojas.length) return;
     // Métricas do mês (todas as lojas)
@@ -430,7 +545,9 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     if (meta && proj < meta && dm > dd) metricas.faltaPorDia = Math.round((meta - fat) / (dm - dd));
     if (dd > 0) metricas.ritmoDia = Math.round(fat / dd);
     const fatos = { cliente: c.nome, metricas, caminho_para_meta: caminho && { mes_da_meta: caminho.mesAlvo, falta_rs: caminho.faltaR, falta_pedidos: caminho.faltaPedidos, precisa_por_dia: caminho.precisaDia, ritmo_por_dia: caminho.ritmoDia, alavancas: caminho.alavancas.map(a => ({ o_que: a.titulo, rende_ate_fim_do_mes: a.valor, confianca: a.conf })), soma_alavancas: caminho.soma, cobertura_pct: caminho.cobertura, falta_alem_das_alavancas: caminho.resto, ads_extra_mantendo_tacos: caminho.adsExtra, teto_ads_tacos_pct: caminho.tetoTacos || null, folga_ads_ate_o_teto: caminho.folgaAds ?? null }, raio_x: raioX && { periodo: raioX.periodo, semana_antes: raioX.semanaAntes, semana_agora: raioX.semanaAgora, variacao_pct: raioX.var,
-      caiu: raioX.caiu.map(x => ({ produto: x.nome, loja: x.loja, antes_sem: x.antes, agora_sem: x.agora, perda_sem: x.perdaSem, causas: x.causas.map(c => c.t) })),
+      funil_da_conta: raioX.funil && { visitas_sem: raioX.funil.visitas, conversao_pct: raioX.funil.conversao, preco_medio: raioX.funil.precoMedio, explicacao: raioX.funil.explica },
+      oportunidades_funil: raioX.oportunidades,
+      caiu: raioX.caiu.map(x => ({ produto: x.nome, loja: x.loja, antes_sem: x.antes, agora_sem: x.agora, perda_sem: x.perdaSem, preco_antes: x.precoAntes, preco_agora: x.precoAgora, funil: x.fn, causas: x.causas.map(c => c.t) })),
       subiu: raioX.subiu.map(x => ({ produto: x.nome, loja: x.loja, antes_sem: x.antes, agora_sem: x.agora, ganho_sem: x.ganhoSem, novo: x.novo, alerta: x.alerta })),
       lojas: raioX.lojas, concentracao_top5_pct: raioX.concentracaoTop5 },
       acoes: acoes.map(a => ({ quando: a.quando, quem: a.quem, titulo: a.titulo, porque: a.porque, impacto: a.impacto, loja: a.loja })), resultados_7_dias: resultados };
