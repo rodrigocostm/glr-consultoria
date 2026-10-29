@@ -25,7 +25,7 @@ Router.register('decisoes', (params, el) => {
     'promocoes': { t: 'Promoções', c: 'var(--purple)' },
   };
   const ACAO_REC = { send_attachments: 'Enviar provas', send_message_to_mediator: 'Responder ao mediador', refund: 'Resolver reembolso' };
-  const st = { itens: [], carregando: true, erro: null, filtro: 'todos', abertos: new Set(), sel: new Set(), proc: {}, lote: null, grupos: new Set(), gruposMexidos: new Set() };
+  const st = { itens: [], carregando: true, erro: null, filtro: 'todos', abertos: new Set(), sel: new Set(), proc: {}, lote: null, grupos: new Set(), gruposMexidos: new Set(), lojasTodas: new Set() };
   window._dcSt = st;
 
   // decisões que não ficam no registro dos agentes (plano, reputação, promoções): feito/descartado por aqui
@@ -143,7 +143,8 @@ Router.register('decisoes', (params, el) => {
   }
 
   // ── Agrupado por cliente → loja (o nome da conta vem como "Cliente · Loja") ──
-  const partes = it => { const t = String(it.loja || it.cliente || ''); const i = t.indexOf(' · '); return i > 0 ? [t.slice(0, i), t.slice(i + 3)] : [t || 'Sem cliente', t || '']; };
+  const NOME_MKT = { ML: 'Mercado Livre', Shopee: 'Shopee', AMZ: 'Amazon', TT: 'TikTok Shop' };
+  const partes = it => { const t = String(it.loja || it.cliente || ''); const i = t.indexOf(' · '); const [c, l] = i > 0 ? [t.slice(0, i), t.slice(i + 3)] : [t || 'Sem cliente', t || '']; return [c, NOME_MKT[l] || l.replace(/^ML /, 'Mercado Livre · ')]; };
   function agrupar(lista) {
     const cls = new Map();
     for (const it of lista) {
@@ -174,7 +175,8 @@ Router.register('decisoes', (params, el) => {
           return `<div class="dc-loja">
             <div class="dc-loja-cab"><span class="dc-loja-nome">${h(l.nome || 'Loja')}</span><span class="pl-sub">${l.itens.length} decisão(ões)${l.rs > 0 ? ` · ${R$(l.rs)}/sem` : ''}</span><span style="flex:1"></span>
               ${ex.length >= 2 ? `<button class="btn btn-secondary btn-sm" ${st.lote ? 'disabled' : ''} onclick="window._dcAprovarLoja('${h(g.k)}','${h(l.k)}')">Aprovar as ${ex.length} desta loja</button>` : ''}</div>
-            ${l.itens.map(linha).join('')}
+            ${(st.lojasTodas.has(l.k) ? l.itens : l.itens.slice(0, 6)).map(linha).join('')}
+            ${l.itens.length > 6 && !st.lojasTodas.has(l.k) ? `<button type="button" class="dc-mais" onclick="window._dcLojaTodas('${h(l.k)}')">ver mais ${l.itens.length - 6} desta loja</button>` : ''}
           </div>`; }).join('') : ''}
       </div>`;
     }).join('')}</div>`;
@@ -202,6 +204,7 @@ Router.register('decisoes', (params, el) => {
   const tirar = id => { st.itens = st.itens.filter(x => x.id !== id); st.sel.delete(id); window.dispatchEvent(new CustomEvent('glr:decisoes', { detail: { n: st.itens.length } })); };
   window._dcRecarregar = () => carregar();
   window._dcFiltro = k => { st.filtro = k; render(); };
+  window._dcLojaTodas = k => { st.lojasTodas.add(k); render(); };
   window._dcGrupo = (k, abrir) => { st.gruposMexidos.add(k); abrir ? st.grupos.add(k) : st.grupos.delete(k); render(); };
   window._dcAprovarLoja = (ck, lk) => {
     const g = agrupar(visiveis()).find(x => x.k === ck), l = g?.lojas.find(x => x.k === lk);
@@ -260,6 +263,7 @@ Router.register('decisoes', (params, el) => {
     .dc-g-res{margin-left:auto;display:flex;gap:14px;font-size:12.5px;color:var(--text-muted);white-space:nowrap} .dc-g-res b{color:var(--text-primary);font-variant-numeric:tabular-nums}
     .dc-loja{border-top:1px solid var(--border)}
     .dc-loja-cab{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 16px;background:var(--bg-subtle)} .dc-loja-nome{font-size:12.5px;font-weight:650;color:var(--text-secondary)}
+    .dc-mais{display:block;width:100%;border:0;border-top:1px solid var(--border);background:none;padding:9px 16px;font-size:12.5px;color:var(--accent);cursor:pointer;font-family:inherit;text-align:left} .dc-mais:hover{background:var(--bg-subtle)}
     .dc-lista{padding:4px 0}
     .dc-li{display:grid;grid-template-columns:28px minmax(0,1fr) 110px auto;gap:12px;align-items:start;padding:12px 16px;border-top:1px solid var(--border);border-left:3px solid transparent}
     .dc-loja-cab + .dc-li{border-top:0} .dc-li.urgente{border-left-color:var(--red);background:color-mix(in srgb,var(--red) 4%,transparent)}
