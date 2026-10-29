@@ -115,8 +115,28 @@ async function vendasPorItem(sbSelect, contaId, desdeIso) {
   return mapa;
 }
 
+// Revisão de 3 dias: venda de cada anúncio nos últimos 3 dias (b) × os 3 anteriores (a)
+async function vendas3x3(sbSelect, contaId, ontem, isoMenos) {
+  const d3 = isoMenos(ontem, 2), d6 = isoMenos(ontem, 5), mapa = new Map();
+  for (let off = 0; off < 20000; off += 1000) {
+    const rows = await sbSelect('glr_pedidos', `marketplace=eq.ml&conta_id=eq.${encodeURIComponent(contaId)}&situacao=eq.valido&criado_em=gte.${encodeURIComponent(new Date(`${d6}T03:00:00Z`).toISOString())}&select=criado_em,itens&limit=1000&offset=${off}`).catch(() => []);
+    for (const p of rows) {
+      const dia = new Date(Date.parse(p.criado_em) - 3 * 3600e3).toISOString().slice(0, 10);
+      if (dia > ontem) continue;
+      for (const i of (p.itens || [])) {
+        if (!i.item_id) continue;
+        const v = mapa.get(String(i.item_id)) || { a: 0, b: 0 };
+        v[dia >= d3 ? 'b' : 'a'] += (parseFloat(i.preco) || 0) * (parseInt(i.qtd) || 1);
+        mapa.set(String(i.item_id), v);
+      }
+    }
+    if (rows.length < 1000) break;
+  }
+  return mapa;
+}
+
 async function processarContaML(cfg, mcApiKey, h) {
-  const { sbSelect, sbInsert, sbUpdate, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall } = h;
+  const { sbSelect, sbInsert, sbUpdate, sbUpsert, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall } = h;
   const contaId = String(cfg.conta_id);
   const sugestoes = [];
   async function logar(tipo, titulo, explicacao, dados, resultado) {
@@ -185,9 +205,14 @@ async function processarContaML(cfg, mcApiKey, h) {
     }
 
     // Campanhas (janela da campanha) + anúncios de cada campanha ativa (janela de produto)
-    const [campanhas, vendasLoja] = await Promise.all([
+    const hojeMom = dataBRT(0).iso;
+    const estMom = (await sbSelect('glr_sync_estado', `marketplace=eq.sistema&conta_id=eq.${encodeURIComponent(`momento:${contaId}`)}&recurso=eq.momento&select=cursor`).catch(() => []))[0]?.cursor;
+    const momentoHoje = !estMom?.dia || (Date.parse(`${hojeMom}T12:00:00Z`) - Date.parse(`${estMom.dia}T12:00:00Z`)) / 864e5 >= 3;
+    const mom = { aceleradas: [], recuperadas: [], seguradas: [] };
+    const [campanhas, vendasLoja, v3] = await Promise.all([
       listarCampanhasML(mcpCall, mcApiKey, contaId, inicio, ontem),
       vendasPorItem(sbSelect, contaId, new Date(`${de30}T00:00:00-03:00`).toISOString()),
+      momentoHoje ? vendas3x3(sbSelect, contaId, ontem, isoMenos) : Promise.resolve(new Map()),
     ]);
     const ativas = campanhas.filter(c => String(c.status || '').toLowerCase() === 'active');
     const anunciosPor = await Promise.all(ativas.map(c => listarAnunciosML(mcpCall, mcApiKey, contaId, c.id, inicioProd, ontem).catch(() => [])));
@@ -431,6 +456,33 @@ async function processarContaML(cfg, mcApiKey, h) {
       //     (não acelera campanha cujo produto principal está acabando — agente de Estoque)
       const principal = x.familias.filter(f => !tiradas.has(f.chave)).sort((a, b) => b.vendasAj - a.vendasAj)[0];
       const avisoCamp = principal ? avisoDe(principal.itens) : null;
+
+      // Revisão de 3 dias: venda dos anúncios da campanha (orgânico + ADS) nos últimos 3 dias × 3 anteriores.
+      // Subindo (ou caindo) com ACOS dentro da meta e TACOS com folga → sugere acelerar dentro dos limites.
+      if (momentoHoje && x.madura) {
+        let a3 = 0, b3 = 0;
+        for (const an of x.anuncios) if (an.status === 'active') { const v = v3.get(String(an.item_id)); if (v) { a3 += v.a; b3 += v.b; } }
+        const subindo = a3 + b3 >= 200 && b3 >= a3 * 1.2 && b3 - a3 >= 100, caindo = a3 + b3 >= 200 && b3 <= a3 * 0.8 && a3 - b3 >= 100;
+        const bloq = seguraEstoque(avisoCamp) ? `o principal produto ${estoqueTxt(avisoCamp)}` : repTxt(avisoCamp) || qaTxt(avisoCamp) || (!tacosOk ? `o TACOS do mês (${r1(tacosMes)}%) está acima ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `da meta (${meta}%)`}` : null);
+        if ((subindo || caindo) && acos <= meta && !bloq) {
+          const moTxt = `a venda dos anúncios da campanha (orgânico + ADS) foi de ${R$(a3)} nos 3 dias anteriores para ${R$(b3)} nos últimos 3 (${b3 >= a3 ? '+' : '−'}${Math.abs(a3 > 0 ? (b3 / a3 - 1) * 100 : 100).toFixed(0)}%)`;
+          const porque = subindo ? `${moTxt}, com ACOS de ${acosTxt} dentro da meta (${meta}%) e TACOS com folga — acelerar para vender mais` : `${moTxt}, com ACOS de ${acosTxt} dentro da meta (${meta}%) — reforçar a exposição antes que a queda continue`;
+          let ok = false;
+          if (x.budget > 0 && x.gastoDia >= x.budget * 0.8 && (!cfg.orcamento_max || x.budget < cfg.orcamento_max)) {
+            const novo = Math.round(Math.min(cfg.orcamento_max || Infinity, x.budget * 1.15) * 100) / 100;
+            ok = await sugerir(chave, `Sugestão: aumentar orçamento — ${x.nome} (revisão de 3 dias)`, `Revisão de 3 dias: ${porque}. O orçamento está quase todo consumido (média de ${R$(x.gastoDia)}/dia de ${R$(x.budget)}): aumentar para ${R$(novo)}.`,
+              { ...base0, acao: 'orcamento', de: x.budget, para: novo, momento: { a: Math.round(a3), b: Math.round(b3) }, impacto: Math.max(0, b3 - a3) / 3 * 7, impacto_tipo: 'ganho' });
+          } else if (x.rentab && x.roasAlvo > roasMeta * 1.02) {
+            const novo = r1(Math.max(roasMeta, x.roasAlvo * 0.9));
+            if (novo < x.roasAlvo) ok = await sugerir(chave, `Sugestão: baixar ROAS objetivo — ${x.nome} (revisão de 3 dias)`, `Revisão de 3 dias: ${porque}. Baixar o ROAS objetivo de ${roasTxt(x.roasAlvo)} para ${roasTxt(novo)} (sem passar do ROAS ${roasTxt(roasMeta)} da meta).`,
+              { ...base0, acao: 'roas_target', de: r1(x.roasAlvo), para: novo, momento: { a: Math.round(a3), b: Math.round(b3) }, impacto: Math.max(0, b3 - a3) / 3 * 7, impacto_tipo: 'ganho' });
+          }
+          if (ok) { (subindo ? mom.aceleradas : mom.recuperadas).push(x.nome); continue; }
+        } else if (subindo) {
+          mom.seguradas.push(x.nome);
+          colaboracoes.push({ de: 'faturamento', texto: `revisão de 3 dias: "${x.nome}" está subindo, mas não sugeri acelerar — ${bloq || `ACOS de ${acosTxt} acima da meta (${meta}%)`}` });
+        }
+      }
       if (acos <= meta * 0.7 && tacosOk && seguraEstoque(avisoCamp)) {
         colaboracoes.push({ de: 'estoque', texto: `segurei a aceleração de "${x.nome}": o principal produto dela, "${String(principal.nome).slice(0, 40)}", ${estoqueTxt(avisoCamp)}` });
       } else if (acos <= meta * 0.7 && tacosOk && repTxt(avisoCamp)) {
@@ -504,6 +556,13 @@ async function processarContaML(cfg, mcApiKey, h) {
       }
     }
 
+    if (momentoHoje) {
+      const lista = (t, xs) => xs.length ? `${t}: ${xs.slice(0, 6).join(', ')}${xs.length > 6 ? ` e mais ${xs.length - 6}` : ''}.` : '';
+      await logar('sistema', `Revisão de 3 dias — ${mom.aceleradas.length + mom.recuperadas.length} sugestão(ões) de acelerar`,
+        `Comparei a venda dos anúncios de cada campanha nos últimos 3 dias com os 3 anteriores. ${[lista('Subindo, sugeri acelerar', mom.aceleradas), lista('Caindo, sugeri reforçar a exposição', mom.recuperadas), lista('Subindo mas segurada por limite', mom.seguradas)].filter(Boolean).join(' ') || 'Nenhuma campanha com variação relevante (±20% e R$ 100).'} Próxima revisão em 3 dias.`,
+        { momento: true, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, seguradas: mom.seguradas.length }, 'executado');
+      if (sbUpsert) await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `momento:${contaId}`, recurso: 'momento', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), cursor: { dia: hojeMom, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length } }, 'marketplace,conta_id,recurso').catch(() => {});
+    }
     if (colaboracoes.length) {
       await logar('sistema', `Colaboração com Estoque e Margem — ${colaboracoes.length} decisão(ões)`,
         colaboracoes.slice(0, 12).map(x => `• ${x.texto}`).join('\n'), { colaboracoes: colaboracoes.slice(0, 30) }, 'executado');

@@ -347,7 +347,7 @@ const comTetoML = async cfg => ({ ...cfg, teto_tacos: (await contratoDaConta(cfg
 
 // Ferramentas compartilhadas que o agente do ML (api/_agente-ml.js) usa.
 function ajudantesML() {
-  return { sbSelect, sbInsert, sbUpdate, lerSinais, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall };
+  return { sbSelect, sbInsert, sbUpdate, sbUpsert, lerSinais, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall };
 }
 
 // Trava de rodada agendada: a mesma rodada (dia + horário) roda uma vez só,
@@ -923,16 +923,23 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // próprio agente). Antes de conter, olha a venda do produto na loja inteira
     // (orgânico + ADS): últimos 7 dias × 7 anteriores, e os apertos dos últimos 21 dias.
     const vendasProd = new Map();
+    // Revisão de 3 dias: a cada 3 dias por loja, a venda de cada produto nos últimos 3 dias × os 3 anteriores
+    const MOMENTO_DIAS = 3, hojeMom = dataBRT(0).iso;
+    const estMom = (await sbSelect('glr_sync_estado', `marketplace=eq.sistema&conta_id=eq.${encodeURIComponent(`momento:${shopId}`)}&recurso=eq.momento&select=cursor`).catch(() => []))[0]?.cursor;
+    const momentoHoje = !estMom?.dia || (Date.parse(`${hojeMom}T12:00:00Z`) - Date.parse(`${estMom.dia}T12:00:00Z`)) / 864e5 >= MOMENTO_DIAS;
+    const mom = { aceleradas: [], recuperadas: [], desfeitas: [], seguradas: [] };
     try {
-      const d7 = isoMenos(ontem.iso, 6), d14 = isoMenos(ontem.iso, 13);
+      const d7 = isoMenos(ontem.iso, 6), d14 = isoMenos(ontem.iso, 13), d3 = isoMenos(ontem.iso, 2), d6 = isoMenos(ontem.iso, 5);
       for (let off = 0; off < 40000; off += 1000) {
         const rows = await sbSelect('glr_pedidos', `marketplace=eq.shopee&conta_id=eq.${encodeURIComponent(shopId)}&situacao=eq.valido&criado_em=gte.${encodeURIComponent(new Date(`${d14}T03:00:00Z`).toISOString())}&select=criado_em,itens&order=criado_em.asc&limit=1000&offset=${off}`);
         for (const p of rows) {
           const dia = new Date(Date.parse(p.criado_em) - 3 * 3600e3).toISOString().slice(0, 10);
           if (dia > ontem.iso) continue;
           for (const i of (p.itens || [])) {
-            const v = vendasProd.get(String(i.item_id)) || { a: 0, b: 0 };
-            v[dia >= d7 ? 'b' : 'a'] += (parseFloat(i.preco) || 0) * (parseInt(i.qtd) || 1);
+            const v = vendasProd.get(String(i.item_id)) || { a: 0, b: 0, a3: 0, b3: 0 };
+            const val = (parseFloat(i.preco) || 0) * (parseInt(i.qtd) || 1);
+            v[dia >= d7 ? 'b' : 'a'] += val;
+            if (dia >= d3) v.b3 += val; else if (dia >= d6) v.a3 += val;
             vendasProd.set(String(i.item_id), v);
           }
         }
@@ -952,6 +959,12 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     const freiosPend = (await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 7 * 864e5).toISOString())}&select=id,dados&limit=300`).catch(() => []))
       .filter(l => l.dados?.freio_volume);
     const voltaPendente = new Set(freiosPend.map(l => String(l.dados.campaign_id)));
+    function momento(itemIds) {
+      if (!vendasProd.size) return null;
+      let a = 0, b = 0;
+      for (const id of (itemIds || [])) { const v = vendasProd.get(String(id)); if (v) { a += v.a3; b += v.b3; } }
+      return a + b >= 200 ? { a, b, pct: a > 0 ? (b / a - 1) * 100 : 100 } : null;
+    }
     function quedaDeVenda(itemIds) {
       if (!vendasProd.size) return null;
       let a = 0, b = 0;
@@ -1142,6 +1155,76 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       const tetoOrcamentoAtingido = !!cfg.orcamento_max && budgetAtual >= cfg.orcamento_max;
       const usarRoasAcelerar = temRoas && (budgetAtual === 0 || !orcamentoSaturado || tetoOrcamentoAtingido);
       const usarRoasConter = temRoas && settings.roas_target < SHOPEE_ROAS_TARGET_MAX;
+
+      // Revisão de 3 dias (a cada 3 dias): venda do produto na loja (orgânico + ADS) nos últimos 3
+      // dias × os 3 anteriores. Subindo, com ACOS dentro da meta e TACOS da loja com folga →
+      // acelera para vender mais. Caindo → desfaz o aperto do próprio agente, ou, com o ACOS dentro
+      // da meta, recupera exposição. Valem os mesmos limites: estoque, reputação, qualidade, TACOS
+      // (teto do cliente ou meta), ROAS mínimo da meta, orçamento máximo e o contrato do cliente.
+      if (momentoHoje && !emMaturacao) {
+        const mo = momento(settings.item_id_list);
+        if (mo) {
+          const subindo = mo.b >= mo.a * 1.2 && mo.b - mo.a >= 100, caindo = mo.b <= mo.a * 0.8 && mo.a - mo.b >= 100;
+          const moTxt = `a venda do produto (orgânico + ADS) foi de ${R$(mo.a)} nos 3 dias anteriores para ${R$(mo.b)} nos últimos 3 (${mo.b >= mo.a ? '+' : '−'}${Math.abs(mo.pct).toFixed(0)}%)`;
+          const acosOk = acosJanela != null && acosJanela !== Infinity && acosJanela * 100 <= metaEf;
+          const bloqueio = estoqueSegura ? `${aviso.nome} ${aviso.ne === 'zerado' ? 'está sem estoque' : `acaba em ~${Math.round(aviso.dias)} dia(s)`}`
+            : reputacaoSegura || qualidadeSegura || (!tacosDentroDaMeta && tacosConta !== Infinity ? `o ${rotuloTacos} da loja (${tacosConta.toFixed(1)}%) está acima ${limiteTacosTxt}` : null);
+          const ap = apertos.get(String(c.campaign_id));
+          const apertado = ap && ((ap.roasAntes && temRoas && settings.roas_target > ap.roasAntes) || (ap.budgetAntes && budgetAtual < ap.budgetAntes));
+          if (caindo && apertado) {
+            const voltaRoas = ap.roasAntes && temRoas && settings.roas_target > ap.roasAntes;
+            const expl = `Revisão de 3 dias: ${moTxt}, e o agente tinha apertado esta campanha (${voltaRoas ? `ROAS ${ap.roasAntes}x → ${settings.roas_target}x` : `orçamento ${R$(ap.budgetAntes)} → ${R$(budgetAtual)}`}). Voltei ${voltaRoas ? `a meta para ${ap.roasAntes}x` : `o orçamento para ${R$(ap.budgetAntes)}`}.`;
+            const base = { freio_volume: true, momento: { a: Math.round(mo.a), b: Math.round(mo.b) }, colaboracao: { de: 'faturamento' } };
+            if (contrato.desfazer === 'executar') {
+              if (voltaRoas) await executarRoasTarget(c.campaign_id, nome, ap.roasAntes, expl, { ...base, desfeito_auto: true, roas_de: settings.roas_target, roas_para: ap.roasAntes });
+              else await executarOrcamento(c.campaign_id, nome, ap.budgetAntes, expl, { ...base, desfeito_auto: true, budget_de: budgetAtual, budget_para: ap.budgetAntes });
+              for (const l of freiosPend) if (String(l.dados.campaign_id) === String(c.campaign_id)) await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { resultado: 'expirado' }).catch(() => {});
+            } else if (!voltaPendente.has(String(c.campaign_id))) {
+              await logar('alerta', `Sugestão de ${voltaRoas ? 'baixar meta de ROI' : 'aumento de orçamento'} — ${nome} (freio de volume)`, expl.replace('Voltei', 'A sugestão é voltar') + ' O contrato deste cliente pede aprovação para desfazer.',
+                voltaRoas ? { ...base, campaign_id: c.campaign_id, roas_atual: settings.roas_target, roas_sugerido: ap.roasAntes } : { ...base, campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: ap.budgetAntes }, 'so_alerta');
+              alertas.push(nome);
+            }
+            mom.desfeitas.push(nome);
+            colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `revisão de 3 dias: desfiz o aperto de "${nome}" — ${moTxt}` });
+            continue;
+          }
+          if ((subindo || caindo) && acosOk && !bloqueio) {
+            const motivo = subindo ? `${moTxt}. O produto está ganhando tração, o ACOS da campanha (${acosTxt}) está dentro da ${txtMeta} e o ${rotuloTacos} da loja tem folga — acelero para vender mais`
+              : `${moTxt}, com o ACOS da campanha (${acosTxt}) dentro da ${txtMeta} — reforço a exposição antes que a queda continue`;
+            const dadosMo = { acos: acosJanela * 100, tacos_conta: tacosConta, momento: { a: Math.round(mo.a), b: Math.round(mo.b), tipo: subindo ? 'subindo' : 'caindo' } };
+            let feito = false;
+            if (usarRoasAcelerar) {
+              const piso = 100 / metaEf, roasAtual = settings.roas_target;
+              const novoRoas = Math.round(Math.max(1, piso, roasAtual * 0.9) * 10) / 10; // nunca abaixo do ROAS da meta
+              if (novoRoas < roasAtual) {
+                const variacaoPct = (roasAtual - novoRoas) / roasAtual * 100;
+                const explicacao = `Revisão de 3 dias: ${motivo}. Meta de ROI ${roasAtual}x → ${novoRoas}x (lance mais agressivo; não desce abaixo de ${(Math.round(piso * 10) / 10)}x, o ROAS da meta).`;
+                if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) { await logar('alerta', `Sugestão de baixar meta de ROI — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, roas_atual: roasAtual, roas_sugerido: novoRoas, ...dadosMo }, 'so_alerta'); alertas.push(nome); }
+                else await executarRoasTarget(c.campaign_id, nome, novoRoas, explicacao, { ...dadosMo, roas_de: roasAtual, roas_para: novoRoas });
+                feito = true;
+              }
+            } else if (budgetAtual > 0 && (!cfg.orcamento_max || budgetAtual < cfg.orcamento_max)) {
+              const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, budgetAtual * 1.15) * 100) / 100;
+              if (novoBudget > budgetAtual) {
+                const variacaoPct = (novoBudget - budgetAtual) / budgetAtual * 100;
+                const explicacao = `Revisão de 3 dias: ${motivo}. O orçamento está sendo consumido (média de ${R$(gastoMedioDia)}/dia de ${R$(budgetAtual)}): orçamento ${R$(budgetAtual)} → ${R$(novoBudget)}${cfg.orcamento_max ? ` (máximo da conta ${R$(cfg.orcamento_max)})` : ''}.`;
+                if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) { await logar('alerta', `Sugestão de aumento de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: novoBudget, ...dadosMo }, 'so_alerta'); alertas.push(nome); }
+                else await executarOrcamento(c.campaign_id, nome, novoBudget, explicacao, { ...dadosMo, budget_de: budgetAtual, budget_para: novoBudget });
+                feito = true;
+              }
+            }
+            if (feito) {
+              (subindo ? mom.aceleradas : mom.recuperadas).push(nome);
+              colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `revisão de 3 dias: ${subindo ? 'acelerei' : 'reforcei'} "${nome}" — ${moTxt}` });
+              continue;
+            }
+            colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `revisão de 3 dias: "${nome}" ${subindo ? 'subindo' : 'caindo'}, mas já está no limite (ROAS da meta / orçamento máximo)` });
+          } else if (subindo) {
+            mom.seguradas.push(nome);
+            colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `revisão de 3 dias: "${nome}" está subindo (${moTxt}), mas não acelerei — ${bloqueio || `o ACOS da campanha (${acosTxt}) está acima da ${txtMeta}`}` });
+          }
+        }
+      }
 
       // Regra 3: ACOS da campanha bem abaixo da meta E a conta como um todo
       // ainda tem folga de TACOS → aumenta orçamento (ou baixa a meta de ROAS,
@@ -1440,6 +1523,14 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     let medidas = 0;
     try { medidas = await medirResultadosShopee(cfg, mcApiKey, shopId, taxaCancel); } catch (e) { /* medição é bônus */ }
     try { await medirSombraShopee(cfg, mcApiKey, shopId, taxaCancel); } catch (e) { /* modo sombra é bônus */ }
+
+    if (momentoHoje) {
+      const lista = (t, xs) => xs.length ? `${t}: ${xs.slice(0, 6).join(', ')}${xs.length > 6 ? ` e mais ${xs.length - 6}` : ''}.` : '';
+      await logar('sistema', `Revisão de 3 dias — ${mom.aceleradas.length} acelerada(s), ${mom.recuperadas.length + mom.desfeitas.length} recuperada(s)`,
+        `Comparei a venda de cada produto com campanha nos últimos 3 dias com os 3 anteriores. ${[lista('Subindo e acelerada', mom.aceleradas), lista('Caindo, exposição reforçada', mom.recuperadas), lista('Caindo depois de aperto, aperto desfeito', mom.desfeitas), lista('Subindo mas segurada por limite', mom.seguradas)].filter(Boolean).join(' ') || 'Nenhum produto com variação relevante (±20% e R$ 100).'} Próxima revisão em ${MOMENTO_DIAS} dias.`,
+        { momento: true, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, desfeitas: mom.desfeitas.length, seguradas: mom.seguradas.length }, 'executado');
+      await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `momento:${shopId}`, recurso: 'momento', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), cursor: { dia: hojeMom, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, desfeitas: mom.desfeitas.length } }, 'marketplace,conta_id,recurso').catch(() => {});
+    }
 
     // Resumo de execução do dia (sempre grava, mesmo sem nenhuma ação — é o
     // registro de que o agente rodou e revisou a conta)
