@@ -417,6 +417,18 @@ module.exports = async function handler(req, res) {
   if (req.query?.rodada === 'promo-meta') {
     try { return res.status(200).json({ ok: true, ...(await promocoesPelaMeta(mcApiKey, req.query?.simular === '1')) }); } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
+  // ?rodada=momento — roda agora só a revisão de 3 dias de todas as contas ativas (Shopee aplica; ML sugere)
+  if (req.query?.rodada === 'momento') {
+    try {
+      const cfgs = await sbSelect('glr_agente_config', 'ativo=eq.true');
+      const ontem = dataBRT(1);
+      waitUntil(Promise.all(cfgs.map(cfg => (ehML(cfg)
+        ? comTetoML(cfg).then(c => processarContaML(c, mcApiKey, ajudantesML(), { soMomento: true }))
+        : processarConta(cfg, mcApiKey, anthropicKey, ontem, dataBRT(Math.max(1, cfg.regra_pausa_dias || 3)), { soMomento: true })).catch(e => ({ conta_id: cfg.conta_id, erro: e.message }))))
+        .then(r => console.log('[momento]', JSON.stringify(r))).finally(gravarConsumo).catch(e => console.error('[momento] falhou', e)));
+      return res.status(202).json({ ok: true, rodada: 'momento', contas: cfgs.length });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=autonomia — recalcula os níveis de autonomia pelo resultado medido (não mexe em campanha)
   if (req.query?.rodada === 'autonomia') {
     try { return res.status(200).json({ ok: true, ...(await avaliarAutonomia()) }); } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
@@ -772,7 +784,7 @@ async function avaliarAutonomia() {
   return { clientes: Object.keys(novo).length, mudancas: mudancas.length };
 }
 
-async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) {
+async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, opc = {}) {
   const shopId = cfg.conta_id;
   const decisoes = [];
   const alertas = [];
@@ -926,8 +938,16 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // Revisão de 3 dias: a cada 3 dias por loja, a venda de cada produto nos últimos 3 dias × os 3 anteriores
     const MOMENTO_DIAS = 3, hojeMom = dataBRT(0).iso;
     const estMom = (await sbSelect('glr_sync_estado', `marketplace=eq.sistema&conta_id=eq.${encodeURIComponent(`momento:${shopId}`)}&recurso=eq.momento&select=cursor`).catch(() => []))[0]?.cursor;
-    const momentoHoje = !estMom?.dia || (Date.parse(`${hojeMom}T12:00:00Z`) - Date.parse(`${estMom.dia}T12:00:00Z`)) / 864e5 >= MOMENTO_DIAS;
+    const momentoHoje = !!opc.soMomento || !estMom?.dia || (Date.parse(`${hojeMom}T12:00:00Z`) - Date.parse(`${estMom.dia}T12:00:00Z`)) / 864e5 >= MOMENTO_DIAS;
     const mom = { aceleradas: [], recuperadas: [], desfeitas: [], seguradas: [] };
+    async function registrarMomento() {
+      const lista = (t, xs) => xs.length ? `${t}: ${xs.slice(0, 6).join(', ')}${xs.length > 6 ? ` e mais ${xs.length - 6}` : ''}.` : '';
+      await logar('sistema', `Revisão de 3 dias — ${mom.aceleradas.length} acelerada(s), ${mom.recuperadas.length + mom.desfeitas.length} recuperada(s)`,
+        `Comparei a venda de cada produto com campanha nos últimos 3 dias com os 3 anteriores. ${[lista('Subindo e acelerada', mom.aceleradas), lista('Caindo, exposição reforçada', mom.recuperadas), lista('Caindo depois de aperto, aperto desfeito', mom.desfeitas), lista('Subindo mas segurada por limite', mom.seguradas)].filter(Boolean).join(' ') || 'Nenhum produto com variação relevante (±20% e R$ 100).'} Próxima revisão em ${MOMENTO_DIAS} dias.`,
+        { momento: true, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, desfeitas: mom.desfeitas.length, seguradas: mom.seguradas.length }, 'executado');
+      await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `momento:${shopId}`, recurso: 'momento', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), cursor: { dia: hojeMom, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, desfeitas: mom.desfeitas.length } }, 'marketplace,conta_id,recurso').catch(() => {});
+    
+    }
     try {
       const d7 = isoMenos(ontem.iso, 6), d14 = isoMenos(ontem.iso, 13), d3 = isoMenos(ontem.iso, 2), d6 = isoMenos(ontem.iso, 5);
       for (let off = 0; off < 40000; off += 1000) {
@@ -1101,6 +1121,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       const reputacaoSegura = sinais?.reputacao?.risco === 'alto' ? `a reputação da conta está em risco (${sinais.reputacao.motivo})` : aviso?.rp ? `${aviso.nome} tem ${aviso.rp}` : null;
       const qualidadeSegura = aviso?.qa ? `o anúncio de ${aviso.nome} precisa de conserto antes (${aviso.qa})` : null;
 
+      if (!opc.soMomento) {
       // Produto sem estoque e a campanha ainda gastando → sugere pausar (aprovação)
       if (aviso?.ne === 'zerado' && diario.gastoOntem > 0 && pausaEstoquePendente.has(String(c.campaign_id))) continue;
       if (aviso?.ne === 'zerado' && diario.gastoOntem > 0) {
@@ -1138,6 +1159,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
         }
         continue;
       }
+      } // fim das regras de pausa (fora da rodada só da revisão de 3 dias)
       if (ajustadasRecentes.has(String(c.campaign_id))) continue; // ajustada há menos de 12h
 
       // Campanha de lance automático tem DUAS alavancas ao mesmo tempo: orçamento
@@ -1225,6 +1247,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           }
         }
       }
+      if (opc.soMomento) continue; // rodada só da revisão de 3 dias: as Regras 3 e 4 já rodaram hoje
 
       // Regra 3: ACOS da campanha bem abaixo da meta E a conta como um todo
       // ainda tem folga de TACOS → aumenta orçamento (ou baixa a meta de ROAS,
@@ -1358,6 +1381,11 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           }
         }
       }
+    }
+
+    if (opc.soMomento) {
+      await registrarMomento();
+      return { conta_id: shopId, momento: { aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, desfeitas: mom.desfeitas.length, seguradas: mom.seguradas.length } };
     }
 
     // Regra 5 — saúde do negócio: as Regras 1-4 acima só reagem ao ACOS de
@@ -1524,13 +1552,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     try { medidas = await medirResultadosShopee(cfg, mcApiKey, shopId, taxaCancel); } catch (e) { /* medição é bônus */ }
     try { await medirSombraShopee(cfg, mcApiKey, shopId, taxaCancel); } catch (e) { /* modo sombra é bônus */ }
 
-    if (momentoHoje) {
-      const lista = (t, xs) => xs.length ? `${t}: ${xs.slice(0, 6).join(', ')}${xs.length > 6 ? ` e mais ${xs.length - 6}` : ''}.` : '';
-      await logar('sistema', `Revisão de 3 dias — ${mom.aceleradas.length} acelerada(s), ${mom.recuperadas.length + mom.desfeitas.length} recuperada(s)`,
-        `Comparei a venda de cada produto com campanha nos últimos 3 dias com os 3 anteriores. ${[lista('Subindo e acelerada', mom.aceleradas), lista('Caindo, exposição reforçada', mom.recuperadas), lista('Caindo depois de aperto, aperto desfeito', mom.desfeitas), lista('Subindo mas segurada por limite', mom.seguradas)].filter(Boolean).join(' ') || 'Nenhum produto com variação relevante (±20% e R$ 100).'} Próxima revisão em ${MOMENTO_DIAS} dias.`,
-        { momento: true, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, desfeitas: mom.desfeitas.length, seguradas: mom.seguradas.length }, 'executado');
-      await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `momento:${shopId}`, recurso: 'momento', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), cursor: { dia: hojeMom, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, desfeitas: mom.desfeitas.length } }, 'marketplace,conta_id,recurso').catch(() => {});
-    }
+    if (momentoHoje) await registrarMomento();
 
     // Resumo de execução do dia (sempre grava, mesmo sem nenhuma ação — é o
     // registro de que o agente rodou e revisou a conta)

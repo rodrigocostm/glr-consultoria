@@ -135,7 +135,7 @@ async function vendas3x3(sbSelect, contaId, ontem, isoMenos) {
   return mapa;
 }
 
-async function processarContaML(cfg, mcApiKey, h) {
+async function processarContaML(cfg, mcApiKey, h, opc = {}) {
   const { sbSelect, sbInsert, sbUpdate, sbUpsert, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall } = h;
   const contaId = String(cfg.conta_id);
   const sugestoes = [];
@@ -207,8 +207,16 @@ async function processarContaML(cfg, mcApiKey, h) {
     // Campanhas (janela da campanha) + anúncios de cada campanha ativa (janela de produto)
     const hojeMom = dataBRT(0).iso;
     const estMom = (await sbSelect('glr_sync_estado', `marketplace=eq.sistema&conta_id=eq.${encodeURIComponent(`momento:${contaId}`)}&recurso=eq.momento&select=cursor`).catch(() => []))[0]?.cursor;
-    const momentoHoje = !estMom?.dia || (Date.parse(`${hojeMom}T12:00:00Z`) - Date.parse(`${estMom.dia}T12:00:00Z`)) / 864e5 >= 3;
+    const momentoHoje = !!opc.soMomento || !estMom?.dia || (Date.parse(`${hojeMom}T12:00:00Z`) - Date.parse(`${estMom.dia}T12:00:00Z`)) / 864e5 >= 3;
     const mom = { aceleradas: [], recuperadas: [], seguradas: [] };
+    async function registrarMomento() {
+      const lista = (t, xs) => xs.length ? `${t}: ${xs.slice(0, 6).join(', ')}${xs.length > 6 ? ` e mais ${xs.length - 6}` : ''}.` : '';
+      await logar('sistema', `Revisão de 3 dias — ${mom.aceleradas.length + mom.recuperadas.length} sugestão(ões) de acelerar`,
+        `Comparei a venda dos anúncios de cada campanha nos últimos 3 dias com os 3 anteriores. ${[lista('Subindo, sugeri acelerar', mom.aceleradas), lista('Caindo, sugeri reforçar a exposição', mom.recuperadas), lista('Subindo mas segurada por limite', mom.seguradas)].filter(Boolean).join(' ') || 'Nenhuma campanha com variação relevante (±20% e R$ 100).'} Próxima revisão em 3 dias.`,
+        { momento: true, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, seguradas: mom.seguradas.length }, 'executado');
+      if (sbUpsert) await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `momento:${contaId}`, recurso: 'momento', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), cursor: { dia: hojeMom, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length } }, 'marketplace,conta_id,recurso').catch(() => {});
+    
+    }
     const [campanhas, vendasLoja, v3] = await Promise.all([
       listarCampanhasML(mcpCall, mcApiKey, contaId, inicio, ontem),
       vendasPorItem(sbSelect, contaId, new Date(`${de30}T00:00:00-03:00`).toISOString()),
@@ -344,8 +352,8 @@ async function processarContaML(cfg, mcApiKey, h) {
     const tiradas = new Set(); // famílias já sugeridas para sair da campanha
     const tirar = (x, f) => { tiradas.add(f.chave); const e = excluido.get(x.id) || { gasto: 0, vendasAj: 0 }; e.gasto += f.gasto; e.vendasAj += f.vendasAj; excluido.set(x.id, e); };
 
-    // ── 1) PRODUTOS dentro das campanhas ──
-    for (const x of C) {
+    // ── 1) PRODUTOS dentro das campanhas ── (fora da rodada só da revisão de 3 dias)
+    for (const x of (opc.soMomento ? [] : C)) {
       if (!x.madura) continue;
       for (const f of [...x.familias].sort((a, b) => b.gasto - a.gasto)) {
         if (!f.ativos.length || f.gasto <= 0) continue;
@@ -424,7 +432,7 @@ async function processarContaML(cfg, mcApiKey, h) {
       const base0 = { campaign_id: x.id, campanha: x.nome, gasto: r1(x.gasto), vendas: r1(x.vendas), vendas_sem_cancelados: r1(x.vendasAj), acos: acos === Infinity ? null : acos && r1(acos), roas_objetivo: x.roasAlvo ? r1(x.roasAlvo) : null, estrategia: x.c.strategy || null };
 
       // 2a) Pausar campanha — último recurso: gasto alto sem retorno
-      if (x.madura && gasto >= limitePausa && (x.unidades === 0 || vendasAj < gasto) && !ex.gasto) {
+      if (!opc.soMomento && x.madura && gasto >= limitePausa && (x.unidades === 0 || vendasAj < gasto) && !ex.gasto) {
         await sugerir(chave, `Sugestão: pausar campanha — ${x.nome}`,
           x.unidades === 0
             ? `Gastou ${R$(x.gasto)} nos últimos ${dias} dias sem nenhuma venda atribuída — acima do limite de ${R$(limitePausa)} (ADS de ~3 vendas no ticket médio${ticketRef ? ` de ${R$(ticketRef)}` : ''}). Gasta muito sem retorno.`
@@ -435,7 +443,7 @@ async function processarContaML(cfg, mcApiKey, h) {
       if (!meta || acos == null || acos === Infinity) continue;
 
       // 2b) Conter — ACOS acima da meta com venda: subir ROAS objetivo (ou cortar orçamento)
-      if (x.madura && acos > meta) {
+      if (!opc.soMomento && x.madura && acos > meta) {
         const forte = !!cfg.regra_pausa_acos && acos > cfg.regra_pausa_acos;
         const passo = forte ? 0.25 : 0.15;
         if (x.rentab && x.roasAlvo > 0) {
@@ -483,6 +491,7 @@ async function processarContaML(cfg, mcApiKey, h) {
           colaboracoes.push({ de: 'faturamento', texto: `revisão de 3 dias: "${x.nome}" está subindo, mas não sugeri acelerar — ${bloq || `ACOS de ${acosTxt} acima da meta (${meta}%)`}` });
         }
       }
+      if (opc.soMomento) continue; // rodada só da revisão de 3 dias
       if (acos <= meta * 0.7 && tacosOk && seguraEstoque(avisoCamp)) {
         colaboracoes.push({ de: 'estoque', texto: `segurei a aceleração de "${x.nome}": o principal produto dela, "${String(principal.nome).slice(0, 40)}", ${estoqueTxt(avisoCamp)}` });
       } else if (acos <= meta * 0.7 && tacosOk && repTxt(avisoCamp)) {
@@ -502,6 +511,11 @@ async function processarContaML(cfg, mcApiKey, h) {
             { ...base0, acao: 'roas_target', de: r1(x.roasAlvo), para: novo, impacto: vendasAj / dias * 7, impacto_tipo: 'ganho' });
         }
       }
+    }
+
+    if (opc.soMomento) {
+      await registrarMomento();
+      return { conta_id: contaId, marketplace: 'ml', momento: { aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, seguradas: mom.seguradas.length } };
     }
 
     // ── 3) CURVA ABC semana a semana (mesma regra da aba Vendas) ──
@@ -556,13 +570,7 @@ async function processarContaML(cfg, mcApiKey, h) {
       }
     }
 
-    if (momentoHoje) {
-      const lista = (t, xs) => xs.length ? `${t}: ${xs.slice(0, 6).join(', ')}${xs.length > 6 ? ` e mais ${xs.length - 6}` : ''}.` : '';
-      await logar('sistema', `Revisão de 3 dias — ${mom.aceleradas.length + mom.recuperadas.length} sugestão(ões) de acelerar`,
-        `Comparei a venda dos anúncios de cada campanha nos últimos 3 dias com os 3 anteriores. ${[lista('Subindo, sugeri acelerar', mom.aceleradas), lista('Caindo, sugeri reforçar a exposição', mom.recuperadas), lista('Subindo mas segurada por limite', mom.seguradas)].filter(Boolean).join(' ') || 'Nenhuma campanha com variação relevante (±20% e R$ 100).'} Próxima revisão em 3 dias.`,
-        { momento: true, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, seguradas: mom.seguradas.length }, 'executado');
-      if (sbUpsert) await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `momento:${contaId}`, recurso: 'momento', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), cursor: { dia: hojeMom, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length } }, 'marketplace,conta_id,recurso').catch(() => {});
-    }
+    if (momentoHoje) await registrarMomento();
     if (colaboracoes.length) {
       await logar('sistema', `Colaboração com Estoque e Margem — ${colaboracoes.length} decisão(ões)`,
         colaboracoes.slice(0, 12).map(x => `• ${x.texto}`).join('\n'), { colaboracoes: colaboracoes.slice(0, 30) }, 'executado');
