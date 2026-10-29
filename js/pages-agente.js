@@ -634,7 +634,7 @@
           <div style="font-size:14px;font-weight:700;">Curva ABC de vendas</div>
           <button class="btn btn-secondary btn-sm" ${carregando ? 'disabled' : ''} onclick="window._agAnalisarABC()">${a && !a.erro ? 'Atualizar' : '▶ Analisar'}</button>
         </div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:12px;">Produto que cresceu mês passado e projeta queda neste mês vira alerta na Fila de Atenção, pra decidirmos a ação juntos.</div>
+        <div class="ajuda">Produto que cresceu mês passado e projeta queda neste mês vira alerta na Fila de Atenção, pra decidirmos a ação juntos.</div>
         ${corpo}
       </div>`;
     }
@@ -1079,7 +1079,7 @@
       return `<details class="ag-sec" ${state.sec.manual ? 'open' : ''} ontoggle="window._agToggleSec('manual', this.open)">
       <summary>Ajuste manual avançado (1 campanha na mão)</summary>
       <div class="ag-hud-card" style="--ag-hud-accent:var(--red);margin-top:10px;">
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Só pra casos pontuais — pode colar o ID aqui ou usar "Ajustar à mão" no menu ⋯ da linha da campanha, que já preenche tudo. Pra aumentar investimento, prefira "Sugerir mais investimento" no mesmo menu, que já calcula o valor certo pra você aprovar.</div>
+        <div class="ajuda">Só pra casos pontuais — pode colar o ID aqui ou usar "Ajustar à mão" no menu ⋯ da linha da campanha, que já preenche tudo. Pra aumentar investimento, prefira "Sugerir mais investimento" no mesmo menu, que já calcula o valor certo pra você aprovar.</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px;">
           <div class="form-group" style="margin:0;"><label class="form-label">ID da campanha</label><input type="text" class="form-input" id="ag-man-campanha" placeholder="Ex: 86858387"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Nome (só pro log)</label><input type="text" class="form-input" id="ag-man-nome" placeholder="Opcional"></div>
@@ -1474,7 +1474,7 @@
       const metrica = (label, valor, sub, variacao) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${label}</div><div class="ag-mono" style="font-size:20px;font-weight:700;">${valor}</div><div class="ag-hud-sub">${sub || ''}${sub && variacao != null ? ' · ' : ''}${varChip(variacao)}</div></div>`;
       return `<div class="ag-hud-card" style="--ag-hud-accent:var(--cyan);margin-bottom:20px;">
         <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Impressões, Cliques e Vendas (${periodoLabel(d.periodo || state.negocioPeriodo)})</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Funil de ADS da conta inteira — de quantas vezes o anúncio apareceu até quantas vendas ele gerou. Variação vs o período anterior equivalente.</div>
+        <div class="ajuda">Funil de ADS da conta inteira — de quantas vezes o anúncio apareceu até quantas vendas ele gerou. Variação vs o período anterior equivalente.</div>
         <div style="display:flex;gap:28px;flex-wrap:wrap;">
           ${metrica('Impressões', n(d.impressoesTotal), null, d.variacaoImpressoes)}
           ${metrica('Cliques', n(d.cliquesTotal), `CTR ${fmtPct(d.ctrGeral, 2)}`, d.variacaoCliques)}
@@ -1775,7 +1775,7 @@
       }
       return `<div class="ag-hud-card" style="--ag-hud-accent:#2a78d6;margin-bottom:20px;">
         <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Comparativo de visualizações (${periodoLabel(p)} × período anterior)</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;">Quantas vezes os anúncios da loja apareceram (impressões de ADS), dia a dia, contra o mesmo número de dias do período anterior. A visualização orgânica dos anúncios a Shopee não informa pela API.</div>
+        <div class="ajuda">Quantas vezes os anúncios da loja apareceram (impressões de ADS), dia a dia, contra o mesmo número de dias do período anterior. A visualização orgânica dos anúncios a Shopee não informa pela API.</div>
         ${corpo}
       </div>`;
     }
@@ -1847,11 +1847,9 @@
     function renderKPIs(cfg) {
       const contaId = cfg.conta_id, p = state.negocioPeriodo;
       const n = state.negocioPorConta[contaId + ':' + p];
-      const PERIODOS = [['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['mes', 'Mês atual']];
       const cab = `<div class="ag-sec-head">
-        <div class="ag-sec-titulo">Indicadores <span class="ag-sec-sub">${periodoLabel(p)} vs período anterior equivalente · vale também para a tabela de campanhas</span></div>
+        <div class="ag-sec-titulo">Indicadores <span class="ag-sec-sub">${periodoLabel(p)} × período anterior</span></div>
         <div class="ag-periodos ag-periodos-kpi">
-          ${PERIODOS.map(([v, l]) => `<button class="btn btn-sm ${p === v ? 'btn-primary' : 'btn-secondary'}" onclick="window._agMudarPeriodo('${v}')">${l}</button>`).join('')}
           <button class="btn btn-secondary btn-sm" ${state.carregandoNegocio ? 'disabled' : ''} onclick="window._agAtualizarTudo()" title="Buscar de novo na Shopee">🔄</button>
         </div>
       </div>`;
@@ -2364,7 +2362,6 @@
 
     el.innerHTML = `<div class="page">
       <div class="ag-titulo-pagina">
-        <div class="ag-hero-title"><span class="ag-pulse-dot"></span><span>ADS Shopee</span></div>
         <details class="ag-como">
           <summary title="Como o agente funciona">ⓘ Como funciona</summary>
           <div class="ag-como-corpo">Todo dia às 07:00 o agente revisa cada conta com o piloto ligado contra as regras da seção "Guardrails do piloto": pausa, reativa e ajusta orçamento ou meta de <abbr class="ag-sigla" title="Retorno sobre o investimento: quantos reais vendidos para cada R$ 1 gasto.">ROAS</abbr> sozinho quando a mudança está dentro da faixa combinada. O que passa do limite, ou que ele não pode decidir sozinho, aparece em "Precisa de você" pra você aprovar ou rejeitar.</div>

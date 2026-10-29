@@ -1221,3 +1221,19 @@ body.sidebar-mini .nav-grupo .nav-grupo-itens { display: block !important; }
   #page-content.pg-entra > *, .cmdk.on { animation: none; }
   .nav-grupo-seta, .nav-grupo-itens { transition: none; }
 }
+
+/* ── Explicação sob demanda (js/ui.js) ───────────────────────────── */
+.ajuda-fechada { display: none !important; }
+.ajuda-bt { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 6px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-surface); color: var(--text-muted); font-size: 11px; line-height: 1; cursor: pointer; vertical-align: middle; font-weight: 600; font-style: normal; text-transform: none; letter-spacing: 0; transition: color .15s, border-color .15s, background .15s; }
+.ajuda-bt:hover, .ajuda-bt[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-glow); }
+.ajuda-bt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ajuda-linha { margin: 2px 0 6px; }
+.ajuda:not(.ajuda-fechada), .ag-nota:not(.ajuda-fechada) { font-size: 12.5px; line-height: 1.55; color: var(--text-secondary); background: var(--bg-subtle); border-radius: 8px; padding: 8px 12px; margin: 6px 0 12px; }
+
+/* ── Coluna sem dados some (js/ui.js) ────────────────────────────── */
+.col-vazia { display: none !important; }
+
+/* ── Esqueleto de carregamento (uso geral) ───────────────────────── */
+.skel { display: block; border-radius: 8px; background: linear-gradient(90deg, var(--bg-subtle) 25%, color-mix(in srgb, var(--border) 70%, transparent) 50%, var(--bg-subtle) 75%); background-size: 200% 100%; animation: skelBrilho 1.3s infinite linear; }
+@keyframes skelBrilho { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
