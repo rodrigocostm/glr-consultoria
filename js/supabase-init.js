@@ -23,6 +23,7 @@ const GLR_KEYS = [
   'glr_margem_minima',   // margem mínima de lucro por conta (agente de Margem → ACOS alvo)
   'glr_metas',           // meta de faturamento por cliente (Gestores, Projeção, Plano de ação) — o Gerente lê no servidor
   'glr_metas_pedidos',   // meta de pedidos por cliente (Plano de ação)
+  'glr_contratos',       // contrato do cliente: perfil (crescer/equilíbrio/lucrar) e autonomia do agente — o agente lê no servidor
   'glr_plano_status',    // Plano de ação: ação feita / virou tarefa / descartada (Gerente de Conta)
   'glr_vendas_linhas',  // linhas extras de custo/desconto lançadas no admin
   'glr_fin_manual',     // lançamentos manuais do Financeiro (antes ficavam só no navegador de quem lançou)

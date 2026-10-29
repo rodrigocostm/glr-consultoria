@@ -525,10 +525,36 @@ async function medirResultadosShopee(cfg, mcApiKey, shopId, taxaCancel) {
   return medidas;
 }
 
+// ── Contrato do cliente (Plano de ação → "Contrato e autonomia"; glr_contratos) ──
+// perfil muda o quanto o agente acelera/contém e quando o freio de volume age;
+// autonomia diz, por tipo de ação, se o agente executa sozinho ou só sugere
+// (a sugestão vai para a Caixa de decisões). Sem contrato = Equilíbrio + Executar
+// (exatamente o comportamento de antes).
+const PERFIS = {
+  crescer:    { acelera: 0.85, contem: 1.15, freio: 15, nome: 'Crescer' },
+  equilibrio: { acelera: 0.7,  contem: 1.0,  freio: 25, nome: 'Equilíbrio' },
+  lucrar:     { acelera: 0.6,  contem: 1.0,  freio: 35, nome: 'Lucrar' },
+};
+let _contratosCache = null;
+async function contratoDaConta(contaId) {
+  if (!_contratosCache || Date.now() - _contratosCache.em > 5 * 60e3) { // instância quente da Vercel: no máx. 5 min de atraso
+    const [ctr, vinc] = await Promise.all([lerStorage('glr_contratos').catch(() => null), lerStorage('glr_mc_vinculos').catch(() => null)]);
+    _contratosCache = { ctr: ctr || {}, vinc: vinc || {}, em: Date.now() };
+  }
+  const { ctr, vinc } = _contratosCache;
+  let cli = null;
+  for (const [cid, arr] of Object.entries(vinc)) if ((arr || []).some(c => [c.external_id, c.param_to_use?.shopId, c.param_to_use?.meliUserId].filter(Boolean).map(String).includes(String(contaId)))) { cli = cid; break; }
+  const c = (cli && ctr[cli]) || {};
+  const perfil = PERFIS[c.perfil] ? c.perfil : 'equilibrio';
+  return { cliente: cli, perfil, P: PERFIS[perfil], ajuste: c.autonomia?.ajuste === 'sugerir' ? 'sugerir' : 'executar', pausar: c.autonomia?.pausar === 'sugerir' ? 'sugerir' : 'executar', desfazer: c.autonomia?.desfazer === 'sugerir' ? 'sugerir' : 'executar' };
+}
+
 async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) {
   const shopId = cfg.conta_id;
   const decisoes = [];
   const alertas = [];
+  _contratosCache = null; // lê o contrato de novo a cada revisão
+  const contrato = await contratoDaConta(shopId);
 
   async function logar(tipo, titulo, explicacao, dados, resultado) {
     try {
@@ -544,6 +570,10 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
   // tinha o nome no título). Só acrescenta informação ao log.
   async function executarPausa(campaignId, nome, explicacao, dadosBase) {
     const dados = { campaign_id: Number(campaignId), ...dadosBase };
+    if (contrato.pausar === 'sugerir') { // contrato: pausar só com aprovação
+      await logar('alerta', `Sugestão de pausar — ${nome}`, `${explicacao} O contrato deste cliente pede aprovação para pausar.`, { ...dados, pausar: true, contrato: 'sugerir' }, 'so_alerta');
+      alertas.push(nome); return;
+    }
     try {
       await mcpCall(mcApiKey, 'shopee_ads_pause_campaign', { shopId, campaign_id: Number(campaignId) });
       await logar('decisao', `Campanha pausada — ${nome}`, explicacao, dados, 'executado');
@@ -555,6 +585,10 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
 
   async function executarOrcamento(campaignId, nome, novoBudget, explicacao, dadosBase) {
     const dados = { campaign_id: Number(campaignId), ...dadosBase };
+    if (contrato.ajuste === 'sugerir' && !dadosBase?.desfeito_auto) { // contrato: ajuste só com aprovação
+      await logar('alerta', `Sugestão de ${novoBudget > (dadosBase?.budget_de || 0) ? 'aumento' : 'corte'} de orçamento — ${nome}`, `${explicacao} O contrato deste cliente pede aprovação para ajustar.`, { campaign_id: Number(campaignId), budget_atual: dadosBase?.budget_de, budget_sugerido: novoBudget, contrato: 'sugerir' }, 'so_alerta');
+      alertas.push(nome); return;
+    }
     try {
       // shopee_ads_edit_campaign é passthrough cru pra edit_manual_product_ads
       // — confirmado ao vivo que exige params.edit_action="change_budget",
@@ -586,6 +620,10 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
   // sinal em relação a executarOrcamento.
   async function executarRoasTarget(campaignId, nome, novoRoasTarget, explicacao, dadosBase) {
     const dados = { campaign_id: Number(campaignId), ...dadosBase };
+    if (contrato.ajuste === 'sugerir' && !dadosBase?.desfeito_auto) { // contrato: ajuste só com aprovação
+      await logar('alerta', `Sugestão de ${novoRoasTarget > (dadosBase?.roas_de || 0) ? 'subir' : 'baixar'} meta de ROI — ${nome}`, `${explicacao} O contrato deste cliente pede aprovação para ajustar.`, { campaign_id: Number(campaignId), roas_atual: dadosBase?.roas_de, roas_sugerido: novoRoasTarget, contrato: 'sugerir' }, 'so_alerta');
+      alertas.push(nome); return;
+    }
     try {
       await mcpCall(mcApiKey, 'shopee_ads_roi_target', { shopId, campaign_id: Number(campaignId), roas_target: novoRoasTarget });
       await logar('decisao', `Meta de ROAS ajustada — ${nome}`, explicacao, dados, 'executado');
@@ -689,7 +727,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       if (!vendasProd.size) return null;
       let a = 0, b = 0;
       for (const id of (itemIds || [])) { const v = vendasProd.get(String(id)); if (v) { a += v.a; b += v.b; } }
-      return a >= 300 && b < a * 0.75 ? { a, b, pct: (1 - b / a) * 100 } : null;
+      return a >= 300 && b < a * (1 - contrato.P.freio / 100) ? { a, b, pct: (1 - b / a) * 100 } : null; // perfil: Crescer 15%, Equilíbrio 25%, Lucrar 35%
     }
     // sugestão de pausa por estoque ainda pendente não é repetida
     const pausaEstoquePendente = new Set((await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 7 * 86400000).toISOString())}&select=dados&limit=300`).catch(() => []))
@@ -880,7 +918,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       // folga de TACOS, não aumenta automaticamente mesmo com campanha
       // eficiente — a conta como um todo já estaria investindo mais que o
       // saudável em ADS.
-      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= metaEf * 0.7 && (budgetAtual > 0 || temRoas)) {
+      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 <= metaEf * contrato.P.acelera && (budgetAtual > 0 || temRoas)) { // perfil: Crescer acelera antes
         if (qualidadeSegura && !reputacaoSegura) {
           colaboracoes.push({ de: 'qualidade', campanha: nome, texto: `segurei o aumento de "${nome}" (ACOS ${acosTxt}): ${qualidadeSegura}` });
           continue;
@@ -937,7 +975,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       // pausar: sobe a meta de ROI (lance automático) ou corta orçamento. Acima
       // do "ACOS de contenção forte" (antigo limite de pausa) o passo é 25% em
       // vez de 15%. Corte é seguro independente do TACOS geral.
-      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > metaEf && !emMaturacao) {
+      if (cfg.meta_acos && acosJanela !== null && acosJanela !== Infinity && acosJanela * 100 > metaEf * contrato.P.contem && !emMaturacao) { // perfil: Crescer tolera 15% acima da meta antes de conter
         const queda = quedaDeVenda(settings.item_id_list);
         if (queda) {
           const ap = apertos.get(String(c.campaign_id));
@@ -945,6 +983,15 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           if (ap && !voltaPendente.has(String(c.campaign_id)) && ((ap.roasAntes && temRoas && settings.roas_target > ap.roasAntes) || (ap.budgetAntes && budgetAtual < ap.budgetAntes))) {
             const dia = new Date(Date.parse(ap.desde) - 3 * 3600e3).toISOString().slice(5, 10).split('-').reverse().join('/');
             const voltaRoas = ap.roasAntes && temRoas && settings.roas_target > ap.roasAntes;
+            // Nível 2 (contrato "desfazer: executar"): desfaz sozinho o próprio aperto que derrubou a venda
+            if (contrato.desfazer === 'executar') {
+              const expl = `Desfeito automaticamente: desde ${dia} o agente apertou esta campanha (${voltaRoas ? `ROAS ${ap.roasAntes}x → ${settings.roas_target}x` : `orçamento ${R$(ap.budgetAntes)} → ${R$(budgetAtual)}`}) por causa do ACOS (${acosTxt}), e ${quedaTxt}. Voltei ${voltaRoas ? `a meta para ${ap.roasAntes}x` : `o orçamento para ${R$(ap.budgetAntes)}`}; o agente segue acompanhando o faturamento do produto.`;
+              const base = { freio_volume: true, desfeito_auto: true, venda_antes: Math.round(queda.a), venda_agora: Math.round(queda.b), colaboracao: { de: 'faturamento' } };
+              if (voltaRoas) await executarRoasTarget(c.campaign_id, nome, ap.roasAntes, expl, { ...base, roas_de: settings.roas_target, roas_para: ap.roasAntes });
+              else await executarOrcamento(c.campaign_id, nome, ap.budgetAntes, expl, { ...base, budget_de: budgetAtual, budget_para: ap.budgetAntes });
+              colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `desfiz o aperto de "${nome}": ${quedaTxt}` });
+              continue;
+            }
             await logar('alerta', `Sugestão de ${voltaRoas ? 'baixar meta de ROI' : 'aumento de orçamento'} — ${nome} (freio de volume)`,
               `Desde ${dia} o agente apertou esta campanha (${voltaRoas ? `meta de ROAS de ${ap.roasAntes}x para ${settings.roas_target}x` : `orçamento de ${R$(ap.budgetAntes)} para ${R$(budgetAtual)}`}) por causa do ACOS (${acosTxt}), e ${quedaTxt}. Apertar mais derruba ainda mais a venda — a sugestão é voltar ${voltaRoas ? `a meta para ${ap.roasAntes}x` : `o orçamento para ${R$(ap.budgetAntes)}`} e acompanhar o faturamento do produto, não só o ACOS.`,
               voltaRoas ? { campaign_id: c.campaign_id, roas_atual: settings.roas_target, roas_sugerido: ap.roasAntes, freio_volume: true, venda_antes: Math.round(queda.a), venda_agora: Math.round(queda.b), colaboracao: { de: 'faturamento' } }
@@ -1256,8 +1303,9 @@ async function processarAcompanhamento(cfg, mcApiKey) {
           const novo = Math.round(Math.min(cfg.orcamento_max || Infinity, budget * 1.2) * 100) / 100;
           const varPct = ((novo - budget) / budget) * 100;
           const explicacao = `Até as ${hora}h já gastou ${R$(h.gasto)} de ${R$(budget)} (${Math.round(h.gasto / budget * 100)}% do orçamento) com ACOS de ${acosHoje.toFixed(1)}% hoje, bem abaixo da meta (${cfg.meta_acos}%)${tacos7 != null ? `, e o ${rotuloTacosA} está em ${tacos7.toFixed(1)}%` : ''}. Sem aumento, a campanha sai do ar antes do fim do dia. Orçamento ${R$(budget)} → ${R$(novo)}.`;
-          if (cfg.alerta_variacao_pct && varPct > cfg.alerta_variacao_pct) {
-            await logar('alerta', `Sugestão de aumento de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: id, budget_atual: budget, budget_sugerido: novo }, 'so_alerta');
+          const ctrA = await contratoDaConta(shopId);
+          if ((cfg.alerta_variacao_pct && varPct > cfg.alerta_variacao_pct) || ctrA.ajuste === 'sugerir') {
+            await logar('alerta', `Sugestão de aumento de orçamento — ${nome}`, explicacao + (ctrA.ajuste === 'sugerir' ? ' O contrato deste cliente pede aprovação para ajustar.' : ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.'), { campaign_id: id, budget_atual: budget, budget_sugerido: novo }, 'so_alerta');
             alertas.push(nome);
           } else if (novo > budget) {
             try {

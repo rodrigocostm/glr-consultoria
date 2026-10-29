@@ -125,6 +125,29 @@ Router.register('plano-acao', (params, el) => {
     </div>`;
   }
 
+  // Contrato do cliente: perfil e o que o agente pode fazer sozinho (o agente lê glr_contratos no servidor)
+  const PERFIS = [['crescer', 'Crescer', 'aceita ACOS até 15% acima da meta para ganhar volume; acelera antes; freio de volume age com queda de 15%'],
+    ['equilibrio', 'Equilíbrio', 'o comportamento padrão: contém acima da meta, acelera com ACOS 30% abaixo dela; freio com queda de 25%'],
+    ['lucrar', 'Lucrar', 'protege a margem: acelera só com ACOS 40% abaixo da meta; freio só com queda de 35%']];
+  const AUTON = [['ajuste', 'Ajustar ROAS e orçamento (ADS Shopee)'], ['pausar', 'Pausar campanha (ADS Shopee)'], ['desfazer', 'Desfazer sozinho um aperto que derrubou a venda']];
+  const contratoDe = cid => { const c = lerJSON('glr_contratos', {})[cid] || {}; return { perfil: c.perfil || 'equilibrio', autonomia: { ajuste: 'executar', pausar: 'executar', desfazer: 'executar', ...(c.autonomia || {}) }, em: c.em }; };
+  function renderContrato(p) {
+    const cid = String(p.cliente.id), c = contratoDe(cid);
+    const resumo = `${PERFIS.find(x => x[0] === c.perfil)[1]} · ${AUTON.filter(([k]) => c.autonomia[k] === 'executar').length} de 3 ações no automático`;
+    return `<details class="card pl-bloco pl-ctr" ${st.ctrAberto ? 'open' : ''} ontoggle="window._plCtrToggle(this.open)">
+      <summary class="pl-bloco-t">Contrato e autonomia <span class="pl-sub">${h(resumo)}</span></summary>
+      <div class="pl-ctr-g">
+        <div><div class="pl-ctr-t">Perfil do cliente</div>
+          ${PERFIS.map(([k, t, d]) => `<label class="pl-ctr-op"><input type="radio" name="pl-perfil" value="${k}" ${c.perfil === k ? 'checked' : ''}><span><b>${t}</b><small>${d}</small></span></label>`).join('')}</div>
+        <div><div class="pl-ctr-t">O que o agente faz sozinho</div>
+          ${AUTON.map(([k, t]) => `<div class="pl-ctr-a"><span>${t}</span><select id="pl-aut-${k}" class="form-control"><option value="executar" ${c.autonomia[k] === 'executar' ? 'selected' : ''}>Executar</option><option value="sugerir" ${c.autonomia[k] === 'sugerir' ? 'selected' : ''}>Só sugerir</option></select></div>`).join('')}
+          <div class="pl-sub" style="margin-top:6px">"Só sugerir" manda a ação para a Caixa de decisões. Os limites de cada conta (variação máxima, orçamento mínimo e máximo) continuam valendo.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px"><button class="btn btn-primary btn-sm" onclick="window._plSalvarContrato('${h(cid)}')">Salvar contrato</button>${st.ctrSalvo === cid ? '<span class="pl-sub" style="color:var(--green)">Salvo — vale a partir da próxima revisão do agente</span>' : ''}</div>
+    </details>`;
+  }
+
   // Raio-X do faturamento: o que puxou e o que derrubou nas últimas 2 semanas
   function renderRaioX(rx, m) {
     if (!rx) return `<div class="card pl-bloco"><div class="pl-bloco-t">Raio-X do faturamento</div><div class="pl-sub">Sem pedidos suficientes na base para comparar as últimas 2 semanas.</div></div>`;
@@ -171,6 +194,7 @@ Router.register('plano-acao', (params, el) => {
         </div>
       </div>
       ${renderMeta(p)}
+      ${renderContrato(p)}
       ${renderRaioX(p.raioX, m)}
       <div class="pl-cols">
         <div>${grupos.map(([t, fn]) => { const as = (p.acoes || []).filter(fn); return as.length ? `<div class="card pl-bloco"><div class="pl-bloco-t">${t} <span class="pl-sub">${as.filter(a => !status()[a.id]).length} aberta(s)</span></div>${as.map(a => renderAcao(p, a)).join('')}</div>` : ''; }).join('') || '<div class="card pl-bloco"><div class="pl-sub">Nenhuma ação hoje — os agentes não encontraram nada urgente.</div></div>'}</div>
@@ -209,6 +233,14 @@ Router.register('plano-acao', (params, el) => {
     render();
   };
   window._plCopiar = () => { const t = document.getElementById('pl-pauta')?.value || ''; navigator.clipboard?.writeText(t).then(() => { st.copiado = true; render(); }, () => alert('Não consegui copiar — selecione o texto e copie.')); };
+  window._plCtrToggle = aberto => { st.ctrAberto = aberto; };
+  window._plSalvarContrato = cid => {
+    const perfil = document.querySelector('input[name="pl-perfil"]:checked')?.value || 'equilibrio';
+    const autonomia = Object.fromEntries(AUTON.map(([k]) => [k, document.getElementById(`pl-aut-${k}`)?.value === 'sugerir' ? 'sugerir' : 'executar']));
+    const todos = lerJSON('glr_contratos', {}); todos[cid] = { perfil, autonomia, em: Date.now() };
+    localStorage.setItem('glr_contratos', JSON.stringify(todos)); // sincroniza (supabase-init) — o agente lê no servidor
+    st.ctrSalvo = cid; st.ctrAberto = true; render();
+  };
   window._plSalvarMeta = async cid => {
     const fat = numBR(document.getElementById('pl-meta-fat')?.value), ped = numBR(document.getElementById('pl-meta-ped')?.value);
     const mf = lerJSON('glr_metas', {}), mp = lerJSON('glr_metas_pedidos', {});
@@ -280,6 +312,12 @@ Router.register('plano-acao', (params, el) => {
     .pl-alav-i{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:9px 12px;border-top:1px solid var(--border)} .pl-alav-i:first-child{border-top:0}
     .pl-alav-txt b{font-size:13px;font-weight:600} .pl-alav-v{text-align:right;display:flex;flex-direction:column} .pl-alav-v b{font-size:14px;color:var(--green);font-variant-numeric:tabular-nums} .pl-alav-v small{font-size:11px}
     .pl-meta-resto{font-size:12.5px;color:var(--text-secondary);background:var(--bg-subtle);border-radius:10px;padding:9px 12px;margin-top:10px;line-height:1.5}
+    .pl-ctr>summary{cursor:pointer;list-style:none;margin-bottom:0} .pl-ctr[open]>summary{margin-bottom:10px}
+    .pl-ctr-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+    .pl-ctr-t{font-size:12px;font-weight:650;color:var(--text-secondary);margin-bottom:6px}
+    .pl-ctr-op{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;cursor:pointer} .pl-ctr-op:has(input:checked){border-color:var(--accent);background:var(--accent-glow)}
+    .pl-ctr-op span{display:flex;flex-direction:column} .pl-ctr-op b{font-size:13px} .pl-ctr-op small{font-size:11.5px;color:var(--text-muted);line-height:1.45}
+    .pl-ctr-a{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px} .pl-ctr-a select{width:140px}
     .pl-bloco{padding:12px 14px;margin-bottom:12px} .pl-bloco-t{font-weight:650;font-size:14px;margin-bottom:8px;display:flex;gap:8px;align-items:baseline}
     .pl-acao{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:9px 0;border-top:1px solid var(--border)}
     .pl-acao.resolvida{opacity:.55} .pl-quem{font-size:11px;font-weight:650;color:var(--q)}
