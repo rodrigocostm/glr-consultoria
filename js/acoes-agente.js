@@ -11,6 +11,7 @@ window.GLRAcoes = (function () {
   // ads (campanha Shopee), estoque e preço — o resto é informativo
   function tipoDe(d) {
     d = d || {};
+    if (d.promo_aprovar && d.item_id) return 'promocao'; // só entra no ML quando o analista aprova
     if (d.campaign_id != null && (d.roas_sugerido != null || d.budget_sugerido != null || d.pausar === true || d.retomar === true)) return 'ads';
     if (d.item_id != null && d.estoque_sugerido != null) return 'estoque';
     if (d.item_id != null && d.preco_sugerido != null) return 'preco';
@@ -22,6 +23,22 @@ window.GLRAcoes = (function () {
     const tipo = tipoDe(d);
     if (!tipo) throw new Error('sugestão informativa — não tem ação automática para aprovar');
     if (tipo === 'ads' && !Number.isFinite(Number(d.campaign_id))) throw new Error(`a sugestão não tem uma campanha válida (campaign_id "${d.campaign_id}"). Rejeite e peça de novo ao agente.`);
+    if (tipo === 'promocao') {
+      const a = d.promo_aprovar, base = { meliUserId: l.conta_id, promotion_type: a.promotion_type };
+      let params;
+      if (a.promotion_type === 'PRICE_DISCOUNT') {
+        const fmt = x => x.toISOString().slice(0, 19), ini = new Date(Date.now() - 3 * 3600e3 + 5 * 60e3);
+        params = { ...base, items: [d.item_id], deal_price: a.deal_price, start_date: fmt(ini), finish_date: fmt(new Date(ini.getTime() + (a.dias || 13) * 864e5)) };
+      } else if (a.deal_price == null) params = { ...base, promotion_id: a.promotion_id, items: [{ id: d.item_id, offer_id: a.offer_id }] };
+      else params = { ...base, promotion_id: a.promotion_id, items: [{ id: d.item_id, deal_price: a.deal_price, ...(a.offer_id ? { offer_id: a.offer_id } : {}) }] };
+      const r = await MarketplaceAPI.call('ml_add_promotion_items', params);
+      const res = (r?.results || r?.data?.results || [])[0] || {};
+      if (res.error || res.erro) throw new Error(res.error || res.erro);
+      await _sb.from('glr_agente_log').update({ resultado: 'executado' }).eq('id', l.id);
+      await _sb.from('glr_agente_log').insert({ conta_id: l.conta_id, cliente_nome: clienteNome || l.cliente_nome || null, tipo: 'decisao',
+        titulo: `Promoção aprovada — ${d.produto || d.item_id}`, explicacao: `Aprovada pelo analista. ${l.explicacao || ''}`, dados: { ...d, aplicado_em: new Date().toISOString() }, resultado: 'executado', origem: 'aprovacao_manual' });
+      return;
+    }
     if (tipo === 'ads') {
       if (d.retomar === true) {
         // reativar de verdade; se veio também uma meta de ROAS nova ("reativar e apertar ROAS"), aplica depois

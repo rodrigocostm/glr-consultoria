@@ -350,7 +350,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     lerStorage('glr_clientes').then(x => x || []), lerStorage('glr_mc_vinculos').then(x => x || {}), lerStorage('glr_metas').then(x => x || {}), lerStorage('glr_metas_pedidos').then(x => x || {}), lerStorage('glr_gestores').then(x => x || []), lerStorage('glr_mc_nicknames').then(x => x || {}),
     sbSelect('glr_sync_estado', 'recurso=in.(resumo,sinais,promocoes,reputacao,qualidade)&marketplace=in.(ml,shopee)&select=marketplace,conta_id,recurso,cursor').catch(() => []),
     sbSelect('glr_agente_config', 'select=conta_id,marketplace,meta_acos,cliente_nome').catch(() => []),
-    sbSelect('glr_agente_log', `tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 10 * 864e5).toISOString())}&select=conta_id,titulo,dados&limit=3000`).catch(() => []),
+    sbSelect('glr_agente_log', `tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 10 * 864e5).toISOString())}&select=conta_id,titulo,dados,criado_em&limit=3000`).catch(() => []),
     sbSelect('glr_agente_log', `tipo=in.(decisao,alerta)&resultado=eq.executado&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 46 * 864e5).toISOString())}&select=conta_id,titulo,dados,criado_em&order=criado_em.desc&limit=6000`).catch(() => []),
   ]);
   const est = {};
@@ -401,7 +401,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     const contasCliMeta = new Set(lojas.map(L => L.conta));
     const mesNum = +ontem.slice(5, 7), diasProxMes = new Date(Date.UTC(+ontem.slice(0, 4), mesNum + 1, 0)).getUTCDate();
     // o que os agentes já fizeram pela meta (últimos 7 dias): promoções em que entraram
-    const promosMeta = medidos.filter(l => new Set(lojas.map(L => L.conta)).has(String(l.conta_id)) && /^Promoção aplicada pela meta/.test(l.titulo || '') && l.criado_em && Date.now() - Date.parse(l.criado_em) < 7 * 864e5)
+    const promosMeta = [...pendentes, ...medidos].filter(l => new Set(lojas.map(L => L.conta)).has(String(l.conta_id)) && /promoção pela meta|^Promoção aprovada/.test(l.titulo || '') && l.criado_em && Date.now() - Date.parse(l.criado_em) < 7 * 864e5)
       .map(l => ({ produto: corta(l.dados?.produto || '', 50), promo: l.dados?.promo, preco: l.dados?.preco, margem: l.dados?.margem, em: l.criado_em }));
     const caminho = calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos: fat > 0 ? ads / fat * 100 : null, mesNum, diasProxMes });
     // as 2 maiores alavancas viram ações do plano (com o R$ que rendem até o fim do mês)

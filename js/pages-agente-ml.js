@@ -32,7 +32,7 @@ Router.register('agente-ml', (params, el) => {
   const idConta = c => String(c.param_to_use?.meliUserId || c.external_id);
   const cfgDe = id => state.configs.find(c => String(c.conta_id) === String(id)) || null;
   const nomeDe = id => { const c = state.contasML.find(x => idConta(x) === String(id)); return c ? nomeConta(c) : (cfgDe(id)?.cliente_nome || id); };
-  const pendentes = id => state.logs.filter(l => String(l.conta_id) === String(id) && l.tipo === 'alerta' && l.resultado === 'so_alerta');
+  const pendentes = id => state.logs.filter(l => String(l.conta_id) === String(id) && l.tipo === 'alerta' && l.resultado === 'so_alerta' && !l.dados?.promo_aprovar); // promoção pela meta fica na Caixa de decisões
 
   async function carregar() {
     state.carregando = true; render();

@@ -57,6 +57,12 @@ Router.register('decisoes', (params, el) => {
         const d = l.dados || {};
         if (d.acao === 'abc_queda') continue; // informativo: já aparece no Raio-X do Plano de ação
         const mkt = d.marketplace === 'ml' ? 'ml' : 'shopee';
+        if (d.promo_aprovar) { // promoção preparada pelo agente (pela meta): só entra com aprovação
+          itens.push({ id: 'log:' + l.id, log: l, tipo: 'promocoes', mkt, conta: String(l.conta_id), titulo: `Entrar em promoção — ${d.produto || d.item_id}`,
+            acao: `${d.promo || 'Promoção'} a ${R$(d.preco)} · lucro ${R$(d.lucro_venda)}/venda (margem ${String(d.margem ?? '—').replace('.', ',')}%)`,
+            porque: String(l.explicacao || ''), impacto: d.impacto || null, impactoTipo: 'ganho', exec: true, tela: 'promocoes', quando: l.criado_em });
+          continue;
+        }
         const impacto = d.impacto != null ? parseFloat(d.impacto) : d.freio_volume ? Math.max(0, (d.venda_antes || 0) - (d.venda_agora || 0)) : null;
         itens.push({
           id: 'log:' + l.id, log: l, tipo: mkt === 'ml' ? 'ads-ml' : 'ads-shopee', mkt, conta: String(l.conta_id),
@@ -173,7 +179,7 @@ Router.register('decisoes', (params, el) => {
   window._dcAprovarSel = async () => {
     const sel = visiveis().filter(it => it.exec && st.sel.has(it.id));
     if (!sel.length || st.lote) return;
-    if (!confirm(`Aprovar e executar agora ${sel.length} sugestão(ões) na Shopee?\n\n${sel.slice(0, 12).map(it => `• ${it.acao || ''} — ${corta(it.titulo, 60)}`).join('\n')}${sel.length > 12 ? `\n… e mais ${sel.length - 12}` : ''}`)) return;
+    if (!confirm(`Aprovar e executar agora ${sel.length} sugestão(ões)?\n\n${sel.slice(0, 12).map(it => `• ${it.acao || ''} — ${corta(it.titulo, 60)}`).join('\n')}${sel.length > 12 ? `\n… e mais ${sel.length - 12}` : ''}`)) return;
     const falhas = []; let n = 0;
     for (const it of sel) {
       st.lote = `Executando ${++n} de ${sel.length}…`; render();
