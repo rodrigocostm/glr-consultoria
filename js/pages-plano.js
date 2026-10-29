@@ -179,10 +179,6 @@ Router.register('plano-acao', (params, el) => {
   };
 
   el.innerHTML = `<div class="page">
-    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-      <h1 style="font-size:22px;font-weight:650;letter-spacing:-.02em;margin:0">Plano de ação</h1>
-      <span class="pl-sub">o Gerente de Conta junta o que todos os agentes viram e diz o que fazer em cada cliente hoje — uso interno</span>
-    </div>
     <div id="pl-root"></div>
   </div>
   <style>
