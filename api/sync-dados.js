@@ -22,7 +22,12 @@ const SINAIS_A_CADA_MS = 3 * 3600 * 1000;
 const promocoesAg = require('./_promocoes');
 // Agente de Reputação e Atendimento (a cada 30 min por loja; métricas da conta a cada 6 h)
 const reputacaoAg = require('./_reputacao');
-const REPUTACAO_A_CADA_MS = 30 * 60 * 1000;
+const REPUTACAO_A_CADA_MS = 60 * 60 * 1000; // era 30 min — 1.571 chamadas/dia de cada ação (medidor de 28/10)
+// Taxas reais (líquido ML / acerto TikTok / escrow): quando a rodada anterior não
+// conseguiu nenhum pedido novo (o marketplace ainda não liberou), espera 2 h —
+// antes perguntava os mesmos pedidos a cada 15 min (38 mil chamadas/dia só no ML)
+const TAXAS_ESPERA_MS = 2 * 3600 * 1000;
+const GMV_RECENTE_A_CADA_MS = 2 * 3600 * 1000; // GMV Max dos últimos dias (17 mil chamadas/dia a cada 15 min)
 // Agente de Qualidade de Anúncio (1x por dia por loja, depois das 06:00)
 const qualidadeAg = require('./_qualidade');
 
@@ -253,9 +258,11 @@ async function gravarAdsShopee(apiKey, shopId, estAds, t, prazo) {
     cursor.tem_gmv_max = !!(await gmvMaxDia(apiKey, shopId, hoje0 - DIA).catch(() => null));
     cursor.gmv_verificado = dataBR(t);
   }
-  if (cursor.tem_gmv_max) {
+  const gmvRecente = !cursor.gmv_rec_em || Date.now() - cursor.gmv_rec_em > GMV_RECENTE_A_CADA_MS;
+  if (cursor.tem_gmv_max && (gmvRecente || (cursor.gmv_hist_ate || hoje0) > limite)) {
     const gasto = { ...(cursor.gmv_max || {}) }, vendas = { ...(cursor.gmv_max_vendas || {}) };
-    const dias = [hoje0 - 2 * DIA, hoje0 - DIA, hoje0];
+    const dias = gmvRecente ? [hoje0 - 2 * DIA, hoje0 - DIA, hoje0] : [];
+    if (gmvRecente) cursor.gmv_rec_em = Date.now();
     const histAte = cursor.gmv_hist_ate || hoje0 - 2 * DIA;
     for (let u = histAte - DIA, k = 0; u >= limite && k < 10; u -= DIA, k++) dias.push(u);
     let menor = histAte;
@@ -709,7 +716,7 @@ function mapearPedidoMagalu(accId, o) {
   };
 }
 async function gravarPedidosMagalu(apiKey, accId, filtro, prazo) {
-  let n = 0;
+  let n = 0, primeiroAnt = null;
   for (let off = 0; off < 20000; off += 50) {
     if (prazo && Date.now() > prazo) return { n, completo: false };
     const q = { magalu_account_id: accId, _limit: 50, _offset: off, ...filtro };
@@ -719,6 +726,11 @@ async function gravarPedidosMagalu(apiKey, accId, filtro, prazo) {
     });
     const d = r.data?.results ? r.data : r;
     const res = d.results || [];
+    // a API às vezes ignora o _offset e devolve sempre a mesma página — sem isto
+    // o laço ia até o fim do tempo (16 mil chamadas/dia para 2 lojas, medidor de 28/10)
+    const primeiro = res[0] ? String(res[0].code || res[0].id) : null;
+    if (off > 0 && primeiro && primeiro === primeiroAnt) break;
+    primeiroAnt = primeiro;
     const linhas = res.filter(o => o && (o.code || o.id) && (o.purchased_at || o.created_at) && !/^new$|pending/i.test(o.status || '')).map(o => mapearPedidoMagalu(accId, o));
     if (linhas.length) {
       await sbUpsert('glr_pedidos', [...new Map(linhas.map(l => [l.pedido_id, l])).values()], 'marketplace,conta_id,pedido_id');
@@ -1060,8 +1072,9 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
       }
     }
     // Taxas reais (escrow Shopee / recebimento ML) dos pedidos que ainda não têm.
-    if (ad.taxas && Date.now() < prazo) {
-      try { cursor.taxas_ult = await ad.taxas(apiKey, shopId, t, Math.min(prazo, Date.now() + TEMPO_TAXAS_POR_CONTA_MS), cursor); delete cursor.taxas_erro; }
+    const taxasNaVez = !cursor.taxas_em || cursor.taxas_ult > 0 || Date.now() - cursor.taxas_em > TAXAS_ESPERA_MS;
+    if (ad.taxas && Date.now() < prazo && taxasNaVez) {
+      try { cursor.taxas_ult = await ad.taxas(apiKey, shopId, t, Math.min(prazo, Date.now() + TEMPO_TAXAS_POR_CONTA_MS), cursor); cursor.taxas_em = Date.now(); delete cursor.taxas_erro; }
       catch (e) { cursor.taxas_erro = String(e.message || e).slice(0, 200); }
     }
     await salvarEstado(mkt, shopId, 'pedidos', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, cursor, registros: gravados });
