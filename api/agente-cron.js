@@ -949,8 +949,9 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
       if (x.budgetAntes == null && d.budget_de != null) x.budgetAntes = +d.budget_de;
       apertos.set(k, x);
     }
-    const voltaPendente = new Set((await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 7 * 864e5).toISOString())}&select=dados&limit=300`).catch(() => []))
-      .filter(l => l.dados?.freio_volume).map(l => String(l.dados.campaign_id)));
+    const freiosPend = (await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 7 * 864e5).toISOString())}&select=id,dados&limit=300`).catch(() => []))
+      .filter(l => l.dados?.freio_volume);
+    const voltaPendente = new Set(freiosPend.map(l => String(l.dados.campaign_id)));
     function quedaDeVenda(itemIds) {
       if (!vendasProd.size) return null;
       let a = 0, b = 0;
@@ -1210,20 +1211,22 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
         if (queda) {
           const ap = apertos.get(String(c.campaign_id));
           const quedaTxt = `as vendas do produto na loja (orgânico + ADS) caíram de ${R$(queda.a)} para ${R$(queda.b)} na última semana (−${queda.pct.toFixed(0)}%)`;
-          if (ap && !voltaPendente.has(String(c.campaign_id)) && ((ap.roasAntes && temRoas && settings.roas_target > ap.roasAntes) || (ap.budgetAntes && budgetAtual < ap.budgetAntes))) {
+          if (ap && (contrato.desfazer === 'executar' || !voltaPendente.has(String(c.campaign_id))) && ((ap.roasAntes && temRoas && settings.roas_target > ap.roasAntes) || (ap.budgetAntes && budgetAtual < ap.budgetAntes))) {
             const dia = new Date(Date.parse(ap.desde) - 3 * 3600e3).toISOString().slice(5, 10).split('-').reverse().join('/');
             const voltaRoas = ap.roasAntes && temRoas && settings.roas_target > ap.roasAntes;
             // Nível 2 (contrato "desfazer: executar"): desfaz sozinho o próprio aperto que derrubou a venda
             if (contrato.desfazer === 'executar') {
-              const expl = `Desfeito automaticamente: desde ${dia} o agente apertou esta campanha (${voltaRoas ? `ROAS ${ap.roasAntes}x → ${settings.roas_target}x` : `orçamento ${R$(ap.budgetAntes)} → ${R$(budgetAtual)}`}) por causa do ACOS (${acosTxt}), e ${quedaTxt}. Voltei ${voltaRoas ? `a meta para ${ap.roasAntes}x` : `o orçamento para ${R$(ap.budgetAntes)}`}; o agente segue acompanhando o faturamento do produto.`;
+              const expl = `Desfeito automaticamente: desde ${dia} o agente apertou esta campanha (${voltaRoas ? `ROAS ${ap.roasAntes}x → ${settings.roas_target}x` : `orçamento ${R$(ap.budgetAntes)} → ${R$(budgetAtual)}`}) por causa do ACOS da campanha (${acosTxt}; ${rotuloTacos} da loja: ${tacosConta === Infinity ? '—' : `${tacosConta.toFixed(1)}%`}), e ${quedaTxt}. Voltei ${voltaRoas ? `a meta para ${ap.roasAntes}x` : `o orçamento para ${R$(ap.budgetAntes)}`}; o agente segue acompanhando o faturamento do produto.`;
               const base = { freio_volume: true, desfeito_auto: true, venda_antes: Math.round(queda.a), venda_agora: Math.round(queda.b), colaboracao: { de: 'faturamento' } };
               if (voltaRoas) await executarRoasTarget(c.campaign_id, nome, ap.roasAntes, expl, { ...base, roas_de: settings.roas_target, roas_para: ap.roasAntes });
               else await executarOrcamento(c.campaign_id, nome, ap.budgetAntes, expl, { ...base, budget_de: budgetAtual, budget_para: ap.budgetAntes });
               colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `desfiz o aperto de "${nome}": ${quedaTxt}` });
+              // a sugestão de voltar que estava na Caixa de decisões já foi feita pelo agente
+              for (const l of freiosPend) if (String(l.dados.campaign_id) === String(c.campaign_id)) await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { resultado: 'expirado' }).catch(() => {});
               continue;
             }
             await logar('alerta', `Sugestão de ${voltaRoas ? 'baixar meta de ROI' : 'aumento de orçamento'} — ${nome} (freio de volume)`,
-              `Desde ${dia} o agente apertou esta campanha (${voltaRoas ? `meta de ROAS de ${ap.roasAntes}x para ${settings.roas_target}x` : `orçamento de ${R$(ap.budgetAntes)} para ${R$(budgetAtual)}`}) por causa do ACOS (${acosTxt}), e ${quedaTxt}. Apertar mais derruba ainda mais a venda — a sugestão é voltar ${voltaRoas ? `a meta para ${ap.roasAntes}x` : `o orçamento para ${R$(ap.budgetAntes)}`} e acompanhar o faturamento do produto, não só o ACOS.`,
+              `Desde ${dia} o agente apertou esta campanha (${voltaRoas ? `meta de ROAS de ${ap.roasAntes}x para ${settings.roas_target}x` : `orçamento de ${R$(ap.budgetAntes)} para ${R$(budgetAtual)}`}) por causa do ACOS da campanha (${acosTxt}; ${rotuloTacos} da loja: ${tacosConta === Infinity ? '—' : `${tacosConta.toFixed(1)}%`}), e ${quedaTxt}. Apertar mais derruba ainda mais a venda — a sugestão é voltar ${voltaRoas ? `a meta para ${ap.roasAntes}x` : `o orçamento para ${R$(ap.budgetAntes)}`} e acompanhar o faturamento do produto, não só o ACOS.`,
               voltaRoas ? { campaign_id: c.campaign_id, roas_atual: settings.roas_target, roas_sugerido: ap.roasAntes, freio_volume: true, venda_antes: Math.round(queda.a), venda_agora: Math.round(queda.b), colaboracao: { de: 'faturamento' } }
                 : { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: ap.budgetAntes, freio_volume: true, venda_antes: Math.round(queda.a), venda_agora: Math.round(queda.b), colaboracao: { de: 'faturamento' } }, 'so_alerta');
             alertas.push(nome);
@@ -1233,15 +1236,25 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           }
           continue;
         }
+        // Quem governa é o TACOS da loja: com ele dentro do limite (teto do cliente ou meta da conta), ACOS
+        // um pouco acima da meta numa campanha não é motivo para frear — só se a campanha passar do limite
+        // da margem do produto (vende no prejuízo) ou do ACOS de contenção forte.
+        const forteAcos = !!cfg.regra_pausa_acos && acosJanela * 100 > cfg.regra_pausa_acos;
+        const prejuizo = metaMargem != null && acosJanela * 100 > metaMargem;
+        if (tacosConta !== Infinity && tacosDentroDaMeta && !forteAcos && !prejuizo) {
+          colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `não contive "${nome}" (ACOS ${acosTxt}): o ${rotuloTacos} da loja (${tacosConta.toFixed(1)}%) está dentro ${limiteTacosTxt}` });
+          continue;
+        }
         if (metaMargem != null && acosJanela * 100 <= cfg.meta_acos) colaboracoes.push({ de: aviso.promo ? 'promocoes' : 'margem', campanha: nome, texto: `contive "${nome}": ACOS ${acosTxt} cabe na meta da conta, mas passa do limite da margem do produto (${metaEf}%)` });
         const forte = !!cfg.regra_pausa_acos && acosJanela * 100 > cfg.regra_pausa_acos;
         const passo = forte ? 0.25 : 0.15;
+        const tacosTxtC = tacosConta !== Infinity ? ` O ${rotuloTacos} da loja está em ${tacosConta.toFixed(1)}%${tacosDentroDaMeta ? '' : `, acima ${limiteTacosTxt}`}.` : '';
         const motivoConter = forte ? `bem acima da meta (${cfg.meta_acos}%) e do limite de contenção forte (${cfg.regra_pausa_acos}%), mas a campanha vende — então contenho com mais força em vez de pausar` : `acima da ${txtMeta}, mas a campanha vende — contenho o gasto em vez de pausar`;
         if (usarRoasConter) {
           const roasAtual = settings.roas_target;
           const novoRoas = Math.min(SHOPEE_ROAS_TARGET_MAX, Math.round(roasAtual * (1 + passo) * 10) / 10);
           const variacaoPct = Math.abs((novoRoas - roasAtual) / roasAtual) * 100;
-          const explicacao = `ACOS de ${acosTxt} ${motivoConter}. Campanha usa lance automático — subindo a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais conservador.`;
+          const explicacao = `ACOS da campanha de ${acosTxt} ${motivoConter}.${tacosTxtC} Campanha usa lance automático — subindo a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais conservador.`;
           if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
             await logar('alerta', `Sugestão de subir meta de ROI — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, roas_atual: roasAtual, roas_sugerido: novoRoas }, 'so_alerta');
             alertas.push(nome);
@@ -1252,7 +1265,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
           const novoBudget = Math.max(cfg.orcamento_min || 0, Math.round(budgetAtual * (1 - passo) * 100) / 100);
           if (novoBudget < budgetAtual) {
             const variacaoPct = Math.abs((novoBudget - budgetAtual) / budgetAtual) * 100;
-            const explicacao = `ACOS de ${acosTxt} ${motivoConter}. Reduzindo orçamento de ${R$(budgetAtual)} pra ${R$(novoBudget)} sem desligar a campanha.`;
+            const explicacao = `ACOS da campanha de ${acosTxt} ${motivoConter}.${tacosTxtC} Reduzindo orçamento de ${R$(budgetAtual)} pra ${R$(novoBudget)} sem desligar a campanha.`;
             if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
               await logar('alerta', `Sugestão de corte de orçamento — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, budget_atual: budgetAtual, budget_sugerido: novoBudget }, 'so_alerta');
               alertas.push(nome);
