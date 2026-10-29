@@ -1161,12 +1161,7 @@
     // da Fundação do Analista GLR (nenhum módulo ainda produz esses alertas
     // sozinho, mas o Kanban/aprovação já reconhece o formato pra quando os
     // módulos de Rentabilidade/Estoque existirem, sem precisar mexer aqui de novo).
-    function temAcaoReconhecida(d) {
-      if (d.campaign_id != null && (d.roas_sugerido != null || d.budget_sugerido != null || d.pausar === true || d.retomar === true)) return 'ads';
-      if (d.item_id != null && d.estoque_sugerido != null) return 'estoque';
-      if (d.item_id != null && d.preco_sugerido != null) return 'preco';
-      return null;
-    }
+    function temAcaoReconhecida(d) { return GLRAcoes.tipoDe(d); }
 
     // emLote: usado por "Aprovar todas" — não recarrega nem alerta a cada item
     // (o chamador recarrega uma vez no fim) e devolve true/false.
@@ -1184,58 +1179,7 @@
       state.processandoAlertaId = logId;
       render();
       try {
-        if (tipoAcao === 'ads' && !Number.isFinite(Number(d.campaign_id))) {
-          throw new Error(`a sugestão não tem uma campanha válida (campaign_id "${d.campaign_id}"). Rejeite e peça de novo ao agente.`);
-        }
-        if (tipoAcao === 'ads') {
-          if (d.retomar === true) {
-            // Reativar de verdade na Shopee; se a sugestão trouxe também uma
-            // meta de ROAS nova ("reativar e apertar ROAS"), aplica depois.
-            await MarketplaceAPI.call('shopee_ads_resume_campaign', { shopId: l.conta_id, campaign_id: Number(d.campaign_id) });
-            if (d.roas_sugerido != null) {
-              await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: l.conta_id, campaign_id: Number(d.campaign_id), roas_target: d.roas_sugerido });
-            }
-          } else if (d.pausar === true) {
-            await MarketplaceAPI.call('shopee_ads_pause_campaign', { shopId: l.conta_id, campaign_id: Number(d.campaign_id) });
-          } else if (d.roas_sugerido != null) {
-            await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: l.conta_id, campaign_id: Number(d.campaign_id), roas_target: d.roas_sugerido });
-          } else {
-            await MarketplaceAPI.call('shopee_ads_edit_campaign', {
-              shopId: l.conta_id,
-              campaign_id: Number(d.campaign_id), // conector valida no nível de cima também
-              params: { campaign_id: Number(d.campaign_id), budget: d.budget_sugerido, edit_action: 'change_budget', reference_id: `glr-aprovado-${Date.now()}-${d.campaign_id}` },
-            });
-          }
-        } else if (tipoAcao === 'estoque') {
-          // marketplace da sugestão decide a ação — Shopee e ML cobertos
-          // desde já (ações confirmadas no diagnóstico); outros marketplaces
-          // entram conforme forem validados ao vivo, não antes.
-          if (d.marketplace === 'ml') {
-            await MarketplaceAPI.call('ml_update_variation_stock', { item_id: d.item_id, variation_id: d.model_id, available_quantity: d.estoque_sugerido });
-          } else {
-            await MarketplaceAPI.call('shopee_update_stock', { shopId: l.conta_id, item_id: Number(d.item_id), model_id: d.model_id ? Number(d.model_id) : undefined, stock: d.estoque_sugerido });
-          }
-        } else if (tipoAcao === 'preco') {
-          if (d.marketplace === 'ml') {
-            await MarketplaceAPI.call('ml_update_variations_price', { item_id: d.item_id, price: d.preco_sugerido });
-          } else {
-            await MarketplaceAPI.call('shopee_update_price', { shopId: l.conta_id, item_id: Number(d.item_id), model_id: d.model_id ? Number(d.model_id) : undefined, price: d.preco_sugerido });
-          }
-        }
-        // A decisão executada usa o formato "de → para" (igual às do cron), não
-        // o "atual/sugerido" do alerta — senão o card executado continuava com
-        // o selo laranja de "Sugestão" e parecia ainda pendente.
-        const dadosExec = { ...d };
-        if (d.roas_sugerido != null) { dadosExec.roas_de = d.roas_atual; dadosExec.roas_para = d.roas_sugerido; delete dadosExec.roas_atual; delete dadosExec.roas_sugerido; }
-        if (d.budget_sugerido != null) { dadosExec.budget_de = d.budget_atual; dadosExec.budget_para = d.budget_sugerido; delete dadosExec.budget_atual; delete dadosExec.budget_sugerido; }
-        if (d.retomar === true) { dadosExec.retomada = true; delete dadosExec.retomar; }
-        if (d.pausar === true) { dadosExec.pausada = true; delete dadosExec.pausar; }
-        await _sb.from('glr_agente_log').update({ resultado: 'executado' }).eq('id', l.id);
-        await _sb.from('glr_agente_log').insert({
-          conta_id: l.conta_id, cliente_nome: cfg?.cliente_nome || null, tipo: 'decisao',
-          titulo: `Aprovado manualmente — ${(l.titulo || '').replace(/^Sugestão de /, '')}`,
-          explicacao: `Alerta aprovado pelo analista. ${l.explicacao || ''}`, dados: dadosExec, resultado: 'executado', origem: 'aprovacao_manual',
-        });
+        await GLRAcoes.executar(l, cfg?.cliente_nome); // mesma regra da Caixa de decisões (js/acoes-agente.js)
         ok = true;
       } catch (e) {
         if (emLote) state.ultimoErroLote = `${l.titulo}: ${e.message || e}`; else alert('Erro ao executar: ' + (e.message || e));

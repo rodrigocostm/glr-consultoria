@@ -53,6 +53,7 @@ const Router = {
     // Update header title
     const titles = {
       dashboard: 'Dashboard Executivo',
+      decisoes: 'Caixa de decisões',
       clientes: 'Gestão de Clientes',
       'cliente-perfil': 'Perfil do Cliente',
       projecao: 'Projeção de Crescimento',

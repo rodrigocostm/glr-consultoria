@@ -67,6 +67,11 @@
 
     <div class="sidebar-section">
       <div class="sidebar-section-title">Principal</div>
+      <button class="nav-item" data-page="decisoes" onclick="Router.navigate('decisoes')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>
+        Caixa de decisões
+        <span class="nav-badge" id="badge-decisoes" style="display:none;">0</span>
+      </button>
       <button class="nav-item" data-page="dashboard" onclick="Router.navigate('dashboard')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         Dashboard
@@ -465,8 +470,8 @@
   }
   atualizarBadges();
 </script>
-<script src="js/router.js?v=22"></script>
-<script src="js/nav.js?v=4"></script>
+<script src="js/router.js?v=23"></script>
+<script src="js/nav.js?v=5"></script>
 <script src="js/ui.js?v=2"></script>
 <script src="js/pages-dashboard.js?v=42"></script>
 <script src="js/pages-gestores.js?v=21"></script>
@@ -483,7 +488,8 @@
 <script src="js/pages-conciliacao.js?v=9"></script>
 <script src="js/pages-financeiro.js?v=88"></script>
 <script src="js/pages-ads.js?v=46"></script>
-<script src="js/pages-agente.js?v=65"></script>
+<script src="js/acoes-agente.js?v=1"></script>
+<script src="js/pages-agente.js?v=66"></script>
 <script src="js/pages-agente-ml.js?v=15"></script>
 <script src="js/pages-afiliados.js?v=9"></script>
 <script src="js/pages-promocoes.js?v=10"></script>
@@ -498,6 +504,7 @@
 <script src="js/pages-estoque-margem.js?v=5"></script>
 <script src="js/pages-atendimento.js?v=5"></script>
 <script src="js/pages-qualidade.js?v=6"></script>
+<script src="js/pages-decisoes.js?v=1"></script>
 <script src="js/pages-plano.js?v=5"></script>
 <script src="js/pages-portal.js?v=28"></script>
 <script src="js/pages-portal-admin.js?v=3"></script>

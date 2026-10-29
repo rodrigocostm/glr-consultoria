@@ -10,7 +10,7 @@
 // ============================================================
 (function () {
   const GRUPOS = [
-    { id: 'hoje', titulo: 'Hoje', paginas: ['dashboard', 'vendometro', 'plano-acao', 'alertas', 'tarefas', 'calendario'] },
+    { id: 'hoje', titulo: 'Hoje', paginas: ['decisoes', 'dashboard', 'vendometro', 'plano-acao', 'alertas', 'tarefas', 'calendario'] },
     { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'projecao', 'vendas', 'gestores', 'relatorios', 'leads', 'portal-admin'] },
     { id: 'ads', titulo: 'ADS e preço', paginas: ['agente', 'agente-ml', 'promocoes', 'precos-ml', 'afiliados'] },
     { id: 'saude', titulo: 'Saúde das contas', paginas: ['estoque-margem', 'atendimento', 'qualidade-anuncios', 'rastreamento'] },
@@ -138,6 +138,9 @@
     if (GLR.quandoClientes) GLR.quandoClientes(preencher); else preencher();
     setTimeout(preencher, 4000); // clientes podem chegar depois (sincronização)
   }
+
+  // contador da Caixa de decisões no menu (a tela avisa quando carrega/resolve)
+  window.addEventListener('glr:decisoes', e => { const b = document.getElementById('badge-decisoes'); if (!b) return; const n = e.detail?.n || 0; b.textContent = n > 99 ? '99+' : n; b.style.display = n ? '' : 'none'; });
 
   window.GLRNav = { abrirPaleta, alternar };
 
