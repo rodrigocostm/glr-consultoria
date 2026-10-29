@@ -384,7 +384,6 @@ Router.register('dashboard', (params, el) => {
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
             Cadastrar primeiro cliente
           </button>
-          <button class="btn btn-secondary" onclick="Router.navigate('analytics')">Ir pro Analytics</button>
         </div>
       </div>
     </div>`;
@@ -395,12 +394,9 @@ Router.register('dashboard', (params, el) => {
   // rolagem, não mais em abas separadas.
   el.innerHTML = `<div class="page dash-v2">
     <div id="dash-aba-conteudo"></div>
-    <!-- O painel antigo de análises continua carregando (é ele que atualiza as projeções
-         que os cards acima usam), mas fica fechado: repetia meta, projeção, ranking e status -->
-    <details class="dx-mais">
-      <summary>Mais análises <span>painel executivo por cliente, produtos em queda e checklist diário</span></summary>
-      <div id="dash-analises-conteudo"></div>
-    </details>
+    <!-- O painel antigo de análises continua montado (é ele que busca as projeções que os
+         cards acima usam), mas não aparece: repetia meta, projeção, ranking e status -->
+    <div id="dash-analises-conteudo" hidden></div>
   </div>`;
 
   const contAba = document.getElementById('dash-aba-conteudo');
