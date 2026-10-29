@@ -50,7 +50,8 @@ Router.register('plano-acao', (params, el) => {
   function lista() {
     let ps = st.planos.slice();
     if (st.filtro === 'meus' && st.meuGestor != null) ps = ps.filter(p => String(p.cliente.gestorId) === String(st.meuGestor));
-    return ps.sort((a, b) => SEM[a.semaforo][2] - SEM[b.semaforo][2] || pendentesDe(b).filter(x => x.quando === 'hoje').length - pendentesDe(a).filter(x => x.quando === 'hoje').length || a.cliente.nome.localeCompare(b.cliente.nome));
+    const perda = p => p.raioX?.caiu?.[0]?.perdaSem || 0;
+    return ps.sort((a, b) => SEM[a.semaforo][2] - SEM[b.semaforo][2] || perda(b) - perda(a) || a.cliente.nome.localeCompare(b.cliente.nome));
   }
 
   function renderLista() {
@@ -64,16 +65,23 @@ Router.register('plano-acao', (params, el) => {
         </div>
         <span class="pl-sub"><b style="color:var(--red)">${cont('vermelho')}</b> precisam de atenção hoje · <b style="color:var(--yellow)">${cont('amarelo')}</b> em atenção · <b style="color:var(--green)">${cont('verde')}</b> em dia</span>
       </div>
-      <div class="pl-grid">${ps.map(p => {
-        const s = SEM[p.semaforo], pend = pendentesDe(p), hoje = pend.filter(a => a.quando === 'hoje').length, m = p.metricas || {};
-        return `<button class="pl-card" style="--c:${s[1]}" onclick="window._plAbrir('${h(p.cliente.id)}')">
-          <div class="pl-card-top"><b>${h(p.cliente.nome)}</b><span class="pl-sem"><i></i>${s[0]}</span></div>
-          <div class="pl-sub">${h(p.cliente.gestor || 'sem gestor')} · ${m.lojas || 0} loja(s)</div>
-          <div class="pl-card-num"><span>Projeção <b>${R$(m.projecao)}</b>${m.pctMeta != null ? ` · ${pct(m.pctMeta)} da meta` : ''}</span><span>TACOS <b>${pct(m.tacos)}</b></span></div>
-          <div class="pl-card-diag">${h(String(p.diagnostico || '').slice(0, 170))}${String(p.diagnostico || '').length > 170 ? '…' : ''}</div>
-          <div class="pl-card-rod"><span><b>${hoje}</b> para hoje</span><span><b>${pend.length}</b> ação(ões) abertas</span></div>
-        </button>`;
-      }).join('') || '<div class="pl-sub" style="padding:20px">Nenhum cliente neste filtro.</div>'}</div>`;
+      <div class="card pl-tab-wrap"><table class="pl-tab">
+        <thead><tr><th>Cliente</th><th>Situação</th><th class="n">Projeção</th><th class="n">Última semana</th><th class="n">TACOS</th><th>Maior queda</th><th class="n">Hoje</th></tr></thead>
+        <tbody>${ps.map(p => {
+          const s = SEM[p.semaforo], pend = pendentesDe(p), hoje = pend.filter(a => a.quando === 'hoje').length, m = p.metricas || {}, rx = p.raioX;
+          const q = rx?.caiu?.[0];
+          const tacosCor = m.metaTacos && m.tacos > m.metaTacos ? 'var(--red)' : 'inherit';
+          return `<tr onclick="window._plAbrir('${h(p.cliente.id)}')" style="--c:${s[1]}">
+            <td><b>${h(p.cliente.nome)}</b><div class="pl-sub">${h(p.cliente.gestor || 'sem gestor')}</div></td>
+            <td><span class="pl-sem"><i></i>${p.semaforo === 'vermelho' ? 'Agir hoje' : s[0]}</span></td>
+            <td class="n"><b>${R$(m.projecao)}</b><div class="pl-sub">${m.pctMeta != null ? `${pct(m.pctMeta)} da meta` : 'sem meta'}</div></td>
+            <td class="n">${rx ? `${R$(rx.semanaAgora)}<div class="pl-sub" style="color:${rx.var >= 0 ? 'var(--green)' : 'var(--red)'}">${rx.var >= 0 ? '+' : ''}${pct(rx.var)}</div>` : '<span class="pl-sub">—</span>'}</td>
+            <td class="n" style="color:${tacosCor};font-weight:600">${pct(m.tacos)}${m.metaTacos ? `<div class="pl-sub">meta ${pct(m.metaTacos)}</div>` : ''}</td>
+            <td class="pl-queda">${q ? `${h(q.nome)}<div class="pl-sub"><b style="color:var(--red)">−${R$(q.perdaSem)}/sem</b>${q.causas?.[0] ? ` · ${h(q.causas[0].t)}` : ''}</div>` : '<span class="pl-sub">—</span>'}</td>
+            <td class="n"><b>${hoje}</b></td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="7" class="pl-sub" style="padding:20px">Nenhum cliente neste filtro.</td></tr>'}</tbody>
+      </table></div>`;
   }
 
   function renderAcao(p, a) {
@@ -207,6 +215,13 @@ Router.register('plano-acao', (params, el) => {
     .pl-acao-bt>*:not(:first-child){opacity:0;transition:opacity .15s}
     .pl-acao:hover .pl-acao-bt>*, .pl-acao:focus-within .pl-acao-bt>*, .pl-acao.resolvida .pl-acao-bt>*{opacity:1}
     @media (hover:none){.pl-acao-bt>*:not(:first-child){opacity:1}}
+    .pl-tab-wrap{padding:0;overflow-x:auto}
+    .pl-tab{width:100%;border-collapse:collapse;font-size:13px}
+    .pl-tab th{font-size:11.5px;font-weight:600;color:var(--text-muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+    .pl-tab td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+    .pl-tab tbody tr{cursor:pointer;box-shadow:inset 3px 0 0 var(--c)} .pl-tab tbody tr:hover{background:var(--bg-subtle)}
+    .pl-tab .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .pl-tab .pl-queda{max-width:340px}
     .pl-bloco{padding:12px 14px;margin-bottom:12px} .pl-bloco-t{font-weight:650;font-size:14px;margin-bottom:8px;display:flex;gap:8px;align-items:baseline}
     .pl-acao{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:9px 0;border-top:1px solid var(--border)}
     .pl-acao.resolvida{opacity:.55} .pl-quem{font-size:11px;font-weight:650;color:var(--q)}

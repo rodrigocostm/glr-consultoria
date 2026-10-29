@@ -946,7 +946,12 @@
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
               <div>
                 <div style="font-size:15px;font-weight:700;">${h(nomeExibicao(cfg))}</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Shopee · ${cfg.ativo ? 'piloto ativo' : 'piloto pausado'}${clienteVinculado(cfg.conta_id).cliente_nome ? ` · cliente ${h(clienteVinculado(cfg.conta_id).cliente_nome)}` : ''}</div>
+                ${(() => { // só o que diferencia: piloto pausado e o cliente quando o nome dele não é o da conta
+                  const cli = clienteVinculado(cfg.conta_id).cliente_nome || '';
+                  const mostraCli = cli && !String(nomeExibicao(cfg)).toLowerCase().includes(String(cli).toLowerCase().split(' ')[0]);
+                  const partes = [!cfg.ativo ? '<span style="color:var(--yellow);font-weight:600">piloto pausado</span>' : '', mostraCli ? h(cli) : ''].filter(Boolean);
+                  return partes.length ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${partes.join(' · ')}</div>` : '';
+                })()}
               </div>
               <span style="font-size:20px;line-height:1;" title="${saude.label}">${saude.emoji}</span>
             </div>
