@@ -25,7 +25,7 @@ Router.register('decisoes', (params, el) => {
     'promocoes': { t: 'Promoções', c: 'var(--purple)' },
   };
   const ACAO_REC = { send_attachments: 'Enviar provas', send_message_to_mediator: 'Responder ao mediador', refund: 'Resolver reembolso' };
-  const st = { itens: [], carregando: true, erro: null, filtro: 'todos', abertos: new Set(), sel: new Set(), proc: {}, lote: null, limite: 120 };
+  const st = { itens: [], carregando: true, erro: null, filtro: 'todos', abertos: new Set(), sel: new Set(), proc: {}, lote: null, grupos: new Set(), gruposMexidos: new Set() };
   window._dcSt = st;
 
   // decisões que não ficam no registro dos agentes (plano, reputação, promoções): feito/descartado por aqui
@@ -138,9 +138,46 @@ Router.register('decisoes', (params, el) => {
         <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._dcRecarregar()" title="Buscar de novo">↻</button>
       </div>
       <div class="dc-chips">${chips.map(([k, t, n]) => `<button class="dc-chip ${st.filtro === k ? 'on' : ''}" onclick="window._dcFiltro('${k}')">${h(t)} <b>${n}</b></button>`).join('')}</div>
-      ${lista.length ? `<div class="card dc-lista">${lista.slice(0, st.limite).map(linha).join('')}</div>
-        ${lista.length > st.limite ? `<div style="text-align:center;margin-top:10px"><button class="btn btn-secondary btn-sm" onclick="window._dcMais()">Mostrar mais ${Math.min(120, lista.length - st.limite)}</button></div>` : ''}`
+      ${lista.length ? renderGrupos(lista, !!foco)
         : `<div class="card dc-vazio"><b>Nada esperando você${foco ? ' neste cliente' : ''}.</b><span>Os agentes não encontraram nada que precise de decisão agora.</span></div>`}`;
+  }
+
+  // ── Agrupado por cliente → loja (o nome da conta vem como "Cliente · Loja") ──
+  const partes = it => { const t = String(it.loja || it.cliente || ''); const i = t.indexOf(' · '); return i > 0 ? [t.slice(0, i), t.slice(i + 3)] : [t || 'Sem cliente', t || '']; };
+  function agrupar(lista) {
+    const cls = new Map();
+    for (const it of lista) {
+      const [cn, ln] = partes(it), ck = it.clienteId || cn;
+      const c = cls.get(ck) || { k: ck, nome: cn, itens: [], lojas: new Map() };
+      c.itens.push(it);
+      const lk = `${it.mkt}:${it.conta}`, l = c.lojas.get(lk) || { k: lk, nome: ln, itens: [] };
+      l.itens.push(it); c.lojas.set(lk, l); cls.set(ck, c);
+    }
+    const soma = xs => xs.reduce((s2, it) => s2 + (it.impacto || 0), 0), urg = xs => xs.filter(it => it.urgente).length;
+    return [...cls.values()].map(c => ({ ...c, rs: soma(c.itens), urg: urg(c.itens), lojas: [...c.lojas.values()].map(l => ({ ...l, rs: soma(l.itens), urg: urg(l.itens) })).sort((a, b) => b.urg - a.urg || b.rs - a.rs || b.itens.length - a.itens.length) }))
+      .sort((a, b) => b.urg - a.urg || b.rs - a.rs || b.itens.length - a.itens.length);
+  }
+  function renderGrupos(lista, umCliente) {
+    const gs = agrupar(lista);
+    return `<div class="dc-grupos">${gs.map((g, i) => {
+      // abre sozinho quem tem prazo vencendo (ou o cliente em foco); o resto começa fechado
+      const aberto = st.gruposMexidos.has(g.k) ? st.grupos.has(g.k) : (umCliente || g.urg > 0 || (i === 0 && gs.length <= 3));
+      const porTipo = Object.entries(g.itens.reduce((m, it) => { m[it.tipo] = (m[it.tipo] || 0) + 1; return m; }, {}));
+      return `<div class="card dc-g ${aberto ? 'aberto' : ''}">
+        <button type="button" class="dc-g-cab" aria-expanded="${aberto}" onclick="window._dcGrupo('${h(g.k)}', ${aberto ? 'false' : 'true'})">
+          <span class="dc-g-seta">▸</span>
+          <span class="dc-g-nome">${h(g.nome)}</span>
+          <span class="dc-g-tipos">${porTipo.map(([t, n]) => `<span class="dc-g-t" style="--c:${TIPOS[t]?.c || 'var(--text-muted)'}">${TIPOS[t]?.t || t} ${n}</span>`).join('')}</span>
+          <span class="dc-g-res">${g.urg ? `<b class="dc-prazo">${g.urg} vencendo</b>` : ''}<span><b>${g.itens.length}</b> decisão(ões)</span>${g.rs > 0 ? `<span><b>${R$(g.rs)}</b>/sem</span>` : ''}</span>
+        </button>
+        ${aberto ? g.lojas.map(l => { const ex = l.itens.filter(it => it.exec);
+          return `<div class="dc-loja">
+            <div class="dc-loja-cab"><span class="dc-loja-nome">${h(l.nome || 'Loja')}</span><span class="pl-sub">${l.itens.length} decisão(ões)${l.rs > 0 ? ` · ${R$(l.rs)}/sem` : ''}</span><span style="flex:1"></span>
+              ${ex.length >= 2 ? `<button class="btn btn-secondary btn-sm" ${st.lote ? 'disabled' : ''} onclick="window._dcAprovarLoja('${h(g.k)}','${h(l.k)}')">Aprovar as ${ex.length} desta loja</button>` : ''}</div>
+            ${l.itens.map(linha).join('')}
+          </div>`; }).join('') : ''}
+      </div>`;
+    }).join('')}</div>`;
   }
 
   function linha(it) {
@@ -149,7 +186,7 @@ Router.register('decisoes', (params, el) => {
     return `<div class="dc-li ${it.urgente ? 'urgente' : ''}" style="--c:${T.c}">
       <div class="dc-sel">${it.exec ? `<input type="checkbox" aria-label="Selecionar" ${st.sel.has(it.id) ? 'checked' : ''} onchange="window._dcMarcarSel('${h(it.id)}', this.checked)">` : ''}</div>
       <div class="dc-txt" onclick="window._dcAbrirTxt('${h(it.id)}')">
-        <div class="dc-meta"><span class="dc-tipo">${T.t}</span><span>${h(it.loja || it.cliente || '')}</span>${prazo ? `<span class="dc-prazo">${prazo}</span>` : ''}${it.freio ? '<span class="dc-freio" title="O agente parou de apertar porque a venda do produto caiu">freio de volume</span>' : ''}${it.quando && !prazo ? `<span>${dataCurta(it.quando)}</span>` : ''}</div>
+        <div class="dc-meta"><span class="dc-tipo">${T.t}</span>${prazo ? `<span class="dc-prazo">${prazo}</span>` : ''}${it.freio ? '<span class="dc-freio" title="O agente parou de apertar porque a venda do produto caiu">freio de volume</span>' : ''}${it.quando && !prazo ? `<span>${dataCurta(it.quando)}</span>` : ''}</div>
         <div class="dc-tit">${h(it.titulo)}${it.acao ? ` <span class="dc-acao">${h(it.acao)}</span>` : ''}</div>
         ${it.porque ? `<div class="dc-porque ${aberto ? 'aberto' : ''}">${h(it.porque)}</div>` : ''}
       </div>
@@ -164,8 +201,12 @@ Router.register('decisoes', (params, el) => {
   const achar = id => st.itens.find(x => x.id === id);
   const tirar = id => { st.itens = st.itens.filter(x => x.id !== id); st.sel.delete(id); window.dispatchEvent(new CustomEvent('glr:decisoes', { detail: { n: st.itens.length } })); };
   window._dcRecarregar = () => carregar();
-  window._dcFiltro = k => { st.filtro = k; st.limite = 120; render(); };
-  window._dcMais = () => { st.limite += 120; render(); };
+  window._dcFiltro = k => { st.filtro = k; render(); };
+  window._dcGrupo = (k, abrir) => { st.gruposMexidos.add(k); abrir ? st.grupos.add(k) : st.grupos.delete(k); render(); };
+  window._dcAprovarLoja = (ck, lk) => {
+    const g = agrupar(visiveis()).find(x => x.k === ck), l = g?.lojas.find(x => x.k === lk);
+    if (l) aprovarLote(l.itens.filter(it => it.exec), `${g.nome} · ${l.nome}`);
+  };
   window._dcAbrirTxt = id => { st.abertos.has(id) ? st.abertos.delete(id) : st.abertos.add(id); render(); };
   window._dcMarcarSel = (id, on) => { on ? st.sel.add(id) : st.sel.delete(id); render(); };
   window._dcIr = id => { const it = achar(id); if (!it) return; if (it.clienteId) GLR.ctx?.definir(it.clienteId, true); Router.navigate(it.tela); };
@@ -176,10 +217,10 @@ Router.register('decisoes', (params, el) => {
     catch (e) { alert('Não consegui executar: ' + (e.message || e)); }
     delete st.proc[id]; render();
   };
-  window._dcAprovarSel = async () => {
-    const sel = visiveis().filter(it => it.exec && st.sel.has(it.id));
+  window._dcAprovarSel = () => aprovarLote(visiveis().filter(it => it.exec && st.sel.has(it.id)));
+  async function aprovarLote(sel, onde) {
     if (!sel.length || st.lote) return;
-    if (!confirm(`Aprovar e executar agora ${sel.length} sugestão(ões)?\n\n${sel.slice(0, 12).map(it => `• ${it.acao || ''} — ${corta(it.titulo, 60)}`).join('\n')}${sel.length > 12 ? `\n… e mais ${sel.length - 12}` : ''}`)) return;
+    if (!confirm(`Aprovar e executar agora ${sel.length} sugestão(ões)${onde ? ` de ${onde}` : ''}?\n\n${sel.slice(0, 12).map(it => `• ${it.acao || ''} — ${corta(it.titulo, 60)}`).join('\n')}${sel.length > 12 ? `\n… e mais ${sel.length - 12}` : ''}`)) return;
     const falhas = []; let n = 0;
     for (const it of sel) {
       st.lote = `Executando ${++n} de ${sel.length}…`; render();
@@ -187,7 +228,7 @@ Router.register('decisoes', (params, el) => {
     }
     st.lote = null; render();
     if (falhas.length) alert(`Executei ${sel.length - falhas.length} de ${sel.length}. Falharam:\n${falhas.slice(0, 8).join('\n')}`);
-  };
+  }
   async function resolver(id, resultado) {
     const it = achar(id); if (!it) return;
     st.proc[id] = resultado === 'executado' ? 'Marcando…' : 'Descartando…'; render();
@@ -209,9 +250,19 @@ Router.register('decisoes', (params, el) => {
     .dc-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
     .dc-chip{border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);border-radius:99px;padding:5px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
     .dc-chip b{color:var(--text-primary);font-weight:650;margin-left:2px} .dc-chip.on{border-color:var(--accent);background:var(--accent-glow);color:var(--accent-light)}
+    .dc-grupos{display:flex;flex-direction:column;gap:10px}
+    .dc-g{padding:0;overflow:hidden}
+    .dc-g-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap;width:100%;padding:13px 16px;border:0;background:none;cursor:pointer;text-align:left;font-family:inherit;color:var(--text-primary)}
+    .dc-g-cab:hover{background:var(--bg-subtle)} .dc-g-cab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+    .dc-g-seta{color:var(--text-muted);transition:transform .15s;display:inline-block} .dc-g.aberto .dc-g-seta{transform:rotate(90deg)}
+    .dc-g-nome{font-size:14.5px;font-weight:650}
+    .dc-g-tipos{display:flex;gap:6px;flex-wrap:wrap} .dc-g-t{font-size:11.5px;font-weight:600;color:var(--c);background:color-mix(in srgb,var(--c) 10%,transparent);border-radius:99px;padding:2px 8px}
+    .dc-g-res{margin-left:auto;display:flex;gap:14px;font-size:12.5px;color:var(--text-muted);white-space:nowrap} .dc-g-res b{color:var(--text-primary);font-variant-numeric:tabular-nums}
+    .dc-loja{border-top:1px solid var(--border)}
+    .dc-loja-cab{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 16px;background:var(--bg-subtle)} .dc-loja-nome{font-size:12.5px;font-weight:650;color:var(--text-secondary)}
     .dc-lista{padding:4px 0}
     .dc-li{display:grid;grid-template-columns:28px minmax(0,1fr) 110px auto;gap:12px;align-items:start;padding:12px 16px;border-top:1px solid var(--border);border-left:3px solid transparent}
-    .dc-li:first-child{border-top:0} .dc-li.urgente{border-left-color:var(--red);background:color-mix(in srgb,var(--red) 4%,transparent)}
+    .dc-loja-cab + .dc-li{border-top:0} .dc-li.urgente{border-left-color:var(--red);background:color-mix(in srgb,var(--red) 4%,transparent)}
     .dc-li:hover{background:var(--bg-subtle)}
     .dc-sel{padding-top:2px} .dc-sel input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent)}
     .dc-txt{cursor:pointer;min-width:0}
