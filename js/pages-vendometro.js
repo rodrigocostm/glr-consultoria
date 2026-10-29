@@ -271,7 +271,7 @@ Router.register('vendometro', (params, el) => {
   function montarSeletores() {
     const contas = [...contasCarteira().entries()];
     const clientes = new Map(); for (const [, ct] of contas) clientes.set(String(ct.cli.id), ct.cli.nome);
-    if (st.cliente && !clientes.has(st.cliente) && !cfgPortal) { st.cliente = ''; st.conta = ''; }
+    if (st.cliente && clientes.size && !clientes.has(st.cliente) && !cfgPortal) { st.cliente = ''; st.conta = ''; } // antes das contas carregarem não zera a escolha
     const doCli = contas.filter(([, ct]) => String(ct.cli.id) === st.cliente);
     if (st.conta && !doCli.some(([k]) => k === st.conta)) st.conta = '';
     const sc = document.getElementById('vm-sel-cliente'), sk = document.getElementById('vm-sel-conta');
