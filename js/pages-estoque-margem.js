@@ -79,8 +79,7 @@ Router.register('estoque-margem', (params, el) => {
           ${st.contas.map(c => { const k = `${c.marketplace}:${c.conta_id}`, rr = c.resumo || {}, n = (rr.zerados || 0) + (rr.criticos || 0) + (rr.negativos || 0); return `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${h(c.nome)}${n ? ` — ${n} alerta(s)` : ''}</option>`; }).join('')}
         </select>
         <span class="em-sub">calculado em ${quando} · últimos ${d?.dias || 30} dias de pedidos${d?.aliquota ? ` · imposto da conta ${pct(d.aliquota)}` : ''}</span>
-        <label class="em-margem">Margem mínima de lucro <input id="em-margem-min" class="form-control" inputmode="decimal" value="${String(margMin).replace('.', ',')}" onchange="window._emMargemMin(this.value)"> %
-          <span class="em-sub">o ACOS alvo de cada produto deixa esse lucro (vale no próximo cálculo)</span></label>
+        <label class="em-margem" title="O ACOS alvo de cada produto deixa esse lucro (vale no próximo cálculo)">Margem mínima de lucro <input id="em-margem-min" class="form-control" inputmode="decimal" value="${String(margMin).replace('.', ',')}" onchange="window._emMargemMin(this.value)"> %</label>
       </div>
       ${!d ? `<div class="em-sub" style="padding:20px">${st.carregando ? 'Carregando…' : 'Sem dados desta conta.'}</div>` : `
       <div class="em-kpis">
@@ -89,6 +88,7 @@ Router.register('estoque-margem', (params, el) => {
         <div><span>Margem negativa</span><b style="color:${r.negativos ? 'var(--red)' : 'inherit'}">${N(r.negativos)}</b><small>${N(r.apertados)} com margem apertada</small></div>
         <div><span>Com custo cadastrado</span><b>${N(r.comCusto)}<small>/${N(r.produtos)}</small></b><small>${r.produtos - r.comCusto > 0 ? 'sem custo não dá para calcular a margem' : 'todos com custo'}</small></div>
       </div>
+      ${r.produtos && !r.comCusto ? `<div class="em-aviso">Nenhum produto desta conta tem custo cadastrado — por isso as colunas de margem e ACOS alvo não aparecem. <button class="btn btn-secondary btn-sm" onclick="Router.navigate('produtos')">Cadastrar custos</button></div>` : ''}
       <div class="card em-card">
         <div class="em-filtros">
           ${FILTROS.map(([k, t, fn]) => `<button class="${st.filtro === k ? 'on' : ''}" onclick="window._emFiltro('${k}')">${t} <b>${itens.filter(fn).length}</b></button>`).join('')}
@@ -102,12 +102,12 @@ Router.register('estoque-margem', (params, el) => {
             <td class="em-prod"><a href="${link(i)}" target="_blank" rel="noopener">${h(i.n)}</a><div class="em-sub">${h(i.id)}${i.vz ? ` · ${i.vz} de ${i.vt} variação(ões) sem estoque` : ''}</div></td>
             <td>${N(i.vd)}</td><td>${i.e == null ? '—' : N(i.e)}</td><td>${i.e == null || i.ne === 'zerado' ? '—' : i.d == null ? 'sem venda recente' : i.d > 365 ? '+1 ano' : `${Math.round(i.d)} dia(s)`}</td>
             <td>${i.ne ? chip(CHIP_E[i.ne][1], CHIP_E[i.ne][0]) : '<span class="em-sub">não lido</span>'}</td>
-            <td>${R$(i.p)}</td><td>${i.c ? R$(i.c) : '<span class="em-sub">sem custo</span>'}</td>
+            <td>${R$(i.p)}</td><td>${i.c ? R$(i.c) : '—'}</td>
             <td title="${h(i.fr ? 'Taxas pelo ' + fonte[i.fr] : '')}">${i.m == null ? '—' : `${pct(i.m)} ${chip(CHIP_M[i.nm][1], CHIP_M[i.nm][0])}`}</td>
             <td>${pct(i.ac)}</td><td><b>${pct(i.aa)}</b></td>
           </tr>`).join('') || `<tr><td colspan="10" class="em-sub" style="padding:18px;text-align:center">Nenhum produto neste filtro.</td></tr>`}
         </tbody></table></div>
-        <div class="em-sub" style="margin-top:10px;line-height:1.6">Margem antes do ADS = preço médio × repasse do marketplace − custo − imposto. O repasse vem dos pedidos já pagos do próprio produto; sem isso, da média da conta. Os agentes de ADS não aceleram produto que acaba em até 10 dias, sugerem pausar/tirar da campanha o que está sem estoque e usam o ACOS alvo como teto quando ele é menor que a meta da conta.</div>
+        <div class="ajuda">Margem antes do ADS = preço médio × repasse do marketplace − custo − imposto. O repasse vem dos pedidos já pagos do próprio produto; sem isso, da média da conta. Os agentes de ADS não aceleram produto que acaba em até 10 dias, sugerem pausar/tirar da campanha o que está sem estoque e usam o ACOS alvo como teto quando ele é menor que a meta da conta.</div>
       </div>`}`;
   }
 
@@ -125,14 +125,11 @@ Router.register('estoque-margem', (params, el) => {
   };
 
   el.innerHTML = `<div class="page">
-    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-      <h1 style="font-size:22px;font-weight:650;letter-spacing:-.02em;margin:0">Estoque e margem</h1>
-      <span class="em-sub">o que os agentes de Estoque e de Margem avisam aos agentes de ADS, produto por produto</span>
-    </div>
     <div id="em-root"></div>
   </div>
   <style>
     .em-sub{font-size:12px;color:var(--text-muted)}
+    .em-aviso{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--text-secondary);background:color-mix(in srgb,var(--yellow) 10%,var(--bg-surface));border:1px solid color-mix(in srgb,var(--yellow) 35%,var(--border));border-radius:10px;padding:10px 14px;margin-bottom:12px}
     .em-topo{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin-bottom:14px}
     .em-margem{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-secondary);flex-wrap:wrap;margin-left:auto}
     .em-margem input{width:64px;text-align:right}

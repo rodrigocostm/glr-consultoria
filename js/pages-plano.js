@@ -207,6 +207,9 @@ Router.register('plano-acao', (params, el) => {
     .pl-rx{width:100%;border-collapse:collapse;font-size:12.5px} .pl-rx th{font-size:11px;font-weight:600;color:var(--text-muted);text-align:left;padding:5px 8px} .pl-rx td{padding:7px 8px;border-top:1px solid var(--border);vertical-align:top} .pl-rx .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
     .pl-rx-t{font-weight:650;font-size:13px;margin:14px 0 4px} .pl-lojas{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin-top:10px;color:var(--text-secondary)}
     .pl-causa{display:inline-block;font-size:11.5px;padding:2px 7px;border-radius:6px;background:var(--bg-subtle);margin:1px 0} .pl-c-estoque{background:color-mix(in srgb,var(--orange) 15%,transparent)} .pl-c-ads{background:color-mix(in srgb,var(--accent) 14%,transparent)} .pl-c-preco{background:color-mix(in srgb,var(--purple) 14%,transparent)} .pl-c-anuncio,.pl-c-qualidade{background:color-mix(in srgb,var(--red) 12%,transparent)}
+    .pl-acao-bt>*:not(:first-child){opacity:0;transition:opacity .15s}
+    .pl-acao:hover .pl-acao-bt>*, .pl-acao:focus-within .pl-acao-bt>*, .pl-acao.resolvida .pl-acao-bt>*{opacity:1}
+    @media (hover:none){.pl-acao-bt>*:not(:first-child){opacity:1}}
     .pl-bloco{padding:12px 14px;margin-bottom:12px} .pl-bloco-t{font-weight:650;font-size:14px;margin-bottom:8px;display:flex;gap:8px;align-items:baseline}
     .pl-acao{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:9px 0;border-top:1px solid var(--border)}
     .pl-acao.resolvida{opacity:.55} .pl-quem{font-size:11px;font-weight:650;color:var(--q)}

@@ -69,7 +69,7 @@ Router.register('atendimento', (params, el) => {
         <select class="form-control" style="max-width:340px" onchange="window._atConta(this.value)">
           ${st.contas.map(c => { const k = `${c.marketplace}:${c.conta_id}`, rr = c.resumo || {}; const n = (rr.perguntas || 0) + (rr.comPrazo || 0) + (rr.pedemResposta || 0); return `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${h(c.nome)}${rr.risco && rr.risco !== 'ok' ? ` — ${RISCO[rr.risco][0].toLowerCase()}` : ''}${n ? ` · ${n} pendência(s)` : ''}</option>`; }).join('')}
         </select>
-        <span class="at-sub">verificado ${d?.em ? haQuanto(new Date(d.em).toISOString()) : '—'} · perguntas e reclamações a cada 30 min, reputação a cada 6 h</span>
+        <span class="at-sub" title="Perguntas e reclamações a cada hora; reputação a cada 6 h">verificado ${d?.em ? haQuanto(new Date(d.em).toISOString()) : '—'}</span>
       </div>
       ${!d ? `<div class="at-sub" style="padding:20px">${st.carregando ? 'Carregando…' : 'Sem dados desta conta.'}</div>` : `
       <div class="at-grid">
@@ -87,13 +87,14 @@ Router.register('atendimento', (params, el) => {
           ${ml ? `<div class="at-sub" style="margin-top:10px">Mensagens pós-venda não lidas: <b>${r.mensagens ?? '—'}</b> — responda pelo painel do Mercado Livre (Vendas → Mensagens).</div>` : ''}
         </div>
         <div class="card at-card">
-          <div class="at-tit">Produtos com problema <span class="at-sub">${ml ? '2+ reclamações abertas' : '3+ devoluções em 30 dias'} — o ADS não acelera nem coloca no ADS</span></div>
+          <div class="at-tit" title="O ADS não acelera nem coloca no ADS esses produtos">Produtos com problema <span class="at-sub">${ml ? '2+ reclamações abertas' : '3+ devoluções em 30 dias'}</span></div>
           ${Object.keys(d.itens || {}).length ? Object.entries(d.itens).map(([id, x]) => `<div class="at-li"><a href="${linkItem(id)}" target="_blank" rel="noopener">${h(x.produto || id)}</a><span class="at-sub">${h(x.motivo)}</span></div>`).join('') : '<div class="at-sub">Nenhum produto com reclamação repetida.</div>'}
         </div>
       </div>
       ${ml ? `
       <div class="card at-card">
-        <div class="at-tit">Perguntas sem resposta <span class="at-sub">${r.perguntas ?? 0} no total${r.perguntaMaisAntigaH != null ? ` · a mais antiga há ${r.perguntaMaisAntigaH} h` : ''} · rascunho feito com IA só com os dados do anúncio — revise antes de enviar</span></div>
+        <div class="at-tit">Perguntas sem resposta <span class="at-sub">${r.perguntas ?? 0} no total${r.perguntaMaisAntigaH != null ? ` · a mais antiga ${haQuanto(new Date(Date.now() - r.perguntaMaisAntigaH * 3600e3).toISOString())}` : ''}</span></div>
+        <div class="ajuda">O rascunho é feito com IA só com os dados do anúncio (título, ficha técnica, descrição). Revise antes de enviar.</div>
         ${perguntas.length ? perguntas.map(p => `<div class="at-perg">
           <div class="at-perg-top"><a href="${linkItem(p.item)}" target="_blank" rel="noopener">${h(p.titulo || p.item)}</a><span class="at-sub">${haQuanto(p.criada)}</span></div>
           <div class="at-q">“${h(p.texto)}”</div>
@@ -118,7 +119,7 @@ Router.register('atendimento', (params, el) => {
             <td>${h(MOTIVO_SH[x.motivo] || x.motivo)}</td><td class="at-prod at-sub">${h(x.texto)}</td>
             <td>${/PENDING/.test(x.negociacao) ? `<b style="color:var(--red)">responder${x.prazo ? ' até ' + data(x.prazo) : ''}</b>` : h(x.status)}</td><td>${R$(x.valor)}</td><td>${haQuanto(x.criada)}</td></tr>`).join('')}
         </tbody></table></div>` : '<div class="at-sub">Nenhuma devolução nos últimos 30 dias.</div>'}
-        <div class="at-sub" style="margin-top:8px">Perguntas e chat da Shopee não estão disponíveis na integração — responda pelo Seller Center.</div>
+        <div class="ajuda">Perguntas e chat da Shopee não estão disponíveis na integração — responda pelo Seller Center.</div>
       </div>`}`}`;
   }
 
@@ -142,10 +143,6 @@ Router.register('atendimento', (params, el) => {
   };
 
   el.innerHTML = `<div class="page">
-    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-      <h1 style="font-size:22px;font-weight:650;letter-spacing:-.02em;margin:0">Reputação e atendimento</h1>
-      <span class="at-sub">perguntas, reclamações e saúde de cada conta — o agente prepara, você responde</span>
-    </div>
     <div id="at-root"></div>
   </div>
   <style>
