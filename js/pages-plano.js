@@ -386,7 +386,7 @@ Router.register('plano-acao', (params, el) => {
     .pl-cam-res{font-size:13.5px;color:var(--text-secondary);margin-bottom:12px} .pl-cam-res b{color:var(--text-primary)} .pl-cam-res small{font-size:11.5px;color:var(--text-muted)}
     .pl-cob{height:6px;border-radius:99px;background:var(--bg-subtle);overflow:hidden;margin:8px 0 3px;max-width:420px} .pl-cob i{display:block;height:100%;background:var(--green);border-radius:99px}
     .pl-alav-txt .pl-sub{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45}
-    .pl-rx-t{font-weight:650;font-size:13px;margin:16px 0 2px}
+    .pl-rx-t{font-weight:650;font-size:13px;margin:16px 0 2px} .pl-lojas{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;margin-top:10px;color:var(--text-secondary)}
     .pl-rx-l{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start;padding:9px 0;border-top:1px solid var(--border)}
     .pl-rx-n{display:flex;flex-direction:column;gap:2px;min-width:0} .pl-rx-n b{font-size:13px;font-weight:600} .pl-rx-c{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
     .pl-rx-v{font-weight:700;font-size:13.5px;white-space:nowrap;font-variant-numeric:tabular-nums} .pl-rx-v small{font-weight:500;font-size:11px;color:var(--text-muted)}
