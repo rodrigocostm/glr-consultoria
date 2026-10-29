@@ -33,6 +33,7 @@ Router.register('vendometro', (params, el) => {
   };
   const oculta = k => st.foto.on && st.foto[k];
   // Portal do cliente: só as contas dele (o banco e o /api/mcp já garantem), sem escolher cliente
+  window._vmSt = st; // só a instância mais nova desenha (a antiga para os timers)
   const cfgPortal = window._portalConfig || null;
   if (cfgPortal) { st.cliente = String(cfgPortal.clienteId); if (st.conta && !st.conta.includes(':')) st.conta = ''; }
   else if (typeof GLR !== 'undefined' && GLR.ctx && GLR.ctx.cliente() !== st.cliente) { st.cliente = GLR.ctx.cliente(); st.conta = ''; } // cliente em foco
@@ -171,6 +172,7 @@ Router.register('vendometro', (params, el) => {
   }
 
   function render() {
+    if (window._vmSt !== st) return parar();
     const root = document.getElementById('vm-root'); if (!root) return;
     montarSeletores();
     const T = calcular();
@@ -394,8 +396,8 @@ Router.register('vendometro', (params, el) => {
   carregar();
 
   // Ao vivo: relógio a cada segundo, base a cada 2 min e quando a sincronização termina
-  const tRel = setInterval(() => { if (!relogio()) parar(); }, 1000);
-  const tBase = setInterval(() => { if (!document.getElementById('vm-root')) return parar(); carregar(); }, 2 * 60e3);
+  const tRel = setInterval(() => { if (window._vmSt !== st || !relogio()) parar(); }, 1000);
+  const tBase = setInterval(() => { if (window._vmSt !== st || !document.getElementById('vm-root')) return parar(); carregar(); }, 2 * 60e3);
   const aoAtualizar = () => { if (document.getElementById('vm-root')) carregar(); };
   window.addEventListener('glr-base-atualizada', aoAtualizar);
   function parar() { clearInterval(tRel); clearInterval(tBase); window.removeEventListener('glr-base-atualizada', aoAtualizar); if (st.grafico) { st.grafico.destroy(); st.grafico = null; } }
