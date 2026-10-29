@@ -399,6 +399,14 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  // ?rodada=sombra — mede agora as sugestões não aplicadas de todas as contas Shopee ativas (só lê campanha)
+  if (req.query?.rodada === 'sombra') {
+    try {
+      const cfgs = (await sbSelect('glr_agente_config', 'ativo=eq.true')).filter(c => !ehML(c));
+      const n = await Promise.all(cfgs.map(c => medirSombraShopee(c, mcApiKey, c.conta_id, 0).catch(() => 0)));
+      return res.status(200).json({ ok: true, contas: cfgs.length, medidas: n.reduce((a, b) => a + b, 0) });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=autonomia — recalcula os níveis de autonomia pelo resultado medido (não mexe em campanha)
   if (req.query?.rodada === 'autonomia') {
     try { return res.status(200).json({ ok: true, ...(await avaliarAutonomia()) }); } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
@@ -487,6 +495,76 @@ function tipoAcaoShopee(l) {
   if (d.budget_de != null && d.budget_para != null && +d.budget_de !== +d.budget_para) return +d.budget_para < +d.budget_de ? 'conter' : 'acelerar';
   return null;
 }
+// ── Modo sombra: sugestão que NÃO foi aplicada também é medida ──
+// 7 dias depois da sugestão (descartada, vencida ou ainda parada), olha a
+// campanha mesmo assim e diz se o agente estava certo — e quanto custou não
+// aplicar. Esses casos entram na promoção da autonomia (avaliarAutonomia): uma
+// ação em "Só sugerir" ganha "Executar" provando que acerta, sem ter executado.
+function tipoSugestao(d) {
+  if (d.pausar === true) return 'pausar';
+  if (d.retomar === true) return 'acelerar';
+  if (d.roas_sugerido != null && d.roas_atual != null && +d.roas_sugerido !== +d.roas_atual) return +d.roas_sugerido > +d.roas_atual ? 'conter' : 'acelerar';
+  if (d.budget_sugerido != null && d.budget_atual != null && +d.budget_sugerido !== +d.budget_atual) return +d.budget_sugerido < +d.budget_atual ? 'conter' : 'acelerar';
+  return null;
+}
+function avaliarSombra(tipo, a, b, meta) {
+  if (!b || (b.gastoDia <= 0 && (!a || a.gastoDia <= 0))) return { veredito: 'sem_dados', resumo: 'campanha sem ADS na semana seguinte', custo: 0 };
+  const acosB = b.semVenda ? Infinity : b.acos;
+  const acima = v => Math.max(0, (b.gastoDia - b.vendasDia * (meta || 0) / 100) * 7);
+  if (tipo === 'pausar') {
+    const ruim = b.semVenda || b.vendasDia < b.gastoDia;
+    return { veredito: ruim ? 'certo' : 'desnecessario', resumo: ruim ? `seguiu gastando ${R$(b.gastoDia * 7)}/sem com ${R$(b.vendasDia * 7)} de venda` : 'a campanha voltou a vender sozinha', custo: ruim ? Math.round(Math.max(0, (b.gastoDia - b.vendasDia) * 7)) : 0 };
+  }
+  if (tipo === 'conter') {
+    if (!meta) return { veredito: 'neutro', resumo: 'conta sem meta de ACOS', custo: 0 };
+    if (acosB > meta * 1.05) return { veredito: 'certo', resumo: `o ACOS seguiu em ${acosB === Infinity ? '∞' : `${acosB.toFixed(1)}%`} (meta ${meta}%)`, custo: Math.round(acima()) };
+    if (acosB <= meta) return { veredito: 'desnecessario', resumo: `o ACOS voltou para ${acosB.toFixed(1)}% sozinho`, custo: 0 };
+    return { veredito: 'neutro', resumo: `ACOS ${acosB.toFixed(1)}%, perto da meta`, custo: 0 };
+  }
+  // acelerar: ACOS bom e venda parada = oportunidade perdida
+  const bom = meta ? acosB <= meta : true, parada = a ? b.vendasDia <= a.vendasDia * 1.05 : true;
+  if (bom && parada) return { veredito: 'certo', resumo: `ACOS bom (${acosB.toFixed(1)}%) e a venda não cresceu sem o aumento`, custo: 0 };
+  if (!bom) return { veredito: 'desnecessario', resumo: `o ACOS subiu para ${acosB === Infinity ? '∞' : `${acosB.toFixed(1)}%`} — acelerar teria piorado`, custo: 0 };
+  return { veredito: 'neutro', resumo: 'a venda cresceu mesmo sem o aumento', custo: 0 };
+}
+async function medirSombraShopee(cfg, mcApiKey, shopId, taxaCancel) {
+  const diaBRT = iso => new Date(new Date(iso).getTime() - 3 * 3600e3).toISOString().slice(0, 10);
+  const ddmm = iso => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`;
+  const isoDe = dd => `${dd.slice(6, 10)}-${dd.slice(3, 5)}-${dd.slice(0, 2)}`;
+  const desde = new Date(Date.now() - 45 * 864e5).toISOString(), ate = new Date(Date.now() - 7.5 * 864e5).toISOString();
+  const logs = await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.alerta&resultado=in.(so_alerta,expirado,descartado)&criado_em=gte.${encodeURIComponent(desde)}&criado_em=lte.${encodeURIComponent(ate)}&select=id,titulo,criado_em,dados&limit=500`).catch(() => []);
+  const ontem = dataBRT(1).iso, porDia = new Map();
+  for (const l of logs) {
+    const d = l.dados || {}, tipo = tipoSugestao(d);
+    if (!d.campaign_id || d.sombra || !tipo || d.marketplace === 'ml') continue;
+    const dia = diaBRT(l.criado_em);
+    if (isoMenos(dia, -7) > ontem) continue;
+    (porDia.get(dia) || porDia.set(dia, []).get(dia)).push({ l, tipo });
+  }
+  let n = 0;
+  for (const dia of [...porDia.keys()].sort().slice(0, 4)) {
+    const itens = porDia.get(dia), ids = [...new Set(itens.map(x => String(x.l.dados.campaign_id)))], met = {};
+    await Promise.all(chunk(ids, 20).map(async lote => {
+      const r = await mcpCall(mcApiKey, 'shopee_ads_campaign_daily', { shopId, campaign_id_list: lote.join(','), start_date: ddmm(isoMenos(dia, 7)), end_date: ddmm(isoMenos(dia, -7)) }).catch(() => null);
+      (r?.data?.response?.campaign_list || r?.response?.campaign_list || []).forEach(c => {
+        const soma = { a: { g: 0, v: 0 }, b: { g: 0, v: 0 } };
+        for (const x of c.metrics_list || []) {
+          const dd = isoDe(String(x.date || '')), lado = dd < dia ? soma.a : dd > dia ? soma.b : null;
+          if (!lado) continue;
+          lado.g += parseFloat(x.expense) || 0; lado.v += (parseFloat(x.broad_gmv) || 0) * (1 - taxaCancel);
+        }
+        met[String(c.campaign_id)] = { a: medicaoAds.metricas(soma.a.g, soma.a.v), b: medicaoAds.metricas(soma.b.g, soma.b.v) };
+      });
+    }));
+    for (const { l, tipo } of itens) {
+      const m = met[String(l.dados.campaign_id)];
+      const r = avaliarSombra(tipo, m?.a, m?.b, cfg.meta_acos);
+      try { await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { dados: { ...l.dados, sombra: { tipo, ...r, antes: m?.a || null, depois: m?.b || null, medido_em: new Date().toISOString() } } }); n++; } catch (e) {}
+    }
+  }
+  return n;
+}
+
 async function medirResultadosShopee(cfg, mcApiKey, shopId, taxaCancel) {
   const ontem = dataBRT(1).iso;
   const diaBRT = iso => new Date(new Date(iso).getTime() - 3 * 3600e3).toISOString().slice(0, 10);
@@ -571,7 +649,14 @@ async function avaliarAutonomia() {
   const clienteDe = {};
   for (const [cid, arr] of Object.entries(vinc || {})) for (const c of (arr || [])) for (const id of [c.external_id, c.param_to_use?.shopId].filter(Boolean)) clienteDe[String(id)] = cid;
   const logs = await sbSelect('glr_agente_log', `tipo=eq.decisao&resultado=eq.executado&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 75 * 864e5).toISOString())}&select=conta_id,titulo,dados&order=criado_em.desc&limit=8000`).catch(() => []);
+  // sombra: sugestões não aplicadas medidas (certo = o agente acertou)
+  const sombras = await sbSelect('glr_agente_log', `tipo=eq.alerta&dados->sombra=not.is.null&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 75 * 864e5).toISOString())}&select=conta_id,titulo,dados&limit=8000`).catch(() => []);
   const grupos = {};
+  for (const l of sombras) {
+    const sv = l.dados?.sombra?.veredito; if (!['certo', 'desnecessario', 'neutro'].includes(sv)) continue;
+    const cli = clienteDe[String(l.conta_id)], k = l.dados?.freio_volume ? 'desfazer' : l.dados?.pausar ? 'pausar' : 'ajuste'; if (!cli) continue;
+    ((grupos[cli] = grupos[cli] || {})[k] = grupos[cli][k] || []).push({ v: sv === 'certo' ? 'melhorou' : sv === 'desnecessario' ? 'piorou' : 'neutro', em: l.dados.sombra.medido_em || '', sombra: true, custo: l.dados.sombra.custo || 0 });
+  }
   for (const l of logs) {
     const v = l.dados?.medicao?.veredito; if (!['melhorou', 'piorou', 'neutro'].includes(v) || l.dados?.marketplace === 'ml') continue;
     const cli = clienteDe[String(l.conta_id)], k = CHAVE_AUT(l); if (!cli || !k) continue;
@@ -582,6 +667,7 @@ async function avaliarAutonomia() {
   for (const [cli, porK] of Object.entries(grupos)) for (const [k, casos] of Object.entries(porK)) {
     const ult = casos.sort((a, b) => String(b.em).localeCompare(String(a.em))).slice(0, 30);
     const n = ult.length, mel = ult.filter(x => x.v === 'melhorou').length, pio = ult.filter(x => x.v === 'piorou').length;
+    const sb = ult.filter(x => x.sombra), sombra = sb.length ? { n: sb.length, certo: sb.filter(x => x.v === 'melhorou').length, custo: Math.round(sb.reduce((s2, x) => s2 + (x.custo || 0), 0)) } : null;
     const ctr = (contratos || {})[cli] || {}, base = ctr.autonomia?.[k] === 'sugerir' ? 'sugerir' : 'executar';
     const prev = antes?.[cli]?.[k];
     let nivel = ctr.fixo ? base : (prev?.nivel || base), motivo = prev?.motivo || null, mudouEm = prev?.mudou_em || null;
@@ -589,7 +675,7 @@ async function avaliarAutonomia() {
       if (nivel === 'executar' && n >= 10 && pio / n >= 0.5) { nivel = 'sugerir'; motivo = `${pio} de ${n} casos medidos pioraram`; mudouEm = new Date().toISOString(); mudancas.push({ cli, k, nivel, motivo }); }
       else if (nivel === 'sugerir' && n >= 30 && mel / n >= 0.7 && pio / n <= 0.15) { nivel = 'executar'; motivo = `${mel} de ${n} casos medidos melhoraram`; mudouEm = new Date().toISOString(); mudancas.push({ cli, k, nivel, motivo }); }
     }
-    (novo[cli] = novo[cli] || {})[k] = { nivel, base, n, melhorou: mel, piorou: pio, motivo: nivel !== base ? motivo : null, mudou_em: nivel !== base ? mudouEm : null, em: new Date().toISOString() };
+    (novo[cli] = novo[cli] || {})[k] = { nivel, base, n, melhorou: mel, piorou: pio, sombra, motivo: nivel !== base ? motivo : null, mudou_em: nivel !== base ? mudouEm : null, em: new Date().toISOString() };
   }
   await sbUpsert('glr_storage', { chave: 'glr_autonomia_auto', dados: novo, atualizado_em: new Date().toISOString() }, 'chave').catch(() => {});
   _contratosCache = null;
@@ -1248,6 +1334,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // Resultado das ações de 8+ dias atrás (7 dias antes × 7 depois)
     let medidas = 0;
     try { medidas = await medirResultadosShopee(cfg, mcApiKey, shopId, taxaCancel); } catch (e) { /* medição é bônus */ }
+    try { await medirSombraShopee(cfg, mcApiKey, shopId, taxaCancel); } catch (e) { /* modo sombra é bônus */ }
 
     // Resumo de execução do dia (sempre grava, mesmo sem nenhuma ação — é o
     // registro de que o agente rodou e revisou a conta)
