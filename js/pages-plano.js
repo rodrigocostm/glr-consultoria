@@ -9,6 +9,8 @@
 // (glr_plano_status, sincronizado) e a ação não volta no dia seguinte.
 // ============================================================
 Router.register('plano-acao', (params, el) => {
+  // embed: o Perfil do cliente monta o plano dele aqui dentro (sem a lista de clientes)
+  const embed = !!params?.embed, cliEmbed = embed ? String(params.clienteId) : null;
   const h = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const R$ = v => v == null ? '—' : 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
   const pct = v => v == null ? '—' : `${String(Math.round(v * 10) / 10).replace('.', ',')}%`;
@@ -38,7 +40,8 @@ Router.register('plano-acao', (params, el) => {
         const g = (window.GLR?.gestores || []).find(x => [x.email, x.loginEmail].some(e => e && String(e).toLowerCase() === email));
         st.meuGestor = g ? g.id : null;
       } catch (e) {}
-      if (GLR.ctx) { const foco = GLR.ctx.cliente(); st.aberto = foco && st.planos.some(p => String(p.cliente.id) === foco) ? foco : foco ? st.aberto : ''; } // cliente em foco
+      if (embed) st.aberto = cliEmbed;
+      else if (GLR.ctx) { const foco = GLR.ctx.cliente(); st.aberto = foco && st.planos.some(p => String(p.cliente.id) === foco) ? foco : foco ? st.aberto : ''; } // cliente em foco
       if (st.aberto && !st.planos.some(p => String(p.cliente.id) === st.aberto)) st.aberto = '';
       st.erro = null;
     } catch (e) { st.erro = e.message || String(e); }
@@ -186,13 +189,13 @@ Router.register('plano-acao', (params, el) => {
     const quando = p.em ? new Date(p.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
     return `
       <div class="pl-head">
-        <button class="btn btn-secondary btn-sm" onclick="window._plAbrir('')">← Todos</button>
-        <select class="form-control" style="max-width:280px" onchange="window._plAbrir(this.value)">${lista().map(x => `<option value="${h(x.cliente.id)}" ${String(x.cliente.id) === String(p.cliente.id) ? 'selected' : ''}>${h(x.cliente.nome)}</option>`).join('')}</select>
+        ${embed ? '' : `<button class="btn btn-secondary btn-sm" onclick="window._plAbrir('')">← Todos</button>
+        <select class="form-control" style="max-width:280px" onchange="window._plAbrir(this.value)">${lista().map(x => `<option value="${h(x.cliente.id)}" ${String(x.cliente.id) === String(p.cliente.id) ? 'selected' : ''}>${h(x.cliente.nome)}</option>`).join('')}</select>`}
         <span class="pl-sub" style="flex:1">plano de ${quando}${p.fonteTexto === 'ia' ? ' · texto escrito com IA a partir dos números' : ''}</span>
         <button class="btn btn-secondary btn-sm" ${st.gerando ? 'disabled' : ''} onclick="window._plGerar('${h(p.cliente.id)}')">${st.gerando ? 'Gerando…' : 'Gerar plano agora'}</button>
       </div>
       <div class="card pl-diag" style="--c:${s[1]}">
-        <div class="pl-diag-top"><b>${h(p.cliente.nome)}</b><span class="pl-sem"><i></i>${s[0]}</span><span class="pl-sub">${h(p.cliente.gestor || '')}</span></div>
+        <div class="pl-diag-top">${embed ? '<b>Situação do cliente</b>' : `<b>${h(p.cliente.nome)}</b>`}<span class="pl-sem"><i></i>${s[0]}</span>${embed ? '' : `<span class="pl-sub">${h(p.cliente.gestor || '')}</span>`}</div>
         <div class="pl-diag-txt">${h(p.diagnostico)}</div>
         <div class="pl-mets">
           <div><span>Faturamento do mês</span><b>${R$(m.faturamento)}</b><small>até ontem · dia ${m.dia}/${m.diasMes}</small></div>
@@ -220,6 +223,7 @@ Router.register('plano-acao', (params, el) => {
     if (st.carregando && !st.planos.length) { root.innerHTML = '<div class="pl-sub" style="padding:30px">Carregando…</div>'; return; }
     if (!st.planos.length) { root.innerHTML = `<div class="card" style="padding:22px"><b>O Gerente de Conta ainda não montou planos.</b><div class="pl-sub" style="margin-top:6px">Ele roda todo dia às 08:00, depois da revisão dos agentes de ADS, para cada cliente com lojas na sincronização automática.</div>${st.erro ? `<div class="pl-sub" style="color:var(--red)">${h(st.erro)}</div>` : ''}</div>`; return; }
     const p = st.aberto && st.planos.find(x => String(x.cliente.id) === st.aberto);
+    if (embed && !p) { root.innerHTML = `<div class="card" style="padding:20px"><b>Ainda não há plano para este cliente.</b><div class="pl-sub" style="margin:6px 0 10px">O Gerente monta os planos todo dia às 08:00 para os clientes com lojas na sincronização automática.</div><button class="btn btn-primary btn-sm" ${st.gerando ? 'disabled' : ''} onclick="window._plGerar('${h(cliEmbed)}')">${st.gerando ? 'Gerando…' : 'Gerar plano agora'}</button></div>`; return; }
     root.innerHTML = p ? renderPlano(p) : renderLista();
   }
 
@@ -276,7 +280,7 @@ Router.register('plano-acao', (params, el) => {
     st.gerando = false; await carregar();
   };
 
-  el.innerHTML = `<div class="page">
+  el.innerHTML = `<div class="${embed ? 'pl-embed' : 'page'}">
     <div id="pl-root"></div>
   </div>
   <style>

@@ -355,7 +355,8 @@ Router.register('cliente-perfil', (params, el) => {
     return;
   }
 
-  let activeTab = 'overview';
+  let activeTab = 'plano';
+  GLR.ctx?.definir(String(clienteId), true); // o seletor "Cliente" da barra acompanha o perfil aberto
 
   function renderTab() {
     // Relê o cliente sempre com dados frescos
@@ -368,7 +369,11 @@ Router.register('cliente-perfil', (params, el) => {
     const tabContent = document.getElementById('tab-content');
     if (!tabContent) return;
 
-    if (activeTab === 'overview') {
+    if (activeTab === 'plano') {
+      // o plano do Gerente (meta, contrato, Raio-X, ações) embutido no perfil
+      tabContent.innerHTML = '<div id="perfil-plano"></div>';
+      Router.routes['plano-acao']?.({ embed: true, clienteId: c.id }, document.getElementById('perfil-plano'));
+    } else if (activeTab === 'overview') {
       const fat   = c.faturamento || 0;
       const cresc = c.crescimento || 0;
 
@@ -563,7 +568,8 @@ Router.register('cliente-perfil', (params, el) => {
     </div>
 
     <div class="tabs">
-      <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">Visão Geral</button>
+      <button class="tab-btn active" data-tab="plano" onclick="switchTab('plano')">Plano e meta</button>
+      <button class="tab-btn" data-tab="overview" onclick="switchTab('overview')">Contas e comissão</button>
       <button class="tab-btn" data-tab="timeline" onclick="switchTab('timeline')">Timeline</button>
     </div>
 
