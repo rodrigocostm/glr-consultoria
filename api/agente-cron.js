@@ -407,6 +407,13 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true, contas: cfgs.length, medidas: n.reduce((a, b) => a + b, 0) });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
+  // ?rodada=meta — situação da meta de cada cliente (só lê); ?rodada=promo-meta — aplica as promoções pela meta agora
+  if (req.query?.rodada === 'meta') {
+    try { _metaCache.clear(); const vinc = await lerStorage('glr_mc_vinculos') || {}; const out = []; for (const cli of Object.keys(vinc)) { const s2 = await situacaoMeta(cli); if (s2) out.push(s2); } return res.status(200).json({ ok: true, clientes: out }); } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
+  if (req.query?.rodada === 'promo-meta') {
+    try { return res.status(200).json({ ok: true, ...(await promocoesPelaMeta(mcApiKey, req.query?.simular === '1')) }); } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=autonomia — recalcula os níveis de autonomia pelo resultado medido (não mexe em campanha)
   if (req.query?.rodada === 'autonomia') {
     try { return res.status(200).json({ ok: true, ...(await avaliarAutonomia()) }); } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
@@ -440,7 +447,7 @@ module.exports = async function handler(req, res) {
       // ML (copiloto) só na revisão completa das 07h; acompanhamentos são da Shopee
       const configs = todas.filter(cfg => rodada === 'completa' || !ehML(cfg));
       const ontem = dataBRT(1);
-      waitUntil((rodada === 'completa' ? avaliarAutonomia().catch(e => console.error('[autonomia]', e)) : Promise.resolve()).then(() => Promise.all(configs.map(cfg => ehML(cfg)
+      waitUntil((rodada === 'completa' ? avaliarAutonomia().catch(e => console.error('[autonomia]', e)).then(() => promocoesPelaMeta(mcApiKey).catch(e => console.error('[promo-meta]', e))) : Promise.resolve()).then(() => Promise.all(configs.map(cfg => ehML(cfg)
         ? processarContaML(cfg, mcApiKey, ajudantesML())
         : rodada === 'completa'
           ? processarConta(cfg, mcApiKey, anthropicKey, ontem, dataBRT(Math.max(1, cfg.regra_pausa_dias || 3)))
@@ -631,7 +638,85 @@ async function contratoDaConta(contaId) {
   const perfil = PERFIS[c.perfil] ? c.perfil : 'equilibrio';
   // nível de cada ação: o do contrato quando "fixo"; senão o que o resultado medido decidiu (avaliarAutonomia)
   const nivel = k => (!c.fixo && aut?.[cli]?.[k]?.nivel) || (c.autonomia?.[k] === 'sugerir' ? 'sugerir' : 'executar');
-  return { cliente: cli, perfil, P: PERFIS[perfil], ajuste: nivel('ajuste'), pausar: nivel('pausar'), desfazer: nivel('desfazer') };
+  return { cliente: cli, perfil, P: PERFIS[perfil], ajuste: nivel('ajuste'), pausar: nivel('pausar'), desfazer: nivel('desfazer'), promocoes: nivel('promocoes') };
+}
+
+// ── Situação da meta do cliente: o que todos os agentes leem ──
+// Meta (Plano de ação / Projeção / cadastro) × projeção do mês somando todas as
+// lojas do cliente (resumo diário da base). Abaixo do ritmo (< 97%) os agentes
+// trabalham para a meta: o ADS acelera com mais facilidade e segura menos, as
+// Promoções entram no que cabe na margem. Acima (≥ 105%) o ADS protege a margem.
+const _metaCache = new Map();
+async function situacaoMeta(cli) {
+  if (!cli) return null;
+  const c0 = _metaCache.get(cli);
+  if (c0 && Date.now() - c0.em < 10 * 60e3) return c0.sit; // instância quente: no máx. 10 min
+  const [metas, metasPed, clientes, vinc] = await Promise.all([lerStorage('glr_metas'), lerStorage('glr_metas_pedidos'), lerStorage('glr_clientes'), lerStorage('glr_mc_vinculos')]);
+  const c = (clientes || []).find(x => String(x.id) === String(cli)) || {};
+  const meta = parseFloat((metas || {})[cli]) || parseFloat(c.metaMensal) || null, metaPedidos = parseFloat((metasPed || {})[cli]) || null;
+  if (!meta && !metaPedidos) { _metaCache.set(cli, { sit: null, em: Date.now() }); return null; }
+  const contas = ((vinc || {})[cli] || []).map(x => String(x.param_to_use?.shopId || x.param_to_use?.meliUserId || x.external_id));
+  const rows = contas.length ? await sbSelect('glr_sync_estado', `recurso=eq.resumo&conta_id=in.(${contas.map(encodeURIComponent).join(',')})&select=conta_id,dias:cursor->dias`).catch(() => []) : [];
+  const ontem = dataBRT(1).iso, ini = ontem.slice(0, 8) + '01', dd = +ontem.slice(8, 10), dm = new Date(Date.UTC(+ontem.slice(0, 4), +ontem.slice(5, 7), 0)).getUTCDate();
+  let fat = 0, ped = 0;
+  for (const r of rows) for (const [d, v] of Object.entries(r.dias || {})) if (d >= ini && d <= ontem) { fat += parseFloat(v.faturamento) || 0; ped += parseInt(v.pedidos) || 0; }
+  const proj = dd ? fat / dd * dm : 0, projPed = dd ? ped / dd * dm : 0;
+  const pct = meta ? proj / meta * 100 : projPed / metaPedidos * 100;
+  const sit = { cliente: cli, nome: c.nome || '', meta, metaPedidos, proj: Math.round(proj), pct: Math.round(pct * 10) / 10, abaixo: pct < 97, acima: pct >= 105,
+    faltaDia: meta && dm > dd ? Math.round(Math.max(0, meta - fat) / (dm - dd)) : null, ritmoDia: dd ? Math.round(fat / dd) : null };
+  _metaCache.set(cli, { sit, em: Date.now() });
+  return sit;
+}
+
+// ── Promoções pela meta: cliente abaixo do ritmo da meta entra sozinho nas
+//    promoções do ML que cabem na margem mínima (com a folga do agente de
+//    Promoções), começando pelo que mais vende; até 5 por loja por dia; produto
+//    que acaba em até 10 dias fica de fora. Contrato "promocoes: sugerir" desliga.
+const PROMO_POR_DIA = 5;
+async function promocoesPelaMeta(mcApiKey, simular) {
+  _metaCache.clear(); _contratosCache = null;
+  const vinc = await lerStorage('glr_mc_vinculos') || {};
+  const feitas = [];
+  const recentes = new Set((await sbSelect('glr_agente_log', `tipo=eq.decisao&titulo=like.${encodeURIComponent('Promoção aplicada pela meta*')}&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 14 * 864e5).toISOString())}&select=dados&limit=2000`).catch(() => [])).map(l => String(l.dados?.item_id)));
+  for (const [cli, arr] of Object.entries(vinc)) {
+    const sit = await situacaoMeta(cli);
+    if (!sit?.abaixo) continue;
+    const contasMl = (arr || []).filter(x => ['meli', 'ml', 'mercadolivre'].includes(String(x.marketplace || '').toLowerCase())).map(x => String(x.param_to_use?.meliUserId || x.external_id));
+    for (const conta of contasMl) {
+      const ctr = await contratoDaConta(conta);
+      if (ctr.promocoes === 'sugerir') continue;
+      const [pr, sn] = await Promise.all([
+        sbSelect('glr_sync_estado', `marketplace=eq.ml&conta_id=eq.${encodeURIComponent(conta)}&recurso=eq.promocoes&select=cursor`).then(r => r[0]?.cursor).catch(() => null),
+        sbSelect('glr_sync_estado', `marketplace=eq.ml&conta_id=eq.${encodeURIComponent(conta)}&recurso=eq.sinais&select=itens:cursor->itens`).then(r => r[0]?.itens || {}).catch(() => ({})),
+      ]);
+      const mMin = pr?.margem_minima ?? 5;
+      const cand = Object.entries(pr?.itens || {}).map(([id, x]) => ({ id, ...x, vd: sn[id]?.vd || 0 }))
+        .filter(x => x.melhor && !/LIGHTNING|COUPON/.test(x.melhor.tipo) && x.melhor.m != null && x.melhor.m >= mMin + 2 && !recentes.has(x.id) && (x.e == null || x.e > 0) && (x.d == null || x.d > 10))
+        .sort((a, b) => b.vd * b.p - a.vd * a.p).slice(0, PROMO_POR_DIA);
+      for (const x of cand) {
+        const op = x.melhor, base = { meliUserId: conta, promotion_type: op.tipo };
+        let params;
+        if (op.tipo === 'PRICE_DISCOUNT') {
+          const fmt = d => d.toISOString().slice(0, 19), i0 = new Date(Date.now() - 3 * 3600e3 + 5 * 60e3);
+          params = { ...base, items: [x.id], deal_price: op.preco, start_date: fmt(i0), finish_date: fmt(new Date(i0.getTime() + 13 * 864e5)) };
+        } else if (['SMART', 'PRICE_MATCHING', 'PRE_NEGOTIATED', 'UNHEALTHY_STOCK'].includes(op.tipo)) params = { ...base, promotion_id: op.id, items: [{ id: x.id, offer_id: op.ref }] };
+        else params = { ...base, promotion_id: op.id, items: [{ id: x.id, deal_price: op.preco, ...(op.ref ? { offer_id: op.ref } : {}) }] };
+        const dados = { marketplace: 'ml', item_id: x.id, produto: String(x.n || '').slice(0, 90), promo: op.rot, tipo_promo: op.tipo, preco: op.preco, margem: op.m, margem_minima: mMin, meta_pct: sit.pct, colaboracao: { de: 'meta' } };
+        if (simular) { feitas.push({ cliente: sit.nome, meta_pct: sit.pct, produto: dados.produto, promo: op.rot, preco: op.preco, margem: op.m, margem_minima: mMin }); continue; }
+        const expl = `${sit.nome || 'O cliente'} está em ${String(sit.pct).replace('.', ',')}% da meta do mês. Entrei em "${op.rot}" a ${R$(op.preco)} — a margem fica em ${String(op.m).replace('.', ',')}% (mínima ${mMin}%).`;
+        try {
+          const r = await mcpCall(mcApiKey, 'ml_add_promotion_items', params);
+          const res = (r?.results || r?.data?.results || [])[0] || {};
+          if (res.error || res.erro) throw new Error(res.error || res.erro);
+          await sbInsert('glr_agente_log', { conta_id: conta, cliente_nome: sit.nome || null, tipo: 'decisao', titulo: `Promoção aplicada pela meta — ${String(x.n || x.id).slice(0, 60)}`, explicacao: expl, dados, resultado: 'executado', origem: 'cron' });
+          feitas.push(x.id);
+        } catch (e) {
+          await sbInsert('glr_agente_log', { conta_id: conta, cliente_nome: sit.nome || null, tipo: 'decisao', titulo: `Falha ao entrar em promoção — ${String(x.n || x.id).slice(0, 60)}`, explicacao: `${expl} Erro: ${e.message}`, dados, resultado: 'erro', origem: 'cron' }).catch(() => {});
+        }
+      }
+    }
+  }
+  return simular ? { simulacao: true, entraria: feitas } : { aplicadas: feitas.length };
 }
 
 // ── Autonomia que sobe e desce pelo resultado medido ("Deu resultado?") ──
@@ -693,6 +778,11 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
   const alertas = [];
   _contratosCache = null; // lê o contrato de novo a cada revisão
   const contrato = await contratoDaConta(shopId);
+  // a meta do cliente guia o ADS: abaixo do ritmo acelera com mais facilidade e segura menos; acima protege a margem
+  const metaSit = await situacaoMeta(contrato.cliente).catch(() => null);
+  const pelaMeta = [];
+  if (metaSit?.abaixo) { contrato.P = { ...contrato.P, acelera: Math.max(contrato.P.acelera, 0.85), contem: Math.max(contrato.P.contem, 1.1), freio: Math.min(contrato.P.freio, 15) }; pelaMeta.push(`o cliente está em ${String(metaSit.pct).replace('.', ',')}% da meta (precisa de ${R$(metaSit.faltaDia || 0)}/dia, faz ${R$(metaSit.ritmoDia || 0)}/dia): acelero com ACOS até 15% abaixo da meta, só contenho 10% acima e o freio age com queda de 15%`); }
+  else if (metaSit?.acima) { contrato.P = { ...contrato.P, acelera: Math.min(contrato.P.acelera, 0.6) }; pelaMeta.push(`o cliente está em ${String(metaSit.pct).replace('.', ',')}% da meta: protejo a margem e só acelero com ACOS 40% abaixo da meta`); }
 
   async function logar(tipo, titulo, explicacao, dados, resultado) {
     try {
@@ -826,7 +916,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela) 
     // Base sincronizada primeiro (instantâneo); sem cobertura, API sem CANCELLED.
     const base = await lerBase('shopee', shopId);
     const sinais = await lerSinais('shopee', shopId);
-    const colaboracoes = []; // o que mudou por causa do Estoque/Margem (vai para o registro e o Escritório)
+    const colaboracoes = pelaMeta.map(t => ({ de: 'meta', campanha: '', texto: t })); // o que mudou por causa da meta/Estoque/Margem (vai para o registro e o Escritório)
     // ── Freio de volume (conversa com o Raio-X do faturamento do Gerente) ──
     // Apertar ROAS/orçamento melhora o ACOS, mas pode derrubar a VENDA do produto
     // (o Raio-X de 28/10 achou 22 das maiores quedas logo depois de apertos do

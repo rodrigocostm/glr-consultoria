@@ -123,6 +123,7 @@ Router.register('plano-acao', (params, el) => {
         <div class="pl-alav-v"><b>+${R$(a.valor)}</b><small style="color:${CONF[a.conf] || 'inherit'}">confiança ${h(a.conf)}</small></div>
         ${a.tela ? `<button class="btn btn-secondary btn-sm" onclick="window._plIr('${h(a.tela)}')">Fazer</button>` : ''}
       </div>`).join('')}</div>` : '<div class="pl-sub">Os agentes não acharam alavancas nos dados deste cliente agora.</div>'}
+      ${(c.promosMeta || []).length ? `<div class="pl-meta-agentes"><b>Os agentes já estão agindo pela meta:</b> entraram em ${c.promosMeta.length} promoção(ões) que cabem na margem nos últimos 7 dias — ${c.promosMeta.slice(0, 3).map(x => `${h(x.produto)} (${h(x.promo || '')}, margem ${String(x.margem ?? '—').replace('.', ',')}%)`).join('; ')}. O ADS também passa a acelerar com mais facilidade enquanto a meta estiver abaixo do ritmo.</div>` : ''}
       ${c.resto > 0 ? `<div class="pl-meta-resto"><b>Ainda faltariam ~${R$(c.resto)}.</b> Além das alavancas, isso pede ação comercial: lançar produtos ou variações, entrar numa data/campanha relâmpago do marketplace${c.adsExtra ? `, ou investir <b>~${R$(c.adsExtra)}</b> a mais de ADS no mês mantendo o TACOS de hoje` : ''}.</div>` : ''}`}
     </div>`;
   }
@@ -131,15 +132,15 @@ Router.register('plano-acao', (params, el) => {
   const PERFIS = [['crescer', 'Crescer', 'aceita ACOS até 15% acima da meta para ganhar volume; acelera antes; freio de volume age com queda de 15%'],
     ['equilibrio', 'Equilíbrio', 'o comportamento padrão: contém acima da meta, acelera com ACOS 30% abaixo dela; freio com queda de 25%'],
     ['lucrar', 'Lucrar', 'protege a margem: acelera só com ACOS 40% abaixo da meta; freio só com queda de 35%']];
-  const AUTON = [['ajuste', 'Ajustar ROAS e orçamento (ADS Shopee)'], ['pausar', 'Pausar campanha (ADS Shopee)'], ['desfazer', 'Desfazer sozinho um aperto que derrubou a venda']];
-  const contratoDe = cid => { const c = lerJSON('glr_contratos', {})[cid] || {}; return { perfil: c.perfil || 'equilibrio', fixo: !!c.fixo, autonomia: { ajuste: 'executar', pausar: 'executar', desfazer: 'executar', ...(c.autonomia || {}) }, em: c.em }; };
+  const AUTON = [['ajuste', 'Ajustar ROAS e orçamento (ADS Shopee)'], ['pausar', 'Pausar campanha (ADS Shopee)'], ['desfazer', 'Desfazer sozinho um aperto que derrubou a venda'], ['promocoes', 'Entrar em promoção que cabe na margem quando abaixo da meta (ML)']];
+  const contratoDe = cid => { const c = lerJSON('glr_contratos', {})[cid] || {}; return { perfil: c.perfil || 'equilibrio', fixo: !!c.fixo, autonomia: { ajuste: 'executar', pausar: 'executar', desfazer: 'executar', promocoes: 'executar', ...(c.autonomia || {}) }, em: c.em }; };
   // nível que o resultado medido decidiu (servidor grava glr_autonomia_auto; a sincronização traz)
   const autoDe = cid => lerJSON('glr_autonomia_auto', {})[cid] || {};
   const efetivo = (c, a, k) => (!c.fixo && a[k]?.nivel) || c.autonomia[k];
   function renderContrato(p) {
     const cid = String(p.cliente.id), c = contratoDe(cid);
     const a = autoDe(cid);
-    const resumo = `${PERFIS.find(x => x[0] === c.perfil)[1]} · ${AUTON.filter(([k]) => efetivo(c, a, k) === 'executar').length} de 3 ações no automático${AUTON.some(([k]) => !c.fixo && a[k]?.nivel && a[k].nivel !== c.autonomia[k]) ? ' · ajustado pelo resultado' : ''}`;
+    const resumo = `${PERFIS.find(x => x[0] === c.perfil)[1]} · ${AUTON.filter(([k]) => efetivo(c, a, k) === 'executar').length} de ${AUTON.length} ações no automático${AUTON.some(([k]) => !c.fixo && a[k]?.nivel && a[k].nivel !== c.autonomia[k]) ? ' · ajustado pelo resultado' : ''}`;
     return `<details class="card pl-bloco pl-ctr" ${st.ctrAberto ? 'open' : ''} ontoggle="window._plCtrToggle(this.open)">
       <summary class="pl-bloco-t">Contrato e autonomia <span class="pl-sub">${h(resumo)}</span></summary>
       <div class="pl-ctr-g">
@@ -320,6 +321,7 @@ Router.register('plano-acao', (params, el) => {
     .pl-alav{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;overflow:hidden}
     .pl-alav-i{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:9px 12px;border-top:1px solid var(--border)} .pl-alav-i:first-child{border-top:0}
     .pl-alav-txt b{font-size:13px;font-weight:600} .pl-alav-v{text-align:right;display:flex;flex-direction:column} .pl-alav-v b{font-size:14px;color:var(--green);font-variant-numeric:tabular-nums} .pl-alav-v small{font-size:11px}
+    .pl-meta-agentes{font-size:12.5px;color:var(--text-secondary);background:color-mix(in srgb,var(--accent) 7%,var(--bg-surface));border-radius:10px;padding:9px 12px;margin-top:10px;line-height:1.5}
     .pl-meta-resto{font-size:12.5px;color:var(--text-secondary);background:var(--bg-subtle);border-radius:10px;padding:9px 12px;margin-top:10px;line-height:1.5}
     .pl-ctr>summary{cursor:pointer;list-style:none;margin-bottom:0} .pl-ctr[open]>summary{margin-bottom:10px}
     .pl-ctr-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}

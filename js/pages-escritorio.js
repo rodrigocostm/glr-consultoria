@@ -119,7 +119,7 @@ Router.register('escritorio', (params, el) => {
         }
         else if (/^Colaboração com Estoque e Margem/.test(l.titulo)) {
           const cs = d.colaboracoes || [];
-          const quem = [cs.some(x => x.de === 'estoque') ? '@Estoque' : '', cs.some(x => x.de === 'margem') ? '@Margem' : '', cs.some(x => x.de === 'promocoes') ? '@Promoções' : '', cs.some(x => x.de === 'reputacao') ? '@Reputação' : '', cs.some(x => x.de === 'qualidade') ? '@Qualidade' : '', cs.some(x => x.de === 'faturamento') ? '@Gerente (faturamento)' : ''].filter(Boolean).join(', ');
+          const quem = [cs.some(x => x.de === 'estoque') ? '@Estoque' : '', cs.some(x => x.de === 'margem') ? '@Margem' : '', cs.some(x => x.de === 'promocoes') ? '@Promoções' : '', cs.some(x => x.de === 'reputacao') ? '@Reputação' : '', cs.some(x => x.de === 'qualidade') ? '@Qualidade' : '', cs.some(x => x.de === 'faturamento') ? '@Gerente (faturamento)' : '', cs.some(x => x.de === 'meta') ? '@Gerente (meta do mês)' : ''].filter(Boolean).join(', ');
           add(ag, t, `Levei em conta os avisos de ${quem || '@Estoque'} na <b>${h(cli)}</b>: ${cs.slice(0, 3).map(x => h(x.texto)).join('; ')}${cs.length > 3 ? ` (+${cs.length - 3})` : ''}.`, { conta: cli, colab: true });
         }
         else if (/Aumento represado|Maturação segurando/.test(l.titulo)) add(ag, t, `${h(corta(l.titulo, 90))} (<b>${h(cli)}</b>) — ${h(primeiraFrase(l.explicacao))}`, { conta: cli, menor: true });

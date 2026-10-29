@@ -398,7 +398,11 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
       const pedidosPor = new Map(lojas.map((L, i) => [L.conta, peds[i]]));
       try { raioX = calcularRaioX(lojas, pedidosPor, medidos); } catch (e) { raioX = null; }
     }
+    const contasCliMeta = new Set(lojas.map(L => L.conta));
     const mesNum = +ontem.slice(5, 7), diasProxMes = new Date(Date.UTC(+ontem.slice(0, 4), mesNum + 1, 0)).getUTCDate();
+    // o que os agentes já fizeram pela meta (últimos 7 dias): promoções em que entraram
+    const promosMeta = medidos.filter(l => new Set(lojas.map(L => L.conta)).has(String(l.conta_id)) && /^Promoção aplicada pela meta/.test(l.titulo || '') && l.criado_em && Date.now() - Date.parse(l.criado_em) < 7 * 864e5)
+      .map(l => ({ produto: corta(l.dados?.produto || '', 50), promo: l.dados?.promo, preco: l.dados?.preco, margem: l.dados?.margem, em: l.criado_em }));
     const caminho = calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos: fat > 0 ? ads / fat * 100 : null, mesNum, diasProxMes });
     // as 2 maiores alavancas viram ações do plano (com o R$ que rendem até o fim do mês)
     const acoesMeta = (caminho?.alavancas || []).slice(0, 2).map((a, i) => ({ id: `meta:${c.id}:${a.id}`, tipo: 'meta', quando: 'hoje', quem: a.quem || 'analista', tela: a.tela,
@@ -436,7 +440,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     ].join('\n');
     const plano = {
       em: Date.now(), dia: isoBRT(0), cliente: { id: c.id, nome: c.nome, gestorId: c.gestorId ?? null, gestor: gestorNome(c.gestorId) },
-      semaforo, metricas, acoes, resultados, raioX, caminho, diagnostico: txt?.diagnostico || diagRegra, pauta: txt?.pauta || pautaRegra, fonteTexto: txt ? 'ia' : 'regra',
+      semaforo, metricas, acoes, resultados, raioX, caminho: caminho ? { ...caminho, promosMeta } : null, diagnostico: txt?.diagnostico || diagRegra, pauta: txt?.pauta || pautaRegra, fonteTexto: txt ? 'ia' : 'regra',
     };
     await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `cliente:${c.id}`, recurso: 'plano', ultimo_sucesso: new Date().toISOString(), ultima_tentativa: new Date().toISOString(), ultimo_erro: null, registros: acoes.length, cursor: plano }, 'marketplace,conta_id,recurso');
     saida.push({ cliente: c.nome, semaforo, acoes: acoes.length });
