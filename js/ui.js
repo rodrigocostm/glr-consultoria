@@ -99,6 +99,36 @@
     new MutationObserver(() => { if (!agendado) agendado = setTimeout(passar, 120); }).observe(raiz, { childList: true, subtree: true });
     passar();
   }
-  window.GLRUI = { atualizar: passar };
+  // ── Saúde do sistema: faixa no topo quando a sincronização para ──
+  // (pedidos sem atualizar há mais de 40 min; diz se foi a cota da Tiops)
+  async function verificarSaude() {
+    if (typeof _sb === 'undefined' || window._portalConfig) return;
+    try {
+      const [p, c] = await Promise.all([
+        _sb.from('glr_sync_estado').select('ultimo_sucesso').eq('recurso', 'pedidos').not('ultimo_sucesso', 'is', null).order('ultimo_sucesso', { ascending: false }).limit(1),
+        _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('recurso', 'consumo').eq('conta_id', 'consumo:sync').limit(1),
+      ]);
+      const ult = p.data?.[0]?.ultimo_sucesso;
+      const min = ult ? (Date.now() - Date.parse(ult)) / 60000 : null;
+      const cur = c.data?.[0]?.cursor;
+      const cota = cur?.limiteEm && cur.dia === new Date().toISOString().slice(0, 10) ? cur.limiteEm : null;
+      let faixa = document.getElementById('glr-saude');
+      const fechadaAte = (() => { try { return +localStorage.getItem('glr_saude_fechada') || 0; } catch (e) { return 0; } })();
+      if (min == null || min < 40 || Date.now() < fechadaAte) { faixa?.remove(); return; }
+      if (!faixa) {
+        faixa = document.createElement('div');
+        faixa.id = 'glr-saude'; faixa.className = 'glr-saude'; faixa.setAttribute('role', 'status');
+        document.getElementById('page-content')?.before(faixa);
+      }
+      const t = min >= 120 ? `${Math.round(min / 60)} h` : `${Math.round(min)} min`;
+      const hora = cota ? new Date(cota).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+      faixa.innerHTML = `<b>Sincronização parada há ${t}.</b> <span>${cota ? `A cota diária da Tiops esgotou às ${hora} — volta sozinha às 21h. Os números de vendas e ADS ficam parados até lá.` : 'Os números de vendas e ADS podem estar desatualizados. Se continuar, confira a Vercel e a Tiops.'}</span><button type="button" aria-label="Fechar aviso" title="Esconder por 1 hora">✕</button>`;
+      faixa.querySelector('button').onclick = () => { try { localStorage.setItem('glr_saude_fechada', String(Date.now() + 3600e3)); } catch (e) {} faixa.remove(); };
+    } catch (e) { /* sem conexão: não mostra nada */ }
+  }
+  setTimeout(verificarSaude, 4000);
+  setInterval(verificarSaude, 5 * 60e3);
+
+  window.GLRUI = { atualizar: passar, verificarSaude };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
 })();

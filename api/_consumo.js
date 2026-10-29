@@ -36,6 +36,11 @@ async function gravar(sbSelect, sbUpsert, origem) {
     limiteEm: bateu ? (mesmoDia && ant.limiteEm) || new Date().toISOString() : (mesmoDia ? ant.limiteEm || null : null),
     anterior: mesmoDia ? ant.anterior || null : (ant.dia ? { dia: ant.dia, total: ant.total, porAcao: ant.porAcao, limiteEm: ant.limiteEm || null } : null),
   };
+  // primeira vez no dia que a cota estoura: avisa no celular (a sincronização para até 21h)
+  if (bateu && !(mesmoDia && ant.limiteEm)) {
+    const hora = new Date(Date.now() - 3 * 3600e3).toISOString().slice(11, 16);
+    await require('./_alerta').avisar(sbSelect, '⚠️ Cota da Tiops esgotada', `A sincronização de pedidos e ADS parou às ${hora} e só volta às 21h. Os números do sistema ficam parados até lá — aumente o plano na Tiops se precisar antes.`, 'cota').catch(() => {});
+  }
   await sbUpsert('glr_sync_estado', [{ marketplace: 'sistema', conta_id, recurso: 'consumo', cursor, ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), registros: cursor.total }], 'marketplace,conta_id,recurso').catch(() => {});
 }
 
