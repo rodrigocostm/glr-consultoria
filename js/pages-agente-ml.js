@@ -215,7 +215,7 @@ Router.register('agente-ml', (params, el) => {
     const campo = (id, rot, val, dica, suf) => `<label class="aml-campo"><span>${rot}</span><div><input id="${id}" class="form-control" value="${val ?? ''}" inputmode="decimal">${suf ? `<em>${suf}</em>` : ''}</div>${dica ? `<small>${dica}</small>` : ''}</label>`;
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Guardrails do copiloto</div>
-      <div class="aml-sub" style="margin-bottom:12px;">As mesmas regras do agente da Shopee: TACOS do mês decide se dá pra acelerar; ACOS sem cancelados; pausar só quando gasta muito sem retorno.</div>
+      <div class="ajuda">As mesmas regras do agente da Shopee: TACOS do mês decide se dá pra acelerar; ACOS sem cancelados; pausar só quando gasta muito sem retorno.</div>
       ${!cfg ? `<label class="aml-campo"><span>Conta do Mercado Livre</span><div><select id="aml-conta" class="form-control"><option value="">Escolha…</option>${opcoes}</select></div></label>` : ''}
       <div class="aml-campos">
         ${campo('aml-meta', 'Meta de TACOS / ACOS', c.meta_acos, 'Em ACOS (%). Ex.: 6% equivale a ROAS 16,7x. Acima disso o agente contém; abaixo de 70% dela, acelera.', '%')}
@@ -371,7 +371,7 @@ Router.register('agente-ml', (params, el) => {
         <div style="font-weight:700;font-size:15px;">O que fazer no Mercado Livre</div>
         <div class="aml-sub">${fazerNoMl} para aplicar no painel do ML · ${todas.length - fazerNoMl} para revisar</div>
       </div>
-      <div class="aml-sub" style="margin-bottom:12px;">Um bloco por campanha, na ordem do que mais custa dinheiro: abra a campanha em Publicidade → Product Ads e faça todos os passos dela. <b>Não precisa marcar Feito</b> — na análise da manhã seguinte o agente lê as campanhas e marca sozinho o que mudou (o ML não deixa a integração alterar, mas deixa ler).</div>
+      <div class="ajuda">Um bloco por campanha, na ordem do que mais custa dinheiro: abra a campanha em Publicidade → Product Ads e faça todos os passos dela. <b>Não precisa marcar Feito</b> — na análise da manhã seguinte o agente lê as campanhas e marca sozinho o que mudou (o ML não deixa a integração alterar, mas deixa ler).</div>
       ${quadroNova}
       ${todas.length ? `<div class="aml-filtros">${chips.map(([k, t, n]) => `<button class="aml-fchip ${filtro === k ? 'on' : ''}" style="--c:${TIPOS[k]?.cor || 'var(--text-muted)'}" onclick="window._amlFiltroSug('${k}')">${t} <b>${n}</b></button>`).join('')}</div>` : ''}
       ${lista.length ? pacote : '<div class="aml-sub">Nada pendente agora.</div>'}
@@ -540,11 +540,8 @@ Router.register('agente-ml', (params, el) => {
   };
 
   el.innerHTML = `<div class="page">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
-      <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;">ADS Mercado Livre</div>
-      <span class="aml-chip" title="Analisa e sugere; você aplica no painel do ML">Copiloto</span>
-    </div>
-    <div class="aml-sub" style="margin-bottom:18px;max-width:900px;">Analisa os anúncios patrocinados (Product Ads) de cada conta com as mesmas regras do agente da Shopee e sugere o que ajustar. O Mercado Livre não libera alteração de campanhas por integração — então você aplica no painel do ML; o agente confere sozinho o que mudou e, 7 dias depois, mede se deu resultado. Quando o ML liberar, ele passa a executar sozinho.</div>
+    <div class="aml-copiloto"><span class="aml-chip" title="Analisa e sugere; você aplica no painel do ML">Copiloto</span></div>
+    <div class="ajuda">Analisa os anúncios patrocinados (Product Ads) de cada conta com as mesmas regras do agente da Shopee e sugere o que ajustar. O Mercado Livre não libera alteração de campanhas por integração — então você aplica no painel do ML; o agente confere sozinho o que mudou e, 7 dias depois, mede se deu resultado. Quando o ML liberar, ele passa a executar sozinho.</div>
     <div id="aml-root"></div>
     <div id="aml-desempenho"></div>
   </div>

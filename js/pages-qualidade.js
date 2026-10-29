@@ -91,10 +91,6 @@ Router.register('qualidade-anuncios', (params, el) => {
   window._qaFiltro = k => { st.filtro = k; render(); };
 
   el.innerHTML = `<div class="page">
-    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-      <h1 style="font-size:22px;font-weight:650;letter-spacing:-.02em;margin:0">Qualidade dos anúncios</h1>
-      <span class="qa-sub">o que derruba a exposição e a conversão de cada anúncio — e o que consertar primeiro</span>
-    </div>
     <div id="qa-root"></div>
   </div>
   <style>

@@ -2820,7 +2820,6 @@ Router.register('vendas', async (params, el) => {
     <!-- Cabeçalho + Filtros -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
       <div>
-        <div class="section-title" style="font-size:20px;">Vendas</div>
         <div id="vendas-status" style="font-size:12px;color:var(--text-muted);margin-top:4px;">Carregando...</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">

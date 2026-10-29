@@ -63,11 +63,31 @@
     });
   }
 
+  // ── Esqueleto de carregamento: "Carregando…" / "Buscando…" em texto vira um
+  //    esqueleto no formato do conteúdo (a tela substitui quando os dados chegam)
+  const RE_CARREGANDO = /^[⏳\s]*(Carregando|Buscando|Calculando)\b[^]{0,60}$/i;
+  const linhas = n => Array.from({ length: n }, (_, i) => `<span class="skel skel-linha" style="width:${[92, 78, 85, 64, 88, 70][i % 6]}%"></span>`).join('');
+  function esqueletos(raiz) {
+    raiz.querySelectorAll('div, td, p').forEach(el => {
+      if (el.dataset.skel || el.children.length > 1) return;
+      const t = el.textContent.trim();
+      // progresso com número ("Buscando… 27/50") e texto de cabeçalho/botão continuam como estão
+      if (!t || t.length > 80 || !RE_CARREGANDO.test(t) || /\d/.test(t) || el.closest('button, label, .section-header, .ag-sec-head, header') || /status|prog/i.test(el.id || '')) return;
+      el.dataset.skel = '1';
+      el.setAttribute('aria-busy', 'true');
+      const largo = el.getBoundingClientRect().width > 640 && !el.closest('table, .card .card');
+      el.innerHTML = `<span class="sr-only">${t.replace(/[<>&]/g, '')}</span>` + (largo
+        ? `<div class="skel-tela"><div class="skel-kpis">${'<span class="skel skel-kpi"></span>'.repeat(4)}</div><div class="skel-bloco">${linhas(6)}</div></div>`
+        : `<div class="skel-mini">${linhas(3)}</div>`);
+    });
+  }
+
   let agendado = null;
   function passar() {
     agendado = null;
     const raiz = document.getElementById('page-content');
     if (!raiz) return;
+    try { esqueletos(raiz); } catch (e) {}
     try { prepararAjuda(raiz); } catch (e) {}
     try { ocultarColunasVazias(raiz); } catch (e) {}
   }

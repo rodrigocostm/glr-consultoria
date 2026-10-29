@@ -1250,3 +1250,10 @@ body.sidebar-mini .nav-grupo .nav-grupo-itens { display: block !important; }
 .ctx-sel { border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600; padding: 4px 4px; max-width: 220px; cursor: pointer; outline: none; }
 .ctx-sel:focus-visible { outline: 2px solid var(--accent); border-radius: 6px; }
 @media (max-width: 900px) { .ctx-rot { display: none; } .ctx-sel { max-width: 140px; } }
+.skel-tela { display: flex; flex-direction: column; gap: 14px; padding: 6px 0; }
+.skel-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.skel-kpi { height: 78px; border-radius: 12px; }
+.skel-bloco, .skel-mini { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); }
+.skel-mini { border: 0; padding: 6px 0; background: transparent; }
+.skel-linha { height: 12px; border-radius: 6px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }

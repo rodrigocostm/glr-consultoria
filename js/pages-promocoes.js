@@ -23,10 +23,7 @@ function renderShell() {
   if (!root) return;
   root.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
-      <div>
-        <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">Central de Promoções</h2>
-        <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0;">Mercado Livre — promoções por anúncio com a margem real, campanhas e cupons</p>
-      </div>
+      <div class="ajuda">Mercado Livre — promoções por anúncio com a margem real, campanhas e cupons.</div>
       <select id="promo-sel-conta" class="form-input" style="border-radius:99px;padding:7px 14px;min-width:200px;">
         <option value="">Carregando contas...</option>
       </select>
