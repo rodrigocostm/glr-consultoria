@@ -347,7 +347,7 @@ const comTetoML = async cfg => ({ ...cfg, teto_tacos: (await contratoDaConta(cfg
 
 // Ferramentas compartilhadas que o agente do ML (api/_agente-ml.js) usa.
 function ajudantesML() {
-  return { sbSelect, sbInsert, sbUpdate, sbUpsert, lerSinais, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall };
+  return { sbSelect, sbInsert, sbUpdate, sbUpsert, lerSinais, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall, Anthropic, anthropicKey: process.env.ANTHROPIC_API_KEY };
 }
 
 // Trava de rodada agendada: a mesma rodada (dia + horário) roda uma vez só,

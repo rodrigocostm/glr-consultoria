@@ -29,6 +29,7 @@ const MAX_SUGESTOES = 15;
 const curvaABC = require('./_curva-abc');
 const medicaoAds = require('./_medicao-ads');
 const estoqueMargem = require('./_estoque-margem');
+const especialista = require('./_especialista-ml');
 
 async function listarCampanhasML(mcpCall, apiKey, meliUserId, de, ate) {
   const todas = [];
@@ -77,7 +78,7 @@ function agruparFamilias(anuncios, taxaCancel) {
   const fam = new Map();
   for (const a of anuncios) {
     const k = String(a.family_id || a.item_id);
-    const f = fam.get(k) || { chave: k, nome: a.family_name || a.title || a.item_id, itens: [], ativos: [], gasto: 0, vendas: 0, unidades: 0, cliques: 0, impressoes: 0, precoSoma: 0, recomendado: false };
+    const f = fam.get(k) || { chave: k, nome: a.family_name || a.title || a.item_id, itens: [], ativos: [], gasto: 0, vendas: 0, unidades: 0, cliques: 0, impressoes: 0, precoSoma: 0, recomendado: false, semBuybox: false, parados: 0, organico: 0 };
     const m = a.metrics || {};
     f.itens.push(a.item_id);
     if (a.status === 'active') f.ativos.push(a.item_id);
@@ -88,6 +89,9 @@ function agruparFamilias(anuncios, taxaCancel) {
     f.impressoes += parseInt(m.prints) || 0;
     f.precoSoma += parseFloat(a.price) || 0;
     f.recomendado = f.recomendado || !!a.recommended;
+    if (a.status === 'active' && a.catalog_listing && a.buy_box_winner === false) f.semBuybox = true; // catálogo sem buy box: perde exposição
+    if (a.status === 'idle') f.parados++;
+    f.organico += parseInt(m.organic_units_quantity) || 0;
     fam.set(k, f);
   }
   for (const f of fam.values()) {
@@ -192,12 +196,21 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     const livre = chave => !ocupadas.has(chave) && sugestoes.length < MAX_SUGESTOES;
     // Prioridade: primeiro estancar gasto (economia/semana), depois ganhar venda
     // (vendas/semana em jogo valem ~10% — margem aproximada do que voltaria)
+    // Nas regras de produto e de campanha (1 e 2), sugerir só PROPÕE (candidatos); o especialista
+    // escolhe o pacote do dia e só as escolhidas vão para a Caixa de decisões.
+    const candidatos = [];
+    let coletando = false;
     async function sugerir(chave, titulo, explicacao, dados) {
-      if (!livre(chave)) return false;
       if (dados && dados.impacto != null) {
         dados.impacto = Math.max(0, Math.round(dados.impacto));
         dados.prioridade = Math.round(dados.impacto * (dados.impacto_tipo === 'economia' ? 1 : 0.1));
       }
+      if (coletando) {
+        if (ocupadas.has(chave) || candidatos.some(c => c.chave === chave)) return false;
+        candidatos.push({ id: chave, chave, titulo, explicacao, dados });
+        return true;
+      }
+      if (!livre(chave)) return false;
       ocupadas.add(chave);
       await logar('alerta', titulo, explicacao + instrucao, { chave, ...dados }, 'so_alerta');
       sugestoes.push(titulo);
@@ -244,6 +257,27 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
       };
     });
     const anunciados = new Set(C.flatMap(x => x.anuncios.filter(a => a.status === 'active').map(a => a.item_id)));
+    // Diagnóstico de escala do Mercado Ads (detalhe de cada campanha): quanto das impressões possíveis
+    // ganha e por que perde o resto — orçamento × classificação — mais o ACOS de referência da categoria.
+    // Aprendizado: o Mercado Ads recomenda 30 dias sem mexer; mudança recente espera o efeito (atribuição de 14 dias).
+    const DIAS_APRENDIZADO = 30, DIAS_DESDE_MUDANCA = 10;
+    const comGasto = C.filter(x => x.gasto > 0).slice(0, 30);
+    for (let i = 0; i < comGasto.length; i += 5) {
+      await Promise.all(comGasto.slice(i, i + 5).map(async x => {
+        try {
+          const r = await mcpCall(mcApiKey, 'raw', { method: 'GET', meliUserId: contaId, path: `/advertising/MLB/product_ads/campaigns/${x.id}?date_from=${inicio}&date_to=${ontem}&metrics=impression_share,top_impression_share,lost_impression_share_by_budget,lost_impression_share_by_ad_rank,acos_benchmark` });
+          const m = (r.data || r)?.metrics || {};
+          if (m.impression_share != null) x.share = { ganha: +m.impression_share || 0, topo: +m.top_impression_share || 0, orcamento: +m.lost_impression_share_by_budget || 0, classificacao: +m.lost_impression_share_by_ad_rank || 0, benchmark: m.acos_benchmark != null ? +m.acos_benchmark : null };
+        } catch (e) { /* sem o detalhe, a campanha segue só pelas regras de ACOS */ }
+      }));
+    }
+    for (const x of C) {
+      x.idadeDias = x.c.date_created ? (agora - new Date(x.c.date_created).getTime()) / 864e5 : Infinity;
+      x.mudouHa = x.c.last_updated ? (agora - new Date(x.c.last_updated).getTime()) / 864e5 : Infinity;
+      x.aprendendo = x.idadeDias < DIAS_APRENDIZADO;
+      x.recente = x.mudouHa < DIAS_DESDE_MUDANCA;
+    }
+    const pc = v => `${Math.round((v || 0) * 100)}%`;
 
     // ── 0) ACOMPANHAMENTO — o ML não deixa a integração aplicar, mas deixa LER:
     //  • confere sozinho o que o analista já aplicou no painel (sem precisar marcar "Feito");
@@ -352,6 +386,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     const tiradas = new Set(); // famílias já sugeridas para sair da campanha
     const tirar = (x, f) => { tiradas.add(f.chave); const e = excluido.get(x.id) || { gasto: 0, vendasAj: 0 }; e.gasto += f.gasto; e.vendasAj += f.vendasAj; excluido.set(x.id, e); };
 
+    coletando = !opc.soMomento;
     // ── 1) PRODUTOS dentro das campanhas ── (fora da rodada só da revisão de 3 dias)
     for (const x of (opc.soMomento ? [] : C)) {
       if (!x.madura) continue;
@@ -371,6 +406,14 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         }
         const custoVenda = f.preco * ((metaFam || 10) / 100); // ADS aceitável por venda deste produto (limitado pela margem)
         const limProd = Math.max(15, custoVenda * 2);
+        // 1-cat) Catálogo sem buy box: o clique pago leva para a oferta de outro vendedor
+        if (f.semBuybox && f.gasto >= limProd * 0.5 && f.unidades === 0) {
+          const ok = await sugerir(chave, `Sugestão: pausar anúncio de catálogo sem buy box — ${f.nome.slice(0, 50)}`,
+            `"${f.nome.slice(0, 70)}" é anúncio de catálogo e não está ganhando o buy box; gastou ${R$(f.gasto)} em ${diasProd} dias na campanha "${x.nome}" sem venda pelo ADS. Pausar este anúncio até ganhar o buy box (preço, frete, reputação) — sem buy box o clique leva para a oferta de outro vendedor.`,
+            { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), unidades: f.unidades, janela_dias: diasProd, acao: 'retirar_produto', impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia' });
+          if (ok) tirar(x, f);
+          continue;
+        }
         const loja = lojaFam(f);
         const lojaTxt = loja.un > 0 ? ` Na loja inteira (orgânico + ADS) vendeu ${loja.un} un. nos últimos 30 dias.` : ' Também não vendeu na loja nos últimos 30 dias.';
         const base0 = { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), vendas_sem_cancelados: r1(f.vendasAj), unidades: f.unidades, acos: f.acos === Infinity ? null : f.acos && r1(f.acos), janela_dias: diasProd };
@@ -445,6 +488,10 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
       // 2b) Conter — ACOS acima da meta com venda: subir ROAS objetivo (ou cortar orçamento)
       if (!opc.soMomento && x.madura && acos > meta) {
         const forte = !!cfg.regra_pausa_acos && acos > cfg.regra_pausa_acos;
+        // campanha aprendendo ou mexida há pouco espera (Mercado Ads: 30 dias; efeito de uma mudança leva 1–2 semanas)
+        if (!forte && (x.aprendendo || x.recente)) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): ${x.aprendendo ? `campanha com ${Math.floor(x.idadeDias)} dia(s) — o Mercado Ads recomenda 30 dias de aprendizado sem mexer` : `alterada há ${Math.floor(x.mudouHa)} dia(s) — esperar o efeito da mudança`}` }); continue; }
+        // quem governa é o TACOS: dentro do limite, ACOS um pouco acima da meta não pede aperto
+        if (!forte && tacosMes != null && tacosOk && acos <= meta * 1.3) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): o TACOS do mês (${r1(tacosMes)}%) está dentro ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `da meta (${meta}%)`}` }); continue; }
         const passo = forte ? 0.25 : 0.15;
         if (x.rentab && x.roasAlvo > 0) {
           const novo = r1(x.roasAlvo / (1 - passo));
@@ -464,10 +511,44 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
       //     (não acelera campanha cujo produto principal está acabando — agente de Estoque)
       const principal = x.familias.filter(f => !tiradas.has(f.chave)).sort((a, b) => b.vendasAj - a.vendasAj)[0];
       const avisoCamp = principal ? avisoDe(principal.itens) : null;
+      const podeMexer = !x.aprendendo && !x.recente;
+      if (!podeMexer && !opc.soMomento && acos <= meta) colaboracoes.push({ de: 'faturamento', texto: `não sugeri mexer em "${x.nome}": ${x.aprendendo ? `campanha com ${Math.floor(x.idadeDias)} dia(s), em aprendizado (Mercado Ads: 30 dias)` : `alterada há ${Math.floor(x.mudouHa)} dia(s) — esperar o efeito`}` });
+
+      // 2d) Escala (Mercado Ads): perde impressão por ORÇAMENTO → subir orçamento; por CLASSIFICAÇÃO →
+      //     baixar o ROAS objetivo se a margem deixa, senão melhorar o anúncio (lance não resolve)
+      const limiteCamp = avisoCamp?.aa != null && avisoCamp.aa < meta ? Math.max(0.5, avisoCamp.aa) : meta;
+      const roasPiso = 100 / limiteCamp;
+      if (x.share && podeMexer && !opc.soMomento) {
+        const sh = x.share;
+        const shTxt = `ganha ${pc(sh.ganha)} das impressões possíveis e perde ${pc(sh.orcamento)} por orçamento e ${pc(sh.classificacao)} por classificação${sh.benchmark ? ` (ACOS de referência da categoria no ML: ${r1(sh.benchmark)}%)` : ''}`;
+        const bloqEsc = seguraEstoque(avisoCamp) ? `o principal produto ${estoqueTxt(avisoCamp)}` : repTxt(avisoCamp) || qaTxt(avisoCamp) || (!tacosOk ? `o TACOS do mês (${r1(tacosMes)}%) está acima do limite` : null);
+        const baseEsc = { ...base0, share: sh, limite_acos: r1(limiteCamp) };
+        let feitoEsc = false;
+        if (acos <= limiteCamp && !bloqEsc) {
+          if (sh.orcamento >= 0.15 && x.budget > 0 && (!cfg.orcamento_max || x.budget < cfg.orcamento_max)) {
+            const novo = Math.round(Math.min(cfg.orcamento_max || Infinity, x.budget * 1.25) * 100) / 100;
+            feitoEsc = await sugerir(chave, `Sugestão: aumentar orçamento — ${x.nome} (perde impressões por orçamento)`,
+              `A campanha ${shTxt}, com ACOS de ${acosTxt} dentro do limite (${r1(limiteCamp)}%). O Mercado Ads recomenda não deixar o orçamento limitar a campanha: aumentar o orçamento diário de ${R$(x.budget)} para ${R$(novo)}.`,
+              { ...baseEsc, acao: 'orcamento', de: x.budget, para: novo, impacto: vendasAj / dias * 7 * Math.min(1, sh.orcamento / Math.max(0.05, sh.ganha)), impacto_tipo: 'ganho' });
+          } else if (sh.classificacao >= 0.5 && sh.ganha < 0.4 && x.roasAlvo > roasPiso * 1.05) {
+            const novo = r1(Math.max(roasPiso, x.roasAlvo * 0.85));
+            if (novo < x.roasAlvo) feitoEsc = await sugerir(chave, `Sugestão: baixar ROAS objetivo — ${x.nome} (perde impressões por classificação)`,
+              `A campanha ${shTxt}, com ACOS de ${acosTxt} abaixo do limite (${r1(limiteCamp)}%): o ROAS objetivo de ${roasTxt(x.roasAlvo)} deixa o lance fraco no leilão. Baixar para ${roasTxt(novo)} (sem passar de ${roasTxt(roasPiso)}, o ROAS que o limite de ACOS aguenta).`,
+              { ...baseEsc, acao: 'roas_target', de: r1(x.roasAlvo), para: novo, impacto: vendasAj / dias * 7 * 0.3, impacto_tipo: 'ganho' });
+          }
+        }
+        if (!feitoEsc && sh.classificacao >= 0.6 && acos > limiteCamp * 0.9) {
+          const fracos = x.familias.filter(f => f.ativos.length && (f.semBuybox || f.parados)).slice(0, 3).map(f => `"${f.nome.slice(0, 40)}"${f.semBuybox ? ' (catálogo sem buy box)' : ' (anúncio sem impressão)'}`);
+          await sugerir(`q:${x.id}`, `Melhorar os anúncios — ${x.nome} (perde ${pc(sh.classificacao)} das impressões por classificação)`,
+            `A campanha ${shTxt}, e o ACOS (${acosTxt}) já está perto do limite que a margem aguenta (${r1(limiteCamp)}%): baixar o ROAS não cabe. O Mercado Ads indica melhorar o anúncio — fotos, título, ficha técnica, envio/frete e, no catálogo, ganhar o buy box.${fracos.length ? ` Comece por ${fracos.join(', ')}.` : ''}`,
+            { ...baseEsc, acao: 'informativa', impacto: vendasAj / dias * 7 * 0.2, impacto_tipo: 'ganho' });
+        }
+        if (feitoEsc) continue;
+      }
 
       // Revisão de 3 dias: venda dos anúncios da campanha (orgânico + ADS) nos últimos 3 dias × 3 anteriores.
       // Subindo (ou caindo) com ACOS dentro da meta e TACOS com folga → sugere acelerar dentro dos limites.
-      if (momentoHoje && x.madura) {
+      if (momentoHoje && x.madura && podeMexer) {
         let a3 = 0, b3 = 0;
         for (const an of x.anuncios) if (an.status === 'active') { const v = v3.get(String(an.item_id)); if (v) { a3 += v.a; b3 += v.b; } }
         const subindo = a3 + b3 >= 200 && b3 >= a3 * 1.2 && b3 - a3 >= 100, caindo = a3 + b3 >= 200 && b3 <= a3 * 0.8 && a3 - b3 >= 100;
@@ -493,7 +574,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           colaboracoes.push({ de: 'faturamento', texto: `revisão de 3 dias: "${x.nome}" está subindo, mas não sugeri acelerar — ${bloq || `ACOS de ${acosTxt} acima da meta (${meta}%)`}` });
         }
       }
-      if (opc.soMomento) continue; // rodada só da revisão de 3 dias
+      if (opc.soMomento || !podeMexer) continue; // rodada só da revisão de 3 dias / campanha que precisa esperar
       if (acos <= meta * 0.7 && tacosOk && seguraEstoque(avisoCamp)) {
         colaboracoes.push({ de: 'estoque', texto: `segurei a aceleração de "${x.nome}": o principal produto dela, "${String(principal.nome).slice(0, 40)}", ${estoqueTxt(avisoCamp)}` });
       } else if (acos <= meta * 0.7 && tacosOk && repTxt(avisoCamp)) {
@@ -518,6 +599,31 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     if (opc.soMomento) {
       await registrarMomento();
       return { conta_id: contaId, marketplace: 'ml', momento: { aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, seguradas: mom.seguradas.length } };
+    }
+
+    // ── Especialista em Mercado Ads: revisa as candidatas das regras e monta o pacote do dia ──
+    coletando = false;
+    let revisao = null;
+    if (candidatos.length) {
+      const conta = {
+        cliente: cfg.cliente_nome || null, hoje: hojeIso, janela_campanhas_dias: dias, janela_produtos_dias: diasProd,
+        meta_acos_conta: meta, teto_tacos_cliente: cfg.teto_tacos || null, tacos_mes: tacosMes == null ? null : r1(tacosMes), taxa_cancelamento_pct: r1(taxaCancel * 100),
+        campanhas: C.map(x => ({ id: x.id, nome: x.nome, estrategia: x.c.strategy || null, roas_objetivo: x.roasAlvo ? r1(x.roasAlvo) : null, orcamento_dia: x.budget, gasto_janela: r1(x.gasto), acos_sem_cancelados: x.acos == null || x.acos === Infinity ? null : r1(x.acos), unidades_ads: x.unidades,
+          idade_dias: Number.isFinite(x.idadeDias) ? Math.floor(x.idadeDias) : null, alterada_ha_dias: Number.isFinite(x.mudouHa) ? Math.floor(x.mudouHa) : null, em_aprendizado: x.aprendendo, alterada_recente: x.recente,
+          impressoes: x.share ? { ganha_pct: Math.round(x.share.ganha * 100), topo_pct: Math.round(x.share.topo * 100), perdida_orcamento_pct: Math.round(x.share.orcamento * 100), perdida_classificacao_pct: Math.round(x.share.classificacao * 100), acos_referencia_categoria: x.share.benchmark } : null })),
+      };
+      revisao = await especialista.revisar({ Anthropic: h.Anthropic, anthropicKey: h.anthropicKey, conta, candidatos });
+      const porId = new Map(candidatos.map(c => [c.id, c])), usadas = new Set();
+      for (const e of revisao.escolhidas) {
+        const c = porId.get(e.id); if (!c) continue;
+        if (await sugerir(c.chave, c.titulo, `${c.explicacao}${e.porque ? ` Leitura do especialista: ${e.porque}` : ''}`, { ...c.dados, especialista: { prioridade: e.prioridade, fonte: revisao.fonte } })) usadas.add(c.dados?.campanha);
+      }
+      // a revisão de 3 dias só conta o que entrou no pacote
+      mom.aceleradas = mom.aceleradas.filter(n => usadas.has(n)); mom.recuperadas = mom.recuperadas.filter(n => usadas.has(n));
+      const descartadas = candidatos.filter(c => !revisao.escolhidas.some(e => e.id === c.id));
+      await logar('sistema', `Especialista Mercado Ads — pacote do dia com ${revisao.escolhidas.length} de ${candidatos.length} recomendação(ões)`,
+        [revisao.estrategia, ...revisao.esperar.map(x => `Esperar: ${x}`), descartadas.length ? `Ficaram de fora hoje: ${descartadas.slice(0, 6).map(c => c.titulo.replace(/^Sugestão:\s*/, '')).join('; ')}${descartadas.length > 6 ? ` e mais ${descartadas.length - 6}` : ''}.` : ''].filter(Boolean).join('\n') || 'Pacote montado pela ordem das regras (especialista indisponível).',
+        { especialista: true, fonte: revisao.fonte, estrategia: revisao.estrategia, esperar: revisao.esperar, escolhidas: revisao.escolhidas, descartadas: descartadas.map(c => ({ id: c.id, titulo: c.titulo })).slice(0, 30) }, 'executado');
     }
 
     // ── 3) CURVA ABC semana a semana (mesma regra da aba Vendas) ──

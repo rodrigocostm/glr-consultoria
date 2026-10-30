@@ -231,7 +231,9 @@ Router.register('agente-ml', (params, el) => {
       ${cfg ? '<button class="btn btn-secondary" onclick="window._amlEditar(false)">Cancelar</button>' : ''}</div>
     </div>`;
   }
-  const semInstrucao = t => String(t || '').replace(/ ?Aplique no painel[\s\S]*$/, '');
+  const semInstrucao = t => String(t || '').replace(/ ?Aplique no painel[\s\S]*$/, '').replace(/ ?Leitura do especialista: [\s\S]*$/, '');
+  // o especialista em Mercado Ads escreve por que a recomendação entrou no pacote do dia
+  const leitura = t => (String(t || '').match(/Leitura do especialista: ([\s\S]*?)(?: Aplique no painel|$)/) || [])[1] || null;
   // Sugestões em formato de "bater o olho e agir": uma linha por sugestão —
   // tipo de ação (cor), produto/campanha, O QUE FAZER e o PORQUÊ em um número;
   // explicação completa e anúncios ficam escondidos (▸ detalhes).
@@ -244,8 +246,18 @@ Router.register('agente-ml', (params, el) => {
     acos_target: { rot: 'Meta de ACOS', cor: 'var(--accent)', ordem: 4 },
     orcamento: { rot: 'Orçamento', cor: 'var(--accent)', ordem: 5 },
     adicionar_produto: { rot: 'Colocar no ADS', cor: 'var(--green)', ordem: 6 },
+    informativa: { rot: 'Melhorar anúncio', cor: 'var(--purple)', ordem: 7 },
     abc_queda: { rot: 'Curva A caindo', cor: 'var(--purple)', ordem: 9 },
   };
+  // Estratégia da conta escrita pelo especialista em Mercado Ads na última análise
+  function quadroEspecialista(id) {
+    const l = state.logs.find(x => String(x.conta_id) === String(id) && x.dados?.especialista);
+    if (!l || (!l.dados.estrategia && !(l.dados.esperar || []).length)) return '';
+    const quando = new Date(l.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return `<div class="aml-espq"><div class="aml-espq-t">Leitura do especialista Mercado Ads <span class="aml-sub">${quando} · ${(l.dados.escolhidas || []).length} recomendação(ões) no pacote</span></div>
+      ${l.dados.estrategia ? `<div class="aml-espq-x">${h(l.dados.estrategia)}</div>` : ''}
+      ${(l.dados.esperar || []).length ? `<div class="aml-espq-e"><b>Esperar:</b> ${l.dados.esperar.map(h).join(' · ')}</div>` : ''}</div>`;
+  }
   function renderSugestoes(id) {
     const meta = parseFloat(cfgDe(id)?.meta_acos) || null;
     const roasMeta = meta ? 100 / meta : null;
@@ -299,12 +311,15 @@ Router.register('agente-ml', (params, el) => {
       orcamento: `Orçamento ${R$(d.de)} → <b>${R$(d.para)}</b>`,
       adicionar_produto: `Colocar na campanha "${h(d.destino || d.campanha || '')}"`,
       abc_queda: d.campanha ? `Revisar estoque, preço e anúncio · está em ${camp(d)}` : 'Revisar estoque, preço e anúncio · fora do ADS',
+      informativa: 'Melhorar os anúncios da campanha (fotos, título, ficha técnica, frete e buy box)',
     })[d.acao] || 'Revisar';
     // por quê (um número)
     const porque = d => {
       if (d.acao === 'retirar_produto' || d.acao === 'pausar') return `gastou <b>${R$(d.gasto)}</b>${d.janela_dias ? ` em ${d.janela_dias}d` : ''} · ${d.unidades ? `${un(d.unidades)} vendidas` : (d.vendas_sem_cancelados ? `vendeu ${R$(d.vendas_sem_cancelados)}` : '<b>0 vendas</b>')}`;
       if (d.acao === 'mover_produto') return `ACOS <b>${pct(d.acos)}</b>${meta ? ` · meta ${pct(meta)}` : ''} · gastou ${R$(d.gasto)}`;
-      if (d.acao === 'roas_target' || d.acao === 'orcamento' || d.acao === 'acos_target') return `ACOS da campanha <b>${pct(d.acos)}</b> · gastou ${R$(d.gasto)}`;
+      const perde = d.share ? ` · perde <b>${Math.round((d.acao === 'orcamento' ? d.share.orcamento : d.share.classificacao) * 100)}%</b> das impressões por ${d.acao === 'orcamento' ? 'orçamento' : 'classificação'}` : '';
+      if (d.acao === 'roas_target' || d.acao === 'orcamento' || d.acao === 'acos_target') return `ACOS da campanha <b>${pct(d.acos)}</b> · gastou ${R$(d.gasto)}${perde}`;
+      if (d.acao === 'informativa') return `ACOS <b>${pct(d.acos)}</b>${d.limite_acos ? ` · limite ${pct(d.limite_acos)}` : ''}${perde}`;
       if (d.acao === 'adicionar_produto') return d.unidades_loja_30d ? `<b>${un(d.unidades_loja_30d)}</b> no mês sem ADS` : `${un(d.unidades_ultima)} na semana${varTxt(d.variacao_pct)}`;
       if (d.acao === 'abc_queda') return `<b>${un(d.unidades_ultima)}</b> na semana × média ${String(d.media_3_semanas ?? '—').replace('.', ',')} <b style="color:var(--red)">${varTxt(d.variacao_pct).trim()}</b>`;
       return '';
@@ -315,7 +330,7 @@ Router.register('agente-ml', (params, el) => {
     const fazerNoMl = todas.filter(x => x.d.acao !== 'abc_queda').length;
     // Pacote do dia: agrupa por campanha (abre cada campanha uma vez no painel e faz tudo nela);
     // produtos antes da campanha; campanhas na ordem do que mais custa dinheiro
-    const PASSO = { retirar_produto: 1, mover_produto: 2, adicionar_produto: 3, roas_target: 4, acos_target: 4, orcamento: 5, pausar: 6 };
+    const PASSO = { retirar_produto: 1, mover_produto: 2, adicionar_produto: 3, roas_target: 4, acos_target: 4, orcamento: 5, pausar: 6, informativa: 7 };
     const grupos = new Map();
     for (const x of lista) {
       const d = x.d, revisar = d.acao === 'abc_queda';
@@ -338,7 +353,7 @@ Router.register('agente-ml', (params, el) => {
           <span class="aml-tipo">${t.rot}</span>
           <div class="aml-li-txt">
             ${ehProduto ? `<div class="aml-li-ass" title="${h(assunto(d))}">${h(assunto(d))}</div>` : ''}
-            <div class="aml-li-faz">${fazer(d)}</div>${comoFazer(d)}
+            <div class="aml-li-faz">${fazer(d)}</div>${comoFazer(d)}${leitura(l.explicacao) ? `<div class="aml-esp"><b>Especialista${d.especialista?.prioridade ? ` · prioridade ${d.especialista.prioridade}` : ''}:</b> ${h(leitura(l.explicacao))}</div>` : ''}
           </div>
           <div class="aml-li-pq">${porque(d)}${d.impacto ? `<div class="aml-imp">${d.impacto_tipo === 'economia' ? `~${R0(d.impacto)}/sem de gasto a cortar` : d.impacto_tipo === 'risco' ? `~${R0(d.impacto)}/sem a menos` : `~${R0(d.impacto)}/sem em vendas`}</div>` : ''}</div>
           <div class="aml-li-bt">
@@ -372,6 +387,7 @@ Router.register('agente-ml', (params, el) => {
         <div class="aml-sub">${fazerNoMl} para aplicar no painel do ML · ${todas.length - fazerNoMl} para revisar</div>
       </div>
       <div class="ajuda">Um bloco por campanha, na ordem do que mais custa dinheiro: abra a campanha em Publicidade → Product Ads e faça todos os passos dela. <b>Não precisa marcar Feito</b> — na análise da manhã seguinte o agente lê as campanhas e marca sozinho o que mudou (o ML não deixa a integração alterar, mas deixa ler).</div>
+      ${quadroEspecialista(id)}
       ${quadroNova}
       ${todas.length ? `<div class="aml-filtros">${chips.map(([k, t, n]) => `<button class="aml-fchip ${filtro === k ? 'on' : ''}" style="--c:${TIPOS[k]?.cor || 'var(--text-muted)'}" onclick="window._amlFiltroSug('${k}')">${t} <b>${n}</b></button>`).join('')}</div>` : ''}
       ${lista.length ? pacote : '<div class="aml-sub">Nada pendente agora.</div>'}
@@ -462,7 +478,7 @@ Router.register('agente-ml', (params, el) => {
         </div>`; }).join('')}</div>` : `<div class="aml-sub" style="margin-top:10px;">Ainda não há resultados: cada sugestão aplicada é medida 7 dias depois.${aguardando ? ` ${aguardando} aguardando.` : ''}</div>`}
     </div>`;
   }
-  const TIPOS_ROT = { retirar_produto: 'Tirar produto', pausar: 'Pausar campanha', mover_produto: 'Mover produto', roas_target: 'Ajustar ROAS', acos_target: 'Meta de ACOS', orcamento: 'Orçamento', adicionar_produto: 'Colocar no ADS' };
+  const TIPOS_ROT = { retirar_produto: 'Tirar produto', pausar: 'Pausar campanha', mover_produto: 'Mover produto', roas_target: 'Ajustar ROAS', acos_target: 'Meta de ACOS', orcamento: 'Orçamento', adicionar_produto: 'Colocar no ADS', informativa: 'Melhorar anúncio' };
 
   function renderHistorico(id) {
     const lista = state.logs.filter(l => String(l.conta_id) === String(id) && !(l.tipo === 'alerta' && l.resultado === 'so_alerta')).slice(0, 15);
@@ -547,6 +563,9 @@ Router.register('agente-ml', (params, el) => {
   </div>
   <style>
     .aml-sub{font-size:12.5px;color:var(--text-muted);line-height:1.5;}
+    .aml-esp{font-size:12px;color:var(--text-secondary);margin-top:4px;line-height:1.45;padding-left:8px;border-left:2px solid var(--purple);}
+    .aml-espq{margin:10px 0 12px;padding:11px 14px;border-radius:10px;background:color-mix(in srgb,var(--purple) 8%,var(--bg-card));border:1px solid color-mix(in srgb,var(--purple) 25%,transparent);}
+    .aml-espq-t{font-weight:650;font-size:13px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px;} .aml-espq-x{font-size:13px;line-height:1.55;color:var(--text-primary);} .aml-espq-e{font-size:12.5px;color:var(--text-secondary);margin-top:6px;}
     .aml-chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(99,102,241,.12);color:var(--accent);vertical-align:middle;}
     .aml-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
     .aml-card{padding:16px 18px;cursor:pointer;border-left:4px solid var(--c,var(--text-muted));}
