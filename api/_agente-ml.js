@@ -499,18 +499,30 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         const forte = !!cfg.regra_pausa_acos && acos > cfg.regra_pausa_acos;
         // campanha aprendendo ou mexida há pouco espera (Mercado Ads: 30 dias; efeito de uma mudança leva 1–2 semanas)
         if (!forte && (x.aprendendo || x.recente)) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): ${x.aprendendo ? `campanha com ${Math.floor(x.idadeDias)} dia(s) — o Mercado Ads recomenda 30 dias de aprendizado sem mexer` : `alterada há ${Math.floor(x.mudouHa)} dia(s) — esperar o efeito da mudança`}` }); continue; }
-        // quem governa é o TACOS: dentro do limite, ACOS um pouco acima da meta não pede aperto
-        if (!forte && tacosMes != null && tacosOk && acos <= meta * 1.3) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): o TACOS do mês (${r1(tacosMes)}%) está dentro ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `do limite (meta ${meta}% com 10% de folga)`}` }); continue; }
+        // Quem governa é o TACOS: com ele dentro do limite, apertar campanha acima da meta tira venda
+        // da conta à toa. Só otimiza a campanha que está MUITO acima — mais que o dobro da meta, acima
+        // do que a margem do produto principal aguenta (vende no prejuízo) ou na contenção forte.
+        const princ0 = x.familias.filter(f => !tiradas.has(f.chave)).sort((a, b) => b.vendasAj - a.vendasAj)[0];
+        const av0 = princ0 ? avisoDe(princ0.itens) : null;
+        const limMargem = av0?.aa != null ? Math.max(0.5, av0.aa) : null;
+        const prejuizo = limMargem != null && acos > limMargem, muitoAcima = acos > meta * 2;
+        if (!forte && !prejuizo && !muitoAcima && tacosMes != null && tacosOk) {
+          colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): o TACOS do mês (${r1(tacosMes)}%) está dentro ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `do limite (meta ${meta}%)`} e a campanha não passa do dobro da meta${limMargem != null ? ` nem do limite da margem (${r1(limMargem)}%)` : ''} — apertar só tiraria venda` });
+          // sugestão antiga de apertar esta campanha deixa de valer
+          for (const l of logs) { const d = l.dados || {}; if (l.resultado === 'so_alerta' && String(d.campaign_id) === String(x.id) && ((d.acao === 'roas_target' && +d.para > +d.de) || (d.acao === 'orcamento' && +d.para < +d.de))) { await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { resultado: 'expirado', dados: { ...d, expirado_em: new Date().toISOString(), motivo_expirado: 'TACOS dentro do limite' } }).catch(() => {}); l.resultado = 'expirado'; } }
+          continue;
+        }
+        const motivoTacos = tacosMes != null && tacosOk ? ` O TACOS do mês (${r1(tacosMes)}%) está dentro do limite, mas ${prejuizo ? `a campanha passa do que a margem do produto aguenta (${r1(limMargem)}%)` : 'a campanha está a mais que o dobro da meta'} — por isso vale otimizar só ela.` : (tacosMes != null ? ` O TACOS do mês (${r1(tacosMes)}%) também está acima do limite.` : '');
         const passo = forte ? 0.25 : 0.15;
         if (x.rentab && x.roasAlvo > 0) {
           const novo = r1(x.roasAlvo / (1 - passo));
           await sugerir(chave, `Sugestão: subir ROAS objetivo — ${x.nome}`,
-            `ACOS de ${acosTxt} nos últimos ${dias} dias, acima da meta (${meta}%, equivale a ROAS ${roasTxt(roasMeta)})${forte ? ` e da contenção forte (${cfg.regra_pausa_acos}%)` : ''}, mas a campanha vende — conter em vez de pausar. Subir o ROAS objetivo de ${roasTxt(x.roasAlvo)} para ${roasTxt(novo)} (lance mais conservador).`,
+            `ACOS de ${acosTxt} nos últimos ${dias} dias, acima da meta (${meta}%, equivale a ROAS ${roasTxt(roasMeta)})${forte ? ` e da contenção forte (${cfg.regra_pausa_acos}%)` : ''}, mas a campanha vende — conter em vez de pausar.${motivoTacos} Subir o ROAS objetivo de ${roasTxt(x.roasAlvo)} para ${roasTxt(novo)} (lance mais conservador).`,
             { ...base0, acao: 'roas_target', de: r1(x.roasAlvo), para: novo, impacto: Math.max(0, gasto - vendasAj * meta / 100) / dias * 7, impacto_tipo: 'economia' });
         } else if (x.budget > (cfg.orcamento_min || 0)) {
           const novo = Math.max(cfg.orcamento_min || 0, Math.round(x.budget * (1 - passo) * 100) / 100);
           if (novo < x.budget) await sugerir(chave, `Sugestão: reduzir orçamento — ${x.nome}`,
-            `ACOS de ${acosTxt} nos últimos ${dias} dias, acima da meta (${meta}%), mas a campanha vende — conter em vez de pausar. Reduzir o orçamento diário de ${R$(x.budget)} para ${R$(novo)}.`,
+            `ACOS de ${acosTxt} nos últimos ${dias} dias, acima da meta (${meta}%), mas a campanha vende — conter em vez de pausar.${motivoTacos} Reduzir o orçamento diário de ${R$(x.budget)} para ${R$(novo)}.`,
             { ...base0, acao: 'orcamento', de: x.budget, para: novo, impacto: Math.max(0, gasto - vendasAj * meta / 100) / dias * 7, impacto_tipo: 'economia' });
         }
         continue;

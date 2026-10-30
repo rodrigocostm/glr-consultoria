@@ -1349,7 +1349,8 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
         // da margem do produto (vende no prejuízo) ou do ACOS de contenção forte.
         const forteAcos = !!cfg.regra_pausa_acos && acosJanela * 100 > cfg.regra_pausa_acos;
         const prejuizo = metaMargem != null && acosJanela * 100 > metaMargem;
-        if (tacosConta !== Infinity && tacosDentroDaMeta && !forteAcos && !prejuizo) {
+        // ...mas campanha a mais que o dobro da meta da conta precisa de otimização mesmo com o TACOS ok
+        if (tacosConta !== Infinity && tacosDentroDaMeta && !forteAcos && !prejuizo && acosJanela * 100 <= cfg.meta_acos * 2) {
           colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `não contive "${nome}" (ACOS ${acosTxt}): o ${rotuloTacos} da loja (${tacosConta.toFixed(1)}%) está dentro ${limiteTacosTxt}` });
           continue;
         }
