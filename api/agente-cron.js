@@ -494,7 +494,7 @@ module.exports = async function handler(req, res) {
     // Contas em paralelo — sequencial estourava os 60s do plano com mais de
     // 1 conta ativa (cada conta já faz vários round-trips pra Tiops).
     const resultados = await Promise.all(configs.map(cfg => {
-      if (ehML(cfg)) return comTetoML(cfg).then(c => processarContaML(c, mcApiKey, ajudantesML()));
+      if (ehML(cfg)) return comTetoML(cfg).then(c => processarContaML(c, mcApiKey, ajudantesML(), { simular: req.query?.simular === '1' }));
       if (req.query?.rodada === 'acompanhamento') return processarAcompanhamento(cfg, mcApiKey);
       const inicioJanela = dataBRT(Math.max(1, cfg.regra_pausa_dias || 3));
       return processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela);

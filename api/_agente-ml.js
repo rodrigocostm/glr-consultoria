@@ -206,7 +206,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         dados.prioridade = Math.round(dados.impacto * (dados.impacto_tipo === 'economia' ? 1 : 0.1));
       }
       if (coletando) {
-        if (ocupadas.has(chave) || candidatos.some(c => c.chave === chave)) return false;
+        if ((ocupadas.has(chave) && !opc.simular) || candidatos.some(c => c.chave === chave)) return false; // simulação: considera também o que já está pendente
         candidatos.push({ id: chave, chave, titulo, explicacao, dados });
         return true;
       }
@@ -500,7 +500,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         // campanha aprendendo ou mexida há pouco espera (Mercado Ads: 30 dias; efeito de uma mudança leva 1–2 semanas)
         if (!forte && (x.aprendendo || x.recente)) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): ${x.aprendendo ? `campanha com ${Math.floor(x.idadeDias)} dia(s) — o Mercado Ads recomenda 30 dias de aprendizado sem mexer` : `alterada há ${Math.floor(x.mudouHa)} dia(s) — esperar o efeito da mudança`}` }); continue; }
         // quem governa é o TACOS: dentro do limite, ACOS um pouco acima da meta não pede aperto
-        if (!forte && tacosMes != null && tacosOk && acos <= meta * 1.3) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): o TACOS do mês (${r1(tacosMes)}%) está dentro ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `da meta (${meta}%)`}` }); continue; }
+        if (!forte && tacosMes != null && tacosOk && acos <= meta * 1.3) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): o TACOS do mês (${r1(tacosMes)}%) está dentro ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `do limite (meta ${meta}% com 10% de folga)`}` }); continue; }
         const passo = forte ? 0.25 : 0.15;
         if (x.rentab && x.roasAlvo > 0) {
           const novo = r1(x.roasAlvo / (1 - passo));
@@ -612,6 +612,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
 
     // ── Especialista em Mercado Ads: revisa as candidatas das regras e monta o pacote do dia ──
     coletando = false;
+    if (opc.simular && !candidatos.length) return { conta_id: contaId, marketplace: 'ml', simulacao: true, candidatos: [], revisao: null, colaboracoes: colaboracoes.map(c => c.texto) };
     let revisao = null;
     if (candidatos.length) {
       const conta = {
@@ -622,6 +623,8 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           impressoes: x.share ? { ganha_pct: Math.round(x.share.ganha * 100), topo_pct: Math.round(x.share.topo * 100), perdida_orcamento_pct: Math.round(x.share.orcamento * 100), perdida_classificacao_pct: Math.round(x.share.classificacao * 100), acos_referencia_categoria: x.share.benchmark } : null })),
       };
       revisao = await especialista.revisar({ Anthropic: h.Anthropic, anthropicKey: h.anthropicKey, conta, candidatos });
+      // simulação (?simular=1): mostra o pacote que o especialista montaria, sem criar nada na Caixa
+      if (opc.simular) return { conta_id: contaId, marketplace: 'ml', simulacao: true, candidatos: candidatos.map(c => ({ id: c.id, titulo: c.titulo, explicacao: String(c.explicacao).slice(0, 400) })), revisao };
       const porId = new Map(candidatos.map(c => [c.id, c])), usadas = new Set();
       for (const e of revisao.escolhidas) {
         const c = porId.get(e.id); if (!c) continue;
