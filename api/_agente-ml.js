@@ -271,9 +271,18 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         } catch (e) { /* sem o detalhe, a campanha segue só pelas regras de ACOS */ }
       }));
     }
+    // "última alteração" do ML muda sozinha todo dia (rotinas do próprio ML) — a mudança que conta é a
+    // que o analista aplicou a partir de uma recomendação (marcada ou detectada pela leitura das campanhas)
+    const ultimaMudanca = new Map();
+    for (const l of logs) {
+      const d = l.dados || {};
+      if (l.resultado !== 'executado' || d.campaign_id == null || !['roas_target', 'orcamento', 'pausar', 'acos_target'].includes(d.acao)) continue;
+      const t = Date.parse(d.aplicado_em || l.criado_em), k = String(d.campaign_id);
+      if (t && (!ultimaMudanca.has(k) || t > ultimaMudanca.get(k))) ultimaMudanca.set(k, t);
+    }
     for (const x of C) {
       x.idadeDias = x.c.date_created ? (agora - new Date(x.c.date_created).getTime()) / 864e5 : Infinity;
-      x.mudouHa = x.c.last_updated ? (agora - new Date(x.c.last_updated).getTime()) / 864e5 : Infinity;
+      x.mudouHa = ultimaMudanca.has(String(x.id)) ? (agora - ultimaMudanca.get(String(x.id))) / 864e5 : Infinity;
       x.aprendendo = x.idadeDias < DIAS_APRENDIZADO;
       x.recente = x.mudouHa < DIAS_DESDE_MUDANCA;
     }
