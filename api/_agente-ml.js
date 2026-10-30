@@ -635,7 +635,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
       const descartadas = candidatos.filter(c => !revisao.escolhidas.some(e => e.id === c.id));
       await logar('sistema', `Especialista Mercado Ads — pacote do dia com ${revisao.escolhidas.length} de ${candidatos.length} recomendação(ões)`,
         [revisao.estrategia, ...revisao.esperar.map(x => `Esperar: ${x}`), descartadas.length ? `Ficaram de fora hoje: ${descartadas.slice(0, 6).map(c => c.titulo.replace(/^Sugestão:\s*/, '')).join('; ')}${descartadas.length > 6 ? ` e mais ${descartadas.length - 6}` : ''}.` : ''].filter(Boolean).join('\n') || 'Pacote montado pela ordem das regras (especialista indisponível).',
-        { especialista: true, fonte: revisao.fonte, estrategia: revisao.estrategia, esperar: revisao.esperar, escolhidas: revisao.escolhidas, descartadas: descartadas.map(c => ({ id: c.id, titulo: c.titulo })).slice(0, 30) }, 'executado');
+        { especialista: true, fonte: revisao.fonte, erro: revisao.erro || null, estrategia: revisao.estrategia, esperar: revisao.esperar, escolhidas: revisao.escolhidas, descartadas: descartadas.map(c => ({ id: c.id, titulo: c.titulo })).slice(0, 30) }, 'executado');
     }
 
     // ── 3) CURVA ABC semana a semana (mesma regra da aba Vendas) ──

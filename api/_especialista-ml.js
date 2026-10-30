@@ -37,7 +37,7 @@ Responda APENAS um JSON válido: {"escolhidas":[{"id":"<id da candidata>","prior
 
 async function revisar({ Anthropic, anthropicKey, conta, candidatos }) {
   const porRegra = () => ({ escolhidas: [...candidatos].sort((a, b) => (b.dados?.prioridade || 0) - (a.dados?.prioridade || 0)).slice(0, 8).map((c, i) => ({ id: c.id, prioridade: i + 1, porque: null })), estrategia: null, esperar: [], fonte: 'regra' });
-  if (!anthropicKey || !Anthropic) return porRegra();
+  if (!anthropicKey || !Anthropic) return { ...porRegra(), erro: 'sem chave da API ou cliente da Anthropic' };
   const entrada = {
     conta,
     candidatas: candidatos.map(c => ({ id: c.id, titulo: c.titulo, explicacao: String(c.explicacao || '').slice(0, 600), acao: c.dados?.acao, campanha: c.dados?.campanha || null, impacto_semana_rs: c.dados?.impacto ?? null, tipo_impacto: c.dados?.impacto_tipo || null })),
@@ -55,10 +55,10 @@ async function revisar({ Anthropic, anthropicKey, conta, candidatos }) {
     // só vale id que existe — o especialista não cria recomendação
     const escolhidas = (Array.isArray(j.escolhidas) ? j.escolhidas : []).filter(e => e && ids.has(String(e.id)) && !vistos.has(String(e.id)) && vistos.add(String(e.id)))
       .slice(0, 8).map((e, i) => ({ id: String(e.id), prioridade: i + 1, porque: typeof e.porque === 'string' ? e.porque.trim().slice(0, 400) : null }));
-    if (!escolhidas.length && candidatos.length && !Array.isArray(j.escolhidas)) return porRegra();
+    if (!escolhidas.length && candidatos.length && !Array.isArray(j.escolhidas)) return { ...porRegra(), erro: 'resposta fora do formato' };
     return { escolhidas, estrategia: typeof j.estrategia === 'string' ? j.estrategia.trim().slice(0, 900) : null, esperar: (Array.isArray(j.esperar) ? j.esperar : []).filter(x => typeof x === 'string').slice(0, 3).map(x => x.slice(0, 300)), fonte: 'especialista' };
   } catch (e) {
-    return porRegra();
+    return { ...porRegra(), erro: String(e.message || e).slice(0, 300) }; // fica registrado no log do especialista
   }
 }
 
