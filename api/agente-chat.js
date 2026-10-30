@@ -400,8 +400,8 @@ async function adsBase(ctx, { inicio, fim, escopo, agrupar }) {
   const sVen = Object.fromEntries(agruparSerie(v, 'dia', modo, ['faturamento_valido', 'faturamento_bruto']).map(x => [x.periodo, x]));
   const porLoja = lojas.map(l => {
     const fa = a.filter(r => r.marketplace === l.marketplace && r.conta_id === l.conta_id), fvv = v.filter(r => r.marketplace === l.marketplace && r.conta_id === l.conta_id);
-    const g = soma(fa, 'gasto'), v = soma(fvv, 'faturamento_valido');
-    return { loja: l.nome, marketplace: NOME_MKT[l.marketplace], gasto: r2(g), gmv_ads: r2(soma(fa, 'gmv_ads')), tacos_pct: v > 0 ? r2(g / v * 100) : null };
+    const g = soma(fa, 'gasto'), fat = soma(fvv, 'faturamento_valido'); // "v" aqui sombreava as vendas acima (erro antes de inicializar)
+    return { loja: l.nome, marketplace: NOME_MKT[l.marketplace], gasto: r2(g), gmv_ads: r2(soma(fa, 'gmv_ads')), tacos_pct: fat > 0 ? r2(g / fat * 100) : null };
   });
   return {
     escopo: escopo === 'cliente' ? `cliente${cliente ? ` ${cliente}` : ''} (${lojas.length} lojas)` : 'esta loja',
