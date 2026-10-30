@@ -236,6 +236,7 @@ async function nomesDasLojas() {
 
 // Lojas da análise: só esta loja, ou todas as lojas do mesmo cliente (Integrações).
 async function lojasDoEscopo(ctx, escopo) {
+  if (ctx.lojas) return { lojas: ctx.lojas, cliente: ctx.cliente || null }; // chat central: as lojas do cliente já vêm prontas
   const nomes = await nomesDasLojas();
   const propria = [{ marketplace: 'shopee', conta_id: ctx.shopId, nome: nomes[ctx.shopId] || ctx.nome || ctx.shopId }];
   if (escopo !== 'cliente') return { lojas: propria, cliente: null };
@@ -577,3 +578,6 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: e.message || String(e) });
   }
 };
+
+// Ferramentas de leitura da base, também usadas pelo chat central (api/chat-central.js)
+module.exports.base = { vendasBase, produtosBase, curvaAbcSemanal, adsBase, campanhas, nomesDasLojas, lerStorage, sbSelect, sbTodos, mcpCall, usuarioLogado, hojeBRT, somarDias, MKT, NOME_MKT, r2 };

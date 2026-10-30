@@ -10,13 +10,13 @@
 // ============================================================
 (function () {
   const GRUPOS = [
-    { id: 'hoje', titulo: 'Hoje', paginas: ['decisoes', 'dashboard', 'vendometro', 'plano-acao', 'tarefas'] },
+    { id: 'hoje', titulo: 'Hoje', paginas: ['decisoes', 'chat', 'dashboard', 'vendometro', 'plano-acao', 'tarefas'] },
     { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'projecao', 'vendas', 'gestores', 'relatorios', 'leads', 'portal-admin'] },
     { id: 'ads', titulo: 'ADS e preço', paginas: ['agente', 'agente-ml', 'promocoes', 'precos-ml', 'afiliados'] },
     { id: 'saude', titulo: 'Saúde das contas', paginas: ['estoque-margem', 'atendimento', 'qualidade-anuncios', 'rastreamento'] },
     { id: 'anuncios', titulo: 'Anúncios', paginas: ['produtos', 'anuncios-ml', 'anuncios-shopee', 'anuncios-tiktok', 'anuncios-amazon', 'fotos'] },
     { id: 'financeiro', titulo: 'Financeiro', paginas: ['financeiro', 'dre', 'conciliacao'] },
-    { id: 'sistema', titulo: 'Sistema', paginas: ['escritorio', 'ia', 'integracoes', 'timeline', 'diagnostico'] },
+    { id: 'sistema', titulo: 'Sistema', paginas: ['escritorio', 'integracoes', 'timeline', 'diagnostico'] },
   ];
   const K_ABERTOS = 'glr_nav_abertos';
   const lerAbertos = () => { try { const v = JSON.parse(localStorage.getItem(K_ABERTOS) || 'null'); return Array.isArray(v) ? v : ['hoje']; } catch (e) { return ['hoje']; } };

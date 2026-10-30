@@ -57,6 +57,7 @@ const Router = {
     const titles = {
       dashboard: 'Dashboard Executivo',
       decisoes: 'Caixa de decisões',
+      chat: 'Chat com os agentes',
       clientes: 'Gestão de Clientes',
       'cliente-perfil': 'Perfil do Cliente',
       projecao: 'Projeção de Crescimento',
