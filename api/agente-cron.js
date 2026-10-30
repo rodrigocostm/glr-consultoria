@@ -939,12 +939,12 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
     const MOMENTO_DIAS = 3, hojeMom = dataBRT(0).iso;
     const estMom = (await sbSelect('glr_sync_estado', `marketplace=eq.sistema&conta_id=eq.${encodeURIComponent(`momento:${shopId}`)}&recurso=eq.momento&select=cursor`).catch(() => []))[0]?.cursor;
     const momentoHoje = !!opc.soMomento || !estMom?.dia || (Date.parse(`${hojeMom}T12:00:00Z`) - Date.parse(`${estMom.dia}T12:00:00Z`)) / 864e5 >= MOMENTO_DIAS;
-    const mom = { aceleradas: [], recuperadas: [], desfeitas: [], seguradas: [] };
+    const mom = { aceleradas: [], recuperadas: [], desfeitas: [], seguradas: [], motivos: {} };
     async function registrarMomento() {
       const lista = (t, xs) => xs.length ? `${t}: ${xs.slice(0, 6).join(', ')}${xs.length > 6 ? ` e mais ${xs.length - 6}` : ''}.` : '';
       await logar('sistema', `Revisão de 3 dias — ${mom.aceleradas.length} acelerada(s), ${mom.recuperadas.length + mom.desfeitas.length} recuperada(s)`,
-        `Comparei a venda de cada produto com campanha nos últimos 3 dias com os 3 anteriores. ${[lista('Subindo e acelerada', mom.aceleradas), lista('Caindo, exposição reforçada', mom.recuperadas), lista('Caindo depois de aperto, aperto desfeito', mom.desfeitas), lista('Subindo mas segurada por limite', mom.seguradas)].filter(Boolean).join(' ') || 'Nenhum produto com variação relevante (±20% e R$ 100).'} Próxima revisão em ${MOMENTO_DIAS} dias.`,
-        { momento: true, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, desfeitas: mom.desfeitas.length, seguradas: mom.seguradas.length }, 'executado');
+        `Comparei a venda de cada produto com campanha nos últimos 3 dias com os 3 anteriores. ${[lista('Subindo e acelerada', mom.aceleradas), lista('Caindo, exposição reforçada', mom.recuperadas), lista('Caindo depois de aperto, aperto desfeito', mom.desfeitas), lista('Subindo mas segurada por limite', mom.seguradas), mom.seguradas.length ? `Por que seguradas: ${Object.entries(mom.motivos).sort((a, b) => b[1] - a[1]).map(([m, n]) => `${n} por ${m}`).join(', ')}.` : ''].filter(Boolean).join(' ') || 'Nenhum produto com variação relevante (±20% e R$ 100).'} Próxima revisão em ${MOMENTO_DIAS} dias.`,
+        { momento: true, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, desfeitas: mom.desfeitas.length, seguradas: mom.seguradas.length, motivos: mom.motivos }, 'executado');
       await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `momento:${shopId}`, recurso: 'momento', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), cursor: { dia: hojeMom, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, desfeitas: mom.desfeitas.length } }, 'marketplace,conta_id,recurso').catch(() => {});
     
     }
@@ -1243,6 +1243,8 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
             colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `revisão de 3 dias: "${nome}" ${subindo ? 'subindo' : 'caindo'}, mas já está no limite (ROAS da meta / orçamento máximo)` });
           } else if (subindo) {
             mom.seguradas.push(nome);
+            const mot = !bloqueio ? 'ACOS acima da meta' : estoqueSegura ? 'estoque' : reputacaoSegura ? 'reputação' : qualidadeSegura ? 'anúncio a consertar' : 'TACOS acima do limite';
+            mom.motivos[mot] = (mom.motivos[mot] || 0) + 1;
             colaboracoes.push({ de: 'faturamento', campanha: nome, texto: `revisão de 3 dias: "${nome}" está subindo (${moTxt}), mas não acelerei — ${bloqueio || `o ACOS da campanha (${acosTxt}) está acima da ${txtMeta}`}` });
           }
         }

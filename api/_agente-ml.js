@@ -208,12 +208,12 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     const hojeMom = dataBRT(0).iso;
     const estMom = (await sbSelect('glr_sync_estado', `marketplace=eq.sistema&conta_id=eq.${encodeURIComponent(`momento:${contaId}`)}&recurso=eq.momento&select=cursor`).catch(() => []))[0]?.cursor;
     const momentoHoje = !!opc.soMomento || !estMom?.dia || (Date.parse(`${hojeMom}T12:00:00Z`) - Date.parse(`${estMom.dia}T12:00:00Z`)) / 864e5 >= 3;
-    const mom = { aceleradas: [], recuperadas: [], seguradas: [] };
+    const mom = { aceleradas: [], recuperadas: [], seguradas: [], motivos: {} };
     async function registrarMomento() {
       const lista = (t, xs) => xs.length ? `${t}: ${xs.slice(0, 6).join(', ')}${xs.length > 6 ? ` e mais ${xs.length - 6}` : ''}.` : '';
       await logar('sistema', `Revisão de 3 dias — ${mom.aceleradas.length + mom.recuperadas.length} sugestão(ões) de acelerar`,
-        `Comparei a venda dos anúncios de cada campanha nos últimos 3 dias com os 3 anteriores. ${[lista('Subindo, sugeri acelerar', mom.aceleradas), lista('Caindo, sugeri reforçar a exposição', mom.recuperadas), lista('Subindo mas segurada por limite', mom.seguradas)].filter(Boolean).join(' ') || 'Nenhuma campanha com variação relevante (±20% e R$ 100).'} Próxima revisão em 3 dias.`,
-        { momento: true, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, seguradas: mom.seguradas.length }, 'executado');
+        `Comparei a venda dos anúncios de cada campanha nos últimos 3 dias com os 3 anteriores. ${[lista('Subindo, sugeri acelerar', mom.aceleradas), lista('Caindo, sugeri reforçar a exposição', mom.recuperadas), lista('Subindo mas segurada por limite', mom.seguradas), mom.seguradas.length ? `Por que seguradas: ${Object.entries(mom.motivos).sort((a, b) => b[1] - a[1]).map(([m, n]) => `${n} por ${m}`).join(', ')}.` : ''].filter(Boolean).join(' ') || 'Nenhuma campanha com variação relevante (±20% e R$ 100).'} Próxima revisão em 3 dias.`,
+        { momento: true, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, seguradas: mom.seguradas.length, motivos: mom.motivos }, 'executado');
       if (sbUpsert) await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `momento:${contaId}`, recurso: 'momento', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), cursor: { dia: hojeMom, aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length } }, 'marketplace,conta_id,recurso').catch(() => {});
     
     }
@@ -488,6 +488,8 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           if (ok) { (subindo ? mom.aceleradas : mom.recuperadas).push(x.nome); continue; }
         } else if (subindo) {
           mom.seguradas.push(x.nome);
+          const mot = !bloq ? 'ACOS acima da meta' : seguraEstoque(avisoCamp) ? 'estoque' : repTxt(avisoCamp) ? 'reputação' : qaTxt(avisoCamp) ? 'anúncio a consertar' : 'TACOS acima do limite';
+          mom.motivos[mot] = (mom.motivos[mot] || 0) + 1;
           colaboracoes.push({ de: 'faturamento', texto: `revisão de 3 dias: "${x.nome}" está subindo, mas não sugeri acelerar — ${bloq || `ACOS de ${acosTxt} acima da meta (${meta}%)`}` });
         }
       }
