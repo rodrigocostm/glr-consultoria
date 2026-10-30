@@ -266,17 +266,6 @@ Router.register('agente-ml', (params, el) => {
     // quase igual (menos de 20% maior) não muda nada → orienta criar campanha nova.
     const roasNovo = d => Math.max(roasMeta || 0, (+d.de || 0) * 1.25) || null;
     const destinoFraco = d => d.destino && d.de && d.para && +d.para < +d.de * 1.2;
-    const moverTxt = d => {
-      const de = `"${h(d.campanha || '')}"${d.de ? ` (ROAS ${roasXg(d.de)})` : ''}`;
-      if (d.destino && !destinoFraco(d)) return `Tirar de ${de} e colocar em <b>"${h(d.destino)}"</b> (ROAS ${roasXg(d.para)})`;
-      return `Tirar de ${de} e criar <b>campanha nova</b> com ROAS objetivo <b>${roasXg(d.destino ? roasNovo(d) : d.para)}</b>`;
-    };
-    const comoFazer = d => {
-      const an = (d.item_ids || []).slice(0, 3).join(', ') + ((d.item_ids || []).length > 3 ? '…' : '');
-      if (d.acao !== 'mover_produto' || !an) return '';
-      const destinoOk = d.destino && !destinoFraco(d);
-      return `<div class="aml-li-como">No ML: Publicidade → Product Ads → campanha "${h(d.campanha || '')}" → pausar o anúncio <b>${h(an)}</b> · depois ${destinoOk ? `campanha "${h(d.destino)}" → Adicionar anúncios → ${h(an)}` : `colocar na campanha nova de ROAS ${roasXg(d.destino ? roasNovo(d) : d.para)} (quadro acima — uma só para todos)`}</div>`;
-    };
     // Produtos que vão para campanha nova: agrupa por ROAS → UMA campanha com todos
     const novaCamp = {};
     for (const l of pendentes(id)) {
@@ -301,30 +290,6 @@ Router.register('agente-ml', (params, el) => {
     const un = v => `${v} un.`;
     const varTxt = v => v == null ? '' : ` (${v > 0 ? '+' : ''}${v}%)`;
     const camp = d => d.campanha ? `"${h(d.campanha)}"` : 'a campanha';
-    // o que fazer (curto e no imperativo)
-    const fazer = d => ({
-      retirar_produto: `Tirar da campanha ${camp(d)}`,
-      pausar: 'Pausar a campanha',
-      mover_produto: moverTxt(d),
-      roas_target: `ROAS objetivo ${roasX(d.de)} → <b>${roasX(d.para)}</b>`,
-      acos_target: `Meta de ACOS ${pct(d.de)} → <b>${pct(d.para)}</b>`,
-      orcamento: `Orçamento ${R$(d.de)} → <b>${R$(d.para)}</b>`,
-      adicionar_produto: `Colocar na campanha "${h(d.destino || d.campanha || '')}"`,
-      abc_queda: d.campanha ? `Revisar estoque, preço e anúncio · está em ${camp(d)}` : 'Revisar estoque, preço e anúncio · fora do ADS',
-      informativa: 'Melhorar os anúncios da campanha (fotos, título, ficha técnica, frete e buy box)',
-    })[d.acao] || 'Revisar';
-    // por quê (um número)
-    const porque = d => {
-      if (d.acao === 'retirar_produto' || d.acao === 'pausar') return `gastou <b>${R$(d.gasto)}</b>${d.janela_dias ? ` em ${d.janela_dias}d` : ''} · ${d.unidades ? `${un(d.unidades)} vendidas` : (d.vendas_sem_cancelados ? `vendeu ${R$(d.vendas_sem_cancelados)}` : '<b>0 vendas</b>')}`;
-      if (d.acao === 'mover_produto') return `ACOS <b>${pct(d.acos)}</b>${meta ? ` · meta ${pct(meta)}` : ''} · gastou ${R$(d.gasto)}`;
-      const perde = d.share ? ` · perde <b>${Math.round((d.acao === 'orcamento' ? d.share.orcamento : d.share.classificacao) * 100)}%</b> das impressões por ${d.acao === 'orcamento' ? 'orçamento' : 'classificação'}` : '';
-      if (d.acao === 'roas_target' || d.acao === 'orcamento' || d.acao === 'acos_target') return `ACOS da campanha <b>${pct(d.acos)}</b> · gastou ${R$(d.gasto)}${perde}`;
-      if (d.acao === 'informativa') return `ACOS <b>${pct(d.acos)}</b>${d.limite_acos ? ` · limite ${pct(d.limite_acos)}` : ''}${perde}`;
-      if (d.acao === 'adicionar_produto') return d.unidades_loja_30d ? `<b>${un(d.unidades_loja_30d)}</b> no mês sem ADS` : `${un(d.unidades_ultima)} na semana${varTxt(d.variacao_pct)}`;
-      if (d.acao === 'abc_queda') return `<b>${un(d.unidades_ultima)}</b> na semana × média ${String(d.media_3_semanas ?? '—').replace('.', ',')} <b style="color:var(--red)">${varTxt(d.variacao_pct).trim()}</b>`;
-      return '';
-    };
-    const assunto = d => ['roas_target', 'orcamento', 'acos_target', 'pausar'].includes(d.acao) ? (d.campanha || '—') : (d.produto || d.campanha || '—');
     const contagem = {}; todas.forEach(x => { contagem[x.d.acao] = (contagem[x.d.acao] || 0) + 1; });
     const chips = [['todas', 'Todas', todas.length], ...Object.entries(contagem).sort((a, b) => (TIPOS[a[0]]?.ordem || 8) - (TIPOS[b[0]]?.ordem || 8)).map(([k, n]) => [k, TIPOS[k]?.rot || k, n])];
     const fazerNoMl = todas.filter(x => x.d.acao !== 'abc_queda').length;
@@ -344,26 +309,72 @@ Router.register('agente-ml', (params, el) => {
     ordGrupos.forEach(g => g.itens.sort((a, b) => (PASSO[a.d.acao] || 9) - (PASSO[b.d.acao] || 9) || (+b.d.prioridade || 0) - (+a.d.prioridade || 0)));
     const campAtual = k => (state.campanhas[id]?.lista || []).find(c => String(c.id) === String(k));
     const estadoCamp = k => { const c = campAtual(k); if (!c) return ''; const r = parseFloat(c.roas_target) || (c.acos_target ? 100 / c.acos_target : 0); return [c.status !== 'active' ? 'pausada' : '', r ? `ROAS objetivo ${roasX(r)}` : '', c.budget ? `orçamento ${R$(c.budget)}/dia` : ''].filter(Boolean).join(' · '); };
+    // ── Um passo = uma frase do que fazer, uma linha do porquê, o valor em jogo e o "como fazer" no painel ──
+    const nomeP = d => `<b>${h(String(d.produto || '').slice(0, 70))}</b>`;
+    const nomeC = n => `<b>${h(n || '—')}</b>`;
+    const destinoTxt = d => d.destino && !destinoFraco(d) ? `a campanha ${nomeC(d.destino)} (ROAS ${roasX(d.para)})` : `uma <b>campanha nova</b> com ROAS objetivo ${roasX(d.destino ? roasNovo(d) : d.para)}`;
+    const acaoTxt = d => ({
+      retirar_produto: `Pausar o anúncio ${nomeP(d)}`,
+      pausar: `Pausar a campanha ${nomeC(d.campanha)}`,
+      mover_produto: `Mover ${nomeP(d)} para ${destinoTxt(d)}`,
+      roas_target: `${+d.para > +d.de ? 'Subir' : 'Baixar'} o ROAS objetivo de ${roasX(d.de)} para <b>${roasX(d.para)}</b>`,
+      acos_target: `Mudar a meta de ACOS de ${pct(d.de)} para <b>${pct(d.para)}</b>`,
+      orcamento: `${+d.para > +d.de ? 'Aumentar' : 'Reduzir'} o orçamento diário de ${R$(d.de)} para <b>${R$(d.para)}</b>`,
+      adicionar_produto: `Colocar ${nomeP(d)} na campanha ${nomeC(d.destino || d.campanha)}`,
+      abc_queda: `Revisar ${nomeP(d)} — curva A ${d.tendencia === 'parou' ? 'parou de vender' : 'em queda'}`,
+      informativa: 'Melhorar os anúncios desta campanha',
+    })[d.acao] || h(d.produto || d.campanha || 'Revisar');
+    const g0 = d => d.janela_dias ? ` em ${d.janela_dias} dias` : '';
+    const pqTxt = d => {
+      const perde = d.share ? (d.acao === 'orcamento' ? d.share.orcamento : d.share.classificacao) : null;
+      switch (d.acao) {
+        case 'retirar_produto': case 'pausar': return `Gastou <b>${R$(d.gasto)}</b>${g0(d)} ${d.unidades ? `e vendeu só ${un(d.unidades)} pelo ADS` : d.vendas_sem_cancelados ? `e vendeu só ${R$(d.vendas_sem_cancelados)}` : 'e <b>não vendeu nada</b> pelo ADS'}.`;
+        case 'mover_produto': return `ACOS de <b>${pct(d.acos)}</b>${meta ? ` com meta de ${pct(meta)}` : ''} — é ele que encarece a campanha (gastou ${R$(d.gasto)}${g0(d)}). Vende, então muda de campanha em vez de pausar.`;
+        case 'roas_target': return +d.para > +d.de ? `ACOS da campanha em <b>${pct(d.acos)}</b>${meta ? `, acima da meta de ${pct(meta)}` : ''}: lance mais conservador.` : `ACOS de <b>${pct(d.acos)}</b> com folga${perde != null ? ` e a campanha perde <b>${Math.round(perde * 100)}%</b> das impressões por classificação` : ''}: lance mais forte para ganhar leilão.`;
+        case 'orcamento': return +d.para > +d.de ? `ACOS de <b>${pct(d.acos)}</b> dentro da meta${perde != null ? ` e perde <b>${Math.round(perde * 100)}%</b> das impressões por falta de orçamento` : ' e o orçamento acaba antes do fim do dia'}.` : `ACOS de <b>${pct(d.acos)}</b>${meta ? ` acima da meta de ${pct(meta)}` : ''}: gastar menos por dia.`;
+        case 'adicionar_produto': return d.unidades_loja_30d ? `Vendeu <b>${un(d.unidades_loja_30d)}</b> no mês sem estar no ADS.` : `Subindo: ${un(d.unidades_ultima)} na última semana${varTxt(d.variacao_pct)}.`;
+        case 'abc_queda': return `<b>${un(d.unidades_ultima)}</b> na última semana contra média de ${String(d.media_3_semanas ?? '—').replace('.', ',')} nas 3 anteriores <b style="color:var(--red)">${varTxt(d.variacao_pct).trim()}</b>.`;
+        case 'informativa': return `Perde <b>${Math.round((perde || 0) * 100)}%</b> das impressões por classificação e o ACOS (${pct(d.acos)}) já está perto do limite da margem${d.limite_acos ? ` (${pct(d.limite_acos)})` : ''}: baixar o ROAS não cabe — o caminho é o anúncio.`;
+      }
+      return '';
+    };
+    const idsHtml = ids => `<span class="aml-ids">${ids.map(x => `<a href="https://produto.mercadolivre.com.br/${h(String(x).replace(/^MLB/, 'MLB-'))}" target="_blank" rel="noopener">${h(x)}</a>`).join(' ')}</span><button class="aml-cop" onclick="navigator.clipboard.writeText('${ids.map(h).join(', ')}').then(()=>{this.textContent='Copiado'})">Copiar códigos</button>`;
+    const passosPainel = d => {
+      const ids = d.item_ids || [], abrir = n => `Em <b>Publicidade → Product Ads</b>, abra a campanha ${nomeC(n)}`;
+      switch (d.acao) {
+        case 'retirar_produto': return [abrir(d.campanha), `Na lista de anúncios, pause: ${idsHtml(ids)}`];
+        case 'mover_produto': return [abrir(d.campanha), `Pause os anúncios: ${idsHtml(ids)}`, d.destino && !destinoFraco(d) ? `Abra a campanha ${nomeC(d.destino)} → <b>Adicionar anúncios</b> → cole os mesmos códigos` : 'Coloque os anúncios na campanha nova (quadro acima — uma só para todos os produtos)'];
+        case 'roas_target': return [abrir(d.campanha), `Clique em <b>Editar</b> e mude o ROAS objetivo para <b>${roasX(d.para)}</b>`];
+        case 'acos_target': return [abrir(d.campanha), `Clique em <b>Editar</b> e mude a meta de ACOS para <b>${pct(d.para)}</b>`];
+        case 'orcamento': return [abrir(d.campanha), `Clique em <b>Editar</b> e mude o orçamento diário para <b>${R$(d.para)}</b>`];
+        case 'pausar': return [abrir(d.campanha), 'Clique em <b>Pausar campanha</b>'];
+        case 'adicionar_produto': return [abrir(d.destino || d.campanha), `<b>Adicionar anúncios</b> → ${idsHtml(ids)}`, 'Confira o estoque antes'];
+      }
+      return null;
+    };
     const R0 = v => R$(v).replace(/,\d{2}$/, '');
-    const linhaPasso = ({ l, d }) => {
+    const impHtml = d => !d.impacto ? '' : `<div class="aml-p-imp ${d.impacto_tipo === 'economia' ? 'eco' : d.impacto_tipo === 'risco' ? 'risco' : 'ganho'}"><b>${d.impacto_tipo === 'economia' ? '−' : d.impacto_tipo === 'risco' ? '−' : '+'}${R0(d.impacto)}</b><small>${d.impacto_tipo === 'economia' ? 'de gasto por semana' : d.impacto_tipo === 'risco' ? 'por semana em risco' : 'em vendas por semana'}</small></div>`;
+    const linhaPasso = ({ l, d }, n) => {
       const t = TIPOS[d.acao] || { rot: 'Ação', cor: 'var(--text-muted)' };
-      const ids = d.item_ids || [];
-      const ehProduto = !['roas_target', 'orcamento', 'acos_target', 'pausar'].includes(d.acao);
-      return `<div class="aml-li" style="--c:${t.cor}">
-          <span class="aml-tipo">${t.rot}</span>
-          <div class="aml-li-txt">
-            ${ehProduto ? `<div class="aml-li-ass" title="${h(assunto(d))}">${h(assunto(d))}</div>` : ''}
-            <div class="aml-li-faz">${fazer(d)}</div>${comoFazer(d)}${leitura(l.explicacao) ? `<div class="aml-esp"><b>Especialista${d.especialista?.prioridade ? ` · prioridade ${d.especialista.prioridade}` : ''}:</b> ${h(leitura(l.explicacao))}</div>` : ''}
+      const passos = passosPainel(d), esp = leitura(l.explicacao), revisar = d.acao === 'abc_queda' || d.acao === 'informativa';
+      return `<div class="aml-p" style="--c:${t.cor}">
+          <div class="aml-p-n" aria-hidden="true">${n}</div>
+          <div class="aml-p-corpo">
+            <div class="aml-p-acao"><span class="aml-p-tag">${t.rot}</span>${acaoTxt(d)}</div>
+            <div class="aml-p-pq">${pqTxt(d)}</div>
+            ${esp ? `<div class="aml-esp"><b>Especialista:</b> ${h(esp)}</div>` : ''}
+            <details class="aml-como"><summary>${passos ? 'Como fazer no painel do ML' : 'O que revisar'}</summary>
+              ${passos ? `<ol>${passos.map(x => `<li>${x}</li>`).join('')}</ol>` : `<div class="aml-sub">${h(semInstrucao(l.explicacao))}</div>`}
+              ${passos ? `<div class="aml-sub aml-expl">${h(semInstrucao(l.explicacao))}</div>` : ''}
+            </details>
           </div>
-          <div class="aml-li-pq">${porque(d)}${d.impacto ? `<div class="aml-imp">${d.impacto_tipo === 'economia' ? `~${R0(d.impacto)}/sem de gasto a cortar` : d.impacto_tipo === 'risco' ? `~${R0(d.impacto)}/sem a menos` : `~${R0(d.impacto)}/sem em vendas`}</div>` : ''}</div>
-          <div class="aml-li-bt">
-            <button class="btn btn-secondary btn-sm" ${state.processando ? 'disabled' : ''} title="${d.acao === 'abc_queda' ? 'Já revisei' : 'Já apliquei no painel do ML (opcional: o agente confere sozinho amanhã)'}" onclick="window._amlMarcar('${l.id}','executado')">${d.acao === 'abc_queda' ? 'Revisado' : 'Feito'}</button>
-            <button class="aml-x" ${state.processando ? 'disabled' : ''} title="Descartar" onclick="window._amlMarcar('${l.id}','descartado')">✕</button>
+          <div class="aml-p-lado">
+            ${impHtml(d)}
+            <div class="aml-li-bt">
+              <button class="btn btn-secondary btn-sm" ${state.processando ? 'disabled' : ''} title="${revisar ? 'Já revisei' : 'Já apliquei no painel do ML (opcional: o agente confere sozinho amanhã)'}" onclick="window._amlMarcar('${l.id}','executado')">${revisar ? 'Revisado' : 'Feito'}</button>
+              <button class="aml-x" ${state.processando ? 'disabled' : ''} title="Descartar" aria-label="Descartar" onclick="window._amlMarcar('${l.id}','descartado')">✕</button>
+            </div>
           </div>
-          <details class="aml-det"><summary>detalhes</summary>
-            <div class="aml-sub">${h(semInstrucao(l.explicacao))}</div>
-            ${ids.length ? `<div class="aml-sub" style="margin-top:4px;">Anúncios: ${ids.slice(0, 12).map(x => `<a href="https://produto.mercadolivre.com.br/${h(String(x).replace(/^MLB/, 'MLB-'))}" target="_blank" rel="noopener">${h(x)}</a>`).join(', ')}${ids.length > 12 ? '…' : ''}</div>` : ''}
-          </details>
         </div>`;
     };
     const pacote = ordGrupos.map((g, i) => {
@@ -374,11 +385,12 @@ Router.register('agente-ml', (params, el) => {
         <div class="aml-grupo-top">
           <div style="min-width:0;flex:1;">
             <div class="aml-grupo-nome">${i === 0 && g.k !== '__revisar' ? '<span class="aml-comece">Comece por aqui</span>' : ''}${h(g.nome)}${g.k.startsWith('__') ? '' : ` <span class="aml-sub">#${h(g.k)}</span>`}</div>
-            <div class="aml-sub">${[est ? `agora: ${est}` : '', `${g.itens.length} passo${g.itens.length > 1 ? 's' : ''}`, impTxt].filter(Boolean).join(' · ')}</div>
+            <div class="aml-sub">${[est ? `hoje: ${est}` : '', `${g.itens.length} passo${g.itens.length > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}</div>
           </div>
+          ${impTxt ? `<div class="aml-g-imp">${impTxt}</div>` : ''}
           ${g.k === '__revisar' ? '' : `<button class="btn btn-primary btn-sm" ${state.processando ? 'disabled' : ''} title="Marca todos os passos desta campanha como aplicados" onclick="window._amlMarcarGrupo('${idsGrupo}')">Fiz tudo desta campanha</button>`}
         </div>
-        <div class="aml-lista">${g.itens.map(linhaPasso).join('')}</div>
+        <div class="aml-lista">${g.itens.map((x, j) => linhaPasso(x, j + 1)).join('')}</div>
       </div>`;
     }).join('');
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
@@ -580,20 +592,31 @@ Router.register('agente-ml', (params, el) => {
     .aml-fchip{border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);border-radius:99px;padding:4px 11px;font-size:12px;cursor:pointer;}
     .aml-fchip.on{background:var(--c);border-color:var(--c);color:#fff;}
     .aml-lista{border:1px solid var(--border);border-radius:10px;overflow:hidden;}
-    .aml-li{display:grid;grid-template-columns:150px minmax(0,1fr) minmax(170px,240px) auto;gap:4px 14px;align-items:center;padding:10px 14px;border-left:4px solid var(--c);border-bottom:1px solid var(--border);}
-    .aml-li:last-child{border-bottom:none;} .aml-li:hover{background:rgba(99,102,241,.04);}
     .aml-tipo{font-size:11px;font-weight:700;color:var(--c);text-transform:none;letter-spacing:0;}
     .aml-li-ass{font-weight:700;font-size:13px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .aml-li-faz{font-size:12.5px;color:var(--text-secondary);margin-top:1px;}
-    .aml-li-como{font-size:11.5px;color:var(--text-muted);margin-top:3px;}
     .aml-nova{border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;background:var(--bg-card-hover);}
     .aml-nova-ids{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--text-secondary);word-break:break-all;}
+    .aml-p{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);box-shadow:inset 3px 0 0 var(--c);}
+    .aml-p:last-child{border-bottom:none;}
+    .aml-p-n{width:24px;height:24px;border-radius:50%;background:var(--bg-subtle);color:var(--text-secondary);font-size:12px;font-weight:700;display:grid;place-items:center;margin-top:1px;}
+    .aml-p-corpo{min-width:0;display:flex;flex-direction:column;gap:4px;}
+    .aml-p-acao{font-size:14px;line-height:1.45;color:var(--text-primary);} .aml-p-acao b{font-weight:650;}
+    .aml-p-tag{display:inline-block;font-size:10.5px;font-weight:700;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);border-radius:5px;padding:1px 7px;margin-right:8px;vertical-align:1px;letter-spacing:.02em;}
+    .aml-p-pq{font-size:13px;line-height:1.5;color:var(--text-secondary);} .aml-p-pq b{color:var(--text-primary);}
+    .aml-como{font-size:12.5px;margin-top:2px;} .aml-como summary{cursor:pointer;color:var(--accent);font-weight:600;font-size:12.5px;width:max-content;}
+    .aml-como ol{margin:8px 0 6px;padding-left:20px;display:flex;flex-direction:column;gap:6px;color:var(--text-primary);line-height:1.5;}
+    .aml-ids{display:inline-flex;flex-wrap:wrap;gap:4px;margin:0 6px;} .aml-ids a{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var(--bg-subtle);border-radius:5px;padding:1px 6px;color:var(--text-primary);text-decoration:none;} .aml-ids a:hover{text-decoration:underline;}
+    .aml-cop{border:1px solid var(--border);background:var(--bg-card);border-radius:6px;font-size:11.5px;padding:2px 8px;cursor:pointer;color:var(--text-secondary);}
+    .aml-expl{margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);}
+    .aml-p-lado{display:flex;flex-direction:column;align-items:flex-end;gap:8px;min-width:150px;}
+    .aml-p-imp{text-align:right;display:flex;flex-direction:column;line-height:1.2;} .aml-p-imp b{font-size:15px;font-variant-numeric:tabular-nums;} .aml-p-imp small{font-size:11px;color:var(--text-muted);}
+    .aml-p-imp.eco b{color:var(--green);} .aml-p-imp.ganho b{color:var(--accent);} .aml-p-imp.risco b{color:var(--red);}
+    .aml-g-imp{font-size:12.5px;color:var(--text-secondary);}
+    @media (max-width:760px){.aml-p{grid-template-columns:24px minmax(0,1fr)}.aml-p-lado{grid-column:2;flex-direction:row;align-items:center;justify-content:space-between;min-width:0}.aml-p-imp{text-align:left}}
     .aml-li-pq{font-size:12px;color:var(--text-secondary);font-variant-numeric:tabular-nums;}
     .aml-li-bt{display:flex;gap:6px;align-items:center;justify-content:flex-end;}
     .aml-x{border:1px solid var(--border);background:none;border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--text-muted);}
     .aml-x:hover{border-color:var(--red);color:var(--red);}
-    .aml-det{grid-column:2/-1;font-size:12px;} .aml-det summary{cursor:pointer;color:var(--text-muted);font-size:11.5px;width:max-content;}
-    @media (max-width:900px){.aml-li{grid-template-columns:1fr auto}.aml-li-txt,.aml-li-pq{grid-column:1/-1}.aml-tipo{grid-column:1}.aml-li-bt{grid-column:2;grid-row:1}.aml-det{grid-column:1/-1}}
     .aml-tab{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums;}
     .aml-tab th,.aml-tab td{padding:7px 8px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;}
     .aml-tab th{font-size:11px;color:var(--text-muted);text-transform:none;}
