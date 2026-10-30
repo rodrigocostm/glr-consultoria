@@ -44,9 +44,14 @@ Router.register('chat', (params, el) => {
       const tit = l.match(/^(#{1,4})\s+(.*)$/);
       if (tit) { const n = Math.min(5, tit[1].length + 2); blocos.push(`<h${n}>${inline(tit[2])}</h${n}>`); continue; }
       if (ehLista(l)) {
-        const num = /^\s*\d+[.)]\s+/.test(l), itens = [];
-        while (i < linhas.length && ehLista(linhas[i])) itens.push(linhas[i++].replace(/^\s*([-*•]|\d+[.)])\s+/, '')); i--;
-        blocos.push(`<${num ? 'ol' : 'ul'}>${itens.map(t => `<li>${inline(t)}</li>`).join('')}</${num ? 'ol' : 'ul'}>`);
+        // item recuado vira sublista do item de cima; a lista numerada mantém o número de onde começou
+        const num = /^\s*\d+[.)]\s+/.test(l), ini = num ? parseInt(l) : 1, itens = [];
+        while (i < linhas.length && ehLista(linhas[i])) {
+          const li = linhas[i++], recuo = li.match(/^\s*/)[0].length, t = li.replace(/^\s*([-*•]|\d+[.)])\s+/, '');
+          if ((recuo >= 2 || (num && /^\s*[-*•]\s+/.test(li))) && itens.length) itens[itens.length - 1].sub.push(t); else itens.push({ t, sub: [] });
+        }
+        i--;
+        blocos.push(`<${num ? `ol${ini > 1 ? ` start="${ini}"` : ''}` : 'ul'}>${itens.map(x => `<li>${inline(x.t)}${x.sub.length ? `<ul>${x.sub.map(s => `<li>${inline(s)}</li>`).join('')}</ul>` : ''}</li>`).join('')}</${num ? 'ol' : 'ul'}>`);
         continue;
       }
       if (/^\s*---+\s*$/.test(l)) { blocos.push('<hr>'); continue; }
