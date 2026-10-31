@@ -18,7 +18,7 @@ const { sbSelect, sbTodos, mcpCall, usuarioLogado, lerStorage, nomesDasLojas, ho
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const MODELO = 'claude-opus-5-5';
+const MODELO = 'claude-sonnet-5-5';
 const ORCAMENTO_MS = 230000; // folga dentro do maxDuration (300s) do vercel.json
 const MAX_RODADAS = 12;
 const LIMITE_RESULTADO = 16000;
