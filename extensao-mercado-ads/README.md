@@ -1,0 +1,27 @@
+# GLR Copiloto Mercado Ads (extensão do Chrome)
+
+Mostra dentro do painel do Mercado Ads o pacote do dia que a GLR montou para a
+campanha aberta, preenche os campos e destaca onde clicar. **Quem salva no
+Mercado Livre é sempre o analista** — a extensão nunca clica em "Salvar".
+
+## Instalar (equipe GLR)
+1. Abra `chrome://extensions` e ligue o **Modo do desenvolvedor** (canto superior direito).
+2. Clique em **Carregar sem compactação** e escolha esta pasta (`extensao-mercado-ads`).
+3. Fixe o ícone **GLR Copiloto Mercado Ads** na barra do Chrome e entre com o seu login do sistema da GLR.
+
+## Usar
+- Em **Central de vendedores → Publicidade → Product Ads**, o painel "GLR · pacote do dia" aparece no canto.
+- Na lista de campanhas: mostra os passos de cada campanha e o botão **Abrir a campanha**.
+- Dentro da campanha:
+  - **Preencher o ROAS / o orçamento** — abre "Modificar sua campanha", coloca o valor e destaca o **Salvar**. Confira e salve.
+  - **Mostrar o anúncio** — filtra a tabela pelo código e destaca o **⋮** → **Pausar**.
+  - **Adicionar aqui** — copia os códigos e destaca **Adicionar anúncios**.
+- **Feito** marca o passo no sistema (o agente também confere sozinho na análise da manhã). **✕** descarta.
+
+## Segurança
+- Login próprio no Supabase com a chave pública (a mesma do site); nenhuma chave secreta.
+- Acesso ao banco com as mesmas regras do site (sessão do analista).
+- Não lê nem envia dados do Mercado Livre para fora; só lê a tela para achar os campos.
+
+Tela mapeada em 30/10/2026. Se o Mercado Livre mudar o painel e um botão não for
+encontrado, o passo mostra a mensagem e o analista faz pela tela normalmente.
