@@ -135,7 +135,10 @@
   // mover de campanha pela tela "Anúncios patrocinados": acha a linha, marca, Mais ações → Mover para uma
   // campanha → escolhe o destino (o valor de cada opção é o id da campanha). Não precisa pausar antes.
   const naAds = () => /\/product-ads\/admin\/ads/.test(location.pathname);
-  const urlAnuncios = adv => `/publicidade/product-ads/admin/ads${adv ? `?advertiser_id=${adv}` : ''}`;
+  // sempre no Central de vendedores: em ads.mercadolivre.com.br o caminho /publicidade/... dá 404
+  const ML = 'https://vendedores.mercadolivre.com.br';
+  const urlAnuncios = adv => `${ML}/publicidade/product-ads/admin/ads${adv ? `?advertiser_id=${adv}` : ''}`;
+  const urlCampanha = (id, adv) => `${ML}/publicidade/product-ads/admin/campaigns/${id}/dashboard${adv ? `?advertiser_id=${adv}` : ''}`;
   const campanhaDaLinha = tr => ((tr?.querySelector('a[href*="/campaigns/"]')?.getAttribute('href') || '').match(/\/campaigns\/(\d+)\//) || [])[1] || null;
   const modalMover = () => [...document.querySelectorAll('.ml-ads-tab-move-ads-modal')].find(visivel) || null;
   const fecharModalMover = () => { const b = modalMover() && [...modalMover().querySelectorAll('button')].find(x => x.textContent.trim() === 'Cancelar'); if (b) b.click(); };
@@ -283,7 +286,7 @@
         const p = f.passos[f.i], d = p.dados;
         st.auto = f; render();
         const ads = d.acao === 'mover_produto';
-        if (ads ? !naAds() : String(d.campaign_id) !== campanhaAberta()) { await humano(2000, 4000); location.href = ads ? urlAnuncios(f.adv) : `/publicidade/product-ads/admin/campaigns/${d.campaign_id}/dashboard${f.adv ? `?advertiser_id=${f.adv}` : ''}`; return; }
+        if (ads ? !naAds() : String(d.campaign_id) !== campanhaAberta()) { await humano(2000, 4000); location.href = ads ? urlAnuncios(f.adv) : urlCampanha(d.campaign_id, f.adv); return; }
         await aguardar(() => ads ? fundo(document, 'table tbody tr').length && fundo1(document, 'input[placeholder^="Procurar por #"]') : lapisDoCartao('ROAS Objetivo'), 15000); await humano(2500, 5000);
         let erro = null;
         if (d.acao === 'roas_target') erro = await autoRoas(+d.para);
@@ -411,7 +414,7 @@
     if (b.dataset.autoIniciar) { b.disabled = true; return iniciarAuto(); }
     if (b.dataset.autoParar) return pararAuto();
     if (b.dataset.autoFechar) { await chrome.storage.local.remove(FILA); st.auto = null; st.chave = ''; return carregar(); }
-    if (b.dataset.abrir) { const adv = new URLSearchParams(location.search).get('advertiser_id'); location.href = `/publicidade/product-ads/admin/campaigns/${b.dataset.abrir}/dashboard${adv ? `?advertiser_id=${adv}` : ''}`; return; }
+    if (b.dataset.abrir) { location.href = urlCampanha(b.dataset.abrir, new URLSearchParams(location.search).get('advertiser_id')); return; }
     const l = st.itens.find(x => String(x.id) === String(b.dataset.ajuda || b.dataset.feito || b.dataset.desc)); if (!l) return;
     if (b.dataset.ajuda) {
       limparDestaques();
