@@ -98,13 +98,18 @@
     destacar(textoIgual('button', 'Salvar', g), 'Confira e clique em Salvar');
     return null;
   }
-  // filtra a tabela de anúncios pelo código e destaca a linha e o menu ⋮ (Pausar / Remover da campanha)
-  async function mostrarAnuncio(itemId) {
-    const busca = document.querySelector('input[placeholder^="Procurar por #"]');
-    if (busca) { digitar(busca, itemId); busca.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })); await espera(1500); }
-    const num = String(itemId).replace(/^MLB/i, '');
-    const linha = await aguardar(() => [...document.querySelectorAll('table tbody tr')].find(tr => tr.innerText.includes(num)), 5000);
-    if (!linha) return `Não achei o anúncio ${itemId} nesta campanha (pode já ter sido pausado).`;
+  // linha do anúncio na tabela da campanha: o ML agrupa por produto (a linha mostra o código do anúncio
+  // principal, do catálogo ou da família), então procura pelo código e, se não achar, pelo nome do produto
+  const normT = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  function linhaDoAnuncio(itemId, produto) {
+    const num = String(itemId).replace(/^MLB/i, ''), linhas = fundo(document, 'table tbody tr'), nome = normT(produto).slice(0, 35);
+    return linhas.find(tr => tr.innerText.includes(num)) || (nome.length >= 12 ? linhas.find(tr => normT(tr.innerText).includes(nome)) : null);
+  }
+  async function mostrarAnuncio(itemId, produto) {
+    let linha = await aguardar(() => linhaDoAnuncio(itemId, produto), 4000);
+    const busca = fundo1(document, 'input[placeholder^="Procurar por #"]');
+    if (!linha && busca && produto) { digitar(busca, String(produto).slice(0, 30)); busca.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })); linha = await aguardar(() => linhaDoAnuncio(itemId, produto), 5000); }
+    if (!linha) return `Não achei o anúncio ${itemId}${produto ? ` ("${String(produto).slice(0, 40)}")` : ''} nesta campanha (pode já ter sido pausado ou removido).`;
     destacar(linha);
     destacar(linha.querySelector('button[aria-label="Acciones del anuncio"]'), 'Clique aqui → Pausar');
     return null;
@@ -177,17 +182,17 @@
     const lido = valorDoCartao('Orçamento diário');
     return lido != null && Math.abs(lido - valor) < 0.6 ? null : `Salvei, mas o cartão mostra R$ ${lido ?? '?'} em vez de ${R$(valor)} — confira.`;
   }
-  async function autoPausarAnuncio(itemId) {
-    const e = await mostrarAnuncio(itemId); if (e) return e;
-    const num = String(itemId).replace(/^MLB/i, '');
-    const linhaDe = () => [...document.querySelectorAll('table tbody tr')].find(tr => tr.innerText.includes(num));
+  async function autoPausarAnuncio(itemId, produto) {
+    const e = await mostrarAnuncio(itemId, produto); if (e) return e;
+    const linhaDe = () => linhaDoAnuncio(itemId, produto);
+    if (/pausad/i.test(linhaDe()?.innerText || '')) return null; // já pausado (ex.: a família toda numa variação anterior)
     const menu = linhaDe()?.querySelector('button[aria-label="Acciones del anuncio"]'); if (!menu) return 'Não achei o menu ⋮ do anúncio.';
     await humano(1500, 3000); menu.click();
-    const pausar = await aguardar(() => [...document.querySelectorAll('li,button,a,span,[role="menuitem"]')].find(x => x.textContent.trim() === 'Pausar' && x.offsetParent !== null), 4000);
+    const pausar = await aguardar(() => fundo(document, 'li,button,a,span,[role="menuitem"]').find(x => x.textContent.trim() === 'Pausar' && visivel(x)), 4000);
     if (!pausar) return 'Não achei a opção Pausar no menu do anúncio.';
     await humano(800, 1800); pausar.click();
     await espera(2500);
-    if ([...document.querySelectorAll('[role="dialog"]')].some(d => d.offsetParent !== null && /pausar|confirm/i.test(d.innerText))) return 'O ML pediu uma confirmação para pausar — confirme à mão e marque Feito.';
+    if (fundo(document, '[role="dialog"]').some(d => visivel(d) && /pausar|confirm/i.test(d.innerText))) return 'O ML pediu uma confirmação para pausar — confirme à mão e marque Feito.';
     return (await aguardar(() => /paus/i.test(linhaDe()?.innerText || ''), 6000)) ? null : 'Cliquei em Pausar, mas não vi o anúncio como pausado — confira.';
   }
   const lerFila = async () => (await chrome.storage.local.get(FILA))[FILA] || null;
@@ -217,7 +222,7 @@
         let erro = null;
         if (d.acao === 'roas_target') erro = await autoRoas(+d.para);
         else if (d.acao === 'orcamento') erro = await autoOrcamento(+d.para);
-        else if (d.acao === 'retirar_produto') for (const id of (d.item_ids || [])) { erro = await autoPausarAnuncio(id); if (erro) break; await humano(); }
+        else if (d.acao === 'retirar_produto') for (const id of (d.item_ids || [])) { erro = await autoPausarAnuncio(id, d.produto); if (erro) break; await humano(); }
         f = await lerFila(); if (!f || f.status !== 'rodando') break; // parado no meio pelo analista
         if (erro) { cancelarEdicao(); f.status = 'parado'; f.erro = `Passo ${f.i + 1}: ${erro}`; await gravarFila(f); break; }
         await enviar({ tipo: 'marcar', id: p.id, resultado: 'executado', dados: d, por: 'extensao_auto' });
@@ -256,7 +261,7 @@
     const d = l.dados || {}, origem = String(d.campaign_id) === aqui, destino = String(d.destino_id) === aqui;
     if (d.acao === 'roas_target' && origem) return { rot: 'Preencher o ROAS', fn: () => preencherRoas(d.para) };
     if (d.acao === 'orcamento' && origem) return { rot: 'Preencher o orçamento', fn: () => preencherOrcamento(d.para) };
-    if ((d.acao === 'retirar_produto' || d.acao === 'mover_produto') && origem && (d.item_ids || []).length) return { rot: 'Mostrar o anúncio', fn: async () => { for (const id of d.item_ids) { if (!(await mostrarAnuncio(id))) return null; } return 'Nenhum dos anúncios apareceu na tabela desta campanha.'; } };
+    if ((d.acao === 'retirar_produto' || d.acao === 'mover_produto') && origem && (d.item_ids || []).length) return { rot: 'Mostrar o anúncio', fn: async () => { for (const id of d.item_ids) { if (!(await mostrarAnuncio(id, d.produto))) return null; } return 'Nenhum dos anúncios apareceu na tabela desta campanha.'; } };
     if ((d.acao === 'adicionar_produto' || d.acao === 'mover_produto') && destino && (d.item_ids || []).length) return { rot: 'Adicionar aqui (copia os códigos)', fn: () => mostrarAdicionar(d.item_ids) };
     if (d.acao === 'pausar' && origem) return { rot: 'Mostrar onde pausar', fn: () => mostrarEstado() };
     return null;
