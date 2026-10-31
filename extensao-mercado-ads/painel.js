@@ -44,7 +44,13 @@
   async function aguardar(fn, ms = 6000) { const fim = Date.now() + ms; while (Date.now() < fim) { const r = fn(); if (r) return r; await espera(200); } return null; }
   // edição da campanha: gaveta lateral "Modificar sua campanha" ou janela "Modificar seu ROAS Objetivo" /
   // "Modificar seu orçamento…" — o ML mostra um formato ou outro dependendo da conta
-  const gaveta = () => { const t = [...document.querySelectorAll('h1,h2,h3,span,div,p')].find(e => e.childElementCount === 0 && /^Modificar (sua campanha|seu ROAS|seu orçamento)/i.test(e.textContent.trim())); let g = t; for (let i = 0; i < 10 && g && !(g.querySelectorAll && [...g.querySelectorAll('button')].some(b => b.textContent.trim() === 'Salvar')); i++) g = g.parentElement; return g; };
+  const visivel = e => !!(e && e.getClientRects().length);
+  const gaveta = () => {
+    // só vale o título visível que está na mesma janela de um botão Salvar visível (o lápis tem uma dica com o mesmo texto)
+    const tits = [...document.querySelectorAll('h1,h2,h3,span,div,p')].filter(e => e.childElementCount === 0 && /^Modificar (sua campanha|seu ROAS|seu orçamento)/i.test(e.textContent.trim()) && visivel(e));
+    for (const t of tits) { let g = t; for (let i = 0; i < 12 && g; i++) { if (g.querySelectorAll && [...g.querySelectorAll('button')].some(b => b.textContent.trim() === 'Salvar' && visivel(b))) return g; g = g.parentElement; } }
+    return null;
+  };
   // botão "Editar" (lápis) do cartão de ROAS ou de orçamento no topo da campanha
   function lapisDoCartao(titulo) {
     const rots = [...document.querySelectorAll('span,div,p,h3,h4,label')].filter(e => e.childElementCount <= 3 && e.textContent.trim().startsWith(titulo) && e.textContent.trim().length < 60);
