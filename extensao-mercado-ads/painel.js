@@ -42,7 +42,9 @@
   }
   function limparDestaques() { destacados.forEach(el => { el.style.removeProperty('outline'); el.style.removeProperty('outline-offset'); el.style.removeProperty('box-shadow'); }); destacados = []; }
   async function aguardar(fn, ms = 6000) { const fim = Date.now() + ms; while (Date.now() < fim) { const r = fn(); if (r) return r; await espera(200); } return null; }
-  const gaveta = () => { const t = textoIgual('h1,h2,h3,span,div,p', 'Modificar sua campanha'); let g = t; for (let i = 0; i < 10 && g && !(g.querySelectorAll && [...g.querySelectorAll('button')].some(b => b.textContent.trim() === 'Salvar')); i++) g = g.parentElement; return g; };
+  // edição da campanha: gaveta lateral "Modificar sua campanha" ou janela "Modificar seu ROAS Objetivo" /
+  // "Modificar seu orçamento…" — o ML mostra um formato ou outro dependendo da conta
+  const gaveta = () => { const t = [...document.querySelectorAll('h1,h2,h3,span,div,p')].find(e => e.childElementCount === 0 && /^Modificar (sua campanha|seu ROAS|seu orçamento)/i.test(e.textContent.trim())); let g = t; for (let i = 0; i < 10 && g && !(g.querySelectorAll && [...g.querySelectorAll('button')].some(b => b.textContent.trim() === 'Salvar')); i++) g = g.parentElement; return g; };
   // botão "Editar" (lápis) do cartão de ROAS ou de orçamento no topo da campanha
   function lapisDoCartao(titulo) {
     const rot = [...document.querySelectorAll('span,div,p,h3,h4')].find(e => e.childElementCount <= 2 && e.textContent.trim().startsWith(titulo) && e.textContent.trim().length < 40);
@@ -60,9 +62,10 @@
   async function preencherRoas(valor) {
     const g = await abrirGaveta('ROAS Objetivo'); if (!g) return 'Não achei o botão de editar o ROAS objetivo nesta tela.';
     const fixo = g.querySelector('input[type="radio"][value="fixed"]'); if (fixo && !fixo.checked) { fixo.click(); await espera(500); }
-    const outro = await aguardar(() => g.querySelector('input[type="radio"][value="-1"]'), 3000); if (outro && !outro.checked) { outro.click(); await espera(300); }
-    const campo = await aguardar(() => g.querySelector('input[type="number"]'), 3000); if (!campo) return 'Não achei o campo do ROAS objetivo.';
-    digitar(campo, String(valor).replace(',', '.'));
+    const o = await aguardar(() => { const x = campoDefinirOutro(g); return x.radio ? x : null; }, 3000);
+    if (o?.radio && !o.radio.checked) { o.radio.click(); await espera(300); }
+    const campo = campoDefinirOutro(g).campo; if (!campo) return 'Não achei o campo do ROAS objetivo.';
+    digitar(campo, campo.type === 'number' ? String(valor) : String(valor).replace('.', ','));
     destacar(campo, 'Valor preenchido pela GLR');
     destacar(textoIgual('button', 'Salvar', g), 'Confira e clique em Salvar');
     return null;
@@ -124,13 +127,23 @@
     if (!(await aguardar(() => !gaveta(), 8000))) return 'Cliquei em Salvar, mas a edição não fechou — o ML pode ter mostrado um aviso. Confira a tela.';
     await espera(2500); return null;
   }
+  // "Definir outro" e o campo do valor, nos dois formatos de edição (o campo pode ser número ou texto com vírgula)
+  function campoDefinirOutro(g) {
+    let radio = g.querySelector('input[type="radio"][value="-1"]');
+    if (!radio) { const rot = [...g.querySelectorAll('label,span,div,p')].find(e => e.childElementCount === 0 && e.textContent.trim() === 'Definir outro'); let c = rot; for (let i = 0; i < 4 && c && !radio; i++) { radio = c.querySelector && c.querySelector('input[type="radio"]'); c = c.parentElement; } }
+    let card = radio; for (let i = 0; i < 5 && card && !(card.querySelector && card.querySelector('input:not([type="radio"]):not([type="checkbox"])')); i++) card = card.parentElement;
+    const campo = (card && card.querySelector('input:not([type="radio"]):not([type="checkbox"])')) || g.querySelector('input[type="number"]');
+    return { radio, campo };
+  }
+  const cancelarEdicao = () => { const g = gaveta(); const b = g && textoIgual('button', 'Cancelar', g); if (b) b.click(); };
   async function autoRoas(valor) {
     const g = await abrirGaveta('ROAS Objetivo'); if (!g) return 'Não achei a edição do ROAS objetivo.';
     await humano(1200, 2500);
     const fixo = g.querySelector('input[type="radio"][value="fixed"]'); if (fixo && !fixo.checked) { fixo.click(); await humano(800, 1600); }
-    const outro = await aguardar(() => g.querySelector('input[type="radio"][value="-1"]'), 3000); if (outro && !outro.checked) { outro.click(); await humano(600, 1200); }
-    const campo = await aguardar(() => g.querySelector('input[type="number"]'), 3000); if (!campo) return 'Não achei o campo do ROAS objetivo.';
-    await digitarDevagar(campo, String(valor));
+    const o = await aguardar(() => { const x = campoDefinirOutro(g); return x.radio ? x : null; }, 3000);
+    if (o?.radio && !o.radio.checked) { o.radio.click(); await humano(600, 1200); }
+    const campo = campoDefinirOutro(g).campo; if (!campo) { cancelarEdicao(); return 'Não achei o campo do ROAS objetivo.'; }
+    await digitarDevagar(campo, campo.type === 'number' ? String(valor) : String(valor).replace('.', ','));
     const e = await salvarGaveta(); if (e) return e;
     const lido = valorDoCartao('ROAS Objetivo');
     return lido != null && Math.abs(lido - valor) < 0.06 ? null : `Salvei, mas o cartão mostra ${lido ?? '?'}x em vez de ${xv(valor)} — confira.`;
@@ -140,7 +153,7 @@
     await humano(1200, 2500);
     if (!g.querySelector('input[aria-label="Orçamento diário"]')) { textoIgual('button', 'Orçamento diário', g)?.click(); await humano(800, 1500); }
     const fixo = g.querySelector('input[type="radio"][aria-label="Orçamento fixo"]'); if (fixo && !fixo.checked) { fixo.click(); await humano(800, 1500); }
-    const campo = await aguardar(() => g.querySelector('input[aria-label="Orçamento diário"]'), 3000); if (!campo) return 'Não achei o campo do orçamento diário.';
+    const campo = await aguardar(() => g.querySelector('input[aria-label="Orçamento diário"]') || g.querySelector('input[type="text"],input[type="number"]'), 3000); if (!campo) { cancelarEdicao(); return 'Não achei o campo do orçamento diário.'; }
     await digitarDevagar(campo, String(Math.round(valor * 100) / 100).replace('.', ','));
     const e = await salvarGaveta(); if (e) return e;
     const lido = valorDoCartao('Orçamento diário');
@@ -188,7 +201,7 @@
         else if (d.acao === 'orcamento') erro = await autoOrcamento(+d.para);
         else if (d.acao === 'retirar_produto') for (const id of (d.item_ids || [])) { erro = await autoPausarAnuncio(id); if (erro) break; await humano(); }
         f = await lerFila(); if (!f || f.status !== 'rodando') break; // parado no meio pelo analista
-        if (erro) { f.status = 'parado'; f.erro = `Passo ${f.i + 1}: ${erro}`; await gravarFila(f); break; }
+        if (erro) { cancelarEdicao(); f.status = 'parado'; f.erro = `Passo ${f.i + 1}: ${erro}`; await gravarFila(f); break; }
         await enviar({ tipo: 'marcar', id: p.id, resultado: 'executado', dados: d, por: 'extensao_auto' });
         st.itens = st.itens.filter(x => x.id !== p.id);
         f.i++; if (f.i >= f.passos.length) f.status = 'concluido';
