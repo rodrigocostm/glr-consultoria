@@ -265,9 +265,17 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     for (let i = 0; i < comGasto.length; i += 5) {
       await Promise.all(comGasto.slice(i, i + 5).map(async x => {
         try {
-          const r = await mcpCall(mcApiKey, 'raw', { method: 'GET', meliUserId: contaId, path: `/advertising/MLB/product_ads/campaigns/${x.id}?date_from=${inicio}&date_to=${ontem}&metrics=impression_share,top_impression_share,lost_impression_share_by_budget,lost_impression_share_by_ad_rank,acos_benchmark` });
+          // + ACOS e TACOS da campanha em 30 dias, como o painel do ML mostra (TACOS = ADS ÷ venda pelo ADS + orgânica dos mesmos anúncios)
+          const [r, r30] = await Promise.all([
+            mcpCall(mcApiKey, 'raw', { method: 'GET', meliUserId: contaId, path: `/advertising/MLB/product_ads/campaigns/${x.id}?date_from=${inicio}&date_to=${ontem}&metrics=impression_share,top_impression_share,lost_impression_share_by_budget,lost_impression_share_by_ad_rank,acos_benchmark` }),
+            mcpCall(mcApiKey, 'raw', { method: 'GET', meliUserId: contaId, path: `/advertising/MLB/product_ads/campaigns/${x.id}?date_from=${de30}&date_to=${ontem}&metrics=cost,total_amount,organic_units_amount,acos,tacos` }).catch(() => null),
+          ]);
           const m = (r.data || r)?.metrics || {};
           if (m.impression_share != null) x.share = { ganha: +m.impression_share || 0, topo: +m.top_impression_share || 0, orcamento: +m.lost_impression_share_by_budget || 0, classificacao: +m.lost_impression_share_by_ad_rank || 0, benchmark: m.acos_benchmark != null ? +m.acos_benchmark : null };
+          const m30 = (r30?.data || r30)?.metrics || {};
+          const custo30 = parseFloat(m30.cost) || 0, total30 = (parseFloat(m30.total_amount) || 0) + (parseFloat(m30.organic_units_amount) || 0);
+          if (m30.tacos != null || total30 > 0) x.tacos30 = m30.tacos != null ? +m30.tacos : custo30 / total30 * 100;
+          if (m30.acos != null) x.acos30 = +m30.acos;
         } catch (e) { /* sem o detalhe, a campanha segue só pelas regras de ACOS */ }
       }));
     }
@@ -521,8 +529,9 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
       const gasto = Math.max(0, x.gasto - ex.gasto * (dias / diasProd));
       const vendasAj = Math.max(0, x.vendasAj - ex.vendasAj * (dias / diasProd));
       const acos = vendasAj > 0 ? gasto / vendasAj * 100 : (gasto > 0 ? Infinity : null);
-      const acosTxt = `${pctTxt(acos)}${taxaCancel > 0.005 && x.vendas > 0 ? ` (sem cancelados; ${r1(x.gasto / x.vendas * 100)}% no ML)` : ''}${ex.gasto > 0 ? ', sem contar os produtos já sugeridos acima' : ''}`;
-      const base0 = { campaign_id: x.id, campanha: x.nome, gasto: r1(x.gasto), vendas: r1(x.vendas), vendas_sem_cancelados: r1(x.vendasAj), acos: acos === Infinity ? null : acos && r1(acos), roas_objetivo: x.roasAlvo ? r1(x.roasAlvo) : null, estrategia: x.c.strategy || null };
+      const painelTxt = x.acos30 != null || x.tacos30 != null ? `; no painel do ML, últimos 30 dias: ACOS ${pctTxt(x.acos30)} e TACOS da campanha ${pctTxt(x.tacos30)}` : '';
+      const acosTxt = `${pctTxt(acos)} nos últimos ${dias} dias${taxaCancel > 0.005 && x.vendas > 0 ? ` (sem cancelados; ${r1(x.gasto / x.vendas * 100)}% no ML)` : ''}${ex.gasto > 0 ? ', sem contar os produtos já sugeridos acima' : ''}${painelTxt}`;
+      const base0 = { campaign_id: x.id, campanha: x.nome, gasto: r1(x.gasto), vendas: r1(x.vendas), vendas_sem_cancelados: r1(x.vendasAj), acos: acos === Infinity ? null : acos && r1(acos), janela_dias: dias, acos_30d: x.acos30 != null ? r1(x.acos30) : null, tacos_campanha: x.tacos30 != null ? r1(x.tacos30) : null, roas_objetivo: x.roasAlvo ? r1(x.roasAlvo) : null, estrategia: x.c.strategy || null };
 
       // 2a) Pausar campanha — último recurso: gasto alto sem retorno
       if (!opc.soMomento && x.madura && gasto >= limitePausa && (x.unidades === 0 || vendasAj < gasto) && !ex.gasto) {
@@ -547,23 +556,32 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         const av0 = princ0 ? avisoDe(princ0.itens) : null;
         const limMargem = av0?.aa != null ? Math.max(0.5, av0.aa) : null;
         const prejuizo = limMargem != null && acos > limMargem, muitoAcima = acos > meta * 2;
-        if (!forte && !prejuizo && !muitoAcima && tacosMes != null && tacosOk) {
-          colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): o TACOS do mês (${r1(tacosMes)}%) está dentro ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `do limite (meta ${meta}%)`} e a campanha não passa do dobro da meta${limMargem != null ? ` nem do limite da margem (${r1(limMargem)}%)` : ''} — apertar só tiraria venda` });
+        // O TACOS da própria campanha manda: dentro do teto, não aperta (só se vende no prejuízo da margem).
+        // Sem ele, vale o TACOS do mês; sem nenhum TACOS, não aperta sem prova (dobro da meta ou contenção forte).
+        const tetoCamp = cfg.teto_tacos || meta;
+        const segura = prejuizo ? null
+          : x.tacos30 != null ? (x.tacos30 <= tetoCamp ? `o TACOS da campanha (${r1(x.tacos30)}% em 30 dias) está dentro ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `da meta (${meta}%)`}` : null)
+          : !forte && !muitoAcima && (tacosMes == null || tacosOk) ? (tacosMes == null ? 'sem o TACOS da campanha e do mês não há prova de que apertar compensa' : `o TACOS do mês (${r1(tacosMes)}%) está dentro ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `do limite (meta ${meta}%)`} e a campanha não passa do dobro da meta`)
+          : null;
+        if (segura) {
+          colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): ${segura}${limMargem != null ? ` e o ACOS não passa do limite da margem (${r1(limMargem)}%)` : ''} — apertar só tiraria venda` });
           // sugestão antiga de apertar esta campanha deixa de valer
-          for (const l of logs) { const d = l.dados || {}; if (l.resultado === 'so_alerta' && String(d.campaign_id) === String(x.id) && ((d.acao === 'roas_target' && +d.para > +d.de) || (d.acao === 'orcamento' && +d.para < +d.de))) { await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { resultado: 'expirado', dados: { ...d, expirado_em: new Date().toISOString(), motivo_expirado: 'TACOS dentro do limite' } }).catch(() => {}); l.resultado = 'expirado'; } }
+          for (const l of logs) { const d = l.dados || {}; if (l.resultado === 'so_alerta' && String(d.campaign_id) === String(x.id) && ((d.acao === 'roas_target' && +d.para > +d.de) || (d.acao === 'orcamento' && +d.para < +d.de))) { await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { resultado: 'expirado', dados: { ...d, expirado_em: new Date().toISOString(), motivo_expirado: 'TACOS dentro do limite' } }).catch(() => {}); l.resultado = 'expirado'; expiradas++; } }
           continue;
         }
-        const motivoTacos = tacosMes != null && tacosOk ? ` O TACOS do mês (${r1(tacosMes)}%) está dentro do limite, mas ${prejuizo ? `a campanha passa do que a margem do produto aguenta (${r1(limMargem)}%)` : 'a campanha está a mais que o dobro da meta'} — por isso vale otimizar só ela.` : (tacosMes != null ? ` O TACOS do mês (${r1(tacosMes)}%) também está acima do limite.` : '');
+        const motivoTacos = prejuizo ? ` A campanha passa do que a margem do produto principal aguenta (${r1(limMargem)}%) — vende no prejuízo, por isso vale apertar.`
+          : x.tacos30 != null ? ` O TACOS da campanha (${r1(x.tacos30)}% em 30 dias) passa ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `da meta (${meta}%)`} — por isso vale apertar.`
+          : tacosMes != null ? ` O TACOS do mês (${r1(tacosMes)}%) ${tacosOk ? 'está dentro do limite, mas a campanha está a mais que o dobro da meta' : 'está acima do limite'} — por isso vale apertar.` : '';
         const passo = forte ? 0.25 : 0.15;
         if (x.rentab && x.roasAlvo > 0) {
           const novo = r1(x.roasAlvo / (1 - passo));
           await sugerir(chave, `Sugestão: subir ROAS objetivo — ${x.nome}`,
-            `ACOS de ${acosTxt} nos últimos ${dias} dias, acima da meta (${meta}%, equivale a ROAS ${roasTxt(roasMeta)})${forte ? ` e da contenção forte (${cfg.regra_pausa_acos}%)` : ''}, mas a campanha vende — conter em vez de pausar.${motivoTacos} Subir o ROAS objetivo de ${roasTxt(x.roasAlvo)} para ${roasTxt(novo)} (lance mais conservador).`,
+            `ACOS de ${acosTxt}, acima da meta (${meta}%, equivale a ROAS ${roasTxt(roasMeta)})${forte ? ` e da contenção forte (${cfg.regra_pausa_acos}%)` : ''}, mas a campanha vende — conter em vez de pausar.${motivoTacos} Subir o ROAS objetivo de ${roasTxt(x.roasAlvo)} para ${roasTxt(novo)} (lance mais conservador).`,
             { ...base0, acao: 'roas_target', de: r1(x.roasAlvo), para: novo, impacto: Math.max(0, gasto - vendasAj * meta / 100) / dias * 7, impacto_tipo: 'economia' });
         } else if (x.budget > (cfg.orcamento_min || 0)) {
           const novo = Math.max(cfg.orcamento_min || 0, Math.round(x.budget * (1 - passo) * 100) / 100);
           if (novo < x.budget) await sugerir(chave, `Sugestão: reduzir orçamento — ${x.nome}`,
-            `ACOS de ${acosTxt} nos últimos ${dias} dias, acima da meta (${meta}%), mas a campanha vende — conter em vez de pausar.${motivoTacos} Reduzir o orçamento diário de ${R$(x.budget)} para ${R$(novo)}.`,
+            `ACOS de ${acosTxt}, acima da meta (${meta}%), mas a campanha vende — conter em vez de pausar.${motivoTacos} Reduzir o orçamento diário de ${R$(x.budget)} para ${R$(novo)}.`,
             { ...base0, acao: 'orcamento', de: x.budget, para: novo, impacto: Math.max(0, gasto - vendasAj * meta / 100) / dias * 7, impacto_tipo: 'economia' });
         }
         continue;
@@ -672,7 +690,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         cliente: cfg.cliente_nome || null, hoje: hojeIso, janela_campanhas_dias: dias, janela_produtos_dias: diasProd,
         meta_acos_conta: meta, teto_tacos_cliente: cfg.teto_tacos || null, tacos_mes: tacosMes == null ? null : r1(tacosMes), taxa_cancelamento_pct: r1(taxaCancel * 100),
         campanhas: C.map(x => ({ id: x.id, nome: x.nome, estrategia: x.c.strategy || null, roas_objetivo: x.roasAlvo ? r1(x.roasAlvo) : null, orcamento_dia: x.budget, gasto_janela: r1(x.gasto), acos_sem_cancelados: x.acos == null || x.acos === Infinity ? null : r1(x.acos), unidades_ads: x.unidades,
-          idade_dias: Number.isFinite(x.idadeDias) ? Math.floor(x.idadeDias) : null, alterada_ha_dias: Number.isFinite(x.mudouHa) ? Math.floor(x.mudouHa) : null, em_aprendizado: x.aprendendo, alterada_recente: x.recente,
+          acos_30d_painel: x.acos30 != null ? r1(x.acos30) : null, tacos_campanha_30d: x.tacos30 != null ? r1(x.tacos30) : null, idade_dias: Number.isFinite(x.idadeDias) ? Math.floor(x.idadeDias) : null, alterada_ha_dias: Number.isFinite(x.mudouHa) ? Math.floor(x.mudouHa) : null, em_aprendizado: x.aprendendo, alterada_recente: x.recente,
           impressoes: x.share ? { ganha_pct: Math.round(x.share.ganha * 100), topo_pct: Math.round(x.share.topo * 100), perdida_orcamento_pct: Math.round(x.share.orcamento * 100), perdida_classificacao_pct: Math.round(x.share.classificacao * 100), acos_referencia_categoria: x.share.benchmark } : null })),
       };
       revisao = await especialista.revisar({ Anthropic: h.Anthropic, anthropicKey: h.anthropicKey, conta, candidatos });

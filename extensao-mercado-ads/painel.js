@@ -322,7 +322,7 @@
     pausar: () => 'Pausar esta campanha',
     informativa: () => 'Melhorar os anúncios desta campanha',
   };
-  const PQ = d => d.acao === 'roas_target' || d.acao === 'orcamento' ? `ACOS da campanha ${pct(d.acos)}${d.share ? ` · perde ${Math.round((d.acao === 'orcamento' ? d.share.orcamento : d.share.classificacao) * 100)}% das impressões por ${d.acao === 'orcamento' ? 'orçamento' : 'classificação'}` : ''}`
+  const PQ = d => d.acao === 'roas_target' || d.acao === 'orcamento' ? `${d.acos_30d != null ? `ACOS ${pct(d.acos_30d)} · TACOS da campanha ${pct(d.tacos_campanha)} (30 dias, como no ML)` : `ACOS da campanha ${pct(d.acos)}${d.janela_dias ? ` em ${d.janela_dias} dias` : ''}`}${d.share ? ` · perde ${Math.round((d.acao === 'orcamento' ? d.share.orcamento : d.share.classificacao) * 100)}% das impressões por ${d.acao === 'orcamento' ? 'orçamento' : 'classificação'}` : ''}`
     : d.acao === 'retirar_produto' ? `gastou ${R$(d.gasto)}${d.janela_dias ? ` em ${d.janela_dias} dias` : ''} ${d.unidades ? `e vendeu ${d.unidades} un.` : 'sem venda pelo ADS'}`
     : d.acao === 'mover_produto' ? `ACOS ${pct(d.acos)} · gastou ${R$(d.gasto)}` : '';
   const impacto = d => !d.impacto ? '' : `<span class="imp ${d.impacto_tipo === 'economia' ? 'eco' : ''}">${d.impacto_tipo === 'economia' ? '−' : '+'}${R$(d.impacto)}/sem</span>`;
