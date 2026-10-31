@@ -45,7 +45,7 @@ async function revisar({ Anthropic, anthropicKey, conta, candidatos }) {
   try {
     const client = new Anthropic({ apiKey: anthropicKey });
     const r = await client.messages.create({
-      model: 'claude-opus-5-5', max_tokens: 3000,
+      model: 'claude-sonnet-5-5', max_tokens: 3000,
       system: `${SISTEMA}\n\n${GUIA}`,
       messages: [{ role: 'user', content: JSON.stringify(entrada) }],
     });
@@ -55,7 +55,7 @@ async function revisar({ Anthropic, anthropicKey, conta, candidatos }) {
     try { j = ler(txt); } catch (e1) {
       // JSON quebrado (ex.: aspas dentro de um texto): pede a mesma resposta de novo, corrigida
       const r2 = await client.messages.create({
-        model: 'claude-opus-5-5', max_tokens: 3000,
+        model: 'claude-sonnet-5-5', max_tokens: 3000,
         system: `${SISTEMA}\n\n${GUIA}`,
         messages: [{ role: 'user', content: JSON.stringify(entrada) }, { role: 'assistant', content: txt }, { role: 'user', content: `Esse JSON é inválido (${String(e1.message).slice(0, 120)}). Responda de novo SÓ o JSON válido, com o mesmo conteúdo e sem aspas duplas dentro dos textos.` }],
       });
