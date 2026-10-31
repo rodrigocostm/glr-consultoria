@@ -462,8 +462,17 @@ module.exports = async function handler(req, res) {
       // ML (copiloto) só na revisão completa das 07h; acompanhamentos são da Shopee
       const configs = todas.filter(cfg => rodada === 'completa' || !ehML(cfg));
       const ontem = dataBRT(1);
+      // Cada conta do ML vai numa chamada própria (?conta_id=X&fundo=1, com os
+      // próprios 300s) — dezenas de contas juntas aqui estourariam o tempo. Sai
+      // uma a cada 1,5s para não despejar tudo na Tiops ao mesmo tempo.
+      const base = `https://${req.headers['x-forwarded-host'] || req.headers.host}`;
+      let filaML = 0;
+      const dispararML = cfg => new Promise(ok => setTimeout(ok, 1500 * filaML++))
+        .then(() => fetch(`${base}/api/agente-cron?conta_id=${encodeURIComponent(cfg.conta_id)}&fundo=1`, { headers: secret ? { authorization: `Bearer ${secret}` } : {} }))
+        .then(r => ({ conta_id: cfg.conta_id, marketplace: 'ml', disparada: r.status }))
+        .catch(e => ({ conta_id: cfg.conta_id, marketplace: 'ml', erro: e.message }));
       waitUntil((rodada === 'completa' ? avaliarAutonomia().catch(e => console.error('[autonomia]', e)).then(() => promocoesPelaMeta(mcApiKey).catch(e => console.error('[promo-meta]', e))) : Promise.resolve()).then(() => Promise.all(configs.map(cfg => ehML(cfg)
-        ? comTetoML(cfg).then(c => processarContaML(c, mcApiKey, ajudantesML()))
+        ? dispararML(cfg)
         : rodada === 'completa'
           ? processarConta(cfg, mcApiKey, anthropicKey, ontem, dataBRT(Math.max(1, cfg.regra_pausa_dias || 3)))
           : processarAcompanhamento(cfg, mcApiKey))))
@@ -490,6 +499,15 @@ module.exports = async function handler(req, res) {
     }
 
     const ontem = dataBRT(1);
+
+    // &fundo=1 (disparo da rodada das 07h, 1 conta do ML): responde na hora e analisa em segundo plano
+    if (contaIdFiltro && req.query?.fundo === '1' && ehML(configs[0])) {
+      waitUntil(comTetoML(configs[0]).then(c => processarContaML(c, mcApiKey, ajudantesML()))
+        .then(r => console.log('[agente-ml]', contaIdFiltro, JSON.stringify(r).slice(0, 2000)))
+        .finally(gravarConsumo)
+        .catch(e => console.error('[agente-ml] falhou', contaIdFiltro, e)));
+      return res.status(202).json({ ok: true, conta_id: contaIdFiltro, fundo: true });
+    }
 
     // Contas em paralelo — sequencial estourava os 60s do plano com mais de
     // 1 conta ativa (cada conta já faz vários round-trips pra Tiops).

@@ -32,6 +32,13 @@ Router.register('agente-ml', (params, el) => {
   const idConta = c => String(c.param_to_use?.meliUserId || c.external_id);
   const cfgDe = id => state.configs.find(c => String(c.conta_id) === String(id)) || null;
   const nomeDe = id => { const c = state.contasML.find(x => idConta(x) === String(id)); return c ? nomeConta(c) : (cfgDe(id)?.cliente_nome || id); };
+  const especial = id => id === '__novo__' || id === '__lote__';
+  const faltam = () => state.contasML.filter(x => !cfgDe(idConta(x)));
+  // teto de ADS do cliente da conta (Plano de ação → meta de TACOS)
+  const tetoCliente = id => {
+    const cli = GLR.ctx?.clienteDaConta('ml', id); if (!cli) return null;
+    try { const v = parseFloat(JSON.parse(localStorage.getItem('glr_metas_tacos') || '{}')[cli]); return v > 0 ? v : null; } catch (e) { return null; }
+  };
   const pendentes = id => state.logs.filter(l => String(l.conta_id) === String(id) && l.tipo === 'alerta' && l.resultado === 'so_alerta' && !l.dados?.promo_aprovar); // promoção pela meta fica na Caixa de decisões
 
   async function carregar() {
@@ -46,13 +53,13 @@ Router.register('agente-ml', (params, el) => {
       state.configs = cfg.data || [];
       state.logs = logs.data || [];
       try { state.base = window.BaseDados ? await BaseDados.carregar() : null; } catch (e) { state.base = null; }
-      if (state.aberta && !cfgDe(state.aberta) && state.aberta !== '__novo__') state.aberta = null;
+      if (state.aberta && !cfgDe(state.aberta) && !especial(state.aberta)) state.aberta = null;
       const foco = GLR.ctx?.cliente(); // cliente em foco (barra de cima) → conta ML dele
       if (foco && GLR.ctx.clienteDaConta('ml', state.aberta) !== foco) { const doCli = state.configs.find(x => GLR.ctx.clienteDaConta('ml', x.conta_id) === foco); if (doCli) state.aberta = String(doCli.conta_id); }
       if (!state.aberta && state.configs.length === 1) state.aberta = String(state.configs[0].conta_id);
     } catch (e) { console.warn('[Agente ML]', e); }
     state.carregando = false; render();
-    if (state.aberta && state.aberta !== '__novo__') carregarCampanhas(state.aberta);
+    if (state.aberta && !especial(state.aberta)) carregarCampanhas(state.aberta);
   }
 
   // Mês da conta pela base automática (faturamento sem cancelados, ADS, TACOS, projeção)
@@ -179,6 +186,29 @@ Router.register('agente-ml', (params, el) => {
     await carregar();
   }
 
+  // Liga o agente de uma vez nas contas marcadas na tela "contas que faltam"
+  async function salvarLote() {
+    const linhas = [...document.querySelectorAll('.aml-lote-linha')].filter(tr => tr.querySelector('input[type=checkbox]')?.checked);
+    const rows = [], semMeta = [];
+    for (const tr of linhas) {
+      const id = tr.dataset.conta, meta = parseFloat(String(tr.querySelector('input[inputmode]')?.value || '').replace(',', '.'));
+      if (!(meta > 0)) { semMeta.push(nomeDe(id)); continue; }
+      rows.push({ conta_id: String(id), marketplace: 'ml', cliente_nome: nomeDe(id), ativo: true, meta_acos: meta, regra_pausa_acos: null,
+        regra_pausa_dias: 7, dias_maturacao_campanha: 7, orcamento_min: null, orcamento_max: null,
+        alerta_variacao_pct: 30, janela_decisao_dias: 1, notas: '', atualizado_em: new Date().toISOString() });
+    }
+    if (semMeta.length) { alert(`Defina a meta de TACOS de: ${semMeta.join(', ')} — ou desmarque essas contas.`); return; }
+    if (!rows.length) { alert('Marque pelo menos uma conta.'); return; }
+    state.salvando = true; render();
+    try {
+      const { error } = await _sb.from('glr_agente_config').upsert(rows, { onConflict: 'conta_id' });
+      if (error) throw error;
+      state.aberta = null;
+    } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
+    state.salvando = false;
+    await carregar();
+  }
+
   async function alternarAtivo(ligado) {
     const cfg = cfgDe(state.aberta); if (!cfg) return;
     const { error } = await _sb.from('glr_agente_config').update({ ativo: ligado, atualizado_em: new Date().toISOString() }).eq('conta_id', cfg.conta_id);
@@ -206,7 +236,29 @@ Router.register('agente-ml', (params, el) => {
           </div>
         </div>`;
       }).join('')}
+      ${faltam().length ? `<div class="card aml-card aml-novo" onclick="window._amlAbrir('__lote__')">+ Ligar o agente nas ${faltam().length} contas do ML que faltam</div>` : ''}
       <div class="card aml-card aml-novo" onclick="window._amlAbrir('__novo__')">+ Adicionar conta do Mercado Livre</div>
+    </div>`;
+  }
+  function renderLote() {
+    const lista = faltam().map(x => ({ id: idConta(x), nome: nomeConta(x), teto: tetoCliente(idConta(x)) })).sort((a, b) => (b.teto ? 1 : 0) - (a.teto ? 1 : 0) || a.nome.localeCompare(b.nome));
+    const com = lista.filter(x => x.teto).length;
+    return `<div class="card" style="padding:18px 20px;">
+      <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Ligar o agente nas contas do ML que faltam</div>
+      <div class="aml-sub" style="margin-bottom:12px;">A meta de TACOS vem do teto de ADS do cliente (Plano de ação) — ${com} de ${lista.length} contas já têm. As outras ficam desmarcadas: preencha a meta para incluir. Cada conta marcada passa a ser analisada todo dia às 07:00 (só sugere; você aplica no ML). Conta sem campanha de ADS não recebe sugestão. Contenção forte, orçamento mínimo e máximo ficam vazios — ajuste depois em Guardrails.</div>
+      <div style="overflow-x:auto;"><table class="aml-lote">
+        <thead><tr><th></th><th>Conta</th><th>Meta de TACOS</th><th>De onde veio</th></tr></thead>
+        <tbody>${lista.map(x => `<tr class="aml-lote-linha" data-conta="${h(x.id)}">
+          <td><input type="checkbox" id="aml-lote-${h(x.id)}" ${x.teto ? 'checked' : ''}></td>
+          <td><label for="aml-lote-${h(x.id)}"><b>${h(x.nome)}</b> <span class="aml-sub">${h(x.id)}</span></label></td>
+          <td><div style="display:flex;gap:6px;align-items:center;"><input class="form-control" style="width:80px;" inputmode="decimal" value="${x.teto ?? ''}" oninput="this.closest('tr').querySelector('input[type=checkbox]').checked=!!this.value.trim()"> %</div></td>
+          <td class="aml-sub">${x.teto ? 'teto de ADS do cliente' : (GLR.ctx?.clienteDaConta('ml', x.id) ? 'cliente sem teto de ADS no Plano de ação' : 'conta sem cliente vinculado')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="btn btn-primary" ${state.salvando ? 'disabled' : ''} onclick="window._amlSalvarLote()">${state.salvando ? '⏳ Salvando…' : 'Ligar nas contas marcadas'}</button>
+        <button class="btn btn-secondary" onclick="window._amlAbrir(null)">Cancelar</button>
+      </div>
     </div>`;
   }
   function renderConfig(cfg) {
@@ -520,6 +572,7 @@ Router.register('agente-ml', (params, el) => {
     const root = document.getElementById('aml-root'); if (!root) return;
     if (state.carregando) { root.innerHTML = '<div class="aml-sub" style="padding:30px;">⏳ Carregando…</div>'; return; }
     if (!state.aberta) { root.innerHTML = renderPortfolio(); return; }
+    if (state.aberta === '__lote__') { root.innerHTML = `<button class="btn btn-secondary btn-sm" style="margin-bottom:14px;" onclick="window._amlAbrir(null)">← Voltar</button>${renderLote()}`; return; }
     if (state.aberta === '__novo__') { root.innerHTML = `<button class="btn btn-secondary btn-sm" style="margin-bottom:14px;" onclick="window._amlAbrir(null)">← Voltar</button>${renderConfig(null)}`; return; }
     const id = state.aberta, cfg = cfgDe(id), m = mesDe(id);
     const ultima = state.logs.find(l => String(l.conta_id) === String(id) && l.tipo === 'sistema' && /^Análise ML|^Erro na análise ML/.test(l.titulo || ''));
@@ -549,13 +602,14 @@ Router.register('agente-ml', (params, el) => {
 
   window._amlAbrir = id => {
     state.aberta = id || null; state.editando = false;
-    if (!id) GLR.ctx?.definir('', true); else if (id !== '__novo__') GLR.ctx?.definirPorConta('ml', id);
-    try { if (id && id !== '__novo__') localStorage.setItem('glr_aml_conta', id); else localStorage.removeItem('glr_aml_conta'); } catch (e) {}
+    if (!id) GLR.ctx?.definir('', true); else if (!especial(id)) GLR.ctx?.definirPorConta('ml', id);
+    try { if (id && !especial(id)) localStorage.setItem('glr_aml_conta', id); else localStorage.removeItem('glr_aml_conta'); } catch (e) {}
     render();
-    if (id && id !== '__novo__') carregarCampanhas(id);
+    if (id && !especial(id)) carregarCampanhas(id);
   };
   window._amlEditar = on => { state.editando = !!on; render(); };
   window._amlSalvar = salvarConfig;
+  window._amlSalvarLote = salvarLote;
   window._amlAtivo = alternarAtivo;
   window._amlAnalisar = analisarAgora;
   window._amlMarcar = marcar;
@@ -581,6 +635,7 @@ Router.register('agente-ml', (params, el) => {
     .aml-chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(99,102,241,.12);color:var(--accent);vertical-align:middle;}
     .aml-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
     .aml-card{padding:16px 18px;cursor:pointer;border-left:4px solid var(--c,var(--text-muted));}
+    .aml-lote{width:100%;border-collapse:collapse;font-size:13px;} .aml-lote th{text-align:left;font-size:11.5px;color:var(--text-muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--border);} .aml-lote td{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:middle;}
     .aml-novo{display:flex;align-items:center;justify-content:center;min-height:110px;color:var(--text-muted);font-weight:600;border-style:dashed;}
     .aml-rot{font-size:11px;text-transform:none;letter-spacing:0;color:var(--text-muted);}
     .aml-val{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;}
