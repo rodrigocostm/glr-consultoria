@@ -105,10 +105,23 @@
     const num = String(itemId).replace(/^MLB/i, ''), linhas = fundo(document, 'table tbody tr'), nome = normT(produto).slice(0, 35);
     return linhas.find(tr => tr.innerText.includes(num)) || (nome.length >= 12 ? linhas.find(tr => normT(tr.innerText).includes(nome)) : null);
   }
-  async function mostrarAnuncio(itemId, produto) {
+  const codigoDaLinha = tr => ((tr?.innerText || '').match(/#\s?((?:MLB)?\d{6,})/) || [])[1] || null;
+  const linhaPorCodigo = cod => cod ? fundo(document, 'table tbody tr').find(tr => codigoDaLinha(tr) === cod) : null;
+  function buscarNaTabela(q) {
+    const busca = fundo1(document, 'input[placeholder^="Procurar por #"]'); if (!busca) return false;
+    digitar(busca, q); busca.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })); return true;
+  }
+  // devolve o código que a linha mostra (#MLB… / família), para achar a mesma linha depois de pausar
+  async function acharLinha(itemId, produto) {
     let linha = await aguardar(() => linhaDoAnuncio(itemId, produto), 4000);
-    const busca = fundo1(document, 'input[placeholder^="Procurar por #"]');
-    if (!linha && busca && produto) { digitar(busca, String(produto).slice(0, 30)); busca.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })); linha = await aguardar(() => linhaDoAnuncio(itemId, produto), 5000); }
+    // a busca do ML acha pelo código da variação e mostra a linha do produto/catálogo
+    if (!linha && buscarNaTabela(String(itemId))) { await espera(3000); const rs = fundo(document, 'table tbody tr').filter(tr => tr.innerText.trim()); linha = linhaDoAnuncio(itemId, produto) || (rs.length === 1 ? rs[0] : null); }
+    if (!linha && produto && buscarNaTabela(String(produto).slice(0, 30))) { linha = await aguardar(() => linhaDoAnuncio(itemId, produto), 5000); }
+    return linha ? codigoDaLinha(linha) || linha : null;
+  }
+  async function mostrarAnuncio(itemId, produto) {
+    const k = await acharLinha(itemId, produto);
+    const linha = typeof k === 'string' ? linhaPorCodigo(k) : k;
     if (!linha) return `Não achei o anúncio ${itemId}${produto ? ` ("${String(produto).slice(0, 40)}")` : ''} nesta campanha (pode já ter sido pausado ou removido).`;
     destacar(linha);
     destacar(linha.querySelector('button[aria-label="Acciones del anuncio"]'), 'Clique aqui → Pausar');
@@ -183,8 +196,10 @@
     return lido != null && Math.abs(lido - valor) < 0.6 ? null : `Salvei, mas o cartão mostra R$ ${lido ?? '?'} em vez de ${R$(valor)} — confira.`;
   }
   async function autoPausarAnuncio(itemId, produto) {
-    const e = await mostrarAnuncio(itemId, produto); if (e) return e;
-    const linhaDe = () => linhaDoAnuncio(itemId, produto);
+    const k = await acharLinha(itemId, produto);
+    const linhaDe = () => typeof k === 'string' ? linhaPorCodigo(k) : k;
+    if (!linhaDe()) return `Não achei o anúncio ${itemId}${produto ? ` ("${String(produto).slice(0, 40)}")` : ''} nesta campanha.`;
+    destacar(linhaDe());
     if (/pausad/i.test(linhaDe()?.innerText || '')) return null; // já pausado (ex.: a família toda numa variação anterior)
     const menu = linhaDe()?.querySelector('button[aria-label="Acciones del anuncio"]'); if (!menu) return 'Não achei o menu ⋮ do anúncio.';
     await humano(1500, 3000); menu.click();
@@ -193,7 +208,9 @@
     await humano(800, 1800); pausar.click();
     await espera(2500);
     if (fundo(document, '[role="dialog"]').some(d => visivel(d) && /pausar|confirm/i.test(d.innerText))) return 'O ML pediu uma confirmação para pausar — confirme à mão e marque Feito.';
-    return (await aguardar(() => /paus/i.test(linhaDe()?.innerText || ''), 6000)) ? null : 'Cliquei em Pausar, mas não vi o anúncio como pausado — confira.';
+    const ok = await aguardar(() => /paus/i.test(linhaDe()?.innerText || ''), 6000);
+    buscarNaTabela(''); // limpa a busca para o próximo passo
+    return ok ? null : 'Cliquei em Pausar, mas não vi o anúncio como pausado — confira.';
   }
   const lerFila = async () => (await chrome.storage.local.get(FILA))[FILA] || null;
   const gravarFila = f => chrome.storage.local.set({ [FILA]: f });
@@ -224,6 +241,7 @@
         else if (d.acao === 'orcamento') erro = await autoOrcamento(+d.para);
         else if (d.acao === 'retirar_produto') for (const id of (d.item_ids || [])) { erro = await autoPausarAnuncio(id, d.produto); if (erro) break; await humano(); }
         f = await lerFila(); if (!f || f.status !== 'rodando') break; // parado no meio pelo analista
+        if (erro && /^Não achei o anúncio/.test(erro)) { f.pulados = [...(f.pulados || []), erro]; f.i++; if (f.i >= f.passos.length) f.status = 'concluido'; await gravarFila(f); limparDestaques(); await humano(); continue; }
         if (erro) { cancelarEdicao(); f.status = 'parado'; f.erro = `Passo ${f.i + 1}: ${erro}`; await gravarFila(f); break; }
         await enviar({ tipo: 'marcar', id: p.id, resultado: 'executado', dados: d, por: 'extensao_auto' });
         st.itens = st.itens.filter(x => x.id !== p.id);
@@ -301,7 +319,7 @@
     const f = st.auto, nAuto = lista.filter(l => AUTO.has(l.dados?.acao)).length;
     const barra = f && f.status === 'rodando' ? `<div class="auto on">Aplicando sozinho, no ritmo de uma pessoa: passo <b>${Math.min(f.i + 1, f.passos.length)} de ${f.passos.length}</b>. Não feche esta aba. <button class="x" data-auto-parar="1">Parar</button></div>`
       : f && f.status === 'parado' ? `<div class="auto erro">Parou: ${esc(f.erro || '')} (${f.i} de ${f.passos.length} aplicados) <button data-auto-fechar="1">Ok</button></div>`
-      : f && f.status === 'concluido' ? `<div class="auto ok">${f.passos.length} passo(s) aplicados e conferidos ✓ <button data-auto-fechar="1">Ok</button></div>`
+      : f && f.status === 'concluido' ? `<div class="auto ok">${f.passos.length - (f.pulados || []).length} passo(s) aplicados e conferidos ✓${(f.pulados || []).length ? `<br>${f.pulados.length} pulado(s), sem mexer: ${esc(f.pulados.join(' · '))}` : ''} <button data-auto-fechar="1">Ok</button></div>`
       : nAuto && !st.erro ? `<div class="auto"><button class="pri" data-auto-iniciar="1">Aplicar ${Math.min(nAuto, MAX_AUTO)} passo(s) sozinho</button><span>ROAS, orçamento e pausar anúncio · ritmo humano · para no primeiro imprevisto${lista.length > nAuto ? ' · mover/colocar produto ficam à mão' : ''}</span></div>` : '';
     raiz.innerHTML = `<style>
       .auto{margin:0 0 4px;padding:8px 10px;border-radius:10px;background:#f4f2ff;font-size:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:#2b2f3c} .auto span{color:#5b6070}
