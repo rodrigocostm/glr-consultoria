@@ -430,7 +430,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           const ok = await sugerir(chave, `Sugestão: tirar produto sem estoque da campanha — ${f.nome.slice(0, 50)}`,
             `O agente de Estoque avisou que "${f.nome.slice(0, 70)}" está sem estoque, mas o anúncio segue na campanha "${x.nome}" e gastou ${R$(f.gasto)} em ${diasProd} dias. Tirar da campanha até repor — clique pago em anúncio sem estoque não vira venda.`,
             { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), unidades: f.unidades, janela_dias: diasProd, acao: 'retirar_produto', impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia', colaboracao: { de: 'estoque' } });
-          if (ok) { tirar(x, f); colaboracoes.push({ de: 'estoque', texto: `sugeri tirar "${f.nome.slice(0, 50)}" de "${x.nome}": está sem estoque` }); }
+          if (ok || ocupadas.has(chave)) tirar(x, f); if (ok) { colaboracoes.push({ de: 'estoque', texto: `sugeri tirar "${f.nome.slice(0, 50)}" de "${x.nome}": está sem estoque` }); }
           continue;
         }
         const custoVenda = f.preco * ((metaFam || 10) / 100); // ADS aceitável por venda deste produto (limitado pela margem)
@@ -446,7 +446,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           const ok = pausas < MAX_PAUSAS && await sugerir(chave, `Sugestão: pausar anúncio de catálogo sem buy box — ${f.nome.slice(0, 50)}`,
             `"${f.nome.slice(0, 70)}" é anúncio de catálogo e não está ganhando o buy box; gastou ${R$(f.gasto)} em ${diasProd} dias na campanha "${x.nome}" com ${f.cliques} cliques e nenhuma venda pelo ADS. Pausar este anúncio até ganhar o buy box (preço, frete, reputação) — sem buy box o clique leva para a oferta de outro vendedor.`,
             { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), unidades: f.unidades, cliques: f.cliques, janela_dias: diasProd, acao: 'retirar_produto', impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia' });
-          if (ok) { pausas++; tirar(x, f); }
+          if (ok) pausas++; if (ok || ocupadas.has(chave)) tirar(x, f);
           continue;
         }
         const base0 = { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), vendas_sem_cancelados: r1(f.vendasAj), unidades: f.unidades, cliques: f.cliques, vendas_esperadas: r1(esperadas), conversao_conta: r1(convConta * 100), unidades_loja_30d: loja.un, acos: f.acos === Infinity ? null : f.acos && r1(f.acos), janela_dias: diasProd };
@@ -459,7 +459,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           const ok = pausas < MAX_PAUSAS && await sugerir(chave, `Sugestão: tirar produto da campanha — ${f.nome.slice(0, 60)}`,
             `Na campanha "${x.nome}", ${f.itens.length > 1 ? `as ${f.ativos.length} variações ativas deste produto gastaram` : 'este anúncio gastou'} ${R$(f.gasto)} em ${diasProd} dias com ${provaTxt}. Também não vende fora do ADS (${loja.un} un. na loja em 30 dias), então pausar não tira venda orgânica. Tirar da campanha (pausar o anúncio) e revisar preço, fotos e ficha antes de voltar — o orçamento vai para quem converte.`,
             { ...base0, acao: 'retirar_produto', impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia' });
-          if (ok) { pausas++; tirar(x, f); }
+          if (ok) pausas++; if (ok || ocupadas.has(chave)) tirar(x, f);
           continue;
         }
         // 1a') Mesmo caso, mas o produto vende na loja: baixar o lance em vez de pausar (só se existe campanha mais conservadora)
@@ -469,7 +469,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
             const ok = await sugerir(chave, `Sugestão: baixar o lance de produto que não converte no ADS — ${f.nome.slice(0, 50)}`,
               `"${f.nome.slice(0, 70)}" gastou ${R$(f.gasto)} em ${diasProd} dias na campanha "${x.nome}" com ${provaTxt}. Mas vende na loja (${loja.un} un. em 30 dias${f.organico ? `, ${f.organico} orgânicas vindas do anúncio` : ''}) — pausar pode derrubar essa venda. Mover para "${destino.nome}" (ROAS objetivo ${roasTxt(destino.roasAlvo)}, lance mais conservador) e manter a exposição.`,
               { ...base0, acao: 'mover_produto', destino_id: destino.id, destino: destino.nome, de: x.roasAlvo, para: destino.roasAlvo, impacto: f.gasto / diasProd * 7 * 0.4, impacto_tipo: 'economia' });
-            if (ok) tirar(x, f);
+            if (ok || ocupadas.has(chave)) tirar(x, f); // pendente ou recém-aplicada também conta: a campanha espera o efeito
           }
           continue;
         }
@@ -489,7 +489,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           const ok = await sugerir(chave, `Sugestão: mover produto para campanha mais conservadora — ${f.nome.slice(0, 50)}`,
             `"${f.nome.slice(0, 70)}" vende, mas com ACOS de ${pctTxt(f.acos)} (sem cancelados) em ${diasProd} dias — bem acima da ${metaMargem != null ? `meta do produto (${metaFam}%, limite da margem de ${aviso.m}%${aviso.promo ? ' no preço da promoção — agente de Promoções' : ' calculada pelo agente de Margem'})` : `meta (${meta}%)`} — e responde por ${Math.round(f.gasto / gastoCampProd * 100)}% do gasto da campanha "${x.nome}" (ROAS objetivo ${roasTxt(x.roasAlvo)}). Em vez de apertar a campanha inteira, ${destino ? `mover este produto para "${destino.nome}" (ROAS objetivo ${roasTxt(destino.roasAlvo)}, lance mais conservador)` : `criar uma campanha só para ele com ROAS objetivo de ${roasTxt(roasNova)} (lance mais conservador)`}. Não pausar: o produto vende.`,
             { ...base0, acao: 'mover_produto', destino_id: destino?.id || null, destino: destino?.nome || null, de: x.roasAlvo, para: destino ? destino.roasAlvo : roasNova, impacto: Math.max(0, f.gasto - f.vendasAj * meta / 100) / diasProd * 7, impacto_tipo: 'economia' });
-          if (ok) tirar(x, f);
+          if (ok || ocupadas.has(chave)) tirar(x, f); // pendente ou recém-aplicada também conta: a campanha espera o efeito
           continue;
         }
 
@@ -505,7 +505,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
             const ok = await sugerir(chave, `Sugestão: mover produto campeão para campanha com verba — ${f.nome.slice(0, 50)}`,
               `"${f.nome.slice(0, 70)}" vendeu ${f.unidades} un. pelo ADS com ACOS de ${pctTxt(f.acos)} em ${diasProd} dias, mas "${x.nome}" já gasta todo o orçamento (${R$(x.gastoDia)}/dia de ${R$(x.budget)}, no teto configurado). Mover para "${destino.nome}", que usa só ${R$(destino.gastoDia)}/dia de ${R$(destino.budget)}.`,
               { ...base0, acao: 'mover_produto', destino_id: destino.id, destino: destino.nome, de: x.roasAlvo, para: destino.roasAlvo, impacto: f.vendasAj / diasProd * 7, impacto_tipo: 'ganho' });
-            if (ok) tirar(x, f);
+            if (ok || ocupadas.has(chave)) tirar(x, f); // pendente ou recém-aplicada também conta: a campanha espera o efeito
           }
         }
       }
@@ -550,7 +550,9 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         const forte = !!cfg.regra_pausa_acos && acos > cfg.regra_pausa_acos;
         // produto que pesa metade ou mais do gasto já vai sair/mudar de campanha hoje: espera o efeito antes de mexer na campanha
         const gastoCampProd = x.familias.reduce((t, o) => t + o.gasto, 0);
-        if (gastoCampProd > 0 && ex.gasto / gastoCampProd >= 0.5) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}": o produto que pesa ${Math.round(ex.gasto / gastoCampProd * 100)}% do gasto dela já vai mudar de campanha — esperar o efeito antes de mexer no ROAS` }); continue; }
+        if (gastoCampProd > 0 && ex.gasto / gastoCampProd >= 0.5) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}": o produto que pesa ${Math.round(ex.gasto / gastoCampProd * 100)}% do gasto dela já vai mudar de campanha — esperar o efeito antes de mexer no ROAS` });
+          for (const l of logs) { const d = l.dados || {}; if (l.resultado === 'so_alerta' && String(d.campaign_id) === String(x.id) && ((d.acao === 'roas_target' && +d.para > +d.de) || (d.acao === 'orcamento' && +d.para < +d.de))) { await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { resultado: 'expirado', dados: { ...d, expirado_em: new Date().toISOString(), motivo_expirado: 'o produto principal já vai mudar de campanha' } }).catch(() => {}); l.resultado = 'expirado'; expiradas++; } }
+          continue; }
         // campanha aprendendo ou mexida há pouco espera (Mercado Ads: 30 dias; efeito de uma mudança leva 1–2 semanas)
         if (!forte && (x.aprendendo || x.recente)) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): ${x.aprendendo ? `campanha com ${Math.floor(x.idadeDias)} dia(s) — o Mercado Ads recomenda 30 dias de aprendizado sem mexer` : `alterada há ${Math.floor(x.mudouHa)} dia(s) — esperar o efeito da mudança`}` }); continue; }
         // Quem governa é o TACOS: com ele dentro do limite, apertar campanha acima da meta tira venda
