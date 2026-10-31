@@ -343,7 +343,7 @@ Router.register('agente-ml', (params, el) => {
       const ids = d.item_ids || [], abrir = n => `Em <b>Publicidade → Product Ads</b>, abra a campanha ${nomeC(n)}`;
       switch (d.acao) {
         case 'retirar_produto': return [abrir(d.campanha), `Na lista de anúncios, pause: ${idsHtml(ids)}`];
-        case 'mover_produto': return [abrir(d.campanha), `Pause os anúncios: ${idsHtml(ids)}`, d.destino && !destinoFraco(d) ? `Abra a campanha ${nomeC(d.destino)} → <b>Adicionar anúncios</b> → cole os mesmos códigos` : 'Coloque os anúncios na campanha nova (quadro acima — uma só para todos os produtos)'];
+        case 'mover_produto': return [`Em <b>Publicidade → Product Ads → Anúncios patrocinados</b>, procure: ${idsHtml(ids)}`, d.destino && !destinoFraco(d) ? `Marque a linha → <b>Mais ações → Mover para uma campanha</b> → escolha ${nomeC(d.destino)} → <b>Mover anúncios patrocinados</b>` : 'Marque a linha → <b>Mais ações → Criar campanha</b> (quadro acima — uma só para todos os produtos)', 'Não precisa pausar: o anúncio sai da campanha atual e já entra ativo na outra'];
         case 'roas_target': return [abrir(d.campanha), `Clique em <b>Editar</b> e mude o ROAS objetivo para <b>${roasX(d.para)}</b>`];
         case 'acos_target': return [abrir(d.campanha), `Clique em <b>Editar</b> e mude a meta de ACOS para <b>${pct(d.para)}</b>`];
         case 'orcamento': return [abrir(d.campanha), `Clique em <b>Editar</b> e mude o orçamento diário para <b>${R$(d.para)}</b>`];

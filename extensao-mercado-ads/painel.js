@@ -132,16 +132,62 @@
     const b = textoIgual('button', 'Adicionar anúncios') || textoIgual('a', 'Adicionar') || textoIgual('button', 'Adicionar');
     return destacar(b, 'Clique aqui e cole os códigos') ? null : 'Não achei o botão "Adicionar anúncios" nesta tela.';
   }
+  // mover de campanha pela tela "Anúncios patrocinados": acha a linha, marca, Mais ações → Mover para uma
+  // campanha → escolhe o destino (o valor de cada opção é o id da campanha). Não precisa pausar antes.
+  const naAds = () => /\/product-ads\/admin\/ads/.test(location.pathname);
+  const urlAnuncios = adv => `/publicidade/product-ads/admin/ads${adv ? `?advertiser_id=${adv}` : ''}`;
+  const campanhaDaLinha = tr => ((tr?.querySelector('a[href*="/campaigns/"]')?.getAttribute('href') || '').match(/\/campaigns\/(\d+)\//) || [])[1] || null;
+  const modalMover = () => [...document.querySelectorAll('.ml-ads-tab-move-ads-modal')].find(visivel) || null;
+  const fecharModalMover = () => { const b = modalMover() && [...modalMover().querySelectorAll('button')].find(x => x.textContent.trim() === 'Cancelar'); if (b) b.click(); };
+  // auto = clica em "Mover anúncios patrocinados" e confere; manual = deixa tudo escolhido e destaca o botão
+  async function moverUm(itemId, d, auto) {
+    const destino = String(d.destino_id || ''), pausa = auto ? humano : () => espera(400);
+    const k = await acharLinha(itemId, d.produto);
+    const linhaDe = () => typeof k === 'string' ? linhaPorCodigo(k) : k;
+    if (!linhaDe()) return `Não achei o anúncio ${itemId}${d.produto ? ` ("${String(d.produto).slice(0, 40)}")` : ''} na tela de anúncios patrocinados.`;
+    if (campanhaDaLinha(linhaDe()) === destino) return null; // já está na campanha de destino (ex.: a família toda numa variação anterior)
+    destacar(linhaDe());
+    const cb = linhaDe().querySelector('input[type="checkbox"]'); if (!cb) return 'Não achei a caixa de seleção da linha do anúncio.';
+    fundo(document, 'table tbody tr input[type="checkbox"]').filter(c => c.checked && c !== cb).forEach(c => (c.closest('label') || c).click()); // só esta linha marcada
+    if (!cb.checked) { await pausa(1200, 2500); (cb.closest('label') || cb).click(); }
+    if (!(await aguardar(() => cb.checked, 3000))) return 'Não consegui marcar a linha do anúncio.';
+    await pausa(1000, 2200);
+    const mais = fundo(document, 'button').find(b => /^Mais ações/.test(b.textContent.trim()) && visivel(b)); if (!mais) return 'Não achei o botão "Mais ações".';
+    mais.click();
+    const op = await aguardar(() => fundo(document, 'li').find(x => x.textContent.trim() === 'Mover para uma campanha' && visivel(x)), 4000);
+    if (!op) return 'Não achei a opção "Mover para uma campanha" em Mais ações.';
+    await pausa(800, 1600); (op.querySelector('button') || op).click();
+    if (!(await aguardar(() => modalMover()?.querySelector('input[type="radio"]'), 8000))) return 'A janela "Escolha a campanha de destino" não abriu.';
+    const radioDe = () => modalMover()?.querySelector(`input[type="radio"][value="${destino}"]`);
+    let rd = radioDe();
+    const busca = modalMover().querySelector('input[placeholder^="Buscar por título"]');
+    if (!rd && d.destino && busca) { await pausa(800, 1500); if (auto) await digitarDevagar(busca, String(d.destino)); else digitar(busca, String(d.destino)); rd = await aguardar(radioDe, 5000); }
+    if (!rd) { fecharModalMover(); return `A campanha ${d.destino || destino} não aparece na lista de destino do ML (pode estar pausada ou com outro nome).`; }
+    const ativar = modalMover().querySelector('input[type="checkbox"]'); if (ativar && !ativar.checked) (ativar.closest('label') || ativar).click(); // entra ativo na campanha nova
+    await pausa(800, 1600); rd.click();
+    const mover = await aguardar(() => { const b = [...(modalMover()?.querySelectorAll('button') || [])].find(x => x.textContent.trim() === 'Mover anúncios patrocinados'); return b && !b.disabled ? b : null; }, 3000);
+    if (!mover) { fecharModalMover(); return 'O botão "Mover anúncios patrocinados" não liberou.'; }
+    if (!auto) { destacar(rd.closest('li') || rd); destacar(mover, 'Confira a campanha e clique aqui'); return null; }
+    await humano(1500, 3500); mover.click();
+    if (!(await aguardar(() => !modalMover(), 10000))) return 'Cliquei em Mover, mas a janela não fechou — o ML pode ter mostrado um aviso. Confira a tela.';
+    await espera(3000);
+    const noDestino = () => { const tr = linhaDe() || linhaDoAnuncio(itemId, d.produto); return tr && campanhaDaLinha(tr) === destino; };
+    let ok = await aguardar(noDestino, 6000);
+    if (!ok && buscarNaTabela(String(itemId))) ok = await aguardar(noDestino, 8000); // a tabela pode só atualizar com nova busca
+    buscarNaTabela(''); // limpa a busca para o próximo passo
+    return ok ? null : `Movi, mas a tabela ainda não mostra o anúncio em ${d.destino || 'na campanha de destino'} — confira.`;
+  }
   function mostrarEstado() {
     const t = textoIgual('span,div,p', 'Estado:');
     const sw = t ? t.parentElement.querySelector('input[type="checkbox"],button[role="switch"],[class*="switch"]') : null;
     return destacar(sw || t, 'Desligue aqui para pausar a campanha') ? null : 'Não achei o controle de estado da campanha.';
   }
 
-  // ── Modo automático, no ritmo de uma pessoa: aplica sozinho ROAS, orçamento e pausa de anúncio,
-  //    confere cada passo na tela e para no primeiro imprevisto. Mover/colocar produto e pausar
-  //    campanha continuam à mão (mover pela metade deixaria o produto pausado e fora do ADS).
-  const AUTO = new Set(['roas_target', 'orcamento', 'retirar_produto']);
+  // ── Modo automático, no ritmo de uma pessoa: aplica sozinho ROAS, orçamento, pausa de anúncio e
+  //    mover de campanha (quando o destino já existe), confere cada passo na tela e para no primeiro
+  //    imprevisto. Colocar produto e pausar campanha continuam à mão.
+  const AUTO = new Set(['roas_target', 'orcamento', 'retirar_produto', 'mover_produto']);
+  const podeAuto = d => !!d && AUTO.has(d.acao) && (d.acao !== 'mover_produto' || /^\d+$/.test(String(d.destino_id || '')));
   const MAX_AUTO = 8, FILA = 'glr_fila_auto';
   const humano = (a = 4000, b = 9000) => espera(a + Math.random() * (b - a));
   async function digitarDevagar(el, valor) {
@@ -221,7 +267,9 @@
       if (!confirm('O Mercado Livre não permite alterar o ADS por automação. Se ele detectar, este anunciante pode ter a publicidade restringida.\n\nA extensão vai aplicar sozinha, no ritmo de uma pessoa, conferindo cada passo e parando no primeiro imprevisto.\n\nVocê assume esse risco para esta conta?')) return;
       await chrome.storage.local.set({ [chaveRisco]: new Date().toISOString() });
     }
-    const passos = st.itens.filter(l => AUTO.has(l.dados?.acao)).sort((a, b) => String(a.dados.campaign_id).localeCompare(String(b.dados.campaign_id))).slice(0, MAX_AUTO).map(l => ({ id: l.id, dados: l.dados }));
+    // agrupa por tela: cada campanha, e os "mover" juntos na tela de anúncios patrocinados
+    const tela = d => d.acao === 'mover_produto' ? '~ads' : String(d.campaign_id);
+    const passos = st.itens.filter(l => podeAuto(l.dados)).sort((a, b) => tela(a.dados).localeCompare(tela(b.dados))).slice(0, MAX_AUTO).map(l => ({ id: l.id, dados: l.dados }));
     if (!passos.length) return;
     await gravarFila({ adv, passos, i: 0, status: 'rodando', inicio: Date.now() });
     rodar();
@@ -234,15 +282,17 @@
       while (f && f.status === 'rodando' && f.i < f.passos.length) {
         const p = f.passos[f.i], d = p.dados;
         st.auto = f; render();
-        if (String(d.campaign_id) !== campanhaAberta()) { await humano(2000, 4000); location.href = `/publicidade/product-ads/admin/campaigns/${d.campaign_id}/dashboard${f.adv ? `?advertiser_id=${f.adv}` : ''}`; return; }
-        await aguardar(() => lapisDoCartao('ROAS Objetivo'), 15000); await humano(2500, 5000);
+        const ads = d.acao === 'mover_produto';
+        if (ads ? !naAds() : String(d.campaign_id) !== campanhaAberta()) { await humano(2000, 4000); location.href = ads ? urlAnuncios(f.adv) : `/publicidade/product-ads/admin/campaigns/${d.campaign_id}/dashboard${f.adv ? `?advertiser_id=${f.adv}` : ''}`; return; }
+        await aguardar(() => ads ? fundo(document, 'table tbody tr').length && fundo1(document, 'input[placeholder^="Procurar por #"]') : lapisDoCartao('ROAS Objetivo'), 15000); await humano(2500, 5000);
         let erro = null;
         if (d.acao === 'roas_target') erro = await autoRoas(+d.para);
         else if (d.acao === 'orcamento') erro = await autoOrcamento(+d.para);
         else if (d.acao === 'retirar_produto') for (const id of (d.item_ids || [])) { erro = await autoPausarAnuncio(id, d.produto); if (erro) break; await humano(); }
+        else if (ads) for (const id of (d.item_ids || [])) { erro = await moverUm(id, d, true); if (erro) break; await humano(); }
         f = await lerFila(); if (!f || f.status !== 'rodando') break; // parado no meio pelo analista
         if (erro && /^Não achei o anúncio/.test(erro)) { f.pulados = [...(f.pulados || []), erro]; f.i++; if (f.i >= f.passos.length) f.status = 'concluido'; await gravarFila(f); limparDestaques(); await humano(); continue; }
-        if (erro) { cancelarEdicao(); f.status = 'parado'; f.erro = `Passo ${f.i + 1}: ${erro}`; await gravarFila(f); break; }
+        if (erro) { cancelarEdicao(); fecharModalMover(); f.status = 'parado'; f.erro = `Passo ${f.i + 1}: ${erro}`; await gravarFila(f); break; }
         await enviar({ tipo: 'marcar', id: p.id, resultado: 'executado', dados: d, por: 'extensao_auto' });
         st.itens = st.itens.filter(x => x.id !== p.id);
         f.i++; if (f.i >= f.passos.length) f.status = 'concluido';
@@ -277,6 +327,9 @@
   // o que o botão de ajuda faz em cada passo, na campanha aberta
   function ajudaDe(l, aqui) {
     const d = l.dados || {}, origem = String(d.campaign_id) === aqui, destino = String(d.destino_id) === aqui;
+    if (d.acao === 'mover_produto' && d.destino_id && (d.item_ids || []).length) return naAds()
+      ? { rot: 'Preparar a mudança', fn: async () => { for (const id of d.item_ids) { const e = await moverUm(id, d, false); if (!e) return null; if (!/^Não achei o anúncio/.test(e)) return e; } return 'Nenhum dos anúncios apareceu na tela de anúncios patrocinados.'; } }
+      : { rot: 'Ir para Anúncios patrocinados', fn: async () => { location.href = urlAnuncios(new URLSearchParams(location.search).get('advertiser_id')); return null; } };
     if (d.acao === 'roas_target' && origem) return { rot: 'Preencher o ROAS', fn: () => preencherRoas(d.para) };
     if (d.acao === 'orcamento' && origem) return { rot: 'Preencher o orçamento', fn: () => preencherOrcamento(d.para) };
     if ((d.acao === 'retirar_produto' || d.acao === 'mover_produto') && origem && (d.item_ids || []).length) return { rot: 'Mostrar o anúncio', fn: async () => { for (const id of d.item_ids) { if (!(await mostrarAnuncio(id, d.produto))) return null; } return 'Nenhum dos anúncios apareceu na tabela desta campanha.'; } };
@@ -287,7 +340,9 @@
   const comoFazer = (d, aqui) => {
     if (d.acao === 'roas_target' || d.acao === 'orcamento') return 'Clique em <b>Preencher</b>, confira o valor destacado e clique em <b>Salvar</b> no ML.';
     if (d.acao === 'retirar_produto') return 'Clique em <b>Mostrar o anúncio</b>, depois no <b>⋮</b> destacado → <b>Pausar</b>.';
-    if (d.acao === 'mover_produto') return String(d.destino_id) === aqui ? 'Clique em <b>Adicionar aqui</b> (os códigos vão para a área de transferência) e cole em <b>Adicionar anúncios</b>.' : `Pause o anúncio aqui (<b>⋮ → Pausar</b>) e depois abra a campanha <b>${esc(d.destino || 'de destino')}</b> para adicionar.`;
+    if (d.acao === 'mover_produto') return !d.destino_id ? 'Em <b>Anúncios patrocinados</b>, marque o anúncio → <b>Mais ações → Criar campanha</b>.'
+      : naAds() ? `Clique em <b>Preparar a mudança</b>: a extensão marca o anúncio e escolhe <b>${esc(d.destino || 'o destino')}</b> em <b>Mais ações → Mover para uma campanha</b>. Confira e clique em <b>Mover anúncios patrocinados</b>. Não precisa pausar.`
+      : 'Mover é feito na tela <b>Anúncios patrocinados</b> (sem pausar): clique no botão abaixo.';
     if (d.acao === 'adicionar_produto') return 'Clique em <b>Adicionar aqui</b> e cole os códigos em <b>Adicionar anúncios</b>.';
     if (d.acao === 'pausar') return 'Desligue o <b>Estado</b> da campanha (destacado).';
     return 'Revise os anúncios desta campanha (fotos, título, ficha, frete e buy box).';
@@ -302,25 +357,26 @@
       : st.carregando ? '<div class="vazio">Buscando o pacote do dia…</div>'
       : !lista.length ? `<div class="vazio">Nada pendente ${aqui ? 'para esta campanha' : 'para as campanhas desta tela'}. ✓</div>`
       : lista.map((l, i) => {
-          const d = l.dados || {}, aj = aqui ? ajudaDe(l, aqui) : null, m = st.msg[l.id];
+          const d = l.dados || {}, mover = d.acao === 'mover_produto', aj = aqui || mover ? ajudaDe(l, aqui) : null, m = st.msg[l.id];
           return `<div class="passo">
             <div class="topo"><span class="n">${i + 1}</span><div class="acao">${(ACAO[d.acao] || (() => esc(l.titulo)))(d)}</div>${impacto(d)}</div>
             ${PQ(d) ? `<div class="pq">${PQ(d)}</div>` : ''}
-            ${aqui ? `<div class="como">${comoFazer(d, aqui)}</div>` : `<div class="pq">Campanha: <b>${esc(d.campanha || '—')}</b></div>`}
+            ${aqui || mover ? `<div class="como">${comoFazer(d, aqui)}</div>` : ''}
+            ${!aqui ? `<div class="pq">Campanha: <b>${esc(d.campanha || '—')}</b></div>` : ''}
             ${m ? `<div class="msg ${m.erro ? 'erro' : ''}">${esc(m.texto)}</div>` : ''}
             <div class="bts">
-              ${!aqui && d.campaign_id ? `<button class="pri" data-abrir="${esc(d.campaign_id)}">Abrir a campanha</button>` : ''}
+              ${!aqui && !mover && d.campaign_id ? `<button class="pri" data-abrir="${esc(d.campaign_id)}">Abrir a campanha</button>` : ''}
               ${aj ? `<button class="pri" data-ajuda="${esc(l.id)}">${esc(aj.rot)}</button>` : ''}
               <button data-feito="${esc(l.id)}">Feito</button>
               <button class="x" data-desc="${esc(l.id)}" title="Descartar">✕</button>
             </div>
           </div>`;
         }).join('');
-    const f = st.auto, nAuto = lista.filter(l => AUTO.has(l.dados?.acao)).length;
+    const f = st.auto, nAuto = lista.filter(l => podeAuto(l.dados)).length;
     const barra = f && f.status === 'rodando' ? `<div class="auto on">Aplicando sozinho, no ritmo de uma pessoa: passo <b>${Math.min(f.i + 1, f.passos.length)} de ${f.passos.length}</b>. Não feche esta aba. <button class="x" data-auto-parar="1">Parar</button></div>`
       : f && f.status === 'parado' ? `<div class="auto erro">Parou: ${esc(f.erro || '')} (${f.i} de ${f.passos.length} aplicados) <button data-auto-fechar="1">Ok</button></div>`
       : f && f.status === 'concluido' ? `<div class="auto ok">${f.passos.length - (f.pulados || []).length} passo(s) aplicados e conferidos ✓${(f.pulados || []).length ? `<br>${f.pulados.length} pulado(s), sem mexer: ${esc(f.pulados.join(' · '))}` : ''} <button data-auto-fechar="1">Ok</button></div>`
-      : nAuto && !st.erro ? `<div class="auto"><button class="pri" data-auto-iniciar="1">Aplicar ${Math.min(nAuto, MAX_AUTO)} passo(s) sozinho</button><span>ROAS, orçamento e pausar anúncio · ritmo humano · para no primeiro imprevisto${lista.length > nAuto ? ' · mover/colocar produto ficam à mão' : ''}</span></div>` : '';
+      : nAuto && !st.erro ? `<div class="auto"><button class="pri" data-auto-iniciar="1">Aplicar ${Math.min(nAuto, MAX_AUTO)} passo(s) sozinho</button><span>ROAS, orçamento, pausar e mover anúncio · ritmo humano · para no primeiro imprevisto${lista.length > nAuto ? ' · colocar produto e campanha nova ficam à mão' : ''}</span></div>` : '';
     raiz.innerHTML = `<style>
       .auto{margin:0 0 4px;padding:8px 10px;border-radius:10px;background:#f4f2ff;font-size:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:#2b2f3c} .auto span{color:#5b6070}
       .auto.on{background:#fff7e6} .auto.erro{background:#fdecea;color:#8a1f12} .auto.ok{background:#eefaf2;color:#1b6b3a}
@@ -374,7 +430,11 @@
 
   async function carregar() {
     const aqui = campanhaAberta();
-    const campanhas = aqui ? [aqui] : campanhasDaLista();
+    let campanhas = aqui ? [aqui] : campanhasDaLista();
+    // a tela de anúncios patrocinados só mostra 50 linhas: junta as campanhas vistas na lista de campanhas
+    const chaveLista = `glr_campanhas_lista_${new URLSearchParams(location.search).get('advertiser_id') || ''}`;
+    if (!aqui && naAds()) campanhas = [...new Set([...campanhas, ...((await chrome.storage.local.get(chaveLista))[chaveLista] || [])])];
+    else if (!aqui && campanhas.length) chrome.storage.local.set({ [chaveLista]: campanhas });
     const chave = campanhas.join(',');
     if (chave === st.chave && (!st.erro || Date.now() - (st.erroEm || 0) < 30000)) return; // com erro, tenta de novo a cada 30 s
     st.chave = chave; st.carregando = true; render();
