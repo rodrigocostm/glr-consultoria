@@ -16,6 +16,7 @@ Mercado Livre é sempre o analista** — a extensão nunca clica em "Salvar".
   - **Preencher o ROAS / o orçamento** — abre "Modificar sua campanha", coloca o valor e destaca o **Salvar**. Confira e salve.
   - **Mostrar o anúncio** — filtra a tabela pelo código e destaca o **⋮** → **Pausar**.
   - **Adicionar aqui** — copia os códigos e destaca **Adicionar anúncios**.
+- **Aplicar N passo(s) sozinho** (na lista de campanhas ou dentro de uma) — a extensão aplica sozinha, no ritmo de uma pessoa (4 a 9 s entre ações, digitando devagar): ajusta ROAS objetivo e orçamento (clica em Salvar) e pausa anúncios pelo ⋮. Depois de cada passo confere na tela; no primeiro imprevisto para e mostra onde. Até 8 passos por vez; botão **Parar** a qualquer momento. Mover/colocar produto e pausar campanha ficam à mão. Na primeira vez em cada conta pede a confirmação de que você assume o risco (o ML não permite automação de ADS).
 - **Feito** marca o passo no sistema (o agente também confere sozinho na análise da manhã). **✕** descarta.
 
 ## Segurança

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GLR Copiloto Mercado Ads",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Mostra no painel do Mercado Ads o pacote do dia da GLR, preenche os campos e destaca onde clicar. Quem salva é sempre o analista.",
   "permissions": ["storage"],
   "host_permissions": ["https://rrodqlejqyaoomutriiw.supabase.co/*"],

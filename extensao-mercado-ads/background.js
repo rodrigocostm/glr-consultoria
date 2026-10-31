@@ -49,8 +49,8 @@ async function listar(campanhas) {
   return rest(`glr_agente_log?${qs}`, { method: 'GET', headers: { Prefer: '' } });
 }
 
-async function marcar(id, resultado, dados) {
-  const extra = resultado === 'executado' ? { dados: { ...(dados || {}), aplicado_em: new Date().toISOString(), aplicado_por: 'extensao' } } : {};
+async function marcar(id, resultado, dados, por) {
+  const extra = resultado === 'executado' ? { dados: { ...(dados || {}), aplicado_em: new Date().toISOString(), aplicado_por: por || 'extensao' } } : {};
   await rest(`glr_agente_log?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ resultado, ...extra }) });
   return true;
 }
@@ -62,7 +62,7 @@ chrome.runtime.onMessage.addListener((msg, _de, responder) => {
       if (msg.tipo === 'sair') { await chrome.storage.local.remove('sessao'); return responder({ ok: true }); }
       if (msg.tipo === 'estado') { const s = await sessao(); return responder({ ok: true, email: s?.email || null }); }
       if (msg.tipo === 'listar') return responder({ ok: true, itens: await listar(msg.campanhas) });
-      if (msg.tipo === 'marcar') return responder({ ok: await marcar(msg.id, msg.resultado, msg.dados) });
+      if (msg.tipo === 'marcar') return responder({ ok: await marcar(msg.id, msg.resultado, msg.dados, msg.por) });
       responder({ ok: false, erro: 'mensagem desconhecida' });
     } catch (e) { responder({ ok: false, erro: e.message === 'SEM_LOGIN' ? 'SEM_LOGIN' : (e.message || String(e)) }); }
   })();

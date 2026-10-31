@@ -100,6 +100,105 @@
     return destacar(sw || t, 'Desligue aqui para pausar a campanha') ? null : 'Não achei o controle de estado da campanha.';
   }
 
+  // ── Modo automático, no ritmo de uma pessoa: aplica sozinho ROAS, orçamento e pausa de anúncio,
+  //    confere cada passo na tela e para no primeiro imprevisto. Mover/colocar produto e pausar
+  //    campanha continuam à mão (mover pela metade deixaria o produto pausado e fora do ADS).
+  const AUTO = new Set(['roas_target', 'orcamento', 'retirar_produto']);
+  const MAX_AUTO = 8, FILA = 'glr_fila_auto';
+  const humano = (a = 4000, b = 9000) => espera(a + Math.random() * (b - a));
+  async function digitarDevagar(el, valor) {
+    el.focus(); digitar(el, ''); await espera(300);
+    let atual = '';
+    for (const ch of String(valor)) { atual += ch; digitar(el, atual); await espera(90 + Math.random() * 140); }
+  }
+  // valor que o cartão da campanha mostra depois de salvar (ex.: "ROAS Objetivo 17,6x", "Orçamento diário R$ 500")
+  function valorDoCartao(titulo) {
+    let c = lapisDoCartao(titulo); for (let i = 0; i < 4 && c; i++) c = c.parentElement;
+    const t = (c?.innerText || '').split(titulo)[1] || '';
+    const m = t.match(/\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?/);
+    return m ? parseFloat(m[0].replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')) : null;
+  }
+  async function salvarGaveta() {
+    const g = gaveta(), b = g && textoIgual('button', 'Salvar', g); if (!b) return 'Não achei o botão Salvar.';
+    await humano(1500, 3500); b.click();
+    if (!(await aguardar(() => !gaveta(), 8000))) return 'Cliquei em Salvar, mas a edição não fechou — o ML pode ter mostrado um aviso. Confira a tela.';
+    await espera(2500); return null;
+  }
+  async function autoRoas(valor) {
+    const g = await abrirGaveta('ROAS Objetivo'); if (!g) return 'Não achei a edição do ROAS objetivo.';
+    await humano(1200, 2500);
+    const fixo = g.querySelector('input[type="radio"][value="fixed"]'); if (fixo && !fixo.checked) { fixo.click(); await humano(800, 1600); }
+    const outro = await aguardar(() => g.querySelector('input[type="radio"][value="-1"]'), 3000); if (outro && !outro.checked) { outro.click(); await humano(600, 1200); }
+    const campo = await aguardar(() => g.querySelector('input[type="number"]'), 3000); if (!campo) return 'Não achei o campo do ROAS objetivo.';
+    await digitarDevagar(campo, String(valor));
+    const e = await salvarGaveta(); if (e) return e;
+    const lido = valorDoCartao('ROAS Objetivo');
+    return lido != null && Math.abs(lido - valor) < 0.06 ? null : `Salvei, mas o cartão mostra ${lido ?? '?'}x em vez de ${xv(valor)} — confira.`;
+  }
+  async function autoOrcamento(valor) {
+    const g = await abrirGaveta('Orçamento diário'); if (!g) return 'Não achei a edição do orçamento.';
+    await humano(1200, 2500);
+    if (!g.querySelector('input[aria-label="Orçamento diário"]')) { textoIgual('button', 'Orçamento diário', g)?.click(); await humano(800, 1500); }
+    const fixo = g.querySelector('input[type="radio"][aria-label="Orçamento fixo"]'); if (fixo && !fixo.checked) { fixo.click(); await humano(800, 1500); }
+    const campo = await aguardar(() => g.querySelector('input[aria-label="Orçamento diário"]'), 3000); if (!campo) return 'Não achei o campo do orçamento diário.';
+    await digitarDevagar(campo, String(Math.round(valor * 100) / 100).replace('.', ','));
+    const e = await salvarGaveta(); if (e) return e;
+    const lido = valorDoCartao('Orçamento diário');
+    return lido != null && Math.abs(lido - valor) < 0.6 ? null : `Salvei, mas o cartão mostra R$ ${lido ?? '?'} em vez de ${R$(valor)} — confira.`;
+  }
+  async function autoPausarAnuncio(itemId) {
+    const e = await mostrarAnuncio(itemId); if (e) return e;
+    const num = String(itemId).replace(/^MLB/i, '');
+    const linhaDe = () => [...document.querySelectorAll('table tbody tr')].find(tr => tr.innerText.includes(num));
+    const menu = linhaDe()?.querySelector('button[aria-label="Acciones del anuncio"]'); if (!menu) return 'Não achei o menu ⋮ do anúncio.';
+    await humano(1500, 3000); menu.click();
+    const pausar = await aguardar(() => [...document.querySelectorAll('li,button,a,span,[role="menuitem"]')].find(x => x.textContent.trim() === 'Pausar' && x.offsetParent !== null), 4000);
+    if (!pausar) return 'Não achei a opção Pausar no menu do anúncio.';
+    await humano(800, 1800); pausar.click();
+    await espera(2500);
+    if ([...document.querySelectorAll('[role="dialog"]')].some(d => d.offsetParent !== null && /pausar|confirm/i.test(d.innerText))) return 'O ML pediu uma confirmação para pausar — confirme à mão e marque Feito.';
+    return (await aguardar(() => /paus/i.test(linhaDe()?.innerText || ''), 6000)) ? null : 'Cliquei em Pausar, mas não vi o anúncio como pausado — confira.';
+  }
+  const lerFila = async () => (await chrome.storage.local.get(FILA))[FILA] || null;
+  const gravarFila = f => chrome.storage.local.set({ [FILA]: f });
+  async function iniciarAuto() {
+    const adv = new URLSearchParams(location.search).get('advertiser_id') || '';
+    const chaveRisco = `glr_risco_${adv || 'sem_anunciante'}`;
+    if (!(await chrome.storage.local.get(chaveRisco))[chaveRisco]) {
+      if (!confirm('O Mercado Livre não permite alterar o ADS por automação. Se ele detectar, este anunciante pode ter a publicidade restringida.\n\nA extensão vai aplicar sozinha, no ritmo de uma pessoa, conferindo cada passo e parando no primeiro imprevisto.\n\nVocê assume esse risco para esta conta?')) return;
+      await chrome.storage.local.set({ [chaveRisco]: new Date().toISOString() });
+    }
+    const passos = st.itens.filter(l => AUTO.has(l.dados?.acao)).sort((a, b) => String(a.dados.campaign_id).localeCompare(String(b.dados.campaign_id))).slice(0, MAX_AUTO).map(l => ({ id: l.id, dados: l.dados }));
+    if (!passos.length) return;
+    await gravarFila({ adv, passos, i: 0, status: 'rodando', inicio: Date.now() });
+    rodar();
+  }
+  let rodando = false;
+  async function rodar() {
+    if (rodando) return; rodando = true;
+    try {
+      let f = await lerFila();
+      while (f && f.status === 'rodando' && f.i < f.passos.length) {
+        const p = f.passos[f.i], d = p.dados;
+        st.auto = f; render();
+        if (String(d.campaign_id) !== campanhaAberta()) { await humano(2000, 4000); location.href = `/publicidade/product-ads/admin/campaigns/${d.campaign_id}/dashboard${f.adv ? `?advertiser_id=${f.adv}` : ''}`; return; }
+        await aguardar(() => lapisDoCartao('ROAS Objetivo'), 15000); await humano(2500, 5000);
+        let erro = null;
+        if (d.acao === 'roas_target') erro = await autoRoas(+d.para);
+        else if (d.acao === 'orcamento') erro = await autoOrcamento(+d.para);
+        else if (d.acao === 'retirar_produto') for (const id of (d.item_ids || [])) { erro = await autoPausarAnuncio(id); if (erro) break; await humano(); }
+        f = await lerFila(); if (!f || f.status !== 'rodando') break; // parado no meio pelo analista
+        if (erro) { f.status = 'parado'; f.erro = `Passo ${f.i + 1}: ${erro}`; await gravarFila(f); break; }
+        await enviar({ tipo: 'marcar', id: p.id, resultado: 'executado', dados: d, por: 'extensao_auto' });
+        st.itens = st.itens.filter(x => x.id !== p.id);
+        f.i++; if (f.i >= f.passos.length) f.status = 'concluido';
+        await gravarFila(f); limparDestaques(); await humano();
+      }
+      st.auto = await lerFila(); render();
+    } finally { rodando = false; }
+  }
+  async function pararAuto() { const f = await lerFila(); if (f) { f.status = 'parado'; f.erro = f.erro || 'Parado por você.'; await gravarFila(f); } st.auto = f; render(); }
+
   // ── Painel ──
   const host = document.createElement('div');
   host.id = 'glr-copiloto';
@@ -163,7 +262,14 @@
             </div>
           </div>`;
         }).join('');
+    const f = st.auto, nAuto = lista.filter(l => AUTO.has(l.dados?.acao)).length;
+    const barra = f && f.status === 'rodando' ? `<div class="auto on">Aplicando sozinho, no ritmo de uma pessoa: passo <b>${Math.min(f.i + 1, f.passos.length)} de ${f.passos.length}</b>. Não feche esta aba. <button class="x" data-auto-parar="1">Parar</button></div>`
+      : f && f.status === 'parado' ? `<div class="auto erro">Parou: ${esc(f.erro || '')} (${f.i} de ${f.passos.length} aplicados) <button data-auto-fechar="1">Ok</button></div>`
+      : f && f.status === 'concluido' ? `<div class="auto ok">${f.passos.length} passo(s) aplicados e conferidos ✓ <button data-auto-fechar="1">Ok</button></div>`
+      : nAuto && !st.erro ? `<div class="auto"><button class="pri" data-auto-iniciar="1">Aplicar ${Math.min(nAuto, MAX_AUTO)} passo(s) sozinho</button><span>ROAS, orçamento e pausar anúncio · ritmo humano · para no primeiro imprevisto${lista.length > nAuto ? ' · mover/colocar produto ficam à mão' : ''}</span></div>` : '';
     raiz.innerHTML = `<style>
+      .auto{margin:0 0 4px;padding:8px 10px;border-radius:10px;background:#f4f2ff;font-size:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:#2b2f3c} .auto span{color:#5b6070}
+      .auto.on{background:#fff7e6} .auto.erro{background:#fdecea;color:#8a1f12} .auto.ok{background:#eefaf2;color:#1b6b3a}
       :host{all:initial}
       .p{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:360px;max-height:70vh;display:flex;flex-direction:column;background:#fff;color:#1f2330;border:1px solid #e1e3ea;border-radius:14px;box-shadow:0 12px 32px rgba(20,24,40,.18);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
       .p.min{width:auto;max-height:none}
@@ -185,13 +291,16 @@
     </style>
     <div class="p ${st.aberto ? '' : 'min'}">
       <div class="cab" data-alternar="1"><b>GLR · pacote do dia</b><span class="q">${st.erro ? '!' : lista.length}</span></div>
-      ${st.aberto ? `<div class="lista">${corpo}</div><div class="rod">A extensão preenche e destaca; quem salva no ML é você.</div>` : ''}
+      ${st.aberto ? `<div class="lista">${barra}${corpo}</div><div class="rod">A extensão preenche e destaca; quem salva no ML é você.</div>` : ''}
     </div>`;
   }
 
   raiz.addEventListener('click', async e => {
-    const b = e.target.closest('[data-alternar],[data-abrir],[data-ajuda],[data-feito],[data-desc]'); if (!b) return;
+    const b = e.target.closest('[data-alternar],[data-abrir],[data-ajuda],[data-feito],[data-desc],[data-auto-iniciar],[data-auto-parar],[data-auto-fechar]'); if (!b) return;
     if (b.dataset.alternar) { st.aberto = !st.aberto; return render(); }
+    if (b.dataset.autoIniciar) { b.disabled = true; return iniciarAuto(); }
+    if (b.dataset.autoParar) return pararAuto();
+    if (b.dataset.autoFechar) { await chrome.storage.local.remove(FILA); st.auto = null; st.chave = ''; return carregar(); }
     if (b.dataset.abrir) { const adv = new URLSearchParams(location.search).get('advertiser_id'); location.href = `/publicidade/product-ads/admin/campaigns/${b.dataset.abrir}/dashboard${adv ? `?advertiser_id=${adv}` : ''}`; return; }
     const l = st.itens.find(x => String(x.id) === String(b.dataset.ajuda || b.dataset.feito || b.dataset.desc)); if (!l) return;
     if (b.dataset.ajuda) {
@@ -224,6 +333,8 @@
   }
 
   render();
+  // fila do modo automático continua sozinha depois de abrir a próxima campanha
+  lerFila().then(f => { st.auto = f; render(); if (f?.status === 'rodando') setTimeout(rodar, 3000); });
   // o painel do ML é uma página de uma tela só: acompanha a troca de campanha pela URL e a lista que carrega
   let ultimaUrl = '';
   setInterval(() => { if (location.href !== ultimaUrl) { ultimaUrl = location.href; st.chave = ''; limparDestaques(); } carregar(); }, 1500);
