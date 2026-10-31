@@ -47,8 +47,15 @@
   const gaveta = () => { const t = [...document.querySelectorAll('h1,h2,h3,span,div,p')].find(e => e.childElementCount === 0 && /^Modificar (sua campanha|seu ROAS|seu orçamento)/i.test(e.textContent.trim())); let g = t; for (let i = 0; i < 10 && g && !(g.querySelectorAll && [...g.querySelectorAll('button')].some(b => b.textContent.trim() === 'Salvar')); i++) g = g.parentElement; return g; };
   // botão "Editar" (lápis) do cartão de ROAS ou de orçamento no topo da campanha
   function lapisDoCartao(titulo) {
-    const rot = [...document.querySelectorAll('span,div,p,h3,h4')].find(e => e.childElementCount <= 2 && e.textContent.trim().startsWith(titulo) && e.textContent.trim().length < 40);
-    let c = rot; for (let i = 0; i < 6 && c; i++) { const b = c.querySelector && c.querySelector('button[aria-label="Editar"]'); if (b) return b; c = c.parentElement; }
+    const rots = [...document.querySelectorAll('span,div,p,h3,h4,label')].filter(e => e.childElementCount <= 3 && e.textContent.trim().startsWith(titulo) && e.textContent.trim().length < 60);
+    for (const rot of rots) {
+      let c = rot;
+      for (let i = 0; i < 6 && c; i++) {
+        const b = c.querySelector && ([...c.querySelectorAll('button')].find(x => /editar|edit/i.test(x.getAttribute('aria-label') || x.title || '')));
+        if (b) return b;
+        c = c.parentElement;
+      }
+    }
     return null;
   }
 
@@ -136,8 +143,9 @@
     return { radio, campo };
   }
   const cancelarEdicao = () => { const g = gaveta(); const b = g && textoIgual('button', 'Cancelar', g); if (b) b.click(); };
+  const porqueSemEdicao = titulo => `Não achei a edição do ${titulo} (lápis ${lapisDoCartao(titulo) ? 'encontrado' : 'não encontrado'}; janela de edição ${gaveta() ? 'aberta' : 'não abriu'}).`;
   async function autoRoas(valor) {
-    const g = await abrirGaveta('ROAS Objetivo'); if (!g) return 'Não achei a edição do ROAS objetivo.';
+    const g = await abrirGaveta('ROAS Objetivo'); if (!g) return porqueSemEdicao('ROAS Objetivo');
     await humano(1200, 2500);
     const fixo = g.querySelector('input[type="radio"][value="fixed"]'); if (fixo && !fixo.checked) { fixo.click(); await humano(800, 1600); }
     const o = await aguardar(() => { const x = campoDefinirOutro(g); return x.radio ? x : null; }, 3000);
@@ -149,7 +157,7 @@
     return lido != null && Math.abs(lido - valor) < 0.06 ? null : `Salvei, mas o cartão mostra ${lido ?? '?'}x em vez de ${xv(valor)} — confira.`;
   }
   async function autoOrcamento(valor) {
-    const g = await abrirGaveta('Orçamento diário'); if (!g) return 'Não achei a edição do orçamento.';
+    const g = await abrirGaveta('Orçamento diário'); if (!g) return porqueSemEdicao('Orçamento diário');
     await humano(1200, 2500);
     if (!g.querySelector('input[aria-label="Orçamento diário"]')) { textoIgual('button', 'Orçamento diário', g)?.click(); await humano(800, 1500); }
     const fixo = g.querySelector('input[type="radio"][aria-label="Orçamento fixo"]'); if (fixo && !fixo.checked) { fixo.click(); await humano(800, 1500); }
@@ -304,7 +312,7 @@
     </style>
     <div class="p ${st.aberto ? '' : 'min'}">
       <div class="cab" data-alternar="1"><b>GLR · pacote do dia</b><span class="q">${st.erro ? '!' : lista.length}</span></div>
-      ${st.aberto ? `<div class="lista">${barra}${corpo}</div><div class="rod">A extensão preenche e destaca; quem salva no ML é você.</div>` : ''}
+      ${st.aberto ? `<div class="lista">${barra}${corpo}</div><div class="rod">A extensão preenche e destaca; quem salva no ML é você. · v${chrome.runtime.getManifest?.().version || ''}</div>` : ''}
     </div>`;
   }
 
