@@ -33,7 +33,7 @@ Você recebe as RECOMENDAÇÕES CANDIDATAS (já calculadas por regra, com númer
 - Escolher o pacote do dia: no máximo 8 recomendações, em ordem de prioridade, seguindo o guia. Descarte as que conflitam com o guia (ex.: mexer em campanha em aprendizado ou alterada há poucos dias, apertar campanha com TACOS dentro do teto, acelerar sem estoque) e as que duplicam outra (mesma campanha: fique com a mais importante).
 - Para cada escolhida, escrever "porque": 1 ou 2 frases objetivas de gestor de Mercado Ads, usando SÓ números que aparecem nos dados. Nunca invente número, produto, campanha ou id.
 - Escrever a "estrategia" da conta: 2 a 4 frases curtas com o que está travando o crescimento e a direção das próximas 2 semanas, usando os dados das campanhas (parcela de impressões, perdas por orçamento/classificação, ACOS × limite, TACOS × teto).
-Responda APENAS um JSON válido: {"escolhidas":[{"id":"<id da candidata>","prioridade":1,"porque":"..."}],"estrategia":"...","esperar":["<o que NÃO fazer agora e por quê, 1 frase cada, no máximo 3>"]}`;
+Dentro dos textos, nunca use aspas duplas (para citar produto ou campanha use aspas simples). Responda APENAS um JSON válido: {"escolhidas":[{"id":"<id da candidata>","prioridade":1,"porque":"..."}],"estrategia":"...","esperar":["<o que NÃO fazer agora e por quê, 1 frase cada, no máximo 3>"]}`;
 
 async function revisar({ Anthropic, anthropicKey, conta, candidatos }) {
   const porRegra = () => ({ escolhidas: [...candidatos].sort((a, b) => (b.dados?.prioridade || 0) - (a.dados?.prioridade || 0)).slice(0, 8).map((c, i) => ({ id: c.id, prioridade: i + 1, porque: null })), estrategia: null, esperar: [], fonte: 'regra' });
@@ -50,7 +50,17 @@ async function revisar({ Anthropic, anthropicKey, conta, candidatos }) {
       messages: [{ role: 'user', content: JSON.stringify(entrada) }],
     });
     const txt = (r.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-    const j = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
+    const ler = t => JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+    let j;
+    try { j = ler(txt); } catch (e1) {
+      // JSON quebrado (ex.: aspas dentro de um texto): pede a mesma resposta de novo, corrigida
+      const r2 = await client.messages.create({
+        model: 'claude-opus-5-5', max_tokens: 3000,
+        system: `${SISTEMA}\n\n${GUIA}`,
+        messages: [{ role: 'user', content: JSON.stringify(entrada) }, { role: 'assistant', content: txt }, { role: 'user', content: `Esse JSON é inválido (${String(e1.message).slice(0, 120)}). Responda de novo SÓ o JSON válido, com o mesmo conteúdo e sem aspas duplas dentro dos textos.` }],
+      });
+      j = ler((r2.content || []).filter(b => b.type === 'text').map(b => b.text).join(''));
+    }
     const ids = new Set(candidatos.map(c => c.id)), vistos = new Set();
     // só vale id que existe — o especialista não cria recomendação
     const escolhidas = (Array.isArray(j.escolhidas) ? j.escolhidas : []).filter(e => e && ids.has(String(e.id)) && !vistos.has(String(e.id)) && vistos.add(String(e.id)))

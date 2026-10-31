@@ -477,7 +477,8 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         const roasMetaFam = 100 / metaFam;
 
         // 1b) Produto que puxa o ACOS da campanha → campanha mais conservadora
-        const pesado = f.gasto >= Math.max(limProd, x.gasto * 0.3);
+        const gastoCampProd = x.familias.reduce((t, o) => t + o.gasto, 0) || f.gasto; // gasto da campanha na mesma janela do produto
+        const pesado = f.gasto >= Math.max(limProd, gastoCampProd * 0.3);
         const limiteMover = metaMargem != null ? Math.max(metaFam * 1.2, 1) : Math.max(meta * 1.5, cfg.regra_pausa_acos || 0);
         if (pesado && f.acos > limiteMover && f.unidades > 0) {
           if (metaMargem != null && f.acos <= Math.max(meta * 1.5, cfg.regra_pausa_acos || 0)) colaboracoes.push({ de: aviso.promo ? 'promocoes' : 'margem', texto: `"${f.nome.slice(0, 50)}" tem ACOS de ${pctTxt(f.acos)}: cabe na meta da conta, mas passa do que a margem aguenta (${metaFam}%)` });
@@ -486,7 +487,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           const destino = C.filter(o => o.id !== x.id && o.roasAlvo >= x.roasAlvo * 1.2 && o.rentab).sort((a, b) => a.roasAlvo - b.roasAlvo)[0];
           const roasNova = r1(Math.max(roasMetaFam, x.roasAlvo * 1.25)); // campanha nova: sempre mais conservadora que a atual (e dentro da margem)
           const ok = await sugerir(chave, `Sugestão: mover produto para campanha mais conservadora — ${f.nome.slice(0, 50)}`,
-            `"${f.nome.slice(0, 70)}" vende, mas com ACOS de ${pctTxt(f.acos)} (sem cancelados) em ${diasProd} dias — bem acima da ${metaMargem != null ? `meta do produto (${metaFam}%, limite da margem de ${aviso.m}%${aviso.promo ? ' no preço da promoção — agente de Promoções' : ' calculada pelo agente de Margem'})` : `meta (${meta}%)`} — e responde por ${Math.round(f.gasto / (x.gasto || f.gasto) * 100)}% do gasto da campanha "${x.nome}" (ROAS objetivo ${roasTxt(x.roasAlvo)}). Em vez de apertar a campanha inteira, ${destino ? `mover este produto para "${destino.nome}" (ROAS objetivo ${roasTxt(destino.roasAlvo)}, lance mais conservador)` : `criar uma campanha só para ele com ROAS objetivo de ${roasTxt(roasNova)} (lance mais conservador)`}. Não pausar: o produto vende.`,
+            `"${f.nome.slice(0, 70)}" vende, mas com ACOS de ${pctTxt(f.acos)} (sem cancelados) em ${diasProd} dias — bem acima da ${metaMargem != null ? `meta do produto (${metaFam}%, limite da margem de ${aviso.m}%${aviso.promo ? ' no preço da promoção — agente de Promoções' : ' calculada pelo agente de Margem'})` : `meta (${meta}%)`} — e responde por ${Math.round(f.gasto / gastoCampProd * 100)}% do gasto da campanha "${x.nome}" (ROAS objetivo ${roasTxt(x.roasAlvo)}). Em vez de apertar a campanha inteira, ${destino ? `mover este produto para "${destino.nome}" (ROAS objetivo ${roasTxt(destino.roasAlvo)}, lance mais conservador)` : `criar uma campanha só para ele com ROAS objetivo de ${roasTxt(roasNova)} (lance mais conservador)`}. Não pausar: o produto vende.`,
             { ...base0, acao: 'mover_produto', destino_id: destino?.id || null, destino: destino?.nome || null, de: x.roasAlvo, para: destino ? destino.roasAlvo : roasNova, impacto: Math.max(0, f.gasto - f.vendasAj * meta / 100) / diasProd * 7, impacto_tipo: 'economia' });
           if (ok) tirar(x, f);
           continue;
@@ -547,6 +548,9 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
       // 2b) Conter — ACOS acima da meta com venda: subir ROAS objetivo (ou cortar orçamento)
       if (!opc.soMomento && x.madura && acos > meta) {
         const forte = !!cfg.regra_pausa_acos && acos > cfg.regra_pausa_acos;
+        // produto que pesa metade ou mais do gasto já vai sair/mudar de campanha hoje: espera o efeito antes de mexer na campanha
+        const gastoCampProd = x.familias.reduce((t, o) => t + o.gasto, 0);
+        if (gastoCampProd > 0 && ex.gasto / gastoCampProd >= 0.5) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}": o produto que pesa ${Math.round(ex.gasto / gastoCampProd * 100)}% do gasto dela já vai mudar de campanha — esperar o efeito antes de mexer no ROAS` }); continue; }
         // campanha aprendendo ou mexida há pouco espera (Mercado Ads: 30 dias; efeito de uma mudança leva 1–2 semanas)
         if (!forte && (x.aprendendo || x.recente)) { colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): ${x.aprendendo ? `campanha com ${Math.floor(x.idadeDias)} dia(s) — o Mercado Ads recomenda 30 dias de aprendizado sem mexer` : `alterada há ${Math.floor(x.mudouHa)} dia(s) — esperar o efeito da mudança`}` }); continue; }
         // Quem governa é o TACOS: com ele dentro do limite, apertar campanha acima da meta tira venda
