@@ -395,11 +395,22 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     const tiradas = new Set(); // famílias já sugeridas para sair da campanha
     const tirar = (x, f) => { tiradas.add(f.chave); const e = excluido.get(x.id) || { gasto: 0, vendasAj: 0 }; e.gasto += f.gasto; e.vendasAj += f.vendasAj; excluido.set(x.id, e); };
 
+    // Pausar anúncio só com prova: a conversão do ADS da conta (vendas ÷ cliques) diz quantas vendas os cliques
+    // do produto deveriam ter trazido. Sem venda onde o normal seriam 3+ (4+ com o TACOS no teto) é sinal; menos
+    // que isso é sorte/azar. Produto que vende na loja não é pausado (o ADS ajuda o orgânico) — baixa o lance.
+    const convConta = (() => { let cl = 0, un = 0; for (const x of C) for (const f of x.familias) { cl += f.cliques; un += f.unidades; } return cl >= 200 && un > 0 ? Math.min(0.1, Math.max(0.005, un / cl)) : 0.02; })();
+    const esperadoMin = tacosOk ? 4 : 3;
+    const MAX_PAUSAS = 3; let pausas = 0;
+    const pausaValida = new Set(); // famílias que ainda merecem pausa — as pendentes fora daqui vencem
+    const analisadas = new Set();
+
     coletando = !opc.soMomento;
     // ── 1) PRODUTOS dentro das campanhas ── (fora da rodada só da revisão de 3 dias)
-    for (const x of (opc.soMomento ? [] : C)) {
-      if (!x.madura) continue;
-      for (const f of [...x.familias].sort((a, b) => b.gasto - a.gasto)) {
+    // em ordem de gasto na conta inteira, para as poucas pausas irem para o maior desperdício
+    const pares = (opc.soMomento ? [] : C).filter(x => x.madura).flatMap(x => x.familias.map(f => ({ x, f }))).sort((a, b) => b.f.gasto - a.f.gasto);
+    {
+      for (const { x, f } of pares) {
+        analisadas.add(f.chave);
         if (!f.ativos.length || f.gasto <= 0) continue;
         const chave = `p:${f.chave}`;
         const aviso = avisoDe(f.itens);
@@ -407,6 +418,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         const metaFam = metaMargem ?? meta;
         // 1-0) Sem estoque e ainda gastando → tirar da campanha até repor
         if (aviso?.ne === 'zerado') {
+          pausaValida.add(f.chave);
           const ok = await sugerir(chave, `Sugestão: tirar produto sem estoque da campanha — ${f.nome.slice(0, 50)}`,
             `O agente de Estoque avisou que "${f.nome.slice(0, 70)}" está sem estoque, mas o anúncio segue na campanha "${x.nome}" e gastou ${R$(f.gasto)} em ${diasProd} dias. Tirar da campanha até repor — clique pago em anúncio sem estoque não vira venda.`,
             { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), unidades: f.unidades, janela_dias: diasProd, acao: 'retirar_produto', impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia', colaboracao: { de: 'estoque' } });
@@ -415,24 +427,42 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         }
         const custoVenda = f.preco * ((metaFam || 10) / 100); // ADS aceitável por venda deste produto (limitado pela margem)
         const limProd = Math.max(15, custoVenda * 2);
+        const esperadas = f.cliques * convConta; // vendas que os cliques deveriam ter trazido na conversão normal da conta
+        const limPausa = Math.max(30, custoVenda * esperadoMin); // gasto de 3–4 vendas aceitáveis antes de pausar
+        const loja = lojaFam(f);
+        const lojaVende = loja.un >= 3 || f.organico > 0; // vende fora do ADS: pausar pode derrubar o orgânico
+        const provaTxt = `${f.cliques} cliques — na conversão do ADS da conta (${r1(convConta * 100)}%) o normal seriam ~${r1(esperadas)} venda(s), e veio nenhuma`;
         // 1-cat) Catálogo sem buy box: o clique pago leva para a oferta de outro vendedor
-        if (f.semBuybox && f.gasto >= limProd * 0.5 && f.unidades === 0) {
-          const ok = await sugerir(chave, `Sugestão: pausar anúncio de catálogo sem buy box — ${f.nome.slice(0, 50)}`,
-            `"${f.nome.slice(0, 70)}" é anúncio de catálogo e não está ganhando o buy box; gastou ${R$(f.gasto)} em ${diasProd} dias na campanha "${x.nome}" sem venda pelo ADS. Pausar este anúncio até ganhar o buy box (preço, frete, reputação) — sem buy box o clique leva para a oferta de outro vendedor.`,
-            { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), unidades: f.unidades, janela_dias: diasProd, acao: 'retirar_produto', impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia' });
-          if (ok) tirar(x, f);
+        if (f.semBuybox && f.unidades === 0 && f.gasto >= limProd && f.cliques >= 20) {
+          pausaValida.add(f.chave);
+          const ok = pausas < MAX_PAUSAS && await sugerir(chave, `Sugestão: pausar anúncio de catálogo sem buy box — ${f.nome.slice(0, 50)}`,
+            `"${f.nome.slice(0, 70)}" é anúncio de catálogo e não está ganhando o buy box; gastou ${R$(f.gasto)} em ${diasProd} dias na campanha "${x.nome}" com ${f.cliques} cliques e nenhuma venda pelo ADS. Pausar este anúncio até ganhar o buy box (preço, frete, reputação) — sem buy box o clique leva para a oferta de outro vendedor.`,
+            { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), unidades: f.unidades, cliques: f.cliques, janela_dias: diasProd, acao: 'retirar_produto', impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia' });
+          if (ok) { pausas++; tirar(x, f); }
           continue;
         }
-        const loja = lojaFam(f);
-        const lojaTxt = loja.un > 0 ? ` Na loja inteira (orgânico + ADS) vendeu ${loja.un} un. nos últimos 30 dias.` : ' Também não vendeu na loja nos últimos 30 dias.';
-        const base0 = { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), vendas_sem_cancelados: r1(f.vendasAj), unidades: f.unidades, acos: f.acos === Infinity ? null : f.acos && r1(f.acos), janela_dias: diasProd };
+        const base0 = { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), vendas_sem_cancelados: r1(f.vendasAj), unidades: f.unidades, cliques: f.cliques, vendas_esperadas: r1(esperadas), conversao_conta: r1(convConta * 100), unidades_loja_30d: loja.un, acos: f.acos === Infinity ? null : f.acos && r1(f.acos), janela_dias: diasProd };
 
-        // 1a) Tirar da campanha — gasta sem retorno
-        if (f.gasto >= limProd && (f.unidades === 0 || f.vendasAj < f.gasto)) {
-          const ok = await sugerir(chave, `Sugestão: tirar produto da campanha — ${f.nome.slice(0, 60)}`,
-            `Na campanha "${x.nome}", ${f.itens.length > 1 ? `as ${f.ativos.length} variações ativas deste produto gastaram` : 'este anúncio gastou'} ${R$(f.gasto)} em ${diasProd} dias com ${f.unidades === 0 ? 'nenhuma venda pelo ADS' : `só ${R$(f.vendasAj)} em vendas sem cancelados`} — mais que ${R$(limProd)} (ADS de ~2 vendas no preço de ${R$(f.preco)}).${lojaTxt}${loja.un >= 5 ? ' Vende sem o ADS — o anúncio pago não está somando.' : ''} Tirar da campanha (pausar o anúncio) para o orçamento ir para quem vende.`,
+        // 1a) Tirar da campanha — só com prova: muitos cliques, nenhuma venda pelo ADS e não vende na loja.
+        //     Quem vende pelo ADS com ACOS alto não pausa (vai para campanha mais conservadora, regra 1b).
+        const semRetorno = f.unidades === 0 && f.gasto >= limPausa && esperadas >= esperadoMin;
+        if (semRetorno && !lojaVende) {
+          pausaValida.add(f.chave);
+          const ok = pausas < MAX_PAUSAS && await sugerir(chave, `Sugestão: tirar produto da campanha — ${f.nome.slice(0, 60)}`,
+            `Na campanha "${x.nome}", ${f.itens.length > 1 ? `as ${f.ativos.length} variações ativas deste produto gastaram` : 'este anúncio gastou'} ${R$(f.gasto)} em ${diasProd} dias com ${provaTxt}. Também não vende fora do ADS (${loja.un} un. na loja em 30 dias), então pausar não tira venda orgânica. Tirar da campanha (pausar o anúncio) e revisar preço, fotos e ficha antes de voltar — o orçamento vai para quem converte.`,
             { ...base0, acao: 'retirar_produto', impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia' });
-          if (ok) tirar(x, f);
+          if (ok) { pausas++; tirar(x, f); }
+          continue;
+        }
+        // 1a') Mesmo caso, mas o produto vende na loja: baixar o lance em vez de pausar (só se existe campanha mais conservadora)
+        if (semRetorno && lojaVende) {
+          const destino = C.filter(o => o.id !== x.id && o.roasAlvo >= x.roasAlvo * 1.2 && o.rentab).sort((a, b) => a.roasAlvo - b.roasAlvo)[0];
+          if (destino) {
+            const ok = await sugerir(chave, `Sugestão: baixar o lance de produto que não converte no ADS — ${f.nome.slice(0, 50)}`,
+              `"${f.nome.slice(0, 70)}" gastou ${R$(f.gasto)} em ${diasProd} dias na campanha "${x.nome}" com ${provaTxt}. Mas vende na loja (${loja.un} un. em 30 dias${f.organico ? `, ${f.organico} orgânicas vindas do anúncio` : ''}) — pausar pode derrubar essa venda. Mover para "${destino.nome}" (ROAS objetivo ${roasTxt(destino.roasAlvo)}, lance mais conservador) e manter a exposição.`,
+              { ...base0, acao: 'mover_produto', destino_id: destino.id, destino: destino.nome, de: x.roasAlvo, para: destino.roasAlvo, impacto: f.gasto / diasProd * 7 * 0.4, impacto_tipo: 'economia' });
+            if (ok) tirar(x, f);
+          }
           continue;
         }
         if (!meta || f.acos == null || f.acos === Infinity) continue;
@@ -469,6 +499,17 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
             if (ok) tirar(x, f);
           }
         }
+      }
+    }
+
+    // Pausas pendentes que não passam mais no critério (poucos cliques, vende na loja, já vendeu) vencem —
+    // não ficam na fila tirando venda
+    if (!opc.soMomento && !opc.simular) {
+      for (const l of logs) {
+        const d = l.dados || {};
+        if (l.resultado !== 'so_alerta' || d.acao !== 'retirar_produto' || !d.familia || !analisadas.has(String(d.familia)) || pausaValida.has(String(d.familia))) continue;
+        await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { resultado: 'expirado', dados: { ...d, expirado_em: new Date().toISOString(), motivo_expirado: 'pausa sem prova: poucos cliques para a conversão da conta, ou o produto vende na loja' } }).catch(() => {});
+        l.resultado = 'expirado'; expiradas++;
       }
     }
 
