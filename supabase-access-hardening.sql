@@ -51,12 +51,12 @@ begin
   loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists acesso_explicito on public.%I', t);
-    execute format('create policy acesso_explicito on public.%I as restrictive for all to authenticated using (public.glr_eh_equipe() or public.glr_portal_ativo()) with check (public.glr_eh_equipe() or public.glr_portal_ativo())', t);
+    execute format('create policy acesso_explicito on public.%I as restrictive for all to authenticated using ((select public.glr_eh_equipe()) or (select public.glr_portal_ativo())) with check ((select public.glr_eh_equipe()) or (select public.glr_portal_ativo()))', t);
     -- Portal can read only the explicitly scoped core tables. Other internal
     -- tables (including new ones) are staff-only.
     if t not in ('glr_storage', 'glr_pedidos', 'glr_ads_diario', 'glr_sync_estado') then
       execute format('drop policy if exists somente_equipe_explicita on public.%I', t);
-      execute format('create policy somente_equipe_explicita on public.%I as restrictive for all to authenticated using (public.glr_eh_equipe()) with check (public.glr_eh_equipe())', t);
+      execute format('create policy somente_equipe_explicita on public.%I as restrictive for all to authenticated using ((select public.glr_eh_equipe())) with check ((select public.glr_eh_equipe()))', t);
     end if;
   end loop;
 end $$;
