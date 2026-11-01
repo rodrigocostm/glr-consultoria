@@ -218,9 +218,43 @@ Router.register('agente-ml', (params, el) => {
 
   // ── Render ──
   const corTacos = (tacos, meta) => tacos != null && meta ? (tacos <= meta ? 'var(--green)' : tacos <= meta * 1.3 ? 'var(--yellow)' : 'var(--red)') : 'var(--text-muted)';
-  function kpi(rot, val, sub, cor) {
-    return `<div class="aml-kpi" style="--c:${cor || 'var(--accent)'}"><div class="aml-rot">${rot}</div><div class="aml-val">${val}</div>${sub ? `<div class="aml-sub">${sub}</div>` : ''}</div>`;
+  // Resumo no formato do painel do Mercado Ads: uma faixa de métricas lado a lado.
+  // Vendas, investimento, ACOS e ROAS vêm das campanhas (igual ao painel); faturamento e TACOS, da base automática.
+  function renderResumo(id, m, cfg) {
+    const lista = state.campanhas[id]?.lista, tx = m?.taxaCancel || 0;
+    const soma = k => lista.reduce((s, x) => s + (parseFloat(x.metrics?.[k]) || 0), 0);
+    const gasto = lista ? soma('cost') : null, vendas = lista ? soma('total_amount') * (1 - tx) : null;
+    const ativas = lista ? lista.filter(x => x.status === 'active').length : null;
+    const acos = gasto > 0 && vendas > 0 ? gasto / vendas * 100 : null;
+    const espera = state.carregandoCamp || !state.campanhas[id] ? '…' : '—';
+    const dm = s => s.split('-').reverse().slice(0, 2).join('/');
+    const met = (rot, val, sub, cor) => `<div class="aml-met"><div class="aml-met-rot">${rot}</div><div class="aml-met-val"${cor ? ` style="color:${cor}"` : ''}>${val}</div><div class="aml-met-sub">${sub || '&nbsp;'}</div></div>`;
+    return `<div class="card aml-resumo">
+      <div class="aml-resumo-t">Resumo de Product Ads <span class="aml-sub">${dm(mesIni)} a ${dm(hojeIso)} · vendas sem cancelados</span></div>
+      <div class="aml-mets">
+        ${met('Vendas por publicidade', vendas == null ? espera : R$(vendas))}
+        ${met('Investimento', gasto == null ? espera : R$(gasto), ativas == null ? '' : `${ativas} campanha${ativas === 1 ? '' : 's'} ativa${ativas === 1 ? '' : 's'}`)}
+        ${met('ACOS', pct(acos), cfg?.meta_acos ? `meta ${pct(cfg.meta_acos)}` : '', corTacos(acos, cfg?.meta_acos))}
+        ${met('ROAS', gasto > 0 ? roasX(vendas / gasto) : '—', cfg?.meta_acos ? `objetivo ${roasX(100 / cfg.meta_acos)}` : '')}
+        ${met('Faturamento da loja', m ? R$(m.fat) : '—', m ? `projeção ${R$(m.proj).replace(/,\d{2}$/, '')}` : 'base automática sem o mês')}
+        ${met('TACOS', pct(m?.tacos), `meta ${pct(cfg?.meta_acos)}`, corTacos(m?.tacos, cfg?.meta_acos))}
+      </div>
+    </div>`;
   }
+  // Ícones das ações (traço simples, como os do painel do ML)
+  const svg = p => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+  const ICONE = {
+    retirar_produto: svg('<circle cx="12" cy="12" r="8"/><path d="M8.5 12h7"/>'),
+    pausar: svg('<path d="M9 6.5v11M15 6.5v11"/>'),
+    mover_produto: svg('<path d="M5 12h13M13 6.5l5.5 5.5-5.5 5.5"/>'),
+    roas_target: svg('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>'),
+    acos_target: svg('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>'),
+    orcamento: svg('<rect x="3.5" y="6.5" width="17" height="11" rx="2"/><circle cx="12" cy="12" r="2.5"/>'),
+    adicionar_produto: svg('<path d="M12 5.5v13M5.5 12h13"/>'),
+    informativa: svg('<path d="M9.5 18h5M10.5 21h3M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3z"/>'),
+    abc_queda: svg('<path d="M4 7l6 6 4-4 6 6M20 10.5V15h-4.5"/>'),
+  };
+  const statusPill = s => s === 'active' ? '<span class="aml-st on">Ativa</span>' : s === 'paused' ? '<span class="aml-st">Pausada</span>' : `<span class="aml-st">${h(s || '—')}</span>`;
   function renderPortfolio() {
     return `<div class="aml-grid">
       ${state.configs.map(cfg => {
@@ -360,6 +394,7 @@ Router.register('agente-ml', (params, el) => {
     const ordGrupos = [...grupos.values()].sort((a, b) => (a.k === '__revisar') - (b.k === '__revisar') || b.prio - a.prio || b.itens.length - a.itens.length);
     ordGrupos.forEach(g => g.itens.sort((a, b) => (PASSO[a.d.acao] || 9) - (PASSO[b.d.acao] || 9) || (+b.d.prioridade || 0) - (+a.d.prioridade || 0)));
     const campAtual = k => (state.campanhas[id]?.lista || []).find(c => String(c.id) === String(k));
+    const pillCamp = k => { const c = campAtual(k); return c ? statusPill(c.status) + ' ' : ''; };
     const estadoCamp = k => { const c = campAtual(k); if (!c) return ''; const r = parseFloat(c.roas_target) || (c.acos_target ? 100 / c.acos_target : 0); return [c.status !== 'active' ? 'pausada' : '', r ? `ROAS objetivo ${roasX(r)}` : '', c.budget ? `orçamento ${R$(c.budget)}/dia` : ''].filter(Boolean).join(' · '); };
     // ── Um passo = uma frase do que fazer, uma linha do porquê, o valor em jogo e o "como fazer" no painel ──
     const nomeP = d => `<b>${h(String(d.produto || '').slice(0, 70))}</b>`;
@@ -410,7 +445,7 @@ Router.register('agente-ml', (params, el) => {
       const t = TIPOS[d.acao] || { rot: 'Ação', cor: 'var(--text-muted)' };
       const passos = passosPainel(d), esp = leitura(l.explicacao), revisar = d.acao === 'abc_queda' || d.acao === 'informativa';
       return `<div class="aml-p" style="--c:${t.cor}">
-          <div class="aml-p-n" aria-hidden="true">${n}</div>
+          <div class="aml-p-ic" title="Passo ${n}">${ICONE[d.acao] || svg('<circle cx="12" cy="12" r="8"/>')}</div>
           <div class="aml-p-corpo">
             <div class="aml-p-acao"><span class="aml-p-tag">${t.rot}</span>${acaoTxt(d)}</div>
             <div class="aml-p-pq">${pqTxt(d)}</div>
@@ -423,8 +458,8 @@ Router.register('agente-ml', (params, el) => {
           <div class="aml-p-lado">
             ${impHtml(d)}
             <div class="aml-li-bt">
-              <button class="btn btn-secondary btn-sm" ${state.processando ? 'disabled' : ''} title="${revisar ? 'Já revisei' : 'Já apliquei no painel do ML (opcional: o agente confere sozinho amanhã)'}" onclick="window._amlMarcar('${l.id}','executado')">${revisar ? 'Revisado' : 'Feito'}</button>
-              <button class="aml-x" ${state.processando ? 'disabled' : ''} title="Descartar" aria-label="Descartar" onclick="window._amlMarcar('${l.id}','descartado')">✕</button>
+              <button class="aml-lk" ${state.processando ? 'disabled' : ''} title="${revisar ? 'Já revisei' : 'Já apliquei no painel do ML (opcional: o agente confere sozinho amanhã)'}" onclick="window._amlMarcar('${l.id}','executado')">${revisar ? 'Revisado' : 'Marcar como feito'}</button>
+              <button class="aml-lk aml-lk-cinza" ${state.processando ? 'disabled' : ''} onclick="window._amlMarcar('${l.id}','descartado')">Descartar</button>
             </div>
           </div>
         </div>`;
@@ -437,7 +472,7 @@ Router.register('agente-ml', (params, el) => {
         <div class="aml-grupo-top">
           <div style="min-width:0;flex:1;">
             <div class="aml-grupo-nome">${i === 0 && g.k !== '__revisar' ? '<span class="aml-comece">Comece por aqui</span>' : ''}${h(g.nome)}${g.k.startsWith('__') ? '' : ` <span class="aml-sub">#${h(g.k)}</span>`}</div>
-            <div class="aml-sub">${[est ? `hoje: ${est}` : '', `${g.itens.length} passo${g.itens.length > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}</div>
+            <div class="aml-sub">${pillCamp(g.k)}${[est ? est.replace(/^pausada( · )?/, '') : '', `${g.itens.length} passo${g.itens.length > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}</div>
           </div>
           ${impTxt ? `<div class="aml-g-imp">${impTxt}</div>` : ''}
           ${g.k === '__revisar' ? '' : `<button class="btn btn-primary btn-sm" ${state.processando ? 'disabled' : ''} title="Marca todos os passos desta campanha como aplicados" onclick="window._amlMarcarGrupo('${idsGrupo}')">Fiz tudo desta campanha</button>`}
@@ -447,7 +482,7 @@ Router.register('agente-ml', (params, el) => {
     }).join('');
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
-        <div style="font-weight:700;font-size:15px;">O que fazer no Mercado Livre</div>
+        <div style="font-weight:600;font-size:16px;">Recomendações para suas campanhas</div>
         <div class="aml-sub">${fazerNoMl} para aplicar no painel do ML · ${todas.length - fazerNoMl} para revisar</div>
       </div>
       <div class="ajuda">Um bloco por campanha, na ordem do que mais custa dinheiro: abra a campanha em Publicidade → Product Ads e faça todos os passos dela. <b>Não precisa marcar Feito</b> — na análise da manhã seguinte o agente lê as campanhas e marca sozinho o que mudou (o ML não deixa a integração alterar, mas deixa ler).</div>
@@ -468,23 +503,24 @@ Router.register('agente-ml', (params, el) => {
     else {
       const pend = new Set(pendentes(id).map(l => String(l.dados?.campaign_id)));
       const linhas = [...c.lista].sort((a, b) => (parseFloat(b.metrics?.cost) || 0) - (parseFloat(a.metrics?.cost) || 0));
-      corpo = `<div style="overflow-x:auto;"><table class="aml-tab"><thead><tr><th>Campanha</th><th>Status</th><th>Estratégia</th><th>Orçamento</th><th>ROAS objetivo</th><th>Gasto</th><th>Vendas (sem cancel.)</th><th>ROAS</th><th>ACOS</th></tr></thead><tbody>
+      corpo = `<div style="overflow-x:auto;"><table class="aml-tab"><thead><tr><th>Campanha</th><th>Status</th><th class="num">Orçamento diário</th><th class="num">ROAS objetivo</th><th class="num">Investimento</th><th class="num">Vendas por publicidade</th><th class="num">ROAS</th><th class="num">ACOS</th></tr></thead><tbody>
         ${linhas.map(x => {
           const mm = x.metrics || {}, g = parseFloat(mm.cost) || 0, v = (parseFloat(mm.total_amount) || 0) * (1 - tx);
           const acos = v > 0 ? g / v * 100 : (g > 0 ? Infinity : null);
           const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity || acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? 'var(--red)' : acos > cfg.meta_acos ? 'var(--yellow)' : 'var(--green)';
           const roasAlvo = parseFloat(x.roas_target) || (x.acos_target ? 100 / x.acos_target : 0);
           const aberta = state.aberto === String(x.id);
-          return `<tr class="aml-linha" onclick="window._amlProdutos('${x.id}')"><td><span class="aml-seta">${aberta ? '▾' : '▸'}</span> ${h(x.name)}${pend.has(String(x.id)) ? ' <span class="aml-chip" title="Tem sugestão pendente">sugestão</span>' : ''}</td>
-            <td>${x.status === 'active' ? '🟢 ativa' : x.status === 'paused' ? '⏸ pausada' : h(x.status)}</td><td>${h({ PROFITABILITY: 'Rentabilidade', INCREASE: 'Crescimento', VISIBILITY: 'Visibilidade' }[x.strategy] || x.strategy || '—')}</td>
-            <td>${x.budget ? R$(x.budget) : '—'}</td><td>${roasAlvo ? roasX(roasAlvo) : '—'}</td>
-            <td>${R$(g)}</td><td>${R$(v)}</td><td>${g > 0 ? roasX(v / g) : '—'}</td><td style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td></tr>
-            ${aberta ? `<tr><td colspan="9" style="padding:0;white-space:normal;">${renderProdutos(id, x.id, tx, cfg)}</td></tr>` : ''}`;
+          const estrat = { PROFITABILITY: 'Rentabilidade', INCREASE: 'Crescimento', VISIBILITY: 'Visibilidade' }[x.strategy] || x.strategy || '';
+          return `<tr class="aml-linha${aberta ? ' aberta' : ''}" onclick="window._amlProdutos('${x.id}')"><td><div class="aml-c-nome"><span class="aml-seta">${aberta ? '▾' : '▸'}</span><div><div class="aml-c-n">${h(x.name)}${pend.has(String(x.id)) ? ' <span class="aml-chip" title="Tem sugestão pendente">sugestão</span>' : ''}</div>${estrat ? `<div class="aml-sub">${h(estrat)}</div>` : ''}</div></div></td>
+            <td>${statusPill(x.status)}</td>
+            <td class="num">${x.budget ? R$(x.budget) : '—'}</td><td class="num">${roasAlvo ? roasX(roasAlvo) : '—'}</td>
+            <td class="num">${R$(g)}</td><td class="num">${R$(v)}</td><td class="num">${g > 0 ? roasX(v / g) : '—'}</td><td class="num" style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td></tr>
+            ${aberta ? `<tr><td colspan="8" style="padding:0;white-space:normal;">${renderProdutos(id, x.id, tx, cfg)}</td></tr>` : ''}`;
         }).join('')}</tbody></table></div>`;
     }
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
-        <div><div style="font-weight:700;font-size:15px;">Campanhas de Product Ads — mês atual</div>
+        <div><div style="font-weight:600;font-size:16px;">Campanhas <span class="aml-sub" style="font-weight:400;">Product Ads · mês atual</span></div>
         <div class="aml-sub">Clique numa campanha para ver os produtos dentro dela. ACOS sem cancelados${tx > 0.005 ? ` (cancelamentos/devoluções da loja no mês: ${pct(tx * 100)})` : ''}.</div></div>
         <button class="btn btn-secondary btn-sm" title="Atualizar" ${state.carregandoCamp ? 'disabled' : ''} onclick="window._amlCampanhas()">🔄</button>
       </div>${corpo}</div>`;
@@ -497,7 +533,7 @@ Router.register('agente-ml', (params, el) => {
     if (!p.lista.length) return '<div class="aml-sub" style="padding:10px 14px;">Nenhum produto nesta campanha.</div>';
     const pend = new Set(pendentes(contaId).map(l => String(l.dados?.familia || '')).filter(Boolean));
     const gastoCamp = p.lista.reduce((s, f) => s + f.gasto, 0) || 1;
-    return `<div class="aml-prods"><table class="aml-tab"><thead><tr><th>Produto (variações somadas)</th><th>Anúncios ativos</th><th>Gasto</th><th>% do gasto</th><th>Vendas (sem cancel.)</th><th>Un.</th><th>ROAS</th><th>ACOS</th></tr></thead><tbody>
+    return `<div class="aml-prods"><table class="aml-tab"><thead><tr><th>Produto (variações somadas)</th><th>Anúncios ativos</th><th class="num">Investimento</th><th class="num">% do investimento</th><th class="num">Vendas por publicidade</th><th class="num">Unidades</th><th class="num">ROAS</th><th class="num">ACOS</th></tr></thead><tbody>
       ${p.lista.map(f => {
         const v = f.vendas * (1 - tx), acos = v > 0 ? f.gasto / v * 100 : (f.gasto > 0 ? Infinity : null);
         const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity ? 'var(--red)' : acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? 'var(--red)' : acos > cfg.meta_acos ? 'var(--yellow)' : 'var(--green)';
@@ -506,8 +542,8 @@ Router.register('agente-ml', (params, el) => {
         const nomeCamp = id => (state.campanhas[contaId]?.lista || []).find(c => String(c.id) === String(id))?.name || `campanha ${id}`;
         const movTxt = Object.entries(f.movidos || {}).map(([id, n]) => `${n} movido${n > 1 ? 's' : ''} para ${h(nomeCamp(id))}`).join(', ');
         return `<tr><td style="white-space:normal;min-width:240px;">${f.permalink ? `<a href="${h(f.permalink)}" target="_blank" rel="noopener">${h(f.nome)}</a>` : h(f.nome)}${f.recomendado ? ' <span class="aml-chip" title="O ML recomenda anunciar">recomendado ML</span>' : ''}${pend.has(f.chave) ? ' <span class="aml-chip">sugestão</span>' : ''}</td>
-          <td style="white-space:normal;">${f.itens.length - nMov ? `${f.ativos}/${f.itens.length - nMov}` : '—'}${pausados ? ` <span class="aml-sub">(${pausados} fora)</span>` : ''}${movTxt ? `<div class="aml-sub" title="O gasto ao lado é o que ficou nesta campanha antes de mover">→ ${movTxt}</div>` : ''}</td><td>${R$(f.gasto)}</td><td>${Math.round(f.gasto / gastoCamp * 100)}%</td><td>${R$(v)}</td><td>${f.unidades}</td>
-          <td>${f.gasto > 0 ? roasX(v / f.gasto) : '—'}</td><td style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td></tr>`;
+          <td style="white-space:normal;">${f.itens.length - nMov ? `${f.ativos}/${f.itens.length - nMov}` : '—'}${pausados ? ` <span class="aml-sub">(${pausados} fora)</span>` : ''}${movTxt ? `<div class="aml-sub" title="O gasto ao lado é o que ficou nesta campanha antes de mover">→ ${movTxt}</div>` : ''}</td><td class="num">${R$(f.gasto)}</td><td class="num">${Math.round(f.gasto / gastoCamp * 100)}%</td><td class="num">${R$(v)}</td><td class="num">${f.unidades}</td>
+          <td class="num">${f.gasto > 0 ? roasX(v / f.gasto) : '—'}</td><td class="num" style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td></tr>`;
       }).join('')}</tbody></table></div>`;
   }
   // Resultado do que foi aplicado: 7 dias antes × 7 dias depois, por campanha
@@ -589,11 +625,7 @@ Router.register('agente-ml', (params, el) => {
         <button class="btn btn-primary btn-sm" ${state.analisando ? 'disabled' : ''} onclick="window._amlAnalisar()">${state.analisando ? '⏳ Analisando…' : 'Analisar agora'}</button>
       </div>
       ${state.editando ? renderConfig(cfg) : ''}
-      <div class="aml-kpis">
-        ${kpi('Faturamento do mês (sem cancelados)', m ? R$(m.fat) : '—', m ? `projeção do mês <b>${R$(m.proj)}</b>` : 'a base automática ainda não cobre o mês desta conta')}
-        ${kpi('Investimento em ADS no mês', m?.ads != null ? R$(m.ads) : '—', '', 'var(--cyan)')}
-        ${kpi('TACOS do mês vs meta', pct(m?.tacos), `meta ${pct(cfg?.meta_acos)}`, corTacos(m?.tacos, cfg?.meta_acos))}
-      </div>
+      ${renderResumo(id, m, cfg)}
       ${renderSugestoes(id)}
       ${renderResultados(id)}
       ${renderCampanhas(id)}
@@ -621,7 +653,7 @@ Router.register('agente-ml', (params, el) => {
     if (state.aberto) carregarProdutos(state.aberta, campId);
   };
 
-  el.innerHTML = `<div class="page">
+  el.innerHTML = `<div class="page aml-ml">
     <div class="aml-copiloto"><span class="aml-chip" title="Analisa e sugere; você aplica no painel do ML">Copiloto</span></div>
     <div class="ajuda">Analisa os anúncios patrocinados (Product Ads) de cada conta com as mesmas regras do agente da Shopee e sugere o que ajustar. O Mercado Livre não libera alteração de campanhas por integração — então você aplica no painel do ML; o agente confere sozinho o que mudou e, 7 dias depois, mede se deu resultado. Quando o ML liberar, ele passa a executar sozinho.</div>
     <div id="aml-root"></div>
@@ -695,6 +727,73 @@ Router.register('agente-ml', (params, el) => {
     .aml-ver{font-size:12px;font-weight:650;color:var(--c);white-space:nowrap;}
     @media (max-width:900px){.aml-res{grid-template-columns:1fr auto}.aml-res>div{grid-column:1/-1}}
     .aml-hist{padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
+
+    /* ── Visual do painel do Mercado Ads (Andes, design system do ML) ──
+       As cores do site são redefinidas só dentro desta tela: azul de ação do ML,
+       verde/vermelho/laranja do ML, cantos de 6px e sombra leve nos cartões. */
+    .aml-ml{--ml-azul:#3483fa;--ml-azul-h:#2968c8;--ml-azul-bg:rgba(65,137,230,.15);--ml-verde:#00a650;--ml-verde-bg:rgba(0,166,80,.12);
+      --accent:var(--ml-azul);--accent-strong:var(--ml-azul-h);--green:var(--ml-verde);--red:#f23d4f;--yellow:#ff7733;--purple:#8a6cf0;--cyan:var(--ml-azul);
+      --ml-sombra:0 1px 2px rgba(0,0,0,.25);
+      font-family:'Proxima Nova',-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;}
+    body.light .aml-ml{--text-primary:rgba(0,0,0,.9);--text-secondary:rgba(0,0,0,.55);--text-muted:rgba(0,0,0,.45);--border:rgba(0,0,0,.1);--bg-subtle:#f5f5f5;--bg-card-hover:#f5f5f5;--ml-sombra:0 1px 2px rgba(0,0,0,.12);}
+    .aml-ml .card{border-radius:6px;box-shadow:var(--ml-sombra);}
+    body.light .aml-ml .card{border-color:transparent;}
+    .aml-ml .btn{border-radius:6px;font-weight:600;}
+    .aml-ml .btn-primary{background:var(--ml-azul);border-color:var(--ml-azul);color:#fff;}
+    .aml-ml .btn-primary:hover:not(:disabled){background:var(--ml-azul-h);border-color:var(--ml-azul-h);}
+    .aml-ml .btn-secondary{background:var(--ml-azul-bg);border-color:transparent;color:var(--ml-azul);}
+    .aml-ml .btn-secondary:hover:not(:disabled){background:rgba(65,137,230,.25);color:var(--ml-azul-h);}
+    .aml-ml .ajuda{border-radius:6px;}
+    .aml-ml .aml-chip{background:var(--ml-azul-bg);color:var(--ml-azul);border-radius:4px;font-weight:600;}
+    /* resumo: faixa de métricas como no topo do Product Ads */
+    .aml-resumo{padding:16px 20px 6px;margin-bottom:18px;}
+    .aml-resumo-t{font-size:16px;font-weight:600;color:var(--text-primary);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px;}
+    .aml-mets{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}
+    .aml-met{padding:4px 16px 12px;border-left:1px solid var(--border);min-width:0;}
+    .aml-met:first-child{border-left:none;padding-left:0;}
+    .aml-met-rot{font-size:13px;color:var(--text-secondary);margin-bottom:4px;}
+    .aml-met-val{font-size:22px;font-weight:600;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .aml-met-sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
+    @media (max-width:640px){.aml-mets{grid-template-columns:1fr 1fr}.aml-met{border-left:none;padding-left:0}}
+    /* status como no painel: pílula verde "Ativa", cinza "Pausada" */
+    .aml-st{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px;background:var(--bg-subtle);color:var(--text-secondary);white-space:nowrap;}
+    .aml-st.on{background:var(--ml-verde-bg);color:var(--ml-verde);}
+    /* tabela de campanhas no estilo do Product Ads */
+    .aml-ml .aml-tab{font-size:13px;}
+    .aml-ml .aml-tab th{font-size:12px;font-weight:600;color:var(--text-secondary);padding:10px 12px;border-bottom:1px solid var(--border);}
+    .aml-ml .aml-tab td{padding:12px;}
+    .aml-ml .aml-tab .num{text-align:right;}
+    .aml-c-nome{display:flex;gap:6px;align-items:flex-start;}
+    .aml-c-n{color:var(--ml-azul);font-weight:600;white-space:normal;min-width:180px;}
+    .aml-ml .aml-linha:hover td,.aml-ml .aml-linha.aberta td{background:var(--bg-subtle);}
+    .aml-ml .aml-prods{background:var(--bg-subtle);padding:4px 12px 12px 30px;}
+    .aml-ml .aml-prods .aml-tab td{padding:9px 12px;}
+    .aml-ml .aml-prods a{color:var(--ml-azul);text-decoration:none;} .aml-ml .aml-prods a:hover{text-decoration:underline;}
+    /* recomendações: ícone redondo na cor da ação, texto, valor e ações em texto azul */
+    .aml-ml .aml-grupo{border-radius:6px;}
+    .aml-ml .aml-grupo-top{background:var(--bg-card);border-bottom:none;padding:14px 16px;}
+    .aml-ml .aml-grupo-nome{font-size:15px;font-weight:600;}
+    .aml-ml .aml-comece{background:var(--ml-azul);border-radius:4px;font-weight:600;}
+    .aml-ml .aml-p{box-shadow:none;grid-template-columns:32px minmax(0,1fr) auto;padding:14px 16px;}
+    .aml-p-ic{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);}
+    .aml-ml .aml-p-tag{border-radius:4px;font-weight:600;letter-spacing:0;}
+    .aml-ml .aml-como summary{color:var(--ml-azul);}
+    .aml-lk{background:none;border:none;padding:4px 0;font:inherit;font-size:13px;font-weight:600;color:var(--ml-azul);cursor:pointer;white-space:nowrap;}
+    .aml-lk:hover:not(:disabled){color:var(--ml-azul-h);text-decoration:underline;}
+    .aml-lk:disabled{opacity:.5;cursor:default;}
+    .aml-lk-cinza{color:var(--text-muted);font-weight:500;} .aml-lk-cinza:hover:not(:disabled){color:var(--red);}
+    .aml-ml .aml-li-bt{gap:14px;}
+    .aml-ml .aml-fchip{border-radius:16px;border-color:var(--border);color:var(--text-primary);padding:5px 12px;}
+    .aml-ml .aml-fchip.on{background:var(--ml-azul-bg);border-color:var(--ml-azul);color:var(--ml-azul);}
+    /* leitura do especialista como o aviso informativo azul do ML */
+    .aml-ml .aml-espq{border-radius:6px;background:color-mix(in srgb,var(--ml-azul) 8%,var(--bg-card));border:none;border-left:4px solid var(--ml-azul);}
+    .aml-ml .aml-esp{border-left-color:var(--ml-azul);}
+    .aml-ml .aml-nova{border-radius:6px;background:var(--bg-subtle);border:none;}
+    .aml-ml .aml-kpi,.aml-ml .aml-card{border-radius:6px;}
+    .aml-ml .aml-rot{font-size:13px;color:var(--text-secondary);} .aml-ml .aml-val{font-weight:600;}
+    .aml-ml .aml-res-kpis{gap:0;} .aml-ml .aml-res-kpis>div{padding:4px 16px 8px;border-left:1px solid var(--border);} .aml-ml .aml-res-kpis>div:first-child{border-left:none;padding-left:0;}
+    @media (max-width:640px){.aml-ml .aml-res-kpis>div{border-left:none;padding-left:0;}}
+    .aml-lk:focus-visible,.aml-ml .aml-fchip:focus-visible,.aml-ml .btn:focus-visible{outline:2px solid var(--ml-azul);outline-offset:2px;}
   </style>`;
   carregar();
 });
