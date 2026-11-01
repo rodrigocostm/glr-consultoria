@@ -112,6 +112,7 @@
         state.carregando = false;
         render();
       }
+      carregarSaldos();
       const cfgAberta = configDaConta(state.contaAbertaId);
       if (cfgAberta?.conta_id) {
         buscarNegocio(cfgAberta.conta_id);
@@ -933,9 +934,81 @@
       return { cor: 'var(--green)', emoji: '🟢', label: 'Saudável' };
     }
 
+    // ── Saldo de ADS das lojas — lido pelo monitor do servidor de hora em hora
+    // (api/agente-cron.js ?rodada=saldo → glr_sync_estado sistema/saldo_ads/shopee).
+    // A tela só mostra; recarregar é na Shopee, com o analista/cliente. ──
+    const SALDO_NIV = {
+      zerado: { t: 'Zerado', dica: 'anúncios parados', c: 'var(--red)', o: 0 },
+      critico: { t: 'Acaba hoje', c: 'var(--red)', o: 1 },
+      baixo: { t: 'Baixo', dica: 'menos de 3 dias', c: 'var(--yellow)', o: 2 },
+      ok: { t: 'OK', c: 'var(--green)', o: 4 },
+      sem_uso: { t: 'Sem ADS', dica: 'não gastou nos últimos 30 dias', c: 'var(--text-muted)', o: 5 },
+    };
+    async function carregarSaldos() {
+      try {
+        const { data, error } = await _sb.from('glr_sync_estado').select('cursor,ultimo_sucesso').eq('marketplace', 'sistema').eq('conta_id', 'saldo_ads').eq('recurso', 'shopee').maybeSingle();
+        if (error) throw error;
+        state.saldos = data?.cursor?.lojas || {}; state.saldosEm = data?.ultimo_sucesso || null;
+      } catch (e) { state.saldos = state.saldos || {}; console.warn('[Agente] saldo de ADS:', e.message); }
+      render();
+    }
+    const saldoDe = id => state.saldos?.[String(id)] || null;
+    const duraTxt = s => s.nivel === 'zerado' ? 'parado' : s.dias == null ? '—' : s.dias < 1 ? `~${Math.max(1, Math.round(s.dias * 24))}h` : `~${fmtNum(s.dias, s.dias < 10 ? 1 : 0)} dias`;
+    function pillSaldo(s) {
+      if (!s) return '';
+      if (s.erro && !s.nivel) return `<span class="ag-saldo-pill" style="--c:var(--text-muted)" title="${esc(s.erro)}">sem leitura</span>`;
+      const n = SALDO_NIV[s.nivel] || SALDO_NIV.ok;
+      return `<span class="ag-saldo-pill" style="--c:${n.c}"${n.dica ? ` title="${esc(n.dica)}"` : ''}>${n.t}</span>`;
+    }
+    function renderSaldos() {
+      if (!state.saldos) return '';
+      const todas = Object.entries(state.saldos).map(([id, s]) => ({ id, ...s }));
+      if (!todas.length) return `<div class="card ag-saldos"><div class="ag-saldos-top"><div><div class="ag-saldos-t">Saldo de ADS das lojas</div><div class="ag-saldos-sub">O monitor ainda não leu os saldos. Ele roda de hora em hora, das 06h às 23h.</div></div>
+        <button class="btn btn-secondary btn-sm" ${state.atualizandoSaldo ? 'disabled' : ''} onclick="window._agSaldosAgora()">${state.atualizandoSaldo ? '⏳ Lendo saldos…' : 'Ler saldos agora'}</button></div></div>`;
+      const ordem = s => s.erro && !s.nivel ? 3 : (SALDO_NIV[s.nivel]?.o ?? 4);
+      todas.sort((a, b) => ordem(a) - ordem(b) || (a.dias ?? 1e9) - (b.dias ?? 1e9) || String(a.nome).localeCompare(String(b.nome)));
+      const problema = todas.filter(s => ['zerado', 'critico', 'baixo'].includes(s.nivel));
+      const semLeitura = todas.filter(s => s.erro && !s.nivel);
+      const lista = state.saldosTodas ? todas : problema;
+      const cont = k => todas.filter(s => s.nivel === k).length;
+      const atual = state.saldosEm ? quandoCurto(state.saldosEm) : '';
+      return `<div class="card ag-saldos">
+        <div class="ag-saldos-top">
+          <div>
+            <div class="ag-saldos-t">Saldo de ADS das lojas</div>
+            <div class="ag-saldos-sub">${[cont('zerado') ? `<b style="color:var(--red)">${cont('zerado')} zerada(s)</b>` : '', cont('critico') ? `<b style="color:var(--red)">${cont('critico')} acaba(m) hoje</b>` : '', cont('baixo') ? `<b style="color:var(--yellow)">${cont('baixo')} baixa(s)</b>` : '', `${cont('ok')} ok`, semLeitura.length ? `${semLeitura.length} sem leitura` : ''].filter(Boolean).join(' · ')}${atual ? ` · lido ${atual}` : ''}. Duração estimada pelo gasto médio dos últimos 7 dias.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="window._agSaldosTodas()">${state.saldosTodas ? 'Só as que precisam de recarga' : `Ver todas (${todas.length})`}</button>
+            <button class="btn btn-secondary btn-sm" ${state.atualizandoSaldo ? 'disabled' : ''} onclick="window._agSaldosAgora()" title="Lê o saldo de todas as lojas agora (e avisa se alguma piorou)">${state.atualizandoSaldo ? '⏳ Lendo…' : '↻ Ler agora'}</button>
+          </div>
+        </div>
+        ${lista.length ? `<div style="overflow-x:auto;"><table class="ag-saldos-tab">
+          <thead><tr><th>Loja</th><th>Situação</th><th class="num">Saldo</th><th class="num">Gasto/dia</th><th class="num">Dura</th></tr></thead>
+          <tbody>${lista.map(s => `<tr${configDaConta(s.id) ? ` class="ag-saldos-link" onclick="window._agAbrirConta('${esc(s.id)}')"` : ''}>
+            <td><b>${h(s.nome || s.id)}</b></td>
+            <td>${pillSaldo(s)}${s.erro && !s.nivel ? `<div class="ag-saldos-err">${h(String(s.erro).slice(0, 90))}</div>` : ''}</td>
+            <td class="num" style="font-weight:700;color:${SALDO_NIV[s.nivel]?.c || 'inherit'}">${s.saldo != null ? R$(s.saldo) : '—'}</td>
+            <td class="num">${s.media != null ? R$(s.media) : '—'}</td>
+            <td class="num">${s.nivel ? duraTxt(s) : '—'}</td></tr>`).join('')}</tbody></table></div>`
+          : `<div class="ag-saldos-sub" style="padding:6px 0 2px;">Nenhuma loja precisando de recarga agora.</div>`}
+      </div>`;
+    }
+    window._agSaldosTodas = () => { state.saldosTodas = !state.saldosTodas; render(); };
+    window._agSaldosAgora = async () => {
+      state.atualizandoSaldo = true; render();
+      try {
+        const r = await fetch('/api/agente-cron?rodada=saldo&agora=1');
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      } catch (e) { alert('Não consegui ler os saldos agora: ' + (e.message || e)); }
+      state.atualizandoSaldo = false;
+      await carregarSaldos();
+    };
+
     // ── Portfólio (grid de contas) ─────────────────────────────
     function renderPortfolio() {
-      return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+      return `${renderSaldos()}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
         ${state.contas.map(cfg => {
           const saude = saudeDaConta(cfg);
           const relatorio = state.relatorios.find(r => r.conta_id === cfg.conta_id);
@@ -959,6 +1032,7 @@
               <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS mês</div><div class="ag-mono" style="font-size:18px;font-weight:700;color:${tacos != null && cfg.meta_acos ? (tacos <= cfg.meta_acos ? 'var(--green)' : tacos <= cfg.meta_acos * 1.3 ? 'var(--yellow)' : 'var(--red)') : 'inherit'};">${tacos != null ? fmtPct(tacos) : '—'}</div></div>
               <div><div class="ag-hud-label" style="margin-bottom:2px;">Projeção mês</div><div class="ag-mono" style="font-size:18px;font-weight:700;">${mes ? R$(mes.projecao).replace(/,\d{2}$/, '') : '—'}</div></div>
               <div><div class="ag-hud-label" style="margin-bottom:2px;">Fila</div><div class="ag-mono" style="font-size:18px;font-weight:700;color:${pendencias ? 'var(--yellow)' : 'inherit'};">${pendencias}</div></div>
+              ${(() => { const s = saldoDe(cfg.conta_id); return s?.saldo != null ? `<div title="${esc(`${SALDO_NIV[s.nivel]?.t || ''} · dura ${duraTxt(s)}`)}"><div class="ag-hud-label" style="margin-bottom:2px;">Saldo ADS</div><div class="ag-mono" style="font-size:18px;font-weight:700;color:${SALDO_NIV[s.nivel]?.c || 'inherit'};">${R$(s.saldo).replace(/,\d{2}$/, '')}</div></div>` : ''; })()}
             </div>
           </div>`;
         }).join('')}
@@ -1594,6 +1668,8 @@
             <option value="__novo__">+ Adicionar conta</option>
           </select>
           <span class="ag-saude-pill" style="color:${saude.cor};background:color-mix(in srgb,${saude.cor} 10%,transparent);" title="Combina o TACOS contra a meta e se há pendências antigas esperando você.">${saude.emoji} ${saude.label}</span>
+          ${(() => { const s = saldoDe(cfg.conta_id); if (!s?.saldo && s?.saldo !== 0) return ''; const n = SALDO_NIV[s.nivel] || SALDO_NIV.ok;
+            return `<span class="ag-saude-pill" style="color:${n.c};background:color-mix(in srgb,${n.c} 10%,transparent);" title="Saldo de ADS lido ${s.em ? quandoCurto(s.em) : ''} · gasto médio ${s.media != null ? R$(s.media) : '—'}/dia (7 dias)">Saldo ADS ${R$(s.saldo)} · ${s.nivel === 'zerado' ? 'anúncios parados' : `dura ${duraTxt(s)}`}</span>`; })()}
           <label class="ag-toggle" title="Ligado: o agente revisa e age nesta conta todo dia às 07:00.">
             <input type="checkbox" ${cfg.ativo ? 'checked' : ''} onchange="window._agTogglePiloto(this.checked)">
             <span class="ag-toggle-trilho"></span><span>Piloto ${cfg.ativo ? 'ON' : 'OFF'}</span>
@@ -2325,6 +2401,18 @@
       <div id="ag-desempenho"></div>
       <div id="ag-chat-root"></div>
       <style>
+        .ag-saldos { padding:16px 18px; margin-bottom:18px; }
+        .ag-saldos-top { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start; margin-bottom:10px; }
+        .ag-saldos-t { font-size:15px; font-weight:700; }
+        .ag-saldos-sub { font-size:12.5px; color:var(--text-muted); line-height:1.5; margin-top:2px; }
+        .ag-saldos-tab { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+        .ag-saldos-tab th { text-align:left; font-size:11.5px; font-weight:600; color:var(--text-muted); padding:7px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+        .ag-saldos-tab td { padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+        .ag-saldos-tab .num { text-align:right; white-space:nowrap; }
+        .ag-saldos-tab tr:last-child td { border-bottom:none; }
+        .ag-saldos-link { cursor:pointer; } .ag-saldos-link:hover td { background:var(--bg-subtle); }
+        .ag-saldo-pill { display:inline-block; font-size:11.5px; font-weight:650; padding:2px 8px; border-radius:99px; color:var(--c); background:color-mix(in srgb,var(--c) 12%,transparent); white-space:nowrap; }
+        .ag-saldos-err { font-size:11px; color:var(--text-muted); margin-top:3px; max-width:340px; }
         .ag-chat-fab { position:fixed; right:22px; bottom:22px; z-index:40; padding:12px 18px; border:none; border-radius:99px; background:var(--accent); color:#fff; font-size:13.5px; font-weight:700; cursor:pointer; box-shadow:0 8px 24px rgba(99,102,241,.45); }
         .ag-chat-fab:hover { background:var(--accent-strong); }
         .ag-chat-panel { position:fixed; right:22px; bottom:22px; z-index:41; width:min(430px, calc(100vw - 24px)); height:min(680px, calc(100vh - 110px)); display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:16px; box-shadow:0 18px 50px rgba(0,0,0,.28); overflow:hidden; }
