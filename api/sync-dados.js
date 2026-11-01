@@ -1247,6 +1247,8 @@ module.exports = async function handler(req, res) {
   const { hora, minuto } = agoraBRT();
   const naAgenda = AGENDA_AGENTE.find(a => a.hora === hora);
   if (naAgenda && minuto < 30 && !conta) waitUntil(dispararAgente(req, naAgenda.tipo));
+  // Monitor de saldo de ADS da Shopee: de hora em hora, das 06h às 23h (o agente trava por hora)
+  if (hora >= 6 && minuto < 30 && !conta) waitUntil(dispararAgente(req, 'saldo'));
   // O reprocesso diário agora roda dentro das rodadas de 15 min (aos poucos,
   // por loja). A chamada noturna antiga cai no mesmo horário de uma rodada
   // normal — se rodasse junto, as duas disputariam as mesmas lojas.

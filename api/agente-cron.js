@@ -363,6 +363,68 @@ async function reservarRodada(slot) {
   return true;
 }
 
+// ── Monitor de saldo de ADS da Shopee (?rodada=saldo — de hora em hora, 06h às 23h) ──
+// A Shopee cobra o ADS de um saldo pré-pago: zerou, os anúncios param na hora.
+// Lê o saldo de cada loja Shopee conectada, estima quantos dias ele dura pelo gasto
+// médio dos últimos 7 dias (base sincronizada; ADS + GMV Max saem do mesmo saldo) e
+// avisa no celular + Caixa de decisões quando piora: baixo (< 3 dias) avisa ao entrar;
+// crítico (< 1 dia) e zerado avisam ao entrar e de novo a cada dia (depois das 08h).
+// Quando o saldo volta, os avisos pendentes da loja são fechados sozinhos.
+// Recarregar é com o analista/cliente — o agente só avisa, nunca paga nada.
+// Estado em glr_sync_estado (sistema / saldo_ads / shopee) para não repetir aviso.
+const NIVEL_SALDO = { ok: 0, sem_uso: 0, baixo: 1, critico: 2, zerado: 3 };
+async function monitorarSaldoShopee(mcApiKey, simular = false) {
+  const r = await mcpCall(mcApiKey, 'list_accounts', {});
+  const lojas = (r.data?.accounts || r.accounts || []).filter(c => mktDe(c.marketplace) === 'shopee')
+    .map(c => ({ id: String(c.param_to_use?.shopId || c.external_id), nome: (c.tags || []).find(t => t && t.name)?.name || c.nickname || c.shop_name || String(c.external_id) }));
+  const est = (await sbSelect('glr_sync_estado', 'marketplace=eq.sistema&conta_id=eq.saldo_ads&recurso=eq.shopee&select=cursor').catch(() => []))[0]?.cursor?.lojas || {};
+  const { hora } = agoraBRT(), hojeIso = dataBRT(0).iso, ontem = dataBRT(1).iso, agoraIso = new Date().toISOString();
+  const novo = {}, saida = [];
+  for (const grupo of chunk(lojas, 8)) {
+    await Promise.all(grupo.map(async l => {
+      const ant = est[l.id] || {};
+      try {
+        const b = await mcpCall(mcApiKey, 'shopee_ads_balance', { shopId: l.id });
+        const saldo = parseFloat(b?.data?.response?.total_balance ?? b?.response?.total_balance);
+        if (!isFinite(saldo)) throw new Error('resposta sem total_balance');
+        const base = await lerBase('shopee', l.id);
+        const temBase = baseCobreAds(base, isoMenos(ontem, 29));
+        const g7 = somarBase(base, isoMenos(ontem, 6), ontem).ads, g30 = somarBase(base, isoMenos(ontem, 29), ontem).ads;
+        const media = temBase || g7 > 0 ? g7 / 7 : null;
+        const dias = media > 0 ? saldo / media : null;
+        const nivel = (temBase ? g30 === 0 : g7 === 0) && saldo < 5 ? 'sem_uso' // loja que não usa ADS: saldo zerado não é problema
+          : saldo < Math.max(5, (media || 0) * 0.05) ? 'zerado' : dias != null && dias < 1 ? 'critico' : dias != null && dias < 3 ? 'baixo' : 'ok';
+        const n = NIVEL_SALDO[nivel], jaHoje = ant.avisado_dia === hojeIso ? NIVEL_SALDO[ant.avisado_nivel] || 0 : 0;
+        const avisar = n > 0 && n > jaHoje && (n >= 2 ? (NIVEL_SALDO[ant.nivel] || 0) < n || hora >= 8 : (NIVEL_SALDO[ant.nivel] || 0) < n);
+        novo[l.id] = { nome: l.nome, nivel, saldo, media, dias, em: agoraIso, avisado_dia: avisar ? hojeIso : ant.avisado_dia || null, avisado_nivel: avisar ? nivel : ant.avisado_nivel || null };
+        if (avisar && simular) saida.push({ loja: l.nome, nivel, saldo, dias, simulado: true });
+        else if (avisar) {
+          const diasTxt = dias == null ? '' : dias < 1 ? `dura menos de 1 dia (~${Math.max(1, Math.round(dias * 24))}h)` : `dura ~${String(Math.round(dias * 10) / 10).replace('.', ',')} dias`;
+          const titulo = nivel === 'zerado' ? `Saldo de ADS zerado — ${l.nome}` : `Saldo de ADS ${nivel === 'critico' ? 'acabando hoje' : 'baixo'} — ${l.nome}`;
+          const explicacao = `${nivel === 'zerado' ? `O saldo de ADS da Shopee está em ${R$(saldo)}: os anúncios pararam.` : `Saldo de ADS da Shopee em ${R$(saldo)}${diasTxt ? ` — no ritmo de ${R$(media)}/dia (média dos últimos 7 dias), ${diasTxt}` : ''}.`} Recarregue em Shopee → Marketing → Anúncios Shopee → Adicionar saldo${nivel === 'baixo' ? ' antes que os anúncios parem' : ''}.`;
+          await sbInsert('glr_agente_log', { conta_id: l.id, cliente_nome: l.nome, tipo: 'alerta', titulo, explicacao,
+            dados: { marketplace: 'shopee', acao: 'saldo_ads', nivel, saldo, media_dia: media, dias_restantes: dias }, resultado: 'so_alerta', origem: 'cron' }).catch(() => {});
+          saida.push({ loja: l.nome, nivel, saldo, dias });
+        }
+        // saldo voltou: fecha os avisos de saldo pendentes desta loja
+        if (!simular && n === 0 && (NIVEL_SALDO[ant.nivel] || 0) > 0) {
+          await sbUpdate('glr_agente_log', `conta_id=eq.${encodeURIComponent(l.id)}&tipo=eq.alerta&resultado=eq.so_alerta&dados->>acao=eq.saldo_ads`,
+            { resultado: 'executado', dados: { marketplace: 'shopee', acao: 'saldo_ads', aplicado_por: 'detectado', aplicado_em: agoraIso, saldo_depois: saldo } }).catch(() => {});
+        }
+      } catch (e) { novo[l.id] = { ...ant, nome: l.nome, erro: String(e.message || e).slice(0, 200), em: agoraIso }; }
+    }));
+  }
+  if (simular) return { simulacao: true, lojas: lojas.length, avisaria: saida, situacao: Object.values(novo).map(x => ({ loja: x.nome, nivel: x.nivel, saldo: x.saldo, gasto_dia: x.media != null ? Math.round(x.media * 100) / 100 : null, dias: x.dias != null ? Math.round(x.dias * 10) / 10 : null, erro: x.erro })) };
+  await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: 'saldo_ads', recurso: 'shopee', ultima_tentativa: agoraIso, ultimo_sucesso: agoraIso, cursor: { lojas: novo } }, 'marketplace,conta_id,recurso');
+  if (saida.length) {
+    const ruins = saida.sort((a, b) => NIVEL_SALDO[b.nivel] - NIVEL_SALDO[a.nivel]);
+    await require('./_alerta').avisar(sbSelect, ruins.length === 1 ? `💳 ${ruins[0].nivel === 'zerado' ? 'ADS parado' : 'Saldo de ADS baixo'} — ${ruins[0].loja}` : `💳 Saldo de ADS em ${ruins.length} lojas Shopee`,
+      ruins.slice(0, 4).map(x => `${x.loja}: ${R$(x.saldo)}${x.nivel === 'zerado' ? ' (zerado)' : x.dias != null ? ` (~${String(Math.round(x.dias * 10) / 10).replace('.', ',')} dias)` : ''}`).join('\n'), 'saldo-ads').catch(() => {});
+  }
+  const cont = k => Object.values(novo).filter(x => x.nivel === k).length;
+  return { lojas: lojas.length, zerado: cont('zerado'), critico: cont('critico'), baixo: cont('baixo'), avisos: saida.length, erros: Object.values(novo).filter(x => x.erro).length };
+}
+
 module.exports = async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers['authorization'];
@@ -427,6 +489,17 @@ module.exports = async function handler(req, res) {
         : processarConta(cfg, mcApiKey, anthropicKey, ontem, dataBRT(Math.max(1, cfg.regra_pausa_dias || 3)), { soMomento: true })).catch(e => ({ conta_id: cfg.conta_id, erro: e.message }))))
         .then(r => console.log('[momento]', JSON.stringify(r))).finally(gravarConsumo).catch(e => console.error('[momento] falhou', e)));
       return res.status(202).json({ ok: true, rodada: 'momento', contas: cfgs.length });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
+  // ?rodada=saldo — monitor de saldo de ADS da Shopee (só lê saldo; avisa quando piora). Uma vez por hora.
+  if (req.query?.rodada === 'saldo') {
+    try {
+      const { dia, hora } = agoraBRT(), slot = `${dia}-${String(hora).padStart(2, '0')}h-saldo`;
+      // ?agora=1 roda já e devolve o resultado; &simular=1 só calcula (não grava nem avisa); a agenda responde na hora e trabalha em segundo plano
+      if (req.query?.agora === '1' || req.query?.simular === '1') return res.status(200).json({ ok: true, rodada: 'saldo', ...(await monitorarSaldoShopee(mcApiKey, req.query?.simular === '1').finally(gravarConsumo)) });
+      if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      waitUntil(monitorarSaldoShopee(mcApiKey).then(r => console.log('[saldo]', JSON.stringify(r))).finally(gravarConsumo).catch(e => console.error('[saldo] falhou', e)));
+      return res.status(202).json({ ok: true, rodada: 'saldo', slot });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
   // ?rodada=autonomia — recalcula os níveis de autonomia pelo resultado medido (não mexe em campanha)

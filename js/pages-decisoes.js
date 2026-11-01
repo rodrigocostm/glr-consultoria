@@ -19,6 +19,7 @@ Router.register('decisoes', (params, el) => {
   const dataCurta = iso => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
   const TIPOS = {
     'reputacao': { t: 'Reputação', c: 'var(--red)' },
+    'saldo': { t: 'Saldo de ADS', c: 'var(--red)' },
     'ads-shopee': { t: 'ADS Shopee', c: '#eb6834' },
     'ads-ml': { t: 'ADS ML', c: '#d9a400' },
     'faturamento': { t: 'Faturamento', c: 'var(--accent)' },
@@ -61,6 +62,12 @@ Router.register('decisoes', (params, el) => {
           itens.push({ id: 'log:' + l.id, log: l, tipo: 'promocoes', mkt, conta: String(l.conta_id), titulo: `Entrar em promoção — ${d.produto || d.item_id}`,
             acao: `${d.promo || 'Promoção'} a ${R$(d.preco)} · lucro ${R$(d.lucro_venda)}/venda (margem ${String(d.margem ?? '—').replace('.', ',')}%)`,
             porque: String(l.explicacao || ''), impacto: d.impacto || null, impactoTipo: 'ganho', exec: true, tela: 'promocoes', quando: l.criado_em });
+          continue;
+        }
+        if (d.acao === 'saldo_ads') { // monitor de saldo de ADS da Shopee: recarregar é com o analista/cliente
+          const diasTxt = d.nivel === 'zerado' ? 'anúncios parados' : d.dias_restantes != null ? `dura ~${String(Math.round(d.dias_restantes * 10) / 10).replace('.', ',')} dia(s)` : '';
+          itens.push({ id: 'log:' + l.id, log: l, tipo: 'saldo', mkt: 'shopee', conta: String(l.conta_id), titulo: String(l.titulo || '').replace(/\s+—\s+[^—]*$/, ''),
+            acao: `Recarregar — saldo ${R$(d.saldo)}${diasTxt ? ` · ${diasTxt}` : ''}`, porque: String(l.explicacao || ''), urgente: d.nivel !== 'baixo', exec: false, tela: 'agente', quando: l.criado_em });
           continue;
         }
         const impacto = d.impacto != null ? parseFloat(d.impacto) : d.freio_volume ? Math.max(0, (d.venda_antes || 0) - (d.venda_agora || 0)) : null;
