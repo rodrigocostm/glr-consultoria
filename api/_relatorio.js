@@ -118,7 +118,7 @@ async function relatoriosSemanais({ sbSelect, sbUpsert, lerStorage }, filtroClie
     }
     const pend = [];
     for (const s of saldoRuim) pend.push(`saldo de ADS da Shopee ${s.nivel === 'zerado' ? 'zerado (anúncios parados)' : s.nivel === 'critico' ? `acabando (${R$(s.saldo)})` : `baixo (${R$(s.saldo)})`} — recarregar em Marketing → Anúncios Shopee`);
-    for (const x of conexRuim) pend.push(`reconectar a conta ${NOME_MKT[x.mkt]} (${x.acao ? x.acao.replace(/\.$/, '').toLowerCase() : 'conexão com problema'})`);
+    for (const x of conexRuim) pend.push(`reconectar a conta ${NOME_MKT[x.mkt]} (${x.acao ? x.acao.split('. ')[0].replace(/\.$/, '').replace(/^./, ch => ch.toLowerCase()) : 'conexão com problema'})`);
     if (pend.length) { L.push(''); L.push('Precisamos da sua ajuda com:'); for (const p of pend) L.push(`• ${p}`); }
     L.push('');
     L.push('Qualquer dúvida, estamos à disposição!');
