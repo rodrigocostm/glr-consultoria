@@ -242,75 +242,23 @@ function mostrarLogin(erroMsg) {
 
   const overlay = document.createElement('div');
   overlay.id = 'glr-login-overlay';
-  overlay.style.cssText = `
-    position:fixed;inset:0;background:#0d0d14;
-    display:flex;align-items:center;justify-content:center;z-index:9999;
-    font-family:'Inter',sans-serif;
-  `;
   overlay.innerHTML = `
-    <div style="background:#16161f;border:1px solid rgba(255,255,255,0.07);border-radius:20px;
-                padding:44px 40px;width:100%;max-width:420px;box-shadow:0 32px 80px rgba(0,0,0,0.6);position:relative;">
-
-      <button onclick="window.location.href='/landing.html'" title="Voltar"
-        style="position:absolute;top:20px;left:20px;background:none;border:none;color:#5a5b72;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:4px;">
-        ← Voltar
-      </button>
-
-      <div style="text-align:center;margin-bottom:36px;">
-        <div style="width:80px;height:80px;margin:0 auto 16px;overflow:hidden;">
-          <img src="logo.png" alt="GLR" style="width:80px;height:80px;object-fit:contain;mix-blend-mode:screen;"
-               onerror="this.parentElement.innerHTML='<span style=\'font-size:22px;font-weight:800;color:white;letter-spacing:-1px;\'>GLR</span>'">
-        </div>
-        <h1 style="font-size:22px;font-weight:800;color:#f1f1f8;margin:0 0 6px;">GLR Consultoria</h1>
-        <p style="font-size:14px;color:#5a5b72;margin:0;">Centro de Operações</p>
-      </div>
-
-      ${erroMsg ? `
-        <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;
-                    padding:10px 14px;margin-bottom:20px;font-size:13px;color:#ef4444;text-align:center;">
-          ${erroMsg}
-        </div>` : ''}
-
-      <div style="margin-bottom:16px;">
-        <label style="display:block;font-size:11px;font-weight:600;color:#5a5b72;
-                      text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;">E-mail</label>
-        <input id="glr-email" type="email" placeholder="seu@email.com" autocomplete="email"
-          style="width:100%;padding:11px 14px;background:#0d0d14;border:1px solid rgba(255,255,255,0.08);
-                 border-radius:10px;color:#f1f1f8;font-size:14px;outline:none;box-sizing:border-box;transition:border .15s;"
-          onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='rgba(255,255,255,0.08)'">
-      </div>
-
-      <div style="margin-bottom:28px;">
-        <label style="display:block;font-size:11px;font-weight:600;color:#5a5b72;
-                      text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;">Senha</label>
-        <input id="glr-senha" type="password" placeholder="••••••••" autocomplete="current-password"
-          style="width:100%;padding:11px 14px;background:#0d0d14;border:1px solid rgba(255,255,255,0.08);
-                 border-radius:10px;color:#f1f1f8;font-size:14px;outline:none;box-sizing:border-box;transition:border .15s;"
-          onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='rgba(255,255,255,0.08)'"
-          onkeydown="if(event.key==='Enter') window.fazerLogin()">
-      </div>
-
-      <div style="text-align:right;margin:-6px 0 14px;"><a href="#" onclick="event.preventDefault();window.esqueciSenha()" style="font-size:12.5px;color:#8b8cf8;text-decoration:none;">Esqueci minha senha</a></div>
-
-      <button id="glr-login-btn" onclick="window.fazerLogin()"
-        style="width:100%;padding:13px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;
-               border-radius:10px;color:white;font-size:15px;font-weight:700;cursor:pointer;
-               transition:opacity .15s;letter-spacing:0.2px;">
-        Entrar
-      </button>
-
-      <p style="text-align:center;margin:20px 0 0;font-size:12px;color:#3a3b50;">
-        GLR Consultoria © 2026
-      </p>
-    </div>
-
-    <style>
-      @keyframes fadeInUp {
-        from { opacity:0; transform:translateX(-50%) translateY(8px); }
-        to   { opacity:1; transform:translateX(-50%) translateY(0); }
-      }
-    </style>
-  `;
+    <section class="glr-auth-card" aria-labelledby="glr-auth-title">
+      <button class="glr-auth-back" onclick="window.location.href='/landing.html'">← Voltar</button>
+      <div class="glr-auth-mark"><b aria-hidden="true">GLR</b><span>GLR Consultoria</span></div>
+      <h1 id="glr-auth-title">Seu próximo resultado<br>começa aqui.</h1>
+      <p class="glr-auth-lead">Entre no seu Centro de Operações.</p>
+      ${erroMsg ? `<div class="glr-auth-error" role="alert"></div>` : ''}
+      <div class="glr-auth-field"><label for="glr-email">E-mail</label>
+        <input id="glr-email" type="email" placeholder="seu@email.com" autocomplete="email" autocapitalize="none" spellcheck="false"></div>
+      <div class="glr-auth-field"><label for="glr-senha">Senha</label>
+        <input id="glr-senha" type="password" placeholder="Sua senha" autocomplete="current-password" onkeydown="if(event.key==='Enter') window.fazerLogin()"></div>
+      <div class="glr-auth-recovery"><a href="#" onclick="event.preventDefault();window.esqueciSenha()">Esqueci minha senha</a></div>
+      <button id="glr-login-btn" onclick="window.fazerLogin()">Entrar</button>
+      <p class="glr-auth-foot">Gestão. Lucro. Resultado.</p>
+    </section>`;
+  // Error text is data, not markup (also covers password recovery messages).
+  if (erroMsg) overlay.querySelector('.glr-auth-error').textContent = String(erroMsg);
   document.body.appendChild(overlay);
   setTimeout(() => document.getElementById('glr-email')?.focus(), 100);
 }
@@ -379,15 +327,16 @@ function mostrarNovaSenha(msg) {
   document.getElementById('glr-nova-senha')?.remove();
   const o = document.createElement('div');
   o.id = 'glr-nova-senha';
-  o.style.cssText = 'position:fixed;inset:0;background:#0d0d14;display:flex;align-items:center;justify-content:center;z-index:10000;font-family:Inter,sans-serif;padding:16px;';
-  o.innerHTML = `<div style="background:#16161f;border:1px solid rgba(255,255,255,0.07);border-radius:20px;padding:32px;width:100%;max-width:380px;">
-    <div style="font-size:18px;font-weight:700;color:#f1f1f8;margin-bottom:6px;">Criar nova senha</div>
-    <div style="font-size:13px;color:#8a8ca0;margin-bottom:18px;">Use pelo menos 8 caracteres.</div>
-    ${msg ? `<div style="font-size:13px;color:#f87171;margin-bottom:12px;">${msg}</div>` : ''}
-    <input id="glr-nova-1" type="password" placeholder="Nova senha" autocomplete="new-password" style="width:100%;padding:11px 14px;background:#0d0d14;border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#f1f1f8;font-size:14px;box-sizing:border-box;margin-bottom:10px;">
-    <input id="glr-nova-2" type="password" placeholder="Repita a nova senha" autocomplete="new-password" style="width:100%;padding:11px 14px;background:#0d0d14;border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#f1f1f8;font-size:14px;box-sizing:border-box;margin-bottom:14px;" onkeydown="if(event.key==='Enter') window.salvarNovaSenha()">
-    <button onclick="window.salvarNovaSenha()" style="width:100%;padding:13px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:10px;color:white;font-size:15px;font-weight:700;cursor:pointer;">Salvar nova senha</button>
-  </div>`;
+  o.innerHTML = `<section class="glr-auth-card" aria-labelledby="glr-recovery-title">
+    <div class="glr-auth-mark"><b aria-hidden="true">GLR</b><span>GLR Consultoria</span></div>
+    <h1 id="glr-recovery-title">Criar nova senha</h1>
+    <p class="glr-auth-lead">Use pelo menos 8 caracteres.</p>
+    ${msg ? '<div class="glr-auth-error" role="alert"></div>' : ''}
+    <div class="glr-auth-field"><label for="glr-nova-1">Nova senha</label><input id="glr-nova-1" type="password" placeholder="Nova senha" autocomplete="new-password"></div>
+    <div class="glr-auth-field"><label for="glr-nova-2">Confirme a senha</label><input id="glr-nova-2" type="password" placeholder="Repita a nova senha" autocomplete="new-password" onkeydown="if(event.key==='Enter') window.salvarNovaSenha()"></div>
+    <button class="glr-auth-submit" onclick="window.salvarNovaSenha()">Salvar nova senha</button>
+  </section>`;
+  if (msg) o.querySelector('.glr-auth-error').textContent = String(msg);
   document.body.appendChild(o);
   setTimeout(() => document.getElementById('glr-nova-1')?.focus(), 100);
 }
