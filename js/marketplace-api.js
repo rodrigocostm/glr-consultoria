@@ -416,10 +416,11 @@ const MarketplaceAPI = {
     const diasMes        = ultimoDiaDoMes;
 
     // Para o mês atual: base sempre até o dia anterior (fechado). Meses passados: último dia do mês.
-    const ontem          = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
-    const diasDecorridos = mesAtual ? ontem.getDate() : diasMes;
+    // No dia 1º ainda não há dia fechado no mês: vai até hoje (ontem daria "dia 31" deste mês → 400 no ML)
+    const diaAte         = Math.max(1, hoje.getDate() - 1);
+    const diasDecorridos = mesAtual ? diaAte : diasMes;
     const dateTo         = mesAtual
-      ? `${ano}-${pad(mes + 1)}-${pad(ontem.getDate())}`
+      ? `${ano}-${pad(mes + 1)}-${pad(diaAte)}`
       : `${ano}-${pad(mes + 1)}-${pad(ultimoDiaDoMes)}`;
 
     for (const conta of contas) {

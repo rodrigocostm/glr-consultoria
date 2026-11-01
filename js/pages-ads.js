@@ -29,10 +29,10 @@ const pad = n => String(n).padStart(2, '0');
 function periodoAtual() {
   const hoje   = new Date();
   const mesAtual = mesSel === hoje.getMonth() && anoSel === hoje.getFullYear();
-  const ontem  = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
   const primeiroDia = `${anoSel}-${pad(mesSel + 1)}-01`;
+  // mês atual vai até ontem — no dia 1º, até hoje (ontem é do mês passado: dava "dia 31" deste mês e o ML respondia 400)
   const ultimoDia  = mesAtual
-    ? `${anoSel}-${pad(mesSel + 1)}-${pad(ontem.getDate())}`
+    ? `${anoSel}-${pad(mesSel + 1)}-${pad(Math.max(1, hoje.getDate() - 1))}`
     : `${anoSel}-${pad(mesSel + 1)}-${pad(new Date(anoSel, mesSel + 1, 0).getDate())}`;
   return { primeiroDia, ultimoDia };
 }
