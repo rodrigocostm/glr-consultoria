@@ -22,6 +22,7 @@ Router.register('agente-ml', (params, el) => {
   const state = {
     carregando: true, contasML: [], configs: [], logs: [], base: null,
     aberta: (() => { try { return localStorage.getItem('glr_aml_conta') || null; } catch (e) { return null; } })(),
+    diario: {}, metResumo: 'vendas',
     campanhas: {}, carregandoCamp: false, aberto: null, produtos: {}, analisando: false, editando: false, salvando: false, processando: null,
   };
 
@@ -87,6 +88,24 @@ Router.register('agente-ml', (params, el) => {
       state.campanhas[id] = { lista: todas, em: Date.now() };
     } catch (e) { state.campanhas[id] = { erro: e.message || String(e) }; }
     state.carregandoCamp = false; render();
+    if (state.campanhas[id]?.lista) carregarDiario(id);
+  }
+
+  // ADS por dia (mês anterior inteiro + mês atual até hoje) para o gráfico do resumo.
+  // ml_ads_metrics pede o id do ANUNCIANTE — vem em cada campanha (advertiser_id).
+  const mesAntIni = (() => { const d = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; })();
+  async function carregarDiario(id) {
+    if (state.diario[id]) return;
+    const adv = (state.campanhas[id]?.lista || []).find(c => c.advertiser_id)?.advertiser_id;
+    if (!adv) return;
+    state.diario[id] = { carregando: true };
+    try {
+      const r = await MarketplaceAPI.call('ml_ads_metrics', { meliUserId: id, account_id: String(adv), date_from: mesAntIni, date_to: hojeIso, group_by: 'day' });
+      const dias = {};
+      for (const d of ((r.data || r).results || [])) if (d.date) dias[String(d.date).slice(0, 10)] = d;
+      state.diario[id] = { dias };
+    } catch (e) { state.diario[id] = { erro: e.message || String(e) }; }
+    render();
   }
 
   // Produtos dentro da campanha (mês atual), somando as variações por família
@@ -228,16 +247,77 @@ Router.register('agente-ml', (params, el) => {
     const acos = gasto > 0 && vendas > 0 ? gasto / vendas * 100 : null;
     const espera = state.carregandoCamp || !state.campanhas[id] ? '…' : '—';
     const dm = s => s.split('-').reverse().slice(0, 2).join('/');
-    const met = (rot, val, sub, cor) => `<div class="aml-met"><div class="aml-met-rot">${rot}</div><div class="aml-met-val"${cor ? ` style="color:${cor}"` : ''}>${val}</div><div class="aml-met-sub">${sub || '&nbsp;'}</div></div>`;
+    // cada métrica é um botão: clicar troca a linha do gráfico (como no painel do Product Ads)
+    const met = (k, rot, val, sub, cor) => `<button type="button" class="aml-met${state.metResumo === k ? ' sel' : ''}" onclick="window._amlMet('${k}')" aria-pressed="${state.metResumo === k}"><div class="aml-met-rot">${rot}</div><div class="aml-met-val"${cor ? ` style="color:${cor}"` : ''}>${val}</div><div class="aml-met-sub">${sub || '&nbsp;'}</div></button>`;
     return `<div class="card aml-resumo">
       <div class="aml-resumo-t">Resumo de Product Ads <span class="aml-sub">${dm(mesIni)} a ${dm(hojeIso)} · vendas sem cancelados</span></div>
       <div class="aml-mets">
-        ${met('Vendas por publicidade', vendas == null ? espera : R$(vendas))}
-        ${met('Investimento', gasto == null ? espera : R$(gasto), ativas == null ? '' : `${ativas} campanha${ativas === 1 ? '' : 's'} ativa${ativas === 1 ? '' : 's'}`)}
-        ${met('ACOS', pct(acos), cfg?.meta_acos ? `meta ${pct(cfg.meta_acos)}` : '', corTacos(acos, cfg?.meta_acos))}
-        ${met('ROAS', gasto > 0 ? roasX(vendas / gasto) : '—', cfg?.meta_acos ? `objetivo ${roasX(100 / cfg.meta_acos)}` : '')}
-        ${met('Faturamento da loja', m ? R$(m.fat) : '—', m ? `projeção ${R$(m.proj).replace(/,\d{2}$/, '')}` : 'base automática sem o mês')}
-        ${met('TACOS', pct(m?.tacos), `meta ${pct(cfg?.meta_acos)}`, corTacos(m?.tacos, cfg?.meta_acos))}
+        ${met('vendas', 'Vendas por publicidade', vendas == null ? espera : R$(vendas))}
+        ${met('invest', 'Investimento', gasto == null ? espera : R$(gasto), ativas == null ? '' : `${ativas} campanha${ativas === 1 ? '' : 's'} ativa${ativas === 1 ? '' : 's'}`)}
+        ${met('acos', 'ACOS', pct(acos), cfg?.meta_acos ? `meta ${pct(cfg.meta_acos)}` : '', corTacos(acos, cfg?.meta_acos))}
+        ${met('roas', 'ROAS', gasto > 0 ? roasX(vendas / gasto) : '—', cfg?.meta_acos ? `objetivo ${roasX(100 / cfg.meta_acos)}` : '')}
+        ${met('fat', 'Faturamento da loja', m ? R$(m.fat) : '—', m ? `projeção ${R$(m.proj).replace(/,\d{2}$/, '')}` : 'base automática sem o mês')}
+        ${met('tacos', 'TACOS', pct(m?.tacos), `meta ${pct(cfg?.meta_acos)}`, corTacos(m?.tacos, cfg?.meta_acos))}
+      </div>
+      ${renderGrafico(id, m, cfg)}
+    </div>`;
+  }
+
+  // Gráfico de linha do resumo: métrica escolhida por dia do mês — linha cheia = este mês,
+  // tracejada = mês anterior no mesmo dia. ADS por dia vem do Product Ads; faturamento e
+  // TACOS por dia vêm da base automática. Meta (ACOS/TACOS) ou objetivo (ROAS) em laranja.
+  const compR$ = v => v >= 1000 ? `R$ ${(v / 1000).toFixed(v >= 10000 ? 0 : 1).replace('.', ',')} mil` : `R$ ${Math.round(v)}`;
+  const METS = {
+    vendas: { rot: 'Vendas por publicidade', fmt: v => R$(v), eixo: compR$, dia: (a, b, tx) => a && (+a.total_amount || 0) * (1 - tx) },
+    invest: { rot: 'Investimento', fmt: v => R$(v), eixo: compR$, dia: a => a && (+a.cost || 0) },
+    acos: { rot: 'ACOS', fmt: pct, eixo: v => `${Math.round(v)}%`, meta: c => c, dia: (a, b, tx) => { const v = a ? (+a.total_amount || 0) * (1 - tx) : 0; return v > 0 ? (+a.cost || 0) / v * 100 : null; } },
+    roas: { rot: 'ROAS', fmt: v => roasX(v), eixo: v => `${Math.round(v)}x`, meta: c => 100 / c, dia: (a, b, tx) => { const c = a ? +a.cost || 0 : 0; return c > 0 ? (+a.total_amount || 0) * (1 - tx) / c : null; } },
+    fat: { rot: 'Faturamento da loja', fmt: v => R$(v), eixo: compR$, base: true, dia: (a, b) => b && (+b.faturamento || 0) },
+    tacos: { rot: 'TACOS', fmt: pct, eixo: v => `${Math.round(v)}%`, base: true, meta: c => c, dia: (a, b) => b && b.faturamento > 0 ? (+b.ads || 0) / b.faturamento * 100 : null },
+  };
+  function renderGrafico(id, m, cfg) {
+    const M = METS[state.metResumo] || METS.vendas, d = state.diario[id], tx = m?.taxaCancel || 0;
+    const info = state.base ? state.base[BaseDados.chave('ml', String(id))] : null;
+    const vazio = t => `<div class="aml-g-vazio">${t}</div>`;
+    if (M.base ? !info : !d || d.carregando) return vazio(M.base ? 'A base automática ainda não tem os dias desta conta.' : (state.carregandoCamp || d?.carregando || !state.campanhas[id] ? 'Carregando o gráfico…' : 'Sem campanha de Product Ads para mostrar no gráfico.'));
+    if (!M.base && d.erro) return vazio(`Não consegui buscar o ADS por dia: ${h(d.erro)}`);
+    const ini = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1), diasAnt = new Date(hoje.getFullYear(), hoje.getMonth(), 0).getDate();
+    const iso = (ano, mes, dia) => `${ano}-${pad(mes + 1)}-${pad(dia)}`;
+    const valor = dIso => {
+      const a = d?.dias ? (d.dias[dIso] || {}) : null; // dia sem registro no Product Ads = sem gasto
+      const b = info && BaseDados.cobre(info, dIso) ? (info.dias?.[dIso] || {}) : null;
+      const v = M.dia(a, b, tx); return v == null || !isFinite(v) ? null : v;
+    };
+    const cur = Array.from({ length: hoje.getDate() }, (_, i) => valor(iso(hoje.getFullYear(), hoje.getMonth(), i + 1)));
+    const prev = Array.from({ length: diasAnt }, (_, i) => valor(iso(ini.getFullYear(), ini.getMonth(), i + 1)));
+    const meta = M.meta && cfg?.meta_acos ? M.meta(+cfg.meta_acos) : null;
+    const todos = [...cur, ...prev, meta].filter(v => v != null);
+    if (!todos.length) return vazio('Sem dados por dia para esta métrica.');
+    // escala "redonda" para os rótulos do eixo
+    const bruto = Math.max(...todos) * 1.1 || 1, mag = 10 ** Math.floor(Math.log10(bruto)), topo = [1, 2, 2.5, 5, 10].map(x => x * mag).find(x => x >= bruto);
+    const W = 760, H = 210, L = 64, R = 14, T = 12, B = 26, nDias = Math.max(diasMes, diasAnt), passo = (W - L - R) / (nDias - 1);
+    const X = i => L + i * passo, Y = v => T + (H - T - B) * (1 - v / topo);
+    const linha = arr => arr.map((v, i) => v == null ? null : `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).reduce((acc, p) => { if (p == null) acc.push([]); else acc[acc.length - 1].push(p); return acc; }, [[]]).filter(s => s.length).map(s => s.length === 1 ? `M${s[0]}h0.01` : `M${s.join('L')}`).join('');
+    const ultimo = cur.length - 1, cheio = cur.filter(v => v != null).length;
+    const area = cheio > 1 ? `M${X(0)},${Y(0)}L${cur.map((v, i) => `${X(i).toFixed(1)},${Y(v || 0).toFixed(1)}`).join('L')}L${X(ultimo)},${Y(0)}Z` : '';
+    const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => f * topo);
+    const xs = [1, 5, 10, 15, 20, 25, 30].filter(x => x <= nDias);
+    const nomeMes = dt => dt.toLocaleString('pt-BR', { month: 'long' });
+    state.graf = { W, L, passo, nDias, cur, prev, fmt: M.fmt, nomeCur: nomeMes(hoje), nomePrev: nomeMes(ini) };
+    return `<div class="aml-graf">
+      <div class="aml-g-leg"><span><i class="aml-g-l1"></i>${h(M.rot)} em ${h(nomeMes(hoje))} (hoje parcial)</span><span><i class="aml-g-l2"></i>${h(nomeMes(ini))}</span>${meta != null ? `<span><i class="aml-g-l3"></i>${state.metResumo === 'roas' ? 'objetivo' : 'meta'} ${M.fmt(meta)}</span>` : ''}</div>
+      <div class="aml-g-area">
+        <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${h(M.rot)} por dia" onmousemove="window._amlGrafMove(event,this)" onmouseleave="window._amlGrafSai(this)">
+          ${ticks.map(t => `<line x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}" class="aml-g-grade"/><text x="${L - 8}" y="${Y(t) + 4}" text-anchor="end" class="aml-g-txt">${M.eixo(t)}</text>`).join('')}
+          ${xs.map(x => `<text x="${X(x - 1)}" y="${H - 6}" text-anchor="middle" class="aml-g-txt">${x}</text>`).join('')}
+          ${meta != null ? `<line x1="${L}" x2="${W - R}" y1="${Y(meta)}" y2="${Y(meta)}" class="aml-g-meta"/>` : ''}
+          <path d="${linha(prev)}" class="aml-g-prev"/>
+          ${area ? `<path d="${area}" class="aml-g-fill"/>` : ''}
+          <path d="${linha(cur)}" class="aml-g-cur"/>
+          ${cur[ultimo] != null ? `<circle cx="${X(ultimo)}" cy="${Y(cur[ultimo])}" r="4" class="aml-g-pt"/>` : ''}
+          <line x1="0" x2="0" y1="${T}" y2="${H - B}" class="aml-g-guia"/>
+        </svg>
+        <div class="aml-g-tip" hidden></div>
       </div>
     </div>`;
   }
@@ -646,7 +726,20 @@ Router.register('agente-ml', (params, el) => {
   window._amlAnalisar = analisarAgora;
   window._amlMarcar = marcar;
   window._amlMarcarGrupo = marcarGrupo;
-  window._amlCampanhas = () => { state.produtos = {}; carregarCampanhas(state.aberta, true); };
+  window._amlCampanhas = () => { state.produtos = {}; state.diario[state.aberta] = null; carregarCampanhas(state.aberta, true); };
+  window._amlMet = k => { state.metResumo = k; render(); };
+  // Passar o mouse no gráfico: linha vertical + valores do dia (sem redesenhar a tela)
+  window._amlGrafMove = (ev, svgEl) => {
+    const g = state.graf; if (!g) return;
+    const box = svgEl.getBoundingClientRect(), x = (ev.clientX - box.left) / box.width * g.W;
+    const dia = Math.min(g.nDias, Math.max(1, Math.round((x - g.L) / g.passo) + 1));
+    const cx = g.L + (dia - 1) * g.passo;
+    const guia = svgEl.querySelector('.aml-g-guia'); guia.setAttribute('x1', cx); guia.setAttribute('x2', cx); guia.style.opacity = 1;
+    const tip = svgEl.parentNode.querySelector('.aml-g-tip'), v = g.cur[dia - 1], p = g.prev[dia - 1];
+    tip.innerHTML = `<b>Dia ${dia}</b><div><i class="aml-g-l1"></i>${h(g.nomeCur)}: <b>${v == null ? '—' : g.fmt(v)}</b></div><div><i class="aml-g-l2"></i>${h(g.nomePrev)}: <b>${p == null ? '—' : g.fmt(p)}</b></div>`;
+    tip.style.left = `${Math.min(cx / g.W * box.width + 12, box.width - 170)}px`; tip.hidden = false;
+  };
+  window._amlGrafSai = svgEl => { svgEl.querySelector('.aml-g-guia').style.opacity = 0; svgEl.parentNode.querySelector('.aml-g-tip').hidden = true; };
   window._amlProdutos = campId => {
     campId = String(campId);
     state.aberto = state.aberto === campId ? null : campId; render();
@@ -752,7 +845,7 @@ Router.register('agente-ml', (params, el) => {
     .aml-met{padding:4px 16px 12px;border-left:1px solid var(--border);min-width:0;}
     .aml-met:first-child{border-left:none;padding-left:0;}
     .aml-met-rot{font-size:13px;color:var(--text-secondary);margin-bottom:4px;}
-    .aml-met-val{font-size:22px;font-weight:600;color:var(--text-primary);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .aml-met-val{font-size:19px;font-weight:600;color:var(--text-primary);font-variant-numeric:tabular-nums;overflow-wrap:anywhere;line-height:1.3;}
     .aml-met-sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
     @media (max-width:640px){.aml-mets{grid-template-columns:1fr 1fr}.aml-met{border-left:none;padding-left:0}}
     /* status como no painel: pílula verde "Ativa", cinza "Pausada" */
@@ -793,6 +886,31 @@ Router.register('agente-ml', (params, el) => {
     .aml-ml .aml-rot{font-size:13px;color:var(--text-secondary);} .aml-ml .aml-val{font-weight:600;}
     .aml-ml .aml-res-kpis{gap:0;} .aml-ml .aml-res-kpis>div{padding:4px 16px 8px;border-left:1px solid var(--border);} .aml-ml .aml-res-kpis>div:first-child{border-left:none;padding-left:0;}
     @media (max-width:640px){.aml-ml .aml-res-kpis>div{border-left:none;padding-left:0;}}
+    /* métricas clicáveis + gráfico de linha do resumo */
+    button.aml-met{background:none;border:none;border-top:3px solid transparent;border-left:1px solid var(--border);text-align:left;font:inherit;color:inherit;cursor:pointer;padding:8px 14px 12px;border-radius:0;}
+    button.aml-met:first-child{padding-left:14px;}
+    button.aml-met:first-child{border-left:none;}
+    button.aml-met:hover{background:var(--bg-subtle);}
+    button.aml-met.sel{border-top-color:var(--ml-azul);background:color-mix(in srgb,var(--ml-azul) 6%,transparent);}
+    button.aml-met.sel .aml-met-rot{color:var(--ml-azul);font-weight:600;}
+    .aml-graf{border-top:1px solid var(--border);margin-top:4px;padding:12px 0 8px;}
+    .aml-g-leg{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--text-secondary);margin-bottom:6px;}
+    .aml-g-leg span,.aml-g-tip div{display:inline-flex;align-items:center;gap:6px;}
+    .aml-g-l1,.aml-g-l2,.aml-g-l3{display:inline-block;width:16px;height:0;border-top:2px solid var(--ml-azul);}
+    .aml-g-l2{border-top:2px dashed var(--text-muted);} .aml-g-l3{border-top:2px dashed var(--yellow);}
+    .aml-g-area{position:relative;}
+    .aml-g-area svg{display:block;width:100%;height:auto;overflow:visible;}
+    .aml-g-grade{stroke:var(--border);stroke-width:1;}
+    .aml-g-txt{fill:var(--text-muted);font-size:11px;font-variant-numeric:tabular-nums;}
+    .aml-g-cur{fill:none;stroke:var(--ml-azul);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;}
+    .aml-g-fill{fill:var(--ml-azul);opacity:.1;stroke:none;}
+    .aml-g-prev{fill:none;stroke:var(--text-muted);stroke-width:1.5;stroke-dasharray:5 4;stroke-linecap:round;}
+    .aml-g-meta{stroke:var(--yellow);stroke-width:1.5;stroke-dasharray:3 4;}
+    .aml-g-pt{fill:var(--ml-azul);stroke:var(--bg-card);stroke-width:2;}
+    .aml-g-guia{stroke:var(--text-muted);stroke-width:1;opacity:0;pointer-events:none;}
+    .aml-g-tip{position:absolute;top:4px;min-width:150px;background:var(--bg-card);border:1px solid var(--border);box-shadow:var(--ml-sombra);border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.6;pointer-events:none;color:var(--text-primary);}
+    .aml-g-tip div{display:flex;}
+    .aml-g-vazio{border-top:1px solid var(--border);margin-top:4px;padding:28px 0;text-align:center;font-size:13px;color:var(--text-muted);}
     .aml-lk:focus-visible,.aml-ml .aml-fchip:focus-visible,.aml-ml .btn:focus-visible{outline:2px solid var(--ml-azul);outline-offset:2px;}
   </style>`;
   carregar();
