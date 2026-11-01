@@ -28,11 +28,11 @@ async function _lerConfigs() {
 }
 
 async function _salvarConfigs(configs) {
-  localStorage.setItem('glr_portal_configs', JSON.stringify(configs));
-  try {
-    await _sb.from('glr_storage')
-      .upsert({ chave: 'glr_portal_configs', dados: configs, atualizado_em: new Date().toISOString() }, { onConflict: 'chave' });
-  } catch(e) { console.warn('[Portal] Erro ao salvar no Supabase:', e.message); }
+  const { error } = await _sb.from('glr_storage')
+    .upsert({ chave: 'glr_portal_configs', dados: configs, atualizado_em: new Date().toISOString() }, { onConflict: 'chave' });
+  if (error) throw new Error('Não foi possível salvar os dados do portal. ' + error.message);
+  const gravarLocal = typeof _localSetItem === 'function' ? _localSetItem : localStorage.setItem.bind(localStorage);
+  gravarLocal('glr_portal_configs', JSON.stringify(configs));
 }
 
 async function _renderPortalAdminLista() {
@@ -121,15 +121,17 @@ function _abrirModal(cfg) {
       </div>
 
       <label style="display:block;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:none;margin-bottom:6px;">E-mail de acesso</label>
-      <input id="pm-email" type="email" value="${cfg?.email||''}" placeholder="cliente@empresa.com"
+      <input id="pm-email" type="email" ${isEdit ? 'readonly aria-describedby="pm-email-help"' : ''} value="${cfg?.email||''}" placeholder="cliente@empresa.com"
         style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:13px;margin-bottom:16px;box-sizing:border-box;">
 
+      ${isEdit ? '<p id="pm-email-help" style="font-size:12px;color:var(--text-secondary);margin:-8px 0 16px;">O e-mail identifica o login existente. Para um e-mail diferente, crie outro acesso.</p>' : ''}
       <label style="display:block;font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:none;margin-bottom:6px;">
         Senha ${isEdit ? '(deixe em branco para manter)' : ''}
       </label>
-      <input id="pm-senha" type="password" placeholder="Mínimo 6 caracteres"
+      <input id="pm-senha" type="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password"
         style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-base);color:var(--text-primary);font-size:13px;margin-bottom:20px;box-sizing:border-box;">
 
+      ${isEdit ? '<p style="font-size:12px;color:var(--text-secondary);margin:-8px 0 16px;">Ao preencher, a nova senha será aplicada ao login deste cliente.</p>' : ''}
       <div id="pm-msg" style="margin-bottom:12px;font-size:12px;text-align:center;"></div>
 
       <div style="display:flex;gap:10px;">
@@ -183,7 +185,9 @@ function _portalModalAtualizarContasInterno(clienteId, selecionadas) {
   }).join('');
 }
 
+let _portalAdminSaving = false;
 window._portalAdminSalvar = async function(editId) {
+  if (_portalAdminSaving) return;
   const msg   = document.getElementById('pm-msg');
   const email = document.getElementById('pm-email')?.value?.trim();
   const senha = document.getElementById('pm-senha')?.value;
@@ -194,7 +198,7 @@ window._portalAdminSalvar = async function(editId) {
   if (!email) { msg.textContent = '⚠️ Informe o e-mail'; msg.style.color='var(--red)'; return; }
   if (!clienteId) { msg.textContent = '⚠️ Selecione um cliente'; msg.style.color='var(--red)'; return; }
   if (!editId && !senha) { msg.textContent = '⚠️ Informe a senha para novo acesso'; msg.style.color='var(--red)'; return; }
-  if (senha && senha.length < 6) { msg.textContent = '⚠️ Senha deve ter no mínimo 6 caracteres'; msg.style.color='var(--red)'; return; }
+  if (senha && (senha.length < 8 || senha.length > 128)) { msg.textContent = '⚠️ Use uma senha entre 8 e 128 caracteres'; msg.style.color='var(--red)'; return; }
   if (!contaIds.length) { msg.textContent = '⚠️ Selecione ao menos uma conta'; msg.style.color='var(--red)'; return; }
 
   msg.textContent = editId ? 'Salvando...' : 'Criando usuário...';
@@ -204,20 +208,28 @@ window._portalAdminSalvar = async function(editId) {
   const cliente = clientes.find(c => String(c.id) === String(clienteId));
   const clienteNome = cliente?.nome || 'Cliente';
 
+  let senhaAlterada = false;
+  _portalAdminSaving = true;
   try {
     const configs = await _lerConfigs();
 
     if (editId) {
       // Edição: atualiza config, senha opcional
       const idx = configs.findIndex(c => c.id === editId);
+      if (idx < 0) throw new Error('Acesso não encontrado. Reabra o cadastro.');
+      if (email.toLowerCase() !== String(configs[idx].email || '').toLowerCase()) throw new Error('O e-mail do login existente não pode ser alterado neste formulário.');
       if (idx >= 0) {
         configs[idx] = { ...configs[idx], email, clienteId, clienteNome, contaIds };
       }
       if (senha) {
-        // Tenta atualizar senha — requer que o usuário esteja logado com a conta alvo (não é possível admin-side sem service key)
-        // Orientamos o usuário a pedir reset via Supabase
-        msg.textContent = '⚠️ Para alterar a senha, use o painel do Supabase ou peça ao cliente para redefinir.';
-        msg.style.color = 'var(--yellow)';
+        const response = await window.glrApiFetch('/api/portal-password', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ portalId: editId, password: senha }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.ok !== true) throw new Error(result.error || 'A atualização de senha não foi confirmada.');
+        senhaAlterada = true;
+        document.getElementById('pm-senha').value = '';
       }
     } else {
       // Novo: cria usuário no Supabase
@@ -232,16 +244,16 @@ window._portalAdminSalvar = async function(editId) {
     }
 
     await _salvarConfigs(configs);
-    msg.textContent = '✅ Salvo com sucesso!';
+    msg.textContent = senhaAlterada ? '✅ Senha atualizada e acesso salvo. O cliente já pode entrar com a nova senha.' : '✅ Salvo com sucesso!';
     msg.style.color = 'var(--green)';
     setTimeout(async () => {
       document.getElementById('portal-modal')?.remove();
       await _renderPortalAdminLista();
     }, 1000);
   } catch(e) {
-    msg.textContent = '❌ Erro: ' + e.message;
+    msg.textContent = (senhaAlterada ? '⚠️ A senha foi atualizada, mas os demais dados não foram salvos: ' : '❌ Erro: ') + e.message;
     msg.style.color = 'var(--red)';
-  }
+  } finally { _portalAdminSaving = false; }
 };
 
 window._portalAdminToggle = async function(id) {
