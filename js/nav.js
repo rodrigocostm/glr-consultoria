@@ -11,7 +11,7 @@
 (function () {
   const GRUPOS = [
     { id: 'hoje', titulo: 'Hoje', paginas: ['decisoes', 'chat', 'dashboard', 'vendometro', 'plano-acao', 'tarefas'] },
-    { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'projecao', 'vendas', 'gestores', 'relatorios', 'leads', 'portal-admin'] },
+    { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'projecao', 'vendas', 'gestores', 'relatorios', 'relatorio-semanal', 'leads', 'portal-admin'] },
     { id: 'ads', titulo: 'ADS e preço', paginas: ['agente', 'agente-ml', 'promocoes', 'precos-ml', 'precos-shopee', 'black-friday', 'afiliados'] },
     { id: 'saude', titulo: 'Saúde das contas', paginas: ['estoque-margem', 'atendimento', 'qualidade-anuncios', 'rastreamento', 'conexoes'] },
     { id: 'anuncios', titulo: 'Anúncios', paginas: ['produtos', 'anuncios-ml', 'anuncios-shopee', 'anuncios-tiktok', 'anuncios-amazon', 'fotos'] },

@@ -48,6 +48,7 @@ const medicaoAds = require('./_medicao-ads');
 const estoqueMargem = require('./_estoque-margem');
 // Gerente de Conta: plano do dia por cliente (rodada 'gerente', 08:00)
 const gerente = require('./_gerente');
+const relatorio = require('./_relatorio');
 async function lerSinais(mkt, conta) {
   const rows = await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${encodeURIComponent(conta)}&recurso=in.(sinais,promocoes,reputacao,qualidade)&select=recurso,cursor`).catch(() => []);
   const c = rows.find(r => r.recurso === 'sinais')?.cursor;
@@ -416,8 +417,9 @@ async function monitorarSaldoShopee(mcApiKey, simular = false) {
   }
   if (simular) return { simulacao: true, lojas: lojas.length, avisaria: saida, situacao: Object.values(novo).map(x => ({ loja: x.nome, nivel: x.nivel, saldo: x.saldo, gasto_dia: x.media != null ? Math.round(x.media * 100) / 100 : null, dias: x.dias != null ? Math.round(x.dias * 10) / 10 : null, erro: x.erro })) };
   await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: 'saldo_ads', recurso: 'shopee', ultima_tentativa: agoraIso, ultimo_sucesso: agoraIso, cursor: { lojas: novo } }, 'marketplace,conta_id,recurso');
-  if (saida.length) {
-    const ruins = saida.sort((a, b) => NIVEL_SALDO[b.nivel] - NIVEL_SALDO[a.nivel]);
+  const urgentes = saida.filter(x => x.nivel === 'zerado' || x.nivel === 'critico');
+  if (urgentes.length) { // "baixo" não toca o celular na hora: entra na Caixa de decisões e no resumo das 08:00
+    const ruins = urgentes.sort((a, b) => NIVEL_SALDO[b.nivel] - NIVEL_SALDO[a.nivel]);
     await require('./_alerta').avisar(sbSelect, ruins.length === 1 ? `💳 ${ruins[0].nivel === 'zerado' ? 'ADS parado' : 'Saldo de ADS baixo'} — ${ruins[0].loja}` : `💳 Saldo de ADS em ${ruins.length} lojas Shopee`,
       ruins.slice(0, 4).map(x => `${x.loja}: ${R$(x.saldo)}${x.nivel === 'zerado' ? ' (zerado)' : x.dias != null ? ` (~${String(Math.round(x.dias * 10) / 10).replace('.', ',')} dias)` : ''}`).join('\n'), 'saldo-ads').catch(() => {});
   }
@@ -569,6 +571,26 @@ module.exports = async function handler(req, res) {
       if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
       waitUntil(monitorarConexoes(mcApiKey).then(r => console.log('[conexoes]', JSON.stringify(r))).finally(gravarConsumo).catch(e => console.error('[conexoes] falhou', e)));
       return res.status(202).json({ ok: true, rodada: 'conexoes', slot });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
+  // ?rodada=resumo — resumo da manhã no celular (08:00, uma vez por dia); &simular=1 só monta o texto
+  if (req.query?.rodada === 'resumo') {
+    try {
+      if (req.query?.simular === '1') return res.status(200).json({ ok: true, ...(await relatorio.resumoDaManha({ sbSelect }, true)) });
+      const slot = `${agoraBRT().dia}-resumo`;
+      if (req.query?.agora !== '1' && !(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      return res.status(200).json({ ok: true, rodada: 'resumo', ...(await relatorio.resumoDaManha({ sbSelect })) });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
+  // ?rodada=relatorio — relatório semanal por cliente (segunda 08:00); &cliente_id=X gera só o dele ("Gerar agora" na tela)
+  if (req.query?.rodada === 'relatorio') {
+    const ajud = { sbSelect, sbUpsert, lerStorage };
+    try {
+      if (req.query?.cliente_id || req.query?.agora === '1') return res.status(200).json({ ok: true, rodada: 'relatorio', ...(await relatorio.relatoriosSemanais(ajud, req.query?.cliente_id || null)) });
+      const slot = `${agoraBRT().dia}-relatorio`;
+      if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      waitUntil(relatorio.relatoriosSemanais(ajud).then(r => console.log('[relatorio]', JSON.stringify(r))).catch(e => console.error('[relatorio] falhou', e)));
+      return res.status(202).json({ ok: true, rodada: 'relatorio', slot });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
   // ?rodada=autonomia — recalcula os níveis de autonomia pelo resultado medido (não mexe em campanha)

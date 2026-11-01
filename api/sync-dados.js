@@ -1303,6 +1303,11 @@ module.exports = async function handler(req, res) {
   if (hora >= 6 && minuto < 30 && !conta) waitUntil(dispararAgente(req, 'saldo'));
   // Saúde das conexões: de hora em hora, o dia todo (avisa quando uma conta cai ou volta)
   if (minuto < 30 && !conta) waitUntil(dispararAgente(req, 'conexoes'));
+  // 08:00: resumo da manhã no celular; às segundas, também o relatório semanal de cada cliente
+  if (hora === 8 && minuto < 30 && !conta) {
+    waitUntil(dispararAgente(req, 'resumo'));
+    if (new Date(Date.now() - 3 * 3600e3).getUTCDay() === 1) waitUntil(dispararAgente(req, 'relatorio'));
+  }
   // O reprocesso diário agora roda dentro das rodadas de 15 min (aos poucos,
   // por loja). A chamada noturna antiga cai no mesmo horário de uma rodada
   // normal — se rodasse junto, as duas disputariam as mesmas lojas.

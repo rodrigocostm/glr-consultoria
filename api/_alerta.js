@@ -9,12 +9,12 @@
 // ============================================================
 const webpush = require('web-push');
 
-async function avisar(sbSelect, titulo, corpo, tag) {
+async function avisar(sbSelect, titulo, corpo, tag, url) {
   const pub = process.env.VAPID_PUBLIC_KEY, priv = process.env.VAPID_PRIVATE_KEY;
   if (!pub || !priv) return 0;
   webpush.setVapidDetails('mailto:contatoconsultoriaglr@gmail.com', pub, priv);
   const subs = await sbSelect('push_subscriptions', 'select=endpoint,p256dh,auth').catch(() => []);
-  const payload = JSON.stringify({ title: titulo, body: corpo, url: '/index.html', tag: tag || 'sistema' });
+  const payload = JSON.stringify({ title: titulo, body: corpo, url: url || '/index.html', tag: tag || 'sistema' });
   let n = 0;
   for (const s of subs) {
     try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload); n++; } catch (e) { /* aparelho que saiu: o push-cron limpa */ }
