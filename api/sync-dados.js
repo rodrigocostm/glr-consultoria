@@ -116,10 +116,10 @@ const dataBR = unix => { const d = new Date((unix - 3 * 3600) * SEG); const p = 
 const MKT = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : m === 'amazon' ? 'amazon' : ['tiktok', 'tiktok_shop', 'tiktokshop'].includes(m) ? 'tiktok' : m === 'magalu' ? 'magalu' : m === 'shein' ? 'shein' : null; };
 async function contasParaSincronizar(apiKey) {
   const chaves = new Map(); // "mkt:id" → { mkt, id }
-  const add = (m, id) => { const mkt = MKT(m); if (mkt && id) chaves.set(`${mkt}:${id}`, { mkt, id: String(id) }); };
+  const add = (m, id, nome) => { const mkt = MKT(m); if (!mkt || !id) return; const k = `${mkt}:${id}`; chaves.set(k, { mkt, id: String(id), nome: nome || chaves.get(k)?.nome || null }); };
   try {
     const r = await comRetry(() => mcpCall(apiKey, 'list_accounts', {}));
-    for (const c of (r.data?.accounts || r.accounts || [])) add(c.marketplace, c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.param_to_use?.magalu_account_id || c.param_to_use?.shein_supplier_id || c.external_id);
+    for (const c of (r.data?.accounts || r.accounts || [])) add(c.marketplace, c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.param_to_use?.magalu_account_id || c.param_to_use?.shein_supplier_id || c.external_id, (c.tags || []).find(t => t && t.name)?.name || c.nickname || c.shop_name);
   } catch (e) { console.warn('[sync-dados] list_accounts falhou, seguindo só com os vínculos:', e.message); }
   const vinc = (await sbSelect('glr_storage', 'chave=eq.glr_mc_vinculos&select=dados'))[0]?.dados || {};
   for (const lista of Object.values(vinc)) for (const c of (Array.isArray(lista) ? lista : [])) add(c.marketplace, c.external_id);
@@ -957,7 +957,7 @@ async function atualizarPrecosML(apiKey, contaId, prazo) {
 async function atualizarPrecosShopee(apiKey, contaId, prazo) {
   const ant = (await sbSelect('glr_sync_estado', `marketplace=eq.shopee&conta_id=eq.${contaId}&recurso=eq.precos&select=cursor`).catch(() => []))[0]?.cursor || {};
   const itensAnt = ant.itens || {};
-  const t = agora(), itens = {}, ids = [];
+  const t = agora(), itens = {}, ids = [], mudancas = [];
   for (let off = 0; off < 20000; ) {
     if (Date.now() > prazo) return null; // não terminou: tenta na próxima rodada (não grava foto pela metade)
     const r = await comRetry(() => mcpCall(apiKey, 'shopee_list_items', { shopId: contaId, item_status: 'NORMAL', offset: off, page_size: 100 }));
@@ -977,12 +977,23 @@ async function atualizarPrecosShopee(apiKey, contaId, prazo) {
       const p = r2(atual), id = String(b.item_id), velho = itensAnt[id];
       const h = Array.isArray(velho?.h) ? velho.h.slice(-19) : [];
       if (!h.length || Math.abs(h[h.length - 1][1] - p) >= 0.01) h.push([t, p]);
+      if (velho && h.length >= 2 && h[h.length - 1][0] === t) mudancas.push({ n: String(b.item_name || id), de: h[h.length - 2][1], para: p, promo: (parseFloat(pi.original_price) || p) > p + 0.01 });
       const max = precos.length ? Math.max(...precos.map(x => parseFloat(x.current_price) || 0)) : null;
       itens[id] = { t: String(b.item_name || '').slice(0, 90), p, po: r2(parseFloat(pi.original_price) || p), px: max && max > p ? r2(max) : null,
         th: b.image?.image_url_list?.[0] || '', h };
     }
   }
-  return { em: Date.now(), itens };
+  // mudanças da madrugada que ainda não viraram aviso (o caller decide se avisa agora)
+  return { em: Date.now(), itens, mudancas: [...(Array.isArray(ant.pendentes) ? ant.pendentes : []), ...mudancas].slice(-50) };
+}
+
+// Aviso no celular: preços que mudaram na foto da Shopee (1 notificação por loja e por foto)
+async function avisarPrecosShopee(shopId, nome, mud) {
+  const brl = v => 'R$ ' + (+v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const vari = m => { const v = m.de > 0 ? (m.para - m.de) / m.de * 100 : 0; return `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1).replace('.', ',')}%`; };
+  const linhas = mud.slice(0, 3).map(m => `${m.n.slice(0, 40)}: ${brl(m.de)} → ${brl(m.para)} (${vari(m)})${m.promo ? ' · desconto da loja' : ''}`);
+  if (mud.length > 3) linhas.push(`+${mud.length - 3} outro(s) — veja no Monitor de preços Shopee`);
+  await require('./_alerta').avisar(sbSelect, `💲 ${mud.length === 1 ? 'Preço mudou' : `${mud.length} preços mudaram`} na Shopee — ${nome || `loja ${shopId}`}`, linhas.join('\n'), `preco-shopee-${shopId}`);
 }
 
 const ADAPTADORES = {
@@ -1065,7 +1076,7 @@ async function salvarEstado(mkt, conta, recurso, campos) {
 //     45 dias (rede de segurança). Cada dia concluído avança o cursor, então
 //     loja grande progride aos poucos e nenhuma trava a fila das outras;
 //  3) ADS por dia (90 dias na 1ª vez, depois os últimos 3).
-async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
+async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo, nome) {
   const ad = ADAPTADORES[mkt];
   const cursor = { ...(estadoAtual?.cursor || {}) };
   const t = agora();
@@ -1142,7 +1153,11 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
     try {
       const fotografar = mkt === 'ml' ? atualizarPrecosML : atualizarPrecosShopee;
       const cur = await fotografar(apiKey, shopId, Math.min(prazo - 15000, Date.now() + 45000));
+      const mud = cur?.mudancas || []; if (cur) delete cur.mudancas;
+      const horaAviso = new Date(Date.now() - 3 * 3600e3).getUTCHours(), silencio = horaAviso < 7 || horaAviso >= 22;
+      if (cur && mud.length && silencio) cur.pendentes = mud; // de madrugada não toca o celular: avisa na 1ª foto depois das 07h
       if (cur) await salvarEstado(mkt, shopId, 'precos', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: Object.keys(cur.itens).length, cursor: cur });
+      if (cur && mud.length && !silencio) await avisarPrecosShopee(shopId, nome, mud).catch(e => console.warn('[sync-dados] aviso de preço:', e.message));
     } catch (e) { await salvarEstado(mkt, shopId, 'precos', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
   }
   // Oportunidades de ADS — 1x por dia por loja, depois das 06:00 (Brasília), se sobrar tempo
@@ -1260,7 +1275,7 @@ async function executar(apiKey, soConta) {
   const trabalhador = async () => {
     while (i < contas.length && Date.now() < prazo - 45000 && !consumo.limiteAtingido()) {
       const conta = contas[i++];
-      resultados.push(await sincronizarConta(apiKey, conta.mkt, conta.id, porConta[chave(conta)], prazo));
+      resultados.push(await sincronizarConta(apiKey, conta.mkt, conta.id, porConta[chave(conta)], prazo, conta.nome));
     }
   };
   await Promise.all(Array.from({ length: CONCORRENCIA }, trabalhador));
