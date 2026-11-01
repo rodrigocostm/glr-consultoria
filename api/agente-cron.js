@@ -474,7 +474,7 @@ async function monitorarConexoes(mcApiKey, simular = false) {
     if (!ruim(status) && ruim(a.status) && status === 'ok') voltou.push(novo[k]);
   }
   const resumo = { contas: contas.length, erro: Object.values(novo).filter(x => x.status === 'erro').length, ads: Object.values(novo).filter(x => x.status === 'ads').length, caiu: caiu.length, voltou: voltou.length };
-  if (simular) return { simulacao: true, ...resumo, problemas: Object.values(novo).filter(x => x.status !== 'ok').map(x => ({ conta: `${x.nome} (${NOME_MKT[x.mkt]})`, status: x.status, acao: x.acao })) };
+  if (simular) return { simulacao: true, ...resumo, problemas: Object.values(novo).filter(x => x.status !== 'ok').map(x => ({ conta: `${x.nome} (${NOME_MKT[x.mkt]})`, status: x.status, acao: x.acao, erro: x.erro })) };
   await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: 'conexoes', recurso: 'todas', ultima_tentativa: agoraIso, ultimo_sucesso: agoraIso, cursor: { em: agoraMs, contas: novo } }, 'marketplace,conta_id,recurso');
   const linha = x => `${x.nome} (${NOME_MKT[x.mkt]})`;
   if (caiu.length) await require('./_alerta').avisar(sbSelect, caiu.length === 1 ? `🔌 Conexão com problema — ${linha(caiu[0])}` : `🔌 ${caiu.length} conexões com problema`,
