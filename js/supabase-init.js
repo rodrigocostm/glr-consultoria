@@ -279,6 +279,8 @@ function mostrarLogin(erroMsg) {
           onkeydown="if(event.key==='Enter') window.fazerLogin()">
       </div>
 
+      <div style="text-align:right;margin:-6px 0 14px;"><a href="#" onclick="event.preventDefault();window.esqueciSenha()" style="font-size:12.5px;color:#8b8cf8;text-decoration:none;">Esqueci minha senha</a></div>
+
       <button id="glr-login-btn" onclick="window.fazerLogin()"
         style="width:100%;padding:13px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;
                border-radius:10px;color:white;font-size:15px;font-weight:700;cursor:pointer;
@@ -315,12 +317,18 @@ window.fazerLogin = async function() {
   const { error } = await _sb.auth.signInWithPassword({ email, password: senha });
 
   if (error) {
-    mostrarLogin('E-mail ou senha incorretos. Tente novamente.');
+    // mostra o motivo de verdade: "e-mail não confirmado" aparecia como senha errada
+    const m = String(error.message || '');
+    mostrarLogin(/not confirmed/i.test(m) ? 'Este e-mail ainda não foi confirmado. Abra o e-mail de confirmação que o sistema enviou (veja também o spam) e tente de novo.'
+      : /invalid login credentials/i.test(m) ? 'E-mail ou senha incorretos. Se esqueceu a senha, use "Esqueci minha senha".'
+      : /rate limit|too many/i.test(m) ? 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.'
+      : 'Não consegui entrar: ' + m);
     return;
   }
 
   // Verifica tipo ANTES de expor qualquer conteúdo
   const portalCfg = await _detectarPortalCliente(email);
+  if (portalCfg?.bloqueado) return; // acesso do portal desativado: já saiu e mostrou o aviso
 
   document.getElementById('glr-login-overlay')?.remove();
 
@@ -345,6 +353,44 @@ window.fazerLogin = async function() {
   }
   if (typeof atualizarBadges === 'function') atualizarBadges();
 };
+
+// ── Esqueci minha senha ───────────────────────────────────────
+// Manda o e-mail de troca de senha do Supabase; o link volta para o site, o
+// Supabase avisa PASSWORD_RECOVERY e abrimos a tela para definir a nova senha.
+window.esqueciSenha = async function() {
+  const email = document.getElementById('glr-email')?.value?.trim();
+  if (!email) { mostrarLogin('Digite seu e-mail no campo acima e clique de novo em "Esqueci minha senha".'); return; }
+  const { error } = await _sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/' });
+  mostrarLogin(error ? 'Não consegui enviar o e-mail: ' + error.message : `Se ${email} tiver acesso, chega em instantes um e-mail com o link para criar uma nova senha (veja também o spam).`);
+  setTimeout(() => { const i = document.getElementById('glr-email'); if (i) i.value = email; }, 50);
+};
+function mostrarNovaSenha(msg) {
+  document.getElementById('glr-nova-senha')?.remove();
+  const o = document.createElement('div');
+  o.id = 'glr-nova-senha';
+  o.style.cssText = 'position:fixed;inset:0;background:#0d0d14;display:flex;align-items:center;justify-content:center;z-index:10000;font-family:Inter,sans-serif;padding:16px;';
+  o.innerHTML = `<div style="background:#16161f;border:1px solid rgba(255,255,255,0.07);border-radius:20px;padding:32px;width:100%;max-width:380px;">
+    <div style="font-size:18px;font-weight:700;color:#f1f1f8;margin-bottom:6px;">Criar nova senha</div>
+    <div style="font-size:13px;color:#8a8ca0;margin-bottom:18px;">Use pelo menos 8 caracteres.</div>
+    ${msg ? `<div style="font-size:13px;color:#f87171;margin-bottom:12px;">${msg}</div>` : ''}
+    <input id="glr-nova-1" type="password" placeholder="Nova senha" autocomplete="new-password" style="width:100%;padding:11px 14px;background:#0d0d14;border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#f1f1f8;font-size:14px;box-sizing:border-box;margin-bottom:10px;">
+    <input id="glr-nova-2" type="password" placeholder="Repita a nova senha" autocomplete="new-password" style="width:100%;padding:11px 14px;background:#0d0d14;border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#f1f1f8;font-size:14px;box-sizing:border-box;margin-bottom:14px;" onkeydown="if(event.key==='Enter') window.salvarNovaSenha()">
+    <button onclick="window.salvarNovaSenha()" style="width:100%;padding:13px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:10px;color:white;font-size:15px;font-weight:700;cursor:pointer;">Salvar nova senha</button>
+  </div>`;
+  document.body.appendChild(o);
+  setTimeout(() => document.getElementById('glr-nova-1')?.focus(), 100);
+}
+window.salvarNovaSenha = async function() {
+  const a = document.getElementById('glr-nova-1')?.value || '', b = document.getElementById('glr-nova-2')?.value || '';
+  if (a.length < 8) { mostrarNovaSenha('A senha precisa ter pelo menos 8 caracteres.'); return; }
+  if (a !== b) { mostrarNovaSenha('As duas senhas não são iguais.'); return; }
+  const { error } = await _sb.auth.updateUser({ password: a });
+  if (error) { mostrarNovaSenha('Não consegui salvar: ' + error.message); return; }
+  document.getElementById('glr-nova-senha')?.remove();
+  await _sb.auth.signOut();
+  mostrarLogin('Senha alterada. Entre com a nova senha.');
+};
+_sb.auth.onAuthStateChange(ev => { if (ev === 'PASSWORD_RECOVERY') mostrarNovaSenha(); });
 
 // ── Fazer Logout ──────────────────────────────────────────────
 window.fazerLogout = async function() {
@@ -406,6 +452,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Verifica tipo ANTES de sincronizar qualquer dado admin
     const portalCfg = await _detectarPortalCliente(userEmail);
+    if (portalCfg?.bloqueado) { _ocultarLoadingInicial(); return; }
 
     if (portalCfg) {
       // Cliente do portal — NUNCA sincroniza dados admin, NUNCA ativa realtime admin
@@ -440,7 +487,9 @@ async function _detectarPortalCliente(email) {
     // Forma segura: o banco devolve só a config DESTE usuário (função glr_meu_portal,
     // supabase-portal-seguranca.sql). Se a função ainda não existir, cai no jeito antigo.
     const { data: meu, error: eRpc } = await _sb.rpc('glr_meu_portal');
-    if (!eRpc) return meu && meu.ativo !== false ? meu : null;
+    // acesso de cliente DESATIVADO não pode cair no fluxo de admin (antes, sem config ativa, entrava como admin)
+    const bloquear = async () => { await _sb.auth.signOut(); mostrarLogin('Este acesso ao portal está desativado. Fale com a GLR Consultoria.'); return { bloqueado: true }; };
+    if (!eRpc) return meu ? (meu.ativo === false ? await bloquear() : meu) : null;
 
     // Tenta localStorage primeiro
     let configs = JSON.parse(localStorage.getItem('glr_portal_configs')||'[]');
@@ -454,7 +503,8 @@ async function _detectarPortalCliente(email) {
       }
     }
 
-    const cfg = configs.find(c => c.email?.toLowerCase() === email?.toLowerCase() && c.ativo !== false);
+    const cfg = configs.find(c => c.email?.toLowerCase() === email?.toLowerCase());
+    if (cfg && cfg.ativo === false) return await bloquear();
     return cfg || null;
   } catch { return null; }
 }
