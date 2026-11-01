@@ -16,6 +16,7 @@
 // ============================================================
 
 const MAX_ACOES = 7;
+const oportunidades = require('../js/plano-oportunidades');
 const { visitasItem, visitasConta } = require('./_funil');
 const r1 = v => Math.round(v * 10) / 10;
 const R$ = v => 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -563,6 +564,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
       em: Date.now(), dia: isoBRT(0), cliente: { id: c.id, nome: c.nome, gestorId: c.gestorId ?? null, gestor: gestorNome(c.gestorId) },
       semaforo, metricas, acoes, resultados, raioX, caminho: caminho ? { ...caminho, promosMeta } : null, diagnostico: txt?.diagnostico || diagRegra, pauta: txt?.pauta || pautaRegra, fonteTexto: txt ? 'ia' : 'regra',
     };
+    plano.oportunidades = oportunidades.build(plano, todas);
     await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `cliente:${c.id}`, recurso: 'plano', ultimo_sucesso: new Date().toISOString(), ultima_tentativa: new Date().toISOString(), ultimo_erro: null, registros: acoes.length, cursor: plano }, 'marketplace,conta_id,recurso');
     saida.push({ cliente: c.nome, semaforo, acoes: acoes.length });
   };

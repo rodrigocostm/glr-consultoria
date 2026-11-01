@@ -82,7 +82,7 @@ async function planoCliente(S, { cliente }) {
   if (!p) return { cliente: c.nome, lojas: c.lojas, aviso: 'Ainda não há plano do Gerente para este cliente. Use vendas/produtos/ads para analisar.' };
   const status = (await lerStorage('glr_plano_status')) || {};
   return { cliente: c.nome, gestor: c.gestor, lojas: c.lojas, gerado_em: p.em ? new Date(p.em).toISOString() : null, semaforo: p.semaforo, diagnostico: p.diagnostico, metricas: p.metricas,
-    caminho_para_meta: p.caminho, raio_x: p.raioX, acoes_abertas: (p.acoes || []).filter(a => !status[a.id]).map(a => ({ quando: a.quando, quem: a.quem, titulo: a.titulo, porque: a.porque, impacto: a.impacto, loja: a.loja })),
+    caminho_para_meta: p.caminho, raio_x: p.raioX, acoes_abertas: (p.oportunidades || p.acoes || []).filter(a => !status[a.id]?.st).map(a => ({ quando: a.quando, quem: a.quem, titulo: a.titulo, porque: a.porque, impacto: a.impacto, loja: a.loja })),
     resultados_7_dias: p.resultados };
 }
 
