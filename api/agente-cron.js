@@ -436,7 +436,8 @@ const MKT_TODOS = m => { m = String(m || '').toLowerCase(); return m === 'shopee
 const NOME_MKT = { shopee: 'Shopee', ml: 'Mercado Livre', amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' };
 function problemaConexao(erro) {
   const e = String(erro || '');
-  if (/refresh_token|token.*expir|expired|invalid_grant|reconect/i.test(e)) return 'A conexão expirou. Reconecte a conta na Tiops.';
+  if (/refresh_token|token.*expir|expired|invalid_grant|reconect|renovar token/i.test(e)) return 'A conexão expirou. Reconecte a conta na Tiops.';
+  if (/Erro na ação tiktok_search_orders/i.test(e)) return 'O TikTok não libera os pedidos desta loja pela integração. Reconecte dando todas as permissões (inclusive pedidos).';
   if (/no linked|não vinculad|nao vinculad|unlinked/i.test(e)) return 'A loja foi desvinculada da Tiops. Reconecte a conta.';
   if (/módulo "Ads"|modulo "Ads"|Ads"/i.test(e)) return 'A loja não liberou a permissão de Anúncios (Ads). Reconecte dando essa permissão.';
   if (/105005|não está disponível na integração|nao esta disponivel/i.test(e)) return 'A loja não liberou a permissão de pedidos. Reconecte dando todas as permissões.';

@@ -78,6 +78,8 @@ const Router = {
       'plano-acao': 'Plano de ação',
       'precos-ml': 'Monitor de preços ML',
       'precos-shopee': 'Monitor de preços Shopee',
+      'conexoes': 'Saúde das conexões',
+      'black-friday': 'Plano Black Friday',
       'meu-dashboard': 'Dashboard', 'meus-pedidos': 'Pedidos', 'minha-curva-abc': 'Curva ABC', 'minhas-oportunidades': 'Oportunidades',
       financeiro: 'Financeiro',
       vendas: 'Vendas',

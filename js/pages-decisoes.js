@@ -20,6 +20,7 @@ Router.register('decisoes', (params, el) => {
   const TIPOS = {
     'reputacao': { t: 'Reputação', c: 'var(--red)' },
     'saldo': { t: 'Saldo de ADS', c: 'var(--red)' },
+    'conexao': { t: 'Conexão', c: 'var(--red)' },
     'ads-shopee': { t: 'ADS Shopee', c: '#eb6834' },
     'ads-ml': { t: 'ADS ML', c: '#d9a400' },
     'faturamento': { t: 'Faturamento', c: 'var(--accent)' },
@@ -46,11 +47,12 @@ Router.register('decisoes', (params, el) => {
     st.carregando = true; render();
     try {
       const desde = new Date(Date.now() - 10 * 864e5).toISOString();
-      const [logs, planos, reps, promos] = await Promise.all([
+      const [logs, planos, reps, promos, conex] = await Promise.all([
         _sb.from('glr_agente_log').select('id,conta_id,cliente_nome,titulo,explicacao,dados,criado_em').eq('tipo', 'alerta').eq('resultado', 'so_alerta').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(3000),
         _sb.from('glr_sync_estado').select('conta_id,cursor').eq('marketplace', 'sistema').eq('recurso', 'plano'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,rec:cursor->reclamacoes').eq('recurso', 'reputacao'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,res:cursor->resumo,dest:cursor->destaques').eq('recurso', 'promocoes'),
+        _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('conta_id', 'conexoes').eq('recurso', 'todas').maybeSingle(),
       ]);
       for (const r of [logs, planos, reps, promos]) if (r.error) throw r.error;
       const itens = [], locais = resolvidasLocais(), planoSt = lerJSON('glr_plano_status', {});
@@ -101,6 +103,15 @@ Router.register('decisoes', (params, el) => {
         const ex = r.dest?.sugeridas?.[0];
         itens.push({ id, tipo: 'promocoes', mkt: r.marketplace, conta: String(r.conta_id), titulo: `Aplicar ${n} promoção(ões) que cabem na margem`,
           porque: ex ? `Ex.: ${corta(ex.n, 60)} — ${ex.rot}${ex.m != null ? `, margem ${String(ex.m).replace('.', ',')}%` : ''}${r.res.parados ? ` · ${r.res.parados} giram estoque parado` : ''}` : '', tela: 'promocoes' });
+      }
+      // conexões com problema (Saúde das conexões, servidor de hora em hora): conta parada não entra nas vendas nem nos agentes
+      const NOME_MKT = { shopee: 'Shopee', ml: 'Mercado Livre', amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' };
+      for (const c of Object.values(conex?.data?.cursor?.contas || {})) {
+        if (c.status !== 'erro' && c.status !== 'ads') continue;
+        const id = `cx:${c.mkt}:${c.id}:${c.desde || ''}`;
+        if (locais[id]) continue;
+        itens.push({ id, tipo: 'conexao', mkt: c.mkt, conta: String(c.id), titulo: `${c.status === 'ads' ? 'Liberar permissão de Ads' : 'Reconectar'} — ${c.nome} (${NOME_MKT[c.mkt] || c.mkt})`,
+          porque: c.acao || '', urgente: c.status === 'erro', tela: 'conexoes', quando: c.desde || null });
       }
       // conta que não está mais em nenhum cliente (cliente excluído / conta desvinculada) sai da fila
       const vinc = lerJSON('glr_mc_vinculos', {}), contasVinc = new Set(Object.values(vinc).flatMap(a => (a || []).flatMap(c => [c.external_id, c.param_to_use?.shopId, c.param_to_use?.meliUserId].filter(Boolean).map(String))));
