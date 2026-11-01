@@ -116,7 +116,7 @@ Router.register('fotos', (params, el) => {
     estado.sugerindo = true;
     render();
     try {
-      const resp = await fetch('/api/analyze-photo', {
+      const resp = await window.glrApiFetch('/api/analyze-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image_base64: estado.refBase64 }),
@@ -140,7 +140,7 @@ Router.register('fotos', (params, el) => {
     estado.ambientada = null; estado.detalhes_imgs = []; estado.errosDetalhes = [];
     render();
     try {
-      const resp = await fetch('/api/generate-photo', {
+      const resp = await window.glrApiFetch('/api/generate-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image_base64: estado.refBase64, product_name: estado.nome, details: estado.detalhes, stage: 'ambientada' }),
@@ -163,7 +163,7 @@ Router.register('fotos', (params, el) => {
     estado.detalhes_imgs = []; estado.errosDetalhes = [];
     render();
     try {
-      const resp = await fetch('/api/generate-photo', {
+      const resp = await window.glrApiFetch('/api/generate-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -210,7 +210,7 @@ Router.register('fotos', (params, el) => {
     tipoState.resultado = null;
     renderPainel();
     try {
-      const resp = await fetch('/api/generate-photo', {
+      const resp = await window.glrApiFetch('/api/generate-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image_base64: estado.refBase64, stage: 'custom', prompt: promptFinal }),

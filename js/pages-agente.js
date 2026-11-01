@@ -998,7 +998,7 @@
     window._agSaldosAgora = async () => {
       state.atualizandoSaldo = true; render();
       try {
-        const r = await fetch('/api/agente-cron?rodada=saldo&agora=1');
+        const r = await window.glrApiFetch('/api/agente-cron?rodada=saldo&agora=1');
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       } catch (e) { alert('Não consegui ler os saldos agora: ' + (e.message || e)); }
@@ -1054,7 +1054,7 @@
       state.resultadoRodada = null;
       render();
       try {
-        const resp = await fetch(`/api/agente-cron?conta_id=${encodeURIComponent(contaId)}`);
+        const resp = await window.glrApiFetch(`/api/agente-cron?conta_id=${encodeURIComponent(contaId)}`);
         const json = await resp.json();
         const r = json.resultados?.[0];
         if (json.skip) {

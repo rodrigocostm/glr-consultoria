@@ -11,6 +11,17 @@ const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true }
 });
 
+// Sends the session only to same-origin application API routes.
+window.glrApiFetch = async function(input, init = {}) {
+  const url = new URL(input, window.location.origin);
+  if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) throw new Error('Destino de API inválido');
+  const { data } = await _sb.auth.getSession();
+  if (!data?.session?.access_token) throw new Error('Sessão expirada. Entre novamente.');
+  const headers = new Headers(init.headers || {});
+  headers.set('Authorization', `Bearer ${data.session.access_token}`);
+  return fetch(url.href, { ...init, headers });
+};
+
 // Chaves gerenciadas pelo sistema
 const GLR_KEYS = [
   'glr_clientes', 'glr_gestores', 'glr_tarefas', 'glr_acoes', 'glr_produtos',
@@ -483,28 +494,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ── Detecta se email é de cliente do portal ───────────────────
 async function _detectarPortalCliente(email) {
-  try {
-    // Forma segura: o banco devolve só a config DESTE usuário (função glr_meu_portal,
-    // supabase-portal-seguranca.sql). Se a função ainda não existir, cai no jeito antigo.
-    const { data: meu, error: eRpc } = await _sb.rpc('glr_meu_portal');
-    // acesso de cliente DESATIVADO não pode cair no fluxo de admin (antes, sem config ativa, entrava como admin)
-    const bloquear = async () => { await _sb.auth.signOut(); mostrarLogin('Este acesso ao portal está desativado. Fale com a GLR Consultoria.'); return { bloqueado: true }; };
-    if (!eRpc) return meu ? (meu.ativo === false ? await bloquear() : meu) : null;
-
-    // Tenta localStorage primeiro
-    let configs = JSON.parse(localStorage.getItem('glr_portal_configs')||'[]');
-
-    // Se não encontrou, busca direto no Supabase (garante dados frescos)
-    if (!configs.length) {
-      const { data } = await _sb.from('glr_storage').select('dados').eq('chave','glr_portal_configs').single();
-      if (data?.dados) {
-        configs = Array.isArray(data.dados) ? data.dados : [];
-        localStorage.setItem('glr_portal_configs', JSON.stringify(configs));
-      }
-    }
-
-    const cfg = configs.find(c => c.email?.toLowerCase() === email?.toLowerCase());
-    if (cfg && cfg.ativo === false) return await bloquear();
-    return cfg || null;
-  } catch { return null; }
+  const { data: access, error } = await _sb.rpc('glr_acesso');
+  if (!error && access?.role === 'staff') return null;
+  if (!error && access?.role === 'portal' && access.portal) return access.portal;
+  await _sb.auth.signOut();
+  GLR_KEYS.forEach(k => localStorage.removeItem(k));
+  mostrarLogin(error ? 'Não foi possível verificar suas permissões. Tente novamente.' : 'Acesso não autorizado ou desativado. Fale com a GLR Consultoria.');
+  return { bloqueado: true };
 }

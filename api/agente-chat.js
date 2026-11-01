@@ -44,12 +44,8 @@ async function mcpCall(apiKey, action, params) {
 // Só usuários logados no sistema da GLR (sessão Supabase) podem usar o chat:
 // ele lê dados de vendas de clientes.
 async function usuarioLogado(req) {
-  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  if (!token) return null;
-  const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` } });
-  if (!r.ok) return null;
-  const u = await r.json().catch(() => null);
-  return u && u.id ? u : null;
+  const identity = await require('./_auth').access(req);
+  return identity?.role === 'staff' ? identity.user : null;
 }
 
 const r2 = v => Math.round((parseFloat(v) || 0) * 100) / 100;

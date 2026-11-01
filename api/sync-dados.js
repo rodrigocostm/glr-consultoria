@@ -36,9 +36,9 @@ const qualidadeAg = require('./_qualidade');
 // pelo horário, então disparo repetido não roda duas vezes).
 async function dispararAgente(req, tipo) {
   try {
-    const host = req.headers['x-forwarded-host'] || req.headers.host || 'consultoriaglr.com.br';
+    const origin = require('./_auth').internalOrigin();
     const headers = process.env.CRON_SECRET ? { Authorization: `Bearer ${process.env.CRON_SECRET}` } : {};
-    const r = await fetch(`https://${host}/api/agente-cron?rodada=${tipo}`, { headers, signal: AbortSignal.timeout(25000) });
+    const r = await fetch(`${origin}/api/agente-cron?rodada=${tipo}`, { headers, signal: AbortSignal.timeout(25000) });
     console.log('[sync-dados] agente', tipo, r.status, await r.text().catch(() => ''));
   } catch (e) { console.warn('[sync-dados] não consegui disparar o agente:', e.message); }
 }

@@ -28,7 +28,7 @@ Router.register('relatorio-semanal', (params, el) => {
   async function gerar(cid) {
     st.gerando = cid || 'todos'; render();
     try {
-      const r = await fetch(`/api/agente-cron?rodada=relatorio&${cid ? `cliente_id=${encodeURIComponent(cid)}` : 'agora=1'}`);
+      const r = await window.glrApiFetch(`/api/agente-cron?rodada=relatorio&${cid ? `cliente_id=${encodeURIComponent(cid)}` : 'agora=1'}`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       if (cid) delete st.editado[cid];

@@ -6,6 +6,8 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  if (!await require('./_auth').requireStaff(req, res)) return;
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ error: 'GEMINI_API_KEY não configurada no servidor.' });
