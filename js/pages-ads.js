@@ -1987,7 +1987,7 @@ REGRAS:
 - TACOS <10% e volume de pedidos bom = tem espaço pra sugerir aumento de orçamento em campanhas eficientes, não só corte.`;
 
   try {
-    const resp = await fetch('/api/chat', {
+    const resp = await window.glrApiFetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ system, messages: [{ role: 'user', content: contexto }] }),
@@ -2135,7 +2135,7 @@ ${_resumoSemanal60d(d.historico60d)}
   _aiHistory.push({ role: 'user', content: texto });
 
   try {
-    const resp = await fetch('/api/chat', {
+    const resp = await window.glrApiFetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

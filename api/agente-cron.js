@@ -488,11 +488,8 @@ async function monitorarConexoes(mcApiKey, simular = false) {
 
 module.exports = async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
-  const auth = req.headers['authorization'];
-  const isVercelCron = !!req.headers['x-vercel-cron'] || !!req.headers['x-vercel-cron-signature'];
-  if (secret && !isVercelCron && auth !== `Bearer ${secret}`) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
+  const isVercelCron = require('./_auth').cronAuthorized(req);
+  if (!isVercelCron && !await require('./_auth').requireStaff(req, res)) return;
 
   const mcApiKey = process.env.MCP_API_KEY;
   if (!mcApiKey) {
@@ -629,7 +626,7 @@ module.exports = async function handler(req, res) {
       // Cada conta do ML vai numa chamada própria (?conta_id=X&fundo=1, com os
       // próprios 300s) — dezenas de contas juntas aqui estourariam o tempo. Sai
       // uma a cada 1,5s para não despejar tudo na Tiops ao mesmo tempo.
-      const base = `https://${req.headers['x-forwarded-host'] || req.headers.host}`;
+      const base = require('./_auth').internalOrigin();
       let filaML = 0;
       const dispararML = cfg => new Promise(ok => setTimeout(ok, 1500 * filaML++))
         .then(() => fetch(`${base}/api/agente-cron?conta_id=${encodeURIComponent(cfg.conta_id)}&fundo=1`, { headers: secret ? { authorization: `Bearer ${secret}` } : {} }))

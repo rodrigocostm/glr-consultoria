@@ -43,7 +43,7 @@ Router.register('conexoes', (params, el) => {
   async function verificarAgora() {
     st.verificando = true; render();
     try {
-      const r = await fetch('/api/agente-cron?rodada=conexoes&agora=1');
+      const r = await window.glrApiFetch('/api/agente-cron?rodada=conexoes&agora=1');
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     } catch (e) { alert('Não consegui verificar agora: ' + (e.message || e)); }

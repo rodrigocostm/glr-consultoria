@@ -21,7 +21,6 @@ language sql stable security definer set search_path = public as $$
   from glr_storage s, jsonb_array_elements(case when jsonb_typeof(s.dados) = 'array' then s.dados else '[]'::jsonb end) c
   where s.chave = 'glr_portal_configs'
     and lower(c->>'email') = lower(auth.jwt()->>'email')
-    and coalesce(c->>'ativo', 'true') <> 'false'
   limit 1;
 $$;
 

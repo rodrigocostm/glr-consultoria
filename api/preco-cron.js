@@ -46,12 +46,8 @@ const R$ = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFracti
 const novoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 module.exports = async function handler(req, res) {
-  const secret = process.env.CRON_SECRET;
-  const auth = req.headers['authorization'];
-  const isVercelCron = !!req.headers['x-vercel-cron'] || !!req.headers['x-vercel-cron-signature'];
-  if (secret && !isVercelCron && auth !== `Bearer ${secret}`) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
+  const isVercelCron = require('./_auth').cronAuthorized(req);
+  if (!isVercelCron) return res.status(401).json({ error: 'unauthorized' });
 
   // VAPID só é necessário pra ENVIAR a notificação — sem ele, o escaneamento e o
   // histórico continuam funcionando normalmente, só o aviso por push que não sai

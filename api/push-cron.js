@@ -40,13 +40,9 @@ async function mcpCall(apiKey, action, params) {
 const R$ = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 
 module.exports = async function handler(req, res) {
-  // Protege o endpoint: só a Vercel Cron (header automático) ou quem tiver o CRON_SECRET
-  const secret = process.env.CRON_SECRET;
-  const auth = req.headers['authorization'];
-  const isVercelCron = !!req.headers['x-vercel-cron'] || !!req.headers['x-vercel-cron-signature'];
-  if (secret && !isVercelCron && auth !== `Bearer ${secret}`) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
+  // Exige o segredo; a presença de cabeçalhos da Vercel não autentica.
+  const isVercelCron = require('./_auth').cronAuthorized(req);
+  if (!isVercelCron) return res.status(401).json({ error: 'unauthorized' });
 
   // VAPID só é necessário pra ENVIAR a notificação — sem ele, a varredura de vendas
   // e a base de dedup (glr_push_vendas_vistas) continuam sendo construídas normalmente,

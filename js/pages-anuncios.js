@@ -14,7 +14,7 @@
   // de simplesmente desistir. Compartilhado pelos 3 marketplaces. ──
   async function sugerirTermosAlternativos(nomeProduto, descricao) {
     try {
-      const resp = await fetch('/api/chat', {
+      const resp = await window.glrApiFetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           system: 'Você ajuda a achar a categoria certa de um produto em marketplaces (Mercado Livre, Shopee, TikTok Shop). Dado o nome e a descrição de um produto, devolva APENAS um JSON válido, sem markdown e sem texto fora do JSON, neste formato exato: {"termos": ["termo 1", "termo 2", "termo 3"]}. Cada termo é uma frase curta de 2 a 4 palavras descrevendo o TIPO do produto (categoria geral, material, função) — nunca o nome comercial, marca ou nome de fantasia. Exemplo: pro produto "Buffet Alaska", um bom termo é "buffet aparador madeira" ou "móveis sala de estar", nunca "Buffet Alaska". Ordene do termo mais específico pro mais genérico.',
@@ -153,7 +153,7 @@
       state.iaCarregando = true;
       render();
       try {
-        const resp = await fetch('/api/analyze-photo', {
+        const resp = await window.glrApiFetch('/api/analyze-photo', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_base64: state.fotoRefBase64 }),
         });
@@ -180,7 +180,7 @@
       state.gerandoFoto = true;
       render();
       try {
-        const resp = await fetch('/api/generate-photo', {
+        const resp = await window.glrApiFetch('/api/generate-photo', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_base64: state.fotoRefBase64, product_name: state.titulo, details: state.descricao, stage: 'ambientada' }),
         });
@@ -824,7 +824,7 @@
       state.iaCarregando = true;
       render();
       try {
-        const resp = await fetch('/api/analyze-photo', {
+        const resp = await window.glrApiFetch('/api/analyze-photo', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_base64: state.fotoRefBase64 }),
         });
@@ -851,7 +851,7 @@
       state.gerandoFoto = true;
       render();
       try {
-        const resp = await fetch('/api/generate-photo', {
+        const resp = await window.glrApiFetch('/api/generate-photo', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_base64: state.fotoRefBase64, product_name: state.nomeProduto, details: state.descricao, stage: 'ambientada' }),
         });
@@ -1492,7 +1492,7 @@
       state.iaCarregando = true;
       render();
       try {
-        const resp = await fetch('/api/analyze-photo', {
+        const resp = await window.glrApiFetch('/api/analyze-photo', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_base64: state.fotoRefBase64 }),
         });
@@ -1517,7 +1517,7 @@
       state.gerandoFoto = true;
       render();
       try {
-        const resp = await fetch('/api/generate-photo', {
+        const resp = await window.glrApiFetch('/api/generate-photo', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_base64: state.fotoRefBase64, product_name: state.nomeProduto, details: state.descricao, stage: 'ambientada' }),
         });

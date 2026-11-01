@@ -9,11 +9,9 @@
 //    vinculadas a ele: a lista de contas volta filtrada e toda ação precisa
 //    dizer a conta (meliUserId/shopId/...) — sem conta, o Tiops usaria a conta
 //    "atual" da GLR, então é recusada;
-//  • equipe GLR (logado e fora da lista do portal) segue sem restrição de conta.
+//  • equipe GLR precisa de cadastro explícito em glr_staff.
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
-// Chave pública (anon) do projeto — a mesma que vai no front; só serve para validar o token
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyb2RxbGVqcXlhb29tdXRyaWl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjU5NjUsImV4cCI6MjA5NjQ0MTk2NX0.JaKQHoGH8S3ZdLQInLErpC21SZ0j4FmIGtvWKcBes-A';
 
 const ALLOWED_ACTIONS = new Set([
   'list_accounts','credits_status',
@@ -36,26 +34,6 @@ const BLOQUEADAS_PORTAL = /^(credits_status|ai_credits_status|me|raw_write|marke
 const CATALOGO_LIVRE = new Set(['search_categories', 'ml_site_categories', 'ml_category_detail', 'category_attributes', 'ml_catalog_domain_categories', 'ml_category_sale_terms', 'ml_listing_fees', 'ml_lookup_ncm', 'tiktok_get_categories', 'tiktok_category_rules', 'tiktok_get_category_attributes', 'tiktok_recommend_category']);
 
 const CAMPOS_CONTA = ['meliUserId', 'meli_user_id', 'account_id', 'shopId', 'shop_id', 'seller_id', 'amazon_account_id', 'magalu_account_id'];
-
-async function usuarioDoToken(token) {
-  if (!token) return null;
-  const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${token}` } });
-  if (!r.ok) return null;
-  const u = await r.json();
-  return u?.email ? u : null;
-}
-
-let _cfgCache = { em: 0, lista: [] };
-async function configsPortal() {
-  if (Date.now() - _cfgCache.em < 60000) return _cfgCache.lista;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY não configurada');
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?chave=eq.glr_portal_configs&select=dados`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
-  const rows = r.ok ? await r.json() : [];
-  const lista = Array.isArray(rows[0]?.dados) ? rows[0].dados : [];
-  _cfgCache = { em: Date.now(), lista };
-  return lista;
-}
 
 // Medidor de consumo da cota (api/_consumo.js): as telas também gastam ações da
 // Tiops. Conta em memória e grava no máximo 1x por minuto por instância.
@@ -139,31 +117,22 @@ module.exports = async function handler(req, res) {
   const { action, params } = req.body || {};
   if (!action) return res.status(400).json({ error: 'action obrigatória' });
 
-  // 1) Login obrigatório
-  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  let usuario;
-  try { usuario = await usuarioDoToken(token); } catch (e) { usuario = null; }
-  if (!usuario) return res.status(401).json({ error: 'Faça login novamente para continuar.' });
-
-  // Equipe GLR usa a chave direto no próprio navegador; aqui ela só tem o conjunto antigo
-  // 2) Cliente do portal: só as contas dele
-  let contasPermitidas = null; // null = equipe GLR, sem restrição
-  try {
-    const cfg = (await configsPortal()).find(c => String(c.email || '').toLowerCase() === usuario.email.toLowerCase() && c.ativo !== false);
-    if (cfg) contasPermitidas = new Set((cfg.contaIds || []).map(String));
-  } catch (e) { return res.status(500).json({ error: 'Não consegui conferir o acesso: ' + e.message }); }
+  let identity;
+  try { identity = await require('./_auth').access(req); }
+  catch { return res.status(503).json({ error: 'Não foi possível verificar as permissões.' }); }
+  if (!identity) return res.status(401).json({ error: 'Faça login para continuar.' });
+  if (!['staff', 'portal'].includes(identity.role)) return res.status(403).json({ error: 'Acesso não autorizado.' });
+  const contasPermitidas = identity.role === 'portal' ? new Set((identity.portal?.contaIds || []).map(String)) : null;
 
   if (!contasPermitidas && !ALLOWED_ACTIONS.has(action)) return res.status(403).json({ error: `Ação '${action}' não permitida via proxy` });
   const p = params || {};
   if (contasPermitidas) {
-    // Cliente do portal: qualquer ação da PRÓPRIA conta (promoções, anúncios,
-    // financeiro, conciliação), menos as administrativas da GLR
-    if (BLOQUEADAS_PORTAL.test(action)) return res.status(403).json({ error: 'Ação não disponível no portal' });
+    // Portal: apenas consultas explicitamente permitidas e custo validado.
+    if ((!ALLOWED_ACTIONS.has(action) && action !== 'glr_portal_salvar_custo' && !CATALOGO_LIVRE.has(action)) || action === 'raw' || BLOQUEADAS_PORTAL.test(action)) return res.status(403).json({ error: 'Ação não disponível no portal' });
     if (action !== 'list_accounts' && !CATALOGO_LIVRE.has(action)) {
       const contas = CAMPOS_CONTA.map(k => p[k]).filter(v => v != null && v !== '').map(String);
       if (!contas.length) return res.status(403).json({ error: 'Informe a conta da consulta' });
       if (contas.some(c => !contasPermitidas.has(c))) return res.status(403).json({ error: 'Conta não vinculada ao seu acesso' });
-      if (action === 'raw' && String(p.method || 'GET').toUpperCase() !== 'GET') return res.status(403).json({ error: 'Somente leitura' });
     }
   }
 

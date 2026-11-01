@@ -154,7 +154,7 @@ Router.register('agente-ml', (params, el) => {
     const id = state.aberta; if (!id) return;
     state.analisando = true; render();
     try {
-      const r = await fetch(`/api/agente-cron?conta_id=${encodeURIComponent(id)}`);
+      const r = await window.glrApiFetch(`/api/agente-cron?conta_id=${encodeURIComponent(id)}`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     } catch (e) { alert('Não consegui analisar agora: ' + (e.message || e)); }

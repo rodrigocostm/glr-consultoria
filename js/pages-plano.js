@@ -355,7 +355,7 @@ Router.register('plano-acao', (params, el) => {
     st.gerando = true; st.metaEd = null; render();
     try {
       const q = `&meta=${encodeURIComponent(fat > 0 ? fat : '')}&meta_pedidos=${encodeURIComponent(ped > 0 ? Math.round(ped) : '')}&meta_tacos=${encodeURIComponent(tac > 0 ? Math.round(tac * 10) / 10 : '')}`;
-      const r = await fetch(`/api/agente-cron?rodada=gerente&cliente_id=${encodeURIComponent(cid)}${q}`);
+      const r = await window.glrApiFetch(`/api/agente-cron?rodada=gerente&cliente_id=${encodeURIComponent(cid)}${q}`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     } catch (e) { alert('Meta salva, mas não consegui recalcular o caminho agora: ' + (e.message || e)); }
@@ -364,7 +364,7 @@ Router.register('plano-acao', (params, el) => {
   window._plGerar = async cid => {
     st.gerando = true; render();
     try {
-      const r = await fetch(`/api/agente-cron?rodada=gerente&cliente_id=${encodeURIComponent(cid)}`);
+      const r = await window.glrApiFetch(`/api/agente-cron?rodada=gerente&cliente_id=${encodeURIComponent(cid)}`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     } catch (e) { alert('Não consegui gerar o plano agora: ' + (e.message || e)); }
