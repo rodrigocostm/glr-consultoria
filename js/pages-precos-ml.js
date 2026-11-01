@@ -14,8 +14,15 @@
 // preço (ml_listing_fees) − frete exato do vendedor (shipping_options/free) −
 // custo (catálogo de Vendas) − imposto da conta − despesas extras − ADS %.
 // ============================================================
-Router.register('precos-ml', (params, el) => {
-  const R$ = v => v == null || isNaN(v) ? '—' : 'R$ ' + (+v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+//
+// Shopee (rota 'precos-shopee', mesma tela): fotos de preço do mesmo jeito
+// (api/sync-dados.js atualizarPrecosShopee); margem = preço × o que a loja recebe
+// de fato nos pedidos (razão líquido ÷ venda medida pelo agente de Estoque/Margem,
+// glr_sync_estado recurso 'sinais') − custo − imposto − despesas extras − ADS %.
+// ============================================================
+function monitorPrecos(mkt) { return (params, el) => {
+  const SH = mkt === 'shopee', NOME_MKT = SH ? 'Shopee' : 'ML', SUF = SH ? '_sh' : '';
+  const R$ =v => v == null || isNaN(v) ? '—' : 'R$ ' + (+v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const pct = (v, c = 1) => v == null || !isFinite(v) ? '—' : (+v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c }) + '%';
   const h = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const lerJSON = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v ?? d; } catch (e) { return d; } };
@@ -26,25 +33,29 @@ Router.register('precos-ml', (params, el) => {
   const POR_PAGINA = 25;
 
   const st = {
-    contas: [], conta: lerJSON('glr_pml_conta', '') || '', periodo: lerJSON('glr_pml_periodo', 30) || 30, filtro: 'todos', busca: '', pagina: 0,
+    contas: [], conta: lerJSON('glr_pml_conta' + SUF, '') || '', periodo: lerJSON('glr_pml_periodo' + SUF, 30) || 30, sinais: {}, filtro: 'todos', busca: '', pagina: 0,
     cur: null, curEm: null, vendas: {}, agora: {}, info: {}, calc: {}, carregando: false, verificando: false, progresso: '', erro: null,
   };
 
   // ── API com retentativa ──
   async function tentar(fn, n = 3) { for (let i = 0; ; i++) { try { return await fn(); } catch (e) { if (i >= n - 1) throw e; await new Promise(r => setTimeout(r, 800 * (i + 1))); } } }
   const D = r => (r && r.data && typeof r.data === 'object' && r.status != null) ? r.data : r;
-  const call = (a, p) => tentar(() => MarketplaceAPI.call(a, { meliUserId: st.conta, ...p })).then(D);
+  const call = (a, p) => tentar(() => MarketplaceAPI.call(a, { ...(SH ? { shopId: st.conta } : { meliUserId: st.conta }), ...p })).then(D);
 
   // ── Carga: fotos de preço (servidor) + vendas dos últimos 60 dias ──
   async function carregar() {
     if (!st.conta) return;
-    st.carregando = true; st.erro = null; st.cur = null; st.vendas = {}; st.agora = {}; st.calc = {}; st.pagina = 0; render();
+    st.carregando = true; st.erro = null; st.cur = null; st.sinais = {}; st.vendas = {}; st.agora = {}; st.calc = {}; st.pagina = 0; render();
     try {
-      const { data: est } = await _sb.from('glr_sync_estado').select('cursor,ultimo_sucesso').eq('marketplace', 'ml').eq('conta_id', st.conta).eq('recurso', 'precos').maybeSingle();
+      const { data: est } = await _sb.from('glr_sync_estado').select('cursor,ultimo_sucesso').eq('marketplace', mkt).eq('conta_id', st.conta).eq('recurso', 'precos').maybeSingle();
       st.cur = est?.cursor?.itens || null; st.curEm = est?.cursor?.em || null;
+      if (SH) { // o que a loja recebe por real vendido, medido nos pedidos (agente de Estoque/Margem)
+        const { data: sin } = await _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'shopee').eq('conta_id', st.conta).eq('recurso', 'sinais').maybeSingle();
+        st.sinais = sin?.cursor?.itens || {};
+      }
       const desde = new Date(Date.now() - 60 * DIA).toISOString();
       for (let off = 0; off < 100000; off += 1000) {
-        const { data, error } = await _sb.from('glr_pedidos').select('criado_em,itens').eq('marketplace', 'ml').eq('conta_id', st.conta)
+        const { data, error } = await _sb.from('glr_pedidos').select('criado_em,itens').eq('marketplace', mkt).eq('conta_id', st.conta)
           .eq('situacao', 'valido').gte('criado_em', desde).order('criado_em').order('pedido_id').range(off, off + 999);
         if (error) throw error;
         for (const p of (data || [])) {
@@ -104,11 +115,20 @@ Router.register('precos-ml', (params, el) => {
   // ── Dados do anúncio (categoria, tipo, frete, foto) ──
   function infoDe(id) {
     const c = st.cur?.[id];
-    if (c) return { id, titulo: c.t, cat: c.c, tipo: c.l, me: !!c.me, foto: c.th };
+    if (c) return { id, titulo: c.t, cat: c.c, tipo: c.l, me: !!c.me, foto: c.th, po: c.po, px: c.px };
     return st.info[id] || null;
   }
   async function buscarInfo(ids) {
     const falta = ids.filter(id => !infoDe(id));
+    if (SH) {
+      for (let i = 0; i < falta.length; i += 50) {
+        try {
+          const r = await call('shopee_get_items_batch', { item_id_list: falta.slice(i, i + 50).map(Number) });
+          for (const b of (r?.response?.item_list || r?.data?.response?.item_list || [])) st.info[String(b.item_id)] = { id: String(b.item_id), titulo: b.item_name, foto: b.image?.image_url_list?.[0] || '' };
+        } catch (e) { /* segue sem */ }
+      }
+      return;
+    }
     for (let i = 0; i < falta.length; i += 20) {
       try {
         const r = await call('get_items', { ids: falta.slice(i, i + 20) });
@@ -145,8 +165,16 @@ Router.register('precos-ml', (params, el) => {
     const ads = parseFloat(lerJSON('glr_promo_ads_pct', {})[st.conta]) || 0;
     return { aliq, extraPct, extraFixo, ads };
   }
-  const custoDe = id => { const v = parseFloat(lerJSON('glr_vendas_custo_catalogo', {})[id]); return v > 0 ? v : null; };
+  const custoDe = id => { const cat = lerJSON('glr_vendas_custo_catalogo', {}); const v = parseFloat(cat[id]) || (SH ? parseFloat(cat[infoDe(id)?.titulo || st.vendas[id]?.nome]) : 0); return v > 0 ? v : null; };
   async function margem(it, preco) {
+    if (SH) { // Shopee: comissão + taxa de serviço + frete saem da razão medida nas vendas do anúncio (ou da loja)
+      const rz = st.sinais?.[it.id]?.rz;
+      if (rz == null) throw new Error('sem vendas suficientes para medir as taxas da Shopee');
+      const tarifa = preco * (1 - rz), d = despesas(), custo = custoDe(it.id);
+      if (custo == null) return { tarifa, frete: 0, lucro: null, margem: null };
+      const lucro = preco * rz - custo - preco * (d.aliq + d.extraPct + d.ads) / 100 - d.extraFixo;
+      return { tarifa, frete: 0, lucro, margem: lucro / preco * 100 };
+    }
     const [tx, fr] = await Promise.all([taxa(it, preco), frete(it, preco)]);
     const tarifa = preco * tx.pct / 100 + tx.fixo, d = despesas(), custo = custoDe(it.id);
     if (custo == null) return { tarifa, frete: fr, lucro: null, margem: null };
@@ -163,7 +191,7 @@ Router.register('precos-ml', (params, el) => {
     await Promise.all(Array.from({ length: 4 }, async () => {
       while (fila.length) {
         const m = fila.shift(), it = infoDe(m.id), k = m.id + '|' + m.antes + '|' + m.agora;
-        if (!it?.cat) { st.calc[k] = { erro: 'sem dados do anúncio' }; continue; }
+        if (!it || (!SH && !it.cat)) { st.calc[k] = { erro: 'sem dados do anúncio' }; continue; }
         try { const [a, b] = await Promise.all([margem(it, m.antes), margem(it, m.agora)]); st.calc[k] = { a, b }; }
         catch (e) { st.calc[k] = { erro: e.message }; }
         render();
@@ -188,7 +216,30 @@ Router.register('precos-ml', (params, el) => {
 
   // ── Ver preços agora (sem esperar a próxima foto) ──
   async function verAgora() {
-    st.verificando = true; st.progresso = 'conferindo preços no ML…'; render();
+    st.verificando = true; st.progresso = `conferindo preços na ${SH ? 'Shopee' : 'ML'}…`; render();
+    if (SH) {
+      try {
+        const ids = [];
+        for (let off = 0; off < 20000; ) {
+          const r = await call('shopee_list_items', { item_status: 'NORMAL', offset: off, page_size: 100 });
+          const d = r?.response || r?.data?.response || {};
+          (d.item || []).forEach(x => ids.push(Number(x.item_id)));
+          if (!d.has_next_page || !(d.item || []).length) break;
+          off = d.next_offset || off + 100;
+        }
+        for (let i = 0; i < ids.length; i += 50) {
+          const r = await call('shopee_get_items_batch', { item_id_list: ids.slice(i, i + 50) });
+          for (const b of (r?.response?.item_list || r?.data?.response?.item_list || [])) {
+            const pi = b.price_info?.[0] || (b.models || []).map(m => m.price_info?.[0]).filter(Boolean).sort((a, c) => a.current_price - c.current_price)[0] || {};
+            const v = parseFloat(pi.current_price ?? b.price_min);
+            if (v > 0) st.agora[String(b.item_id)] = Math.round(v * 100) / 100;
+          }
+          st.progresso = `conferindo ${Math.min(i + 50, ids.length)}/${ids.length}…`; render();
+        }
+      } catch (e) { st.erro = 'Não consegui conferir os preços agora: ' + e.message; }
+      st.verificando = false; st.progresso = ''; render();
+      return;
+    }
     try {
       const guardar = r => { (r?.results || []).forEach(e => { const b = e?.body || e; if (b?.id && b.price != null) st.agora[b.id] = Math.round(b.price * 100) / 100; }); };
       const p1 = await call('list_items', { status: 'active', limit: 100, offset: 0 }); guardar(p1);
@@ -202,7 +253,7 @@ Router.register('precos-ml', (params, el) => {
   // ── Tela ──
   function render() {
     const root = document.getElementById('pml-root'); if (!root) return;
-    if (!st.contas.length) { root.innerHTML = `<div class="card pml-vazio">${st.erro ? '⚠️ ' + h(st.erro) : '⏳ Carregando contas do Mercado Livre…'}</div>`; return; }
+    if (!st.contas.length) { root.innerHTML = `<div class="card pml-vazio">${st.erro ? '⚠️ ' + h(st.erro) : `⏳ Carregando contas ${SH ? 'da Shopee' : 'do Mercado Livre'}…`}</div>`; return; }
     const todas = mudancas();
     const q = st.busca.toLowerCase();
     const com = todas.map(m => ({ m, c: st.calc[m.id + '|' + m.antes + '|' + m.agora] }));
@@ -228,8 +279,8 @@ Router.register('precos-ml', (params, el) => {
       return `<tr>
         <td><div class="pml-prod">${it.foto ? `<img src="${h(it.foto)}" alt="" loading="lazy">` : '<span class="pml-img"></span>'}<div style="min-width:0">
           <div class="pml-tit" title="${h(it.titulo)}">${h(it.titulo)}</div>
-          <div class="pml-mut"><a href="https://produto.mercadolivre.com.br/${h(String(m.id).replace(/^MLB(?=\d)/, 'MLB-'))}" target="_blank" rel="noopener">${h(m.id)}</a>${custo ? ` · custo ${R$(custo)}` : ''}</div></div></div></td>
-        <td class="n">${R$(m.antes)} → <b>${R$(m.agora)}</b><div>${varTxt(m.antes, m.agora)}</div></td>
+          <div class="pml-mut"><a href="${SH ? `https://shopee.com.br/product/${h(st.conta)}/${h(m.id)}` : `https://produto.mercadolivre.com.br/${h(String(m.id).replace(/^MLB(?=\d)/, 'MLB-'))}`}" target="_blank" rel="noopener">${h(m.id)}</a>${custo ? ` · custo ${R$(custo)}` : ''}</div></div></div></td>
+        <td class="n">${R$(m.antes)} → <b>${R$(m.agora)}</b><div>${varTxt(m.antes, m.agora)}</div>${it.po > m.agora + 0.01 && m.fonte !== 'vendas' ? `<div class="pml-mut">desconto da loja · cheio ${R$(it.po)}</div>` : ''}${it.px ? `<div class="pml-mut">variações até ${R$(it.px)}</div>` : ''}</td>
         <td class="n">${m.fonte === 'agora' ? 'agora' : dataBR(m.quando)}<div class="pml-mut">${m.fonte === 'vendas' ? 'pelas vendas' : m.fonte === 'agora' ? 'conferido agora' : 'no anúncio'}</div></td>
         <td class="n">${margemCel}</td>
         <td class="n">${c?.b?.lucro != null ? `${R$(c.a.lucro)} → <b>${R$(c.b.lucro)}</b>` : '—'}</td>
@@ -240,11 +291,11 @@ Router.register('precos-ml', (params, el) => {
       <div class="pml-topo">
         <select class="pml-sel" onchange="window._pmlConta(this.value)">${st.contas.map(c => `<option value="${h(c.id)}" ${c.id === st.conta ? 'selected' : ''}>${h(c.nome)}</option>`).join('')}</select>
         <select class="pml-sel" onchange="window._pmlPeriodo(this.value)">${[7, 15, 30, 60].map(d => `<option value="${d}" ${+st.periodo === d ? 'selected' : ''}>Mudanças dos últimos ${d} dias</option>`).join('')}</select>
-        <input class="pml-sel" style="min-width:220px" placeholder="Buscar produto ou MLB…" value="${h(st.busca)}" oninput="window._pmlBusca(this.value)">
+        <input class="pml-sel" style="min-width:220px" placeholder="Buscar produto ou ${SH ? 'código' : 'MLB'}…" value="${h(st.busca)}" oninput="window._pmlBusca(this.value)">
         <span style="flex:1"></span>
         <button class="btn btn-secondary btn-sm" ${st.verificando || st.carregando ? 'disabled' : ''} onclick="window._pmlAgora()">${st.verificando ? '⏳ ' + h(st.progresso) : 'Ver preços agora'}</button>
       </div>
-      <div class="pml-mut" style="margin-bottom:10px">${h(fotoTxt)} · margem com tarifa e frete exatos do ML em cada preço, custo do produto, imposto${despesas().ads ? `, ADS ${pct(despesas().ads)}` : ''} e despesas de Vendas</div>
+      <div class="pml-mut" style="margin-bottom:10px">${h(fotoTxt)} · margem com ${SH ? 'o que a loja recebe de fato nas vendas (comissão, taxa de serviço e frete da Shopee medidos nos pedidos)' : 'tarifa e frete exatos do ML em cada preço'}, custo do produto, imposto${despesas().ads ? `, ADS ${pct(despesas().ads)}` : ''} e despesas de Vendas</div>
       ${st.erro ? `<div class="pml-erro">⚠️ ${h(st.erro)}</div>` : ''}
       <div class="pml-chips">${chip('todos', 'Mudaram de preço')}${chip('caiu', '▼ Margem caiu')}${chip('subiu', '▲ Margem subiu')}${chip('semcusto', 'Sem custo')}</div>
       <div class="card" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table class="pml-tab">
@@ -257,8 +308,8 @@ Router.register('precos-ml', (params, el) => {
 
   // ── Ações ──
   const salvar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
-  window._pmlConta = v => { st.conta = v; salvar('glr_pml_conta', v); carregar(); };
-  window._pmlPeriodo = v => { st.periodo = +v; st.pagina = 0; salvar('glr_pml_periodo', +v); render(); };
+  window._pmlConta = v => { st.conta = v; salvar('glr_pml_conta' + SUF, v); carregar(); };
+  window._pmlPeriodo = v => { st.periodo = +v; st.pagina = 0; salvar('glr_pml_periodo' + SUF, +v); render(); };
   window._pmlFiltro = k => { st.filtro = k; st.pagina = 0; render(); };
   window._pmlPagina = d => { st.pagina += d; render(); };
   window._pmlAgora = () => verAgora();
@@ -272,7 +323,7 @@ Router.register('precos-ml', (params, el) => {
   };
 
   el.innerHTML = `<div class="page">
-    <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;color:var(--text-primary);margin-bottom:4px">Monitor de preços ML</div>
+    <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;color:var(--text-primary);margin-bottom:4px">Monitor de preços ${NOME_MKT}</div>
     <div class="pml-mut" style="margin-bottom:16px;max-width:920px">Os anúncios que mudaram de preço na conta, e o efeito disso: margem antes × agora (subiu ou caiu) e vendas por dia antes × depois.</div>
     <div id="pml-root"></div>
   </div>
@@ -304,13 +355,15 @@ Router.register('precos-ml', (params, el) => {
   (async () => {
     try {
       const lista = await MarketplaceAPI.listAccounts();
-      st.contas = (lista || []).filter(c => ['meli', 'ml', 'mercadolivre'].includes(String(c.marketplace).toLowerCase())).map(c => ({
-        id: String(c.param_to_use?.meliUserId || c.external_id), nome: GLR.nomeConta('ml', c.param_to_use?.meliUserId || c.external_id),
-      })).sort((a, b) => a.nome.localeCompare(b.nome));
-      GLR.quandoClientes(() => { st.contas.forEach(c => { c.nome = GLR.nomeConta('ml', c.id); }); render(); });
-      if (!st.contas.length) { st.erro = 'Nenhuma conta do Mercado Livre conectada.'; render(); return; }
+      const doMkt = c => SH ? String(c.marketplace).toLowerCase() === 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(String(c.marketplace).toLowerCase());
+      st.contas = (lista || []).filter(doMkt).map(c => { const id = String((SH ? c.param_to_use?.shopId : c.param_to_use?.meliUserId) || c.external_id); return { id, nome: GLR.nomeConta(mkt, id) }; })
+        .sort((a, b) => a.nome.localeCompare(b.nome));
+      GLR.quandoClientes(() => { st.contas.forEach(c => { c.nome = GLR.nomeConta(mkt, c.id); }); render(); });
+      if (!st.contas.length) { st.erro = `Nenhuma conta ${SH ? 'da Shopee' : 'do Mercado Livre'} conectada.`; render(); return; }
       if (!st.contas.some(c => c.id === st.conta)) st.conta = st.contas[0].id;
       carregar();
     } catch (e) { st.erro = 'Não consegui listar as contas: ' + e.message; render(); }
   })();
-});
+}; }
+Router.register('precos-ml', monitorPrecos('ml'));
+Router.register('precos-shopee', monitorPrecos('shopee'));

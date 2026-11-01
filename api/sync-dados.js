@@ -949,6 +949,42 @@ async function atualizarPrecosML(apiKey, contaId, prazo) {
   return { em: Date.now(), itens };
 }
 
+// ── Monitor de preços da Shopee ── mesma "foto" a cada 4 h, no mesmo formato do ML
+// (recurso 'precos'): lista os anúncios ativos (shopee_list_items, 100 por página) e lê o
+// preço em lotes de 50 (shopee_get_items_batch). Anúncio com variações: guarda o menor
+// preço entre elas (o que aparece na busca) e o maior em `px`. `po` = preço original
+// (sem desconto da loja), para a tela mostrar quando a mudança veio de promoção.
+async function atualizarPrecosShopee(apiKey, contaId, prazo) {
+  const ant = (await sbSelect('glr_sync_estado', `marketplace=eq.shopee&conta_id=eq.${contaId}&recurso=eq.precos&select=cursor`).catch(() => []))[0]?.cursor || {};
+  const itensAnt = ant.itens || {};
+  const t = agora(), itens = {}, ids = [];
+  for (let off = 0; off < 20000; ) {
+    if (Date.now() > prazo) return null; // não terminou: tenta na próxima rodada (não grava foto pela metade)
+    const r = await comRetry(() => mcpCall(apiKey, 'shopee_list_items', { shopId: contaId, item_status: 'NORMAL', offset: off, page_size: 100 }));
+    const d = r.data?.response || r.response || {};
+    (d.item || []).forEach(x => { if (x.item_id) ids.push(Number(x.item_id)); });
+    if (!d.has_next_page || !(d.item || []).length) break;
+    off = d.next_offset || off + 100;
+  }
+  for (let i = 0; i < ids.length; i += 50) {
+    if (Date.now() > prazo) return null;
+    const r = await comRetry(() => mcpCall(apiKey, 'shopee_get_items_batch', { shopId: contaId, item_id_list: ids.slice(i, i + 50) }));
+    for (const b of (r.data?.response?.item_list || r.response?.item_list || [])) {
+      const precos = (b.models || []).map(m => m.price_info?.[0]).filter(Boolean);
+      const pi = b.price_info?.[0] || precos.slice().sort((a, c) => a.current_price - c.current_price)[0] || {};
+      const atual = parseFloat(pi.current_price ?? b.price_min);
+      if (!b.item_id || !(atual > 0)) continue;
+      const p = r2(atual), id = String(b.item_id), velho = itensAnt[id];
+      const h = Array.isArray(velho?.h) ? velho.h.slice(-19) : [];
+      if (!h.length || Math.abs(h[h.length - 1][1] - p) >= 0.01) h.push([t, p]);
+      const max = precos.length ? Math.max(...precos.map(x => parseFloat(x.current_price) || 0)) : null;
+      itens[id] = { t: String(b.item_name || '').slice(0, 90), p, po: r2(parseFloat(pi.original_price) || p), px: max && max > p ? r2(max) : null,
+        th: b.image?.image_url_list?.[0] || '', h };
+    }
+  }
+  return { em: Date.now(), itens };
+}
+
 const ADAPTADORES = {
   shopee: {
     // Por data de ATUALIZAÇÃO: venda nova, cancelamento e devolução de qualquer data.
@@ -1101,12 +1137,13 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo) {
       await salvarEstado(mkt, shopId, 'ads', { ultimo_erro: String(e.message || e).slice(0, 500) }).catch(() => {});
     }
   }
-  // Monitor de preços do ML — foto dos preços a cada 4 h, registrando o que mudou
-  if (mkt === 'ml' && Date.now() - (estadoAtual?.precosEm || 0) > PRECOS_A_CADA_MS && Date.now() < prazo - 30000) {
+  // Monitor de preços (ML e Shopee) — foto dos preços a cada 4 h, registrando o que mudou
+  if ((mkt === 'ml' || mkt === 'shopee') && Date.now() - (estadoAtual?.precosEm || 0) > PRECOS_A_CADA_MS && Date.now() < prazo - 30000) {
     try {
-      const cur = await atualizarPrecosML(apiKey, shopId, Math.min(prazo - 15000, Date.now() + 45000));
-      if (cur) await salvarEstado('ml', shopId, 'precos', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: Object.keys(cur.itens).length, cursor: cur });
-    } catch (e) { await salvarEstado('ml', shopId, 'precos', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
+      const fotografar = mkt === 'ml' ? atualizarPrecosML : atualizarPrecosShopee;
+      const cur = await fotografar(apiKey, shopId, Math.min(prazo - 15000, Date.now() + 45000));
+      if (cur) await salvarEstado(mkt, shopId, 'precos', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: Object.keys(cur.itens).length, cursor: cur });
+    } catch (e) { await salvarEstado(mkt, shopId, 'precos', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
   }
   // Oportunidades de ADS — 1x por dia por loja, depois das 06:00 (Brasília), se sobrar tempo
   const horaOp = new Date((t - 3 * 3600) * SEG).getUTCHours();
