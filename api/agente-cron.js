@@ -425,6 +425,64 @@ async function monitorarSaldoShopee(mcApiKey, simular = false) {
   return { lojas: lojas.length, zerado: cont('zerado'), critico: cont('critico'), baixo: cont('baixo'), avisos: saida.length, erros: Object.values(novo).filter(x => x.erro).length };
 }
 
+// ── Saúde das conexões (?rodada=conexoes — de hora em hora, junto do saldo) ──
+// Junta, por conta de todos os marketplaces: a lista de contas da Tiops (conectada,
+// vencimento), o motor de dados (glr_sync_estado recurso 'pedidos': último sucesso e
+// último erro — ele tenta cada conta a cada 15 min) e, na Shopee, o erro de Ads do
+// monitor de saldo. Traduz o erro para "o que fazer" e avisa no celular quando uma
+// conta cai ou volta. Estado em glr_sync_estado (sistema / conexoes / todas); a tela
+// Saúde das conexões e a Caixa de decisões leem dali.
+const MKT_TODOS = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : m === 'amazon' ? 'amazon' : ['tiktok', 'tiktok_shop', 'tiktokshop'].includes(m) ? 'tiktok' : m === 'magalu' ? 'magalu' : m === 'shein' ? 'shein' : null; };
+const NOME_MKT = { shopee: 'Shopee', ml: 'Mercado Livre', amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' };
+function problemaConexao(erro) {
+  const e = String(erro || '');
+  if (/refresh_token|token.*expir|expired|invalid_grant|reconect/i.test(e)) return 'A conexão expirou. Reconecte a conta na Tiops.';
+  if (/no linked|não vinculad|nao vinculad|unlinked/i.test(e)) return 'A loja foi desvinculada da Tiops. Reconecte a conta.';
+  if (/módulo "Ads"|modulo "Ads"|Ads"/i.test(e)) return 'A loja não liberou a permissão de Anúncios (Ads). Reconecte dando essa permissão.';
+  if (/105005|não está disponível na integração|nao esta disponivel/i.test(e)) return 'A loja não liberou a permissão de pedidos. Reconecte dando todas as permissões.';
+  if (/não encontrada|nao encontrada|not found/i.test(e)) return 'A Tiops não encontra mais esta conta. Reconecte a conta na Tiops.';
+  if (/plano cobre|upgrade/i.test(e)) return 'Limite de contas do plano da Tiops.';
+  if (/401|403|unauthori|forbidden|permiss/i.test(e)) return 'A Tiops recusou o acesso. Reconecte a conta.';
+  return 'Erro ao buscar os pedidos. Se continuar, reconecte a conta ou abra um chamado na Tiops.';
+}
+async function monitorarConexoes(mcApiKey, simular = false) {
+  const r = await mcpCall(mcApiKey, 'list_accounts', {});
+  const contas = (r.data?.accounts || r.accounts || []).map(c => {
+    const mkt = MKT_TODOS(c.marketplace), p = c.param_to_use || {};
+    return mkt && { mkt, id: String(p.shopId || p.meliUserId || p.amazon_account_id || p.magalu_account_id || p.shein_supplier_id || c.external_id), nome: (c.tags || []).find(t => t && t.name)?.name || c.nickname || c.label || String(c.external_id), conectada: c.connected !== false, vence: c.expires_at || null };
+  }).filter(Boolean);
+  const ped = await sbSelect('glr_sync_estado', 'recurso=eq.pedidos&select=marketplace,conta_id,ultimo_sucesso,ultimo_erro,ultima_tentativa').catch(() => []);
+  const porPed = new Map(ped.map(x => [`${x.marketplace}:${x.conta_id}`, x]));
+  const saldo = (await sbSelect('glr_sync_estado', 'marketplace=eq.sistema&conta_id=eq.saldo_ads&recurso=eq.shopee&select=cursor').catch(() => []))[0]?.cursor?.lojas || {};
+  const ant = (await sbSelect('glr_sync_estado', 'marketplace=eq.sistema&conta_id=eq.conexoes&recurso=eq.todas&select=cursor').catch(() => []))[0]?.cursor?.contas || {};
+  const agoraMs = Date.now(), H = 3600e3, agoraIso = new Date().toISOString();
+  const novo = {}, caiu = [], voltou = [];
+  for (const c of contas) {
+    const k = `${c.mkt}:${c.id}`, p = porPed.get(k), a = ant[k] || {};
+    const sucessoMs = p?.ultimo_sucesso ? Date.parse(p.ultimo_sucesso) : 0, tentativaMs = p?.ultima_tentativa ? Date.parse(p.ultima_tentativa) : 0;
+    const adsErro = c.mkt === 'shopee' && saldo[c.id]?.erro && !saldo[c.id]?.nivel ? saldo[c.id].erro : null;
+    let status = 'ok', erro = null;
+    if (!c.conectada) { status = 'erro'; erro = 'A Tiops mostra a conta como desconectada.'; }
+    else if (p?.ultimo_erro && (!sucessoMs || agoraMs - sucessoMs > 2 * H)) { status = 'erro'; erro = p.ultimo_erro; }
+    else if (!p || !tentativaMs) status = 'sem_sync';
+    else if (agoraMs - tentativaMs > 6 * H) status = 'atrasada';
+    if (status === 'ok' && adsErro) { status = 'ads'; erro = adsErro; }
+    const ruim = s => s === 'erro' || s === 'ads';
+    novo[k] = { mkt: c.mkt, id: c.id, nome: c.nome, status, erro: erro ? String(erro).slice(0, 240) : null, acao: erro ? problemaConexao(erro) : null,
+      ultimo_dado: p?.ultimo_sucesso || null, vence: c.vence, desde: ruim(status) ? (ruim(a.status) && a.desde ? a.desde : agoraIso) : null };
+    if (ruim(status) && !ruim(a.status)) caiu.push(novo[k]);
+    if (!ruim(status) && ruim(a.status) && status === 'ok') voltou.push(novo[k]);
+  }
+  const resumo = { contas: contas.length, erro: Object.values(novo).filter(x => x.status === 'erro').length, ads: Object.values(novo).filter(x => x.status === 'ads').length, caiu: caiu.length, voltou: voltou.length };
+  if (simular) return { simulacao: true, ...resumo, problemas: Object.values(novo).filter(x => x.status !== 'ok').map(x => ({ conta: `${x.nome} (${NOME_MKT[x.mkt]})`, status: x.status, acao: x.acao })) };
+  await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: 'conexoes', recurso: 'todas', ultima_tentativa: agoraIso, ultimo_sucesso: agoraIso, cursor: { em: agoraMs, contas: novo } }, 'marketplace,conta_id,recurso');
+  const linha = x => `${x.nome} (${NOME_MKT[x.mkt]})`;
+  if (caiu.length) await require('./_alerta').avisar(sbSelect, caiu.length === 1 ? `🔌 Conexão com problema — ${linha(caiu[0])}` : `🔌 ${caiu.length} conexões com problema`,
+    caiu.slice(0, 4).map(x => `${linha(x)}: ${x.acao}`).join('\n') + (caiu.length > 4 ? `\n+${caiu.length - 4} — veja em Saúde das conexões` : ''), 'conexoes').catch(() => {});
+  if (voltou.length) await require('./_alerta').avisar(sbSelect, voltou.length === 1 ? `✅ Conexão voltou — ${linha(voltou[0])}` : `✅ ${voltou.length} conexões voltaram`, voltou.slice(0, 4).map(linha).join('\n'), 'conexoes-ok').catch(() => {});
+  return resumo;
+}
+
 module.exports = async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers['authorization'];
@@ -500,6 +558,16 @@ module.exports = async function handler(req, res) {
       if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
       waitUntil(monitorarSaldoShopee(mcApiKey).then(r => console.log('[saldo]', JSON.stringify(r))).finally(gravarConsumo).catch(e => console.error('[saldo] falhou', e)));
       return res.status(202).json({ ok: true, rodada: 'saldo', slot });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
+  // ?rodada=conexoes — saúde das conexões de todas as contas (só lê; avisa quando cai/volta). Uma vez por hora.
+  if (req.query?.rodada === 'conexoes') {
+    try {
+      const { dia, hora } = agoraBRT(), slot = `${dia}-${String(hora).padStart(2, '0')}h-conexoes`;
+      if (req.query?.agora === '1' || req.query?.simular === '1') return res.status(200).json({ ok: true, rodada: 'conexoes', ...(await monitorarConexoes(mcApiKey, req.query?.simular === '1').finally(gravarConsumo)) });
+      if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      waitUntil(monitorarConexoes(mcApiKey).then(r => console.log('[conexoes]', JSON.stringify(r))).finally(gravarConsumo).catch(e => console.error('[conexoes] falhou', e)));
+      return res.status(202).json({ ok: true, rodada: 'conexoes', slot });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
   // ?rodada=autonomia — recalcula os níveis de autonomia pelo resultado medido (não mexe em campanha)
