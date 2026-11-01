@@ -22,8 +22,8 @@ Router.register('plano-acao', (params, el) => {
     planos: [], aberto: (() => { try { return localStorage.getItem('glr_plano_cliente') || ''; } catch (e) { return ''; } })(),
     filtro: (() => { try { return localStorage.getItem('glr_plano_filtro') || 'todos'; } catch (e) { return 'todos'; } })(),
     meuGestor: null, carregando: true, erro: null, gerando: false, copiado: false,
-    aba: (() => { try { return localStorage.getItem('glr_plano_aba') || 'acoes'; } catch (e) { return 'acoes'; } })(),
-    acaoAberta: null, metaEd: null, diagAberto: false, rxTodos: false, pautaEd: {},
+    aba: (() => { try { return localStorage.getItem('glr_plano_aba') || 'oportunidades'; } catch (e) { return 'oportunidades'; } })(),
+    contaOportunidade: '', acaoAberta: null, metaEd: null, diagAberto: false, rxTodos: false, pautaEd: {},
   };
   const status = () => lerJSON('glr_plano_status', {});
   const salvarStatus = (id, v) => { const s = status(); if (v) s[id] = v; else delete s[id]; localStorage.setItem('glr_plano_status', JSON.stringify(s)); };
@@ -52,7 +52,7 @@ Router.register('plano-acao', (params, el) => {
 
   const SEM = { vermelho: ['Precisa de atenção hoje', 'var(--red)', 0], amarelo: ['Atenção', 'var(--yellow)', 1], verde: ['Em dia', 'var(--green)', 2] };
   const QUEM = { analista: 'Analista', cliente: 'Cliente', agente: 'Agente' };
-  const pendentesDe = p => (p.acoes || []).filter(a => !status()[a.id]);
+  const pendentesDe = p => (p.acoes || []).filter(a => !status()[a.id]?.st);
 
   function lista() {
     let ps = st.planos.slice();
@@ -94,7 +94,7 @@ Router.register('plano-acao', (params, el) => {
   // Ação numa linha: quem, o quê e o impacto; o porquê abre ao clicar
   const tirarMeta = t => String(t || '').replace(/^Meta:\s*/, '');
   function renderAcao(p, a) {
-    const s = status()[a.id], ab = st.acaoAberta === a.id, ehMeta = /^Meta:/.test(a.titulo || '');
+    const s = status()[a.id]?.st ? status()[a.id] : null, ab = st.acaoAberta === a.id, ehMeta = /^Meta:/.test(a.titulo || '');
     const cid = h(p.cliente.id), id = h(a.id);
     const tarefa = `<button class="btn btn-${a.tela ? 'secondary' : 'primary'} btn-sm" onclick="window._plTarefa('${cid}','${id}')">Virar tarefa</button>`;
     const principal = s ? `<span class="pl-sub">${s.st === 'feito' ? 'Feito' : s.st === 'tarefa' ? 'Virou tarefa' : 'Descartada'}${s.motivo ? ` — ${h(s.motivo)}` : ''}</span><button class="pl-x" title="Reabrir" onclick="window._plReabrir('${id}')">↺</button>`
@@ -271,11 +271,41 @@ Router.register('plano-acao', (params, el) => {
 
   function renderAcoes(p) {
     const grupos = [['Fazer hoje', a => a.quando === 'hoje' && a.quem !== 'cliente'], ['Esta semana', a => a.quando !== 'hoje' && a.quem !== 'cliente'], ['Pedir ao cliente', a => a.quem === 'cliente']];
-    const ordem = as => [...as.filter(a => !status()[a.id]), ...as.filter(a => status()[a.id])]; // resolvidas vão para o fim
+    const ordem = as => [...as.filter(a => !status()[a.id]?.st), ...as.filter(a => status()[a.id]?.st)]; // resolvidas vão para o fim
     return grupos.map(([t, fn]) => { const as = ordem((p.acoes || []).filter(fn)); if (!as.length) return '';
-      const ab = as.filter(a => !status()[a.id]).length;
+      const ab = as.filter(a => !status()[a.id]?.st).length;
       return `<div class="pl-grupo"><div class="pl-grupo-t">${t}<span class="pl-sub">${ab ? `${ab} aberta(s)` : 'tudo resolvido'}</span></div>${as.map(a => renderAcao(p, a)).join('')}</div>`; }).join('')
       || '<div class="pl-vazio">Nenhuma ação hoje — os agentes não encontraram nada urgente.</div>';
+  }
+
+  const oportunidadesDe = p => window.GLRPlanoOportunidades.build(p);
+  const planoAtual = () => st.planos.find(p => String(p.cliente.id) === String(st.aberto));
+  function renderOportunidades(p) {
+    const all = oportunidadesDe(p), contas = [...new Map(all.filter(a => a.conta != null).map(a => [String(a.conta), a.loja || String(a.conta)])).entries()];
+    const conta = contas.some(([id]) => id === st.contaOportunidade) ? st.contaOportunidade : '';
+    const filtradas = all.filter(a => !conta || String(a.conta) === conta);
+    const ordered = [...filtradas.filter(a => !status()[a.id]?.st), ...filtradas.filter(a => status()[a.id]?.st)];
+    const resultado = p.resultados || {};
+    return `<div class="pl-op-intro"><h3>Oportunidades para vender com lucro</h3>
+      <p class="pl-sub">Ordenadas por urgência e peso dos sinais do plano. Estimativas podem se sobrepor e não devem ser somadas. Confira estoque e margem antes de aumentar Ads.</p>
+      <label>Conta <select class="form-control" onchange="window._plOpConta(this.value)"><option value="">Todas as contas + ações consolidadas</option>${contas.map(([id,nome]) => `<option value="${h(id)}" ${conta === id ? 'selected' : ''}>${h(nome)}</option>`).join('')}</select></label>
+      <div class="pl-sub">${ordered.length} oportunidade(s) · plano atualizado em ${p.em ? h(new Date(p.em).toLocaleString('pt-BR')) : 'data não informada'}${!p.oportunidades ? ' · Atualize o plano para incluir todos os sinais dos agentes.' : ''}</div></div>
+      ${ordered.map(a => {
+        const idx = all.findIndex(x => x.id === a.id), saved = status()[a.id];
+        return `<article class="pl-op-card"><div class="pl-sub">${h(a.loja || 'Cliente consolidado')} · ${a.quando === 'hoje' ? 'Agir hoje' : 'Esta semana'} · Confiança: ${h(a.confianca)}</div>
+          <h4>${h(a.titulo)}</h4><div class="pl-op-impact"><b>${h(a.impacto || 'Impacto financeiro não quantificado')}</b><span class="pl-sub">${h(a.impactoNatureza)}</span></div>
+          <dl><dt>Evidência / sinal disponível</dt><dd>${h(a.evidencia)}</dd><dt>Hipótese a validar</dt><dd>${h(a.hipotese)}</dd>
+          <dt>Dados e verificações pendentes</dt><dd>${h(a.faltantes.join(' · ') || 'Sem pendência adicional identificada; conferir a atualidade do sinal.')}</dd>
+          <dt>Responsável</dt><dd>${h(saved?.responsavel || a.responsavel)}</dd></dl>
+          ${saved?.st ? `<div class="pl-sub">${h(({feito:'Feita',tarefa:'Virou tarefa',descartado:'Descartada'})[saved.st] || saved.st)}${saved.em ? ' em '+h(new Date(saved.em).toLocaleDateString('pt-BR')) : ''}${saved.motivo ? ' · '+h(saved.motivo) : ''}</div>` : ''}
+          ${saved?.baseline ? `<div class="pl-sub">Contexto ao concluir: TACOS ${pct(saved.baseline.tacos)} · projeção do cliente ${R$(saved.baseline.projecao)}. São dados consolidados, não resultado atribuível à ação.</div>` : ''}
+          ${saved?.resultado ? `<p><b>Resultado observado:</b> ${h(saved.resultado)}<br><span class="pl-sub">Registro manual · ${h(new Date(saved.resultadoEm).toLocaleDateString('pt-BR'))}; não comprova causalidade.</span></p>` : ''}
+          <div class="pl-acao-mais">${a.tela ? `<button class="btn btn-primary btn-sm" onclick="window._plOpAcao(${idx},'ir')">Abrir ação</button>` : ''}
+          ${!saved?.st ? `<button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'tarefa')">Virar tarefa</button><button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'feito')">Concluir</button><button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'descartar')">Descartar</button>` : `<button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'resultado')">Registrar resultado</button><button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'reabrir')">Reabrir</button>`}
+          <button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'responsavel')">Definir responsável</button></div>
+        </article>`;
+      }).join('') || '<div class="pl-vazio">Nenhuma oportunidade para esta conta no plano atual.</div>'}
+      <div class="pl-op-card"><h4>Medições dos agentes · últimos 7 dias · cliente consolidado</h4><p>${Number(resultado.medidas)||0} ajuste(s) medido(s) · ${Number(resultado.melhoraram)||0} melhoraram.</p>${(resultado.exemplos || []).map(t => `<p class="pl-sub">${h(t)}</p>`).join('')}<p class="pl-sub">Comparações antes/depois não isolam sazonalidade, preço, estoque ou outras alterações.</p></div>`;
   }
 
   function renderPauta(p) {
@@ -287,10 +317,10 @@ Router.register('plano-acao', (params, el) => {
 
   function renderPlano(p) {
     const abertas = pendentesDe(p).length, c = p.caminho;
-    const ABAS = [['acoes', `O que fazer${abertas ? ` <b>${abertas}</b>` : ''}`], ['caminho', `Caminho da meta${c && !c.atinge && c.cobertura != null ? ` <small>${c.cobertura}%</small>` : ''}`],
+    const ABAS = [['oportunidades', 'Oportunidades'], ['acoes', `O que fazer${abertas ? ` <b>${abertas}</b>` : ''}`], ['caminho', `Caminho da meta${c && !c.atinge && c.cobertura != null ? ` <small>${c.cobertura}%</small>` : ''}`],
       ['raiox', 'Por que mudou'], ['pauta', 'Pauta do cliente'], ['ajustes', 'Autonomia']];
     const aba = ABAS.some(x => x[0] === st.aba) ? st.aba : 'acoes';
-    const corpo = { acoes: () => renderAcoes(p), caminho: () => renderCaminho(p), raiox: () => renderRaioX(p.raioX, p.metricas || {}), pauta: () => renderPauta(p), ajustes: () => renderContrato(p) }[aba]();
+    const corpo = { oportunidades: () => renderOportunidades(p), acoes: () => renderAcoes(p), caminho: () => renderCaminho(p), raiox: () => renderRaioX(p.raioX, p.metricas || {}), pauta: () => renderPauta(p), ajustes: () => renderContrato(p) }[aba]();
     return `
       ${embed ? '' : `<div class="pl-head">
         <button class="btn btn-secondary btn-sm" onclick="window._plAbrir('')">← Todos</button>
@@ -313,19 +343,40 @@ Router.register('plano-acao', (params, el) => {
   window._plFiltro = k => { st.filtro = k; try { localStorage.setItem('glr_plano_filtro', k); } catch (e) {} render(); };
   window._plAbrir = id => { st.aberto = String(id || ''); GLR.ctx?.definir(st.aberto, true); st.copiado = false; st.acaoAberta = null; st.metaEd = null; st.diagAberto = false; st.rxTodos = false; try { localStorage.setItem('glr_plano_cliente', st.aberto); } catch (e) {} render(); window.scrollTo?.(0, 0); };
   window._plIr = tela => Router.navigate(tela);
-  window._plFeito = id => { salvarStatus(id, { st: 'feito', em: Date.now() }); render(); };
-  window._plReabrir = id => { salvarStatus(id, null); render(); };
-  window._plDescartar = id => { const motivo = prompt('Por que descartar esta ação? (opcional)'); if (motivo === null) return; salvarStatus(id, { st: 'descartado', em: Date.now(), motivo: motivo.slice(0, 140) }); render(); };
+  window._plFeito = id => {
+    const p = planoAtual(), old = status()[id] || {};
+    salvarStatus(id, { ...old, st: 'feito', em: Date.now(), baseline: { tacos: p?.metricas?.tacos ?? null, projecao: p?.metricas?.projecao ?? null, planoEm: p?.em ?? null } }); render();
+  };
+  window._plOpConta = conta => { st.contaOportunidade = conta; render(); };
+  window._plOpAcao = (idx, action) => {
+    const p = planoAtual(), a = p && oportunidadesDe(p)[idx]; if (!a) return;
+    if (action === 'ir' && a.tela) return window._plIr(a.tela);
+    if (action === 'tarefa') return window._plTarefa(p.cliente.id, a.id);
+    if (action === 'feito') return window._plFeito(a.id);
+    if (action === 'descartar') return window._plDescartar(a.id);
+    if (action === 'reabrir') return window._plReabrir(a.id);
+    if (action === 'responsavel') {
+      const value = prompt('Responsável por esta oportunidade:', status()[a.id]?.responsavel || a.responsavel);
+      if (value?.trim()) { salvarStatus(a.id, { ...(status()[a.id] || {}), responsavel: value.trim().slice(0,120) }); render(); }
+    }
+    if (action === 'resultado') {
+      const value = prompt('Resultado observado (informe período, vendas, Ads ou margem; não atribua causalidade sem evidência):', status()[a.id]?.resultado || '');
+      if (value?.trim()) { salvarStatus(a.id, { ...(status()[a.id] || {}), resultado: value.trim().slice(0,2000), resultadoEm: Date.now() }); render(); }
+    }
+  };
+  window._plReabrir = id => { const { st: anterior, em, ...dados } = status()[id] || {}; salvarStatus(id, Object.keys(dados).length ? dados : null); render(); };
+  window._plDescartar = id => { const motivo = prompt('Por que descartar esta ação? (opcional)'); if (motivo === null) return; salvarStatus(id, { ...(status()[id] || {}), st: 'descartado', em: Date.now(), motivo: motivo.slice(0, 140) }); render(); };
   window._plTarefa = (cid, id) => {
-    const p = st.planos.find(x => String(x.cliente.id) === String(cid)), a = p?.acoes.find(x => x.id === id); if (!a) return;
+    const p = st.planos.find(x => String(x.cliente.id) === String(cid)), a = p && oportunidadesDe(p).find(x => x.id === id); if (!a) return;
+    if (status()[id]?.tarefaId && GLR.tarefas.some(t => t.id === status()[id].tarefaId)) return;
     const cli = (window.GLR?.clientes || []).find(c => String(c.id) === String(cid));
-    const resp = (window.GLR?.gestores || []).find(g => g.id === (cli?.gestorId ?? p.cliente.gestorId))?.nome || p.cliente.gestor || '';
+    const resp = status()[id]?.responsavel || (window.GLR?.gestores || []).find(g => g.id === (cli?.gestorId ?? p.cliente.gestorId))?.nome || p.cliente.gestor || '';
     const tarefa = { id: GLR.nextId(GLR.tarefas), titulo: a.quem === 'cliente' ? `Pedir ao cliente: ${a.titulo}` : a.titulo, cliente: p.cliente.nome, clienteId: cli ? cli.id : p.cliente.id,
       responsavel: resp, status: 'pendente', prioridade: a.quando === 'hoje' ? 'alta' : 'media', prazo: a.quando === 'hoje' ? hojeISO() : maisDias(7),
       categoria: 'Plano de ação', notas: `${a.porque}${a.impacto ? ` · Impacto: ${a.impacto}` : ''} · ${a.loja || ''} (Gerente de Conta, ${new Date(p.em).toLocaleDateString('pt-BR')})` };
     GLR.tarefas.push(tarefa);
     localStorage.setItem('glr_tarefas', JSON.stringify(GLR.tarefas)); // sincroniza (supabase-init)
-    salvarStatus(id, { st: 'tarefa', em: Date.now(), tarefaId: tarefa.id });
+    salvarStatus(id, { ...(status()[id] || {}), st: 'tarefa', em: Date.now(), tarefaId: tarefa.id });
     render();
   };
   window._plCopiar = () => { const t = document.getElementById('pl-pauta')?.value || ''; navigator.clipboard?.writeText(t).then(() => { st.copiado = true; render(); }, () => alert('Não consegui copiar — selecione o texto e copie.')); };
@@ -397,6 +448,7 @@ Router.register('plano-acao', (params, el) => {
     .pl-stats-box{margin-top:0;padding-top:0;border-top:0}
     .pl-hero-diag{font-size:13px;line-height:1.55;color:var(--text-secondary);margin-top:12px;max-width:880px}
     .pl-seg{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 10px;padding:4px;background:var(--bg-subtle);border-radius:11px;width:fit-content;max-width:100%}
+    .pl-op-intro h3{margin:0 0 8px}.pl-op-intro label{display:block;max-width:420px;margin:12px 0}.pl-op-card{border-top:1px solid var(--border);padding:16px 0}.pl-op-card h4{margin:6px 0 10px;font-size:15px}.pl-op-impact{display:flex;gap:8px;flex-wrap:wrap}.pl-op-card dl{display:grid;grid-template-columns:170px 1fr;gap:7px 16px;font-size:13px}.pl-op-card dt{font-weight:600}.pl-op-card dd{margin:0;overflow-wrap:anywhere}.pl-op-card p{overflow-wrap:anywhere}@media(max-width:760px){.pl-op-card dl{grid-template-columns:1fr}.pl-op-card dt{margin-top:6px}}
     .pl-seg button{all:unset;cursor:pointer;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:600;color:var(--text-secondary);display:inline-flex;gap:6px;align-items:center}
     .pl-seg button:hover{color:var(--text-primary)} .pl-seg button:focus-visible{outline:2px solid var(--accent)}
     .pl-seg button.on{background:var(--bg-card);color:var(--text-primary);box-shadow:var(--shadow-xs)}
