@@ -10,11 +10,14 @@
 // são aplicados por aqui (ML não libera escrita; promoção é sempre manual).
 // Conversas por usuário em glr_sync_estado (marketplace 'sistema', recurso
 // 'chat', conta_id 'chat:<usuário>:<conversa>').
+// Agente "adviser" (seletor da tela): estratégia da GLR até R$ 200 mil — instruções
+// e ferramentas em api/_adviser-chat.js, mais carteira, plano e vendas daqui.
 // ============================================================
 const sdk = require('@anthropic-ai/sdk');
 const Anthropic = sdk.default || sdk;
 const { base } = require('./agente-chat');
 const { sbSelect, sbTodos, mcpCall, usuarioLogado, lerStorage, nomesDasLojas, hojeBRT, MKT, NOME_MKT, r2 } = base;
+const adviserChat = require('./_adviser-chat');
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -187,7 +190,10 @@ const FERRAMENTAS = [
     impacto: { type: 'number', description: 'R$ por semana estimado' }, tipo_impacto: { type: 'string', enum: ['ganho', 'economia'] } }, required: ['conta_id', 'titulo', 'explicacao'] } },
 ];
 const EXEC = { carteira, plano_cliente: planoCliente, vendas, produtos, curva_abc: curvaAbc, ads, estoque_margem: estoqueMargem, campanhas_shopee: campanhasShopee, campanhas_ml: campanhasML, decisoes_pendentes: decisoesPendentes, historico_agentes: historicoAgentes, propor_acao: proporAcao };
-const ROTULO = { carteira: 'carteira', plano_cliente: 'plano do Gerente', vendas: 'vendas', produtos: 'produtos', curva_abc: 'curva ABC', ads: 'ADS', estoque_margem: 'estoque e margem', campanhas_shopee: 'campanhas Shopee', campanhas_ml: 'campanhas ML', decisoes_pendentes: 'Caixa de decisões', historico_agentes: 'histórico dos agentes', propor_acao: 'sugestão criada' };
+const ADVISER_BASE = ['carteira', 'plano_cliente', 'vendas', 'decisoes_pendentes']; // do copiloto que o Adviser também usa
+const ferramentasDe = ag => ag === 'adviser' ? [...FERRAMENTAS.filter(f => ADVISER_BASE.includes(f.name)), ...adviserChat.FERRAMENTAS] : FERRAMENTAS;
+const execDe = ag => ag === 'adviser' ? { ...Object.fromEntries(ADVISER_BASE.map(k => [k, EXEC[k]])), ...adviserChat.EXEC } : EXEC;
+const ROTULO = { ...adviserChat.ROTULO, carteira: 'carteira', plano_cliente: 'plano do Gerente', vendas: 'vendas', produtos: 'produtos', curva_abc: 'curva ABC', ads: 'ADS', estoque_margem: 'estoque e margem', campanhas_shopee: 'campanhas Shopee', campanhas_ml: 'campanhas ML', decisoes_pendentes: 'Caixa de decisões', historico_agentes: 'histórico dos agentes', propor_acao: 'sugestão criada' };
 const dm = iso => `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}`;
 const resumo = (n, i) => `${ROTULO[n] || n}${i?.cliente ? ` · ${i.cliente}` : ''}${i?.inicio && i?.fim ? ` · ${dm(i.inicio)} a ${dm(i.fim)}` : ''}${n === 'propor_acao' && i?.titulo ? ` · ${corta(i.titulo, 50)}` : ''}`;
 
@@ -228,13 +234,13 @@ module.exports = async function handler(req, res) {
   if (!process.env.ANTHROPIC_API_KEY || !mcKey || !SUPABASE_KEY) return res.status(500).json({ error: 'Chaves do servidor não configuradas.' });
   const usuario = await usuarioLogado(req).catch(() => null);
   if (!usuario) return res.status(401).json({ error: 'Sessão expirada — entre de novo no sistema.' });
-  const uid = usuario.id, { acao, conversa_id, mensagem, cliente_id } = req.body || {};
+  const uid = usuario.id, { acao, conversa_id, mensagem, cliente_id, agente } = req.body || {};
   const idOk = v => /^[a-z0-9]{6,40}$/i.test(String(v || ''));
 
   try {
     if (acao === 'listar') {
-      const rows = await sbSelect('glr_sync_estado', `marketplace=eq.sistema&recurso=eq.chat&conta_id=like.${encodeURIComponent(`chat:${uid}:*`)}&select=conta_id,ultimo_sucesso,titulo:cursor->>titulo,cliente:cursor->>cliente_nome&order=ultimo_sucesso.desc&limit=60`).catch(() => []);
-      return res.status(200).json({ conversas: rows.map(r => ({ id: r.conta_id.split(':').pop(), titulo: r.titulo || 'Conversa', cliente: r.cliente || null, em: r.ultimo_sucesso })) });
+      const rows = await sbSelect('glr_sync_estado', `marketplace=eq.sistema&recurso=eq.chat&conta_id=like.${encodeURIComponent(`chat:${uid}:*`)}&select=conta_id,ultimo_sucesso,titulo:cursor->>titulo,cliente:cursor->>cliente_nome,agente:cursor->>agente&order=ultimo_sucesso.desc&limit=60`).catch(() => []);
+      return res.status(200).json({ conversas: rows.map(r => ({ id: r.conta_id.split(':').pop(), titulo: r.titulo || 'Conversa', cliente: r.cliente || null, agente: r.agente || 'copiloto', em: r.ultimo_sucesso })) });
     }
     if (acao === 'abrir') {
       const conv = idOk(conversa_id) ? await lerConversa(uid, String(conversa_id)) : null;
@@ -250,8 +256,9 @@ module.exports = async function handler(req, res) {
     const texto = String(mensagem || '').trim().slice(0, 6000);
     if (!texto) return res.status(400).json({ error: 'Mensagem vazia.' });
     const id = idOk(conversa_id) ? String(conversa_id) : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-    const conv = (await lerConversa(uid, id)) || { titulo: corta(texto, 60), criado: new Date().toISOString(), msgs: [] };
-    const S = { carteira: await carregarCarteira(), mcKey, usuario: usuario.email || uid, criadas: 0 };
+    const conv = (await lerConversa(uid, id)) || { titulo: corta(texto, 60), criado: new Date().toISOString(), msgs: [], agente: agente === 'adviser' ? 'adviser' : 'copiloto' };
+    const ag = conv.agente === 'adviser' ? 'adviser' : 'copiloto', TOOLS = ferramentasDe(ag), RUN = execDe(ag);
+    const S = { carteira: await carregarCarteira(), mcKey, usuario: usuario.email || uid, criadas: 0, sbSelect, sbUpsert };
     const foco = cliente_id ? S.carteira.find(c => c.id === String(cliente_id)) || null : null;
     if (foco) { conv.cliente_id = foco.id; conv.cliente_nome = foco.nome; }
 
@@ -266,7 +273,7 @@ module.exports = async function handler(req, res) {
       const semTempo = Date.now() - inicio > ORCAMENTO_MS || rodada >= MAX_RODADAS;
       resposta = await client.beta.messages.create({
         model: MODELO, max_tokens: 16000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' },
-        system: sistema(S, foco), tools: FERRAMENTAS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+        system: ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : sistema(S, foco), tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
       });
       if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
       if (resposta.stop_reason !== 'tool_use') break;
@@ -275,9 +282,9 @@ module.exports = async function handler(req, res) {
       // em sequência: o conector corrompe respostas simultâneas
       for (const b of resposta.content.filter(x => x.type === 'tool_use')) {
         try {
-          if (!EXEC[b.name]) throw new Error(`Ferramenta desconhecida: ${b.name}`);
+          if (!RUN[b.name]) throw new Error(`Ferramenta desconhecida: ${b.name}`);
           if (Date.now() - inicio > ORCAMENTO_MS) throw new Error('Tempo de consulta esgotado — responda com o que já tem.');
-          let t = JSON.stringify(await EXEC[b.name](S, b.input || {}));
+          let t = JSON.stringify(await RUN[b.name](S, b.input || {}));
           if (t.length > LIMITE_RESULTADO) t = t.slice(0, LIMITE_RESULTADO) + '… [cortado por tamanho — refine a consulta]';
           resultados.push({ type: 'tool_result', tool_use_id: b.id, content: t });
           usadas.push({ f: b.name, r: resumo(b.name, b.input) });
@@ -294,7 +301,7 @@ module.exports = async function handler(req, res) {
     conv.msgs.push({ r: 'user', t: texto, em: new Date(inicio).toISOString() }, { r: 'assistant', t: final, em: new Date().toISOString(), ferramentas: usadas, criadas: S.criadas });
     if (conv.msgs.length > 80) conv.msgs = conv.msgs.slice(-80);
     await salvarConversa(uid, id, conv).catch(() => {});
-    return res.status(200).json({ conversa_id: id, titulo: conv.titulo, resposta: final, ferramentas: usadas, criadas: S.criadas, cortada: resposta.stop_reason === 'max_tokens', segundos: Math.round((Date.now() - inicio) / 1000) });
+    return res.status(200).json({ conversa_id: id, titulo: conv.titulo, agente: ag, missoes: S.missoesCriadas || 0, resposta: final, ferramentas: usadas, criadas: S.criadas, cortada: resposta.stop_reason === 'max_tokens', segundos: Math.round((Date.now() - inicio) / 1000) });
   } catch (e) {
     if (e instanceof Anthropic.RateLimitError) return res.status(429).json({ error: 'Muitas perguntas ao mesmo tempo — espere alguns segundos e tente de novo.' });
     if (e instanceof Anthropic.APIError && /credit balance is too low/i.test(e.message)) return res.status(402).json({ error: 'Os créditos da API da Anthropic acabaram — recarregue em console.anthropic.com → Plans & Billing e o chat volta na hora.' });

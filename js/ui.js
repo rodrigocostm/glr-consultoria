@@ -133,3 +133,43 @@
   window.GLRUI = { atualizar: passar, verificarSaude };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
 })();
+
+// ── Markdown simples e seguro (o texto é escapado antes) — chat com os agentes e Adviser ──
+window.glrMarkdown = (function () {
+  const h = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return function (texto) {
+  const blocos = [], linhas = String(texto || '').replace(/\r/g, '').split('\n');
+  const inline = s => h(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*\w])[*_]([^*_\n]+)[*_](?=[^*\w]|$)/g, '$1<i>$2</i>');
+  const ehLista = l => /^\s*([-*•]|\d+[.)])\s+/.test(l), ehTab = l => /^\s*\|.*\|\s*$/.test(l);
+  for (let i = 0; i < linhas.length; i++) {
+    const l = linhas[i];
+    if (/^```/.test(l)) { const cod = []; i++; while (i < linhas.length && !/^```/.test(linhas[i])) cod.push(linhas[i++]); blocos.push(`<pre><code>${h(cod.join('\n'))}</code></pre>`); continue; }
+    if (ehTab(l)) {
+      const tab = []; while (i < linhas.length && ehTab(linhas[i])) tab.push(linhas[i++]); i--;
+      const cel = r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      const [cab, ...resto] = tab.filter(r => !/^\s*\|?\s*:?-{2,}/.test(r));
+      blocos.push(`<div class="ch-tab"><table><thead><tr>${cel(cab).map(c => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${resto.map(r => `<tr>${cel(r).map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+      continue;
+    }
+    const tit = l.match(/^(#{1,4})\s+(.*)$/);
+    if (tit) { const n = Math.min(5, tit[1].length + 2); blocos.push(`<h${n}>${inline(tit[2])}</h${n}>`); continue; }
+    if (ehLista(l)) {
+      // item recuado vira sublista do item de cima; a lista numerada mantém o número de onde começou
+      const num = /^\s*\d+[.)]\s+/.test(l), ini = num ? parseInt(l) : 1, itens = [];
+      while (i < linhas.length && ehLista(linhas[i])) {
+        const li = linhas[i++], recuo = li.match(/^\s*/)[0].length, t = li.replace(/^\s*([-*•]|\d+[.)])\s+/, '');
+        if ((recuo >= 2 || (num && /^\s*[-*•]\s+/.test(li))) && itens.length) itens[itens.length - 1].sub.push(t); else itens.push({ t, sub: [] });
+      }
+      i--;
+      blocos.push(`<${num ? `ol${ini > 1 ? ` start="${ini}"` : ''}` : 'ul'}>${itens.map(x => `<li>${inline(x.t)}${x.sub.length ? `<ul>${x.sub.map(s => `<li>${inline(s)}</li>`).join('')}</ul>` : ''}</li>`).join('')}</${num ? 'ol' : 'ul'}>`);
+      continue;
+    }
+    if (/^\s*---+\s*$/.test(l)) { blocos.push('<hr>'); continue; }
+    if (!l.trim()) continue;
+    const par = [l];
+    while (i + 1 < linhas.length && linhas[i + 1].trim() && !/^(```|#{1,4}\s)/.test(linhas[i + 1]) && !ehLista(linhas[i + 1]) && !ehTab(linhas[i + 1])) par.push(linhas[++i]);
+    blocos.push(`<p>${par.map(inline).join('<br>')}</p>`);
+  }
+  return blocos.join('');
+};
+})();

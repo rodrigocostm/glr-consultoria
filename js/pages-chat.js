@@ -7,12 +7,16 @@
 // com números e próximos passos. Mudança vira sugestão na Caixa de decisões
 // (nada é aplicado sem aprovação). As conversas ficam salvas por usuário no
 // servidor; o cliente em foco vem do seletor do topo.
+// Seletor "Adviser": a mesma conversa com o estrategista da GLR (receita de
+// comissão até R$ 200 mil, contratos, retenção, expansão e missões).
 // ============================================================
 Router.register('chat', (params, el) => {
   const h = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const lerLS = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } };
   const gravarLS = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
-  const st = { conversas: [], id: lerLS('glr_chat_atual', null), msgs: [], enviando: false, erro: null, listaAberta: false, carregando: true, inicio: 0, rascunho: '' };
+  const st = { conversas: [], id: lerLS('glr_chat_atual', null), msgs: [], enviando: false, erro: null, listaAberta: false, carregando: true, inicio: 0, rascunho: '', agente: lerLS('glr_chat_agente', 'copiloto') };
+  if (window._glrChatAgente) { st.agente = window._glrChatAgente; st.id = null; window._glrChatAgente = null; } // veio do botão "Conversar com o Adviser"
+  const ehAdviser = () => st.agente === 'adviser';
   window._chSt = st; // respostas que chegam depois de sair da tela conferem se ainda são a tela atual
 
   const focoId = () => (typeof GLR !== 'undefined' && GLR.ctx?.cliente()) || null;
@@ -26,48 +30,19 @@ Router.register('chat', (params, el) => {
     return j;
   }
 
-  // ── Markdown simples e seguro (o texto é escapado antes) ──
-  function md(texto) {
-    const blocos = [], linhas = String(texto || '').replace(/\r/g, '').split('\n');
-    const inline = s => h(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*\w])[*_]([^*_\n]+)[*_](?=[^*\w]|$)/g, '$1<i>$2</i>');
-    const ehLista = l => /^\s*([-*•]|\d+[.)])\s+/.test(l), ehTab = l => /^\s*\|.*\|\s*$/.test(l);
-    for (let i = 0; i < linhas.length; i++) {
-      const l = linhas[i];
-      if (/^```/.test(l)) { const cod = []; i++; while (i < linhas.length && !/^```/.test(linhas[i])) cod.push(linhas[i++]); blocos.push(`<pre><code>${h(cod.join('\n'))}</code></pre>`); continue; }
-      if (ehTab(l)) {
-        const tab = []; while (i < linhas.length && ehTab(linhas[i])) tab.push(linhas[i++]); i--;
-        const cel = r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
-        const [cab, ...resto] = tab.filter(r => !/^\s*\|?\s*:?-{2,}/.test(r));
-        blocos.push(`<div class="ch-tab"><table><thead><tr>${cel(cab).map(c => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${resto.map(r => `<tr>${cel(r).map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
-        continue;
-      }
-      const tit = l.match(/^(#{1,4})\s+(.*)$/);
-      if (tit) { const n = Math.min(5, tit[1].length + 2); blocos.push(`<h${n}>${inline(tit[2])}</h${n}>`); continue; }
-      if (ehLista(l)) {
-        // item recuado vira sublista do item de cima; a lista numerada mantém o número de onde começou
-        const num = /^\s*\d+[.)]\s+/.test(l), ini = num ? parseInt(l) : 1, itens = [];
-        while (i < linhas.length && ehLista(linhas[i])) {
-          const li = linhas[i++], recuo = li.match(/^\s*/)[0].length, t = li.replace(/^\s*([-*•]|\d+[.)])\s+/, '');
-          if ((recuo >= 2 || (num && /^\s*[-*•]\s+/.test(li))) && itens.length) itens[itens.length - 1].sub.push(t); else itens.push({ t, sub: [] });
-        }
-        i--;
-        blocos.push(`<${num ? `ol${ini > 1 ? ` start="${ini}"` : ''}` : 'ul'}>${itens.map(x => `<li>${inline(x.t)}${x.sub.length ? `<ul>${x.sub.map(s => `<li>${inline(s)}</li>`).join('')}</ul>` : ''}</li>`).join('')}</${num ? 'ol' : 'ul'}>`);
-        continue;
-      }
-      if (/^\s*---+\s*$/.test(l)) { blocos.push('<hr>'); continue; }
-      if (!l.trim()) continue;
-      const par = [l];
-      while (i + 1 < linhas.length && linhas[i + 1].trim() && !/^(```|#{1,4}\s)/.test(linhas[i + 1]) && !ehLista(linhas[i + 1]) && !ehTab(linhas[i + 1])) par.push(linhas[++i]);
-      blocos.push(`<p>${par.map(inline).join('<br>')}</p>`);
-    }
-    return blocos.join('');
-  }
+  const md = t => window.glrMarkdown(t); // js/ui.js
 
   const SUG_CLIENTE = n => [
     `Onde a ${n} está perdendo venda e o que fazer hoje?`,
     `Monte um plano para a ${n} bater a meta do mês`,
     `Quais campanhas da ${n} posso acelerar sem estourar o TACOS?`,
     `Quais produtos da ${n} têm visita e não vendem?`,
+  ];
+  const SUG_ADVISER = [
+    'Quanto falta para o próximo marco e o que mais aproxima a GLR dele este mês?',
+    'Quais contratos rendem menos comissão para o tamanho do cliente?',
+    'Quais clientes estão em risco de cancelar e quanto de comissão isso representa?',
+    'Monte a rota até os R$ 200 mil com as 5 missões desta semana',
   ];
   const SUG_CARTEIRA = [
     'Quais 5 clientes têm mais potencial de crescer esta semana, e por onde começar?',
@@ -79,16 +54,17 @@ Router.register('chat', (params, el) => {
   function renderLista() {
     return `<button class="ch-nova" onclick="window._chNova()"><span aria-hidden="true">+</span> Nova conversa</button>
       <div class="ch-conv">${st.conversas.length ? st.conversas.map(c => `<div class="ch-ci ${c.id === st.id ? 'on' : ''}">
-        <button class="ch-ci-a" onclick="window._chAbrir('${h(c.id)}')"><b>${h(c.titulo)}</b><small>${c.cliente ? `${h(c.cliente)} · ` : ''}${new Date(c.em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</small></button>
+        <button class="ch-ci-a" onclick="window._chAbrir('${h(c.id)}')"><b>${h(c.titulo)}</b><small>${c.agente === 'adviser' ? '<span class="ch-tag">Adviser</span> ' : ''}${c.cliente ? `${h(c.cliente)} · ` : ''}${new Date(c.em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</small></button>
         <button class="ch-ci-x" title="Apagar conversa" aria-label="Apagar conversa" onclick="window._chApagar('${h(c.id)}')">✕</button></div>`).join('') : '<div class="ch-vazia-l">Suas conversas aparecem aqui.</div>'}</div>`;
   }
 
   function renderMsg(m, i) {
     if (m.r === 'user') return `<div class="ch-m ch-u"><div class="ch-b">${h(m.t).replace(/\n/g, '<br>')}</div></div>`;
     const fs = m.ferramentas || [];
-    return `<div class="ch-m ch-a"><div class="ch-av" aria-hidden="true">G</div><div class="ch-corpo">
+    return `<div class="ch-m ch-a"><div class="ch-av ${ehAdviser() ? 'adv' : ''}" aria-hidden="true">${ehAdviser() ? 'A' : 'G'}</div><div class="ch-corpo">
       ${fs.length ? `<details class="ch-fontes"><summary>Consultou ${fs.length} fonte(s)</summary><div>${fs.map(f => `<span class="${f.erro ? 'erro' : ''}">${h(f.r)}</span>`).join('')}</div></details>` : ''}
       <div class="ch-md">${md(m.t)}</div>
+      ${m.missoes ? `<div class="ch-criadas"><b>${m.missoes} missão(ões) registrada(s)</b> no Adviser. <button class="ch-link" onclick="Router.navigate('adviser')">Abrir o Adviser →</button></div>` : ''}
       ${m.criadas ? `<div class="ch-criadas"><b>${m.criadas} sugestão(ões) criada(s)</b> na Caixa de decisões — nada foi aplicado ainda. <button class="ch-link" onclick="Router.navigate('decisoes')">Abrir a Caixa →</button></div>` : ''}
       <div class="ch-acoes-m"><button class="ch-link" onclick="window._chCopiar(${i}, this)">Copiar</button></div>
     </div></div>`;
@@ -96,6 +72,12 @@ Router.register('chat', (params, el) => {
 
   function renderConversa() {
     const nome = focoNome();
+    if (!st.msgs.length && !st.enviando && ehAdviser()) return `<div class="ch-inicio">
+        <div class="ch-logo adv" aria-hidden="true">A</div>
+        <h2>Como a GLR chega aos R$ 200 mil por mês?</h2>
+        <p>Sou o Adviser: olho a GLR como empresa — receita de comissão e marcos (130, 150, 170 e 200 mil), rentabilidade dos contratos, clientes em risco, expansão de canais, implantação e as missões da equipe. Se você pedir, registro as missões no Adviser.</p>
+        <div class="ch-sugs">${SUG_ADVISER.map(s => `<button onclick="window._chUsar(this.textContent)">${h(s)}</button>`).join('')}</div>
+      </div>`;
     if (!st.msgs.length && !st.enviando) {
       const sug = nome ? SUG_CLIENTE(nome) : SUG_CARTEIRA;
       return `<div class="ch-inicio">
@@ -105,7 +87,7 @@ Router.register('chat', (params, el) => {
         <div class="ch-sugs">${sug.map(s => `<button onclick="window._chUsar(this.textContent)">${h(s)}</button>`).join('')}</div>
       </div>`;
     }
-    const pensando = st.enviando ? `<div class="ch-m ch-a"><div class="ch-av" aria-hidden="true">G</div><div class="ch-corpo"><div class="ch-pensa" role="status"><i></i><i></i><i></i><span id="ch-pensa-t">Consultando os agentes…</span></div></div></div>` : '';
+    const pensando = st.enviando ? `<div class="ch-m ch-a"><div class="ch-av ${ehAdviser() ? 'adv' : ''}" aria-hidden="true">${ehAdviser() ? 'A' : 'G'}</div><div class="ch-corpo"><div class="ch-pensa" role="status"><i></i><i></i><i></i><span id="ch-pensa-t">Consultando os agentes…</span></div></div></div>` : '';
     return st.msgs.map(renderMsg).join('') + pensando + (st.erro ? `<div class="ch-erro">${h(st.erro)} <button class="ch-link" onclick="window._chReenviar()">Tentar de novo</button></div>` : '');
   }
 
@@ -117,12 +99,16 @@ Router.register('chat', (params, el) => {
       <section class="ch-main">
         <div class="ch-topo">
           <button class="ch-menu" onclick="window._chLista()" aria-label="Conversas">☰</button>
-          <span class="ch-foco">${nome ? `Falando sobre <b>${h(nome)}</b>` : 'Falando sobre <b>a carteira inteira</b>'} <small>· troque no seletor de cliente do topo</small></span>
+          <div class="ch-agentes" role="tablist" aria-label="Com quem conversar">
+            <button role="tab" aria-selected="${!ehAdviser()}" class="${!ehAdviser() ? 'on' : ''}" onclick="window._chAgente('copiloto')">Copiloto das contas</button>
+            <button role="tab" aria-selected="${ehAdviser()}" class="${ehAdviser() ? 'on' : ''}" onclick="window._chAgente('adviser')">Adviser · estratégia GLR</button>
+          </div>
+          <span class="ch-foco">${ehAdviser() ? 'Receita da GLR, contratos, retenção e missões' : nome ? `Falando sobre <b>${h(nome)}</b> <small>· troque no seletor de cliente do topo</small>` : 'Falando sobre <b>a carteira inteira</b> <small>· troque no seletor de cliente do topo</small>'}</span>
         </div>
         <div class="ch-msgs" id="ch-msgs"><div class="ch-col">${st.carregando ? '<div class="ch-carregando">Abrindo a conversa…</div>' : renderConversa()}</div></div>
         <div class="ch-comp"><div class="ch-col">
           <div class="ch-caixa">
-            <textarea id="ch-in" rows="1" aria-label="Mensagem" placeholder="${nome ? `Pergunte sobre a ${h(nome)} ou peça um plano…` : 'Pergunte sobre qualquer cliente ou sobre a carteira…'}" ${st.enviando ? 'disabled' : ''}></textarea>
+            <textarea id="ch-in" rows="1" aria-label="Mensagem" placeholder="${ehAdviser() ? 'Pergunte sobre a receita da GLR, contratos, riscos ou peça a rota até os R$ 200 mil…' : nome ? `Pergunte sobre a ${h(nome)} ou peça um plano…` : 'Pergunte sobre qualquer cliente ou sobre a carteira…'}" ${st.enviando ? 'disabled' : ''}></textarea>
             <button class="ch-env" aria-label="Enviar" ${st.enviando ? 'disabled' : ''} onclick="window._chEnviar()">↑</button>
           </div>
           <div class="ch-nota">O chat só lê os dados e cria sugestões na Caixa de decisões — nada é aplicado sem a sua aprovação. Promoção e ADS do Mercado Livre são sempre aplicados por você.</div>
@@ -156,7 +142,7 @@ Router.register('chat', (params, el) => {
   }
   async function abrir(id) {
     st.id = id; st.msgs = []; st.erro = null; st.carregando = true; st.listaAberta = false; gravarLS('glr_chat_atual', id); render();
-    try { st.msgs = (await api({ acao: 'abrir', conversa_id: id })).conversa?.msgs || []; }
+    try { const cv = (await api({ acao: 'abrir', conversa_id: id })).conversa; st.msgs = cv?.msgs || []; st.agente = cv?.agente === 'adviser' ? 'adviser' : 'copiloto'; gravarLS('glr_chat_agente', st.agente); }
     catch (e) { st.id = null; gravarLS('glr_chat_atual', null); }
     st.carregando = false; render();
   }
@@ -167,11 +153,11 @@ Router.register('chat', (params, el) => {
     st.msgs.push({ r: 'user', t: texto }); st.ultima = texto; st.rascunho = ''; st.enviando = true; st.erro = null; st.inicio = Date.now();
     render(); iniciarEspera();
     try {
-      const j = await api({ acao: 'enviar', conversa_id: st.id, mensagem: texto, cliente_id: focoId() });
+      const j = await api({ acao: 'enviar', conversa_id: st.id, mensagem: texto, cliente_id: ehAdviser() ? null : focoId(), agente: st.agente });
       if (window._chSt !== st) return;
       const nova = st.id !== j.conversa_id;
       st.id = j.conversa_id; gravarLS('glr_chat_atual', st.id);
-      st.msgs.push({ r: 'assistant', t: j.resposta + (j.cortada ? '\n\n_(resposta cortada por tamanho — peça a continuação)_' : ''), ferramentas: j.ferramentas, criadas: j.criadas });
+      st.msgs.push({ r: 'assistant', t: j.resposta + (j.cortada ? '\n\n_(resposta cortada por tamanho — peça a continuação)_' : ''), ferramentas: j.ferramentas, criadas: j.criadas, missoes: j.missoes });
       if (nova || !st.conversas.some(c => c.id === st.id)) await carregarLista();
       else { const c = st.conversas.find(x => x.id === st.id); if (c) c.em = new Date().toISOString(); st.conversas.sort((a, b) => String(b.em).localeCompare(String(a.em))); }
     } catch (e) {
@@ -186,6 +172,8 @@ Router.register('chat', (params, el) => {
   window._chReenviar = () => { st.erro = null; enviar(st.rascunho || st.ultima); };
   window._chNova = () => { st.id = null; st.msgs = []; st.erro = null; st.listaAberta = false; gravarLS('glr_chat_atual', null); render(); };
   window._chAbrir = id => abrir(id);
+  // trocar de agente começa uma conversa nova (cada conversa é de um agente)
+  window._chAgente = ag => { if (st.enviando || ag === st.agente) return; st.agente = ag; gravarLS('glr_chat_agente', ag); window._chNova(); };
   window._chLista = () => { st.listaAberta = !st.listaAberta; render(); };
   window._chApagar = async id => {
     if (!confirm('Apagar esta conversa?')) return;
@@ -208,12 +196,16 @@ Router.register('chat', (params, el) => {
     .ch-ci-x{border:0;background:none;color:var(--text-muted);cursor:pointer;padding:6px 8px;opacity:0;border-radius:6px} .ch-ci:hover .ch-ci-x,.ch-ci-x:focus-visible{opacity:1} .ch-ci-x:hover{color:var(--red)}
     .ch-vazia-l{font-size:12.5px;color:var(--text-muted);padding:8px}
     .ch-main{display:flex;flex-direction:column;min-width:0;min-height:0}
-    .ch-topo{display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-secondary)} .ch-topo small{color:var(--text-muted)}
+    .ch-topo{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:10px 18px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-secondary)} .ch-topo small{color:var(--text-muted)}
     .ch-menu{display:none;border:1px solid var(--border);background:var(--bg-card);border-radius:8px;width:32px;height:32px;cursor:pointer;color:var(--text-primary)}
     .ch-msgs{flex:1;overflow-y:auto;padding:20px 16px 8px}
     .ch-col{max-width:800px;margin:0 auto;width:100%}
     .ch-m{display:flex;gap:12px;margin-bottom:22px}
     .ch-u{justify-content:flex-end} .ch-u .ch-b{background:var(--bg-subtle);border-radius:16px;padding:10px 14px;max-width:80%;font-size:14px;line-height:1.55;color:var(--text-primary);overflow-wrap:anywhere}
+    .ch-agentes{display:flex;gap:2px;padding:2px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);flex:none}
+    .ch-agentes button{border:0;background:none;padding:5px 11px;border-radius:8px;font:inherit;font-size:12.5px;font-weight:600;color:var(--text-secondary);cursor:pointer;white-space:nowrap} .ch-agentes button.on{background:var(--accent);color:#fff} .ch-agentes button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+    .ch-tag{display:inline-block;font-size:10px;font-weight:700;color:var(--accent);background:var(--accent-glow);border-radius:4px;padding:0 5px}
+    .ch-av.adv,.ch-logo.adv{background:#2f3b52}
     .ch-av,.ch-logo{flex-shrink:0;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px}
     .ch-corpo{flex:1;min-width:0}
     .ch-md{font-size:14px;line-height:1.65;color:var(--text-primary)} .ch-md p{margin:0 0 10px} .ch-md ul,.ch-md ol{margin:0 0 10px;padding-left:22px} .ch-md li{margin:3px 0}
