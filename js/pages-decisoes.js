@@ -231,7 +231,7 @@ Router.register('decisoes', (params, el) => {
         <div class="dc-card-top"><div><b>${h(c.nome)}</b><span>${h(gestorDe(c.itens[0]?.clienteId).nome)}${c.lojas.length > 1 ? ` · ${c.lojas.length} lojas` : ''}</span></div>${c.urg ? `<span class="dc-card-urg">${c.urg} vencendo</span>` : ''}</div>
         <div class="dc-card-nums"><div><b>${c.itens.length}</b><span>decisão(ões)</span></div>${c.rs > 0 ? `<div><b>${R$(c.rs)}</b><span>por semana em jogo</span></div>` : ''}${ex ? `<div><b>${ex}</b><span>aprovar com 1 clique</span></div>` : ''}</div>
         <div class="dc-g-tipos">${porTipo.map(([t, n]) => `<span class="dc-g-t" style="--c:${TIPOS[t]?.c || 'var(--text-muted)'}">${TIPOS[t]?.t || t} ${n}</span>`).join('')}</div>
-        <ul class="dc-card-top3">${c.itens.slice(0, 3).map(it => `<li style="--c:${TIPOS[it.tipo]?.c || 'var(--text-muted)'}"><i></i><span>${h(corta(it.titulo, 70))}</span>${it.impacto ? `<b>${R$(it.impacto)}</b>` : ''}</li>`).join('')}</ul>
+        <ul class="dc-card-top3">${c.itens.slice(0, 3).map(it => `<li style="--c:${TIPOS[it.tipo]?.c || 'var(--text-muted)'}"><i></i><span>${h(corta(it.titulo, 70))}${c.lojas.length > 1 && partes(it)[1] ? `<small> · ${h(corta(partes(it)[1], 30))}</small>` : ''}</span>${it.impacto ? `<b>${R$(it.impacto)}</b>` : ''}</li>`).join('')}</ul>
         <span class="dc-card-ir">Ver as ${c.itens.length} decisão(ões) →</span>
       </button>`;
     }).join('')}</div>`;
@@ -331,6 +331,7 @@ Router.register('decisoes', (params, el) => {
     .dc-card-nums{display:flex;gap:18px;flex-wrap:wrap} .dc-card-nums>div{display:flex;flex-direction:column} .dc-card-nums b{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text-primary)} .dc-card-nums span{font-size:11px;color:var(--text-muted)}
     .dc-card-top3{list-style:none;margin:0;padding:10px 0 0;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
     .dc-card-top3 li{display:flex;gap:8px;align-items:baseline;font-size:12.5px;color:var(--text-secondary);line-height:1.35} .dc-card-top3 i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--c);transform:translateY(-1px)} .dc-card-top3 span{flex:1;min-width:0} .dc-card-top3 b{font-size:12px;font-weight:650;color:var(--text-primary);white-space:nowrap}
+    .dc-card-top3 small{color:var(--text-muted);font-size:11.5px}
     .dc-card-ir{font-size:12.5px;font-weight:600;color:var(--accent)}
     .dc-det{padding:0;overflow:hidden}
     .dc-det-cab{display:flex;flex-direction:column;gap:8px;padding:14px 16px}
