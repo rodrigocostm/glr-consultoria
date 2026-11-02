@@ -61,6 +61,22 @@ const GLR_KEYS = [
 // Toda vez que qualquer parte do sistema salva no localStorage,
 // automaticamente também salva no Supabase — sem alterar nenhum outro arquivo.
 const _localSetItem = localStorage.setItem.bind(localStorage);
+// Navegador sem espaço (~5 MB): apaga caches que as telas refazem sozinhas (fora do GLR_KEYS)
+// e tenta de novo; se ainda não couber, segue sem a cópia local em vez de travar a entrada.
+function _guardarLocal(k, v) {
+  try { _localSetItem(k, v); return true; } catch (e) {
+    if (!/quota/i.test(e.name + e.message)) throw e;
+    const caches = Object.keys(localStorage).filter(x => !GLR_KEYS.includes(x) && /_cache|^glr_prod_anuncios_|_snap$/.test(x))
+      .sort((a, b) => (localStorage.getItem(b) || '').length - (localStorage.getItem(a) || '').length);
+    localStorage.removeItem(k);
+    for (const x of caches) {
+      localStorage.removeItem(x);
+      try { _localSetItem(k, v); console.warn('[GLR] Navegador sem espaço: limpei caches locais para caber', k); return true; } catch (e2) {}
+    }
+    console.warn('[GLR] Sem espaço no navegador para', k, '— segue sem a cópia local');
+    return false;
+  }
+}
 
 // ── Listas compartilhadas por vários analistas: gravação ITEM A ITEM ──
 // Antes, cada navegador subia a lista INTEIRA e sobrescrevia a do banco: quem
@@ -164,7 +180,7 @@ async function sincronizarDoSupabase() {
     data.forEach(row => {
       // Lista com gravação item a item que ainda está sendo gravada: não atropela
       if (CHAVES_POR_ITEM.includes(row.chave)) _baseSync[row.chave] = Array.isArray(row.dados) ? row.dados : [];
-      _localSetItem(row.chave, _paraLocalStorage(row.dados));
+      _guardarLocal(row.chave, _paraLocalStorage(row.dados));
     });
     console.log(`[Supabase] ${data.length} coleções sincronizadas.`);
   }
