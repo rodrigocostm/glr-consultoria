@@ -31,6 +31,18 @@
     } catch (e) { return []; }
   }
 
+  // ── Rascunho vindo da Expansão de canais (js/pages-expansao.js): o anúncio que já
+  // vende em outro canal chega com fotos, título, descrição, preço, SKU e medidas.
+  // Vale uma vez (a próxima abertura da tela começa vazia). ──
+  function pegarRascunho(alvo) {
+    const r = window._glrRascunhoAnuncio;
+    if (!r || r.alvo !== alvo) return null;
+    window._glrRascunhoAnuncio = null;
+    return r;
+  }
+  const fotosDoRascunho = r => (r.fotos || []).map((url, i) => ({ id: Date.now() + i + Math.random(), url, origem: 'referencia' }));
+  const avisoRascunho = r => `<div style="font-size:13px;padding:10px 14px;border-radius:10px;background:var(--accent-glow);color:var(--text-primary);margin:-8px 0 18px;max-width:780px;line-height:1.5"><b>Rascunho da Expansão de canais</b> — copiado de ${String(r.origem || '').replace(/</g, '&lt;')}. Confira a categoria, a ficha técnica e o preço (as taxas do canal são outras) antes de publicar.</div>`;
+
   // ── Placeholder para os marketplaces ainda não construídos ──────────────
   const _PLACEHOLDER = {
     amazon:  { nome: 'Amazon', cor: '#ff9900' },
@@ -77,6 +89,8 @@
 
       criando: false, resultado: null, erro: '',
     };
+    const rasc = pegarRascunho('ml');
+    if (rasc) Object.assign(state, { titulo: String(rasc.titulo || '').slice(0, 60), descricao: rasc.descricao || '', preco: String(rasc.preco ?? ''), estoque: String(rasc.estoque ?? ''), sku: rasc.sku || '', contaId: rasc.conta || '', categoriaBuscaInput: String(rasc.titulo || '').slice(0, 60), fotos: fotosDoRascunho(rasc) });
 
     // ── Sincroniza o que está no DOM pro state antes de qualquer re-render,
     // pra não perder o que o analista já digitou quando uma ação (foto,
@@ -642,6 +656,7 @@
       <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;max-width:680px;">
         Suba a foto, deixe a IA sugerir título/descrição/categoria, confira a ficha técnica e publique — tudo numa tela só.
       </div>
+      ${rasc ? avisoRascunho(rasc) : ''}
       <div id="an-ml-root"></div>
       <style>@media (max-width:900px){.an-grid-resp{grid-template-columns:1fr !important;}}</style>
     </div>`;
@@ -663,7 +678,7 @@
     window._anMlReset = resetar;
 
     render();
-    carregarContas();
+    carregarContas().then(() => { if (rasc && state.contaId) buscarCategoria(state.titulo); });
   }
 
   // ============================================================
@@ -690,6 +705,8 @@
 
       criando: false, resultado: null, erro: '',
     };
+    const rasc = pegarRascunho('shopee');
+    if (rasc) Object.assign(state, { nomeProduto: String(rasc.titulo || '').slice(0, 120), descricao: rasc.descricao || '', preco: String(rasc.preco ?? ''), estoque: String(rasc.estoque ?? ''), sku: rasc.sku || '', contaId: rasc.conta || '', peso: String(rasc.peso || ''), compr: String(rasc.compr || ''), larg: String(rasc.larg || ''), alt: String(rasc.alt || ''), fotos: fotosDoRascunho(rasc) });
 
     function syncFormState() {
       const v = id => document.getElementById(id)?.value;
@@ -1305,6 +1322,7 @@
       <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;max-width:680px;">
         Suba a foto, deixe a IA sugerir nome/descrição/categoria, confira a ficha técnica e publique — tudo numa tela só.
       </div>
+      ${rasc ? avisoRascunho(rasc) : ''}
       <div id="an-sp-root"></div>
       <style>@media (max-width:900px){.an-grid-resp{grid-template-columns:1fr !important;}}</style>
     </div>`;
@@ -1327,7 +1345,7 @@
     window._anSpReset = resetar;
 
     render();
-    carregarContas();
+    carregarContas().then(() => { if (rasc && state.contaId) sugerirCategorias(); });
   }
 
   // ============================================================
@@ -1354,6 +1372,8 @@
 
       criando: false, resultado: null, erro: '',
     };
+    const rasc = pegarRascunho('tiktok');
+    if (rasc) Object.assign(state, { nomeProduto: String(rasc.titulo || '').slice(0, 255), descricao: rasc.descricao || '', preco: String(rasc.preco ?? ''), estoque: String(rasc.estoque ?? ''), sku: rasc.sku || '', contaId: rasc.conta || '', peso: String(rasc.peso || ''), compr: String(rasc.compr || ''), larg: String(rasc.larg || ''), alt: String(rasc.alt || ''), fotos: fotosDoRascunho(rasc) });
 
     function syncFormState() {
       const v = id => document.getElementById(id)?.value;
@@ -1936,6 +1956,7 @@
       <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;max-width:680px;">
         Suba a foto, deixe a IA sugerir nome/descrição/categoria, confira a ficha técnica e publique — tudo numa tela só.
       </div>
+      ${rasc ? avisoRascunho(rasc) : ''}
       <div id="an-tt-root"></div>
       <style>@media (max-width:900px){.an-grid-resp{grid-template-columns:1fr !important;}}</style>
     </div>`;
@@ -1958,7 +1979,7 @@
     window._anTtReset = resetar;
 
     render();
-    carregarContas();
+    carregarContas().then(async () => { if (rasc && state.contaId) { if (!state.warehouseId) await carregarWarehouse(); sugerirCategoria(); } });
   }
 
   Router.register('anuncios-ml', renderML);

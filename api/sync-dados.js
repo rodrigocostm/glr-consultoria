@@ -1305,6 +1305,8 @@ module.exports = async function handler(req, res) {
   if (minuto < 30 && !conta) waitUntil(dispararAgente(req, 'conexoes'));
   // limpeza da Caixa de decisões (vencidas/substituídas), de hora em hora
   if (minuto >= 30 && !conta) waitUntil(dispararAgente(req, 'limpeza'));
+  // expansão de canais: de madrugada (1h às 5h), uma rodada por hora, cliente analisado há mais de 3 dias
+  if (hora >= 1 && hora <= 5 && minuto < 15 && !conta) waitUntil(dispararAgente(req, 'expansao'));
   // Estoque único: a cada rodada (15 min) espelha as vendas novas nas outras lojas
   if (!conta) waitUntil(dispararAgente(req, 'estoque'));
   // 08:00: resumo da manhã no celular; às segundas, também o relatório semanal de cada cliente

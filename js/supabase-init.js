@@ -49,6 +49,7 @@ const GLR_KEYS = [
   'glr_plano_acao',      // plano de ação (Analytics) — editorial, não vem de API
   'glr_checklist_diario', // checklist diário (Analytics) — editorial, não vem de API
   'glr_logs',            // log de alterações (auditoria) — quem mudou o quê
+  'glr_expansao_ignorar',  // Expansão de canais — produtos marcados "Já existe" no canal
   'glr_track_ads_snap',    // Histórico de Alterações — último retrato de campanhas ADS por conta
   'glr_track_ads_log',     // Histórico de Alterações — mudanças de ADS detectadas
   'glr_track_precos_snap', // Histórico de Alterações — último preço visto por item, por conta

@@ -599,6 +599,19 @@ module.exports = async function handler(req, res) {
       return res.status(202).json({ ok: true, rodada: 'conexoes', slot });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
+  // ?rodada=expansao — Agente de Expansão de canais (api/_expansao.js): de madrugada, os clientes
+  // analisados há mais de 3 dias; &cliente_id=X analisa só ele na hora ("Analisar agora" na tela)
+  if (req.query?.rodada === 'expansao') {
+    const t = async (a, q) => mcpCall(mcApiKey, a, q);
+    const ajud = { sbSelect, sbUpsert, lerStorage, t };
+    try {
+      if (req.query?.cliente_id) return res.status(200).json({ ok: true, rodada: 'expansao', ...(await require('./_expansao').rodada(ajud, { clienteId: req.query.cliente_id, limiteMs: 250000 }).finally(gravarConsumo)) });
+      const { dia, hora } = agoraBRT(), slot = `${dia}-${String(hora).padStart(2, '0')}h-expansao`;
+      if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      waitUntil(require('./_expansao').rodada(ajud).then(r => console.log('[expansao]', JSON.stringify(r))).finally(gravarConsumo).catch(e => console.error('[expansao] falhou', e)));
+      return res.status(202).json({ ok: true, rodada: 'expansao', slot });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=limpeza — fecha as sugestões vencidas/substituídas da Caixa de decisões (de hora em hora); &simular=1 só conta
   if (req.query?.rodada === 'limpeza') {
     try { return res.status(200).json({ ok: true, rodada: 'limpeza', ...(await limparDecisoes(req.query?.simular === '1')) }); }

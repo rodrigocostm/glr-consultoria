@@ -192,4 +192,4 @@ async function espelharTodos(t) {
   return out;
 }
 
-module.exports = { listar, salvarProduto, ativar, espelharTodos };
+module.exports = { listar, salvarProduto, ativar, espelharTodos, anunciosML, anunciosShopee };
