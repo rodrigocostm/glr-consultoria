@@ -590,6 +590,16 @@ module.exports = async function handler(req, res) {
       return res.status(202).json({ ok: true, rodada: 'relatorio', slot });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
+  // ?rodada=estoque — espelho do estoque único (a cada 15 min): vendas novas descontam do produto
+  // e o número vai para as outras lojas do cliente (só clientes que ativaram no portal)
+  if (req.query?.rodada === 'estoque') {
+    try {
+      const t = async (a, q) => mcpCall(mcApiKey, a, q);
+      const r = await require('./_estoque').espelharTodos(t);
+      await gravarConsumo().catch(() => {});
+      return res.status(200).json({ ok: true, rodada: 'estoque', clientes: r });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=autonomia — recalcula os níveis de autonomia pelo resultado medido (não mexe em campanha)
   if (req.query?.rodada === 'autonomia') {
     try { return res.status(200).json({ ok: true, ...(await avaliarAutonomia()) }); } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }

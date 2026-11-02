@@ -154,6 +154,7 @@ async function loginPortal({ tipo, email, senha }) {
 }
 
 const nfeMod = require('./_nfe');
+const estoqueMod = require('./_estoque');
 
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -182,8 +183,8 @@ module.exports = async function handler(req, res) {
   const p = params || {};
   if (contasPermitidas) {
     // Portal: apenas consultas explicitamente permitidas e custo validado.
-    if ((!ALLOWED_ACTIONS.has(action) && action !== 'glr_portal_salvar_custo' && action !== 'glr_portal_produtos' && !/^glr_nfe_|^glr_portal_(ncm|salvar_ncm)$/.test(action) && !CATALOGO_LIVRE.has(action)) || action === 'raw' || BLOQUEADAS_PORTAL.test(action)) return res.status(403).json({ error: 'Ação não disponível no portal' });
-    if (action !== 'list_accounts' && action !== 'glr_portal_produtos' && !/^glr_nfe_|^glr_portal_(ncm|salvar_ncm)$/.test(action) && !CATALOGO_LIVRE.has(action)) { // as ações glr_nfe_*/ncm conferem a conta por conta própria
+    if ((!ALLOWED_ACTIONS.has(action) && action !== 'glr_portal_salvar_custo' && action !== 'glr_portal_produtos' && !/^glr_nfe_|^glr_estoque_|^glr_portal_(ncm|salvar_ncm)$/.test(action) && !CATALOGO_LIVRE.has(action)) || action === 'raw' || BLOQUEADAS_PORTAL.test(action)) return res.status(403).json({ error: 'Ação não disponível no portal' });
+    if (action !== 'list_accounts' && action !== 'glr_portal_produtos' && !/^glr_nfe_|^glr_estoque_|^glr_portal_(ncm|salvar_ncm)$/.test(action) && !CATALOGO_LIVRE.has(action)) { // as ações glr_nfe_*/ncm conferem a conta por conta própria
       const contas = CAMPOS_CONTA.map(k => p[k]).filter(v => v != null && v !== '').map(String);
       if (!contas.length) return res.status(403).json({ error: 'Informe a conta da consulta' });
       if (contas.some(c => !contasPermitidas.has(c))) return res.status(403).json({ error: 'Conta não vinculada ao seu acesso' });
@@ -194,13 +195,30 @@ module.exports = async function handler(req, res) {
   // deixa o portal gravar; aqui o servidor confere que cada anúncio é da conta
   // do cliente e grava só essas chaves no catálogo de custos.
   // ── Notas fiscais e NCM (api/_nfe.js) — só o portal, cada cliente com a própria chave do emissor ──
-  if (/^glr_nfe_|^glr_portal_(ncm|salvar_ncm)$/.test(action)) {
+  if (/^glr_nfe_|^glr_estoque_|^glr_portal_(ncm|salvar_ncm)$/.test(action)) {
     if (!contasPermitidas) return res.status(403).json({ error: 'Somente para o portal do cliente' });
     const cli = String(identity.portal?.clienteId ?? '');
     if (!cli) return res.status(403).json({ error: 'Acesso sem cliente vinculado' });
     const t = async (a, q) => { const j = await tiops(apiKey, a, q); if (typeof j?.error === 'string' && j.error.trim()) throw new Error(j.error); if (j?.status && j.status !== 200 && j?.data?.error) throw new Error(j.data.error); return j; };
     const minhaConta = (mkt, conta) => ['ml', 'shopee'].includes(mkt) && contasPermitidas.has(String(conta));
     try {
+      if (/^glr_estoque_/.test(action)) {
+        const lc = await t('list_accounts', {});
+        const contas = (lc?.data?.accounts || lc?.accounts || []).filter(c => contasPermitidas.has(String(c.external_id)))
+          .map(c => ({ mkt: /shopee/i.test(c.marketplace) ? 'shopee' : /meli|mercado|^ml$/i.test(c.marketplace) ? 'ml' : null, id: String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id) })).filter(c => c.mkt);
+        if (action === 'glr_estoque_listar') return res.status(200).json(await estoqueMod.listar(t, cli, contas));
+        // anúncios vêm da tela: só passa o que for das contas do cliente
+        const limpa = arr => (Array.isArray(arr) ? arr : []).filter(a => minhaConta(a?.mkt, a?.conta)).slice(0, 50).map(a => ({ mkt: a.mkt, conta: String(a.conta), id: String(a.id), var: a.var ? String(a.var) : null, full: !!a.full, estoque: a.estoque == null ? null : Number(a.estoque) }));
+        if (action === 'glr_estoque_salvar') {
+          const anuncios = limpa(p.anuncios);
+          if (!anuncios.length) return res.status(403).json({ error: 'Nenhum anúncio das suas contas' });
+          return res.status(200).json(await estoqueMod.salvarProduto(t, cli, { chave: String(p.chave || '').slice(0, 200), nome: p.nome, sku: p.sku, estoque: p.estoque, anuncios }));
+        }
+        if (action === 'glr_estoque_ativar') {
+          const produtos = (Array.isArray(p.produtos) ? p.produtos : []).slice(0, 5000).map(x => ({ chave: String(x.chave || '').slice(0, 200), nome: x.nome, sku: x.sku, anuncios: limpa(x.anuncios) })).filter(x => x.chave && x.anuncios.length);
+          return res.status(200).json(await estoqueMod.ativar(t, cli, !!p.ativo, produtos));
+        }
+      }
       if (action === 'glr_nfe_status') return res.status(200).json(await nfeMod.status(cli));
       if (action === 'glr_nfe_chave') return res.status(200).json(p.remover ? await nfeMod.removerChave(cli) : await nfeMod.salvarChave(cli, p.chave));
       if (action === 'glr_nfe_pedidos') {
