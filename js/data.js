@@ -240,4 +240,5 @@ async function registrarLog(acao, detalhes) {
     if (typeof window._logAtualizarTela === 'function') window._logAtualizarTela();
   } catch(e) { console.warn('[Log] erro ao registrar', e); }
 }
-window.registrarLog = registrarLog;
+if (typeof window !== 'undefined') window.registrarLog = registrarLog;
+if (typeof module !== 'undefined' && module.exports) module.exports = GLR;
