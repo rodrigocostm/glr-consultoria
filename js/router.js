@@ -83,6 +83,7 @@ const Router = {
       'datas-especiais': 'Datas especiais',
       'expansao': 'Expansão de canais',
       'retencao': 'Retenção',
+      'conversao-ml': 'Catálogo e Buy Box',
       'black-friday': 'Datas especiais',
       'relatorio-semanal': 'Relatório semanal',
       'notas': 'Notas e etiquetas',

@@ -13,6 +13,8 @@ window.GLRAcoes = (function () {
     d = d || {};
     if (d.promo_aprovar && d.item_id) return 'promocao'; // só entra no ML quando o analista aprova
     if (d.campaign_id != null && (d.roas_sugerido != null || d.budget_sugerido != null || d.pausar === true || d.retomar === true)) return 'ads';
+    if (d.acao === 'buybox_preco' && d.item_id && d.preco_sugerido != null) return 'buybox'; // Agente de Conversão: preço que ganha o catálogo
+    if (d.acao === 'catalogo_optin' && d.item_id && d.catalog_product_id) return 'catalogo';  // Agente de Conversão: entrar no catálogo
     if (d.item_id != null && d.estoque_sugerido != null) return 'estoque';
     if (d.item_id != null && d.preco_sugerido != null) return 'preco';
     return null;
@@ -58,6 +60,15 @@ window.GLRAcoes = (function () {
     } else if (tipo === 'estoque') {
       if (d.marketplace === 'ml') await MarketplaceAPI.call('ml_update_variation_stock', { item_id: d.item_id, variation_id: d.model_id, available_quantity: d.estoque_sugerido });
       else await MarketplaceAPI.call('shopee_update_stock', { shopId: l.conta_id, item_id: Number(d.item_id), model_id: d.model_id ? Number(d.model_id) : undefined, stock: d.estoque_sugerido });
+    } else if (tipo === 'buybox' || tipo === 'catalogo') {
+      const r = tipo === 'catalogo'
+        ? await MarketplaceAPI.call('ml_catalog_optin', { meliUserId: l.conta_id, item_id: d.item_id, product_id: d.catalog_product_id })
+        : d.tem_variacao
+          ? await MarketplaceAPI.call('ml_update_variations_price', { account_id: l.conta_id, item_id: d.item_id, price: d.preco_sugerido })
+          : await MarketplaceAPI.call('update_item', { meliUserId: l.conta_id, item_id: d.item_id, price: d.preco_sugerido });
+      const x = r?.data || r || {};
+      const erro = r?.error || x.error || (parseInt(r?.status) >= 400 || parseInt(x.status) >= 400 ? (x.message || x.cause?.[0]?.message || 'o ML recusou') : null);
+      if (erro) throw new Error(typeof erro === 'string' ? erro : JSON.stringify(erro).slice(0, 200));
     } else if (tipo === 'preco') {
       if (d.marketplace === 'ml') await MarketplaceAPI.call('ml_update_variations_price', { item_id: d.item_id, price: d.preco_sugerido });
       else await MarketplaceAPI.call('shopee_update_price', { shopId: l.conta_id, item_id: Number(d.item_id), model_id: d.model_id ? Number(d.model_id) : undefined, price: d.preco_sugerido });
@@ -68,6 +79,7 @@ window.GLRAcoes = (function () {
     if (d.budget_sugerido != null) { dadosExec.budget_de = d.budget_atual; dadosExec.budget_para = d.budget_sugerido; delete dadosExec.budget_atual; delete dadosExec.budget_sugerido; }
     if (d.retomar === true) { dadosExec.retomada = true; delete dadosExec.retomar; }
     if (d.pausar === true) { dadosExec.pausada = true; delete dadosExec.pausar; }
+    if (tipo === 'buybox') { dadosExec.preco_de = d.preco_atual; dadosExec.preco_para = d.preco_sugerido; }
     await _sb.from('glr_agente_log').update({ resultado: 'executado' }).eq('id', l.id);
     await _sb.from('glr_agente_log').insert({
       conta_id: l.conta_id, cliente_nome: clienteNome || l.cliente_nome || null, tipo: 'decisao',

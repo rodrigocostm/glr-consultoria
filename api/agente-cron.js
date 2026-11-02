@@ -599,6 +599,29 @@ module.exports = async function handler(req, res) {
       return res.status(202).json({ ok: true, rodada: 'conexoes', slot });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
+  // ?rodada=conversao — Agente de Conversão no ML (api/_conversao.js): catálogo/Buy Box e elegíveis,
+  // contas ainda não analisadas hoje (de madrugada, em várias passadas); &conta=X analisa só ela na hora
+  if (req.query?.rodada === 'conversao') {
+    const t = async (a, q) => mcpCall(mcApiKey, a, q);
+    const ajud = { sbSelect, sbUpsert, sbInsert, lerStorage, t };
+    try {
+      if (req.query?.conta) return res.status(200).json({ ok: true, rodada: 'conversao', ...(await require('./_conversao').rodada(ajud, { conta: req.query.conta, limiteMs: 250000 }).finally(gravarConsumo)) });
+      const { dia, hora } = agoraBRT(), slot = `${dia}-${String(hora).padStart(2, '0')}h${String(Math.floor(new Date().getUTCMinutes() / 15) * 15).padStart(2, '0')}-conversao`;
+      if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      waitUntil(require('./_conversao').rodada(ajud).then(r => console.log('[conversao]', JSON.stringify(r))).finally(gravarConsumo).catch(e => console.error('[conversao] falhou', e)));
+      return res.status(202).json({ ok: true, rodada: 'conversao', slot });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
+  // ?rodada=perguntas — perguntas do ML sem resposta há mais de 1 h → aviso no celular (de hora em hora, 8h–22h); &simular=1 só conta
+  if (req.query?.rodada === 'perguntas') {
+    const ajud = { sbSelect, sbUpsert, lerStorage };
+    try {
+      if (req.query?.simular === '1') return res.status(200).json({ ok: true, ...(await require('./_conversao').avisarPerguntas(ajud, true)) });
+      const { dia, hora } = agoraBRT(), slot = `${dia}-${String(hora).padStart(2, '0')}h-perguntas`;
+      if (req.query?.agora !== '1' && !(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      return res.status(200).json({ ok: true, rodada: 'perguntas', ...(await require('./_conversao').avisarPerguntas(ajud)) });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=retencao — Agente de Retenção (api/_retencao.js), 07:00 uma vez por dia; &agora=1 roda já; &simular=1 só calcula
   if (req.query?.rodada === 'retencao') {
     const ajud = { sbSelect, sbUpsert, sbInsert, sbUpdate, lerStorage };

@@ -17,6 +17,7 @@
 // ============================================================
 Router.register('decisoes', (params, el) => {
   const R$ = v => 'R$ ' + (Math.round(parseFloat(v) || 0)).toLocaleString('pt-BR');
+  const R2 = v => 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const h = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const lerJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || '') ?? d; } catch (e) { return d; } };
   const corta = (t, n) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
@@ -29,6 +30,7 @@ Router.register('decisoes', (params, el) => {
     'ads-shopee': { t: 'ADS Shopee', c: '#eb6834' },
     'ads-ml': { t: 'ADS ML', c: '#d9a400' },
     'estoque': { t: 'Estoque', c: '#1f9d74' },
+    'conversao': { t: 'Catálogo ML', c: '#d9a400' },
     'faturamento': { t: 'Faturamento', c: 'var(--accent)' },
     'promocoes': { t: 'Promoções', c: 'var(--purple)' },
   };
@@ -81,6 +83,13 @@ Router.register('decisoes', (params, el) => {
         if (d.acao === 'retencao') { // Agente de Retenção: o aviso é do cliente, não de uma loja
           itens.push({ id: 'log:' + l.id, log: l, tipo: 'retencao', mkt: 'cliente', conta: String(l.conta_id), clienteFixo: String(d.cliente_id || ''), titulo: `Cliente em risco de cancelar${d.gestor ? ` — ${d.gestor}` : ''}`,
             acao: `risco ${d.score}/100`, porque: (d.motivos || []).join(' · '), urgente: true, exec: false, tela: 'retencao', quando: l.criado_em, nomeCliente: l.cliente_nome });
+          continue;
+        }
+        if (d.acao === 'buybox_preco' || d.acao === 'catalogo_optin') { // Agente de Conversão no ML: aprovar aplica no ML
+          const cat = d.acao === 'catalogo_optin';
+          itens.push({ id: 'log:' + l.id, log: l, tipo: 'conversao', mkt: 'ml', conta: String(l.conta_id), titulo: cat ? `Entrar no catálogo — ${d.produto || d.item_id}` : `Ganhar o catálogo — ${d.produto || d.item_id}`,
+            acao: cat ? 'publicar no catálogo' : `${R2(d.preco_atual)} → ${R2(d.preco_sugerido)}${d.margem_nova != null ? ` · margem ${String(d.margem_nova).replace('.', ',')}%` : ''}`,
+            porque: String(l.explicacao || ''), impacto: d.impacto || null, impactoTipo: 'ganho', exec: !!GLRAcoes.tipoDe(d), tela: 'conversao-ml', quando: l.criado_em });
           continue;
         }
         if (d.acao === 'estoque_minimo') { // agente de ADS: produto da campanha acabando — repor é com o cliente

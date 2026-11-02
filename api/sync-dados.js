@@ -1305,6 +1305,10 @@ module.exports = async function handler(req, res) {
   if (minuto < 30 && !conta) waitUntil(dispararAgente(req, 'conexoes'));
   // limpeza da Caixa de decisões (vencidas/substituídas), de hora em hora
   if (minuto >= 30 && !conta) waitUntil(dispararAgente(req, 'limpeza'));
+  // conversão no ML (catálogo/Buy Box): 5h e 6h, cada passada pega as contas ainda não analisadas hoje
+  if ((hora === 5 || hora === 6) && !conta) waitUntil(dispararAgente(req, 'conversao'));
+  // perguntas do ML esperando mais de 1 h: aviso de hora em hora, das 8h às 22h
+  if (hora >= 8 && hora <= 22 && minuto < 15 && !conta) waitUntil(dispararAgente(req, 'perguntas'));
   // retenção: risco de cancelar de cada cliente, às 07:00 (antes do resumo das 8h)
   if (hora === 7 && minuto < 15 && !conta) waitUntil(dispararAgente(req, 'retencao'));
   // expansão de canais: de madrugada (1h às 5h), uma rodada por hora, cliente analisado há mais de 3 dias
