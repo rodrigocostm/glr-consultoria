@@ -45,9 +45,10 @@ async function lerSistema(sbSelect, conta, recurso) {
 // ── Resumo da manhã ──
 async function resumoDaManha({ sbSelect }, simular = false) {
   const ontem = isoBRT(1), semanaPassada = isoMais(ontem, -7);
-  const [bases, saldo, conex, pend] = await Promise.all([
+  const [bases, saldo, conex, pend, ret] = await Promise.all([
     lerBases(sbSelect), lerSistema(sbSelect, 'saldo_ads', 'shopee'), lerSistema(sbSelect, 'conexoes', 'todas'),
     sbSelect('glr_agente_log', `tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 10 * 864e5).toISOString())}&select=dados&limit=5000`).catch(() => []),
+    lerSistema(sbSelect, 'retencao', 'todas'),
   ]);
   let v1 = 0, v0 = 0, p1 = 0;
   for (const dias of bases.values()) { const a = somar(dias, ontem, ontem), b = somar(dias, semanaPassada, semanaPassada); v1 += a.faturamento; p1 += a.pedidos; v0 += b.faturamento; }
@@ -59,6 +60,8 @@ async function resumoDaManha({ sbSelect }, simular = false) {
   linhas.push(`Vendas ontem: ${mil(v1)} em ${p1} pedido(s)${varTxt(v1, v0) ? ` (${varTxt(v1, v0)} vs ${DIA_SEMANA[new Date(`${semanaPassada}T12:00:00Z`).getUTCDay()]} passado)` : ''}`);
   if (n('zerado') + n('critico') + n('baixo')) linhas.push(`Saldo de ADS Shopee: ${[n('zerado') ? `${n('zerado')} zerada(s)` : '', n('critico') ? `${n('critico')} acaba(m) hoje` : '', n('baixo') ? `${n('baixo')} baixa(s)` : ''].filter(Boolean).join(', ')}`);
   if (probl) linhas.push(`Conexões: ${probl} com problema`);
+  const risco = Object.values(ret?.clientes || {}), rAlto = risco.filter(x => x.nivel === 'alto'), rMedio = risco.filter(x => x.nivel === 'medio').length;
+  if (rAlto.length || rMedio) linhas.push(`Retenção: ${rAlto.length ? `${rAlto.length} cliente(s) em risco alto (${rAlto.sort((a, b) => b.score - a.score).slice(0, 3).map(x => x.nome).join(', ')})` : ''}${rAlto.length && rMedio ? ', ' : ''}${rMedio ? `${rMedio} em risco médio` : ''}`);
   linhas.push(`Caixa de decisões: ${pendentes.length} pendente(s)${promo ? `, ${promo} promoção(ões) para aprovar` : ''}`);
   const titulo = '☀️ Bom dia — o que precisa de você hoje';
   if (simular) return { simulacao: true, titulo, linhas };

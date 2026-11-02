@@ -599,6 +599,17 @@ module.exports = async function handler(req, res) {
       return res.status(202).json({ ok: true, rodada: 'conexoes', slot });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
+  // ?rodada=retencao — Agente de Retenção (api/_retencao.js), 07:00 uma vez por dia; &agora=1 roda já; &simular=1 só calcula
+  if (req.query?.rodada === 'retencao') {
+    const ajud = { sbSelect, sbUpsert, sbInsert, sbUpdate, lerStorage };
+    try {
+      if (req.query?.simular === '1' || req.query?.agora === '1') return res.status(200).json({ ok: true, rodada: 'retencao', ...(await require('./_retencao').avaliarCarteira(ajud, { simular: req.query?.simular === '1' })) });
+      const slot = `${agoraBRT().dia}-retencao`;
+      if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      waitUntil(require('./_retencao').avaliarCarteira(ajud).then(r => console.log('[retencao]', JSON.stringify(r))).catch(e => console.error('[retencao] falhou', e)));
+      return res.status(202).json({ ok: true, rodada: 'retencao', slot });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=expansao — Agente de Expansão de canais (api/_expansao.js): de madrugada, os clientes
   // analisados há mais de 3 dias; &cliente_id=X analisa só ele na hora ("Analisar agora" na tela)
   if (req.query?.rodada === 'expansao') {

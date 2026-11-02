@@ -22,6 +22,7 @@ Router.register('decisoes', (params, el) => {
   const corta = (t, n) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
   const dataCurta = iso => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
   const TIPOS = {
+    'retencao': { t: 'Retenção', c: 'var(--red)' },
     'reputacao': { t: 'Reputação', c: 'var(--red)' },
     'saldo': { t: 'Saldo de ADS', c: 'var(--red)' },
     'conexao': { t: 'Conexão', c: 'var(--red)' },
@@ -77,6 +78,11 @@ Router.register('decisoes', (params, el) => {
             acao: `Recarregar — saldo ${R$(d.saldo)}${diasTxt ? ` · ${diasTxt}` : ''}`, porque: String(l.explicacao || ''), urgente: d.nivel !== 'baixo', exec: false, tela: 'agente', quando: l.criado_em });
           continue;
         }
+        if (d.acao === 'retencao') { // Agente de Retenção: o aviso é do cliente, não de uma loja
+          itens.push({ id: 'log:' + l.id, log: l, tipo: 'retencao', mkt: 'cliente', conta: String(l.conta_id), clienteFixo: String(d.cliente_id || ''), titulo: `Cliente em risco de cancelar${d.gestor ? ` — ${d.gestor}` : ''}`,
+            acao: `risco ${d.score}/100`, porque: (d.motivos || []).join(' · '), urgente: true, exec: false, tela: 'retencao', quando: l.criado_em, nomeCliente: l.cliente_nome });
+          continue;
+        }
         if (d.acao === 'estoque_minimo') { // agente de ADS: produto da campanha acabando — repor é com o cliente
           const diasTxt = d.dias != null ? ` · acaba em ~${String(d.dias).replace('.', ',')} dia(s)` : '';
           itens.push({ id: 'log:' + l.id, log: l, tipo: 'estoque', mkt, conta: String(l.conta_id), titulo: `Repor estoque — ${d.produto || ''}`,
@@ -126,15 +132,16 @@ Router.register('decisoes', (params, el) => {
       }
       // conta que não está mais em nenhum cliente (cliente excluído / conta desvinculada) sai da fila
       const vinc = lerJSON('glr_mc_vinculos', {}), contasVinc = new Set(Object.values(vinc).flatMap(a => (a || []).flatMap(c => [c.external_id, c.param_to_use?.shopId, c.param_to_use?.meliUserId].filter(Boolean).map(String))));
-      if (contasVinc.size) for (let i = itens.length - 1; i >= 0; i--) if (!contasVinc.has(itens[i].conta)) itens.splice(i, 1);
-      for (const it of itens) {
-        it.loja = GLR.nomeConta(it.mkt, it.conta);
-        it.clienteId = GLR.ctx?.clienteDaConta(it.mkt, it.conta) || '';
-      }
+      if (contasVinc.size) for (let i = itens.length - 1; i >= 0; i--) if (!itens[i].clienteFixo && !contasVinc.has(itens[i].conta)) itens.splice(i, 1);
+      const nomear = it => {
+        if (it.clienteFixo) { it.clienteId = it.clienteFixo; it.loja = `${(GLR.clientes || []).find(c => String(c.id) === it.clienteFixo)?.nome || it.nomeCliente || 'Cliente'} · Carteira`; return; }
+        it.loja = GLR.nomeConta(it.mkt, it.conta); it.clienteId = GLR.ctx?.clienteDaConta(it.mkt, it.conta) || '';
+      };
+      itens.forEach(nomear);
       itens.sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0) || (a.urgente && b.urgente ? new Date(a.prazo) - new Date(b.prazo) : 0)
         || (b.impacto || 0) - (a.impacto || 0) || String(b.quando || '').localeCompare(String(a.quando || '')));
       st.itens = itens; st.erro = null;
-      GLR.quandoClientes(() => { st.itens.forEach(it => { it.loja = GLR.nomeConta(it.mkt, it.conta); it.clienteId = GLR.ctx?.clienteDaConta(it.mkt, it.conta) || ''; }); render(); });
+      GLR.quandoClientes(() => { st.itens.forEach(nomear); render(); });
     } catch (e) { st.erro = e.message || String(e); }
     st.carregando = false; render();
     window.dispatchEvent(new CustomEvent('glr:decisoes', { detail: { n: st.itens.length } }));
