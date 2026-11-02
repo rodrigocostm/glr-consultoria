@@ -336,7 +336,7 @@ Router.register('decisoes', (params, el) => {
     .dc-det{padding:0;overflow:hidden}
     .dc-det-cab{display:flex;flex-direction:column;gap:8px;padding:14px 16px}
     .dc-voltar{all:unset;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--accent);width:fit-content} .dc-voltar:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-    .dc-det-nome{display:flex;flex-direction:column} .dc-det-nome b{font-size:16px;font-weight:650} .dc-det-nome span{font-size:12.5px;color:var(--text-muted)}
+    .dc-det-nome{display:flex;flex-direction:column} .dc-det-nome > b{font-size:16px;font-weight:650} .dc-det-nome span{font-size:12.5px;color:var(--text-muted)} .dc-det-nome span b{font-size:inherit}
     .dc-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
     .dc-chip{border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);border-radius:99px;padding:5px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
     .dc-chip b{color:var(--text-primary);font-weight:650;margin-left:2px} .dc-chip.on{border-color:var(--accent);background:var(--accent-glow);color:var(--accent-light)}
