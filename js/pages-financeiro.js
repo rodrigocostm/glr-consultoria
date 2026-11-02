@@ -76,7 +76,7 @@ Router.register('financeiro', async (params, el) => {
   // Mês selecionado persiste entre recarregamentos (não volta sozinho pro mês atual)
   let mesSel   = localStorage.getItem('glr_fin_mes') || `${hoje.getFullYear()}-${pad(hoje.getMonth()+1)}`;
   // Empresa/conta escolhidas ficam lembradas: a tela já abre carregada da base.
-  let empresaSel = localStorage.getItem('glr_fin_empresa') || 'todas';  // empresa/tag selecionada
+  let empresaSel = window._portalConfig ? 'todas' : (localStorage.getItem('glr_fin_empresa') || 'todas');  // empresa/tag selecionada (portal: só as contas dele)
   let contaSel = localStorage.getItem('glr_fin_conta') || 'todas';      // conta individual selecionada
   let ultimaBuscaSoBase = false; // última busca veio toda da base → pode recarregar sozinha
   let incluirReemb = true;

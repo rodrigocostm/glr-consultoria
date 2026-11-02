@@ -823,6 +823,16 @@ async function _portalBuscarAdsPeriodo(de, ate) {
 // ── Inicializar portal cliente ────────────────────────────────
 window._initPortalCliente = async function(cfg) {
   window._portalConfig = cfg;
+  // Nada da equipe pode aparecer para o cliente: o seletor "Cliente" da barra de cima
+  // pode ter sido montado antes de saber que é portal, e o navegador pode guardar o
+  // cache de quem da equipe usou este computador (lista de clientes, vínculos, metas…).
+  document.querySelectorAll('.ctx-box').forEach(b => b.remove());
+  try {
+    const manter = new Set(['glr_vendas_custos', 'glr_vendas_custo_catalogo', 'glr_aliquotas', 'glr_vendas_linhas']); // custos: o portal relê abaixo
+    (typeof GLR_KEYS !== 'undefined' ? GLR_KEYS : []).forEach(k => { if (!manter.has(k)) localStorage.removeItem(k); });
+    ['glr_ctx_cliente', 'glr_fin_empresa', 'glr_fin_conta'].forEach(k => localStorage.removeItem(k));
+    if (typeof GLR !== 'undefined') ['clientes', 'gestores', 'tarefas', 'acoes', 'alertas', 'oportunidades'].forEach(k => { if (Array.isArray(GLR[k])) GLR[k] = []; });
+  } catch (e) {}
   _configurarSidebarCliente(cfg);
 
   // Marcador LOCAL no lugar da chave: as telas que conferem "tem chave?" seguem em
@@ -833,7 +843,7 @@ window._initPortalCliente = async function(cfg) {
   document.body.classList.add('modo-portal');
   if (!document.getElementById('portal-sem-botoes')) {
     const st = document.createElement('style'); st.id = 'portal-sem-botoes';
-    st.textContent = 'body.modo-portal #btn-buscar, body.modo-portal #fin-btn-atualizar, body.modo-portal #fin-btn-reprocessar, body.modo-portal #op-manual-wrap, body.modo-portal .pm-config .btn, body.modo-portal #conc-btn-buscar, body.modo-portal #vendas-abas, body.modo-portal #vendas-config-custo { display: none !important; }';
+    st.textContent = 'body.modo-portal #btn-buscar, body.modo-portal #fin-btn-atualizar, body.modo-portal #fin-btn-reprocessar, body.modo-portal #op-manual-wrap, body.modo-portal .pm-config .btn, body.modo-portal #conc-btn-buscar, body.modo-portal #fin-sel-empresa, body.modo-portal #vendas-abas, body.modo-portal #vendas-config-custo { display: none !important; }';
     document.head.appendChild(st);
   }
   // Custos lançados no admin (mesmo lucro que a equipe vê)
@@ -851,7 +861,7 @@ window._initPortalCliente = async function(cfg) {
 };
 
 // Telas liberadas para o cliente do portal (o router bloqueia o resto)
-window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'minhas-oportunidades', 'produtos', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'conciliacao', 'vendas'];
+window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'conciliacao', 'vendas'];
 
 function _portalMostrarLoading(msg) {
   const el = document.getElementById('page-content');
@@ -926,10 +936,6 @@ function _configurarSidebarCliente(cfg) {
       <button class="nav-item" data-page="minha-curva-abc" onclick="Router.navigate('minha-curva-abc')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         Curva ABC
-      </button>
-      <button class="nav-item" data-page="minhas-oportunidades" onclick="Router.navigate('minhas-oportunidades')">
-        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-        Oportunidades
       </button>
       <button class="nav-item" data-page="produtos" onclick="Router.navigate('produtos')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>

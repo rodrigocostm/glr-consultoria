@@ -291,8 +291,10 @@ Router.register('conciliacao', async (params, el) => {
   function render() {
     const nomesContas = contas.map(c => {
       const mp = (c.marketplace||'').toLowerCase().includes('shopee') ? '🟠' : '🟡';
-      const emp = contaEmpresa(c.external_id);
-      return { id: c.external_id, label: `${mp} ${emp ? emp+' — ' : ''}${c.nickname||c.external_id}` };
+      const tag = (c.tags || []).map(t => t && (t.name || t.value)).find(v => v && typeof v === 'string') || '';
+      const emp = window._portalConfig ? '' : contaEmpresa(c.external_id);
+      const nome = tag || c.label || c.nickname || c.external_id;
+      return { id: c.external_id, label: `${mp} ${emp && !String(nome).toLowerCase().includes(emp.toLowerCase()) ? emp + ' — ' : ''}${nome}` };
     });
 
     const totalPedidos = pedidos.length;

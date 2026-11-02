@@ -70,6 +70,10 @@ async function _renderPortalAdminLista() {
               style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid var(--border);background:var(--bg-base);color:var(--text-secondary);">
               ${cfg.ativo!==false ? '⏸ Suspender' : '▶ Ativar'}
             </button>
+            <button onclick="window._portalAdminLiberar('${cfg.id}')" title="Libera o login sem precisar do e-mail de confirmação"
+              style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid var(--border);background:var(--bg-base);color:var(--text-secondary);">
+              Liberar login
+            </button>
             <button onclick="window._portalAdminEditar('${cfg.id}')"
               style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:600;">
               Editar
@@ -83,6 +87,22 @@ async function _renderPortalAdminLista() {
       `).join('')}
     </div>`;
 }
+
+// ── Login do cliente pelo servidor (api/mcp.js glr_login_portal, só equipe) ──
+async function _loginPortalServidor(params) {
+  const r = await window.glrApiFetch('/api/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'glr_login_portal', params }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+// Libera o login de quem ficou preso no e-mail de confirmação
+window._portalAdminLiberar = async function(id) {
+  const cfg = (await _lerConfigs()).find(c => c.id === id); if (!cfg) return;
+  try {
+    const j = await _loginPortalServidor({ tipo: 'confirmar', email: cfg.email });
+    alert(j.ja_estava ? `O login de ${cfg.email} já estava liberado. Se não entra, a senha está errada: use Editar para definir uma nova.` : `Login de ${cfg.email} liberado. Já pode entrar.`);
+  } catch (e) { alert('Não consegui liberar: ' + e.message); }
+};
 
 // ── Modal de criação / edição ──────────────────────────────────
 window._portalAdminNovo = function() { _abrirModal(null); };
@@ -233,12 +253,9 @@ window._portalAdminSalvar = async function(editId) {
       }
     } else {
       // Novo: cria usuário no Supabase
-      const { error: signUpError } = await _sb.auth.signUp({ email, password: senha });
-      if (signUpError && !signUpError.message.includes('already registered')) {
-        msg.textContent = '❌ Erro ao criar usuário: ' + signUpError.message;
-        msg.style.color = 'var(--red)';
-        return;
-      }
+      // login criado pelo servidor já com o e-mail confirmado: o cliente entra sem o e-mail de confirmação
+      try { await _loginPortalServidor({ tipo: 'criar', email, senha }); }
+      catch (e) { msg.textContent = '❌ Erro ao criar usuário: ' + e.message; msg.style.color = 'var(--red)'; return; }
       const novoId = 'portal_' + Date.now();
       configs.push({ id: novoId, email, clienteId, clienteNome, contaIds, ativo: true, criadoEm: new Date().toISOString() });
     }

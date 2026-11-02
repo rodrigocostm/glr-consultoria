@@ -107,6 +107,52 @@ async function salvarCustoPortal(apiKey, p) {
   return { ok: true, chaves: Object.fromEntries(chaves) };
 }
 
+// ── Login de cliente do portal pelo servidor (só a equipe, glr_staff) ──
+// 'criar'     → cria o login já com o e-mail confirmado (o cliente entra sem o e-mail
+//               de confirmação); se o login já existir e não for da equipe: confirma e
+//               define a senha informada.
+// 'confirmar' → só marca o e-mail como confirmado (libera quem ficou preso nisso).
+// Nunca mexe em login da equipe (glr_staff) e não muda papel: quem é equipe continua
+// sendo só quem está em glr_staff. Troca de senha de acesso existente: /api/portal-password.
+async function loginPortal({ tipo, email, senha }) {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY não configurada');
+  email = String(email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 160) throw new Error('E-mail inválido');
+  if (tipo === 'criar' && (typeof senha !== 'string' || senha.length < 8 || senha.length > 128)) throw new Error('Use uma senha entre 8 e 128 caracteres');
+  const headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+  const ir = (path, init = {}) => fetch(`${SUPABASE_URL}${path}`, { ...init, headers, signal: AbortSignal.timeout(10000) });
+  const achar = async () => {
+    for (let page = 1; page <= 20; page++) {
+      const r = await ir(`/auth/v1/admin/users?page=${page}&per_page=100`);
+      if (!r.ok) throw new Error('Não consegui consultar os logins');
+      const lista = (await r.json()).users || [];
+      const u = lista.find(x => String(x.email || '').toLowerCase() === email);
+      if (u || lista.length < 100) return u || null;
+    }
+    return null;
+  };
+  const daEquipe = async id => { const r = await ir(`/rest/v1/glr_staff?user_id=eq.${encodeURIComponent(id)}&select=user_id`); if (!r.ok) throw new Error('Não consegui conferir a equipe'); return (await r.json()).length > 0; };
+  const atualizar = async (id, campos) => { const r = await ir(`/auth/v1/admin/users/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(campos) }); if (!r.ok) throw new Error('O provedor recusou a alteração'); };
+  if (tipo === 'criar') {
+    const r = await ir('/auth/v1/admin/users', { method: 'POST', body: JSON.stringify({ email, password: senha, email_confirm: true }) });
+    if (r.ok) return { ok: true, criado: true };
+    const u = await achar();
+    if (!u) throw new Error('Não consegui criar o login');
+    if (await daEquipe(u.id)) throw new Error('Este e-mail é de um login da equipe GLR.');
+    await atualizar(u.id, { password: senha, email_confirm: true });
+    return { ok: true, criado: false, atualizado: true };
+  }
+  if (tipo === 'confirmar') {
+    const u = await achar();
+    if (!u) throw new Error('Não existe login com esse e-mail. Edite o acesso e defina uma senha para criá-lo.');
+    if (await daEquipe(u.id)) throw new Error('Este e-mail é de um login da equipe GLR.');
+    if (!u.email_confirmed_at) await atualizar(u.id, { email_confirm: true });
+    return { ok: true, ja_estava: !!u.email_confirmed_at };
+  }
+  throw new Error('tipo inválido');
+}
+
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -123,6 +169,12 @@ module.exports = async function handler(req, res) {
   if (!identity) return res.status(401).json({ error: 'Faça login para continuar.' });
   if (!['staff', 'portal'].includes(identity.role)) return res.status(403).json({ error: 'Acesso não autorizado.' });
   const contasPermitidas = identity.role === 'portal' ? new Set((identity.portal?.contaIds || []).map(String)) : null;
+
+  if (action === 'glr_login_portal') {
+    if (identity.role !== 'staff') return res.status(403).json({ error: 'Acesso restrito à equipe GLR.' });
+    try { return res.status(200).json(await loginPortal(params || {})); }
+    catch (e) { return res.status(400).json({ error: e.message || String(e) }); }
+  }
 
   if (!contasPermitidas && !ALLOWED_ACTIONS.has(action)) return res.status(403).json({ error: `Ação '${action}' não permitida via proxy` });
   const p = params || {};

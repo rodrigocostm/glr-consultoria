@@ -601,8 +601,12 @@ Router.register('gestores', (params, el) => {
 
     try {
       if (senha) {
-        const { error } = await _sb.auth.signUp({ email, password: senha });
-        if (error && !error.message.includes('already registered')) {
+        // pelo servidor, já confirmado (sem e-mail de confirmação); se já existir, troca a senha
+        const { data: sess } = await _sb.auth.getSession();
+        const resp = await fetch('/api/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token || ''}` }, body: JSON.stringify({ action: 'glr_login_portal', params: { tipo: 'criar', email, senha } }) });
+        const jr = await resp.json().catch(() => ({}));
+        const error = !resp.ok || jr.error ? { message: jr.error || `HTTP ${resp.status}` } : null;
+        if (error) {
           msg.textContent = '❌ Erro ao criar usuário: ' + error.message;
           msg.style.color = '#dc2626';
           if (btn) { btn.disabled = false; btn.textContent = g.loginCriado ? 'Atualizar' : 'Criar Login'; }
