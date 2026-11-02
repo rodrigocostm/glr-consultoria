@@ -4,7 +4,10 @@
 // Um card por cliente com a projeção do mês (contra a meta), o ADS do mês com o
 // TACOS e se está crescendo ou caindo: últimos 7 dias contra os 7 anteriores
 // (firme mesmo no começo do mês) e a projeção contra o mês passado fechado.
-// Nos 2 primeiros dias do mês a projeção usa o ritmo dos últimos 7 dias.
+// Projeção do mês = realizado até ontem + ritmo dos últimos 7 dias × dias que
+// faltam — a mesma regra da Receita GLR do Adviser (api/_adviser-revenue.js).
+// Também preenche os indicadores do topo do Dashboard: "Projeção do mês" (soma
+// destes cards) e "Receita GLR" (a mesma do Adviser, /api/adviser).
 // Fonte: a base automática (BaseDados), a mesma das telas Gestores e
 // Rentabilidade. Filtros por gestor e por tendência; o cliente em foco do topo
 // também filtra. Montado pelo Dashboard (js/pages-dashboard.js).
@@ -32,7 +35,7 @@ window.GLRDashClientes = (function () {
     const out = [];
     for (const c of (GLR.clientes || [])) {
       if (/inativ|cancel|encerr/i.test(String(c.status || ''))) continue;
-      const r = { mtd: 0, adsMtd: 0, temAds: false, a7: 0, b7: 0, ads7: 0, m1: 0, temM1: false, tem7: false, serie: {}, cob: 0 };
+      const r = { mtd: 0, adsMtd: 0, temAds: false, a7: 0, b7: 0, ads7: 0, m1: 0, temM1: false, tem7: false, serie: {}, cob: 0, ritmo: 0 };
       for (const ct of (vinc[String(c.id)] || [])) {
         const mkt = BaseDados.mktDe(ct.marketplace), id = String(ct.param_to_use?.shopId || ct.param_to_use?.meliUserId || ct.contaId || ct.external_id);
         const info = mkt ? st.base[BaseDados.chave(mkt, id)] : null;
@@ -40,21 +43,22 @@ window.GLRDashClientes = (function () {
         r.cob++;
         const mtd = BaseDados.somar(info, mesIni, oIso), a7 = BaseDados.somar(info, a7de, oIso), b7 = BaseDados.somar(info, b7de, b7ate);
         r.mtd += mtd.faturamento; r.a7 += a7.faturamento; r.b7 += b7.faturamento; r.tem7 = true;
+        r.ritmo += BaseDados.cobre(info, a7de) ? a7.faturamento / 7 : mtd.faturamento / dd; // venda/dia para os dias que faltam
         if (BaseDados.cobreAds(info, mesIni)) { r.adsMtd += mtd.ads; r.temAds = true; }
         if (BaseDados.cobreAds(info, a7de)) r.ads7 += a7.ads;
         if (BaseDados.cobre(info, m1de)) { r.m1 += BaseDados.somar(info, m1de, m1ate).faturamento; r.temM1 = true; }
         for (let i = 13; i >= 0; i--) { const d = isoD(diaMais(ontem, -i)); r.serie[d] = (r.serie[d] || 0) + (parseFloat(info.dias?.[d]?.faturamento) || 0); }
       }
       if (!r.cob || (r.mtd <= 0 && r.a7 <= 0)) continue;
-      const peloRitmo = dd < 3; // dia 1 e 2: a projeção do mês pelo ritmo dos últimos 7 dias
-      const proj = peloRitmo ? r.a7 / 7 * dm : r.mtd / dd * dm;
-      const fatT = peloRitmo ? r.a7 : r.mtd, adsT = peloRitmo ? r.ads7 : r.adsMtd;
+      const proj = r.mtd + r.ritmo * (dm - dd); // realizado + ritmo de 7 dias nos dias que faltam
+      const inicio = dd < 3; // começo do mês: o TACOS sai dos últimos 7 dias (o mês ainda tem 1–2 dias)
+      const fatT = inicio ? r.a7 : r.mtd, adsT = inicio ? r.ads7 : r.adsMtd;
       const meta = parseFloat(metas[c.id]) || parseFloat(c.metaMensal) || 0;
       const t7 = r.b7 > 0 ? (r.a7 / r.b7 - 1) * 100 : null;
       const g = gest(c.gestorId);
       out.push({ id: String(c.id), nome: c.nome, gestorId: g ? String(g.id) : 'sem', gestor: g?.nome || c.gestor || 'Sem gestor',
-        proj, peloRitmo, meta, pctMeta: meta > 0 ? proj / meta * 100 : null, ads: r.temAds || peloRitmo ? adsT : null, tacos: (r.temAds || peloRitmo) && fatT > 0 ? adsT / fatT * 100 : null,
-        t7, vsM1: r.temM1 && r.m1 > 0 ? (proj / r.m1 - 1) * 100 : null, tend: t7 == null ? 'sem' : t7 >= 5 ? 'cresce' : t7 <= -5 ? 'cai' : 'estavel', serie: Object.values(r.serie), adsLabel: peloRitmo ? 'ADS 7 dias' : 'ADS do mês' });
+        proj, m1: r.temM1 ? r.m1 : 0, meta, pctMeta: meta > 0 ? proj / meta * 100 : null, ads: r.temAds || inicio ? adsT : null, tacos: (r.temAds || inicio) && fatT > 0 ? adsT / fatT * 100 : null,
+        t7, vsM1: r.temM1 && r.m1 > 0 ? (proj / r.m1 - 1) * 100 : null, tend: t7 == null ? 'sem' : t7 >= 5 ? 'cresce' : t7 <= -5 ? 'cai' : 'estavel', serie: Object.values(r.serie), adsLabel: inicio ? 'ADS 7 dias' : 'ADS do mês' });
     }
     return out;
   }
@@ -71,11 +75,31 @@ window.GLRDashClientes = (function () {
     const corMeta = x.pctMeta == null ? 'var(--accent)' : x.pctMeta >= 100 ? 'var(--green)' : x.pctMeta >= 85 ? '#d98b00' : 'var(--red)';
     return `<button type="button" class="dc-card" style="--t:${T[1]}" onclick="GLR.ctx?.definir('${h(x.id)}', true); Router.navigate('cliente-perfil', { id: ${JSON.stringify(x.id)} })">
       <div class="dc-top"><div><b>${h(x.nome)}</b><span>${h(x.gestor)}</span></div><span class="dc-tend" title="Últimos 7 dias contra os 7 anteriores">${T[2]} ${x.t7 != null ? `${x.t7 > 0 ? '+' : ''}${pct(x.t7)}` : T[0]}</span></div>
-      <div class="dc-proj"><span>Projeção do mês${x.peloRitmo ? ' (ritmo de 7 dias)' : ''}</span><b>${R0(x.proj)}</b>
+      <div class="dc-proj"><span>Projeção do mês</span><b>${R0(x.proj)}</b>
         <small>${x.pctMeta != null ? `<b style="color:${corMeta}">${pct(x.pctMeta)}</b> da meta de ${R0(x.meta)}` : 'sem meta'}${x.vsM1 != null ? ` · <span style="color:${x.vsM1 >= 0 ? 'var(--green)' : 'var(--red)'}">${x.vsM1 >= 0 ? '+' : ''}${pct(x.vsM1)}</span> vs mês passado` : ''}</small></div>
       ${pm != null ? `<div class="dc-bar"><i style="width:${pm}%;background:${corMeta}"></i></div>` : ''}
       <div class="dc-rod"><div><span>${x.adsLabel}</span><b>${x.ads != null ? R0(x.ads) : '—'}</b><small>TACOS ${pct(x.tacos)}</small></div>${spark(x.serie, x.tend === 'cai' ? 'var(--red)' : x.tend === 'cresce' ? 'var(--green)' : 'var(--accent)')}</div>
     </button>`;
+  }
+
+  // indicadores do topo do Dashboard com os mesmos números (carteira inteira)
+  function kpisTopo(todos) {
+    const k = document.getElementById('dash-kpi-proj'); if (!k || typeof kpiCard !== 'function') return;
+    const tot = todos.reduce((s, x) => s + x.proj, 0), comMeta = todos.filter(x => x.meta > 0), comM1 = todos.filter(x => x.m1 > 0);
+    const pm = comMeta.length ? comMeta.reduce((s, x) => s + x.proj, 0) / comMeta.reduce((s, x) => s + x.meta, 0) * 100 : null;
+    const vs = comM1.length ? (comM1.reduce((s, x) => s + x.proj, 0) / comM1.reduce((s, x) => s + x.m1, 0) - 1) * 100 : null;
+    k.innerHTML = kpiCard('Projeção do mês', GLR.formatCurrency(tot), [vs != null ? `${vs >= 0 ? '+' : ''}${vs.toFixed(1).replace('.', ',')}% vs mês anterior` : '', pm != null ? `${Math.round(pm)}% da meta (${comMeta.length} com meta)` : ''].filter(Boolean).join(' · '), vs == null || vs >= 0, '', '🏆', '', false, vs == null ? 'neutro' : '');
+  }
+  let receitaEm = 0, receitaDados = null;
+  async function receitaTopo() {
+    const k = document.getElementById('dash-kpi-receita'); if (!k || typeof kpiCard !== 'function') return;
+    const pinta = j => { const rc = j?.receita; if (!rc || rc.projetada == null) return; k.innerHTML = kpiCard('Receita GLR', GLR.formatCurrency(rc.base || 0), `projeção ${GLR.formatCurrency(rc.projetada)} no fim do mês · ${Math.round(rc.projetada / 2000)}% dos R$ 200 mil`, true, '', '💰', '', false, 'neutro'); };
+    if (receitaDados && Date.now() - receitaEm < 120000) return pinta(receitaDados);
+    try {
+      const mes = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).format(new Date());
+      const r = await window.glrApiFetch(`/api/adviser?mes=${mes}`); if (!r.ok) return;
+      receitaDados = await r.json(); receitaEm = Date.now(); pinta(receitaDados);
+    } catch (e) {}
   }
 
   function render() {
@@ -83,7 +107,8 @@ window.GLRDashClientes = (function () {
     if (st.erro) { el.innerHTML = `<div class="card dc-vazio" style="color:var(--red)">Não consegui carregar os clientes: ${h(st.erro)}</div>`; return; }
     if (!st.base) { el.innerHTML = '<div class="card dc-vazio">Carregando os clientes…</div>'; return; }
     const foco = GLR.ctx?.cliente();
-    const todos = calcular().filter(x => !foco || x.id === String(foco));
+    const carteira = calcular(); kpisTopo(carteira);
+    const todos = carteira.filter(x => !foco || x.id === String(foco));
     const doGestor = todos.filter(x => st.gestor === 'todos' || x.gestorId === st.gestor);
     const ORD = { projecao: (a, b) => b.proj - a.proj, queda: (a, b) => (a.t7 ?? 999) - (b.t7 ?? 999), alta: (a, b) => (b.t7 ?? -999) - (a.t7 ?? -999), tacos: (a, b) => (b.tacos ?? -1) - (a.tacos ?? -1), meta: (a, b) => (a.pctMeta ?? 999) - (b.pctMeta ?? 999) };
     const ls = doGestor.filter(x => st.tend === 'todos' || x.tend === st.tend).sort(ORD[st.ordem] || ORD.projecao);
@@ -125,7 +150,7 @@ window.GLRDashClientes = (function () {
       .dc-vazio{padding:22px;text-align:center;font-size:13px;color:var(--text-muted)}
       .dc-mais{display:block;margin:12px auto 0;border:0;background:none;color:var(--accent);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
     </style>`);
-    render();
+    render(); receitaTopo();
     try { st.base = await BaseDados.carregar(forcar); st.erro = null; } catch (e) { st.erro = e.message || String(e); }
     GLR.quandoClientes(render);
   }
