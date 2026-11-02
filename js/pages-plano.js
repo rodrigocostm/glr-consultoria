@@ -21,6 +21,7 @@ Router.register('plano-acao', (params, el) => {
   const st = {
     planos: [], aberto: (() => { try { return localStorage.getItem('glr_plano_cliente') || ''; } catch (e) { return ''; } })(),
     filtro: (() => { try { return localStorage.getItem('glr_plano_filtro') || 'todos'; } catch (e) { return 'todos'; } })(),
+    gestor: (() => { try { return localStorage.getItem('glr_plano_gestor') || 'todos'; } catch (e) { return 'todos'; } })(),
     meuGestor: null, carregando: true, erro: null, gerando: false, copiado: false,
     aba: (() => { try { return localStorage.getItem('glr_plano_aba') || 'oportunidades'; } catch (e) { return 'oportunidades'; } })(),
     contaOportunidade: '', acaoAberta: null, metaEd: null, diagAberto: false, rxTodos: false, pautaEd: {},
@@ -57,38 +58,46 @@ Router.register('plano-acao', (params, el) => {
   function lista() {
     let ps = st.planos.slice();
     if (st.filtro === 'meus' && st.meuGestor != null) ps = ps.filter(p => String(p.cliente.gestorId) === String(st.meuGestor));
+    if (st.gestor !== 'todos') ps = ps.filter(p => String(gestorDe(p).id) === st.gestor);
     const perda = p => p.raioX?.caiu?.[0]?.perdaSem || 0;
     return ps.sort((a, b) => SEM[a.semaforo][2] - SEM[b.semaforo][2] || perda(b) - perda(a) || a.cliente.nome.localeCompare(b.cliente.nome));
   }
 
+  // gestor do cliente pelo cadastro atual (o plano guarda o do dia em que foi gerado)
+  function gestorDe(p) {
+    const cli = (GLR.clientes || []).find(c => String(c.id) === String(p.cliente.id));
+    const gid = cli?.gestorId ?? p.cliente.gestorId;
+    const g = (GLR.gestores || []).find(x => String(x.id) === String(gid));
+    return { id: g ? String(g.id) : 'sem', nome: g?.nome || p.cliente.gestor || 'Sem gestor' };
+  }
   function renderLista() {
     const ps = lista();
-    const cont = k => st.planos.filter(p => p.semaforo === k).length;
+    const cont = k => ps.filter(p => p.semaforo === k).length;
+    const gestores = [...new Map(st.planos.map(p => { const g = gestorDe(p); return [g.id, g]; })).values()].sort((a, b) => a.nome.localeCompare(b.nome));
     return `
       <div class="pl-topo">
         <div class="pl-chips">
           <button class="${st.filtro === 'todos' ? 'on' : ''}" onclick="window._plFiltro('todos')">Todos os clientes <b>${st.planos.length}</b></button>
           <button class="${st.filtro === 'meus' ? 'on' : ''}" ${st.meuGestor == null ? 'disabled title="Seu e-mail não está no cadastro de gestores"' : ''} onclick="window._plFiltro('meus')">Meus clientes</button>
         </div>
+        <select class="form-control pl-gestor" aria-label="Gestor" onchange="window._plGestor(this.value)"><option value="todos">Todos os gestores</option>${gestores.map(g => `<option value="${h(g.id)}" ${st.gestor === g.id ? 'selected' : ''}>${h(g.nome)}</option>`).join('')}</select>
         <span class="pl-sub"><b style="color:var(--red)">${cont('vermelho')}</b> precisam de atenção hoje · <b style="color:var(--yellow)">${cont('amarelo')}</b> em atenção · <b style="color:var(--green)">${cont('verde')}</b> em dia</span>
       </div>
-      <div class="card pl-tab-wrap"><table class="pl-tab">
-        <thead><tr><th>Cliente</th><th>Situação</th><th class="n">Projeção</th><th class="n">Última semana</th><th class="n">TACOS</th><th>Maior queda</th><th class="n">Hoje</th></tr></thead>
-        <tbody>${ps.map(p => {
-          const s = SEM[p.semaforo], pend = pendentesDe(p), hoje = pend.filter(a => a.quando === 'hoje').length, m = p.metricas || {}, rx = p.raioX;
-          const q = rx?.caiu?.[0];
-          const tacosCor = m.metaTacos && m.tacos > m.metaTacos ? 'var(--red)' : 'inherit';
-          return `<tr onclick="window._plAbrir('${h(p.cliente.id)}')" style="--c:${s[1]}">
-            <td><b>${h(p.cliente.nome)}</b><div class="pl-sub">${h(p.cliente.gestor || 'sem gestor')}</div></td>
-            <td><span class="pl-sem"><i></i>${p.semaforo === 'vermelho' ? 'Agir hoje' : s[0]}</span></td>
-            <td class="n"><b>${R$(m.projecao)}</b><div class="pl-sub">${m.pctMeta != null ? `${pct(m.pctMeta)} da meta` : 'sem meta'}</div></td>
-            <td class="n">${rx ? `${R$(rx.semanaAgora)}<div class="pl-sub" style="color:${rx.var >= 0 ? 'var(--green)' : 'var(--red)'}">${rx.var >= 0 ? '+' : ''}${pct(rx.var)}</div>` : '<span class="pl-sub">—</span>'}</td>
-            <td class="n" style="color:${tacosCor};font-weight:600">${pct(m.tacos)}${m.metaTacos ? `<div class="pl-sub">meta ${pct(m.metaTacos)}</div>` : ''}</td>
-            <td class="pl-queda">${q ? `${h(q.nome)}<div class="pl-sub"><b style="color:var(--red)">−${R$(q.perdaSem)}/sem</b>${q.causas?.[0] ? ` · ${h(q.causas[0].t)}` : ''}</div>` : '<span class="pl-sub">—</span>'}</td>
-            <td class="n"><b>${hoje}</b></td>
-          </tr>`;
-        }).join('') || '<tr><td colspan="7" class="pl-sub" style="padding:20px">Nenhum cliente neste filtro.</td></tr>'}</tbody>
-      </table></div>`;
+      <div class="pl-grade">${ps.map(p => {
+        const s = SEM[p.semaforo], pend = pendentesDe(p), hoje = pend.filter(a => a.quando === 'hoje').length, m = p.metricas || {}, rx = p.raioX, q = rx?.caiu?.[0];
+        const tacosAlto = m.metaTacos && m.tacos > m.metaTacos, pm = m.pctMeta != null ? Math.min(100, m.pctMeta) : null;
+        return `<button type="button" class="pl-card" style="--c:${s[1]}" onclick="window._plAbrir('${h(p.cliente.id)}')">
+          <div class="pl-card-top"><div><b>${h(p.cliente.nome)}</b><span class="pl-sub">${h(gestorDe(p).nome)}</span></div><span class="pl-sem"><i></i>${p.semaforo === 'vermelho' ? 'Agir hoje' : s[0]}</span></div>
+          <div class="pl-card-proj"><span class="pl-sub">Projeção do mês</span><b>${R$(m.projecao)}</b><span class="pl-sub">${m.pctMeta != null ? `${pct(m.pctMeta)} da meta` : 'sem meta'}</span></div>
+          ${pm != null ? `<div class="pl-card-bar"><i style="width:${pm}%"></i></div>` : ''}
+          <div class="pl-card-nums">
+            <div><span>Última semana</span>${rx ? `<b>${R$(rx.semanaAgora)}</b><small style="color:${rx.var >= 0 ? 'var(--green)' : 'var(--red)'}">${rx.var >= 0 ? '▲ +' : '▼ '}${pct(rx.var)}</small>` : '<b>—</b>'}</div>
+            <div><span>TACOS</span><b style="color:${tacosAlto ? 'var(--red)' : 'inherit'}">${pct(m.tacos)}</b><small>${m.metaTacos ? `meta ${pct(m.metaTacos)}` : '&nbsp;'}</small></div>
+            <div><span>Ações hoje</span><b>${hoje}</b><small>${pend.length} abertas</small></div>
+          </div>
+          ${q ? `<div class="pl-card-queda"><span>Maior queda</span>${h(q.nome)} <b>−${R$(q.perdaSem)}/sem</b>${q.causas?.[0] ? `<small>${h(q.causas[0].t)}</small>` : ''}</div>` : ''}
+        </button>`;
+      }).join('') || '<div class="card pl-sub" style="padding:20px">Nenhum cliente neste filtro.</div>'}</div>`;
   }
 
   // Ação numa linha: quem, o quê e o impacto; o porquê abre ao clicar
@@ -340,6 +349,7 @@ Router.register('plano-acao', (params, el) => {
     root.innerHTML = p ? renderPlano(p) : renderLista();
   }
 
+  window._plGestor = g => { st.gestor = g; try { localStorage.setItem('glr_plano_gestor', g); } catch (e) {} render(); };
   window._plFiltro = k => { st.filtro = k; try { localStorage.setItem('glr_plano_filtro', k); } catch (e) {} render(); };
   window._plAbrir = id => { st.aberto = String(id || ''); GLR.ctx?.definir(st.aberto, true); st.copiado = false; st.acaoAberta = null; st.metaEd = null; st.diagAberto = false; st.rxTodos = false; try { localStorage.setItem('glr_plano_cliente', st.aberto); } catch (e) {} render(); window.scrollTo?.(0, 0); };
   window._plIr = tela => Router.navigate(tela);
@@ -428,6 +438,16 @@ Router.register('plano-acao', (params, el) => {
   <style>
     .pl-sub{font-size:12px;color:var(--text-muted)}
     .pl-topo{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+    .pl-gestor{width:auto;max-width:220px}
+    .pl-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
+    .pl-card{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:14px;background:var(--bg-card);border:1px solid var(--border);box-shadow:inset 4px 0 0 var(--c)}
+    .pl-card:hover{border-color:color-mix(in srgb,var(--c) 45%,var(--border))} .pl-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    .pl-card-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start} .pl-card-top>div{display:flex;flex-direction:column;min-width:0} .pl-card-top b{font-size:14.5px;font-weight:650;color:var(--text-primary)}
+    .pl-card-proj{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap} .pl-card-proj b{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text-primary)}
+    .pl-card-bar{height:6px;border-radius:99px;background:var(--bg-subtle);overflow:hidden;margin-top:-4px} .pl-card-bar i{display:block;height:100%;background:var(--c);border-radius:99px}
+    .pl-card-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding-top:10px;border-top:1px solid var(--border)}
+    .pl-card-nums>div{display:flex;flex-direction:column} .pl-card-nums span{font-size:11px;color:var(--text-muted)} .pl-card-nums b{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;color:var(--text-primary)} .pl-card-nums small{font-size:11px;color:var(--text-muted);font-weight:600}
+    .pl-card-queda{font-size:12.5px;color:var(--text-secondary);line-height:1.45} .pl-card-queda span{display:block;font-size:11px;color:var(--text-muted)} .pl-card-queda b{color:var(--red)} .pl-card-queda small{display:block;font-size:11.5px;color:var(--text-muted)}
     .pl-chips{display:flex;gap:6px} .pl-chips button{border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);border-radius:99px;padding:5px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
     .pl-chips button.on{background:var(--text-primary);border-color:var(--text-primary);color:var(--bg-card)} .pl-chips button:disabled{opacity:.5;cursor:default}
     .pl-sem{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--c);white-space:nowrap} .pl-sem i{width:8px;height:8px;border-radius:50%;background:var(--c)}
@@ -483,13 +503,6 @@ Router.register('plano-acao', (params, el) => {
     .pl-funil-x{font-size:13px;color:var(--text-primary);margin-top:8px}
     #pl-pauta{font-size:13px;line-height:1.5;resize:vertical}
     .pl-causa{display:inline-block;font-size:11.5px;padding:2px 7px;border-radius:6px;background:var(--bg-subtle);margin:1px 0} .pl-c-estoque{background:color-mix(in srgb,var(--orange) 15%,transparent)} .pl-c-ads{background:color-mix(in srgb,var(--accent) 14%,transparent)} .pl-c-preco{background:color-mix(in srgb,var(--purple) 14%,transparent)} .pl-c-anuncio,.pl-c-qualidade{background:color-mix(in srgb,var(--red) 12%,transparent)}
-    .pl-tab-wrap{padding:0;overflow-x:auto}
-    .pl-tab{width:100%;border-collapse:collapse;font-size:13px}
-    .pl-tab th{font-size:11.5px;font-weight:600;color:var(--text-muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
-    .pl-tab td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:top}
-    .pl-tab tbody tr{cursor:pointer;box-shadow:inset 3px 0 0 var(--c)} .pl-tab tbody tr:hover{background:var(--bg-subtle)}
-    .pl-tab .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-    .pl-tab .pl-queda{max-width:340px}
     .pl-meta-form{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;margin-bottom:12px} .pl-meta-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)}
     .pl-in{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted)} .pl-in input{width:150px} .pl-in input.pl-in-curto{width:80px}
     .pl-meta-ls{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:10px}

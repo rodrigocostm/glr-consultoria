@@ -499,6 +499,9 @@ Router.register('dashboard', (params, el) => {
       <div onclick="Router.navigate('plano-acao')" style="cursor:pointer" title="Abrir o Plano de ação">${kpiCard('Clientes em atenção', String(risco + queda), `${risco} em risco · ${queda} em queda · de ${clientes.length}`, !(risco + queda), '', '🚦', '', false, risco + queda ? '' : 'neutro')}</div>
     </div>
 
+    <!-- Clientes em cards: projeção, ADS e tendência (js/dash-clientes.js) -->
+    <div id="dash-clientes"></div>
+
     <!-- Vendas por dia + canais -->
     <div class="dx-linha dx-2-1">
       <div class="card">
@@ -588,6 +591,7 @@ Router.register('dashboard', (params, el) => {
     </div>
 
 `;
+  window.GLRDashClientes?.montar(document.getElementById('dash-clientes'));
 
 
   window._dashFiltrarCarteira = q => {
