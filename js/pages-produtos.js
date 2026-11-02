@@ -35,7 +35,8 @@ Router.register('produtos', (params, el) => {
 
   // ── Dados ──
   const todos = () => lerJSON('glr_produtos', []);
-  const doCliente = () => portal ? [] : todos().filter(p => String(p.clienteId) === String(st.cliente));
+  // portal: os produtos cadastrados pela equipe chegam pelo servidor (só os do cliente)
+  const doCliente = () => portal ? (st.prodsPortal || []) : todos().filter(p => String(p.clienteId) === String(st.cliente));
   function salvarTodos(lista) { localStorage.setItem('glr_produtos', JSON.stringify(lista)); } // sync item a item (supabase-init)
   function salvarProduto(prod, anterior) {
     const lista = todos();
@@ -129,6 +130,9 @@ Router.register('produtos', (params, el) => {
     const cache = lerJSON(chave, null);
     st.carregando = true; st.erro = null; render();
     try {
+      if (portal && (forcar || !st.prodsPortal)) { // custo, foto e SKU dos produtos cadastrados pela equipe
+        try { st.prodsPortal = (await MarketplaceAPI.call('glr_portal_produtos', {})).produtos || []; } catch (e) { st.prodsPortal = st.prodsPortal || []; }
+      }
       st.contas = await obterContas();
       if (minha !== geracao) return;
       if (!forcar && cache && Date.now() - cache.em < 6 * 3600000) { st.anuncios = cache.lista; return; }
@@ -190,7 +194,8 @@ Router.register('produtos', (params, el) => {
       // custo alterado direto no anúncio (Vendas ou portal do cliente) depois do produto
       const diverge = proprio ? cats.some(v => Math.abs(v - custoTotal(p)) > 0.005) : new Set(cats).size > 1;
       return { id: String(p.id), sku: p.sku, nome: p.nome, imagem: p.imagem, anuncios: p.anuncios || [],
-        custo: proprio ? num(p.custo) : (cats[0] || 0), custoExtra: proprio ? num(p.custoExtra) : 0,
+        // portal não tem a coluna Custo extra: mostra o custo total (produto + extra), o que entra na margem
+        custo: proprio ? num(p.custo) + (portal ? num(p.custoExtra) : 0) : (cats[0] || 0), custoExtra: proprio && !portal ? num(p.custoExtra) : 0,
         origem: proprio ? 'produto' : (cats.length ? 'anuncio' : ''), diverge, custosAnuncios: [...new Set(cats)] };
     });
     const grupos = new Map();

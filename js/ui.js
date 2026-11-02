@@ -55,7 +55,8 @@
       const linhas = [...corpo.rows].filter(r => r.cells.length === n); // linhas expandidas (colspan) ficam de fora
       if (linhas.length < 3) return;
       for (let c = 1; c < n; c++) {
-        const semDado = linhas.every(r => vazio(r.cells[c].textContent));
+        // imagem, campo ou botão também é conteúdo (a coluna da foto e a do custo digitável não têm texto)
+        const semDado = linhas.every(r => vazio(r.cells[c].textContent) && !r.cells[c].querySelector('img, input, select, textarea, button, svg, canvas'));
         if (semDado === cab.cells[c].classList.contains('col-vazia')) continue;
         cab.cells[c].classList.toggle('col-vazia', semDado);
         linhas.forEach(r => r.cells[c].classList.toggle('col-vazia', semDado));

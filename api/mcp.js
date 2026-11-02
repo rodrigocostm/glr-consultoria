@@ -180,8 +180,8 @@ module.exports = async function handler(req, res) {
   const p = params || {};
   if (contasPermitidas) {
     // Portal: apenas consultas explicitamente permitidas e custo validado.
-    if ((!ALLOWED_ACTIONS.has(action) && action !== 'glr_portal_salvar_custo' && !CATALOGO_LIVRE.has(action)) || action === 'raw' || BLOQUEADAS_PORTAL.test(action)) return res.status(403).json({ error: 'Ação não disponível no portal' });
-    if (action !== 'list_accounts' && !CATALOGO_LIVRE.has(action)) {
+    if ((!ALLOWED_ACTIONS.has(action) && action !== 'glr_portal_salvar_custo' && action !== 'glr_portal_produtos' && !CATALOGO_LIVRE.has(action)) || action === 'raw' || BLOQUEADAS_PORTAL.test(action)) return res.status(403).json({ error: 'Ação não disponível no portal' });
+    if (action !== 'list_accounts' && action !== 'glr_portal_produtos' && !CATALOGO_LIVRE.has(action)) {
       const contas = CAMPOS_CONTA.map(k => p[k]).filter(v => v != null && v !== '').map(String);
       if (!contas.length) return res.status(403).json({ error: 'Informe a conta da consulta' });
       if (contas.some(c => !contasPermitidas.has(c))) return res.status(403).json({ error: 'Conta não vinculada ao seu acesso' });
@@ -191,6 +191,24 @@ module.exports = async function handler(req, res) {
   // Custo do produto lançado pelo cliente no portal (tela Produtos). O banco não
   // deixa o portal gravar; aqui o servidor confere que cada anúncio é da conta
   // do cliente e grava só essas chaves no catálogo de custos.
+  // Produtos cadastrados pela equipe (custo, foto, SKU) — só os do cliente logado e só
+  // os anúncios das contas dele. O banco não deixa o portal ler glr_produtos inteiro.
+  if (action === 'glr_portal_produtos') {
+    if (!contasPermitidas) return res.status(403).json({ error: 'Somente para o portal do cliente' });
+    try {
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?chave=eq.glr_produtos&select=dados`, { headers: { apikey: key, Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10000) });
+      if (!r.ok) throw new Error('Não consegui ler os produtos');
+      const todos = (await r.json())[0]?.dados;
+      const cli = String(identity.portal?.clienteId ?? '');
+      const produtos = (Array.isArray(todos) ? todos : []).filter(x => cli && String(x?.clienteId) === cli).map(x => ({
+        id: x.id, clienteId: x.clienteId, sku: x.sku || '', nome: x.nome || '', imagem: x.imagem || '', custo: x.custo || 0, custoExtra: x.custoExtra || 0,
+        anuncios: (x.anuncios || []).filter(a => contasPermitidas.has(String(a.conta))),
+      }));
+      return res.status(200).json({ produtos });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
+
   if (action === 'glr_portal_salvar_custo') {
     if (!contasPermitidas) return res.status(403).json({ error: 'Somente para o portal do cliente' });
     try { return res.status(200).json(await salvarCustoPortal(apiKey, p)); }
