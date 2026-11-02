@@ -492,7 +492,7 @@ async function monitorarConexoes(mcApiKey, simular = false) {
 // sugere de novo na próxima passada se ainda valer (pendente é o que bloqueia
 // repetir). Saldo de ADS não vence por idade: fica o aviso mais novo de cada loja
 // até o saldo voltar. Roda de hora em hora e antes do resumo das 8h.
-const VALIDADE_DIAS = { ads_shopee: 3, ads_ml: 4, promo: 5, estoque: 5, abc: 7, outro: 7 };
+const VALIDADE_DIAS = { ads_shopee: 3, ads_ml: 4, promo: 5, estoque: 5, abc: 7, ritmo: 0.75, outro: 7 };
 async function limparDecisoes(simular = false) {
   const pend = [];
   for (let off = 0; off < 20000; off += 1000) {
@@ -502,9 +502,10 @@ async function limparDecisoes(simular = false) {
   const agora = Date.now(), visto = new Set(), fechar = [], motivos = {};
   for (const l of pend) { // do mais novo para o mais antigo: o primeiro de cada chave fica
     const d = l.dados || {}, idade = (agora - Date.parse(l.criado_em)) / 864e5;
-    const grupo = d.acao === 'saldo_ads' ? 'saldo' : d.promo_aprovar ? 'promo' : d.acao === 'estoque_minimo' ? 'estoque' : d.acao === 'abc_queda' ? 'abc'
-      : d.marketplace === 'ml' ? 'ads_ml' : d.campaign_id != null ? 'ads_shopee' : 'outro';
-    const chave = grupo === 'saldo' ? `saldo:${l.conta_id}` : d.chave ? `${l.conta_id}:${d.chave}`
+    const grupo = d.acao === 'saldo_ads' ? 'saldo' : d.promo_aprovar ? 'promo' : d.acao === 'estoque_minimo' ? 'estoque' : d.acao === 'abc_queda' || d.origem_analise === 'curva_abc_semanal' ? 'abc'
+      : d.pedidos_hoje != null ? 'ritmo' : d.marketplace === 'ml' ? 'ads_ml' : d.campaign_id != null ? 'ads_shopee' : 'outro';
+    // "vendas de hoje abaixo do ritmo" vale só para o dia: fica o mais novo de cada loja
+    const chave = grupo === 'saldo' || grupo === 'ritmo' ? `${grupo}:${l.conta_id}` : d.chave ? `${l.conta_id}:${d.chave}`
       : d.campaign_id != null ? `${l.conta_id}:c:${d.campaign_id}:${grupo}` : d.item_id != null ? `${l.conta_id}:i:${d.item_id}:${grupo}` : null;
     const por = chave && visto.has(chave) ? 'substituida' : grupo !== 'saldo' && idade > VALIDADE_DIAS[grupo] ? 'vencida' : null;
     if (chave) visto.add(chave);
