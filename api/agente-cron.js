@@ -486,6 +486,34 @@ async function monitorarConexoes(mcApiKey, simular = false) {
   return resumo;
 }
 
+// ── Limpeza da Caixa de decisões ──
+// Sugestão parada vira barulho: fecha (resultado 'expirado') a que venceu o prazo
+// e a que uma mais nova da mesma campanha/produto/loja substituiu. O agente
+// sugere de novo na próxima passada se ainda valer (pendente é o que bloqueia
+// repetir). Saldo de ADS não vence por idade: fica o aviso mais novo de cada loja
+// até o saldo voltar. Roda de hora em hora e antes do resumo das 8h.
+const VALIDADE_DIAS = { ads_shopee: 3, ads_ml: 4, promo: 5, estoque: 5, abc: 7, outro: 7 };
+async function limparDecisoes(simular = false) {
+  const pend = [];
+  for (let off = 0; off < 20000; off += 1000) {
+    const r = await sbSelect('glr_agente_log', `tipo=eq.alerta&resultado=eq.so_alerta&select=id,conta_id,criado_em,dados&order=criado_em.desc&limit=1000&offset=${off}`);
+    pend.push(...r); if (r.length < 1000) break;
+  }
+  const agora = Date.now(), visto = new Set(), fechar = [], motivos = {};
+  for (const l of pend) { // do mais novo para o mais antigo: o primeiro de cada chave fica
+    const d = l.dados || {}, idade = (agora - Date.parse(l.criado_em)) / 864e5;
+    const grupo = d.acao === 'saldo_ads' ? 'saldo' : d.promo_aprovar ? 'promo' : d.acao === 'estoque_minimo' ? 'estoque' : d.acao === 'abc_queda' ? 'abc'
+      : d.marketplace === 'ml' ? 'ads_ml' : d.campaign_id != null ? 'ads_shopee' : 'outro';
+    const chave = grupo === 'saldo' ? `saldo:${l.conta_id}` : d.chave ? `${l.conta_id}:${d.chave}`
+      : d.campaign_id != null ? `${l.conta_id}:c:${d.campaign_id}:${grupo}` : d.item_id != null ? `${l.conta_id}:i:${d.item_id}:${grupo}` : null;
+    const por = chave && visto.has(chave) ? 'substituida' : grupo !== 'saldo' && idade > VALIDADE_DIAS[grupo] ? 'vencida' : null;
+    if (chave) visto.add(chave);
+    if (por) { fechar.push(l.id); motivos[`${grupo} ${por}`] = (motivos[`${grupo} ${por}`] || 0) + 1; }
+  }
+  if (!simular) for (let i = 0; i < fechar.length; i += 150) await sbUpdate('glr_agente_log', `id=in.(${fechar.slice(i, i + 150).join(',')})`, { resultado: 'expirado' });
+  return { simulacao: simular || undefined, pendentes: pend.length, fechadas: fechar.length, ficam: pend.length - fechar.length, motivos };
+}
+
 module.exports = async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
   const isVercelCron = require('./_auth').cronAuthorized(req);
@@ -570,12 +598,18 @@ module.exports = async function handler(req, res) {
       return res.status(202).json({ ok: true, rodada: 'conexoes', slot });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
+  // ?rodada=limpeza — fecha as sugestões vencidas/substituídas da Caixa de decisões (de hora em hora); &simular=1 só conta
+  if (req.query?.rodada === 'limpeza') {
+    try { return res.status(200).json({ ok: true, rodada: 'limpeza', ...(await limparDecisoes(req.query?.simular === '1')) }); }
+    catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=resumo — resumo da manhã no celular (08:00, uma vez por dia); &simular=1 só monta o texto
   if (req.query?.rodada === 'resumo') {
     try {
       if (req.query?.simular === '1') return res.status(200).json({ ok: true, ...(await relatorio.resumoDaManha({ sbSelect }, true)) });
       const slot = `${agoraBRT().dia}-resumo`;
       if (req.query?.agora !== '1' && !(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      await limparDecisoes().catch(e => console.error('[limpeza]', e)); // o número de pendências do resumo já sai limpo
       return res.status(200).json({ ok: true, rodada: 'resumo', ...(await relatorio.resumoDaManha({ sbSelect })) });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
@@ -700,6 +734,7 @@ module.exports = async function handler(req, res) {
 // ainda sem medição — até 4 dias de ação por revisão, para não pesar o cron.
 function tipoAcaoShopee(l) {
   const d = l.dados || {};
+  if (d.pausa_estoque || d.estoque_voltou) return null; // pausa por estoque não é decisão de desempenho
   if (d.pausada === true || /pausad/i.test(l.titulo || '')) return 'pausar';
   if (d.retomada === true) return 'acelerar';
   if (d.roas_de != null && d.roas_para != null && +d.roas_de !== +d.roas_para) return +d.roas_para > +d.roas_de ? 'conter' : 'acelerar';
@@ -712,6 +747,7 @@ function tipoAcaoShopee(l) {
 // aplicar. Esses casos entram na promoção da autonomia (avaliarAutonomia): uma
 // ação em "Só sugerir" ganha "Executar" provando que acerta, sem ter executado.
 function tipoSugestao(d) {
+  if (d.pausa_estoque || d.acao === 'estoque_minimo') return null;
   if (d.pausar === true) return 'pausar';
   if (d.retomar === true) return 'acelerar';
   if (d.roas_sugerido != null && d.roas_atual != null && +d.roas_sugerido !== +d.roas_atual) return +d.roas_sugerido > +d.roas_atual ? 'conter' : 'acelerar';
@@ -1183,6 +1219,13 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
     // sugestão de pausa por estoque ainda pendente não é repetida
     const pausaEstoquePendente = new Set((await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 7 * 86400000).toISOString())}&select=dados&limit=300`).catch(() => []))
       .filter(l => l.dados?.pausar === true && l.dados?.colaboracao?.de === 'estoque').map(l => String(l.dados.campaign_id)));
+    // campanhas que o agente pausou por falta de estoque (a última decisão nela foi essa) → reativa quando o estoque voltar
+    const ultimaDecisao = new Map();
+    for (const l of await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.decisao&resultado=eq.executado&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 60 * 86400000).toISOString())}&select=dados,criado_em&order=criado_em.desc&limit=500`).catch(() => []))
+      if (l.dados?.campaign_id != null && !ultimaDecisao.has(String(l.dados.campaign_id))) ultimaDecisao.set(String(l.dados.campaign_id), l);
+    const pausadasPorEstoque = new Set([...ultimaDecisao].filter(([, l]) => l.dados.pausa_estoque === true).map(([id]) => id));
+    // aviso de estoque acabando: um por campanha a cada 5 dias (mesmo se marcado ou descartado)
+    const estoqueMinRecente = new Set((await sbSelect('glr_agente_log', `conta_id=eq.${encodeURIComponent(shopId)}&tipo=eq.alerta&dados->>acao=eq.estoque_minimo&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 5 * 86400000).toISOString())}&select=dados&limit=300`).catch(() => [])).map(l => String(l.dados?.campaign_id)));
     let faturamentoTotalLoja = 0, fonteFaturamento = 'api';
     if (baseCobre(base, inicioJanela.iso)) {
       faturamentoTotalLoja = somarBase(base, inicioJanela.iso, ontem.iso).faturamento;
@@ -1289,6 +1332,18 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
       if (!settings || !diario) continue;
       const status = (settings.campaign_status || '').toLowerCase();
       const budgetAtual = parseFloat(settings.campaign_budget) || 0;
+      if (status === 'paused' && pausadasPorEstoque.has(String(c.campaign_id)) && !opc.soMomento) {
+        const av = sinais ? estoqueMargem.avisosDe(sinais, settings.item_id_list) : null;
+        if (av?.ne && av.ne !== 'zerado') {
+          const nomeP = settings.ad_name?.slice(0, 70) || `Campanha ${c.campaign_id}`;
+          try {
+            await mcpCall(mcApiKey, 'shopee_ads_resume_campaign', { shopId, campaign_id: Number(c.campaign_id) });
+            await logar('decisao', `Campanha reativada — ${nomeP} (estoque voltou)`, `O agente tinha pausado esta campanha porque "${av.nome}" estava sem estoque. O estoque voltou (${av.estoque ?? '?'} un.), então ela voltou a rodar com as mesmas configurações.`, { campaign_id: Number(c.campaign_id), estoque_voltou: true, estoque: av.estoque, colaboracao: { de: 'estoque', produto: av.nome } }, 'executado');
+            decisoes.push(nomeP);
+          } catch (e) { await logar('decisao', `Falha ao reativar — ${nomeP}`, `O estoque de "${av.nome}" voltou, mas a Shopee recusou reativar: ${e.message}`, { campaign_id: Number(c.campaign_id), estoque_voltou: true }, 'erro'); }
+        }
+        continue;
+      }
       if (status !== 'ongoing') continue;
       campanhasAtivas++;
 
@@ -1311,15 +1366,24 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
       const qualidadeSegura = aviso?.qa ? `o anúncio de ${aviso.nome} precisa de conserto antes (${aviso.qa})` : null;
 
       if (!opc.soMomento) {
-      // Produto sem estoque e a campanha ainda gastando → sugere pausar (aprovação)
+      // Produto sem estoque e a campanha ainda gastando → pausa sozinha e reativa quando o estoque voltar
+      // (com contrato "pausar só com aprovação", vira sugestão na Caixa de decisões)
       if (aviso?.ne === 'zerado' && diario.gastoOntem > 0 && pausaEstoquePendente.has(String(c.campaign_id))) continue;
       if (aviso?.ne === 'zerado' && diario.gastoOntem > 0) {
-        await logar('alerta', `Sugestão de pausar — ${nome} (produto sem estoque)`,
-          `O agente de Estoque avisou que "${aviso.nome}" está sem estoque, mas a campanha gastou ${R$(diario.gastoOntem)} ontem. Pausar até repor — anúncio sem estoque não converte e o clique é pago.`,
-          { campaign_id: c.campaign_id, pausar: true, colaboracao: { de: 'estoque', produto: aviso.nome } }, 'so_alerta');
-        alertas.push(nome);
-        colaboracoes.push({ de: 'estoque', campanha: nome, texto: `sugeri pausar "${nome}": ${aviso.nome} está sem estoque` });
+        await executarPausa(c.campaign_id, `${nome} (sem estoque)`,
+          `O agente de Estoque avisou que "${aviso.nome}" está sem estoque, mas a campanha gastou ${R$(diario.gastoOntem)} ontem — anúncio sem estoque não converte e o clique é pago. Pausada até repor: quando o estoque voltar, o agente reativa sozinho.`,
+          { pausa_estoque: true, gasto_ontem: diario.gastoOntem, impacto: Math.round(diario.gastoOntem * 7), impacto_tipo: 'economia', colaboracao: { de: 'estoque', produto: aviso.nome } });
+        colaboracoes.push({ de: 'estoque', campanha: nome, texto: `pausei "${nome}" até repor: ${aviso.nome} está sem estoque` });
         continue;
+      }
+      // Estoque acabando (≤ 7 dias no ritmo atual) num produto que o ADS está empurrando → avisa para repor antes de zerar
+      if (aviso?.ne === 'critico' && diario.gastoOntem > 0 && !estoqueMinRecente.has(String(c.campaign_id))) {
+        estoqueMinRecente.add(String(c.campaign_id));
+        const diasE = aviso.dias != null ? Math.max(0, Math.round(aviso.dias * 10) / 10) : null;
+        await logar('alerta', `Estoque acabando — ${aviso.nome}`,
+          `"${aviso.nome}" tem ${aviso.estoque ?? '?'} un.${diasE != null ? `, que acabam em ~${String(diasE).replace('.', ',')} dia(s) no ritmo de venda atual` : ''}, e a campanha "${nome}" está gastando ${R$(diario.gastoOntem)}/dia nele. Repor agora evita a campanha parar e o anúncio perder posição; se zerar, o agente pausa a campanha sozinho até repor.`,
+          { campaign_id: c.campaign_id, acao: 'estoque_minimo', produto: aviso.nome, estoque: aviso.estoque, dias: diasE, gasto_dia: diario.gastoOntem, colaboracao: { de: 'estoque', produto: aviso.nome } }, 'so_alerta');
+        alertas.push(nome);
       }
 
       // Regras 1 e 2 — pausa SÓ por gasto alto sem retorno: gastou acima do

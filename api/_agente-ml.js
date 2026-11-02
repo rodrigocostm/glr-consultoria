@@ -393,6 +393,9 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     // Avisos da curva ABC: um por produto a cada 7 dias (mesmo se descartado)
     const desde7d = new Date(Date.now() - 6.5 * 86400000).toISOString();
     logs.filter(l => String(l.dados?.chave || '').startsWith('abc:') && l.criado_em >= desde7d).forEach(l => ocupadas.add(l.dados.chave));
+    // Estoque acabando: um aviso por produto a cada 5 dias (mesmo se marcado ou descartado)
+    const desde5d = new Date(Date.now() - 5 * 86400000).toISOString();
+    logs.filter(l => String(l.dados?.chave || '').startsWith('est:') && l.criado_em >= desde5d).forEach(l => ocupadas.add(l.dados.chave));
 
     const naLoja = item => vendasLoja.get(item) || null;
     const lojaFam = f => f.itens.reduce((s, it) => { const v = naLoja(it); return v ? { un: s.un + v.unidades, rec: s.rec + v.receita } : s; }, { un: 0, rec: 0 });
@@ -432,6 +435,14 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
             { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), unidades: f.unidades, janela_dias: diasProd, acao: 'retirar_produto', impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia', colaboracao: { de: 'estoque' } });
           if (ok || ocupadas.has(chave)) tirar(x, f); if (ok) { colaboracoes.push({ de: 'estoque', texto: `sugeri tirar "${f.nome.slice(0, 50)}" de "${x.nome}": está sem estoque` }); }
           continue;
+        }
+        // 1-0b) Estoque acabando (≤ 7 dias) num produto que a campanha está empurrando → aviso para repor (fora do limite de sugestões)
+        if (aviso?.ne === 'critico' && !opc.simular && !ocupadas.has(`est:${f.chave}`)) {
+          ocupadas.add(`est:${f.chave}`);
+          const diasE = aviso.dias != null ? Math.max(0, r1(aviso.dias)) : null;
+          await logar('alerta', `Estoque acabando — ${f.nome.slice(0, 60)}`,
+            `"${f.nome.slice(0, 70)}" tem ${aviso.estoque ?? '?'} un.${diasE != null ? `, que acabam em ~${String(diasE).replace('.', ',')} dia(s) no ritmo de venda atual` : ''}, e está na campanha "${x.nome}" (gastou ${R$(f.gasto)} em ${diasProd} dias). Repor agora evita o anúncio parar e perder posição.`,
+            { chave: `est:${f.chave}`, acao: 'estoque_minimo', campaign_id: x.id, campanha: x.nome, produto: f.nome.slice(0, 90), item_ids: f.ativos, estoque: aviso.estoque, dias: diasE, gasto_dia: r1(f.gasto / diasProd), colaboracao: { de: 'estoque' } }, 'so_alerta');
         }
         const custoVenda = f.preco * ((metaFam || 10) / 100); // ADS aceitável por venda deste produto (limitado pela margem)
         const limProd = Math.max(15, custoVenda * 2);

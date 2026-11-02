@@ -8,7 +8,11 @@
 //  • ADS Mercado Livre: passos do pacote → aplicar no painel do ML e marcar Feito;
 //  • Faturamento: as quedas do Raio-X do Gerente (Plano de ação);
 //  • Reputação: reclamação com prazo vencendo;
-//  • Promoções: promoções que cabem na margem.
+//  • Promoções: promoções que cabem na margem;
+//  • Estoque: produto que o ADS empurra e acaba em até 7 dias (repor antes de zerar).
+// Limpeza: o servidor fecha de hora em hora as sugestões vencidas e as que uma
+// mais nova substituiu (api/agente-cron.js limparDecisoes); cada loja mostra as
+// 3 de maior impacto e o resto fica em "ver mais".
 // "Abrir" leva para a tela certa já no cliente da decisão (cliente em foco).
 // ============================================================
 Router.register('decisoes', (params, el) => {
@@ -23,6 +27,7 @@ Router.register('decisoes', (params, el) => {
     'conexao': { t: 'Conexão', c: 'var(--red)' },
     'ads-shopee': { t: 'ADS Shopee', c: '#eb6834' },
     'ads-ml': { t: 'ADS ML', c: '#d9a400' },
+    'estoque': { t: 'Estoque', c: '#1f9d74' },
     'faturamento': { t: 'Faturamento', c: 'var(--accent)' },
     'promocoes': { t: 'Promoções', c: 'var(--purple)' },
   };
@@ -70,6 +75,12 @@ Router.register('decisoes', (params, el) => {
           const diasTxt = d.nivel === 'zerado' ? 'anúncios parados' : d.dias_restantes != null ? `dura ~${String(Math.round(d.dias_restantes * 10) / 10).replace('.', ',')} dia(s)` : '';
           itens.push({ id: 'log:' + l.id, log: l, tipo: 'saldo', mkt: 'shopee', conta: String(l.conta_id), titulo: String(l.titulo || '').replace(/\s+—\s+[^—]*$/, ''),
             acao: `Recarregar — saldo ${R$(d.saldo)}${diasTxt ? ` · ${diasTxt}` : ''}`, porque: String(l.explicacao || ''), urgente: d.nivel !== 'baixo', exec: false, tela: 'agente', quando: l.criado_em });
+          continue;
+        }
+        if (d.acao === 'estoque_minimo') { // agente de ADS: produto da campanha acabando — repor é com o cliente
+          const diasTxt = d.dias != null ? ` · acaba em ~${String(d.dias).replace('.', ',')} dia(s)` : '';
+          itens.push({ id: 'log:' + l.id, log: l, tipo: 'estoque', mkt, conta: String(l.conta_id), titulo: `Repor estoque — ${d.produto || ''}`,
+            acao: `${d.estoque ?? '?'} un.${diasTxt}`, porque: String(l.explicacao || ''), urgente: d.dias != null && d.dias <= 3, exec: false, tela: 'estoque-margem', quando: l.criado_em });
           continue;
         }
         const impacto = d.impacto != null ? parseFloat(d.impacto) : d.freio_volume ? Math.max(0, (d.venda_antes || 0) - (d.venda_agora || 0)) : null;
@@ -155,6 +166,7 @@ Router.register('decisoes', (params, el) => {
         ${selExec.length ? `<button class="btn btn-primary btn-sm" ${st.lote ? 'disabled' : ''} onclick="window._dcAprovarSel()">${st.lote ? h(st.lote) : `Aprovar ${selExec.length} selecionada(s)`}</button>` : ''}
         <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._dcRecarregar()" title="Buscar de novo">↻</button>
       </div>
+      <div class="dc-nota">Sugestões vencidas ou repetidas fecham sozinhas a cada hora — se ainda valer, o agente sugere de novo. Em cada loja aparecem as 3 de maior impacto.</div>
       <div class="dc-chips">${chips.map(([k, t, n]) => `<button class="dc-chip ${st.filtro === k ? 'on' : ''}" onclick="window._dcFiltro('${k}')">${h(t)} <b>${n}</b></button>`).join('')}</div>
       ${lista.length ? renderGrupos(lista, !!foco)
         : `<div class="card dc-vazio"><b>Nada esperando você${foco ? ' neste cliente' : ''}.</b><span>Os agentes não encontraram nada que precise de decisão agora.</span></div>`}`;
@@ -176,6 +188,7 @@ Router.register('decisoes', (params, el) => {
     return [...cls.values()].map(c => ({ ...c, rs: soma(c.itens), urg: urg(c.itens), lojas: [...c.lojas.values()].map(l => ({ ...l, rs: soma(l.itens), urg: urg(l.itens) })).sort((a, b) => b.urg - a.urg || b.rs - a.rs || b.itens.length - a.itens.length) }))
       .sort((a, b) => b.urg - a.urg || b.rs - a.rs || b.itens.length - a.itens.length);
   }
+  const POR_LOJA = 3; // as 3 de maior impacto (a lista já vem em ordem de prazo e R$)
   function renderGrupos(lista, umCliente) {
     const gs = agrupar(lista);
     return `<div class="dc-grupos">${gs.map((g, i) => {
@@ -193,8 +206,8 @@ Router.register('decisoes', (params, el) => {
           return `<div class="dc-loja">
             <div class="dc-loja-cab"><span class="dc-loja-nome">${h(l.nome || 'Loja')}</span><span class="pl-sub">${l.itens.length} decisão(ões)${l.rs > 0 ? ` · ${R$(l.rs)}/sem` : ''}</span><span style="flex:1"></span>
               ${ex.length >= 2 ? `<button class="btn btn-secondary btn-sm" ${st.lote ? 'disabled' : ''} onclick="window._dcAprovarLoja('${h(g.k)}','${h(l.k)}')">Aprovar as ${ex.length} desta loja</button>` : ''}</div>
-            ${(st.lojasTodas.has(l.k) ? l.itens : l.itens.slice(0, 6)).map(linha).join('')}
-            ${l.itens.length > 6 && !st.lojasTodas.has(l.k) ? `<button type="button" class="dc-mais" onclick="window._dcLojaTodas('${h(l.k)}')">ver mais ${l.itens.length - 6} desta loja</button>` : ''}
+            ${(st.lojasTodas.has(l.k) ? l.itens : l.itens.slice(0, POR_LOJA)).map(linha).join('')}
+            ${l.itens.length > POR_LOJA && !st.lojasTodas.has(l.k) ? `<button type="button" class="dc-mais" onclick="window._dcLojaTodas('${h(l.k)}')">ver mais ${l.itens.length - POR_LOJA} desta loja</button>` : ''}
           </div>`; }).join('') : ''}
       </div>`;
     }).join('')}</div>`;
@@ -268,6 +281,7 @@ Router.register('decisoes', (params, el) => {
   <style>
     .dc-topo{display:flex;align-items:center;gap:22px;flex-wrap:wrap;margin-bottom:12px}
     .dc-num{display:flex;flex-direction:column} .dc-num b{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.1} .dc-num span{font-size:12px;color:var(--text-muted)}
+    .dc-nota{font-size:12px;color:var(--text-muted);margin:-4px 0 10px}
     .dc-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
     .dc-chip{border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);border-radius:99px;padding:5px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
     .dc-chip b{color:var(--text-primary);font-weight:650;margin-left:2px} .dc-chip.on{border-color:var(--accent);background:var(--accent-glow);color:var(--accent-light)}
