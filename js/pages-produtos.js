@@ -147,6 +147,9 @@ Router.register('produtos', (params, el) => {
     } catch (e) { if (minha === geracao) st.erro = e.message; }
     finally {
       if (minha === geracao) { st.carregando = false; st.progresso = ''; associarPeloSku(); render(); }
+      if (portal && minha === geracao && st.anuncios.length) {
+        MarketplaceAPI.call('glr_portal_ncm', { ids: st.anuncios.map(a => a.id) }).then(r => { st.ncmPortal = r.ncm || {}; render(); }).catch(() => {});
+      }
     }
   }
 
@@ -324,6 +327,37 @@ Router.register('produtos', (params, el) => {
       onchange="window._prCusto(${st.rows.indexOf(r)},'${campo}',this)" onkeydown="if(event.key==='Enter')this.blur()">`;
   }
 
+  // ── NCM (nota fiscal): por anúncio, em glr_ncm_catalogo — equipe grava aqui; portal pelo servidor ──
+  const ncmCat = () => portal ? (st.ncmPortal || {}) : lerJSON('glr_ncm_catalogo', {});
+  const ncmDe = r => { const c = ncmCat(); for (const a of r.anuncios || []) if (c[String(a.id)]) return c[String(a.id)]; return ''; };
+  function celulaNcm(r, i) {
+    const v = ncmDe(r);
+    return `<input class="pr-in pr-ncm ${v ? '' : 'vazio'}" id="pr-ncm-${i}" inputmode="numeric" maxlength="10" placeholder="NCM" value="${h(v)}" title="8 dígitos — obrigatório para emitir a nota"
+      onchange="window._prNcm(${st.rows.indexOf(r)}, this)" onkeydown="if(event.key==='Enter')this.blur()">`;
+  }
+  window._prNcm = async (idx, inp) => {
+    const r = st.rows[idx]; if (!r) return;
+    const n = String(inp.value || '').replace(/\D/g, '');
+    if (n && n.length !== 8) { inp.classList.add('erro'); alert('O NCM tem 8 dígitos (ex.: 9403.60.00 → 94036000).'); return; }
+    inp.classList.remove('erro', 'ok');
+    if (!portal) {
+      const c = lerJSON('glr_ncm_catalogo', {});
+      for (const a of r.anuncios || []) { if (n) c[String(a.id)] = n; else delete c[String(a.id)]; }
+      localStorage.setItem('glr_ncm_catalogo', JSON.stringify(c)); // sincroniza (supabase-init)
+    } else {
+      inp.disabled = true;
+      try {
+        const porConta = new Map();
+        for (const a of r.anuncios || []) { const k = `${a.mkt}:${a.conta}`; if (!porConta.has(k)) porConta.set(k, { a, itens: [] }); porConta.get(k).itens.push({ id: a.id, ncm: n }); }
+        for (const { a, itens } of porConta.values()) await MarketplaceAPI.call('glr_portal_salvar_ncm', { [a.mkt === 'ml' ? 'meliUserId' : 'shopId']: a.conta, itens });
+        st.ncmPortal = st.ncmPortal || {};
+        for (const a of r.anuncios || []) { if (n) st.ncmPortal[String(a.id)] = n; else delete st.ncmPortal[String(a.id)]; }
+      } catch (e) { inp.classList.add('erro'); alert('Não consegui salvar o NCM: ' + e.message); inp.disabled = false; return; }
+      inp.disabled = false;
+    }
+    inp.value = n; inp.classList.add('ok'); inp.classList.toggle('vazio', !n);
+  };
+
   function render() {
     const box = document.getElementById('pr-root'); if (!box) return;
     const clientes = [...(GLR.clientes || [])].sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
@@ -357,7 +391,7 @@ Router.register('produtos', (params, el) => {
         ${st.carregando ? ` · ⏳ ${h(st.progresso || 'carregando…')}` : ` · <a href="#" onclick="window._prRecarregar();return false;">atualizar anúncios</a>`}${st.erro ? ` · <span style="color:var(--red)">${h(st.erro)}</span>` : ''}</span>
       </div>
       <div class="card" style="padding:0;overflow:hidden"><div style="overflow-x:auto">
-        <table class="pr-tab"><thead><tr><th>SKU interno</th><th>Imagem</th><th>Título</th><th class="pr-n">Preço de custo</th>${portal ? '' : '<th class="pr-n">Custo extra</th>'}<th>Marketplaces associados</th>${portal ? '' : '<th></th>'}</tr></thead>
+        <table class="pr-tab"><thead><tr><th>SKU interno</th><th>Imagem</th><th>Título</th><th class="pr-n">Preço de custo</th>${portal ? '' : '<th class="pr-n">Custo extra</th>'}<th title="Código fiscal do produto (8 dígitos) — obrigatório para emitir a nota fiscal">NCM</th><th>Marketplaces associados</th>${portal ? '' : '<th></th>'}</tr></thead>
         <tbody>${pagina.map((r, i) => {
           // Cliente com várias contas: o selo diz de qual conta é cada anúncio
           const por = new Map(); r.anuncios.forEach(a => { const k = multiConta ? chaveConta(a) : a.mkt; if (!por.has(k)) por.set(k, { a, n: 0 }); por.get(k).n++; });
@@ -369,6 +403,7 @@ Router.register('produtos', (params, el) => {
             <td class="pr-tit">${h(r.nome)}</td>
             <td class="pr-n">${celulaCusto(r, 'custo', i)}${nota}</td>
             ${portal ? '' : `<td class="pr-n">${celulaCusto(r, 'custoExtra', i)}</td>`}
+            <td>${celulaNcm(r, i)}</td>
             <td class="pr-mkts">${por.size ? [...por.values()].map(({ a, n }) => `<span class="pr-mkt" style="--c:${MKT[a.mkt].cor}" title="${MKT[a.mkt].nome}${multiConta ? ' · ' + h(a.contaNome || a.conta) : ''}">${MKT[a.mkt].sigla}${multiConta ? ` · ${h(a.contaNome || a.conta)}` : ''} ${n}</span>`).join('') : '<span class="pr-mut">nenhum</span>'}</td>
             ${portal ? '' : `<td class="pr-acoes"><button title="Associar anúncios" onclick="window._prAssociar(${st.rows.indexOf(r)})">🔗</button><button title="Editar" onclick="window._prEditar(${st.rows.indexOf(r)})">✎</button>${r.virtual ? '' : `<button title="Excluir" onclick="window._prExcluir(${st.rows.indexOf(r)})">🗑</button>`}</td>`}
           </tr>`;
@@ -483,7 +518,7 @@ Router.register('produtos', (params, el) => {
     .pr-tit{color:var(--text-primary)!important;font-weight:600;min-width:240px}
     .pr-in{width:96px;text-align:right;background:var(--bg-card-hover);border:1px solid var(--border);border-radius:7px;color:var(--text-primary);padding:6px 8px;font-size:13px;font-variant-numeric:tabular-nums}
     .pr-in:focus{outline:none;border-color:var(--accent)}
-    .pr-in.vazio{border-color:var(--red)}.pr-in.vazio::placeholder{color:var(--red);font-weight:700}
+    .pr-in.vazio{border-color:var(--red)} .pr-ncm{width:96px;text-align:left} .pr-in.pr-ncm.vazio{border-color:var(--border)} .pr-in.pr-ncm.vazio::placeholder{color:var(--text-muted);font-weight:400}.pr-in.vazio::placeholder{color:var(--red);font-weight:700}
     .pr-sem{color:var(--red);font-weight:700}
     .pr-in.ok{border-color:var(--green)}.pr-in.erro{border-color:var(--red)}
     .pr-mkts{display:flex;flex-wrap:wrap;gap:4px;max-width:340px}

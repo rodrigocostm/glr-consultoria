@@ -81,6 +81,7 @@ const Router = {
       'conexoes': 'Saúde das conexões',
       'black-friday': 'Plano Black Friday',
       'relatorio-semanal': 'Relatório semanal',
+      'notas': 'Notas e etiquetas',
       'meu-dashboard': 'Dashboard', 'meus-pedidos': 'Pedidos', 'minha-curva-abc': 'Curva ABC', 'minhas-oportunidades': 'Oportunidades',
       financeiro: 'Financeiro',
       vendas: 'Vendas',

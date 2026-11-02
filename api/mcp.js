@@ -153,6 +153,8 @@ async function loginPortal({ tipo, email, senha }) {
   throw new Error('tipo inválido');
 }
 
+const nfeMod = require('./_nfe');
+
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -180,8 +182,8 @@ module.exports = async function handler(req, res) {
   const p = params || {};
   if (contasPermitidas) {
     // Portal: apenas consultas explicitamente permitidas e custo validado.
-    if ((!ALLOWED_ACTIONS.has(action) && action !== 'glr_portal_salvar_custo' && action !== 'glr_portal_produtos' && !CATALOGO_LIVRE.has(action)) || action === 'raw' || BLOQUEADAS_PORTAL.test(action)) return res.status(403).json({ error: 'Ação não disponível no portal' });
-    if (action !== 'list_accounts' && action !== 'glr_portal_produtos' && !CATALOGO_LIVRE.has(action)) {
+    if ((!ALLOWED_ACTIONS.has(action) && action !== 'glr_portal_salvar_custo' && action !== 'glr_portal_produtos' && !/^glr_nfe_|^glr_portal_(ncm|salvar_ncm)$/.test(action) && !CATALOGO_LIVRE.has(action)) || action === 'raw' || BLOQUEADAS_PORTAL.test(action)) return res.status(403).json({ error: 'Ação não disponível no portal' });
+    if (action !== 'list_accounts' && action !== 'glr_portal_produtos' && !/^glr_nfe_|^glr_portal_(ncm|salvar_ncm)$/.test(action) && !CATALOGO_LIVRE.has(action)) { // as ações glr_nfe_*/ncm conferem a conta por conta própria
       const contas = CAMPOS_CONTA.map(k => p[k]).filter(v => v != null && v !== '').map(String);
       if (!contas.length) return res.status(403).json({ error: 'Informe a conta da consulta' });
       if (contas.some(c => !contasPermitidas.has(c))) return res.status(403).json({ error: 'Conta não vinculada ao seu acesso' });
@@ -191,6 +193,54 @@ module.exports = async function handler(req, res) {
   // Custo do produto lançado pelo cliente no portal (tela Produtos). O banco não
   // deixa o portal gravar; aqui o servidor confere que cada anúncio é da conta
   // do cliente e grava só essas chaves no catálogo de custos.
+  // ── Notas fiscais e NCM (api/_nfe.js) — só o portal, cada cliente com a própria chave do emissor ──
+  if (/^glr_nfe_|^glr_portal_(ncm|salvar_ncm)$/.test(action)) {
+    if (!contasPermitidas) return res.status(403).json({ error: 'Somente para o portal do cliente' });
+    const cli = String(identity.portal?.clienteId ?? '');
+    if (!cli) return res.status(403).json({ error: 'Acesso sem cliente vinculado' });
+    const t = async (a, q) => { const j = await tiops(apiKey, a, q); if (typeof j?.error === 'string' && j.error.trim()) throw new Error(j.error); if (j?.status && j.status !== 200 && j?.data?.error) throw new Error(j.data.error); return j; };
+    const minhaConta = (mkt, conta) => ['ml', 'shopee'].includes(mkt) && contasPermitidas.has(String(conta));
+    try {
+      if (action === 'glr_nfe_status') return res.status(200).json(await nfeMod.status(cli));
+      if (action === 'glr_nfe_chave') return res.status(200).json(p.remover ? await nfeMod.removerChave(cli) : await nfeMod.salvarChave(cli, p.chave));
+      if (action === 'glr_nfe_pedidos') {
+        const lc = await t('list_accounts', {});
+        const contas = (lc?.data?.accounts || lc?.accounts || []).filter(c => contasPermitidas.has(String(c.external_id)))
+          .map(c => ({ mkt: /shopee/i.test(c.marketplace) ? 'shopee' : /meli|mercado|^ml$/i.test(c.marketplace) ? 'ml' : null, id: String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id) }))
+          .filter(c => c.mkt && (!p.conta || c.id === String(p.conta)));
+        return res.status(200).json(await nfeMod.pedidosAEnviar(t, cli, contas));
+      }
+      if (action === 'glr_nfe_previa' || action === 'glr_nfe_emitir') {
+        if (!minhaConta(p.mkt, p.conta)) return res.status(403).json({ error: 'Conta não vinculada ao seu acesso' });
+        return res.status(200).json(await nfeMod.previaOuEmitir(t, cli, { mkt: p.mkt, conta: String(p.conta), pedido: String(p.pedido || ''), orderIds: (Array.isArray(p.orderIds) ? p.orderIds : []).map(String).slice(0, 20), empresaId: String(p.empresaId || ''), ambiente: p.ambiente === 'producao' ? 'producao' : 'homologacao' }, action === 'glr_nfe_emitir'));
+      }
+      if (action === 'glr_nfe_nota') return res.status(200).json(await nfeMod.consultarNota(cli, String(p.id || '')));
+      if (action === 'glr_nfe_danfe') return res.status(200).json(await nfeMod.danfe(cli, String(p.id || ''), p.formato));
+      if (action === 'glr_portal_ncm') {
+        const cat = await nfeMod.lerNcm(), ids = (Array.isArray(p.ids) ? p.ids : []).slice(0, 3000).map(String);
+        return res.status(200).json({ ncm: Object.fromEntries(ids.filter(id => cat[id]).map(id => [id, cat[id]])) });
+      }
+      if (action === 'glr_portal_salvar_ncm') { // confere que cada anúncio é da conta do cliente (como o custo)
+        const conta = String(p.meliUserId || p.shopId || '');
+        if (!contasPermitidas.has(conta)) return res.status(403).json({ error: 'Conta não vinculada ao seu acesso' });
+        const pedidos = new Map((Array.isArray(p.itens) ? p.itens : []).slice(0, 100).map(x => [String(x.id), String(x.ncm || '')]));
+        const ok = [];
+        const ids = [...pedidos.keys()];
+        if (p.meliUserId) for (let i = 0; i < ids.length; i += 20) {
+          const r = await t('get_items', { meliUserId: conta, ids: ids.slice(i, i + 20) });
+          for (const e of (Array.isArray(r?.data) ? r.data : (Array.isArray(r) ? r : []))) { const b = e?.body || e; if (b?.id && String(b.seller_id) === conta && pedidos.has(String(b.id))) ok.push({ id: String(b.id), ncm: pedidos.get(String(b.id)) }); }
+        } else for (let i = 0; i < ids.length; i += 50) {
+          const r = await t('shopee_get_items_batch', { shopId: conta, item_id_list: ids.slice(i, i + 50).map(Number) });
+          for (const d of (r?.data?.response?.item_list || r?.response?.item_list || [])) if (pedidos.has(String(d.item_id))) ok.push({ id: String(d.item_id), ncm: pedidos.get(String(d.item_id)) });
+        }
+        if (!ok.length) return res.status(400).json({ error: 'Nenhum anúncio desta conta encontrado' });
+        await nfeMod.salvarNcm(ok);
+        return res.status(200).json({ ok: true, salvos: ok.length });
+      }
+      return res.status(400).json({ error: 'Ação de nota inválida' });
+    } catch (e) { return res.status(400).json({ error: e.message || String(e) }); }
+  }
+
   // Produtos cadastrados pela equipe (custo, foto, SKU) — só os do cliente logado e só
   // os anúncios das contas dele. O banco não deixa o portal ler glr_produtos inteiro.
   if (action === 'glr_portal_produtos') {

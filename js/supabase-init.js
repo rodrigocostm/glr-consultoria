@@ -29,6 +29,7 @@ const GLR_KEYS = [
   'glr_mc_vinculos', 'glr_mc_nicknames', 'glr_portal_configs',
   'glr_vendas_custos',  // custo de produto lançado no admin — precisa chegar no portal do cliente
   'glr_vendas_custo_catalogo', // custo unitário fixo por produto (SKU/itemId) — aplica a pedidos antigos e novos
+  'glr_ncm_catalogo',   // NCM por anúncio (tela Produtos) — usado na emissão da nota fiscal
   'glr_aliquotas',      // % de imposto padrão por conta
   'glr_comissao_contas', // contas que NÃO contam comissão GLR ({ id: false })
   'glr_margem_minima',   // margem mínima de lucro por conta (agente de Margem → ACOS alvo)

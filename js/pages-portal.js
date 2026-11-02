@@ -861,7 +861,7 @@ window._initPortalCliente = async function(cfg) {
 };
 
 // Telas liberadas para o cliente do portal (o router bloqueia o resto)
-window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'vendas'];
+window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'notas', 'vendas'];
 
 function _portalMostrarLoading(msg) {
   const el = document.getElementById('page-content');
@@ -953,6 +953,11 @@ function _configurarSidebarCliente(cfg) {
       <button class="nav-item" data-page="anuncios-shopee" onclick="Router.navigate('anuncios-shopee')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         Shopee
+      </button>
+      <div class="sidebar-section-title" style="margin-top:10px;">Envios</div>
+      <button class="nav-item" data-page="notas" onclick="Router.navigate('notas')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
+        Notas e etiquetas
       </button>
       <div class="sidebar-section-title" style="margin-top:10px;">Financeiro</div>
       <button class="nav-item" data-page="financeiro" onclick="Router.navigate('financeiro')">
