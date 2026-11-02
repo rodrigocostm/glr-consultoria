@@ -163,6 +163,10 @@ Router.register('expansao', (params, el) => {
         sku: b.seller_custom_field || (b.attributes || []).find(a => a.id === 'SELLER_SKU')?.value_name || r.sku });
       const dim = String(b.shipping?.dimensions || '').match(/^(\d+)x(\d+)x(\d+),(\d+)/); // "CxLxA,gramas"
       if (dim) Object.assign(r, { compr: dim[1], larg: dim[2], alt: dim[3], peso: String(Math.round(+dim[4] / 10) / 100) });
+      else { // anúncio novo do ML: embalagem nos atributos SELLER_PACKAGE_* ("115 cm", "36400 g")
+        const at = id => { const m = String((b.attributes || []).find(a => a.id === id)?.value_name || '').replace(',', '.').match(/([\d.]+)\s*(mm|cm|m|g|kg)?/i); if (!m) return ''; const v = +m[1], u = (m[2] || '').toLowerCase(); return String(u === 'mm' ? v / 10 : u === 'm' ? v * 100 : u === 'g' ? Math.round(v / 10) / 100 : v); };
+        Object.assign(r, { compr: at('SELLER_PACKAGE_LENGTH'), larg: at('SELLER_PACKAGE_WIDTH'), alt: at('SELLER_PACKAGE_HEIGHT'), peso: at('SELLER_PACKAGE_WEIGHT') });
+      }
       fotos = (b.pictures || []).map(p => p.secure_url || p.url);
     } else if (f.mkt === 'shopee') {
       const x = await MarketplaceAPI.call('shopee_get_items_batch', { shopId: f.conta, item_id_list: [Number(f.item_id)] });

@@ -126,7 +126,7 @@ async function analisarCliente({ sbSelect, sbUpsert, t }, cli, vinculos, limiteM
     r.n++; r.unid_est = r1(r.unid_est + o.unid_est); r.receita_est += o.receita_est;
     resumo.unid_est = r1(resumo.unid_est + o.unid_est); resumo.receita_est += o.receita_est;
   }
-  const cursor = { em: new Date().toISOString(), cliente: { id: String(cli.id), nome: cli.nome || '' }, base: { unid30: totUnid, receita30: Math.round([...porItem.values()].reduce((s, x) => s + x.receita, 0)), produtos: produtos.length }, canais, resumo, oportunidades: oportunidades.slice(0, 200), total: oportunidades.length, erros: erros.slice(0, 10), ms: Date.now() - ini };
+  const cursor = { em: new Date().toISOString(), cliente: { id: String(cli.id), nome: cli.nome || '' }, base: { unid30: totUnid, receita30: Math.round([...porItem.values()].reduce((s, x) => s + x.receita, 0)), produtos: produtos.length }, canais, resumo, oportunidades: oportunidades.slice(0, 400), total: oportunidades.length, erros: erros.slice(0, 10), ms: Date.now() - ini };
   await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `cliente:${cli.id}`, recurso: 'expansao', ultima_tentativa: cursor.em, ultimo_sucesso: cursor.em, cursor }, 'marketplace,conta_id,recurso');
   return { cliente: cli.nome, oportunidades: oportunidades.length, unid_est: r1(oportunidades.reduce((s, o) => s + o.unid_est, 0)), erros: erros.length, ms: cursor.ms };
 }
