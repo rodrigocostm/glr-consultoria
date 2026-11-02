@@ -14,6 +14,8 @@
 // mais nova substituiu (api/agente-cron.js limparDecisoes); cada loja mostra as
 // 3 de maior impacto e o resto fica em "ver mais".
 // "Abrir" leva para a tela certa já no cliente da decisão (cliente em foco).
+// Tela: um card por cliente (gestor, tipos, prazos, R$ em jogo e as 3 principais);
+// o card abre as decisões do cliente separadas por loja. Filtro por gestor.
 // ============================================================
 Router.register('decisoes', (params, el) => {
   const R$ = v => 'R$ ' + (Math.round(parseFloat(v) || 0)).toLocaleString('pt-BR');
@@ -36,7 +38,8 @@ Router.register('decisoes', (params, el) => {
     'promocoes': { t: 'Promoções', c: 'var(--purple)' },
   };
   const ACAO_REC = { send_attachments: 'Enviar provas', send_message_to_mediator: 'Responder ao mediador', refund: 'Resolver reembolso' };
-  const st = { itens: [], carregando: true, erro: null, filtro: 'todos', abertos: new Set(), sel: new Set(), proc: {}, lote: null, grupos: new Set(), gruposMexidos: new Set(), lojasTodas: new Set() };
+  const lerLS = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } };
+  const st = { aberto: null, gestor: lerLS('glr_dc_gestor', 'todos'), itens: [], carregando: true, erro: null, filtro: 'todos', abertos: new Set(), sel: new Set(), proc: {}, lote: null, lojasTodas: new Set() };
   window._dcSt = st;
 
   // decisões que não ficam no registro dos agentes (plano, reputação, promoções): feito/descartado por aqui
@@ -162,9 +165,12 @@ Router.register('decisoes', (params, el) => {
     window.dispatchEvent(new CustomEvent('glr:decisoes', { detail: { n: st.itens.length } }));
   }
 
+  // gestor do cliente pelo cadastro (o filtro e o card mostram o nome)
+  const gestorDe = cid => { const c = (GLR.clientes || []).find(x => String(x.id) === String(cid)); const g = (GLR.gestores || []).find(x => String(x.id) === String(c?.gestorId)); return { id: g ? String(g.id) : 'sem', nome: g?.nome || c?.gestor || 'Sem gestor' }; };
+  const doGestor = it => st.gestor === 'todos' || gestorDe(it.clienteId).id === st.gestor;
   const visiveis = () => {
     const foco = GLR.ctx?.cliente();
-    return st.itens.filter(it => (!foco || it.clienteId === foco) && (st.filtro === 'todos' || it.tipo === st.filtro || (st.filtro === 'aprovar' && it.exec)));
+    return st.itens.filter(it => (!foco || it.clienteId === foco) && doGestor(it) && (st.filtro === 'todos' || it.tipo === st.filtro || (st.filtro === 'aprovar' && it.exec)));
   };
 
   function render() {
@@ -173,7 +179,8 @@ Router.register('decisoes', (params, el) => {
     if (st.carregando && !st.itens.length) { root.innerHTML = '<div class="card" style="padding:18px">Carregando…</div>'; return; }
     if (st.erro) { root.innerHTML = `<div class="card" style="padding:18px;color:var(--red)">Não consegui carregar as decisões: ${h(st.erro)} <button class="btn btn-secondary btn-sm" onclick="window._dcRecarregar()">Tentar de novo</button></div>`; return; }
     const foco = GLR.ctx?.cliente();
-    const base = st.itens.filter(it => !foco || it.clienteId === foco);
+    const base = st.itens.filter(it => (!foco || it.clienteId === foco) && doGestor(it));
+    const gestores = [...new Map(st.itens.map(it => { const g = gestorDe(it.clienteId); return [g.id, g.nome]; })).entries()].sort((a, b) => a[1].localeCompare(b[1]));
     const lista = visiveis();
     const emJogo = lista.reduce((s, it) => s + (it.impacto || 0), 0);
     const nExec = base.filter(it => it.exec).length;
@@ -189,7 +196,8 @@ Router.register('decisoes', (params, el) => {
         <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._dcRecarregar()" title="Buscar de novo">↻</button>
       </div>
       <div class="dc-nota">Sugestões vencidas ou repetidas fecham sozinhas a cada hora — se ainda valer, o agente sugere de novo. Em cada loja aparecem as 3 de maior impacto.</div>
-      <div class="dc-chips">${chips.map(([k, t, n]) => `<button class="dc-chip ${st.filtro === k ? 'on' : ''}" onclick="window._dcFiltro('${k}')">${h(t)} <b>${n}</b></button>`).join('')}</div>
+      <div class="dc-filtros"><div class="dc-chips">${chips.map(([k, t, n]) => `<button class="dc-chip ${st.filtro === k ? 'on' : ''}" onclick="window._dcFiltro('${k}')">${h(t)} <b>${n}</b></button>`).join('')}</div>
+        <select class="form-control dc-gestor" aria-label="Gestor" onchange="window._dcGestor(this.value)"><option value="todos">Todos os gestores</option>${gestores.map(([id, nome]) => `<option value="${h(id)}" ${st.gestor === id ? 'selected' : ''}>${h(nome)}</option>`).join('')}</select></div>
       ${lista.length ? renderGrupos(lista, !!foco)
         : `<div class="card dc-vazio"><b>Nada esperando você${foco ? ' neste cliente' : ''}.</b><span>Os agentes não encontraram nada que precise de decisão agora.</span></div>`}`;
   }
@@ -213,26 +221,34 @@ Router.register('decisoes', (params, el) => {
   const POR_LOJA = 3; // as 3 de maior impacto (a lista já vem em ordem de prazo e R$)
   function renderGrupos(lista, umCliente) {
     const gs = agrupar(lista);
-    return `<div class="dc-grupos">${gs.map((g, i) => {
-      // abre sozinho quem tem prazo vencendo (ou o cliente em foco); o resto começa fechado
-      const aberto = st.gruposMexidos.has(g.k) ? st.grupos.has(g.k) : (umCliente || g.urg > 0 || (i === 0 && gs.length <= 3));
-      const porTipo = Object.entries(g.itens.reduce((m, it) => { m[it.tipo] = (m[it.tipo] || 0) + 1; return m; }, {}));
-      return `<div class="card dc-g ${aberto ? 'aberto' : ''}">
-        <button type="button" class="dc-g-cab" aria-expanded="${aberto}" onclick="window._dcGrupo('${h(g.k)}', ${aberto ? 'false' : 'true'})">
-          <span class="dc-g-seta">▸</span>
-          <span class="dc-g-nome">${h(g.nome)}</span>
-          <span class="dc-g-tipos">${porTipo.map(([t, n]) => `<span class="dc-g-t" style="--c:${TIPOS[t]?.c || 'var(--text-muted)'}">${TIPOS[t]?.t || t} ${n}</span>`).join('')}</span>
-          <span class="dc-g-res">${g.urg ? `<b class="dc-prazo">${g.urg} vencendo</b>` : ''}<span><b>${g.itens.length}</b> decisão(ões)</span>${g.rs > 0 ? `<span><b>${R$(g.rs)}</b>/sem</span>` : ''}</span>
-        </button>
-        ${aberto ? g.lojas.map(l => { const ex = l.itens.filter(it => it.exec);
-          return `<div class="dc-loja">
-            <div class="dc-loja-cab"><span class="dc-loja-nome">${h(l.nome || 'Loja')}</span><span class="pl-sub">${l.itens.length} decisão(ões)${l.rs > 0 ? ` · ${R$(l.rs)}/sem` : ''}</span><span style="flex:1"></span>
-              ${ex.length >= 2 ? `<button class="btn btn-secondary btn-sm" ${st.lote ? 'disabled' : ''} onclick="window._dcAprovarLoja('${h(g.k)}','${h(l.k)}')">Aprovar as ${ex.length} desta loja</button>` : ''}</div>
-            ${(st.lojasTodas.has(l.k) ? l.itens : l.itens.slice(0, POR_LOJA)).map(linha).join('')}
-            ${l.itens.length > POR_LOJA && !st.lojasTodas.has(l.k) ? `<button type="button" class="dc-mais" onclick="window._dcLojaTodas('${h(l.k)}')">ver mais ${l.itens.length - POR_LOJA} desta loja</button>` : ''}
-          </div>`; }).join('') : ''}
-      </div>`;
+    const g = umCliente && gs.length === 1 ? gs[0] : gs.find(x => x.k === st.aberto);
+    if (g) return detalhe(g, !umCliente);
+    // um card por cliente: o que tem prazo vencendo e mais R$ em jogo vem primeiro
+    return `<div class="dc-grade">${gs.map(c => {
+      const porTipo = Object.entries(c.itens.reduce((m, it) => { m[it.tipo] = (m[it.tipo] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]);
+      const ex = c.itens.filter(it => it.exec).length, cor = c.urg ? 'var(--red)' : c.rs > 0 ? 'var(--accent)' : 'var(--border)';
+      return `<button type="button" class="dc-card" style="--c:${cor}" onclick="window._dcAbrirCliente('${h(c.k)}')">
+        <div class="dc-card-top"><div><b>${h(c.nome)}</b><span>${h(gestorDe(c.itens[0]?.clienteId).nome)}${c.lojas.length > 1 ? ` · ${c.lojas.length} lojas` : ''}</span></div>${c.urg ? `<span class="dc-card-urg">${c.urg} vencendo</span>` : ''}</div>
+        <div class="dc-card-nums"><div><b>${c.itens.length}</b><span>decisão(ões)</span></div>${c.rs > 0 ? `<div><b>${R$(c.rs)}</b><span>por semana em jogo</span></div>` : ''}${ex ? `<div><b>${ex}</b><span>aprovar com 1 clique</span></div>` : ''}</div>
+        <div class="dc-g-tipos">${porTipo.map(([t, n]) => `<span class="dc-g-t" style="--c:${TIPOS[t]?.c || 'var(--text-muted)'}">${TIPOS[t]?.t || t} ${n}</span>`).join('')}</div>
+        <ul class="dc-card-top3">${c.itens.slice(0, 3).map(it => `<li style="--c:${TIPOS[it.tipo]?.c || 'var(--text-muted)'}"><i></i><span>${h(corta(it.titulo, 70))}</span>${it.impacto ? `<b>${R$(it.impacto)}</b>` : ''}</li>`).join('')}</ul>
+        <span class="dc-card-ir">Ver as ${c.itens.length} decisão(ões) →</span>
+      </button>`;
     }).join('')}</div>`;
+  }
+  // decisões de um cliente, separadas por loja
+  function detalhe(g, comVoltar) {
+    return `<div class="card dc-det">
+      <div class="dc-det-cab">${comVoltar ? `<button type="button" class="dc-voltar" onclick="window._dcAbrirCliente(null)">← Todos os clientes</button>` : ''}
+        <div class="dc-det-nome"><b>${h(g.nome)}</b><span>${h(gestorDe(g.itens[0]?.clienteId).nome)} · ${g.itens.length} decisão(ões)${g.rs > 0 ? ` · ${R$(g.rs)}/sem em jogo` : ''}${g.urg ? ` · <b class="dc-prazo">${g.urg} vencendo</b>` : ''}</span></div></div>
+      ${g.lojas.map(l => { const ex = l.itens.filter(it => it.exec);
+        return `<div class="dc-loja">
+          <div class="dc-loja-cab"><span class="dc-loja-nome">${h(l.nome || 'Loja')}</span><span class="pl-sub">${l.itens.length} decisão(ões)${l.rs > 0 ? ` · ${R$(l.rs)}/sem` : ''}</span><span style="flex:1"></span>
+            ${ex.length >= 2 ? `<button class="btn btn-secondary btn-sm" ${st.lote ? 'disabled' : ''} onclick="window._dcAprovarLoja('${h(g.k)}','${h(l.k)}')">Aprovar as ${ex.length} desta loja</button>` : ''}</div>
+          ${(st.lojasTodas.has(l.k) ? l.itens : l.itens.slice(0, POR_LOJA)).map(linha).join('')}
+          ${l.itens.length > POR_LOJA && !st.lojasTodas.has(l.k) ? `<button type="button" class="dc-mais" onclick="window._dcLojaTodas('${h(l.k)}')">ver mais ${l.itens.length - POR_LOJA} desta loja</button>` : ''}
+        </div>`; }).join('')}
+    </div>`;
   }
 
   function linha(it) {
@@ -257,8 +273,9 @@ Router.register('decisoes', (params, el) => {
   const tirar = id => { st.itens = st.itens.filter(x => x.id !== id); st.sel.delete(id); window.dispatchEvent(new CustomEvent('glr:decisoes', { detail: { n: st.itens.length } })); };
   window._dcRecarregar = () => carregar();
   window._dcFiltro = k => { st.filtro = k; render(); };
+  window._dcGestor = g => { st.gestor = g; st.aberto = null; try { localStorage.setItem('glr_dc_gestor', g); } catch (e) {} render(); };
+  window._dcAbrirCliente = k => { st.aberto = k; render(); window.scrollTo({ top: 0 }); };
   window._dcLojaTodas = k => { st.lojasTodas.add(k); render(); };
-  window._dcGrupo = (k, abrir) => { st.gruposMexidos.add(k); abrir ? st.grupos.add(k) : st.grupos.delete(k); render(); };
   window._dcAprovarLoja = (ck, lk) => {
     const g = agrupar(visiveis()).find(x => x.k === ck), l = g?.lojas.find(x => x.k === lk);
     if (l) aprovarLote(l.itens.filter(it => it.exec), `${g.nome} · ${l.nome}`);
@@ -304,6 +321,21 @@ Router.register('decisoes', (params, el) => {
     .dc-topo{display:flex;align-items:center;gap:22px;flex-wrap:wrap;margin-bottom:12px}
     .dc-num{display:flex;flex-direction:column} .dc-num b{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.1} .dc-num span{font-size:12px;color:var(--text-muted)}
     .dc-nota{font-size:12px;color:var(--text-muted);margin:-4px 0 10px}
+    .dc-filtros{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px} .dc-filtros .dc-chips{margin-bottom:0}
+    .dc-gestor{width:auto;max-width:220px}
+    .dc-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+    .dc-card{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:14px;background:var(--bg-card);border:1px solid var(--border);box-shadow:inset 4px 0 0 var(--c)}
+    .dc-card:hover{border-color:color-mix(in srgb,var(--c) 45%,var(--border))} .dc-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    .dc-card-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start} .dc-card-top>div{display:flex;flex-direction:column;min-width:0} .dc-card-top b{font-size:14.5px;font-weight:650;color:var(--text-primary)} .dc-card-top span{font-size:12px;color:var(--text-muted)}
+    .dc-card-urg{font-size:11.5px !important;font-weight:700;color:var(--red) !important;background:color-mix(in srgb,var(--red) 10%,transparent);border-radius:99px;padding:2px 8px;white-space:nowrap}
+    .dc-card-nums{display:flex;gap:18px;flex-wrap:wrap} .dc-card-nums>div{display:flex;flex-direction:column} .dc-card-nums b{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text-primary)} .dc-card-nums span{font-size:11px;color:var(--text-muted)}
+    .dc-card-top3{list-style:none;margin:0;padding:10px 0 0;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+    .dc-card-top3 li{display:flex;gap:8px;align-items:baseline;font-size:12.5px;color:var(--text-secondary);line-height:1.35} .dc-card-top3 i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--c);transform:translateY(-1px)} .dc-card-top3 span{flex:1;min-width:0} .dc-card-top3 b{font-size:12px;font-weight:650;color:var(--text-primary);white-space:nowrap}
+    .dc-card-ir{font-size:12.5px;font-weight:600;color:var(--accent)}
+    .dc-det{padding:0;overflow:hidden}
+    .dc-det-cab{display:flex;flex-direction:column;gap:8px;padding:14px 16px}
+    .dc-voltar{all:unset;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--accent);width:fit-content} .dc-voltar:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    .dc-det-nome{display:flex;flex-direction:column} .dc-det-nome b{font-size:16px;font-weight:650} .dc-det-nome span{font-size:12.5px;color:var(--text-muted)}
     .dc-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
     .dc-chip{border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);border-radius:99px;padding:5px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
     .dc-chip b{color:var(--text-primary);font-weight:650;margin-left:2px} .dc-chip.on{border-color:var(--accent);background:var(--accent-glow);color:var(--accent-light)}
