@@ -6,7 +6,9 @@ async function db(path,init={}) {
  const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
  const r=await fetch(`${BASE}/${path}`,{...init,headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json',...(init.headers||{})},signal:AbortSignal.timeout(15000)});
  if(!r.ok)throw Error('Não foi possível acessar os dados do Adviser.');
- return r.status===204?null:r.json();
+ if(r.status===204)return null;
+ if(typeof r.text!=='function')return r.json();
+ const t=await r.text();return t?JSON.parse(t):null; // gravação (return=minimal) volta 201 sem corpo
 }
 async function ler(){const rows=await db('glr_storage?chave=eq.glr_adviser&select=dados');return rows[0]?.dados||{receitas:{},missoes:[]};}
 module.exports=async(req,res)=>{
