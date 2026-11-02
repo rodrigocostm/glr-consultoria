@@ -861,7 +861,7 @@ window._initPortalCliente = async function(cfg) {
 };
 
 // Telas liberadas para o cliente do portal (o router bloqueia o resto)
-window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'conciliacao', 'vendas'];
+window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'vendas'];
 
 function _portalMostrarLoading(msg) {
   const el = document.getElementById('page-content');
@@ -959,11 +959,7 @@ function _configurarSidebarCliente(cfg) {
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
         Financeiro
       </button>
-      <button class="nav-item" data-page="conciliacao" onclick="Router.navigate('conciliacao')">
-        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-        Conciliação
-      </button>
-    </div>
+      </div>
   `;
   if (logo) logo.after(nav); else sidebar.prepend(nav);
 
