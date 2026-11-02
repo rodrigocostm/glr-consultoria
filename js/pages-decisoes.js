@@ -24,6 +24,7 @@ Router.register('decisoes', (params, el) => {
   const dataCurta = iso => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
   const TIPOS = {
     'retencao': { t: 'Retenção', c: 'var(--red)' },
+    'onboarding': { t: 'Implantação', c: 'var(--accent)' },
     'reputacao': { t: 'Reputação', c: 'var(--red)' },
     'saldo': { t: 'Saldo de ADS', c: 'var(--red)' },
     'conexao': { t: 'Conexão', c: 'var(--red)' },
@@ -78,6 +79,11 @@ Router.register('decisoes', (params, el) => {
           const diasTxt = d.nivel === 'zerado' ? 'anúncios parados' : d.dias_restantes != null ? `dura ~${String(Math.round(d.dias_restantes * 10) / 10).replace('.', ',')} dia(s)` : '';
           itens.push({ id: 'log:' + l.id, log: l, tipo: 'saldo', mkt: 'shopee', conta: String(l.conta_id), titulo: String(l.titulo || '').replace(/\s+—\s+[^—]*$/, ''),
             acao: `Recarregar — saldo ${R$(d.saldo)}${diasTxt ? ` · ${diasTxt}` : ''}`, porque: String(l.explicacao || ''), urgente: d.nivel !== 'baixo', exec: false, tela: 'agente', quando: l.criado_em });
+          continue;
+        }
+        if (d.acao === 'onboarding') { // Agente de Onboarding: implantação do cliente travada num passo essencial
+          itens.push({ id: 'log:' + l.id, log: l, tipo: 'onboarding', mkt: 'cliente', conta: String(l.conta_id), clienteFixo: String(d.cliente_id || ''), titulo: `Implantação travada — falta ${(d.faltam || []).map(x => x.toLowerCase()).join(', ')}`,
+            acao: `${d.pct ?? 0}% pronto`, porque: String(l.explicacao || ''), urgente: false, exec: false, tela: 'onboarding', quando: l.criado_em, nomeCliente: l.cliente_nome });
           continue;
         }
         if (d.acao === 'retencao') { // Agente de Retenção: o aviso é do cliente, não de uma loja

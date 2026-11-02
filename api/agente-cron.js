@@ -622,6 +622,15 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true, rodada: 'perguntas', ...(await require('./_conversao').avisarPerguntas(ajud)) });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
+  // ?rodada=onboarding — Agente de Onboarding (api/_onboarding.js): checklist de entrada de cada cliente,
+  // 07:00 uma vez por dia; &agora=1 roda já ("Verificar agora"); &simular=1 só calcula
+  if (req.query?.rodada === 'onboarding') {
+    const ajud = { sbSelect, sbUpsert, sbInsert, sbUpdate, lerStorage };
+    try {
+      if (req.query?.simular !== '1' && req.query?.agora !== '1' && !(await reservarRodada(`${agoraBRT().dia}-onboarding`))) return res.status(200).json({ ok: true, skip: 'rodada de hoje já executada' });
+      return res.status(200).json({ ok: true, rodada: 'onboarding', ...(await require('./_onboarding').avaliar(ajud, { simular: req.query?.simular === '1' })) });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=retencao — Agente de Retenção (api/_retencao.js), 07:00 uma vez por dia; &agora=1 roda já; &simular=1 só calcula
   if (req.query?.rodada === 'retencao') {
     const ajud = { sbSelect, sbUpsert, sbInsert, sbUpdate, lerStorage };
