@@ -148,7 +148,7 @@ async function avaliarCarteira({ sbSelect, sbUpsert, sbInsert, sbUpdate, lerStor
   const novosAltos = Object.entries(saida).filter(([cid, x]) => x.nivel === 'alto' && anterior[cid]?.nivel !== 'alto');
   const sairam = Object.entries(anterior).filter(([cid, x]) => x.nivel === 'alto' && saida[cid]?.nivel !== 'alto');
   const contar = n => Object.values(saida).filter(x => x.nivel === n).length;
-  if (simular) return { simulacao: true, clientes: Object.keys(saida).length, alto: contar('alto'), medio: contar('medio'), entrariam: novosAltos.map(([, x]) => x.nome), sairiam: sairam.map(([, x]) => x.nome) };
+  if (simular) return { simulacao: true, clientes: Object.keys(saida).length, alto: contar('alto'), medio: contar('medio'), entrariam: novosAltos.map(([, x]) => x.nome), sairiam: sairam.map(([, x]) => x.nome), clientes_detalhe: saida };
 
   const agora = new Date().toISOString();
   await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: 'retencao', recurso: 'todas', ultima_tentativa: agora, ultimo_sucesso: agora, cursor: { em: agora, clientes: saida } }, 'marketplace,conta_id,recurso');
