@@ -55,6 +55,7 @@ const Router = {
 
     // Update header title
     const titles = {
+      adviser: 'Adviser · Estratégia GLR',
       dashboard: 'Dashboard Executivo',
       decisoes: 'Caixa de decisões',
       chat: 'Chat com os agentes',

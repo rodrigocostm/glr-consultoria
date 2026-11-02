@@ -10,7 +10,7 @@
 // ============================================================
 (function () {
   const GRUPOS = [
-    { id: 'hoje', titulo: 'Hoje', paginas: ['decisoes', 'chat', 'dashboard', 'vendometro', 'plano-acao', 'tarefas'] },
+    { id: 'hoje', titulo: 'Hoje', paginas: ['adviser', 'decisoes', 'chat', 'dashboard', 'vendometro', 'plano-acao', 'tarefas'] },
     { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'projecao', 'vendas', 'gestores', 'relatorios', 'relatorio-semanal', 'leads', 'portal-admin'] },
     { id: 'ads', titulo: 'ADS e preço', paginas: ['agente', 'agente-ml', 'promocoes', 'precos-ml', 'precos-shopee', 'datas-especiais', 'black-friday', 'afiliados'] },
     { id: 'saude', titulo: 'Saúde das contas', paginas: ['estoque-margem', 'atendimento', 'qualidade-anuncios', 'rastreamento', 'conexoes'] },

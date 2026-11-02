@@ -10,6 +10,7 @@
     }
   ],
   "functions": {
+    "api/adviser.js": {"maxDuration": 60},
     "api/generate-photo.js": {
       "maxDuration": 60
     },
