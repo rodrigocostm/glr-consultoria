@@ -64,8 +64,11 @@ async function avaliar({ sbSelect, sbUpsert, sbInsert, sbUpdate, lerStorage }, {
     const caidas = Object.values(conex).filter(x => ids.has(String(x.id)) && x.status === 'erro');
     add('conexao', 'Conexões funcionando', 'essencial', contas.length && !caidas.length, caidas.length ? `${caidas.map(x => `${NOME_MKT[x.mkt] || x.mkt} ${x.nome || x.id}`).slice(0, 3).join(', ')} com erro` : contas.length ? 'todas respondendo' : 'sem contas',
       'Reconectar as contas com erro junto com o cliente (Saúde das conexões).', 'conexoes');
-    const semBase = contas.filter(ct => { const d = diasDe(ct); return !d || !Object.keys(d).some(k => k >= recente); });
-    add('vendas', 'Vendas chegando na base', 'essencial', contas.length && !semBase.length, semBase.length ? `${semBase.length} conta(s) sem venda na base nos últimos 3 dias (${semBase.slice(0, 2).map(x => NOME_MKT[x.mkt]).join(', ')})` : contas.length ? 'base atualizada' : 'sem contas',
+    // conta que nunca mandou nada para a base = sincronização parada; conta pouco usada (Amazon/TikTok com pouca venda) não reprova
+    const nuncaSincronizou = contas.filter(ct => !diasDe(ct));
+    const vendeuRecente = contas.some(ct => Object.entries(diasDe(ct) || {}).some(([k, v]) => k >= recente && (parseFloat(v?.faturamento) || 0) > 0));
+    add('vendas', 'Vendas chegando na base', 'essencial', contas.length && vendeuRecente && !nuncaSincronizou.length,
+      !contas.length ? 'sem contas' : nuncaSincronizou.length ? `${nuncaSincronizou.length} conta(s) ainda sem nenhum dado na base (${nuncaSincronizou.slice(0, 2).map(x => NOME_MKT[x.mkt]).join(', ')})` : !vendeuRecente ? 'nenhuma venda na base nos últimos 3 dias' : 'base atualizada',
       'Conferir em Integrações se a conta sincroniza (a base atualiza a cada 15 min); conta nova leva até 1 dia para trazer o histórico.', 'integracoes');
     add('comissao', 'Modelo de comissão', 'essencial', temComissao(c), temComissao(c) ? (c.comissao?.modelo ? `modelo ${c.comissao.modelo}` : `R$ ${String(c.valorPorVenda).replace('.', ',')} por venda`) : 'sem comissão definida',
       'Definir o modelo de comissão no perfil do cliente (por venda, fixo com franquia ou por faixa de ticket).', 'cliente-perfil');
