@@ -44,7 +44,7 @@ a{color:inherit}img{max-width:100%}
 :focus-visible{outline:2px solid var(--azul);outline-offset:2px}
 .topo{background:var(--noite);color:#fff}
 .topo .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;height:68px}
-.marca{display:flex;align-items:center;gap:10px;text-decoration:none;color:#fff}.marca img{width:30px;height:30px;object-fit:contain;background:#fff;border-radius:8px;padding:3px}
+.marca{display:flex;align-items:center;gap:10px;text-decoration:none;color:#fff}.marca img{display:block;height:28px;width:auto}
 .marca b{font-family:"Bricolage Grotesque",sans-serif;font-size:19px;letter-spacing:-.02em}.marca span{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#9fb3e8;font-family:"JetBrains Mono",monospace}
 .topo nav{display:flex;align-items:center;gap:20px;font-size:14px}.topo nav a{text-decoration:none;color:#c9d3ea}.topo nav a:hover{color:#fff}
 .bt{display:inline-flex;align-items:center;gap:8px;background:var(--azul);color:#fff !important;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:10px;border:0;cursor:pointer;font-family:inherit}.bt:hover{background:var(--azul2)}
@@ -102,12 +102,12 @@ function pagina({ titulo, descricao, url, corpo, jsonld, editoriaAtual }) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(titulo)}</title><meta name="description" content="${esc(descricao)}"><link rel="canonical" href="${esc(url)}">
 <meta property="og:type" content="${jsonld ? 'article' : 'website'}"><meta property="og:title" content="${esc(titulo)}"><meta property="og:description" content="${esc(descricao)}"><meta property="og:url" content="${esc(url)}"><meta property="og:site_name" content="GLR Notícias"><meta property="og:locale" content="pt_BR">
-<meta name="theme-color" content="#0A1633"><link rel="icon" href="/logo.png"><link rel="alternate" type="application/rss+xml" title="GLR Notícias" href="/blog?formato=rss">
+<meta name="theme-color" content="#0A1633"><link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="icon" href="/img/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png"><link rel="alternate" type="application/rss+xml" title="GLR Notícias" href="/blog?formato=rss">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld).replace(/</g, '\\u003c')}</script>` : ''}
 <style>${CSS}</style></head><body>
-<header class="topo"><div class="wrap"><a class="marca" href="/blog"><img src="/logo.png" alt="" onerror="this.style.display='none'"><b>GLR</b><span>Notícias</span></a>
+<header class="topo"><div class="wrap"><a class="marca" href="/blog"><img src="/img/logo-glr-branco.png" alt="GLR" width="56" height="28"><span>Notícias</span></a>
 <nav><a class="l" href="/landing.html">A consultoria</a><a class="l" href="/calculadora.html">Calculadora de taxas</a><a class="bt" href="${WHATS}" target="_blank" rel="noopener"><span class="l">Falar com um especialista</span><span class="cel">WhatsApp</span></a></nav></div></header>
 <nav class="editorias" aria-label="Editorias"><div class="wrap"><a class="todas ${!editoriaAtual ? 'on' : ''}" style="--c:var(--tinta)" href="/blog">Últimas</a>${blog.EDITORIAS.map(e => `<a class="${editoriaAtual === e.id ? 'on' : ''}" style="--c:${e.cor}" href="/blog/editoria/${e.id}">${esc(e.nome)}</a>`).join('')}</div></nav>
 <main>${corpo}</main>

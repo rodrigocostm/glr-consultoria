@@ -950,7 +950,7 @@ body { background: var(--bg-base); letter-spacing: -0.005em; }
 /* ── Sidebar ─────────────────────────────────────────────── */
 #sidebar { background: var(--bg-surface); border-right: 1px solid var(--border); width: var(--sidebar-w); transition: width .22s var(--ease), transform .3s var(--ease); scrollbar-width: thin; }
 .sidebar-logo { flex-direction: row !important; align-items: center !important; gap: 10px !important; padding: 16px 16px 14px !important; border-bottom: none; }
-.sidebar-logo img { width: 36px !important; height: 36px !important; border-radius: 10px; flex: none; }
+.sidebar-logo img { width: auto !important; height: 24px !important; flex: none; }
 .logo-text { text-align: left !important; min-width: 0; }
 .logo-text strong { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; }
 .logo-text span { font-size: 11px; text-transform: none; letter-spacing: 0; color: var(--text-muted); white-space: nowrap; }
