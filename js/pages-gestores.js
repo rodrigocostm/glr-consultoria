@@ -25,6 +25,26 @@ Router.register('gestores', (params, el) => {
   function fmtR(v) {
     return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}).format(v||0);
   }
+  // Meta é exibida em BRL e continua persistida como número, sem arredondar centavos.
+  const fmtMeta = v => Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  function lerMeta(valor) {
+    const texto = String(valor ?? '').replace(/R\$/g, '').replace(/\s/g, '');
+    if (!texto) return 0;
+    const normal = texto.includes(',') ? texto.replace(/\./g, '').replace(',', '.')
+      : /^\d{1,3}(\.\d{3})+$/.test(texto) ? texto.replace(/\./g, '') : texto;
+    return /^\d+(\.\d{0,2})?$/.test(normal) ? Number(normal) : NaN;
+  }
+  window.formatarMetaInput = inp => {
+    const antes = inp.value, pos = inp.selectionStart ?? antes.length;
+    const direita = antes.length - pos;
+    let texto = antes.replace(/R\$/g, '').replace(/[^\d,.]/g, '');
+    // Formato brasileiro: vírgula decimal; pontos separam milhares.
+    const partes = texto.replace(/\./g, '').split(',');
+    const inteiro = partes[0].replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    inp.value = inteiro + (partes.length > 1 ? ',' + partes.slice(1).join('').slice(0, 2) : '');
+    const cursor = Math.max(0, inp.value.length - direita);
+    inp.setSelectionRange(cursor, cursor);
+  };
   function fmtPct(v) { return (v>=0?'+':'')+(v||0).toFixed(1)+'%'; }
 
   // Clientes de um gestor — aceita tanto gestorId quanto nome
@@ -202,15 +222,16 @@ Router.register('gestores', (params, el) => {
             </td>
             <td style="padding:6px 8px;text-align:right;">
               <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;">
-                <input type="number" id="inp-meta-${c.id}"
-                  value="${d.metaFinal>0?Math.round(d.metaFinal):''}"
-                  placeholder="${d.fatBase>0?Math.round(d.fatBase):'Meta'}"
+                <span aria-hidden="true" style="font-size:12px;color:var(--text-secondary)">R$</span>
+                <input type="text" inputmode="decimal" aria-label="Meta Base em reais" id="inp-meta-${c.id}"
+                  value="${d.metaFinal>0?fmtMeta(d.metaFinal):''}"
+                  placeholder="${d.fatBase>0?fmtMeta(d.fatBase):'0,00'}"
                   data-fat-ref="${Math.round((d.viaBase ? d.fatProj : (d.fatReal||d.fatProj))||0)}"
                   data-gestor-id="${gid}"
                   onclick="event.stopPropagation()"
-                  oninput="previewMeta(${c.id},this.value,this.dataset.fatRef)"
+                  oninput="formatarMetaInput(this);previewMeta(${c.id},this.value,this.dataset.fatRef)"
                   onchange="salvarMeta(${c.id},this.value,this.dataset.fatRef,this.dataset.gestorId)"
-                  style="width:100px;background:var(--bg-base);border:1px solid var(--border);border-radius:6px;
+                  style="width:140px;background:var(--bg-base);border:1px solid var(--border);border-radius:6px;
                          padding:5px 8px;color:var(--text-primary);font-size:12px;text-align:right;outline:none;"
                   onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
                 <button title="Salvar meta" onclick="event.stopPropagation();(function(){var inp=document.getElementById('inp-meta-${c.id}');salvarMeta(${c.id},inp.value,inp.dataset.fatRef,inp.dataset.gestorId);})()"
@@ -389,7 +410,7 @@ Router.register('gestores', (params, el) => {
 
   // Preview ao digitar (antes de salvar)
   window.previewMeta = (clienteId, valor, fatRefStr) => {
-    const meta   = parseFloat(valor) || 0;
+    const meta   = lerMeta(valor) || 0;
     const fatRef = parseFloat(fatRefStr) || 0;
     atualizarCelulasMeta(clienteId, meta, fatRef);
   };
@@ -397,7 +418,8 @@ Router.register('gestores', (params, el) => {
   window.salvarMeta = (clienteId, valor, fatRefStr, gestorId) => {
     let metas = {};
     try { metas = JSON.parse(localStorage.getItem('glr_metas')||'{}'); } catch(e) {}
-    const v      = parseFloat(valor);
+    const v      = lerMeta(valor);
+    if (!Number.isFinite(v)) return;
     const fatRef = parseFloat(fatRefStr) || 0;
     if (v > 0) metas[clienteId] = v;
     else delete metas[clienteId];
@@ -414,7 +436,7 @@ Router.register('gestores', (params, el) => {
         let totalMeta = 0;
         let totalRef  = 0;
         blocoEl.querySelectorAll('input[data-gestor-id]').forEach(inp => {
-          const metaVal = parseFloat(inp.value) || 0;
+          const metaVal = lerMeta(inp.value) || 0;
           const refVal  = parseFloat(inp.dataset.fatRef) || 0;
           totalMeta += metaVal;
           totalRef  += refVal;
@@ -434,6 +456,7 @@ Router.register('gestores', (params, el) => {
     // Feedback visual no botão ✓
     const inp = document.getElementById(`inp-meta-${clienteId}`);
     if (inp) {
+      inp.value = v > 0 ? fmtMeta(v) : '';
       const btn = inp.nextElementSibling;
       if (btn) {
         btn.textContent = '✓ Salvo';
