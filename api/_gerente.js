@@ -26,6 +26,8 @@ const mktDe = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 
 const isoBRT = (diasAtras = 0) => { const d = new Date(Date.now() - 3 * 3600e3); d.setUTCDate(d.getUTCDate() - diasAtras); return d.toISOString().slice(0, 10); };
 const MKT_NOME = { ml: 'ML', shopee: 'Shopee' };
 
+// a loja tem histórico na base desde `iso` (algum dia gravado nesse dia ou antes)?
+const temDesde = (dias, iso) => Object.keys(dias || {}).some(d => d <= iso);
 function somarDias(dias, de, ate) {
   const t = { faturamento: 0, ads: 0, pedidos: 0, cobre: false };
   for (const [d, v] of Object.entries(dias || {})) {
@@ -339,14 +341,15 @@ const TELA_CAUSA = { estoque: 'estoque-margem', anuncio: 'qualidade-anuncios', a
 // Nos últimos 4 dias do mês quase nada mais muda: o caminho passa a ser o do mês
 // seguinte (mesma meta), partindo do ritmo diário de hoje.
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-function calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos, mesNum, diasProxMes }) {
+function calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos, mesNum, diasProxMes, ritmoDia, ritmoPedDia }) {
   if (!(meta > 0) && !(metaPedidos > 0)) return null;
   const proximo = dm - dd <= 4 && diasProxMes > 0;
   const diasAlvo = proximo ? diasProxMes : dm;
   const diasRest = proximo ? diasProxMes : Math.max(0, dm - dd), semRest = diasRest / 7;
   const ticket = pedidos > 0 ? fat / pedidos : 0;
-  const ritmo = dd > 0 ? fat / dd : 0, ritmoPed = dd > 0 ? pedidos / dd : 0;
-  const proj = proximo ? ritmo * diasAlvo : ritmo * dm, projPed = proximo ? ritmoPed * diasAlvo : ritmoPed * dm;
+  // ritmo de 7 dias (o mesmo da projeção do plano); sem ele, o ritmo do próprio mês
+  const ritmo = ritmoDia ?? (dd > 0 ? fat / dd : 0), ritmoPed = ritmoPedDia ?? (dd > 0 ? pedidos / dd : 0);
+  const proj = proximo ? ritmo * diasAlvo : fat + ritmo * (dm - dd), projPed = proximo ? ritmoPed * diasAlvo : pedidos + ritmoPed * (dm - dd);
   const faltaR = meta > 0 ? Math.max(0, meta - proj) : 0;
   const faltaPed = metaPedidos > 0 ? Math.max(0, metaPedidos - projPed) : 0;
   // o que pesa mais: a meta em R$ ou a de pedidos (convertida pelo ticket do mês)
@@ -475,6 +478,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
   const desde7 = Date.now() - 7 * 864e5;
   const ontem = isoBRT(1), mesIni = ontem.slice(0, 8) + '01';
   const dd = parseInt(ontem.slice(8, 10)), dm = new Date(Date.UTC(+ontem.slice(0, 4), +ontem.slice(5, 7), 0)).getUTCDate();
+  const ini7 = isoBRT(7); // 7 dias fechados: de ontem−6 até ontem
   const ant = new Date(`${mesIni}T12:00:00Z`); ant.setUTCMonth(ant.getUTCMonth() - 1);
   const antIni = ant.toISOString().slice(0, 10), antFim = (() => { const d = new Date(`${antIni}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + dd - 1); return d.toISOString().slice(0, 10); })();
   const gestorNome = id => (gestores.find(g => g.id === id) || {}).nome || '';
@@ -492,12 +496,19 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     }
     if (!lojas.length) return;
     // Métricas do mês (todas as lojas)
-    let fat = 0, ads = 0, fatAnt = 0, cobreAnt = true, pedidos = 0;
+    // Projeção = realizado até ontem + ritmo dos últimos 7 dias × dias que faltam (a mesma regra do
+    // Dashboard e do Adviser) — no começo do mês não multiplica 1 dia por 30
+    let fat = 0, ads = 0, fatAnt = 0, cobreAnt = true, pedidos = 0, rFat = 0, rPed = 0, rAds = 0;
     for (const L of lojas) {
       const m = somarDias(L.resumo?.dias, mesIni, ontem); fat += m.faturamento; ads += m.ads; pedidos += m.pedidos;
       const a = somarDias(L.resumo?.dias, antIni, antFim); if (!a.cobre) cobreAnt = false; fatAnt += a.faturamento;
+      if (dd > 0) {
+        const s7 = temDesde(L.resumo?.dias, ini7) ? somarDias(L.resumo?.dias, ini7, ontem) : null;
+        rFat += s7 ? s7.faturamento / 7 : m.faturamento / dd; rPed += s7 ? s7.pedidos / 7 : m.pedidos / dd; rAds += s7 ? s7.ads / 7 : m.ads / dd;
+      }
     }
-    const proj = dd > 0 ? fat / dd * dm : 0;
+    const faltam = Math.max(0, dm - dd);
+    const proj = dd > 0 ? fat + rFat * faltam : 0;
     // meta da tela do plano (acabou de salvar) > Projeção/Gestores (glr_metas) > cadastro do cliente
     const nova = metaNova && String(metaNova.cliente) === String(c.id) ? metaNova : null;
     const meta = (nova && nova.meta != null ? (parseFloat(nova.meta) || null) : null) ?? (parseFloat(metas[c.id] ?? metas[String(c.id)]) || parseFloat(c.metaMensal) || null);
@@ -521,9 +532,9 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     // o que os agentes já fizeram pela meta (últimos 7 dias): promoções em que entraram
     const promosMeta = [...pendentes, ...medidos].filter(l => new Set(lojas.map(L => L.conta)).has(String(l.conta_id)) && /promoção pela meta|^Promoção aprovada/.test(l.titulo || '') && l.criado_em && Date.now() - Date.parse(l.criado_em) < 7 * 864e5)
       .map(l => ({ produto: corta(l.dados?.produto || '', 50), promo: l.dados?.promo, preco: l.dados?.preco, margem: l.dados?.margem, em: l.criado_em }));
-    const caminho = calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos: fat > 0 ? ads / fat * 100 : null, mesNum, diasProxMes });
-    // teto de ADS: quanto ainda cabe de investimento no mês sem passar do teto (no ritmo de gasto de hoje)
-    if (caminho && tetoTacos && meta) { const adsMes = dd > 0 ? ads / dd * dm : 0; caminho.tetoTacos = tetoTacos; caminho.adsMes = Math.round(adsMes); caminho.folgaAds = Math.round(tetoTacos / 100 * meta - adsMes); }
+    const caminho = calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX, pendentes, tacos: fat > 0 ? ads / fat * 100 : null, mesNum, diasProxMes, ritmoDia: dd > 0 ? rFat : null, ritmoPedDia: dd > 0 ? rPed : null });
+    // teto de ADS: quanto ainda cabe de investimento no mês sem passar do teto (no ritmo de gasto dos últimos 7 dias)
+    if (caminho && tetoTacos && meta) { const adsMes = dd > 0 ? ads + rAds * faltam : 0; caminho.tetoTacos = tetoTacos; caminho.adsMes = Math.round(adsMes); caminho.folgaAds = Math.round(tetoTacos / 100 * meta - adsMes); }
     // as 2 maiores alavancas viram ações do plano (com o R$ que rendem até o fim do mês)
     const acoesMeta = (caminho?.alavancas || []).slice(0, 2).map((a, i) => ({ id: `meta:${c.id}:${a.id}`, tipo: 'meta', quando: 'hoje', quem: a.quem || 'analista', tela: a.tela,
       titulo: `Meta: ${a.titulo}`, porque: `${a.porque ? a.porque + ' — ' : ''}rende ~${R$(a.valor)} até o fim de ${caminho.mesAlvo} (confiança ${a.conf})`, impacto: `~${R$(a.valor)} em ${caminho.mesAlvo}`, valor: a.valor, peso: 1200 + a.valor / 10 - i }));
@@ -538,13 +549,13 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     // Semáforo
     const repAlto = lojas.some(L => L.reputacao?.risco === 'alto');
     const prazoCurto = acoes.some(a => a.id.startsWith('rec:') && a.peso >= 1800);
-    const projPedidos = dd > 0 ? pedidos / dd * dm : 0;
+    const projPedidos = dd > 0 ? pedidos + rPed * faltam : 0;
     const pctMeta = meta ? proj / meta * 100 : metaPedidos ? projPedidos / metaPedidos * 100 : null;
     const semaforo = repAlto || prazoCurto || (pctMeta != null && pctMeta < 80) || (metaTacos && tacos != null && tacos > metaTacos * 1.3) ? 'vermelho'
       : (pctMeta != null && pctMeta < 95) || (metaTacos && tacos != null && tacos > metaTacos) || acoes.filter(a => a.quando === 'hoje').length >= 3 ? 'amarelo' : 'verde';
     const metricas = { faturamento: Math.round(fat), projecao: Math.round(proj), meta, metaPedidos, pedidos, projPedidos: Math.round(projPedidos), pctMetaPedidos: metaPedidos ? r1(projPedidos / metaPedidos * 100) : null, pctMeta: pctMeta == null ? null : r1(pctMeta), tacos: tacos == null ? null : r1(tacos), metaTacos, tetoTacos, varMes: varMes == null ? null : r1(varMes), lojas: lojas.length, dia: dd, diasMes: dm };
     if (meta && proj < meta && dm > dd) metricas.faltaPorDia = Math.round((meta - fat) / (dm - dd));
-    if (dd > 0) metricas.ritmoDia = Math.round(fat / dd);
+    if (dd > 0) metricas.ritmoDia = Math.round(rFat); // venda/dia dos últimos 7 dias (base da projeção)
     const fatos = { cliente: c.nome, metricas, caminho_para_meta: caminho && { mes_da_meta: caminho.mesAlvo, falta_rs: caminho.faltaR, falta_pedidos: caminho.faltaPedidos, precisa_por_dia: caminho.precisaDia, ritmo_por_dia: caminho.ritmoDia, alavancas: caminho.alavancas.map(a => ({ o_que: a.titulo, rende_ate_fim_do_mes: a.valor, confianca: a.conf })), soma_alavancas: caminho.soma, cobertura_pct: caminho.cobertura, falta_alem_das_alavancas: caminho.resto, ads_extra_mantendo_tacos: caminho.adsExtra, teto_ads_tacos_pct: caminho.tetoTacos || null, folga_ads_ate_o_teto: caminho.folgaAds ?? null }, raio_x: raioX && { periodo: raioX.periodo, semana_antes: raioX.semanaAntes, semana_agora: raioX.semanaAgora, variacao_pct: raioX.var,
       funil_da_conta: raioX.funil && { visitas_sem: raioX.funil.visitas, conversao_pct: raioX.funil.conversao, preco_medio: raioX.funil.precoMedio, explicacao: raioX.funil.explica },
       oportunidades_funil: raioX.oportunidades,
