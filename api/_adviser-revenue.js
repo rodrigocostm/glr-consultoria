@@ -3,8 +3,8 @@
 // que cobrem o mês — a mesma do Dashboard, Gestores e Rentabilidade; a Projeção salva
 // (glr_projecoes) só entra para cliente sem nenhuma conta na base. Sem nenhuma das duas, o
 // cliente fica em "faltantes" (desconhecido, nunca zero).
-// Projeção do mês = realizado até ontem + ritmo dos últimos 7 dias × dias que faltam (sem o
-// ritmo de 7 dias na base, o ritmo do próprio mês). Firme desde o dia 2: não multiplica 1 dia por 30.
+// Projeção mensal = base do próprio mês / dias encerrados × dias do mês.
+// Aplica a comissão ao volume projetado por cliente, sem extrapolar o fixo mensal.
 const {comissao}=require('../js/data');
 const n=v=>parseFloat(v)||0;
 const mkt=v=>{v=String(v||'').toLowerCase().replace(/\s/g,'');return /meli|mercado|^ml$/.test(v)?'ml':/tiktok/.test(v)?'tiktok':v};
@@ -27,15 +27,14 @@ function receitaProjecao({clientes=[],projecoes=[],vinculos={},excecoes={},base=
   const gera=ct=>![ct?.external_id,ct?.param_to_use?.shopId,ct?.param_to_use?.meliUserId,ct?.param_to_use?.magalu_account_id,ct?.id].some(id=>id!=null&&excecoes[String(id)]===false);
   // 1) base automática das contas comissão
   if(dataBaseAuto){
-   const dd=+dataBaseAuto.slice(8,10),faltam=diasNoMes-dd,ini7=maisDias(dataBaseAuto,-6);
-   let fat=0,vendas=0,ritmoFat=0,ritmoVendas=0,cobertas=0;
+   const dd=+dataBaseAuto.slice(8,10);
+   let fat=0,vendas=0,cobertas=0;
    for(const ct of vinculadas.filter(gera)){
     const k=`${mkt(ct.marketplace)}:${contaDe(ct)}`,resumo=cobre(k,mes+'-01');if(!resumo)continue;cobertas++;
     const m=somar(resumo.cursor?.dias,mes+'-01',dataBaseAuto);fat+=m.fat;vendas+=m.vendas;
-    if(faltam>0){const s7=cobre(k,ini7)?somar(resumo.cursor?.dias,ini7,dataBaseAuto):null;ritmoFat+=s7?s7.fat/7:m.fat/dd;ritmoVendas+=s7?s7.vendas/7:m.vendas/dd;}
    }
    if(cobertas){
-    const fatP=fat+ritmoFat*faltam,vendasP=vendas+ritmoVendas*faltam;
+    const fatP=fat/dd*diasNoMes,vendasP=vendas/dd*diasNoMes;
     detalhes.push({clienteId:String(c.id),cliente:c.nome,fonte:'base',dataBase:dataBaseAuto,dias:dd,receitaBase:comissao.estimar(c,vendas,fat),receitaProjetada:comissao.estimar(c,vendasP,fatP),gmvBase:Math.round(fat),gmvProjetado:Math.round(fatP)});
     continue;
    }
@@ -60,6 +59,6 @@ function receitaProjecao({clientes=[],projecoes=[],vinculos={},excecoes={},base=
  }
  const soma=k=>detalhes.length?detalhes.reduce((s,d)=>s+d[k],0):null;
  const dias=detalhes.length?Math.min(...detalhes.map(d=>d.dias)):null;
- return {fonte:'Base automática (realizado + ritmo de 7 dias) · comissão GLR',mes,base:soma('receitaBase'),projetada:soma('receitaProjetada'),gmvBase:soma('gmvBase'),gmvProjetado:soma('gmvProjetado'),dias,instavel:dias!=null&&dias<3,parcial:faltantes.length>0,faltantes,detalhes};
+ return {fonte:'Projeção mensal (acumulado ÷ dias encerrados × dias do mês) · comissão GLR',mes,base:soma('receitaBase'),projetada:soma('receitaProjetada'),gmvBase:soma('gmvBase'),gmvProjetado:soma('gmvProjetado'),dias,instavel:dias!=null&&dias<3,parcial:faltantes.length>0,faltantes,detalhes};
 }
 module.exports={receitaProjecao};
