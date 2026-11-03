@@ -438,7 +438,7 @@ Router.register('dashboard', (params, el) => {
   const _hojeDash = new Date();
   const diasNoMesDash = new Date(_hojeDash.getFullYear(), _hojeDash.getMonth() + 1, 0).getDate();
   const diasDecorridosDash = (vendasDiaCache?.dias || []).length;
-  const projecaoReceitaGLR = diasDecorridosDash > 0 ? (receitaGLR / diasDecorridosDash) * diasNoMesDash : 0;
+  const projecaoReceitaGLR = 0; // A projeção por contrato vem de /api/adviser em dash-clientes.js; não extrapolar comissão fixa agregada.
   const ticketMedioGLR = clientes.length > 0 ? projecaoReceitaGLR / clientes.length : 0;
 
   const comAPI = clientes.length;
