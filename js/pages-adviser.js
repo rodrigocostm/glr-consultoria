@@ -49,9 +49,9 @@ Router.register('adviser', async (params, el) => {
           </div>
         </div>
         ${trilha(p)}
-        ${rc?.instavel ? `<div class="adv-aviso">Começo do mês: a projeção soma o realizado (${rc.dias} dia${rc.dias > 1 ? 's' : ''}) com o ritmo de venda dos últimos 7 dias nos dias que faltam — a mesma conta do Dashboard.</div>` : ''}
+        ${rc?.instavel ? `<div class="adv-aviso">Começo do mês: a projeção usa o ritmo de ${rc.dias} dia${rc.dias > 1 ? 's' : ''} encerrado${rc.dias > 1 ? 's' : ''} deste mês e ainda pode oscilar bastante.</div>` : ''}
         <div class="adv-rodape">
-          <span class="adv-sub">Comissão pelo contrato de cada cliente, só nas contas que contam comissão. Projeção = realizado até ontem + ritmo dos últimos 7 dias; não é faturamento recebido nem marco realizado.</span>
+          <span class="adv-sub">Comissão pelo contrato de cada cliente, só nas contas que contam comissão. Projeção = volume do mês ÷ dias encerrados × dias do mês, com a comissão de cada contrato; não é faturamento recebido nem marco realizado.</span>
           ${rc?.parcial ? `<details class="adv-faltam"><summary>${rc.faltantes.length} cliente(s) sem dados no mês</summary><p>${h(rc.faltantes.join(', '))}</p></details>` : ''}
           <span style="flex:1"></span>
           <button class="btn btn-ghost btn-sm" onclick="Router.navigate('rentabilidade')">Rentabilidade da carteira</button>
