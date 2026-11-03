@@ -312,6 +312,8 @@ async function _dashBuscarVendasPorDia() {
       const v = m.modelo === 'fixo' ? (B.n ? totalFixo * x.n / B.n : totalFixo) : x.var;
       if (!porDia[dataStr]) porDia[dataStr] = { pedidos: 0, comissao: 0, faturamento: 0 };
       porDia[dataStr].comissao += v;
+      const campo = m.modelo === 'fixo' ? 'fixoMensalRateado' : 'comissaoVariavel';
+      porDia[dataStr][campo] = (porDia[dataStr][campo] || 0) + v;
       if (!porCanal[canal]) porCanal[canal] = { pedidos: 0, comissao: 0, faturamento: 0 };
       porCanal[canal].comissao += v;
     }
@@ -326,7 +328,7 @@ async function _dashBuscarVendasPorDia() {
   const mesKey = `${ano}-${pad(mesN)}`;
   localStorage.setItem(STORAGE_VENDAS_DIA, JSON.stringify({
     mesKey, atualizadoEm, lojasBase, lojasAPI, periodoAnt: { de: iniAnt, ate: fimAnt },
-    dias: dias.map(d => ({ data: d, pedidos: porDia[d].pedidos, comissao: porDia[d].comissao, faturamento: porDia[d].faturamento })),
+    dias: dias.map(d => ({ data: d, pedidos: porDia[d].pedidos, comissao: porDia[d].comissao, comissaoVariavel: porDia[d].comissaoVariavel || 0, fixoMensalRateado: porDia[d].fixoMensalRateado || 0, faturamento: porDia[d].faturamento })),
     canais: Object.keys(porCanal).map(nome => ({ nome, pedidos: porCanal[nome].pedidos, comissao: porCanal[nome].comissao, faturamento: porCanal[nome].faturamento, cmp: cmpCanal[nome] || null })),
   }));
 
@@ -513,6 +515,7 @@ Router.register('dashboard', (params, el) => {
           <button class="btn btn-secondary btn-sm" id="btn-dash-vendas-dia">${ICONE_DX.refresh} Atualizar</button>
         </div>
         <div class="dvd-kpis" id="dash-vd-kpis"></div>
+        <p style="font-size:12px;color:var(--text-secondary);margin:8px 0 16px">O gráfico inclui mensalidades fixas rateadas pelos dias com pedidos. A média abaixo não é comissão variável diária: multiplicá-la pelos dias do mês repete os fixos. A projeção no topo e no Adviser calcula a parte variável e acrescenta os fixos uma única vez.</p>
         <div class="chart-wrapper" style="height:300px">
           <canvas id="chart-vendas-dia"></canvas>
         </div>
@@ -906,7 +909,7 @@ function _dashGraficoVendasDia(canvas, dias) {
     const tPed = soma('pedidos'), tCom = soma('comissao'), tFat = soma('faturamento');
     // o total do mês já está nos cards do topo — aqui só o que é novo: médias e melhor dia
     const item = (c, txt) => `<span class="dvd-linha-i"><i style="background:${c}"></i>${txt}</span>`;
-    kpis.innerHTML = `<div class="dvd-linha">${item(VERDE, `<b>${R(tCom / dias.length)}</b>/dia de comissão`)}${item(AZUL, `<b>${Math.round(tPed / dias.length).toLocaleString('pt-BR')}</b> vendas/dia`)}${tFat > 0 ? item('var(--text-muted)', `ticket <b>${R(tPed ? tFat / tPed : 0, 2)}</b>`) : ''}${melhor ? item('#eb6834', `melhor dia <b>${melhor.data}</b> (${R(melhor.comissao)})`) : ''}</div>`;
+    kpis.innerHTML = `<div class="dvd-linha">${item(VERDE, `<b>${R(tCom / dias.length)}</b>/dia, incluindo fixos mensais rateados`)}${item(AZUL, `<b>${Math.round(tPed / dias.length).toLocaleString('pt-BR')}</b> vendas/dia`)}${tFat > 0 ? item('var(--text-muted)', `ticket <b>${R(tPed ? tFat / tPed : 0, 2)}</b>`) : ''}${melhor ? item('#eb6834', `melhor dia <b>${melhor.data}</b> (${R(melhor.comissao)})`) : ''}</div>`;
   }
 
   const grad = (ctx, c, a1, a2) => { const { chartArea } = ctx.chart; if (!chartArea) return c; const g = ctx.chart.ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom); g.addColorStop(0, c + a1); g.addColorStop(1, c + a2); return g; };
@@ -917,7 +920,7 @@ function _dashGraficoVendasDia(canvas, dias) {
     data: {
       labels: dias.map(d => d.data),
       datasets: [
-        { type: 'line', label: 'Comissão GLR', data: dias.map(d => d.comissao), yAxisID: 'y1', order: 0,
+        { type: 'line', label: 'Comissão GLR + fixos rateados', data: dias.map(d => d.comissao), yAxisID: 'y1', order: 0,
           borderColor: VERDE, backgroundColor: ctx => grad(ctx, VERDE, '55', '00'), fill: 'origin', borderWidth: 2.5, tension: 0.4, cubicInterpolationMode: 'monotone',
           pointRadius: dias.map((_, i) => (i === iMelhor || dias.length === 1 ? 5 : 0)), pointBackgroundColor: VERDE, pointBorderColor: cor.fundo, pointBorderWidth: 2,
           pointHoverRadius: 6, pointHoverBorderWidth: 2, pointHoverBorderColor: cor.fundo },
@@ -938,7 +941,7 @@ function _dashGraficoVendasDia(canvas, dias) {
           callbacks: {
             title: it => `${semana(it[0].label)}, ${it[0].label}`,
             label: ctx => ctx.dataset.yAxisID === 'y1' ? ` Comissão GLR: ${R(ctx.raw, 2)}` : ` Vendas: ${(ctx.raw || 0).toLocaleString('pt-BR')}`,
-            afterBody: it => { const d = dias[it[0].dataIndex]; return d?.faturamento > 0 ? [` Faturamento: ${R(d.faturamento)}`] : []; },
+            afterBody: it => { const d = dias[it[0].dataIndex], linhas = []; if (d?.comissaoVariavel != null) linhas.push(` Comissão variável: ${R(d.comissaoVariavel, 2)}`, ` Fixo mensal rateado: ${R(d.fixoMensalRateado || 0, 2)}`); if (d?.faturamento > 0) linhas.push(` Faturamento: ${R(d.faturamento)}`); return linhas; },
           },
         },
       },
