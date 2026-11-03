@@ -35,7 +35,7 @@ window.GLRDashClientes = (function () {
     const out = [];
     for (const c of (GLR.clientes || [])) {
       if (/inativ|cancel|encerr/i.test(String(c.status || ''))) continue;
-      const r = { mtd: 0, adsMtd: 0, temAds: false, a7: 0, b7: 0, ads7: 0, m1: 0, temM1: false, tem7: false, serie: {}, cob: 0, ritmo: 0 };
+      const r = { mtd: 0, adsMtd: 0, temAds: false, a7: 0, b7: 0, m1: 0, temM1: false, tem7: false, serie: {}, cob: 0, ritmo: 0 };
       for (const ct of (vinc[String(c.id)] || [])) {
         const mkt = BaseDados.mktDe(ct.marketplace), id = String(ct.param_to_use?.shopId || ct.param_to_use?.meliUserId || ct.contaId || ct.external_id);
         const info = mkt ? st.base[BaseDados.chave(mkt, id)] : null;
@@ -45,20 +45,17 @@ window.GLRDashClientes = (function () {
         r.mtd += mtd.faturamento; r.a7 += a7.faturamento; r.b7 += b7.faturamento; r.tem7 = true;
         r.ritmo += BaseDados.cobre(info, a7de) ? a7.faturamento / 7 : mtd.faturamento / dd; // venda/dia para os dias que faltam
         if (BaseDados.cobreAds(info, mesIni)) { r.adsMtd += mtd.ads; r.temAds = true; }
-        if (BaseDados.cobreAds(info, a7de)) r.ads7 += a7.ads;
         if (BaseDados.cobre(info, m1de)) { r.m1 += BaseDados.somar(info, m1de, m1ate).faturamento; r.temM1 = true; }
         for (let i = 13; i >= 0; i--) { const d = isoD(diaMais(ontem, -i)); r.serie[d] = (r.serie[d] || 0) + (parseFloat(info.dias?.[d]?.faturamento) || 0); }
       }
       if (!r.cob || (r.mtd <= 0 && r.a7 <= 0)) continue;
       const proj = r.mtd + r.ritmo * (dm - dd); // realizado + ritmo de 7 dias nos dias que faltam
-      const inicio = dd < 3; // começo do mês: o TACOS sai dos últimos 7 dias (o mês ainda tem 1–2 dias)
-      const fatT = inicio ? r.a7 : r.mtd, adsT = inicio ? r.ads7 : r.adsMtd;
       const meta = parseFloat(metas[c.id]) || parseFloat(c.metaMensal) || 0;
       const t7 = r.b7 > 0 ? (r.a7 / r.b7 - 1) * 100 : null;
       const g = gest(c.gestorId);
       out.push({ id: String(c.id), nome: c.nome, gestorId: g ? String(g.id) : 'sem', gestor: g?.nome || c.gestor || 'Sem gestor',
-        proj, m1: r.temM1 ? r.m1 : 0, meta, pctMeta: meta > 0 ? proj / meta * 100 : null, ads: r.temAds || inicio ? adsT : null, tacos: (r.temAds || inicio) && fatT > 0 ? adsT / fatT * 100 : null,
-        t7, vsM1: r.temM1 && r.m1 > 0 ? (proj / r.m1 - 1) * 100 : null, tend: t7 == null ? 'sem' : t7 >= 5 ? 'cresce' : t7 <= -5 ? 'cai' : 'estavel', serie: Object.values(r.serie), adsLabel: inicio ? 'ADS 7 dias' : 'ADS do mês' });
+        proj, m1: r.temM1 ? r.m1 : 0, meta, pctMeta: meta > 0 ? proj / meta * 100 : null, ads: r.temAds ? r.adsMtd : null, tacos: r.temAds && r.mtd > 0 ? r.adsMtd / r.mtd * 100 : null,
+        t7, vsM1: r.temM1 && r.m1 > 0 ? (proj / r.m1 - 1) * 100 : null, tend: t7 == null ? 'sem' : t7 >= 5 ? 'cresce' : t7 <= -5 ? 'cai' : 'estavel', serie: Object.values(r.serie) });
     }
     return out;
   }
@@ -78,7 +75,7 @@ window.GLRDashClientes = (function () {
       <div class="dc-proj"><span>Projeção do mês</span><b>${R0(x.proj)}</b>
         <small>${x.pctMeta != null ? `<b style="color:${corMeta}">${pct(x.pctMeta)}</b> da meta de ${R0(x.meta)}` : 'sem meta'}${x.vsM1 != null ? ` · <span style="color:${x.vsM1 >= 0 ? 'var(--green)' : 'var(--red)'}">${x.vsM1 >= 0 ? '+' : ''}${pct(x.vsM1)}</span> vs mês passado` : ''}</small></div>
       ${pm != null ? `<div class="dc-bar"><i style="width:${pm}%;background:${corMeta}"></i></div>` : ''}
-      <div class="dc-rod"><div><span>${x.adsLabel}</span><b>${x.ads != null ? R0(x.ads) : '—'}</b><small>TACOS ${pct(x.tacos)}</small></div>${spark(x.serie, x.tend === 'cai' ? 'var(--red)' : x.tend === 'cresce' ? 'var(--green)' : 'var(--accent)')}</div>
+      <div class="dc-rod"><div><span>ADS do mês</span><b>${x.ads != null ? R0(x.ads) : '—'}</b><small>TACOS ${pct(x.tacos)}</small></div>${spark(x.serie, x.tend === 'cai' ? 'var(--red)' : x.tend === 'cresce' ? 'var(--green)' : 'var(--accent)')}</div>
     </button>`;
   }
 
