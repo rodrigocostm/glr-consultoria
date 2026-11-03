@@ -90,6 +90,12 @@ const CHAVES_POR_ITEM = ['glr_acoes', 'glr_tarefas', 'glr_produtos'];
 const _baseSync = {};   // chave → última versão do banco que este navegador conhece
 const _filaSync = {};   // chave → promessa da gravação em andamento
 function _salvarMesclando(key, local) {
+  if (key === 'glr_acoes' && window.glrSalvarAcoes) {
+    const base = new Map((_baseSync[key] || []).map(x => [String(x.id), x]));
+    const changed = local.filter(x => !base.has(String(x.id)) || JSON.stringify(base.get(String(x.id))) !== JSON.stringify(x));
+    if (!changed.length) return Promise.resolve();
+    return window.glrSalvarAcoes(changed).catch(e => console.warn('[Relatórios] Lançamentos pendentes:', e.message));
+  }
   _filaSync[key] = (_filaSync[key] || Promise.resolve()).then(async () => {
     const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave', key).maybeSingle();
     if (error) { console.warn('[Supabase] Erro ao ler antes de gravar', key, error.message); return; }
@@ -321,6 +327,7 @@ window.fazerLogin = async function() {
   window._portalConfig = null;
   await sincronizarDoSupabase();
   ativarRealtime();
+  window.glrRecuperarAcoesPendentes?.().catch(()=>{});
   atualizarSidebarUsuario();
   if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();
   if (typeof Router !== 'undefined') {
@@ -445,6 +452,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window._portalConfig = null;
     await sincronizarDoSupabase();
     ativarRealtime();
+  window.glrRecuperarAcoesPendentes?.().catch(()=>{});
     _ocultarLoadingInicial();
     atualizarSidebarUsuario();
     if (typeof Router !== 'undefined') {
