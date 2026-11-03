@@ -139,4 +139,24 @@ function mdParaHtml(md) {
   return out.join('\n');
 }
 
-module.exports = { FONTES, gerarRascunhos, lerEstado, salvarEstado, mdParaHtml, esc, slugDe };
+// Editorias do blog (cor e assunto): título pesa 3, tags 2, começo do texto 1; empate fica com a primeira
+const EDITORIAS = [
+  { id: 'marketplaces', nome: 'Marketplaces', cor: '#0B4FE0', re: /mercado livre|shopee|amazon|magalu|magazine luiza|tiktok shop|shein|temu|aliexpress|marketplace|americanas|casas bahia/gi },
+  { id: 'pagamentos', nome: 'Pagamentos', cor: '#6236F5', re: /\bpix\b|pagamento|checkout|parcel|cart[aã]o|banco|fintech|cr[eé]dito|carteira digital/gi },
+  { id: 'logistica', nome: 'Logística', cor: '#D9480F', re: /frete|log[ií]stica|entrega|fulfillment|correios|armaz[eé]m|estoque/gi },
+  { id: 'datas', nome: 'Datas e vendas', cor: '#C2185B', re: /black friday|cyber monday|natal|11\.11|12\.12|dia das (m[aã]es|crian[cç]as|pais)|dia dos namorados|sazonal|halloween/gi },
+  { id: 'tecnologia', nome: 'Tecnologia e IA', cor: '#0B7F73', re: /intelig[eê]ncia artificial|\bia\b|tecnologia|big techs?|automa[cç][aã]o|algoritmo|aplicativo/gi },
+  { id: 'gestao', nome: 'Gestão', cor: '#334155', re: /lideran[cç]|\bceo\b|executiv|gest[aã]o|tribut|imposto|resultado|balan[cç]o|investimento|reforma/gi },
+  { id: 'varejo', nome: 'Varejo e consumo', cor: '#A15C07', re: /varejo|consumidor|consumo|loja|vendas|marca/gi },
+];
+function editoriaDe(p) {
+  const conta = (t, re) => (String(t || '').match(re) || []).length;
+  let melhor = EDITORIAS[EDITORIAS.length - 1], nota = 0;
+  for (const e of EDITORIAS) {
+    const n = conta(p.titulo, e.re) * 3 + conta((p.tags || []).join(' '), e.re) * 2 + conta(String(p.corpo || '').slice(0, 600), e.re);
+    if (n > nota) { nota = n; melhor = e; }
+  }
+  return melhor;
+}
+
+module.exports = { FONTES, EDITORIAS, editoriaDe, gerarRascunhos, lerEstado, salvarEstado, mdParaHtml, esc, slugDe };

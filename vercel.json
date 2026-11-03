@@ -61,6 +61,10 @@
       "destination": "/api/blog"
     },
     {
+      "source": "/blog/editoria/:id",
+      "destination": "/api/blog?editoria=:id"
+    },
+    {
       "source": "/blog/:slug",
       "destination": "/api/blog?slug=:slug"
     }

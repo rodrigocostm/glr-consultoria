@@ -1,10 +1,12 @@
 // ============================================================
 // GLR Consultoria — Blog (consultoriaglr.com.br/blog)
 // ------------------------------------------------------------
-// GET público (vercel.json reescreve /blog e /blog/<slug> para cá): a lista dos
-// posts PUBLICADOS e a página de cada post, em HTML pronto para o Google
-// (título, descrição, link canônico, Open Graph e dados estruturados). Rascunho
-// nunca aparece aqui.
+// GET público (vercel.json reescreve /blog, /blog/editoria/<id> e /blog/<slug>
+// para cá): portal de notícias do varejo digital — destaque, grade por
+// editoria, página de cada post com capa gerada na cor da editoria (sem foto de
+// terceiros), compartilhar e "leia também". HTML pronto para o Google (título,
+// descrição, canônico, Open Graph, dados estruturados). Só posts PUBLICADOS.
+// ?formato=json: os últimos publicados para a landing (landing.html).
 // POST da equipe (requireStaff): listar, salvar, publicar, despublicar, descartar
 // e gerar rascunhos agora (api/_blog.js). Posts em glr_storage 'glr_blog'.
 // ============================================================
@@ -24,58 +26,143 @@ const lerStorage = async chave => (await sb(`glr_storage?chave=eq.${chave}&selec
 const sbUpsert = (table, row, conflito) => sb(`${table}?on_conflict=${conflito}`, { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(row) });
 
 const { esc } = blog;
-const dataBR = iso => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' }) : '';
-function pagina({ titulo, descricao, url, corpo, jsonld }) {
+const dataBR = iso => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Sao_Paulo' }).replace('.', '') : '';
+const minutos = p => Math.max(1, Math.round(String(p.corpo || '').split(/\s+/).length / 200));
+const ed = p => blog.editoriaDe(p);
+// capa gerada: cor da editoria + o assunto em letra grande (nada de foto de outro veículo)
+const capa = (p, tam) => { const e = ed(p); const k = (p.tags?.[0] || e.nome).toLowerCase(); return `<div class="capa capa-${tam}${k.length > 11 ? ' longo' : ''}" style="--c:${e.cor}" aria-hidden="true"><span class="capa-ed">${esc(e.nome)}</span><span class="capa-k">${esc(k)}</span></div>`; };
+// dentro de um card (que já é link) a editoria vai como texto: link dentro de link quebra o card
+const etiqueta = (p, link) => { const e = ed(p); return link ? `<a class="ed-tag" style="--c:${e.cor}" href="/blog/editoria/${e.id}">${esc(e.nome)}</a>` : `<span class="ed-tag" style="--c:${e.cor}">${esc(e.nome)}</span>`; };
+
+const CSS = `
+:root{--noite:#0A1633;--azul:#0B4FE0;--azul2:#083BAA;--ceu:#E9EFFE;--nevoa:#F4F6FA;--tinta:#0D1322;--sec:#4B5468;--mute:#8A91A3;--linha:#E3E7EF;--papel:#fff}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0;font-family:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);background:var(--papel);line-height:1.6;font-size:16px}
+a{color:inherit}img{max-width:100%}
+.wrap{max-width:1200px;margin:0 auto;padding:0 20px}
+.d{font-family:"Bricolage Grotesque","Instrument Sans",system-ui,sans-serif;letter-spacing:-.02em}
+.mono{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
+:focus-visible{outline:2px solid var(--azul);outline-offset:2px}
+.topo{background:var(--noite);color:#fff}
+.topo .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;height:68px}
+.marca{display:flex;align-items:center;gap:10px;text-decoration:none;color:#fff}.marca img{width:30px;height:30px;object-fit:contain;background:#fff;border-radius:8px;padding:3px}
+.marca b{font-family:"Bricolage Grotesque",sans-serif;font-size:19px;letter-spacing:-.02em}.marca span{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#9fb3e8;font-family:"JetBrains Mono",monospace}
+.topo nav{display:flex;align-items:center;gap:20px;font-size:14px}.topo nav a{text-decoration:none;color:#c9d3ea}.topo nav a:hover{color:#fff}
+.bt{display:inline-flex;align-items:center;gap:8px;background:var(--azul);color:#fff !important;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:10px;border:0;cursor:pointer;font-family:inherit}.bt:hover{background:var(--azul2)}
+.cel{display:none}.bt-luz{background:#fff;color:var(--noite) !important}.bt-luz:hover{background:var(--ceu)}
+.editorias{border-bottom:1px solid var(--linha);background:#fff;position:sticky;top:0;z-index:5}
+.editorias .wrap{display:flex;gap:22px;overflow-x:auto;scrollbar-width:none;height:48px;align-items:center}.editorias .wrap::-webkit-scrollbar{display:none}
+.editorias a{white-space:nowrap;text-decoration:none;font-size:14px;font-weight:600;color:var(--c);padding:13px 0;border-bottom:2px solid transparent}.editorias a.on,.editorias a:hover{border-bottom-color:var(--c)}
+.editorias a.todas{color:var(--tinta)}
+.capa{position:relative;overflow:hidden;background:var(--c);color:#fff;border-radius:12px;display:flex;flex-direction:column;justify-content:space-between;padding:16px 18px;isolation:isolate}
+.capa::before{content:"";position:absolute;inset:0;z-index:-1;background:repeating-linear-gradient(135deg,rgba(255,255,255,.09) 0 2px,transparent 2px 14px),radial-gradient(120% 90% at 100% 0%,rgba(255,255,255,.28),transparent 55%)}
+.capa-ed{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.9}
+.capa-k{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;line-height:.92;letter-spacing:-.04em;hyphens:auto;overflow-wrap:break-word}
+.capa.longo .capa-k{font-size-adjust:none;transform-origin:left bottom}
+.capa-g{aspect-ratio:16/10}.capa-g .capa-k{font-size:clamp(44px,7vw,92px)}
+.capa-m{aspect-ratio:16/10}.capa-m .capa-k{font-size:clamp(28px,3.2vw,42px)}
+.capa-p{aspect-ratio:1/1;border-radius:10px;padding:10px}.capa-p .capa-k{font-size:20px}.capa-p .capa-ed{font-size:9px}
+.capa-x{aspect-ratio:21/8;border-radius:16px}.capa-x .capa-k{font-size:clamp(46px,8vw,104px)}
+.capa-g.longo .capa-k{font-size:clamp(34px,4.6vw,60px)}.capa-m.longo .capa-k{font-size:clamp(20px,2vw,26px)}.capa-p.longo .capa-k{font-size:14px}.capa-x.longo .capa-k{font-size:clamp(34px,5.4vw,68px)}
+.ed-tag{display:inline-block;text-decoration:none;font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--c)}
+.meta{font-size:13px;color:var(--mute)}
+.destaque{display:grid;grid-template-columns:1.35fr 1fr;gap:28px;padding:30px 0 34px;border-bottom:1px solid var(--linha)}
+.dest-princ{text-decoration:none;display:flex;flex-direction:column;gap:12px}.dest-princ h1{font-size:clamp(28px,3.4vw,42px);line-height:1.08;margin:0;text-wrap:balance}.dest-princ p{margin:0;color:var(--sec);font-size:17px}
+.dest-princ:hover h1{color:var(--azul)}
+.dest-lado{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.mini{text-decoration:none;display:flex;flex-direction:column;gap:8px}.mini h3{font-size:16.5px;line-height:1.3;margin:0;font-weight:700;letter-spacing:-.01em}.mini:hover h3{color:var(--azul)}
+.corpo-home{display:grid;grid-template-columns:1fr 320px;gap:40px;padding:34px 0 60px}
+.sec-t{display:flex;align-items:baseline;justify-content:space-between;gap:12px;border-bottom:2px solid var(--tinta);padding-bottom:8px;margin-bottom:6px}.sec-t h2{font-size:22px;margin:0}
+.lista-item{display:grid;grid-template-columns:150px 1fr;gap:18px;padding:20px 0;border-bottom:1px solid var(--linha);text-decoration:none}
+.lista-item h3{font-size:19px;line-height:1.25;margin:4px 0 6px}.lista-item p{margin:0 0 6px;color:var(--sec);font-size:14.5px}.lista-item:hover h3{color:var(--azul)}
+.lado{display:flex;flex-direction:column;gap:22px}
+.box-cta{background:var(--noite);color:#fff;border-radius:16px;padding:22px}.box-cta b{font-family:"Bricolage Grotesque",sans-serif;font-size:21px;line-height:1.15;display:block;margin-bottom:8px;letter-spacing:-.02em}.box-cta p{color:#b9c6e6;font-size:14px;margin:0 0 16px}
+.box{border:1px solid var(--linha);border-radius:16px;padding:18px}.box h4{margin:0 0 10px;font-size:13px;font-family:"JetBrains Mono",monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:500}
+.box a.ed-link{display:flex;justify-content:space-between;text-decoration:none;padding:8px 0;border-top:1px solid var(--linha);font-weight:600;font-size:14.5px}.box a.ed-link:first-of-type{border-top:0}.box a.ed-link i{font-style:normal;color:var(--mute);font-weight:500}
+.vazio{padding:70px 20px;text-align:center;color:var(--sec)}.vazio b{display:block;font-family:"Bricolage Grotesque",sans-serif;font-size:24px;color:var(--tinta);margin-bottom:6px}
+.cab-ed{padding:30px 0 6px}.cab-ed h1{font-size:clamp(30px,4vw,46px);margin:6px 0 0;color:var(--c)}
+article.post{max-width:760px;margin:0 auto;padding:30px 20px 10px}
+article.post h1{font-size:clamp(30px,4.4vw,48px);line-height:1.06;margin:12px 0 14px;text-wrap:balance}
+.lead{font-size:19px;color:var(--sec);margin:0 0 16px;line-height:1.5}
+.assina{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13.5px;color:var(--mute);padding:14px 0;border-top:1px solid var(--linha);border-bottom:1px solid var(--linha);margin-bottom:24px}
+.assina b{color:var(--tinta)}.assina a{color:var(--azul)}
+.texto{font-size:18px;line-height:1.72}.texto h2{font-family:"Bricolage Grotesque",sans-serif;font-size:25px;letter-spacing:-.02em;line-height:1.2;margin:36px 0 10px}.texto h3{font-size:20px;margin:28px 0 8px}
+.texto p{margin:0 0 18px}.texto ul,.texto ol{padding-left:24px;margin:0 0 18px}.texto li{margin:6px 0}.texto a{color:var(--azul)}
+.texto blockquote{margin:0 0 18px;padding:12px 18px;border-left:3px solid var(--azul);background:var(--nevoa);color:var(--sec)}
+.fonte{font-size:14px;color:var(--sec);background:var(--nevoa);border-radius:12px;padding:14px 16px;margin:28px 0}
+.compart{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--mute);margin:0 0 30px}
+.compart a,.compart button{border:1px solid var(--linha);background:#fff;border-radius:99px;padding:7px 14px;font:inherit;font-size:13px;font-weight:600;color:var(--tinta);text-decoration:none;cursor:pointer}.compart a:hover,.compart button:hover{border-color:var(--azul);color:var(--azul)}
+.cta-post{max-width:760px;margin:0 auto 40px;padding:0 20px}.cta-post .box-cta{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap}.cta-post .box-cta p{margin:0}
+.relac{background:var(--nevoa);padding:34px 0 50px}.relac h2{font-size:22px;margin:0 0 16px}.relac-g{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.rodape{background:var(--noite);color:#9fb0d6;font-size:13.5px;padding:34px 0}.rodape .wrap{display:flex;gap:20px;justify-content:space-between;flex-wrap:wrap}.rodape a{color:#dfe6f7}.rodape p{max-width:560px;margin:6px 0 0}
+@media(max-width:960px){.destaque,.corpo-home{grid-template-columns:1fr}.lado{order:2}.relac-g{grid-template-columns:1fr 1fr}}
+@media(max-width:640px){.topo nav a.l,.topo .bt .l{display:none}.topo .bt .cel{display:inline}.dest-lado{grid-template-columns:1fr}.lista-item{grid-template-columns:96px 1fr;gap:14px}.lista-item h3{font-size:17px}.lista-item p{display:none}.relac-g{grid-template-columns:1fr}.texto{font-size:17px}}
+@media(prefers-reduced-motion:reduce){*{transition:none !important}}`;
+
+function pagina({ titulo, descricao, url, corpo, jsonld, editoriaAtual }) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(titulo)}</title><meta name="description" content="${esc(descricao)}"><link rel="canonical" href="${esc(url)}">
-<meta property="og:type" content="${jsonld ? 'article' : 'website'}"><meta property="og:title" content="${esc(titulo)}"><meta property="og:description" content="${esc(descricao)}"><meta property="og:url" content="${esc(url)}"><meta property="og:site_name" content="GLR Consultoria">
-<link rel="icon" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<meta property="og:type" content="${jsonld ? 'article' : 'website'}"><meta property="og:title" content="${esc(titulo)}"><meta property="og:description" content="${esc(descricao)}"><meta property="og:url" content="${esc(url)}"><meta property="og:site_name" content="GLR Notícias"><meta property="og:locale" content="pt_BR">
+<meta name="theme-color" content="#0A1633"><link rel="icon" href="/logo.png"><link rel="alternate" type="application/rss+xml" title="GLR Notícias" href="/blog?formato=rss">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld).replace(/</g, '\\u003c')}</script>` : ''}
-<style>
-:root{--blue:#0B4FE0;--blue-dark:#083BAA;--blue-soft:#E8EFFD;--ink:#0A0A0A;--paper:#fff;--soft:#F4F6FB;--sec:#52586B;--mute:#8B90A0;--border:#E5E8F0}
-*{box-sizing:border-box}body{margin:0;font-family:Poppins,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--paper);line-height:1.6}
-a{color:var(--blue)}.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
-header{border-bottom:1px solid var(--border);background:#fff}header .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;height:64px}
-.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:var(--ink);text-decoration:none}.logo img{width:28px;height:28px;object-fit:contain}
-nav{display:flex;gap:18px;align-items:center;font-size:14px}nav a{color:var(--sec);text-decoration:none;font-weight:500}nav a:hover{color:var(--ink)}
-.btn{display:inline-block;background:var(--blue);color:#fff !important;text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}.btn:hover{background:var(--blue-dark)}
-.hero{background:var(--soft);padding:44px 0 34px}.hero h1{font-size:clamp(26px,4vw,38px);line-height:1.2;margin:0 0 8px;letter-spacing:-.02em;text-wrap:balance}.hero p{color:var(--sec);margin:0;max-width:640px}
-.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px;padding:34px 0 50px}
-.card{display:flex;flex-direction:column;gap:8px;border:1px solid var(--border);border-radius:14px;padding:20px;text-decoration:none;color:inherit;background:#fff;transition:border-color .15s,box-shadow .15s}
-.card:hover{border-color:#c9d6f7;box-shadow:0 8px 24px rgba(10,10,10,.06)}.card h2{font-size:18px;line-height:1.35;margin:0;color:var(--ink)}.card p{margin:0;color:var(--sec);font-size:14.5px}
-.meta{font-size:12.5px;color:var(--mute)}.tags{display:flex;gap:6px;flex-wrap:wrap}.tags span{font-size:11.5px;font-weight:600;color:var(--blue);background:var(--blue-soft);border-radius:99px;padding:2px 9px}
-.vazio{padding:60px 0;text-align:center;color:var(--sec)}
-article{max-width:720px;margin:0 auto;padding:36px 20px 20px}article h1{font-size:clamp(26px,4.2vw,36px);line-height:1.22;letter-spacing:-.02em;margin:10px 0 10px;text-wrap:balance}
-.voltar{font-size:13.5px;text-decoration:none;font-weight:500}.lead{font-size:17px;color:var(--sec);margin:0 0 6px}
-.corpo{font-size:16.5px}.corpo h2{font-size:21px;margin:30px 0 8px;letter-spacing:-.01em}.corpo h3{font-size:18px;margin:24px 0 6px}.corpo p{margin:0 0 16px}.corpo ul,.corpo ol{padding-left:22px;margin:0 0 16px}.corpo li{margin:5px 0}
-.corpo blockquote{margin:0 0 16px;padding:10px 16px;border-left:3px solid var(--blue);background:var(--soft);color:var(--sec)}
-.fonte{font-size:13.5px;color:var(--sec);border-top:1px solid var(--border);padding-top:14px;margin-top:26px}
-.cta{max-width:720px;margin:10px auto 50px;padding:24px;border-radius:16px;background:var(--blue-soft);display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-.cta b{font-size:17px;display:block}.cta span{color:var(--sec);font-size:14.5px}
-footer{border-top:1px solid var(--border);padding:22px 0;font-size:13px;color:var(--mute)}
-@media(max-width:640px){nav a:not(.btn){display:none}.cta{margin:10px 16px 40px}}
-</style></head><body>
-<header><div class="wrap"><a class="logo" href="/landing.html"><img src="/logo.png" alt="" onerror="this.style.display='none'">GLR Consultoria</a>
-<nav><a href="/blog">Notícias</a><a href="/landing.html">A GLR</a><a href="/calculadora.html">Calculadora</a><a class="btn" href="${WHATS}" target="_blank" rel="noopener">Falar no WhatsApp</a></nav></div></header>
-${corpo}
-<footer><div class="wrap">© ${new Date().getFullYear()} GLR Consultoria · Gestão de lojas no Mercado Livre, Shopee, Amazon, TikTok Shop e Magalu. Os posts resumem e comentam notícias de outros veículos, sempre com o link da fonte original.</div></footer>
+<style>${CSS}</style></head><body>
+<header class="topo"><div class="wrap"><a class="marca" href="/blog"><img src="/logo.png" alt="" onerror="this.style.display='none'"><b>GLR</b><span>Notícias</span></a>
+<nav><a class="l" href="/landing.html">A consultoria</a><a class="l" href="/calculadora.html">Calculadora de taxas</a><a class="bt" href="${WHATS}" target="_blank" rel="noopener"><span class="l">Falar com um especialista</span><span class="cel">WhatsApp</span></a></nav></div></header>
+<nav class="editorias" aria-label="Editorias"><div class="wrap"><a class="todas ${!editoriaAtual ? 'on' : ''}" style="--c:var(--tinta)" href="/blog">Últimas</a>${blog.EDITORIAS.map(e => `<a class="${editoriaAtual === e.id ? 'on' : ''}" style="--c:${e.cor}" href="/blog/editoria/${e.id}">${esc(e.nome)}</a>`).join('')}</div></nav>
+<main>${corpo}</main>
+<footer class="rodape"><div class="wrap"><div><b style="color:#fff;font-family:'Bricolage Grotesque',sans-serif;font-size:18px">GLR Notícias</b><p>O que acontece no Mercado Livre, Shopee, Amazon, TikTok Shop, Magalu e no e-commerce brasileiro, explicado para quem vende. Os textos são da equipe GLR e sempre trazem o link da matéria original.</p></div>
+<div><a href="/landing.html">Conheça a GLR Consultoria</a><br><a href="${WHATS}" target="_blank" rel="noopener">WhatsApp</a><br>© ${new Date().getFullYear()} GLR Consultoria</div></div></footer>
 </body></html>`;
 }
 
-function htmlLista(posts, aviso) {
-  return pagina({ titulo: 'Notícias do varejo digital | GLR Consultoria', descricao: 'O que acontece no Mercado Livre, Shopee, Amazon e no e-commerce brasileiro — e o que isso muda para quem vende.', url: `${SITE}/blog`,
-    corpo: `<section class="hero"><div class="wrap"><h1>Notícias do varejo digital</h1><p>O que acontece no Mercado Livre, Shopee, Amazon e no e-commerce brasileiro — e o que isso muda para quem vende, explicado pela equipe da GLR.</p></div></section>
-<main class="wrap">${aviso ? `<div class="vazio">${esc(aviso)}</div>` : ''}${posts.length ? `<div class="grade">${posts.map(p => `<a class="card" href="/blog/${esc(p.slug)}"><span class="meta">${dataBR(p.publicado_em)} · com informações de ${esc(p.fonte?.nome || '')}</span><h2>${esc(p.titulo)}</h2><p>${esc(p.resumo)}</p>${p.tags?.length ? `<div class="tags">${p.tags.map(t => `<span>${esc(t)}</span>`).join('')}</div>` : ''}</a>`).join('')}</div>` : '<div class="vazio">Em breve, as primeiras notícias.</div>'}</main>` });
+const boxLado = (pub) => {
+  const n = id => pub.filter(p => ed(p).id === id).length;
+  return `<aside class="lado">
+  <div class="box-cta"><b>Sua loja vendendo mais no Mercado Livre e na Shopee</b><p>A GLR cuida de ADS, anúncios, preço, estoque e reputação — com agentes trabalhando todo dia e um gestor dedicado.</p><a class="bt bt-luz" href="/landing.html">Conhecer a GLR</a></div>
+  <div class="box"><h4>Editorias</h4>${blog.EDITORIAS.filter(e => n(e.id)).map(e => `<a class="ed-link" href="/blog/editoria/${e.id}" style="color:${e.cor}">${esc(e.nome)} <i>${n(e.id)}</i></a>`).join('') || '<span class="meta">As editorias aparecem com os primeiros posts.</span>'}</div>
+</aside>`;
+};
+const itemLista = p => `<a class="lista-item" href="/blog/${esc(p.slug)}">${capa(p, 'p')}<div>${etiqueta(p)}<h3 class="d">${esc(p.titulo)}</h3><p>${esc(p.resumo)}</p><span class="meta">${dataBR(p.publicado_em)} · ${minutos(p)} min de leitura</span></div></a>`;
+
+function htmlHome(pub, aviso) {
+  const [d, ...resto] = pub, lado = resto.slice(0, 4), mais = resto.slice(4);
+  const corpo = !pub.length ? `<div class="wrap"><div class="vazio"><b>As primeiras notícias estão chegando</b>A equipe GLR está preparando os primeiros textos sobre o varejo digital.</div></div>` : `
+<div class="wrap">${aviso ? `<div class="vazio" style="padding:24px 0 0">${esc(aviso)}</div>` : ''}
+  <section class="destaque">
+    <a class="dest-princ" href="/blog/${esc(d.slug)}">${capa(d, 'g')}<span>${etiqueta(d)}</span><h1 class="d">${esc(d.titulo)}</h1><p>${esc(d.resumo)}</p><span class="meta">${dataBR(d.publicado_em)} · ${minutos(d)} min de leitura</span></a>
+    <div class="dest-lado">${lado.map(p => `<a class="mini" href="/blog/${esc(p.slug)}">${capa(p, 'm')}${etiqueta(p)}<h3 class="d">${esc(p.titulo)}</h3><span class="meta">${dataBR(p.publicado_em)}</span></a>`).join('')}</div>
+  </section>
+  <div class="corpo-home"><section><div class="sec-t"><h2 class="d">Mais notícias</h2><span class="meta">${pub.length} publicada(s)</span></div>${mais.length ? mais.map(itemLista).join('') : '<p class="meta" style="padding:16px 0">As próximas notícias aparecem aqui.</p>'}</section>${boxLado(pub)}</div>
+</div>`;
+  return pagina({ titulo: 'GLR Notícias — o varejo digital explicado para quem vende', descricao: 'Notícias do Mercado Livre, Shopee, Amazon e do e-commerce brasileiro, com o que muda para quem vende em marketplace.', url: `${SITE}/blog`, corpo });
 }
-function htmlPost(p) {
-  const url = `${SITE}/blog/${p.slug}`;
-  return pagina({ titulo: `${p.titulo} | GLR Consultoria`, descricao: p.resumo || p.titulo, url,
-    jsonld: { '@context': 'https://schema.org', '@type': 'BlogPosting', headline: p.titulo, description: p.resumo, datePublished: p.publicado_em, dateModified: p.atualizado_em || p.publicado_em, mainEntityOfPage: url, author: { '@type': 'Organization', name: 'GLR Consultoria' }, publisher: { '@type': 'Organization', name: 'GLR Consultoria', logo: { '@type': 'ImageObject', url: `${SITE}/logo.png` } }, isBasedOn: p.fonte?.url },
-    corpo: `<article><a class="voltar" href="/blog">← Todas as notícias</a><h1>${esc(p.titulo)}</h1><p class="lead">${esc(p.resumo)}</p>
-<div class="meta">${dataBR(p.publicado_em)} · Equipe GLR Consultoria · com informações de <a href="${esc(p.fonte?.url)}" target="_blank" rel="noopener nofollow">${esc(p.fonte?.nome)}</a></div>
-<div class="corpo" style="margin-top:22px">${blog.mdParaHtml(String(p.corpo || '').replace(/\n+Fonte:.*$/i, ''))}</div>
-<div class="fonte">Fonte original: <a href="${esc(p.fonte?.url)}" target="_blank" rel="noopener nofollow">${esc(p.fonte?.titulo || p.fonte?.nome)}</a> (${esc(p.fonte?.nome)}). Este texto é um resumo comentado pela GLR; os detalhes completos estão na matéria original.</div></article>
-<div class="cta"><div><b>Quer ajuda para aplicar isso na sua loja?</b><span>A GLR cuida de ADS, catálogo, preço e estratégia no Mercado Livre, Shopee e Amazon.</span></div><a class="btn" href="${WHATS}" target="_blank" rel="noopener">Falar com um especialista</a></div>` });
+function htmlEditoria(e, pub) {
+  const lista = pub.filter(p => ed(p).id === e.id);
+  return pagina({ titulo: `${e.nome} — GLR Notícias`, descricao: `Notícias de ${e.nome.toLowerCase()} no varejo digital, explicadas para quem vende em marketplace.`, url: `${SITE}/blog/editoria/${e.id}`, editoriaAtual: e.id,
+    corpo: `<div class="wrap"><div class="cab-ed" style="--c:${e.cor}"><span class="ed-tag" style="--c:${e.cor}">Editoria</span><h1 class="d">${esc(e.nome)}</h1></div>
+<div class="corpo-home"><section>${lista.length ? lista.map(itemLista).join('') : '<div class="vazio"><b>Nada por aqui ainda</b>As notícias desta editoria aparecem assim que forem publicadas.</div>'}</section>${boxLado(pub)}</div></div>` });
+}
+function htmlPost(p, pub) {
+  const url = `${SITE}/blog/${p.slug}`, e = ed(p);
+  const relac = pub.filter(x => x.id !== p.id).sort((a, b) => (ed(b).id === e.id) - (ed(a).id === e.id)).slice(0, 3);
+  const txt = encodeURIComponent(`${p.titulo} — ${url}`);
+  return pagina({ titulo: `${p.titulo} | GLR Notícias`, descricao: p.resumo || p.titulo, url, editoriaAtual: e.id,
+    jsonld: { '@context': 'https://schema.org', '@type': 'NewsArticle', headline: p.titulo, description: p.resumo, articleSection: e.nome, datePublished: p.publicado_em, dateModified: p.atualizado_em || p.publicado_em, mainEntityOfPage: url, author: { '@type': 'Organization', name: 'Equipe GLR Consultoria' }, publisher: { '@type': 'Organization', name: 'GLR Consultoria', logo: { '@type': 'ImageObject', url: `${SITE}/logo.png` } }, isBasedOn: p.fonte?.url },
+    corpo: `<article class="post">${etiqueta(p, true)}<h1 class="d">${esc(p.titulo)}</h1><p class="lead">${esc(p.resumo)}</p>
+<div class="assina"><span>Por <b>Equipe GLR</b></span><span>${dataBR(p.publicado_em)}</span><span>${minutos(p)} min de leitura</span><span>Com informações de <a href="${esc(p.fonte?.url)}" target="_blank" rel="noopener nofollow">${esc(p.fonte?.nome)}</a></span></div>
+${capa(p, 'x')}
+<div class="texto" style="margin-top:28px">${blog.mdParaHtml(String(p.corpo || '').replace(/\n+Fonte:.*$/i, ''))}</div>
+<div class="fonte">Fonte original: <a href="${esc(p.fonte?.url)}" target="_blank" rel="noopener nofollow">${esc(p.fonte?.titulo || p.fonte?.nome)}</a> (${esc(p.fonte?.nome)}). Este texto resume e comenta a notícia; os detalhes completos estão na matéria original.</div>
+<div class="compart"><span>Compartilhar:</span><a href="https://wa.me/?text=${txt}" target="_blank" rel="noopener">WhatsApp</a><a href="https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}" target="_blank" rel="noopener">LinkedIn</a><button type="button" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(url)}').then(()=>{this.textContent='Link copiado'})">Copiar link</button></div>
+</article>
+<div class="cta-post"><div class="box-cta"><div><b>Quer aplicar isso na sua loja?</b><p>A GLR opera ADS, anúncios, preço e estoque no Mercado Livre, Shopee e Amazon — e você acompanha tudo num portal próprio.</p></div><a class="bt bt-luz" href="${WHATS}" target="_blank" rel="noopener">Falar com um especialista</a></div></div>
+${relac.length ? `<section class="relac"><div class="wrap"><h2 class="d">Leia também</h2><div class="relac-g">${relac.map(x => `<a class="mini" href="/blog/${esc(x.slug)}">${capa(x, 'm')}${etiqueta(x)}<h3 class="d">${esc(x.titulo)}</h3><span class="meta">${dataBR(x.publicado_em)}</span></a>`).join('')}</div></div></section>` : ''}` });
+}
+function rss(pub) {
+  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>GLR Notícias</title><link>${SITE}/blog</link><description>O varejo digital explicado para quem vende em marketplace.</description><language>pt-BR</language>
+${pub.slice(0, 30).map(p => `<item><title>${esc(p.titulo)}</title><link>${SITE}/blog/${esc(p.slug)}</link><guid>${SITE}/blog/${esc(p.slug)}</guid><pubDate>${new Date(p.publicado_em).toUTCString()}</pubDate><description>${esc(p.resumo)}</description><category>${esc(ed(p).nome)}</category></item>`).join('\n')}
+</channel></rss>`;
 }
 
 module.exports = async (req, res) => {
@@ -84,12 +171,15 @@ module.exports = async (req, res) => {
       const est = await blog.lerEstado(lerStorage);
       const pub = est.posts.filter(p => p.status === 'publicado').sort((a, b) => String(b.publicado_em).localeCompare(String(a.publicado_em)));
       const slug = String(req.query?.slug || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
-      if (!slug) return res.status(200).send(htmlLista(pub));
+      if (req.query?.formato === 'json') { res.setHeader('Access-Control-Allow-Origin', '*'); return res.status(200).json({ posts: pub.slice(0, 6).map(p => ({ titulo: p.titulo, resumo: p.resumo, slug: p.slug, publicado_em: p.publicado_em, editoria: ed(p).nome, cor: ed(p).cor })) }); }
+      if (req.query?.formato === 'rss') { res.setHeader('Content-Type', 'application/rss+xml; charset=utf-8'); return res.status(200).send(rss(pub)); }
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      if (req.query?.editoria) { const e = blog.EDITORIAS.find(x => x.id === String(req.query.editoria)); if (e) return res.status(200).send(htmlEditoria(e, pub)); }
+      if (!slug) return res.status(200).send(htmlHome(pub));
       const p = pub.find(x => x.slug === slug);
-      if (!p) return res.status(404).send(htmlLista(pub, 'Não encontramos esta notícia — veja as mais recentes abaixo.'));
-      return res.status(200).send(htmlPost(p));
+      if (!p) return res.status(404).send(htmlHome(pub, 'Não encontramos esta notícia — veja as mais recentes abaixo.'));
+      return res.status(200).send(htmlPost(p, pub));
     }
     if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
     res.setHeader('Cache-Control', 'private, no-store');
