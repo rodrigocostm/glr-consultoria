@@ -112,14 +112,16 @@ async function salvarCustoPortal(apiKey, p) {
 //               de confirmação); se o login já existir e não for da equipe: confirma e
 //               define a senha informada.
 // 'confirmar' → só marca o e-mail como confirmado (libera quem ficou preso nisso).
-// Nunca mexe em login da equipe (glr_staff) e não muda papel: quem é equipe continua
-// sendo só quem está em glr_staff. Troca de senha de acesso existente: /api/portal-password.
+// 'equipe'    → login de gestor (tela Gestores): cria ou confirma o login, troca a senha
+//               se informada e cadastra em glr_staff. Recusa e-mail de cliente do portal.
+// 'criar'/'confirmar' nunca mexem em login da equipe nem mudam papel: equipe é só quem
+// está em glr_staff. Troca de senha de acesso existente: /api/portal-password.
 async function loginPortal({ tipo, email, senha }) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY não configurada');
   email = String(email || '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 160) throw new Error('E-mail inválido');
-  if (tipo === 'criar' && (typeof senha !== 'string' || senha.length < 8 || senha.length > 128)) throw new Error('Use uma senha entre 8 e 128 caracteres');
+  if ((tipo === 'criar' || (tipo === 'equipe' && senha)) && (typeof senha !== 'string' || senha.length < 8 || senha.length > 128)) throw new Error('Use uma senha entre 8 e 128 caracteres');
   const headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
   const ir = (path, init = {}) => fetch(`${SUPABASE_URL}${path}`, { ...init, headers, signal: AbortSignal.timeout(10000) });
   const achar = async () => {
@@ -142,6 +144,26 @@ async function loginPortal({ tipo, email, senha }) {
     if (await daEquipe(u.id)) throw new Error('Este e-mail é de um login da equipe GLR.');
     await atualizar(u.id, { password: senha, email_confirm: true });
     return { ok: true, criado: false, atualizado: true };
+  }
+  if (tipo === 'equipe') {
+    const rp = await ir('/rest/v1/glr_storage?chave=eq.glr_portal_configs&select=dados');
+    if (!rp.ok) throw new Error('Não consegui conferir o portal');
+    const portal = (await rp.json())[0]?.dados;
+    if ((Array.isArray(portal) ? portal : []).some(c => String(c?.email || '').trim().toLowerCase() === email)) throw new Error('Este e-mail é de um cliente do Portal. Use outro e-mail para o gestor.');
+    let u = null, criado = false;
+    if (senha) {
+      const r = await ir('/auth/v1/admin/users', { method: 'POST', body: JSON.stringify({ email, password: senha, email_confirm: true }) });
+      if (r.ok) { u = await r.json(); criado = true; }
+    }
+    if (!u) {
+      u = await achar();
+      if (!u) throw new Error('Não existe login com esse e-mail. Informe uma senha para criá-lo.');
+      if (senha) await atualizar(u.id, { password: senha, email_confirm: true });
+      else if (!u.email_confirmed_at) await atualizar(u.id, { email_confirm: true });
+    }
+    const rs = await ir('/rest/v1/glr_staff?on_conflict=user_id', { method: 'POST', headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ user_id: u.id, ativo: true }) });
+    if (!rs.ok) throw new Error('Login criado, mas não consegui liberar o acesso da equipe');
+    return { ok: true, criado, equipe: true };
   }
   if (tipo === 'confirmar') {
     const u = await achar();

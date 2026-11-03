@@ -561,7 +561,7 @@ Router.register('gestores', (params, el) => {
         <input class="form-input" id="lg-email" type="email" placeholder="nome@glr.com.br" value="${g.loginEmail || g.email || ''}">
       </div>
       <div class="form-group"><label class="form-label">Senha ${g.loginCriado ? '(deixe em branco pra não alterar)' : ''}</label>
-        <input class="form-input" id="lg-senha" type="password" placeholder="Mínimo 6 caracteres">
+        <input class="form-input" id="lg-senha" type="password" placeholder="Mínimo 8 caracteres">
       </div>
       <div id="lg-msg" style="margin-bottom:12px;font-size:12px;text-align:center;"></div>
       <div style="display:flex;gap:10px;justify-content:flex-end;">
@@ -593,17 +593,18 @@ Router.register('gestores', (params, el) => {
       return;
     }
     if (!g.loginCriado && !senha) { msg.textContent = '⚠️ Informe a senha pra criar o login.'; msg.style.color = '#dc2626'; return; }
-    if (senha && senha.length < 6) { msg.textContent = '⚠️ Senha deve ter no mínimo 6 caracteres.'; msg.style.color = '#dc2626'; return; }
+    if (senha && senha.length < 8) { msg.textContent = '⚠️ Senha deve ter no mínimo 8 caracteres.'; msg.style.color = '#dc2626'; return; }
 
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
     msg.textContent = 'Criando usuário...';
     msg.style.color = 'var(--text-secondary)';
 
     try {
-      if (senha) {
-        // pelo servidor, já confirmado (sem e-mail de confirmação); se já existir, troca a senha
+      {
+        // pelo servidor: login já confirmado + cadastro na equipe (glr_staff), sem o qual o
+        // sistema recusa a entrada; se já existir, troca a senha (se informada) e libera
         const { data: sess } = await _sb.auth.getSession();
-        const resp = await fetch('/api/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token || ''}` }, body: JSON.stringify({ action: 'glr_login_portal', params: { tipo: 'criar', email, senha } }) });
+        const resp = await fetch('/api/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token || ''}` }, body: JSON.stringify({ action: 'glr_login_portal', params: { tipo: 'equipe', email, senha: senha || undefined } }) });
         const jr = await resp.json().catch(() => ({}));
         const error = !resp.ok || jr.error ? { message: jr.error || `HTTP ${resp.status}` } : null;
         if (error) {
@@ -611,10 +612,6 @@ Router.register('gestores', (params, el) => {
           msg.style.color = '#dc2626';
           if (btn) { btn.disabled = false; btn.textContent = g.loginCriado ? 'Atualizar' : 'Criar Login'; }
           return;
-        }
-        if (error?.message.includes('already registered')) {
-          msg.textContent = '⚠️ Esse e-mail já tem conta. Se a senha não for essa, peça pro gestor redefinir (link "Esqueci minha senha" pode ser adicionado depois, ou use o painel do Supabase).';
-          msg.style.color = '#d97706';
         }
       }
 
