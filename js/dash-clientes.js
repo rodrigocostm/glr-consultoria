@@ -93,7 +93,7 @@ window.GLRDashClientes = (function () {
   let receitaEm = 0, receitaDados = null;
   async function receitaTopo() {
     const k = document.getElementById('dash-kpi-receita'); if (!k || typeof kpiCard !== 'function') return;
-    const pinta = j => { const rc = j?.receita; if (!rc || rc.projetada == null) return; k.innerHTML = kpiCard('Receita GLR', GLR.formatCurrency(rc.base || 0), `projeção ${GLR.formatCurrency(rc.projetada)} no fim do mês · ${Math.round(rc.projetada / 2000)}% dos R$ 200 mil`, true, '', '💰', '', false, 'neutro'); };
+    const pinta = j => { const rc = j?.receita; if (!rc || rc.projetada == null) return; k.innerHTML = kpiCard('Receita GLR', GLR.formatCurrency(rc.base || 0), `projeção ${GLR.formatCurrency(rc.projetada)} · base até ${rc.dias || 0} dia(s) encerrado(s)${rc.parcial ? " · cobertura parcial" : ""} · ${Math.round(rc.projetada / 2000)}% dos R$ 200 mil`, true, '', '💰', '', false, 'neutro'); };
     if (receitaDados && Date.now() - receitaEm < 120000) return pinta(receitaDados);
     try {
       const mes = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).format(new Date());
