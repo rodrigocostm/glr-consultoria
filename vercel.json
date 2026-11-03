@@ -10,7 +10,9 @@
     }
   ],
   "functions": {
-    "api/adviser.js": {"maxDuration": 60},
+    "api/adviser.js": {
+      "maxDuration": 60
+    },
     "api/generate-photo.js": {
       "maxDuration": 60
     },
@@ -28,6 +30,9 @@
     },
     "api/mcp.js": {
       "maxDuration": 60
+    },
+    "api/blog.js": {
+      "maxDuration": 120
     }
   },
   "headers": [
@@ -48,6 +53,16 @@
           "value": "no-cache, must-revalidate"
         }
       ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/blog",
+      "destination": "/api/blog"
+    },
+    {
+      "source": "/blog/:slug",
+      "destination": "/api/blog?slug=:slug"
     }
   ]
 }

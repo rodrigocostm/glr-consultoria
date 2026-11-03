@@ -86,6 +86,7 @@ const Router = {
       'conversao-ml': 'Catálogo e Buy Box',
       'onboarding': 'Implantação de clientes',
       'rentabilidade': 'Rentabilidade da carteira',
+      'blog': 'Blog de notícias',
       'black-friday': 'Datas especiais',
       'relatorio-semanal': 'Relatório semanal',
       'notas': 'Notas e etiquetas',

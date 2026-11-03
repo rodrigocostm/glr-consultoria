@@ -622,6 +622,15 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true, rodada: 'perguntas', ...(await require('./_conversao').avisarPerguntas(ajud)) });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
+  // ?rodada=blog — Blog de notícias do varejo digital (api/_blog.js): 06:00, 3 rascunhos com texto
+  // próprio a partir do RSS dos portais do setor; nada é publicado sem a equipe aprovar (tela Blog)
+  if (req.query?.rodada === 'blog') {
+    try {
+      if (!(await reservarRodada(`${agoraBRT().dia}-blog`))) return res.status(200).json({ ok: true, skip: 'rodada de hoje já executada' });
+      waitUntil(require('./_blog').gerarRascunhos({ lerStorage, sbUpsert: (t, row, c) => sbUpsert(t, row, c), anthropicKey }).then(r => console.log('[blog]', JSON.stringify(r))).catch(e => console.error('[blog] falhou', e)));
+      return res.status(202).json({ ok: true, rodada: 'blog' });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=onboarding — Agente de Onboarding (api/_onboarding.js): checklist de entrada de cada cliente,
   // 07:00 uma vez por dia; &agora=1 roda já ("Verificar agora"); &simular=1 só calcula
   if (req.query?.rodada === 'onboarding') {

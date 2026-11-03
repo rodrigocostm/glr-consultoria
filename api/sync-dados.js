@@ -1311,6 +1311,8 @@ module.exports = async function handler(req, res) {
   if (hora >= 8 && hora <= 22 && minuto < 15 && !conta) waitUntil(dispararAgente(req, 'perguntas'));
   // retenção: risco de cancelar de cada cliente, às 07:00 (antes do resumo das 8h)
   if (hora === 7 && minuto < 15 && !conta) waitUntil(dispararAgente(req, 'retencao'));
+  // blog: rascunhos do dia com as notícias do varejo digital, às 06:00 (publicação só com aprovação)
+  if (hora === 6 && minuto < 15 && !conta) waitUntil(dispararAgente(req, 'blog'));
   // onboarding: checklist de entrada dos clientes, às 07:00
   if (hora === 7 && minuto < 15 && !conta) waitUntil(dispararAgente(req, 'onboarding'));
   // expansão de canais: de madrugada (1h às 5h), uma rodada por hora, cliente analisado há mais de 3 dias
