@@ -278,7 +278,24 @@ function setupClienteHandlers() {
       </div>
     </div>`;
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    // Keep typed text independently from remote refresh/navigation, even before Save.
+  const fields = ['a-cliente','a-data','a-cat','a-desc','a-resp','a-status'];
+  let touched = false;
+  overlay.addEventListener('input', () => {
+    touched = true;
+    if (!overlay._draftKey) return;
+    try { _localSetItem(overlay._draftKey, JSON.stringify(Object.fromEntries(fields.map(id => [id, overlay.querySelector('#'+id).value])))); }
+    catch { /* The open form is kept; saving explicitly reports storage failures. */ }
+  });
+  _sb.auth.getSession().then(({data}) => {
+    if (!data?.session?.user?.id || !overlay.isConnected) return;
+    overlay._draftKey = 'glr_acao_rascunho_'+data.session.user.id+'_'+(acaoId ?? 'nova');
+    try {
+      const draft = JSON.parse(localStorage.getItem(overlay._draftKey) || 'null');
+      if (draft && !touched && confirm('Há um rascunho não enviado neste navegador. Restaurar o texto?')) for (const id of fields) if (draft[id] != null) overlay.querySelector('#'+id).value = draft[id];
+    } catch {}
+  }).catch(()=>{});
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     window._cliComPrevia();
   };
 
@@ -716,6 +733,7 @@ function indicadorCard(label, value, colorClass, sub) {
 // acaoId opcional: quando informado, abre em modo edição (pré-preenchido,
 // atualiza a ação existente em vez de criar uma nova, e mostra "Excluir").
 function openModalNovaAcao(clienteId, acaoId) {
+  const registroId = acaoId != null ? acaoId : GLR.nextId(GLR.acoes);
   const acaoExistente = acaoId != null ? GLR.acoes.find(a => a.id === acaoId) : null;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -760,16 +778,16 @@ function openModalNovaAcao(clienteId, acaoId) {
       </div>
     </div>
     <div style="display:flex;gap:10px;justify-content:${acaoExistente ? 'space-between' : 'flex-end'};">
-      ${acaoExistente ? `<button class="btn btn-ghost" style="color:var(--red);" onclick="(function(){
+      ${acaoExistente ? `<button class="btn btn-ghost" style="color:var(--red);" onclick="(async function(){
         if(!confirm('Excluir esta ação?'))return;
-        GLR.acoes = GLR.acoes.filter(a => a.id !== ${acaoExistente.id});
-        localStorage.setItem('glr_acoes',JSON.stringify(GLR.acoes));
+        try { await glrSalvarAcoes([], [${acaoExistente.id}]); } catch(e) { alert(e.message); return; }
         document.querySelector('.modal-overlay').remove();
         Router.resolve();
       })()">Excluir</button>` : ''}
       <div style="display:flex;gap:10px;">
         <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
-        <button class="btn btn-primary" onclick="(function(){
+        <button class="btn btn-primary" onclick="(async function(){
+          if(this.disabled)return;
           const clienteSel = document.getElementById('a-cliente').value;
           const cliente = clienteSel ? GLR.clientes.find(cl => cl.id === parseInt(clienteSel)) : null;
           const data = document.getElementById('a-data').value;
@@ -782,12 +800,11 @@ function openModalNovaAcao(clienteId, acaoId) {
             status: document.getElementById('a-status').value,
           };
           if(!dados.descricao){alert('Informe a descrição.');return;}
-          ${acaoExistente
-            ? `const idx = GLR.acoes.findIndex(a => a.id === ${acaoExistente.id});
-               if (idx >= 0) GLR.acoes[idx] = { ...GLR.acoes[idx], ...dados };`
-            : `GLR.acoes.push({ id: GLR.nextId(GLR.acoes), ...dados });`
-          }
-          localStorage.setItem('glr_acoes',JSON.stringify(GLR.acoes));
+          const item = {id: ${registroId}, ...dados};
+          this.disabled=true;
+          try { await glrSalvarAcoes([item]); }
+          catch(e) { this.disabled=false; alert(e.message); return; }
+          try { const key=this.closest('.modal-overlay')._draftKey; if(key) localStorage.removeItem(key); } catch {}
           this.closest('.modal-overlay').remove();
           Router.resolve();
         }).call(this)">${acaoExistente ? 'Salvar Alterações' : 'Salvar Ação'}</button>
@@ -795,6 +812,23 @@ function openModalNovaAcao(clienteId, acaoId) {
     </div>
   </div>`;
   document.body.appendChild(overlay);
+  // Keep typed text independently from remote refresh/navigation, even before Save.
+  const fields = ['a-cliente','a-data','a-cat','a-desc','a-resp','a-status'];
+  let touched = false;
+  overlay.addEventListener('input', () => {
+    touched = true;
+    if (!overlay._draftKey) return;
+    try { _localSetItem(overlay._draftKey, JSON.stringify(Object.fromEntries(fields.map(id => [id, overlay.querySelector('#'+id).value])))); }
+    catch { /* The open form is kept; saving explicitly reports storage failures. */ }
+  });
+  _sb.auth.getSession().then(({data}) => {
+    if (!data?.session?.user?.id || !overlay.isConnected) return;
+    overlay._draftKey = 'glr_acao_rascunho_'+data.session.user.id+'_'+(acaoId ?? 'nova');
+    try {
+      const draft = JSON.parse(localStorage.getItem(overlay._draftKey) || 'null');
+      if (draft && !touched && confirm('Há um rascunho não enviado neste navegador. Restaurar o texto?')) for (const id of fields) if (draft[id] != null) overlay.querySelector('#'+id).value = draft[id];
+    } catch {}
+  }).catch(()=>{});
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   setTimeout(() => document.getElementById('a-desc')?.focus(), 50);
 }
