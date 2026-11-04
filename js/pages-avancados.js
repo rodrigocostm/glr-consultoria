@@ -1096,7 +1096,7 @@ Router.register('projecao', (params, el) => {
   el.innerHTML = `<div class="page pn">
     <div class="pn-head">
       <div class="pn-head-l">
-        ${GLR.clientes.length === 0
+        ${params.embed ? '<div class="pn-cliente-txt">Projeção do mês</div>' : GLR.clientes.length === 0
           ? `<div class="pn-cliente-txt">${_pnEsc(projecaoAtiva.nomeCliente || 'Projeção')}</div>`
           : `<select id="sel-cliente" class="pn-cliente" onchange="trocarCliente(parseInt(this.value))">
                ${GLR.clientes.map(c => `<option value="${c.id}" ${c.id === clienteIdAtivo ? 'selected' : ''}>${_pnEsc(c.nome)}</option>`).join('')}

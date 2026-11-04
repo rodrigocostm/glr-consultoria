@@ -43,7 +43,7 @@ window.GLRDashClientes = (function () {
         r.cob++;
         const mtd = BaseDados.somar(info, mesIni, oIso), a7 = BaseDados.somar(info, a7de, oIso), b7 = BaseDados.somar(info, b7de, b7ate);
         r.mtd += mtd.faturamento; r.a7 += a7.faturamento; r.b7 += b7.faturamento; r.tem7 = true;
-        const ritmo = BaseDados.cobre(info, a7de) ? a7.faturamento / 7 : mtd.faturamento / dd; // venda/dia para os dias que faltam
+        const ritmo = mtd.faturamento / dd; // média do mês (mesma regra da Projeção e do Perfil)
         r.ritmo += ritmo;
         const temAds = BaseDados.cobreAds(info, mesIni);
         if (temAds) { r.adsMtd += mtd.ads; r.temAds = true; }
@@ -52,7 +52,7 @@ window.GLRDashClientes = (function () {
         for (let i = 13; i >= 0; i--) { const d = isoD(diaMais(ontem, -i)); r.serie[d] = (r.serie[d] || 0) + (parseFloat(info.dias?.[d]?.faturamento) || 0); }
       }
       if (!r.cob || (r.mtd <= 0 && r.a7 <= 0)) continue;
-      const proj = r.mtd + r.ritmo * (dm - dd); // realizado + ritmo de 7 dias nos dias que faltam
+      const proj = r.mtd + r.ritmo * (dm - dd); // = faturado ÷ dias decorridos × dias do mês
       const meta = parseFloat(metas[c.id]) || parseFloat(c.metaMensal) || 0, teto = parseFloat(tetos[c.id]) || null;
       const t7 = r.b7 > 0 ? (r.a7 / r.b7 - 1) * 100 : null;
       const g = gest(c.gestorId);

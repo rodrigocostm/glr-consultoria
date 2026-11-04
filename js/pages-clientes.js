@@ -388,8 +388,10 @@ Router.register('cliente-perfil', (params, el) => {
 
     if (activeTab === 'plano') {
       // o plano do Gerente (meta, contrato, Raio-X, ações) embutido no perfil
-      tabContent.innerHTML = '<div id="perfil-plano"></div>';
+      // + a Projeção de Crescimento do cliente logo abaixo (uma página só: meta, plano e projeção)
+      tabContent.innerHTML = '<div id="perfil-plano"></div><div id="perfil-proj" style="margin-top:24px"></div>';
       Router.routes['plano-acao']?.({ embed: true, clienteId: c.id }, document.getElementById('perfil-plano'));
+      Router.routes['projecao']?.({ embed: true, clienteId: c.id }, document.getElementById('perfil-proj'));
     } else if (activeTab === 'overview') {
       const fat   = c.faturamento || 0;
       const cresc = c.crescimento || 0;

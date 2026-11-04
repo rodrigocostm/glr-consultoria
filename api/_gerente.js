@@ -347,7 +347,7 @@ function calcularCaminho({ meta, metaPedidos, fat, pedidos, dd, dm, lojas, raioX
   const diasAlvo = proximo ? diasProxMes : dm;
   const diasRest = proximo ? diasProxMes : Math.max(0, dm - dd), semRest = diasRest / 7;
   const ticket = pedidos > 0 ? fat / pedidos : 0;
-  // ritmo de 7 dias (o mesmo da projeção do plano); sem ele, o ritmo do próprio mês
+  // ritmo do mês (o mesmo da projeção do plano: média por dia decorrido)
   const ritmo = ritmoDia ?? (dd > 0 ? fat / dd : 0), ritmoPed = ritmoPedDia ?? (dd > 0 ? pedidos / dd : 0);
   const proj = proximo ? ritmo * diasAlvo : fat + ritmo * (dm - dd), projPed = proximo ? ritmoPed * diasAlvo : pedidos + ritmoPed * (dm - dd);
   const faltaR = meta > 0 ? Math.max(0, meta - proj) : 0;
@@ -496,16 +496,13 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     }
     if (!lojas.length) return;
     // Métricas do mês (todas as lojas)
-    // Projeção = realizado até ontem + ritmo dos últimos 7 dias × dias que faltam (a mesma regra do
-    // Dashboard e do Adviser) — no começo do mês não multiplica 1 dia por 30
+    // Projeção = média do mês: realizado até ontem ÷ dias decorridos × dias do mês (decisão do
+    // analista, 04/11/2026 — a mesma regra em todas as telas: Dashboard, Perfil, Projeção e Gestores)
     let fat = 0, ads = 0, fatAnt = 0, cobreAnt = true, pedidos = 0, rFat = 0, rPed = 0, rAds = 0;
     for (const L of lojas) {
       const m = somarDias(L.resumo?.dias, mesIni, ontem); fat += m.faturamento; ads += m.ads; pedidos += m.pedidos;
       const a = somarDias(L.resumo?.dias, antIni, antFim); if (!a.cobre) cobreAnt = false; fatAnt += a.faturamento;
-      if (dd > 0) {
-        const s7 = temDesde(L.resumo?.dias, ini7) ? somarDias(L.resumo?.dias, ini7, ontem) : null;
-        rFat += s7 ? s7.faturamento / 7 : m.faturamento / dd; rPed += s7 ? s7.pedidos / 7 : m.pedidos / dd; rAds += s7 ? s7.ads / 7 : m.ads / dd;
-      }
+      if (dd > 0) { rFat += m.faturamento / dd; rPed += m.pedidos / dd; rAds += m.ads / dd; }
     }
     const faltam = Math.max(0, dm - dd);
     const proj = dd > 0 ? fat + rFat * faltam : 0;
@@ -555,7 +552,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
       : (pctMeta != null && pctMeta < 95) || (metaTacos && tacos != null && tacos > metaTacos) || acoes.filter(a => a.quando === 'hoje').length >= 3 ? 'amarelo' : 'verde';
     const metricas = { faturamento: Math.round(fat), projecao: Math.round(proj), meta, metaPedidos, pedidos, projPedidos: Math.round(projPedidos), pctMetaPedidos: metaPedidos ? r1(projPedidos / metaPedidos * 100) : null, pctMeta: pctMeta == null ? null : r1(pctMeta), tacos: tacos == null ? null : r1(tacos), metaTacos, tetoTacos, varMes: varMes == null ? null : r1(varMes), lojas: lojas.length, dia: dd, diasMes: dm };
     if (meta && proj < meta && dm > dd) metricas.faltaPorDia = Math.round((meta - fat) / (dm - dd));
-    if (dd > 0) metricas.ritmoDia = Math.round(rFat); // venda/dia dos últimos 7 dias (base da projeção)
+    if (dd > 0) metricas.ritmoDia = Math.round(rFat); // venda/dia média do mês (base da projeção)
     const fatos = { cliente: c.nome, metricas, caminho_para_meta: caminho && { mes_da_meta: caminho.mesAlvo, falta_rs: caminho.faltaR, falta_pedidos: caminho.faltaPedidos, precisa_por_dia: caminho.precisaDia, ritmo_por_dia: caminho.ritmoDia, alavancas: caminho.alavancas.map(a => ({ o_que: a.titulo, rende_ate_fim_do_mes: a.valor, confianca: a.conf })), soma_alavancas: caminho.soma, cobertura_pct: caminho.cobertura, falta_alem_das_alavancas: caminho.resto, ads_extra_mantendo_tacos: caminho.adsExtra, teto_ads_tacos_pct: caminho.tetoTacos || null, folga_ads_ate_o_teto: caminho.folgaAds ?? null }, raio_x: raioX && { periodo: raioX.periodo, semana_antes: raioX.semanaAntes, semana_agora: raioX.semanaAgora, variacao_pct: raioX.var,
       funil_da_conta: raioX.funil && { visitas_sem: raioX.funil.visitas, conversao_pct: raioX.funil.conversao, preco_medio: raioX.funil.precoMedio, explicacao: raioX.funil.explica },
       oportunidades_funil: raioX.oportunidades,
