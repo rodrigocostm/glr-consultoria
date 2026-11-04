@@ -198,7 +198,7 @@ module.exports = async (req, res) => {
     }
     if (b.acao === 'fotos_faltando') { // publicadas sem foto: até 2 por chamada (cada foto leva ~20s); a tela repete até zerar
       const est0 = await blog.lerEstado(lerStorage);
-      const sem = est0.posts.filter(p => p.status === 'publicado' && !p.foto?.url).sort((a, b) => String(b.publicado_em).localeCompare(String(a.publicado_em)));
+      const sem = est0.posts.filter(p => p.status === 'publicado' && (!p.foto?.url || (b.refazer && p.foto.versao !== 2))).sort((a, b) => String(b.publicado_em).localeCompare(String(a.publicado_em)));
       const feitas = [], erros = [];
       for (const p of sem.slice(0, 2)) {
         try { p.foto = await require('./_blog-foto').gerarFotoPost(p, blog.editoriaDe(p).id); feitas.push(p.titulo); } catch (e) { erros.push(`${p.titulo.slice(0, 50)}: ${e.message}`); }
