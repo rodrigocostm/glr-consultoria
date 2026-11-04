@@ -38,6 +38,7 @@ Router.register('blog', (params, el) => {
         <div class="bl-abas" role="tablist">${ABAS.map(([k, t]) => `<button role="tab" aria-selected="${st.aba === k}" class="${st.aba === k ? 'on' : ''}" onclick="window._blAba('${k}')">${t} <b>${cont(k)}</b></button>`).join('')}</div>
         <span style="flex:1"></span>
         <a class="btn btn-ghost btn-sm" href="/blog" target="_blank" rel="noopener">Ver o blog no site ↗</a>
+        ${(() => { const n = st.posts.filter(p => p.status === 'publicado' && !p.foto?.url).length; return n || st.fotos ? `<button class="btn btn-secondary btn-sm" ${st.fotos ? 'disabled' : ''} onclick="window._blFotos()">${st.fotos ? h(st.fotos) : `Gerar fotos dos publicados (${n})`}</button>` : ''; })()}
         <button class="btn btn-primary btn-sm" ${st.gerando ? 'disabled' : ''} onclick="window._blGerar()">${st.gerando ? 'Lendo os portais e escrevendo… (até 2 min)' : 'Gerar rascunhos agora'}</button>
       </div>
       ${st.aviso ? `<div class="bl-aviso">${h(st.aviso)}</div>` : ''}
@@ -57,7 +58,9 @@ Router.register('blog', (params, el) => {
       </div>
       <div class="bl-bts"><button class="btn btn-primary btn-sm" ${proc ? 'disabled' : ''} onclick="window._blSalvar('${h(p.id)}')">${proc || 'Salvar'}</button><button class="btn btn-ghost btn-sm" onclick="window._blEditar(null)">Cancelar</button></div>
     </div>`;
-    return `<div class="card bl-card">
+    const fotoBt = `<button class="btn btn-ghost btn-sm" onclick="window._blAcao('${h(p.id)}','foto')">${p.foto?.url ? 'Trocar foto' : 'Gerar foto'}</button>`;
+    return `<div class="card bl-card${p.foto?.url ? ' com-foto' : ''}">
+      ${p.foto?.url ? `<img class="bl-foto" src="${h(p.foto.url)}" alt="" loading="lazy" width="1200" height="675">` : p.foto_erro ? `<div class="bl-sub">Sem foto: ${h(p.foto_erro)}</div>` : ''}
       <div class="bl-meta"><span>${p.status === 'publicado' ? `publicado ${data(p.publicado_em)}` : `escrito ${data(p.criado_em)}`}</span><span>· com informações de <a href="${h(p.fonte?.url)}" target="_blank" rel="noopener">${h(p.fonte?.nome)} ↗</a></span>${(p.tags || []).map(t => `<span class="bl-tag">${h(t)}</span>`).join('')}</div>
       <h3>${h(p.titulo)}</h3>
       <p class="bl-res">${h(p.resumo)}</p>
@@ -65,9 +68,11 @@ Router.register('blog', (params, el) => {
       <div class="bl-bts">${proc ? `<span class="bl-sub">${h(proc)}</span>` : p.status === 'rascunho' ? `
         <button class="btn btn-primary btn-sm" onclick="window._blAcao('${h(p.id)}','publicar')">Publicar</button>
         <button class="btn btn-secondary btn-sm" onclick="window._blEditar('${h(p.id)}')">Editar</button>
+        ${fotoBt}
         <button class="btn btn-ghost btn-sm" onclick="window._blAcao('${h(p.id)}','descartar')">Descartar</button>` : p.status === 'publicado' ? `
         <a class="btn btn-secondary btn-sm" href="/blog/${h(p.slug)}" target="_blank" rel="noopener">Ver no site ↗</a>
         <button class="btn btn-secondary btn-sm" onclick="window._blEditar('${h(p.id)}')">Editar</button>
+        ${fotoBt}
         <button class="btn btn-ghost btn-sm" onclick="window._blAcao('${h(p.id)}','despublicar')">Tirar do ar</button>` : `
         <button class="btn btn-secondary btn-sm" onclick="window._blAcao('${h(p.id)}','despublicar')">Voltar para rascunho</button>`}</div>
     </div>`;
@@ -83,12 +88,27 @@ Router.register('blog', (params, el) => {
     catch (e) { alert('Não consegui salvar: ' + e.message); }
     delete st.proc[id]; render();
   };
-  const TXT = { publicar: ['Publicar no site? O post fica visível para todos em consultoriaglr.com.br/blog.', 'Publicando…'], descartar: ['Descartar este rascunho?', 'Descartando…'], despublicar: [null, 'Atualizando…'] };
+  const TXT = { publicar: ['Publicar no site? O post fica visível para todos em consultoriaglr.com.br/blog.', 'Publicando…'], descartar: ['Descartar este rascunho?', 'Descartando…'], despublicar: [null, 'Atualizando…'], foto: [null, 'Gerando a foto… (até 30 s)'] };
   window._blAcao = async (id, acao) => {
     if (TXT[acao][0] && !confirm(TXT[acao][0])) return;
     st.proc[id] = TXT[acao][1]; render();
     try { const j = await api({ acao, id }); troca(j.post); } catch (e) { alert('Não consegui: ' + e.message); }
     delete st.proc[id]; render();
+  };
+  // publicadas sem foto: o servidor faz 2 por vez; repete até zerar
+  window._blFotos = async () => {
+    let feitas = 0; const erros = [];
+    st.fotos = 'Gerando fotos…'; render();
+    try {
+      for (let i = 0; i < 40; i++) {
+        const j = await api({ acao: 'fotos_faltando' });
+        feitas += j.feitas.length; erros.push(...j.erros);
+        st.fotos = `Gerando fotos… ${feitas} prontas, faltam ${j.faltam}`; render();
+        if (!j.faltam || !j.feitas.length) break;
+      }
+      st.aviso = `${feitas} foto(s) gerada(s) e já no site.${erros.length ? ` Não deu em ${erros.length}: ${erros.slice(0, 2).join(' · ')}` : ''}`;
+    } catch (e) { st.aviso = 'Não consegui gerar as fotos: ' + e.message; }
+    st.fotos = null; await carregar();
   };
   window._blGerar = async () => {
     if (st.gerando) return;
@@ -114,6 +134,7 @@ Router.register('blog', (params, el) => {
     .bl-aviso{font-size:13px;padding:9px 12px;border-radius:9px;background:var(--bg-subtle);margin-bottom:12px}
     .bl-lista{display:flex;flex-direction:column;gap:12px}
     .bl-card{padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+    .bl-foto{width:100%;max-width:420px;aspect-ratio:16/9;object-fit:cover;border-radius:10px;background:var(--bg-secondary,#eef1f6)}
     .bl-card h3{font-size:16.5px;font-weight:650;margin:0;line-height:1.35} .bl-res{margin:0;font-size:13.5px;color:var(--text-secondary)}
     .bl-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--text-muted)} .bl-tag{font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-glow);border-radius:99px;padding:1px 8px}
     .bl-det summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--accent)} .bl-det[open] summary{margin-bottom:8px}

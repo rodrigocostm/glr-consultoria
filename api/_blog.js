@@ -115,6 +115,8 @@ async function gerarRascunhos({ lerStorage, sbUpsert, anthropicKey }, { qtd = PO
       const p = await escrever(anthropicKey, n);
       let slug = slugDe(p.titulo) || `post-${Date.now()}`; while (est.posts.some(x => x.slug === slug)) slug += '-2';
       const post = { id: require('node:crypto').randomUUID(), slug, ...p, status: 'rascunho', criado_em: new Date().toISOString(), fonte: { nome: n.fonte, url: n.url, titulo: n.titulo, publicada: n.data }, relevancia: n.nota };
+      // foto de capa própria (IA); se falhar, o post fica com a capa de cor e dá para gerar depois na tela Blog
+      try { post.foto = await require('./_blog-foto').gerarFotoPost(post, editoriaDe(post).id); } catch (e) { post.foto_erro = String(e.message || e).slice(0, 160); }
       est.posts.push(post); criados.push(post.titulo);
     } catch (e) { criados.push(`(falhou: ${n.titulo.slice(0, 60)} — ${e.message})`); }
   }

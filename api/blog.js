@@ -29,8 +29,13 @@ const { esc } = blog;
 const dataBR = iso => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Sao_Paulo' }).replace('.', '') : '';
 const minutos = p => Math.max(1, Math.round(String(p.corpo || '').split(/\s+/).length / 200));
 const ed = p => blog.editoriaDe(p);
-// capa gerada: cor da editoria + o assunto em letra grande (nada de foto de outro veículo)
-const capa = (p, tam) => { const e = ed(p); const k = (p.tags?.[0] || e.nome).toLowerCase(); return `<div class="capa capa-${tam}${k.length > 11 ? ' longo' : ''}" style="--c:${e.cor}" aria-hidden="true"><span class="capa-ed">${esc(e.nome)}</span><span class="capa-k">${esc(k)}</span></div>`; };
+// capa: foto própria gerada por IA (api/_blog-foto.js) com a editoria por cima; sem foto,
+// a capa de cor da editoria com o assunto em letra grande (nunca foto de outro veículo)
+const capa = (p, tam) => {
+  const e = ed(p);
+  if (p.foto?.url) return `<div class="capa capa-${tam} com-foto" style="--c:${e.cor}" aria-hidden="true"><img src="${esc(p.foto.url)}" alt="" width="1200" height="675" ${tam === 'x' || tam === 'g' ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async"><span class="capa-ed">${esc(e.nome)}</span></div>`;
+  const k = (p.tags?.[0] || e.nome).toLowerCase(); return `<div class="capa capa-${tam}${k.length > 11 ? ' longo' : ''}" style="--c:${e.cor}" aria-hidden="true"><span class="capa-ed">${esc(e.nome)}</span><span class="capa-k">${esc(k)}</span></div>`;
+};
 // dentro de um card (que já é link) a editoria vai como texto: link dentro de link quebra o card
 const etiqueta = (p, link) => { const e = ed(p); return link ? `<a class="ed-tag" style="--c:${e.cor}" href="/blog/editoria/${e.id}">${esc(e.nome)}</a>` : `<span class="ed-tag" style="--c:${e.cor}">${esc(e.nome)}</span>`; };
 
@@ -62,6 +67,7 @@ a{color:inherit}img{max-width:100%}
 .capa-m{aspect-ratio:16/10}.capa-m .capa-k{font-size:clamp(28px,3.2vw,42px)}
 .capa-p{aspect-ratio:1/1;border-radius:10px;padding:10px}.capa-p .capa-k{font-size:20px}.capa-p .capa-ed{font-size:9px}
 .capa-x{aspect-ratio:21/8;border-radius:16px}.capa-x .capa-k{font-size:clamp(46px,8vw,104px)}
+.capa.com-foto{padding:14px 16px;justify-content:flex-start;background:#0A1633}.capa.com-foto::before{display:none}.capa.com-foto img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2;transition:transform .5s ease}.capa.com-foto::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(10,22,51,.55),rgba(10,22,51,0) 45%)}.capa.com-foto .capa-ed{align-self:flex-start;background:var(--c);padding:4px 8px;border-radius:6px;opacity:1}.capa-p.com-foto{padding:6px}.capa-p.com-foto .capa-ed{font-size:8px;padding:3px 5px}.capa-x.com-foto{aspect-ratio:16/9}a:hover .capa.com-foto img{transform:scale(1.03)}@media (prefers-reduced-motion:reduce){.capa.com-foto img{transition:none}}
 .capa-g.longo .capa-k{font-size:clamp(34px,4.6vw,60px)}.capa-m.longo .capa-k{font-size:clamp(20px,2vw,26px)}.capa-p.longo .capa-k{font-size:14px}.capa-x.longo .capa-k{font-size:clamp(34px,5.4vw,68px)}
 .ed-tag{display:inline-block;text-decoration:none;font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--c)}
 .meta{font-size:13px;color:var(--mute)}
@@ -98,10 +104,10 @@ article.post h1{font-size:clamp(30px,4.4vw,48px);line-height:1.06;margin:12px 0 
 @media(max-width:640px){.topo nav a.l,.topo .bt .l{display:none}.topo .bt .cel{display:inline}.dest-lado{grid-template-columns:1fr}.lista-item{grid-template-columns:96px 1fr;gap:14px}.lista-item h3{font-size:17px}.lista-item p{display:none}.relac-g{grid-template-columns:1fr}.texto{font-size:17px}}
 @media(prefers-reduced-motion:reduce){*{transition:none !important}}`;
 
-function pagina({ titulo, descricao, url, corpo, jsonld, editoriaAtual }) {
+function pagina({ titulo, descricao, url, corpo, jsonld, editoriaAtual, imagem }) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(titulo)}</title><meta name="description" content="${esc(descricao)}"><link rel="canonical" href="${esc(url)}">
-<meta property="og:type" content="${jsonld ? 'article' : 'website'}"><meta property="og:title" content="${esc(titulo)}"><meta property="og:description" content="${esc(descricao)}"><meta property="og:url" content="${esc(url)}"><meta property="og:site_name" content="GLR Notícias"><meta property="og:locale" content="pt_BR">
+<meta property="og:type" content="${jsonld ? 'article' : 'website'}"><meta property="og:title" content="${esc(titulo)}"><meta property="og:description" content="${esc(descricao)}"><meta property="og:url" content="${esc(url)}"><meta property="og:site_name" content="GLR Notícias">${imagem ? `<meta property="og:image" content="${esc(imagem)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="675"><meta name="twitter:card" content="summary_large_image">` : ''}<meta property="og:locale" content="pt_BR">
 <meta name="theme-color" content="#0A1633"><link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="icon" href="/img/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png"><link rel="alternate" type="application/rss+xml" title="GLR Notícias" href="/blog?formato=rss">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
@@ -147,8 +153,8 @@ function htmlPost(p, pub) {
   const url = `${SITE}/blog/${p.slug}`, e = ed(p);
   const relac = pub.filter(x => x.id !== p.id).sort((a, b) => (ed(b).id === e.id) - (ed(a).id === e.id)).slice(0, 3);
   const txt = encodeURIComponent(`${p.titulo} — ${url}`);
-  return pagina({ titulo: `${p.titulo} | GLR Notícias`, descricao: p.resumo || p.titulo, url, editoriaAtual: e.id,
-    jsonld: { '@context': 'https://schema.org', '@type': 'NewsArticle', headline: p.titulo, description: p.resumo, articleSection: e.nome, datePublished: p.publicado_em, dateModified: p.atualizado_em || p.publicado_em, mainEntityOfPage: url, author: { '@type': 'Organization', name: 'Equipe GLR Consultoria' }, publisher: { '@type': 'Organization', name: 'GLR Consultoria', logo: { '@type': 'ImageObject', url: `${SITE}/logo.png` } }, isBasedOn: p.fonte?.url },
+  return pagina({ titulo: `${p.titulo} | GLR Notícias`, descricao: p.resumo || p.titulo, url, editoriaAtual: e.id, imagem: p.foto?.url || null,
+    jsonld: { '@context': 'https://schema.org', '@type': 'NewsArticle', headline: p.titulo, description: p.resumo, ...(p.foto?.url ? { image: [p.foto.url] } : {}), articleSection: e.nome, datePublished: p.publicado_em, dateModified: p.atualizado_em || p.publicado_em, mainEntityOfPage: url, author: { '@type': 'Organization', name: 'Equipe GLR Consultoria' }, publisher: { '@type': 'Organization', name: 'GLR Consultoria', logo: { '@type': 'ImageObject', url: `${SITE}/logo.png` } }, isBasedOn: p.fonte?.url },
     corpo: `<article class="post">${etiqueta(p, true)}<h1 class="d">${esc(p.titulo)}</h1><p class="lead">${esc(p.resumo)}</p>
 <div class="assina"><span>Por <b>Equipe GLR</b></span><span>${dataBR(p.publicado_em)}</span><span>${minutos(p)} min de leitura</span><span>Com informações de <a href="${esc(p.fonte?.url)}" target="_blank" rel="noopener nofollow">${esc(p.fonte?.nome)}</a></span></div>
 ${capa(p, 'x')}
@@ -172,7 +178,7 @@ module.exports = async (req, res) => {
       const pub = est.posts.filter(p => p.status === 'publicado').sort((a, b) => String(b.publicado_em).localeCompare(String(a.publicado_em)));
       const slug = String(req.query?.slug || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
       res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
-      if (req.query?.formato === 'json') { res.setHeader('Access-Control-Allow-Origin', '*'); return res.status(200).json({ posts: pub.slice(0, 6).map(p => ({ titulo: p.titulo, resumo: p.resumo, slug: p.slug, publicado_em: p.publicado_em, editoria: ed(p).nome, cor: ed(p).cor })) }); }
+      if (req.query?.formato === 'json') { res.setHeader('Access-Control-Allow-Origin', '*'); return res.status(200).json({ posts: pub.slice(0, 6).map(p => ({ titulo: p.titulo, resumo: p.resumo, slug: p.slug, publicado_em: p.publicado_em, foto: p.foto?.url || null, editoria: ed(p).nome, cor: ed(p).cor })) }); }
       if (req.query?.formato === 'rss') { res.setHeader('Content-Type', 'application/rss+xml; charset=utf-8'); return res.status(200).send(rss(pub)); }
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       if (req.query?.editoria) { const e = blog.EDITORIAS.find(x => x.id === String(req.query.editoria)); if (e) return res.status(200).send(htmlEditoria(e, pub)); }
@@ -190,6 +196,20 @@ module.exports = async (req, res) => {
       const est = await blog.lerEstado(lerStorage);
       return res.status(200).json({ ok: true, ...r, posts: est.posts });
     }
+    if (b.acao === 'fotos_faltando') { // publicadas sem foto: até 2 por chamada (cada foto leva ~20s); a tela repete até zerar
+      const est0 = await blog.lerEstado(lerStorage);
+      const sem = est0.posts.filter(p => p.status === 'publicado' && !p.foto?.url).sort((a, b) => String(b.publicado_em).localeCompare(String(a.publicado_em)));
+      const feitas = [], erros = [];
+      for (const p of sem.slice(0, 2)) {
+        try { p.foto = await require('./_blog-foto').gerarFotoPost(p, blog.editoriaDe(p).id); feitas.push(p.titulo); } catch (e) { erros.push(`${p.titulo.slice(0, 50)}: ${e.message}`); }
+      }
+      if (feitas.length) { // relê antes de gravar para não perder edição feita enquanto as fotos eram geradas
+        const est1 = await blog.lerEstado(lerStorage);
+        for (const p of sem.slice(0, 2)) if (p.foto?.url) { const q = est1.posts.find(x => x.id === p.id); if (q) q.foto = p.foto; }
+        await blog.salvarEstado(sbUpsert, est1);
+      }
+      return res.status(200).json({ ok: true, feitas, erros, faltam: Math.max(0, sem.length - feitas.length) });
+    }
     const est = await blog.lerEstado(lerStorage);
     if (b.acao === 'listar') return res.status(200).json({ posts: est.posts, fontes: blog.FONTES.map(f => f.nome) });
     const p = est.posts.find(x => x.id === b.id);
@@ -201,6 +221,8 @@ module.exports = async (req, res) => {
       Object.assign(p, { titulo: tit, resumo: String(b.resumo || '').trim().slice(0, 200), corpo, tags: (Array.isArray(b.tags) ? b.tags : String(b.tags || '').split(',')).map(t => String(t).trim()).filter(Boolean).slice(0, 4), atualizado_em: agora, editado_por: user.email || null });
       if (p.status !== 'publicado') { let slug = blog.slugDe(tit) || p.slug; while (est.posts.some(x => x !== p && x.slug === slug)) slug += '-2'; p.slug = slug; } // link já publicado não muda
     } else if (b.acao === 'publicar') { if (p.status === 'descartado') return res.status(400).json({ error: 'Post descartado.' }); p.status = 'publicado'; p.publicado_em = p.publicado_em || agora; p.publicado_por = user.email || null; }
+    else if (b.acao === 'foto') { p.foto = await require('./_blog-foto').gerarFotoPost(p, blog.editoriaDe(p).id); }
+    else if (b.acao === 'tirar_foto') { delete p.foto; }
     else if (b.acao === 'despublicar') p.status = 'rascunho';
     else if (b.acao === 'descartar') { if (p.status === 'publicado') return res.status(400).json({ error: 'Despublique antes de descartar.' }); p.status = 'descartado'; }
     else return res.status(400).json({ error: 'Ação inválida.' });
