@@ -25,6 +25,8 @@ Router.register('vendas', async (params, el) => {
   let filtroPlat    = 'todas';
   let filtroEmpresas = new Set(); // vazio = todas
   let filtroContasSel = new Set(); // vazio = todas
+  // plataformas: sigla, nome, cor do selo e ordem dos grupos (filtro de contas)
+  const _MKT_DCB = { ml: { sigla: 'ML', nome: 'Mercado Livre', cor: '#d9a400', ordem: 0 }, shopee: { sigla: 'SH', nome: 'Shopee', cor: '#ee4d2d', ordem: 1 }, amazon: { sigla: 'AMZ', nome: 'Amazon', cor: '#232f3e', ordem: 2 }, tiktok: { sigla: 'TT', nome: 'TikTok Shop', cor: '#111111', ordem: 3 }, magalu: { sigla: 'MGL', nome: 'Magalu', cor: '#0086ff', ordem: 4 }, shein: { sigla: 'SHN', nome: 'Shein', cor: '#555555', ordem: 5 } };
   let customFrom    = fmtDate(ontem); // ontem
   let customTo      = fmtDate(ontem); // ontem
   let expandido     = null;
@@ -245,6 +247,7 @@ Router.register('vendas', async (params, el) => {
     return nomes.length ? nomes : ['Sem vínculo'];
   }
 
+  window._vendasLimparContas = () => { filtroEmpresas = new Set(); filtroContasSel = new Set(); renderFiltroEmpresaConta(); _filtroMudou(); };
   function renderFiltroEmpresaConta() {
     const wrapEmp  = document.getElementById('filtro-empresa');
     const wrapCont = document.getElementById('filtro-conta');
@@ -257,8 +260,9 @@ Router.register('vendas', async (params, el) => {
 
     _renderCheckboxDropdown(wrapEmp, {
       label: 'Empresa', icon: '🏢',
-      itens: empresas.map(e => ({ valor: e, label: e })),
+      itens: empresas.map(e => ({ valor: e, label: e, sub: (() => { const cs = contas.filter(c => contaEmpresas(c).includes(e)); const n = {}; cs.forEach(c => { const m = _MKT_DCB[BaseDados.mktDe(c.marketplace)]?.sigla || '?'; n[m] = (n[m] || 0) + 1; }); return Object.entries(n).map(([k, v]) => `${v} ${k}`).join(' · '); })() })),
       selecionados: filtroEmpresas,
+      textoVazio: filtroContasSel.size ? (() => { const es = [...new Set(contas.filter(c => filtroContasSel.has(c.external_id)).flatMap(contaEmpresas))]; return es.length === 1 ? `🏢 ${es[0]}` : `🏢 ${es.length} empresas (pelas contas)`; })() : null,
       onChange: (novoSet) => {
         filtroEmpresas = novoSet;
         if (filtroEmpresas.size > 0) {
@@ -276,53 +280,90 @@ Router.register('vendas', async (params, el) => {
 
     _renderCheckboxDropdown(wrapCont, {
       label: 'Conta', icon: '🏬',
-      itens: contasFiltradas.map(c => ({ valor: c.external_id, label: contaNome(c) })),
-      selecionados: filtroContasSel,
+      itens: contasFiltradas.map(c => ({ valor: c.external_id, label: contaNome(c), mkt: BaseDados.mktDe(c.marketplace), sub: contaEmpresas(c).join(', ') })),
+      selecionados: filtroContasSel, porPlataforma: true,
       onChange: (novoSet) => { filtroContasSel = novoSet; renderFiltroEmpresaConta(); _filtroMudou(); },
     });
   }
 
   // ── Dropdown de checkboxes reutilizável (empresa/conta) ────────
-  // itens: [{valor,label}], selecionados: Set, onChange(novoSet)
-  function _renderCheckboxDropdown(container, { label, icon, itens, selecionados, onChange }) {
+  // itens: [{valor,label,mkt?,sub?}], selecionados: Set, onChange(novoSet)
+  // Continua aberto enquanto marca (antes fechava a cada clique), tem busca, mostra a
+  // plataforma de cada conta (selo ML/Shopee…), agrupa por plataforma e tem atalhos.
+  function _renderCheckboxDropdown(container, { label, icon, itens, selecionados, onChange, porPlataforma, textoVazio }) {
     const uid = container.id;
-    const qtdSel = selecionados.size;
-    const textoBotao = qtdSel === 0 ? `Todas ${label.toLowerCase()}s` : qtdSel === 1 ? itens.find(i=>selecionados.has(i.valor))?.label || `1 selecionada` : `${qtdSel} selecionadas`;
+    const aberto = window._dcbAberto === uid;
+    const busca = (window._dcbBusca || {})[uid] || '';
+    const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const selo = m => { const x = _MKT_DCB[m]; return x ? `<span class="dcb-selo" style="--c:${x.cor}">${x.sigla}</span>` : ''; };
+    const qtdSel = [...selecionados].filter(v => itens.some(i => i.valor === v)).length;
+    let textoBotao;
+    if (!qtdSel) textoBotao = textoVazio ? String(textoVazio).replace(/</g, '&lt;') : `${icon} Todas as ${label.toLowerCase()}s`;
+    else if (qtdSel === 1) { const it = itens.find(i => selecionados.has(i.valor)); textoBotao = `${porPlataforma ? selo(it?.mkt) : icon} ${esc(it?.label || '1 selecionada')}`; }
+    else if (porPlataforma) { const n = {}; itens.filter(i => selecionados.has(i.valor)).forEach(i => { const k = _MKT_DCB[i.mkt]?.sigla || '?'; n[k] = (n[k] || 0) + 1; }); textoBotao = `${icon} ${qtdSel} contas · ${Object.entries(n).map(([k, v]) => `${v} ${k}`).join(' · ')}`; }
+    else textoBotao = `${icon} ${qtdSel} ${label.toLowerCase()}s`;
+    const q = busca.trim().toLowerCase();
+    const visiveis = itens.filter(i => !q || `${i.label} ${i.sub || ''} ${_MKT_DCB[i.mkt]?.nome || ''}`.toLowerCase().includes(q));
+    const linha = i => `<label class="dcb-op"><input type="checkbox" value="${esc(i.valor)}" ${selecionados.has(i.valor) ? 'checked' : ''}>${porPlataforma ? selo(i.mkt) : ''}<span class="dcb-txt"><span class="dcb-nome">${esc(i.label)}</span>${i.sub ? `<span class="dcb-sub">${esc(i.sub)}</span>` : ''}</span></label>`;
+    let lista;
+    if (porPlataforma) {
+      const grupos = {}; visiveis.forEach(i => { (grupos[i.mkt || 'outro'] = grupos[i.mkt || 'outro'] || []).push(i); });
+      lista = Object.entries(grupos).sort(([a], [b]) => (_MKT_DCB[a]?.ordem ?? 9) - (_MKT_DCB[b]?.ordem ?? 9)).map(([m, arr]) => `<div class="dcb-grupo"><span>${selo(m)} ${esc(_MKT_DCB[m]?.nome || 'Outras')} · ${arr.length}</span><button type="button" class="dcb-so" data-mkt="${esc(m)}">só ${esc(_MKT_DCB[m]?.nome || 'estas')}</button></div>${arr.sort((a, b) => a.label.localeCompare(b.label)).map(linha).join('')}`).join('');
+    } else lista = visiveis.map(linha).join('');
     container.innerHTML = `
       <div style="position:relative;">
-        <button type="button" class="form-input dcb-toggle" style="width:170px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:6px;cursor:pointer;">
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${icon} ${textoBotao}</span>
-          <span style="font-size:10px;opacity:0.6;">▾</span>
+        <button type="button" class="form-input dcb-toggle" aria-expanded="${aberto}" title="${esc(qtdSel ? itens.filter(i => selecionados.has(i.valor)).map(i => `${_MKT_DCB[i.mkt]?.sigla ? _MKT_DCB[i.mkt].sigla + ' · ' : ''}${i.label}`).join('\n') : `Todas as ${label.toLowerCase()}s`)}">
+          <span class="dcb-rot">${textoBotao}</span><span style="font-size:10px;opacity:0.6;">▾</span>
         </button>
-        <div class="dcb-panel" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:220px;max-height:280px;overflow-y:auto;padding:6px;">
-          ${itens.length === 0 ? `<div style="padding:8px;font-size:12px;color:var(--text-muted);">Nenhuma opção</div>` : itens.map(i => `
-            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--text-primary);" onmouseover="this.style.background='var(--bg-card-hover)'" onmouseout="this.style.background='transparent'">
-              <input type="checkbox" value="${i.valor}" ${selecionados.has(i.valor)?'checked':''} style="width:14px;height:14px;accent-color:var(--accent);">
-              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.label}</span>
-            </label>`).join('')}
-          ${itens.length > 0 ? `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;display:flex;gap:6px;">
-            <button type="button" class="dcb-limpar" style="flex:1;font-size:11px;padding:5px;background:var(--bg-card-hover);border:none;border-radius:5px;color:var(--text-secondary);cursor:pointer;">Limpar</button>
-          </div>` : ''}
+        <div class="dcb-panel" style="display:${aberto ? 'block' : 'none'};">
+          ${itens.length > 6 ? `<input type="search" class="dcb-busca" placeholder="Buscar ${label.toLowerCase()}${porPlataforma ? ' ou plataforma' : ''}…" value="${esc(busca)}">` : ''}
+          <div class="dcb-lista">${itens.length === 0 ? '<div class="dcb-vazio">Nenhuma opção</div>' : visiveis.length ? lista : '<div class="dcb-vazio">Nada encontrado</div>'}</div>
+          ${itens.length > 0 ? `<div class="dcb-rodape"><span>${qtdSel ? `${qtdSel} de ${itens.length} marcada(s)` : `todas as ${itens.length}`}</span>${q && visiveis.length ? '<button type="button" class="dcb-marcar">Marcar as encontradas</button>' : ''}<button type="button" class="dcb-limpar">${qtdSel ? 'Limpar (todas)' : 'Fechar'}</button></div>` : ''}
         </div>
       </div>`;
 
-    const btn   = container.querySelector('.dcb-toggle');
-    const panel = container.querySelector('.dcb-panel');
-    btn.addEventListener('click', (ev) => {
+    const btn = container.querySelector('.dcb-toggle'), panel = container.querySelector('.dcb-panel');
+    const mudar = novo => { window._dcbAberto = uid; onChange(novo); };
+    btn.addEventListener('click', ev => {
       ev.stopPropagation();
-      document.querySelectorAll('.dcb-panel').forEach(p => { if (p !== panel) p.style.display = 'none'; });
-      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      const abrir = panel.style.display === 'none';
+      document.querySelectorAll('.dcb-panel').forEach(p => { p.style.display = 'none'; });
+      panel.style.display = abrir ? 'block' : 'none';
+      window._dcbAberto = abrir ? uid : null;
+      if (abrir) container.querySelector('.dcb-busca')?.focus();
     });
     panel.addEventListener('click', ev => ev.stopPropagation());
-    container.querySelectorAll('input[type=checkbox]').forEach(cb => {
-      cb.addEventListener('change', () => {
-        const novo = new Set(selecionados);
-        if (cb.checked) novo.add(cb.value); else novo.delete(cb.value);
-        onChange(novo);
-      });
-    });
-    const btnLimpar = container.querySelector('.dcb-limpar');
-    if (btnLimpar) btnLimpar.addEventListener('click', () => onChange(new Set()));
+    container.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+      const novo = new Set([...selecionados].filter(v => itens.some(i => i.valor === v)));
+      if (cb.checked) novo.add(cb.value); else novo.delete(cb.value);
+      mudar(novo);
+    }));
+    const inp = container.querySelector('.dcb-busca');
+    if (inp) {
+      inp.addEventListener('input', () => { window._dcbBusca = { ...(window._dcbBusca || {}), [uid]: inp.value }; window._dcbAberto = uid; _renderCheckboxDropdown(container, { label, icon, itens, selecionados, onChange, porPlataforma, textoVazio }); const n = container.querySelector('.dcb-busca'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } });
+      inp.addEventListener('keydown', ev => { if (ev.key === 'Escape') { window._dcbAberto = null; panel.style.display = 'none'; } });
+    }
+    container.querySelectorAll('.dcb-so').forEach(b => b.addEventListener('click', () => mudar(new Set(itens.filter(i => (i.mkt || 'outro') === b.dataset.mkt).map(i => i.valor)))));
+    container.querySelector('.dcb-marcar')?.addEventListener('click', () => mudar(new Set([...[...selecionados].filter(v => itens.some(i => i.valor === v)), ...visiveis.map(i => i.valor)])));
+    container.querySelector('.dcb-limpar')?.addEventListener('click', () => { if (qtdSel) mudar(new Set()); else { window._dcbAberto = null; panel.style.display = 'none'; } });
+  }
+  if (!document.getElementById('dcb-estilo')) {
+    const st = document.createElement('style'); st.id = 'dcb-estilo';
+    st.textContent = `.dcb-toggle{width:220px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:6px;cursor:pointer}
+      .dcb-rot{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:5px}
+      .dcb-panel{position:absolute;top:calc(100% + 4px);left:0;z-index:60;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.22);width:340px;max-width:calc(100vw - 32px);padding:8px}
+      .dcb-busca{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:7px;padding:7px 9px;font-size:13px;background:var(--bg-base);color:var(--text-primary);margin-bottom:6px}
+      .dcb-lista{max-height:340px;overflow:auto}
+      .dcb-grupo{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11px;font-weight:700;color:var(--text-secondary);padding:8px 6px 4px;position:sticky;top:0;background:var(--bg-card)}
+      .dcb-grupo span{display:flex;align-items:center;gap:5px}.dcb-so{font-size:11px;border:none;background:none;color:var(--accent);cursor:pointer;padding:2px 4px;font-weight:600}
+      .dcb-op{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--text-primary)}.dcb-op:hover{background:var(--bg-card-hover)}
+      .dcb-op input{width:14px;height:14px;accent-color:var(--accent);flex:none}
+      .dcb-txt{display:flex;flex-direction:column;min-width:0}.dcb-nome,.dcb-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dcb-sub{font-size:11px;color:var(--text-muted)}
+      .dcb-selo{flex:none;font-size:9.5px;font-weight:800;letter-spacing:.02em;color:#fff;background:var(--c);border-radius:4px;padding:2px 5px;line-height:1.2}
+      .dcb-vazio{padding:10px;font-size:12px;color:var(--text-muted)}
+      .dcb-rodape{border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;gap:8px;align-items:center;font-size:11px;color:var(--text-muted)}
+      .dcb-rodape span{flex:1}.dcb-rodape button{font-size:11px;padding:5px 9px;background:var(--bg-card-hover);border:none;border-radius:5px;color:var(--text-secondary);cursor:pointer}`;
+    document.head.appendChild(st);
   }
 
   // Fecha qualquer dropdown de checkbox aberto ao clicar fora — registra só uma vez
@@ -331,6 +372,7 @@ Router.register('vendas', async (params, el) => {
     window._dcbGlobalCloseListener = true;
     document.addEventListener('click', () => {
       document.querySelectorAll('.dcb-panel').forEach(p => p.style.display = 'none');
+      window._dcbAberto = null;
     });
   }
 
@@ -2118,7 +2160,7 @@ Router.register('vendas', async (params, el) => {
     const carregando = alvo.filter(c => !BaseDados.cobre(base[BaseDados.chave(BaseDados.mktDe(c.marketplace), idNaBase(c))], dataFrom));
     const plat = filtroPlat === 'todas' ? '' : ` de ${filtroPlat}`;
     const partes = [];
-    if (fora) partes.push(`<span title="Estão fora da seleção de contas (filtro 🏬). Limpe a seleção para ver todas.">⚠️ ${fora} conta(s)${plat} fora da seleção</span>`);
+    if (fora) partes.push(`<span title="Estão fora da seleção de contas (filtro 🏬)." style="cursor:pointer;text-decoration:underline dotted" onclick="window._vendasLimparContas && window._vendasLimparContas()">⚠️ ${fora} conta(s)${plat} fora da seleção — ver todas</span>`);
     if (carregando.length) partes.push(`<span title="${carregando.map(contaNome).join(', ').replace(/"/g, '&quot;')}">⏳ ${carregando.length} conta(s)${plat} ainda carregando o histórico</span>`);
     return partes.length ? ` &nbsp;<span style="font-size:11px;color:var(--yellow);">${partes.join(' · ')}</span>` : '';
   }
