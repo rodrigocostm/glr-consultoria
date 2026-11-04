@@ -173,7 +173,7 @@ async function aplicarAcaoML(d, { cfg, contaId, mcpCall, mcApiKey }) {
     return { ok: true };
   } catch (e) {
     const m = String(e?.message || e);
-    if (!feitas && /401|permission|permiss|not allowed|forbidden|write/i.test(m)) return { ok: false, bloqueado: true };
+    if (!feitas && (e?.status === 401 || e?.status === 403 || /401|permission|permiss|not allowed|forbidden|write/i.test(m))) return { ok: false, bloqueado: true };
     return { ok: false, motivo: `Tentei aplicar sozinho${feitas ? ` (fiz ${feitas} de ${chamadas.length})` : ''}, mas o ML respondeu: ${m.slice(0, 140)}.` };
   }
 }

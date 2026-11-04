@@ -39,3 +39,8 @@ test('outro erro do ML vira sugestão com o motivo', async () => {
   const r = await aplicarAcaoML({ acao: 'pausar', campaign_id: 7 }, ctx(m));
   assert.equal(r.ok, false); assert.equal(r.bloqueado, undefined); assert.match(r.motivo, /campaign not found/);
 });
+test('erro com status 401 sem texto também conta como bloqueio', async () => {
+  const e = new Error('Erro na ação ml_ads_update_campaign (status 401): {}'); e.status = 401;
+  const r = await aplicarAcaoML({ acao: 'pausar', campaign_id: 7 }, ctx(mcp(e)));
+  assert.deepEqual(r, { ok: false, bloqueado: true });
+});

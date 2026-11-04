@@ -156,7 +156,11 @@ async function mcpCall(apiKey, action, params) {
   // (tratava erro real como "acabaram as campanhas", nunca chegava nas
   // campanhas ongoing de verdade que ficam depois da página 1).
   if (!r.ok || (json.status && json.status !== 200) || (json.error && String(json.error).trim())) {
-    throw new Error(json.error || json.message || `Erro na ação ${action}`);
+    // a Tiops às vezes devolve só o status + o corpo do marketplace: leva os dois no erro
+    const det = json.error || json.message || json.data?.message || json.data?.error || json.response?.message || json.body?.message;
+    const err = new Error(det ? String(det) : `Erro na ação ${action} (status ${json.status || r.status}): ${JSON.stringify(json).slice(0, 300)}`);
+    err.status = Number(json.status || json.data?.status || r.status) || null;
+    throw err;
   }
   return json;
 }
