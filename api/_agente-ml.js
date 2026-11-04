@@ -1,11 +1,15 @@
 // ============================================================
 // GLR Consultoria — Agente do Mercado Livre (modo COPILOTO)
 // ------------------------------------------------------------
-// Separado do agente da Shopee (pedido do analista). O ML não libera escrita
-// em Product Ads para integrações (testado em 14/10/2026: 401 "User does not
-// have permission to write"), então este agente só ANALISA e SUGERE — cada
-// sugestão vira um card na aba "Agente Mercado Livre" e o analista aplica no
-// painel do ML e marca "Já apliquei". Dados: API do Tiops + base sincronizada.
+// Separado do agente da Shopee (pedido do analista). Escrita em Product Ads:
+// o agente TENTA aplicar sozinho, igual à Shopee (ROAS objetivo, orçamento,
+// pausar campanha, tirar produto), respeitando contrato e limite de variação.
+// O ML ainda recusava escrita por integração (14/10/2026: 401 "User does not
+// have permission to write"): quando recusa, a ação fica como sugestão no card
+// da aba "Agente Mercado Livre", o analista aplica no painel e marca "Já
+// apliquei" — no dia em que o ML liberar, passa a executar sem mexer em código.
+// Mover/colocar produto em campanha não tem escrita na API: sempre sugestão.
+// Dados: API do Tiops + base sincronizada.
 //
 // Como o analista otimiza ADS no ML (e o agente segue):
 //  • Campanha = vários produtos. Otimiza-se a campanha (ROAS objetivo e
@@ -139,6 +143,41 @@ async function vendas3x3(sbSelect, contaId, ontem, isoMenos) {
   return mapa;
 }
 
+// Escrita no Mercado Ads de uma ação do agente (igual à Shopee): ROAS objetivo e
+// orçamento seguem o contrato ("ajuste") e o limite de variação — baixar o ROAS
+// (lance mais agressivo) é sempre automático; pausar campanha e tirar produto seguem
+// o contrato ("pausar"). Mover/colocar produto e as informativas não têm escrita.
+// Devolve { ok } | { ok:false, motivo } | { ok:false, bloqueado:true } (ML recusou por permissão).
+async function aplicarAcaoML(d, { cfg, contaId, mcpCall, mcApiKey }) {
+  if (!d?.acao || d.campaign_id == null) return { ok: false };
+  const nivel = k => cfg.autonomia_ml?.[k] === 'sugerir' ? 'sugerir' : 'executar';
+  const de = +d.de, para = +d.para;
+  let chamadas = [];
+  if (d.acao === 'roas_target' || d.acao === 'orcamento') {
+    if (!(para > 0)) return { ok: false };
+    const baixaRoas = d.acao === 'roas_target' && de > 0 && para < de;
+    const varPct = de > 0 ? Math.abs(para - de) / de * 100 : 0;
+    if (!baixaRoas && nivel('ajuste') === 'sugerir') return { ok: false, motivo: 'O contrato deste cliente pede aprovação para ajustar.' };
+    if (!baixaRoas && cfg.alerta_variacao_pct && varPct > cfg.alerta_variacao_pct) return { ok: false, motivo: `Variação de ${Math.round(varPct)}% passa do limite de execução automática (${cfg.alerta_variacao_pct}%).` };
+    chamadas = [['ml_ads_update_campaign', { meliUserId: contaId, campaign_id: String(d.campaign_id), ...(d.acao === 'roas_target' ? { roas_target: para } : { daily_budget: para }) }]];
+  } else if (d.acao === 'pausar' || d.acao === 'retirar_produto') {
+    if (nivel('pausar') === 'sugerir') return { ok: false, motivo: 'O contrato deste cliente pede aprovação para pausar.' };
+    chamadas = d.acao === 'pausar'
+      ? [['ml_ads_update_campaign', { meliUserId: contaId, campaign_id: String(d.campaign_id), status: 'paused' }]]
+      : (d.item_ids || []).map(i => ['ml_ads_update_ad', { meliUserId: contaId, item_id: String(i), status: 'paused' }]);
+  }
+  if (!chamadas.length) return { ok: false };
+  let feitas = 0;
+  try {
+    for (const [acao, params] of chamadas) { await mcpCall(mcApiKey, acao, params); feitas++; }
+    return { ok: true };
+  } catch (e) {
+    const m = String(e?.message || e);
+    if (!feitas && /401|permission|permiss|not allowed|forbidden|write/i.test(m)) return { ok: false, bloqueado: true };
+    return { ok: false, motivo: `Tentei aplicar sozinho${feitas ? ` (fiz ${feitas} de ${chamadas.length})` : ''}, mas o ML respondeu: ${m.slice(0, 140)}.` };
+  }
+}
+
 async function processarContaML(cfg, mcApiKey, h, opc = {}) {
   const { sbSelect, sbInsert, sbUpdate, sbUpsert, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall } = h;
   const contaId = String(cfg.conta_id);
@@ -149,6 +188,17 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     } catch (e) {}
   }
   const instrucao = ' Aplique no painel do Mercado Livre (Publicidade → Product Ads) e marque "Já apliquei" aqui — o ML não libera essa alteração por integração.';
+  // Escrita no Mercado Ads: null = ainda não tentou nesta rodada; true = ML aceitou;
+  // false = ML recusou por permissão (401) — não tenta de novo até a próxima rodada.
+  let escritaML = null;
+  const aplicadas = [];
+  async function tentarAplicar(d) {
+    if (opc.simular || escritaML === false) return { ok: false };
+    const r = await aplicarAcaoML(d, { cfg, contaId, mcpCall, mcApiKey });
+    if (r.ok) escritaML = true; else if (r.bloqueado) escritaML = false;
+    return r;
+  }
+
   const r1 = v => Math.round(v * 10) / 10;
   const pctTxt = v => v == null ? '—' : v === Infinity ? '∞' : `${r1(v)}%`;
   const roasTxt = v => v ? `${r1(v)}x` : '—';
@@ -212,7 +262,15 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
       }
       if (!livre(chave)) return false;
       ocupadas.add(chave);
-      await logar('alerta', titulo, explicacao + instrucao, { chave, ...dados }, 'so_alerta');
+      const exec = await tentarAplicar(dados);
+      if (exec.ok) {
+        // gravada como aplicada: entra no acompanhamento e na medição de 7×7 dias como as do analista
+        await logar('alerta', titulo.replace(/^Sugestão:\s*/, 'Aplicado: '), `${explicacao} Aplicado pelo agente no Mercado Ads.`,
+          { chave, ...dados, aplicado_em: new Date().toISOString(), aplicado_dia: dataBRT(0).iso, aplicado_por: 'agente' }, 'executado');
+        aplicadas.push(titulo);
+        return true;
+      }
+      await logar('alerta', titulo, explicacao + (exec.motivo ? ` ${exec.motivo}` : '') + instrucao, { chave, ...dados }, 'so_alerta');
       sugestoes.push(titulo);
       return true;
     }
@@ -784,14 +842,14 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         colaboracoes.slice(0, 12).map(x => `• ${x.texto}`).join('\n'), { colaboracoes: colaboracoes.slice(0, 30) }, 'executado');
     }
     const nProdutos = C.reduce((s, x) => s + x.familias.length, 0);
-    await logar('sistema', `Análise ML concluída — ${sugestoes.length} sugestão(ões)`,
-      `Analisadas ${C.length} campanhas ativas e ${nProdutos} produtos dentro delas (campanhas: ${dias} dias; produtos: ${diasProd} dias; ${R$(C.reduce((s, x) => s + x.gasto, 0))} investidos na janela da campanha). ${tacosMes != null ? `TACOS do mês: ${r1(tacosMes)}% (meta ${meta ?? '—'}%). ` : ''}${taxaCancel > 0.005 ? `ACOS sem cancelados (cancelamentos/devoluções da loja: ${r1(taxaCancel * 100)}%). ` : ''}${sugestoes.length >= MAX_SUGESTOES ? `Parou em ${MAX_SUGESTOES} sugestões para não lotar a fila — o resto vem na próxima análise. ` : ''}${detectadas ? `${detectadas} sugestão(ões) já aplicada(s) no painel detectada(s) pela leitura das campanhas. ` : ''}${medidas ? `${medidas} resultado(s) medido(s) (7 dias antes × 7 dias depois). ` : ''}${expiradas ? `${expiradas} sugestão(ões) com mais de 7 dias venceram e foram refeitas com números novos quando ainda valiam. ` : ''}Modo copiloto: aplique no painel do ML.`,
-      { campanhas: C.length, produtos: nProdutos, sugestoes: sugestoes.length, tacos_mes: tacosMes, limite_pausa: limitePausa, taxa_cancelamento: taxaCancel, detectadas, medidas, expiradas }, 'executado');
-    return { conta_id: contaId, marketplace: 'ml', campanhas: C.length, produtos: nProdutos, sugestoes: sugestoes.length, tacos_mes: tacosMes, detectadas, medidas, expiradas };
+    await logar('sistema', `Análise ML concluída — ${aplicadas.length ? `${aplicadas.length} aplicada(s) pelo agente, ` : ''}${sugestoes.length} sugestão(ões)`,
+      `${escritaML === false ? 'O Mercado Livre ainda recusou a escrita em Product Ads por integração (permissão), então as ações ficaram como sugestão para aplicar no painel. ' : ''}Analisadas ${C.length} campanhas ativas e ${nProdutos} produtos dentro delas (campanhas: ${dias} dias; produtos: ${diasProd} dias; ${R$(C.reduce((s, x) => s + x.gasto, 0))} investidos na janela da campanha). ${tacosMes != null ? `TACOS do mês: ${r1(tacosMes)}% (meta ${meta ?? '—'}%). ` : ''}${taxaCancel > 0.005 ? `ACOS sem cancelados (cancelamentos/devoluções da loja: ${r1(taxaCancel * 100)}%). ` : ''}${sugestoes.length >= MAX_SUGESTOES ? `Parou em ${MAX_SUGESTOES} sugestões para não lotar a fila — o resto vem na próxima análise. ` : ''}${detectadas ? `${detectadas} sugestão(ões) já aplicada(s) no painel detectada(s) pela leitura das campanhas. ` : ''}${medidas ? `${medidas} resultado(s) medido(s) (7 dias antes × 7 dias depois). ` : ''}${expiradas ? `${expiradas} sugestão(ões) com mais de 7 dias venceram e foram refeitas com números novos quando ainda valiam. ` : ''}Modo copiloto: aplique no painel do ML.`,
+      { campanhas: C.length, produtos: nProdutos, sugestoes: sugestoes.length, aplicadas: aplicadas.length, escrita_ml: escritaML === null ? 'nao_testada' : escritaML ? 'liberada' : 'bloqueada', tacos_mes: tacosMes, limite_pausa: limitePausa, taxa_cancelamento: taxaCancel, detectadas, medidas, expiradas }, 'executado');
+    return { conta_id: contaId, marketplace: 'ml', campanhas: C.length, produtos: nProdutos, sugestoes: sugestoes.length, aplicadas: aplicadas.length, escrita_ml: escritaML, tacos_mes: tacosMes, detectadas, medidas, expiradas };
   } catch (e) {
     await logar('sistema', 'Erro na análise ML', e.message || String(e), {}, 'erro');
     return { conta_id: contaId, marketplace: 'ml', erro: e.message };
   }
 }
 
-module.exports = { processarContaML, agruparFamilias, listarAnunciosML, normalizarAnuncios };
+module.exports = { processarContaML, aplicarAcaoML, agruparFamilias, listarAnunciosML, normalizarAnuncios };

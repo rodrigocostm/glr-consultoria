@@ -653,7 +653,7 @@ Router.register('agente-ml', (params, el) => {
       ${medidas.length ? `<div class="aml-lista" style="margin-top:10px;">${medidas.slice(0, 8).map(l => { const d = l.dados, v = VER[d.medicao.veredito]; return `<div class="aml-res" style="--c:${v[1]}">
           <span class="aml-tipo">${h(TIPOS_ROT[d.acao] || d.acao)}</span>
           <div style="min-width:0"><div class="aml-li-ass">${h(d.produto || d.campanha || '—')}</div><div class="aml-sub">${h(d.medicao.resumo || '')}</div></div>
-          <span class="aml-sub">aplicada ${dm(d.medicao.aplicado_dia)}${d.aplicado_por === 'detectado' ? ' · detectada' : ''}</span>
+          <span class="aml-sub">aplicada ${dm(d.medicao.aplicado_dia)}${d.aplicado_por === 'detectado' ? ' · detectada' : d.aplicado_por === 'agente' ? ' · pelo agente' : ''}</span>
           <span class="aml-ver">${v[0]}</span>
         </div>`; }).join('')}</div>` : `<div class="aml-sub" style="margin-top:10px;">Ainda não há resultados: cada sugestão aplicada é medida 7 dias depois.${aguardando ? ` ${aguardando} aguardando.` : ''}</div>`}
     </div>`;
@@ -663,7 +663,7 @@ Router.register('agente-ml', (params, el) => {
   function renderHistorico(id) {
     const lista = state.logs.filter(l => String(l.conta_id) === String(id) && !(l.tipo === 'alerta' && l.resultado === 'so_alerta')).slice(0, 15);
     const quando = s => new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    const rot = l => l.tipo === 'sistema' ? 'análise ·' : l.resultado === 'executado' ? (l.dados?.aplicado_por === 'detectado' ? 'aplicada (detectada no painel) ·' : 'aplicada ·') : l.resultado === 'descartado' ? 'descartada ·' : l.resultado === 'expirado' ? 'venceu (refeita se ainda valia) ·' : '';
+    const rot = l => l.tipo === 'sistema' ? 'análise ·' : l.resultado === 'executado' ? (l.dados?.aplicado_por === 'detectado' ? 'aplicada (detectada no painel) ·' : l.dados?.aplicado_por === 'agente' ? 'aplicada pelo agente ·' : 'aplicada ·') : l.resultado === 'descartado' ? 'descartada ·' : l.resultado === 'expirado' ? 'venceu (refeita se ainda valia) ·' : '';
     return `<details class="card" style="padding:14px 20px;margin-bottom:18px;"><summary style="cursor:pointer;font-weight:700;">Registro</summary>
       ${lista.length ? lista.map(l => `<div class="aml-hist"><span class="aml-sub">${quando(l.criado_em)}</span> ${rot(l)} <b>${h(l.titulo)}</b><div class="aml-sub">${h(semInstrucao(l.explicacao).slice(0, 260))}</div></div>`).join('') : '<div class="aml-sub" style="margin-top:8px;">Nada registrado ainda.</div>'}
     </details>`;

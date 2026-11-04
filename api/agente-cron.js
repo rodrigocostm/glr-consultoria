@@ -344,7 +344,10 @@ async function contextoNegocio(shopId, ontemIso) {
 }
 
 // O agente do ML recebe o teto de ADS do cliente junto com a configuração da conta
-const comTetoML = async cfg => ({ ...cfg, teto_tacos: (await contratoDaConta(cfg.conta_id).catch(() => ({}))).tetoTacos || null });
+const comTetoML = async cfg => {
+  const ctr = await contratoDaConta(cfg.conta_id).catch(() => ({}));
+  return { ...cfg, teto_tacos: ctr.tetoTacos || null, autonomia_ml: { ajuste: ctr.ajuste || 'executar', pausar: ctr.pausar || 'executar' } };
+};
 
 // Ferramentas compartilhadas que o agente do ML (api/_agente-ml.js) usa.
 function ajudantesML() {
