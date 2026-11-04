@@ -308,8 +308,8 @@ Router.register('vendas', async (params, el) => {
     let lista;
     if (porPlataforma) {
       const grupos = {}; visiveis.forEach(i => { (grupos[i.mkt || 'outro'] = grupos[i.mkt || 'outro'] || []).push(i); });
-      lista = Object.entries(grupos).sort(([a], [b]) => (_MKT_DCB[a]?.ordem ?? 9) - (_MKT_DCB[b]?.ordem ?? 9)).map(([m, arr]) => `<div class="dcb-grupo"><span>${selo(m)} ${esc(_MKT_DCB[m]?.nome || 'Outras')} · ${arr.length}</span><button type="button" class="dcb-so" data-mkt="${esc(m)}">só ${esc(_MKT_DCB[m]?.nome || 'estas')}</button></div>${arr.sort((a, b) => a.label.localeCompare(b.label)).map(linha).join('')}`).join('');
-    } else lista = visiveis.map(linha).join('');
+      lista = Object.entries(grupos).sort(([a], [b]) => (_MKT_DCB[a]?.ordem ?? 9) - (_MKT_DCB[b]?.ordem ?? 9)).map(([m, arr]) => `<div class="dcb-grupo"><span>${selo(m)} ${esc(_MKT_DCB[m]?.nome || 'Outras')} · ${arr.length}</span><button type="button" class="dcb-so" data-mkt="${esc(m)}">só ${esc(_MKT_DCB[m]?.nome || 'estas')}</button></div>${arr.sort((a, b) => (selecionados.has(b.valor) - selecionados.has(a.valor)) || a.label.localeCompare(b.label)).map(linha).join('')}`).join('');
+    } else lista = [...visiveis].sort((a, b) => selecionados.has(b.valor) - selecionados.has(a.valor)).map(linha).join('');
     container.innerHTML = `
       <div style="position:relative;">
         <button type="button" class="form-input dcb-toggle" aria-expanded="${aberto}" title="${esc(qtdSel ? itens.filter(i => selecionados.has(i.valor)).map(i => `${_MKT_DCB[i.mkt]?.sigla ? _MKT_DCB[i.mkt].sigla + ' · ' : ''}${i.label}`).join('\n') : `Todas as ${label.toLowerCase()}s`)}">
