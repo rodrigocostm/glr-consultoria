@@ -465,13 +465,17 @@ async function escreverUmaVez(Anthropic, anthropicKey, fatos) {
 // h: { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic }
 async function gerarPlanos(h, filtroCliente, metaNova) {
   const { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic } = h;
-  const [clientes, vinc, metas, metasPed, metasTac, gestores, nicks, estados, configs, pendentes, medidos] = await Promise.all([
+  const [clientes, vinc, metas, metasPed, metasTac, gestores, nicks, estados, configs, pendentes, medidos, resumosOutros] = await Promise.all([
     lerStorage('glr_clientes').then(x => x || []), lerStorage('glr_mc_vinculos').then(x => x || {}), lerStorage('glr_metas').then(x => x || {}), lerStorage('glr_metas_pedidos').then(x => x || {}), lerStorage('glr_metas_tacos').then(x => x || {}), lerStorage('glr_gestores').then(x => x || []), lerStorage('glr_mc_nicknames').then(x => x || {}),
     sbSelect('glr_sync_estado', 'recurso=in.(resumo,sinais,promocoes,reputacao,qualidade,funil,oportunidades)&marketplace=in.(ml,shopee)&select=marketplace,conta_id,recurso,cursor').catch(() => []),
     sbSelect('glr_agente_config', 'select=conta_id,marketplace,meta_acos,cliente_nome').catch(() => []),
     sbSelect('glr_agente_log', `tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 10 * 864e5).toISOString())}&select=conta_id,titulo,dados,criado_em&limit=3000`).catch(() => []),
     sbSelect('glr_agente_log', `tipo=in.(decisao,alerta)&resultado=eq.executado&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 46 * 864e5).toISOString())}&select=conta_id,titulo,dados,criado_em&order=criado_em.desc&limit=6000`).catch(() => []),
+    // faturamento das outras plataformas (Amazon, TikTok, Magalu, Shein): entra na meta e na projeção, como no Dashboard
+    sbSelect('glr_sync_estado', 'recurso=eq.resumo&marketplace=in.(amazon,tiktok,magalu,shein)&select=marketplace,conta_id,cursor').catch(() => []),
   ]);
+  const resumoOutro = Object.fromEntries(resumosOutros.map(e => [`${e.marketplace}:${e.conta_id}`, e.cursor]));
+  const mktOutro = m => { m = String(m || '').toLowerCase(); return m === 'amazon' ? 'amazon' : ['tiktok', 'tiktok_shop', 'tiktokshop'].includes(m) ? 'tiktok' : m === 'magalu' ? 'magalu' : m === 'shein' ? 'shein' : null; };
   const est = {};
   for (const e of estados) { const k = `${e.marketplace}:${e.conta_id}`; (est[k] = est[k] || {})[e.recurso] = e.cursor; }
   const cfgDe = Object.fromEntries(configs.map(c => [String(c.conta_id), c]));
@@ -495,11 +499,19 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
       lojas.push({ mkt, conta, nome: nicks[ct.external_id] || ct.tags?.[0]?.name || ct.nickname || '', resumo: e.resumo, sinais: e.sinais, promocoes: e.promocoes, reputacao: e.reputacao, qualidade: e.qualidade, funil: e.funil, oportunidades: e.oportunidades });
     }
     if (!lojas.length) return;
+    // só para as métricas do mês: lojas das outras plataformas (os agentes e o Raio-X seguem só ML/Shopee)
+    const outras = [];
+    for (const ct of (vinc[String(c.id)] || [])) {
+      const m = mktOutro(ct.marketplace); if (!m) continue;
+      const p = ct.param_to_use || {};
+      const r = [p.amazon_account_id, p.magalu_account_id, p.shein_supplier_id, ct.external_id].filter(Boolean).map(id => resumoOutro[`${m}:${id}`]).find(Boolean);
+      if (r) outras.push({ resumo: r });
+    }
     // Métricas do mês (todas as lojas)
     // Projeção = média do mês: realizado até ontem ÷ dias decorridos × dias do mês (decisão do
     // analista, 04/11/2026 — a mesma regra em todas as telas: Dashboard, Perfil, Projeção e Gestores)
     let fat = 0, ads = 0, fatAnt = 0, cobreAnt = true, pedidos = 0, rFat = 0, rPed = 0, rAds = 0;
-    for (const L of lojas) {
+    for (const L of [...lojas, ...outras]) {
       const m = somarDias(L.resumo?.dias, mesIni, ontem); fat += m.faturamento; ads += m.ads; pedidos += m.pedidos;
       const a = somarDias(L.resumo?.dias, antIni, antFim); if (!a.cobre) cobreAnt = false; fatAnt += a.faturamento;
       if (dd > 0) { rFat += m.faturamento / dd; rPed += m.pedidos / dd; rAds += m.ads / dd; }
