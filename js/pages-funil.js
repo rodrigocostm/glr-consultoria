@@ -8,7 +8,8 @@
 //  • impressões e cliques: anúncios pagos (glr_ads_diario — ML e Shopee);
 //  • visitas: Mercado Livre, loja inteira (glr_sync_estado 'funil', 1x/dia);
 //  • carrinho: Shopee e Mercado Livre não informam pela API (etapa sinalizada);
-//  • vendas: pedidos válidos (vw_vendas_dia) e as atribuídas ao ADS.
+//  • vendas: resumo diário por loja da base (BaseDados — o mesmo do Dashboard:
+//    pedidos e faturamento válidos) e as atribuídas ao ADS.
 // Por padrão mostra ONTEM (dia fechado) × anteontem.
 // ============================================================
 Router.register('funil', (params, el) => {
@@ -46,13 +47,19 @@ Router.register('funil', (params, el) => {
     st.carregando = true; render();
     const d0 = st.dia, d1 = menos1(d0);
     try {
-      const [ads, vendas, fun] = await Promise.all([
+      // vendas: resumo diário por loja (vw_vendas_dia agrega a tabela inteira e estoura o tempo do banco)
+      const [ads, base, fun] = await Promise.all([
         _sb.from('glr_ads_diario').select('marketplace,conta_id,data,impressoes,cliques,pedidos_ads,gmv_ads,gasto').in('data', [d0, d1]),
-        _sb.from('vw_vendas_dia').select('marketplace,conta_id,dia,pedidos_validos,faturamento_valido').in('dia', [d0, d1]),
+        BaseDados.carregar(),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,conta:cursor->conta').eq('recurso', 'funil').eq('marketplace', 'ml'),
       ]);
-      const erro = ads.error || vendas.error || fun.error; if (erro) throw erro;
-      st.dados = { d0, d1, ads: ads.data || [], vendas: vendas.data || [], visitas: fun.data || [] };
+      const erro = ads.error || fun.error; if (erro) throw erro;
+      const vendas = [];
+      for (const [k, info] of Object.entries(base || {})) {
+        const [marketplace, conta_id] = [k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)];
+        for (const dia of [d0, d1]) { const v = info.dias?.[dia]; if (v) vendas.push({ marketplace, conta_id, dia, pedidos_validos: +v.pedidos || 0, faturamento_valido: +v.faturamento || 0 }); }
+      }
+      st.dados = { d0, d1, ads: ads.data || [], vendas, visitas: fun.data || [] };
       st.erro = null;
     } catch (e) { st.erro = e.message || String(e); }
     st.carregando = false; render();
