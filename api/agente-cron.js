@@ -1149,16 +1149,20 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
   // (mais gasto/volume); quanto MAIOR, mais conservador (menos gasto). É o
   // inverso do orçamento — por isso as regras de crescer/reduzir invertem o
   // sinal em relação a executarOrcamento.
+  const roasMexidoAgora = new Set(); // campanhas com ROAS ajustado nesta rodada (não ajusta duas vezes)
   async function executarRoasTarget(campaignId, nome, novoRoasTarget, explicacao, dadosBase) {
     const dados = { campaign_id: Number(campaignId), ...dadosBase };
-    if (contrato.ajuste === 'sugerir' && !dadosBase?.desfeito_auto) { // contrato: ajuste só com aprovação
+    // Baixar a meta de ROAS (lance mais agressivo) é sempre automático — decisão do
+    // analista: é o que puxa venda quando há folga. Só subir (conter) segue o contrato.
+    const baixando = dadosBase?.roas_de != null && novoRoasTarget < dadosBase.roas_de;
+    if (contrato.ajuste === 'sugerir' && !dadosBase?.desfeito_auto && !baixando) { // contrato: ajuste só com aprovação
       await logar('alerta', `Sugestão de ${novoRoasTarget > (dadosBase?.roas_de || 0) ? 'subir' : 'baixar'} meta de ROI — ${nome}`, `${explicacao} O contrato deste cliente pede aprovação para ajustar.`, { campaign_id: Number(campaignId), roas_atual: dadosBase?.roas_de, roas_sugerido: novoRoasTarget, contrato: 'sugerir' }, 'so_alerta');
       alertas.push(nome); return;
     }
     try {
       await mcpCall(mcApiKey, 'shopee_ads_roi_target', { shopId, campaign_id: Number(campaignId), roas_target: novoRoasTarget });
       await logar('decisao', `Meta de ROAS ajustada — ${nome}`, explicacao, dados, 'executado');
-      decisoes.push(nome);
+      decisoes.push(nome); roasMexidoAgora.add(String(campaignId));
     } catch (e) {
       await logar('decisao', `Falha ao ajustar meta de ROAS — ${nome}`, `Tentei ajustar por: ${explicacao} — mas deu erro: ${e.message}`, dados, 'erro');
     }
@@ -1219,6 +1223,15 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
     // Base sincronizada primeiro (instantâneo); sem cobertura, API sem CANCELLED.
     const base = await lerBase('shopee', shopId);
     const sinais = await lerSinais('shopee', shopId);
+    // Travas para baixar ROAS fora do laço de campanhas: as mesmas do laço (estoque,
+    // reputação, anúncio a consertar) e o piso de ROAS pela margem do produto.
+    const travaAcelerar = itemIds => {
+      const av = sinais ? estoqueMargem.avisosDe(sinais, itemIds) : null;
+      const metaM = av?.aa != null && cfg.meta_acos && av.aa < cfg.meta_acos ? Math.max(0.5, av.aa) : null;
+      const bloqueio = av && (av.ne === 'zerado' || av.ne === 'critico' || (av.dias != null && av.dias <= 10)) ? `${av.nome} ${av.ne === 'zerado' ? 'está sem estoque' : `acaba em ~${Math.round(av.dias)} dia(s)`}`
+        : sinais?.reputacao?.risco === 'alto' ? `a reputação da conta está em risco (${sinais.reputacao.motivo})` : av?.rp ? `${av.nome} tem ${av.rp}` : av?.qa ? `o anúncio de ${av.nome} precisa de conserto antes (${av.qa})` : null;
+      return { bloqueio, pisoRoas: 100 / (metaM ?? cfg.meta_acos ?? 8) };
+    };
     const colaboracoes = pelaMeta.map(t => ({ de: 'meta', campanha: '', texto: t })); // o que mudou por causa da meta/Estoque/Margem (vai para o registro e o Escritório)
     // ── Freio de volume (conversa com o Raio-X do faturamento do Gerente) ──
     // Apertar ROAS/orçamento melhora o ACOS, mas pode derrubar a VENDA do produto
@@ -1538,10 +1551,8 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
               const piso = 100 / metaEf, roasAtual = settings.roas_target;
               const novoRoas = Math.round(Math.max(1, piso, roasAtual * 0.9) * 10) / 10; // nunca abaixo do ROAS da meta
               if (novoRoas < roasAtual) {
-                const variacaoPct = (roasAtual - novoRoas) / roasAtual * 100;
                 const explicacao = `Revisão de 3 dias: ${motivo}. Meta de ROI ${roasAtual}x → ${novoRoas}x (lance mais agressivo; não desce abaixo de ${(Math.round(piso * 10) / 10)}x, o ROAS da meta).`;
-                if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) { await logar('alerta', `Sugestão de baixar meta de ROI — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, roas_atual: roasAtual, roas_sugerido: novoRoas, ...dadosMo }, 'so_alerta'); alertas.push(nome); }
-                else await executarRoasTarget(c.campaign_id, nome, novoRoas, explicacao, { ...dadosMo, roas_de: roasAtual, roas_para: novoRoas });
+                await executarRoasTarget(c.campaign_id, nome, novoRoas, explicacao, { ...dadosMo, roas_de: roasAtual, roas_para: novoRoas });
                 feito = true;
               }
             } else if (budgetAtual > 0 && (!cfg.orcamento_max || budgetAtual < cfg.orcamento_max)) {
@@ -1603,14 +1614,8 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
           const roasAtual = settings.roas_target;
           const novoRoas = Math.round(Math.max(1, metaRoasConta, roasAtual * 0.85) * 10) / 10;
           if (novoRoas < roasAtual) {
-            const variacaoPct = Math.abs((novoRoas - roasAtual) / roasAtual) * 100;
             const explicacao = `ACOS de ${acosTxt} está bem abaixo da meta, e o ${rotuloTacos} (${tacosConta.toFixed(1)}%) ainda tem folga. ${budgetAtual > 0 && !orcamentoSaturado ? `O orçamento diário (${R$(budgetAtual)}) não está sendo consumido por completo (média de ${R$(gastoMedioDia)}/dia), então subir orçamento não ajudaria — o limitador é o lance.` : 'Campanha usa lance automático.'} Baixando a meta de ROI de ${roasAtual}x pra ${novoRoas}x pra deixar o lance mais agressivo e captar mais volume.`;
-            if (cfg.alerta_variacao_pct && variacaoPct > cfg.alerta_variacao_pct) {
-              await logar('alerta', `Sugestão de baixar meta de ROI — ${nome}`, explicacao + ' Variação acima do limite configurado pra execução automática — precisa de aprovação manual.', { campaign_id: c.campaign_id, roas_atual: roasAtual, roas_sugerido: novoRoas, tacos_conta: tacosConta }, 'so_alerta');
-              alertas.push(nome);
-            } else {
-              await executarRoasTarget(c.campaign_id, nome, novoRoas, explicacao, { acos: acosJanela * 100, tacos_conta: tacosConta, roas_de: roasAtual, roas_para: novoRoas });
-            }
+            await executarRoasTarget(c.campaign_id, nome, novoRoas, explicacao, { acos: acosJanela * 100, tacos_conta: tacosConta, roas_de: roasAtual, roas_para: novoRoas });
           }
         } else {
           const tetoOk = !cfg.orcamento_max || budgetAtual < cfg.orcamento_max;
@@ -1762,21 +1767,24 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
           const acosC = gmvC > 0 ? (diario.gasto / gmvC) * 100 : (diario.gasto > 0 ? Infinity : null);
           if (acosC == null || acosC === Infinity) continue;
           if (cfg.meta_acos && acosC > cfg.meta_acos) continue; // só reforça campanha dentro da meta
-          if (!melhor || acosC < melhor.acos) melhor = { id: c.campaign_id, nome: (settings.ad_name || `Campanha ${c.campaign_id}`).slice(0, 70), acos: acosC, budget: parseFloat(settings.campaign_budget) || 0, roasTarget: settings.roas_target };
+          if (!melhor || acosC < melhor.acos) melhor = { id: c.campaign_id, nome: (settings.ad_name || `Campanha ${c.campaign_id}`).slice(0, 70), acos: acosC, budget: parseFloat(settings.campaign_budget) || 0, roasTarget: settings.roas_target, itens: settings.item_id_list };
         }
         if (melhor) {
           const usaRoas = melhor.budget === 0 && melhor.roasTarget != null;
           const dadosSug = { campaign_id: melhor.id };
           let titulo = null, explicacao = '';
-          if (usaRoas) {
-            const metaRoasConta = 100 / (cfg.meta_acos || 8);
-            const novoRoas = Math.round(Math.max(1, metaRoasConta, melhor.roasTarget * 0.85) * 10) / 10;
-            if (novoRoas < melhor.roasTarget) {
+          const jaMexida = roasMexidoAgora.has(String(melhor.id)) || ajustadasRecentes.has(String(melhor.id));
+          if (usaRoas && !jaMexida) {
+            const trava = travaAcelerar(melhor.itens);
+            const novoRoas = Math.round(Math.max(1, trava.pisoRoas, melhor.roasTarget * 0.85) * 10) / 10;
+            if (novoRoas < melhor.roasTarget && !trava.bloqueio) {
+              await executarRoasTarget(melhor.id, melhor.nome, novoRoas, `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% na janela de ${diasJanela} dia(s) vs a janela anterior equivalente (${R$(faturamentoSaudeAtual)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — meta de ROAS ${melhor.roasTarget}x → ${novoRoas}x (lance mais agressivo, sem descer abaixo de ${Math.round(trava.pisoRoas * 10) / 10}x) para puxar volume e reverter a queda.`, { roas_de: melhor.roasTarget, roas_para: novoRoas, origem_analise: 'saude_negocio' });
+            } else if (novoRoas < melhor.roasTarget) {
               dadosSug.roas_atual = melhor.roasTarget; dadosSug.roas_sugerido = novoRoas;
               titulo = `Queda de faturamento — reforçar ${melhor.nome}`;
-              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% na janela de ${diasJanela} dia(s) vs a janela anterior equivalente (${R$(faturamentoSaudeAtual)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%) — baixando meta de ROAS de ${melhor.roasTarget}x pra ${novoRoas}x pra tentar puxar mais volume e ajudar a reverter a queda.`;
+              explicacao = `Faturamento total da loja caiu ${Math.abs(variacaoSaude).toFixed(1)}% na janela de ${diasJanela} dia(s) vs a janela anterior equivalente (${R$(faturamentoSaudeAtual)} vs ${R$(faturamentoSaudeAnterior)}). "${melhor.nome}" é a campanha ativa mais eficiente (ACOS ${melhor.acos.toFixed(1)}%), mas não baixei o ROAS sozinho porque ${trava.bloqueio}. Sugestão: meta de ROAS ${melhor.roasTarget}x → ${novoRoas}x se resolver isso.`;
             }
-          } else if (melhor.budget > 0) {
+          } else if (!usaRoas && melhor.budget > 0) {
             const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, melhor.budget * 1.2) * 100) / 100;
             if (novoBudget > melhor.budget) {
               dadosSug.budget_atual = melhor.budget; dadosSug.budget_sugerido = novoBudget;
@@ -1842,8 +1850,14 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
               const dados = { ...base0, campaign_id: camp.id };
               let acao = null;
               if (budget === 0 && roasT) {
-                const novo = Math.round(Math.max(1, 100 / (cfg.meta_acos || 8), roasT * 0.85) * 10) / 10;
-                if (novo < roasT) { dados.roas_atual = roasT; dados.roas_sugerido = novo; acao = `baixar a meta de ROAS de ${roasT}x para ${novo}x`; }
+                const trava = travaAcelerar(camp.st.item_id_list);
+                const novo = Math.round(Math.max(1, trava.pisoRoas, roasT * 0.85) * 10) / 10;
+                const jaMexida = roasMexidoAgora.has(String(camp.id)) || ajustadasRecentes.has(String(camp.id));
+                if (novo < roasT && !trava.bloqueio && !jaMexida) {
+                  await executarRoasTarget(camp.id, nome, novo, `Produto curva ${x.classe} em ${curvaABC.TEND_TXT[x.tend]}: ${linhaSemana(x)} — candidato a virar curva A. A campanha "${nome}" está dentro da meta (ACOS ${fmtAcos(acos)}): meta de ROAS ${roasT}x → ${novo}x (lance mais agressivo, sem descer abaixo de ${Math.round(trava.pisoRoas * 10) / 10}x) para aproveitar a alta.`, { ...base0, roas_de: roasT, roas_para: novo });
+                  continue;
+                }
+                if (novo < roasT && !jaMexida) { dados.roas_atual = roasT; dados.roas_sugerido = novo; acao = `baixar a meta de ROAS de ${roasT}x para ${novo}x (não fiz sozinho porque ${trava.bloqueio})`; }
               } else if (budget > 0) {
                 const novo = Math.round(Math.min(cfg.orcamento_max || Infinity, budget * 1.2) * 100) / 100;
                 if (novo > budget) { dados.budget_atual = budget; dados.budget_sugerido = novo; acao = `subir o orçamento de ${R$(budget)} para ${R$(novo)}`; }

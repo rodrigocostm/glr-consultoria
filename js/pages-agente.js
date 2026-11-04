@@ -1367,7 +1367,7 @@
           </div>
           <div class="ag-regra-bloco" style="--c:var(--yellow);">
             <div class="ag-regra-tit">O que sempre espera sua aprovação</div>
-            ${campoRegra('ag-alerta-var', 'Alerta se a variação proposta passar de', cfg.alerta_variacao_pct ?? 30, { sufixo: '%', dica: 'Mudança maior que isso não é feita sozinha: vira item em “Precisa de você”.' })}
+            ${campoRegra('ag-alerta-var', 'Alerta se a variação proposta passar de', cfg.alerta_variacao_pct ?? 30, { sufixo: '%', dica: 'Mudança maior que isso não é feita sozinha: vira item em “Precisa de você”. Baixar a meta de ROAS (lance mais agressivo) é sempre automático, sem limite de variação — sempre dentro do ROAS mínimo da meta e da margem.' })}
           </div>
         </div>
         <details class="ag-avancado">
