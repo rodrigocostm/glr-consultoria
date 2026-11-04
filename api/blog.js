@@ -211,13 +211,17 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, feitas, erros, faltam: Math.max(0, sem.length - feitas.length) });
     }
     const est = await blog.lerEstado(lerStorage);
-    if (b.acao === 'listar') return res.status(200).json({ posts: est.posts, fontes: blog.FONTES.map(f => f.nome) });
+    if (b.acao === 'listar') return res.status(200).json({ posts: est.posts, fontes: blog.FONTES.map(f => f.nome), editorias: blog.EDITORIAS.map(({id,nome})=>({id,nome})) });
     const p = est.posts.find(x => x.id === b.id);
     if (!p) return res.status(404).json({ error: 'Post não encontrado.' });
     const agora = new Date().toISOString();
     if (b.acao === 'salvar') {
       const tit = String(b.titulo || '').trim(), corpo = String(b.corpo || '').trim();
       if (!tit || tit.length > 140 || !corpo || corpo.length > 20000) return res.status(400).json({ error: 'Título (até 140) e texto são obrigatórios.' });
+      if (b.editoria !== undefined) {
+        if (b.editoria && !blog.EDITORIAS.some(e => e.id === b.editoria)) return res.status(400).json({error:'Categoria inválida.'});
+        if (b.editoria) p.editoria = b.editoria; else delete p.editoria;
+      }
       Object.assign(p, { titulo: tit, resumo: String(b.resumo || '').trim().slice(0, 200), corpo, tags: (Array.isArray(b.tags) ? b.tags : String(b.tags || '').split(',')).map(t => String(t).trim()).filter(Boolean).slice(0, 4), atualizado_em: agora, editado_por: user.email || null });
       if (p.status !== 'publicado') { let slug = blog.slugDe(tit) || p.slug; while (est.posts.some(x => x !== p && x.slug === slug)) slug += '-2'; p.slug = slug; } // link já publicado não muda
     } else if (b.acao === 'publicar') { if (p.status === 'descartado') return res.status(400).json({ error: 'Post descartado.' }); p.status = 'publicado'; p.publicado_em = p.publicado_em || agora; p.publicado_por = user.email || null; }
