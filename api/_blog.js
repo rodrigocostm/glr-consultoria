@@ -152,6 +152,8 @@ const EDITORIAS = [
   { id: 'varejo', nome: 'Varejo e consumo', cor: '#A15C07', re: /varejo|consumidor|consumo|loja|vendas|marca/gi },
 ];
 function editoriaDe(p) {
+  const revisada = EDITORIAS.find(e => e.id === p.editoria);
+  if (revisada) return revisada; // revisão editorial tem prioridade sobre palavras do texto
   const conta = (t, re) => (String(t || '').match(re) || []).length;
   let melhor = EDITORIAS[EDITORIAS.length - 1], nota = 0;
   for (const e of EDITORIAS) {
