@@ -30,12 +30,12 @@ window.GLRDashClientes = (function () {
     const mesIni = isoD(new Date(ontem.getFullYear(), ontem.getMonth(), 1)), dd = ontem.getDate(), dm = new Date(ontem.getFullYear(), ontem.getMonth() + 1, 0).getDate();
     const a7de = isoD(diaMais(ontem, -6)), b7de = isoD(diaMais(ontem, -13)), b7ate = isoD(diaMais(ontem, -7));
     const m1 = new Date(ontem.getFullYear(), ontem.getMonth() - 1, 1), m1de = isoD(m1), m1ate = isoD(new Date(m1.getFullYear(), m1.getMonth() + 1, 0));
-    const vinc = lerJSON('glr_mc_vinculos', {}), metas = lerJSON('glr_metas', {});
+    const vinc = lerJSON('glr_mc_vinculos', {}), metas = lerJSON('glr_metas', {}), tetos = lerJSON('glr_metas_tacos', {}); // teto de ADS: Plano de ação
     const gest = id => (GLR.gestores || []).find(g => String(g.id) === String(id));
     const out = [];
     for (const c of (GLR.clientes || [])) {
       if (/inativ|cancel|encerr/i.test(String(c.status || ''))) continue;
-      const r = { mtd: 0, adsMtd: 0, temAds: false, a7: 0, b7: 0, m1: 0, temM1: false, tem7: false, serie: {}, cob: 0, ritmo: 0 };
+      const r = { mtd: 0, adsMtd: 0, temAds: false, a7: 0, b7: 0, m1: 0, temM1: false, tem7: false, serie: {}, cob: 0, ritmo: 0, contas: [] };
       for (const ct of (vinc[String(c.id)] || [])) {
         const mkt = BaseDados.mktDe(ct.marketplace), id = String(ct.param_to_use?.shopId || ct.param_to_use?.meliUserId || ct.contaId || ct.external_id);
         const info = mkt ? st.base[BaseDados.chave(mkt, id)] : null;
@@ -43,19 +43,22 @@ window.GLRDashClientes = (function () {
         r.cob++;
         const mtd = BaseDados.somar(info, mesIni, oIso), a7 = BaseDados.somar(info, a7de, oIso), b7 = BaseDados.somar(info, b7de, b7ate);
         r.mtd += mtd.faturamento; r.a7 += a7.faturamento; r.b7 += b7.faturamento; r.tem7 = true;
-        r.ritmo += BaseDados.cobre(info, a7de) ? a7.faturamento / 7 : mtd.faturamento / dd; // venda/dia para os dias que faltam
-        if (BaseDados.cobreAds(info, mesIni)) { r.adsMtd += mtd.ads; r.temAds = true; }
+        const ritmo = BaseDados.cobre(info, a7de) ? a7.faturamento / 7 : mtd.faturamento / dd; // venda/dia para os dias que faltam
+        r.ritmo += ritmo;
+        const temAds = BaseDados.cobreAds(info, mesIni);
+        if (temAds) { r.adsMtd += mtd.ads; r.temAds = true; }
+        r.contas.push({ mkt, nome: GLR.nomeConta(mkt, id) || id, proj: mtd.faturamento + ritmo * (dm - dd), ads: temAds ? mtd.ads : null, tacos: temAds && mtd.faturamento > 0 ? mtd.ads / mtd.faturamento * 100 : null });
         if (BaseDados.cobre(info, m1de)) { r.m1 += BaseDados.somar(info, m1de, m1ate).faturamento; r.temM1 = true; }
         for (let i = 13; i >= 0; i--) { const d = isoD(diaMais(ontem, -i)); r.serie[d] = (r.serie[d] || 0) + (parseFloat(info.dias?.[d]?.faturamento) || 0); }
       }
       if (!r.cob || (r.mtd <= 0 && r.a7 <= 0)) continue;
       const proj = r.mtd + r.ritmo * (dm - dd); // realizado + ritmo de 7 dias nos dias que faltam
-      const meta = parseFloat(metas[c.id]) || parseFloat(c.metaMensal) || 0;
+      const meta = parseFloat(metas[c.id]) || parseFloat(c.metaMensal) || 0, teto = parseFloat(tetos[c.id]) || null;
       const t7 = r.b7 > 0 ? (r.a7 / r.b7 - 1) * 100 : null;
       const g = gest(c.gestorId);
       out.push({ id: String(c.id), nome: c.nome, gestorId: g ? String(g.id) : 'sem', gestor: g?.nome || c.gestor || 'Sem gestor',
         proj, m1: r.temM1 ? r.m1 : 0, meta, pctMeta: meta > 0 ? proj / meta * 100 : null, ads: r.temAds ? r.adsMtd : null, tacos: r.temAds && r.mtd > 0 ? r.adsMtd / r.mtd * 100 : null,
-        t7, vsM1: r.temM1 && r.m1 > 0 ? (proj / r.m1 - 1) * 100 : null, tend: t7 == null ? 'sem' : t7 >= 5 ? 'cresce' : t7 <= -5 ? 'cai' : 'estavel', serie: Object.values(r.serie) });
+        t7, vsM1: r.temM1 && r.m1 > 0 ? (proj / r.m1 - 1) * 100 : null, tend: t7 == null ? 'sem' : t7 >= 5 ? 'cresce' : t7 <= -5 ? 'cai' : 'estavel', serie: Object.values(r.serie), teto, contas: r.contas.sort((a, b) => b.proj - a.proj) });
     }
     return out;
   }
@@ -66,6 +69,9 @@ window.GLRDashClientes = (function () {
     return `<svg class="dc-spark" viewBox="0 0 ${w} ${hh}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${cor}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
   }
 
+  // TACOS contra o teto de ADS do cliente: acima → vermelho, dentro → verde, sem teto → neutro
+  const corTeto = (tacos, teto) => tacos == null || !teto ? 'var(--text-muted)' : tacos > teto ? 'var(--red)' : 'var(--green)';
+  const MKT = { ml: ['ML', '#e6b800'], shopee: ['Shopee', '#ee4d2d'], amazon: ['Amazon', '#ff9900'], tiktok: ['TikTok', '#111'], magalu: ['Magalu', '#0086ff'], shein: ['Shein', '#222'] };
   const TEND = { cresce: ['Crescendo', 'var(--green)', '▲'], estavel: ['Estável', 'var(--text-muted)', '■'], cai: ['Caindo', 'var(--red)', '▼'], sem: ['Sem comparação', 'var(--text-muted)', '·'] };
   function card(x) {
     const T = TEND[x.tend], pm = x.pctMeta != null ? Math.min(100, x.pctMeta) : null;
@@ -75,7 +81,8 @@ window.GLRDashClientes = (function () {
       <div class="dc-proj"><span>Projeção do mês</span><b>${R0(x.proj)}</b>
         <small>${x.pctMeta != null ? `<b style="color:${corMeta}">${pct(x.pctMeta)}</b> da meta de ${R0(x.meta)}` : 'sem meta'}${x.vsM1 != null ? ` · <span style="color:${x.vsM1 >= 0 ? 'var(--green)' : 'var(--red)'}">${x.vsM1 >= 0 ? '+' : ''}${pct(x.vsM1)}</span> vs mês passado` : ''}</small></div>
       ${pm != null ? `<div class="dc-bar"><i style="width:${pm}%;background:${corMeta}"></i></div>` : ''}
-      <div class="dc-rod"><div><span>ADS do mês</span><b>${x.ads != null ? R0(x.ads) : '—'}</b><small>TACOS ${pct(x.tacos)}</small></div>${spark(x.serie, x.tend === 'cai' ? 'var(--red)' : x.tend === 'cresce' ? 'var(--green)' : 'var(--accent)')}</div>
+      ${x.contas.length > 1 ? `<div class="dc-contas">${x.contas.map(ct => `<div><i style="background:${(MKT[ct.mkt] || ['', 'var(--text-muted)'])[1]}" title="${h((MKT[ct.mkt] || [ct.mkt])[0])}"></i><span>${h(ct.nome)}</span><b>${R0(ct.proj)}</b><em style="color:${corTeto(ct.tacos, x.teto)}">${ct.tacos != null ? pct(ct.tacos) : '—'}</em></div>`).join('')}</div>` : ''}
+      <div class="dc-rod"><div><span>ADS do mês</span><b style="color:${x.teto && x.tacos != null ? corTeto(x.tacos, x.teto) : 'var(--text-primary)'}">${x.ads != null ? R0(x.ads) : '—'}</b><small><span style="color:${corTeto(x.tacos, x.teto)};font-weight:${x.teto ? 650 : 400}">TACOS ${pct(x.tacos)}</span>${x.teto ? ` · teto ${pct(x.teto)}` : ' · sem teto'}</small></div>${spark(x.serie, x.tend === 'cai' ? 'var(--red)' : x.tend === 'cresce' ? 'var(--green)' : 'var(--accent)')}</div>
     </button>`;
   }
 
@@ -144,6 +151,10 @@ window.GLRDashClientes = (function () {
       .dc-rod{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;padding-top:8px;border-top:1px solid var(--border)}
       .dc-rod>div{display:flex;flex-direction:column} .dc-rod span{font-size:11px;color:var(--text-muted)} .dc-rod b{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;color:var(--text-primary)} .dc-rod small{font-size:11px;color:var(--text-muted)}
       .dc-spark{width:120px;height:32px;flex:none}
+      .dc-contas{display:flex;flex-direction:column;gap:4px;font-size:11.5px}
+      .dc-contas>div{display:grid;grid-template-columns:8px minmax(0,1fr) auto 44px;gap:7px;align-items:center}
+      .dc-contas i{width:8px;height:8px;border-radius:50%} .dc-contas span{color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .dc-contas b{font-weight:600;color:var(--text-primary);font-variant-numeric:tabular-nums} .dc-contas em{font-style:normal;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
       .dc-vazio{padding:22px;text-align:center;font-size:13px;color:var(--text-muted)}
       .dc-mais{display:block;margin:12px auto 0;border:0;background:none;color:var(--accent);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
     </style>`);
