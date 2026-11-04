@@ -62,13 +62,17 @@ async function _renderPortalAdminLista() {
             <div>
               <div style="font-size:14px;font-weight:700;color:var(--text-primary);">${cfg.clienteNome||'—'}</div>
               <div style="font-size:12px;color:var(--text-secondary);">${cfg.email} · ${(cfg.contaIds||[]).length} conta(s)</div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">Criado em ${new Date(cfg.criadoEm||Date.now()).toLocaleDateString('pt-BR')}</div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">Criado em ${new Date(cfg.criadoEm||Date.now()).toLocaleDateString('pt-BR')}${cfg.atendimentoIA ? ` · <span style="color:var(--green);font-weight:600;">Atendimento com IA ligado</span><span id="pa-ia-uso-${cfg.id}"></span>` : ''}</div>
             </div>
           </div>
           <div style="display:flex;gap:8px;flex-shrink:0;">
             <button onclick="window._portalAdminToggle('${cfg.id}')"
               style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid var(--border);background:var(--bg-base);color:var(--text-secondary);">
               ${cfg.ativo!==false ? '⏸ Suspender' : '▶ Ativar'}
+            </button>
+            <button onclick="window._portalAdminIA('${cfg.id}')" title="Módulo pago: a IA responde sozinha perguntas e mensagens do Mercado Livre e conversas da Magalu deste cliente (gasta tokens)"
+              style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid ${cfg.atendimentoIA ? 'var(--green)' : 'var(--border)'};background:${cfg.atendimentoIA ? 'var(--green-bg)' : 'var(--bg-base)'};color:${cfg.atendimentoIA ? 'var(--green)' : 'var(--text-secondary)'};font-weight:${cfg.atendimentoIA ? 600 : 400};">
+              ${cfg.atendimentoIA ? 'IA atendimento: ligada' : 'Liberar atendimento IA'}
             </button>
             <button onclick="window._portalAdminLiberar('${cfg.id}')" title="Libera o login sem precisar do e-mail de confirmação"
               style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid var(--border);background:var(--bg-base);color:var(--text-secondary);">
@@ -86,6 +90,7 @@ async function _renderPortalAdminLista() {
         </div>
       `).join('')}
     </div>`;
+  _portalAdminUsoIA(configs);
 }
 
 // ── Login do cliente pelo servidor (api/mcp.js glr_login_portal, só equipe) ──
@@ -272,6 +277,34 @@ window._portalAdminSalvar = async function(editId) {
     msg.style.color = 'var(--red)';
   } finally { _portalAdminSaving = false; }
 };
+
+// Módulo Atendimento com IA (pago à parte: cada resposta gasta tokens). Lê a lista
+// do banco na hora para não sobrescrever com uma cópia velha do navegador.
+window._portalAdminIA = async function(id) {
+  let configs;
+  try { const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave', 'glr_portal_configs').single(); if (error) throw error; configs = Array.isArray(data?.dados) ? data.dados : []; }
+  catch (e) { alert('Não consegui ler os acessos: ' + (e.message || e)); return; }
+  const cfg = configs.find(c => c.id === id); if (!cfg) return;
+  const ligar = !cfg.atendimentoIA;
+  if (!confirm(ligar
+    ? `Liberar o Atendimento com IA para ${cfg.clienteNome || cfg.email}?\n\nA IA vai responder SOZINHA, a cada ~15 minutos, as perguntas e mensagens pós-venda do Mercado Livre e as conversas da Magalu das contas deste cliente. O que ela não puder responder com segurança fica no portal para o cliente responder. Cada resposta gasta tokens.`
+    : `Desligar o Atendimento com IA de ${cfg.clienteNome || cfg.email}? A IA para de responder em até 5 minutos.`)) return;
+  cfg.atendimentoIA = ligar;
+  cfg.atendimentoIAEm = new Date().toISOString();
+  try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
+  await _renderPortalAdminLista();
+};
+// uso do mês de quem tem o módulo ligado
+async function _portalAdminUsoIA(configs) {
+  for (const cfg of configs.filter(c => c.atendimentoIA && (c.contaIds || []).length)) {
+    try {
+      const r = await window.glrApiFetch('/api/atendimento', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'listar', contas: cfg.contaIds }) });
+      const j = await r.json(); if (!r.ok) continue;
+      const el = document.getElementById(`pa-ia-uso-${cfg.id}`);
+      if (el) el.textContent = ` · no mês: ${j.resumo.respondidas_ia} respondida(s) pela IA, ${j.resumo.pendentes} com o cliente, ${(j.resumo.tokens_mes / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil tokens`;
+    } catch (e) {}
+  }
+}
 
 window._portalAdminToggle = async function(id) {
   const configs = await _lerConfigs();

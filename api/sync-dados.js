@@ -23,6 +23,16 @@ const promocoesAg = require('./_promocoes');
 const funilAg = require('./_funil');
 // Agente de Reputação e Atendimento (a cada 30 min por loja; métricas da conta a cada 6 h)
 const reputacaoAg = require('./_reputacao');
+const atendimentoIA = require('./_atendimento-ia');
+// contas com o módulo Atendimento com IA liberado no portal (relido a cada 5 min)
+let _liberadasIA = { em: 0, mapa: new Map() };
+async function liberadasIA() {
+  if (Date.now() - _liberadasIA.em > 5 * 60e3) {
+    const lerStorage = async chave => (await sbSelect('glr_storage', `chave=eq.${chave}&select=dados`).catch(() => []))[0]?.dados;
+    _liberadasIA = { em: Date.now(), mapa: await atendimentoIA.contasLiberadas(lerStorage).catch(() => _liberadasIA.mapa) };
+  }
+  return _liberadasIA.mapa;
+}
 const REPUTACAO_A_CADA_MS = 60 * 60 * 1000; // era 30 min — 1.571 chamadas/dia de cada ação (medidor de 28/10)
 // Taxas reais (líquido ML / acerto TikTok / escrow): quando a rodada anterior não
 // conseguiu nenhum pedido novo (o marketplace ainda não liberou), espera 2 h —
@@ -1230,6 +1240,18 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo, nome) {
       const cur = await reputacaoAg.calcularReputacao({ mcpCall, apiKey, sbSelect, anthropicKey: process.env.ANTHROPIC_API_KEY, prazo: Math.min(prazo - 10000, Date.now() + 40000) }, mkt, shopId, ant);
       await salvarEstado(mkt, shopId, 'reputacao', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: null, registros: (cur.resumo.perguntas || 0) + (cur.resumo.reclamacoes || 0), cursor: cur });
     } catch (e) { await salvarEstado(mkt, shopId, 'reputacao', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
+  }
+  // Atendimento com IA (módulo do portal, só para quem a GLR liberou): responde perguntas
+  // e mensagens do Mercado Livre e conversas da Magalu a cada visita da loja
+  if ((mkt === 'ml' || mkt === 'magalu') && Date.now() < prazo - 25000) {
+    const lib = (await liberadasIA()).get(String(shopId));
+    if (lib) {
+      try {
+        const logar = (titulo, explicacao, dados, resultado) => sbUpsert('glr_agente_log', [{ conta_id: String(shopId), cliente_nome: lib.cliente, tipo: 'atendimento', titulo: String(titulo).slice(0, 200), explicacao, dados, resultado, origem: 'atendimento_ia' }], 'id').catch(e => console.warn('[atendimento-ia] log', e.message));
+        const r = await atendimentoIA.atenderConta({ mcpCall, apiKey, sbSelect, logar, anthropicKey: process.env.ANTHROPIC_API_KEY, prazo: Math.min(prazo - 15000, Date.now() + 60000) }, mkt, String(shopId));
+        await salvarEstado(mkt, shopId, 'atendimento', { ultimo_sucesso: new Date().toISOString(), ultimo_erro: r.erro || null, registros: (r.respondidas || 0) + (r.pendentes || 0), cursor: { em: Date.now(), ...r } });
+      } catch (e) { await salvarEstado(mkt, shopId, 'atendimento', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
+    }
   }
   try { await atualizarResumo(mkt, shopId, estadoAtual?.resumo, t); }
   catch (e) { await salvarEstado(mkt, shopId, 'resumo', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }

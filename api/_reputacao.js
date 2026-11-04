@@ -183,4 +183,4 @@ async function calcularReputacao(ctx, mkt, conta, ant) {
   return out;
 }
 
-module.exports = { calcularReputacao };
+module.exports = { calcularReputacao, dadosDoAnuncio };

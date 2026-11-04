@@ -33,6 +33,9 @@
     },
     "api/blog.js": {
       "maxDuration": 120
+    },
+    "api/atendimento.js": {
+      "maxDuration": 60
     }
   },
   "headers": [
