@@ -51,6 +51,7 @@ Router.register('blog', (params, el) => {
     if (ed) return `<div class="card bl-card bl-ed">
       <label class="bl-campo" for="bl-tit">Título <input id="bl-tit" class="form-control" maxlength="140" value="${h(p.titulo)}"></label>
       <label class="bl-campo" for="bl-res">Resumo (aparece no Google) <input id="bl-res" class="form-control" maxlength="200" value="${h(p.resumo)}"></label>
+      <label class="bl-campo" for="bl-editoria">Categoria <select id="bl-editoria" class="form-control"><option value="">Automática</option>${[['marketplaces','Marketplaces'],['pagamentos','Pagamentos'],['logistica','Logística'],['datas','Datas e vendas'],['tecnologia','Tecnologia e IA'],['gestao','Gestão'],['varejo','Varejo e consumo']].map(([id,nome])=>`<option value="${id}" ${p.editoria===id?'selected':''}>${nome}</option>`).join('')}</select></label>
       <label class="bl-campo" for="bl-tags">Tags (separadas por vírgula) <input id="bl-tags" class="form-control" value="${h((p.tags || []).join(', '))}"></label>
       <div class="bl-ed-grid">
         <label class="bl-campo" for="bl-corpo">Texto (markdown: ## título, - lista, **negrito**) <textarea id="bl-corpo" class="form-control" rows="18" oninput="document.getElementById('bl-prev').innerHTML = window.glrMarkdown(this.value)">${h(p.corpo)}</textarea></label>
@@ -84,7 +85,7 @@ Router.register('blog', (params, el) => {
   window._blSalvar = async id => {
     const v = k => document.getElementById(k)?.value || '';
     st.proc[id] = 'Salvando…'; render();
-    try { const j = await api({ acao: 'salvar', id, titulo: v('bl-tit'), resumo: v('bl-res'), tags: v('bl-tags'), corpo: v('bl-corpo') }); troca(j.post); st.editando = null; }
+    try { const j = await api({ acao: 'salvar', id, titulo: v('bl-tit'), resumo: v('bl-res'), tags: v('bl-tags'), editoria: v('bl-editoria'), corpo: v('bl-corpo') }); troca(j.post); st.editando = null; }
     catch (e) { alert('Não consegui salvar: ' + e.message); }
     delete st.proc[id]; render();
   };

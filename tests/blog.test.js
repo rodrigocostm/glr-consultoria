@@ -16,3 +16,5 @@ test('post text cannot inject HTML or script links', () => {
   const html = blog.mdParaHtml('<script>alert(1)</script> [x](javascript:alert(1)) [ok](https://a.com)');
   assert.doesNotMatch(html, /<script>/); assert.doesNotMatch(html, /href="javascript/); assert.match(html, /href="https:\/\/a\.com"/);
 });
+
+test('reviewed retail category overrides incidental logistics terms',()=>{assert.equal(blog.editoriaDe({titulo:'Zelda Ocarina of Time no Switch 2',tags:['logística'],corpo:'entrega frete estoque',editoria:'varejo'}).id,'varejo');assert.equal(blog.editoriaDe({titulo:'Frete e logística',editoria:'invalida'}).id,'logistica')});
