@@ -1262,7 +1262,7 @@ async function executar(apiKey, soConta) {
   const prazo = Date.now() + ORCAMENTO_MS;
   let contas = await contasParaSincronizar(apiKey);
   if (soConta) contas = contas.filter(c => c.id === String(soConta));
-  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor&recurso=not.in.(oportunidades,precos,sinais,promocoes,reputacao,qualidade)');
+  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor&recurso=not.in.(oportunidades,precos,sinais,promocoes,reputacao,qualidade,promos_ml,atendimento)');
   const qualEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.qualidade').catch(() => []);
   const repEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,em:cursor->>em&recurso=eq.reputacao').catch(() => []);
   const promoEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.promocoes').catch(() => []);

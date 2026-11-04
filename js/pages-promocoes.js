@@ -169,12 +169,20 @@ const PM = (() => {
     if (!it.mercadoEnvios) return 0;
     const k = `${it.id}|${preco.toFixed(2)}`;
     if (freteCache[k] == null) {
-      const r = await tentar(() => MarketplaceAPI.call('raw', { method: 'GET', path: `/users/${st.meli}/shipping_options/free?item_id=${it.id}&item_price=${preco.toFixed(2)}`, meliUserId: st.meli }));
-      const v = parseFloat((r?.data || r)?.coverage?.all_country?.list_cost);
+      let v;
+      if (window._portalConfig) v = parseFloat((await apiPromos({ acao: 'frete', conta: st.meli, item_id: it.id, preco: preco.toFixed(2) })).frete);
+      else { const r = await tentar(() => MarketplaceAPI.call('raw', { method: 'GET', path: `/users/${st.meli}/shipping_options/free?item_id=${it.id}&item_price=${preco.toFixed(2)}`, meliUserId: st.meli })); v = parseFloat((r?.data || r)?.coverage?.all_country?.list_cost); }
       if (isNaN(v)) throw new Error('o ML não informou o frete deste anúncio');
       freteCache[k] = v;
     }
     return freteCache[k];
+  }
+  // Busca rápida no servidor (api/promos.js): anúncios + promoções + tarifas + fretes, guardados até 6 h
+  async function apiPromos(corpo) {
+    const r = await window.glrApiFetch('/api/promos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+    const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+    if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
   }
   async function custosNoPreco(it, preco) { const [tx, fr] = await Promise.all([taxa(it, preco), frete(it, preco)]); return { tx, fr }; }
 
@@ -220,11 +228,17 @@ const PM = (() => {
   async function avaliar(it) {
     const m = margemMin();
     it.opcoes = [];
+    // sem custo não há margem: usa só tarifa/frete já guardados (sem consultar o ML anúncio por anúncio)
+    const semCusto = custoDe(it.id) == null;
+    const doCache = pr => {
+      const tx = taxaCache[`${it.cat}|${it.tipo}|${pr < 79 ? pr.toFixed(2) : 'pct'}`], fr = it.mercadoEnvios ? freteCache[`${it.id}|${pr.toFixed(2)}`] : 0;
+      return tx && fr != null ? conta(it, pr, tx, fr) : { preco: pr, tarifa: null, frete: null, recebe: null, custo: null, lucro: null, margem: null, margemAntesAds: null, adsValor: 0 };
+    };
     for (const p of it.promos.filter(p => p.status === 'candidate')) {
       const min = parseFloat(p.min_discounted_price) || 0, max = parseFloat(p.max_discounted_price) || it.preco;
       const fixo = PRECO_FIXO.has(p.type) && parseFloat(p.price) > 0;
       const sug = fixo ? parseFloat(p.price) : (parseFloat(p.suggested_discounted_price) || parseFloat(p.price) || max);
-      const avaliarEm = async pr => { const { tx, fr } = await custosNoPreco(it, pr); return conta(it, pr, tx, fr); };
+      const avaliarEm = async pr => { if (semCusto) return doCache(pr); const { tx, fr } = await custosNoPreco(it, pr); return conta(it, pr, tx, fr); };
       let preco = sug, r = await avaliarEm(sug), motivo = 'preço sugerido pelo ML';
       if (!fixo && r.margem != null && r.margem < m) {
         const alvo = await precoParaMargem(it, m, sug);
@@ -249,7 +263,7 @@ const PM = (() => {
     }
     // Em vigor
     const ativa = it.promos.find(p => p.status === 'started' && parseFloat(p.price) > 0);
-    if (ativa) { const pr = parseFloat(ativa.price); const { tx, fr } = await custosNoPreco(it, pr); it.ativa = { promo: ativa, ...conta(it, pr, tx, fr) }; } else it.ativa = null;
+    if (ativa) { const pr = parseFloat(ativa.price); if (semCusto) it.ativa = { promo: ativa, ...doCache(pr) }; else { const { tx, fr } = await custosNoPreco(it, pr); it.ativa = { promo: ativa, ...conta(it, pr, tx, fr) }; } } else it.ativa = null;
     // Padrão: a que bate a margem com o menor preço (mais competitiva); depois a de maior margem
     const ordem = [...it.opcoes].sort((a, b) => (b.bate - a.bate) || (a.bate ? a.preco - b.preco : (b.margem ?? -999) - (a.margem ?? -999)));
     it.melhor = ordem[0] || null;
@@ -259,7 +273,9 @@ const PM = (() => {
   async function carregar(forcar) {
     if (!contaAtual) return;
     const meli = meliDe(contaAtual);
-    const chave = `glr_promo_cache_${meli}`;
+    const quem = (await _sb.auth.getSession().catch(() => null))?.data?.session?.user?.id || 'anon';
+    const chave = `glr_promo_cache2_${quem}_${meli}`; // por usuário: o cache de um login não vale para outro
+    try { Object.keys(localStorage).filter(k => k.startsWith('glr_promo_cache_')).forEach(k => localStorage.removeItem(k)); } catch (e) {} // formato antigo (não separava usuário e guardava erro)
     if (!forcar) {
       const c = lerJSON(chave, null);
       if (c && Date.now() - c.em < 30 * 60000 && st.conta !== meli) {
@@ -274,31 +290,16 @@ const PM = (() => {
     render();
     carregarTacos();
     try {
-      // 1) anúncios ativos (corpo completo: categoria, tipo, frete, foto, estoque)
-      const anuncios = [];
-      for (let off = 0; off < 3000; off += 100) {
-        const r = await tentar(() => MarketplaceAPI.call('list_items', { meliUserId: meli, status: 'active', limit: 100, offset: off }));
-        const lote = r?.results || r?.data?.results || [];
-        for (const e of lote) { const b = e && typeof e === 'object' ? (e.body || e) : null; if (b?.id) anuncios.push(b); }
-        if (lote.length < 100) break;
-      }
-      // 3) promoções de cada anúncio + frete estimado de quem não tem histórico
-      st.itens = anuncios.map(b => ({
-        id: b.id, titulo: b.title, foto: (b.thumbnail || '').replace(/^http:/, 'https:'), link: b.permalink, preco: parseFloat(b.price) || 0,
-        estoque: b.available_quantity, vendidos: b.sold_quantity, cat: b.category_id, tipo: b.listing_type_id || 'gold_special',
-        // Mercado Envios (me2, inclui Full): o ML cobra o frete do vendedor; fora dele, frete = 0
-        mercadoEnvios: String(b.shipping?.mode || 'me2') === 'me2', promos: [],
-      }));
-      let feitos = 0;
-      await mapLimit(st.itens, 5, async it => {
-        try { const r = await tentar(() => MarketplaceAPI.call('ml_item_promotions', { meliUserId: meli, item_id: it.id })); it.promos = r?.items || r?.data?.items || (Array.isArray(r?.data) ? r.data : []) || []; }
-        catch (e) { it.erroPromo = e.message; }
-        feitos++;
-        if (feitos % 5 === 0) { st.progresso = `promoções e custos: ${feitos}/${st.itens.length} anúncios`; render(); }
-      });
+      // 1) anúncios + promoções de cada um, buscados no servidor em paralelo (e guardados para os próximos)
+      st.progresso = forcar ? 'buscando no Mercado Livre todos os anúncios e as promoções de cada um…' : 'carregando anúncios e promoções…'; render();
+      const t0 = Date.now();
+      const r = await apiPromos({ acao: 'carregar', conta: meli, forcar: !!forcar });
+      st.itens = (r.itens || []).map(it => ({ ...it, promos: it.promos || [] }));
+      Object.assign(taxaCache, r.taxas || {}); Object.assign(freteCache, r.fretes || {});
+      st.buscadoEm = r.em; st.guardado = !!r.guardado; st.falhas = r.falhas || 0; st.tempoBusca = Math.round((Date.now() - t0) / 1000);
       st.progresso = 'calculando margens…'; render();
       await mapLimit(st.itens, 4, async it => { try { await avaliar(it); } catch (e) { it.erroPromo = e.message; it.opcoes = []; } });
-      try { localStorage.setItem(chave, JSON.stringify({ em: Date.now(), itens: st.itens.map(({ opcoes, melhor, ativa, ...x }) => x), taxas: taxaCache, fretes: freteCache })); } catch (e) {}
+      if (!st.itens.some(x => x.erroPromo)) { try { localStorage.setItem(chave, JSON.stringify({ em: Date.now(), itens: st.itens.map(({ opcoes, melhor, ativa, erroPromo, ...x }) => x), taxas: taxaCache, fretes: freteCache })); } catch (e) {} }
     } catch (e) { st.erro = e.message || String(e); }
     st.carregando = false;
     render();
@@ -379,9 +380,9 @@ const PM = (() => {
         <label title="Investimento em ADS como % do preço — entra na margem (margem pós-ADS)">ADS <input id="pm-ads" type="number" step="0.1" min="0" value="${d.ads || ''}" placeholder="0" onchange="window._pmAds(this.value)">%${tacosSug != null ? ` <button class="pm-link" type="button" onclick="window._pmAds('${tacosSug.toFixed(1)}')" title="TACOS do mês desta conta (base automática)">usar TACOS do mês (${tacosSug.toFixed(1).replace('.', ',')}%)</button>` : ''}</label>
         <span class="pm-mut">Imposto da conta: <b>${d.imp ? d.imp.toString().replace('.', ',') + '%' : 'não definido'}</b>${d.extraPct || d.extraFixo ? ` · despesas extras de Vendas: ${d.extraPct ? d.extraPct + '%' : ''}${d.extraPct && d.extraFixo ? ' + ' : ''}${d.extraFixo ? R(d.extraFixo) + '/pedido' : ''}` : ''}</span>
         <span class="pm-mut" style="flex:1">Margem${d.ads ? ' pós-ADS' : ''} = (preço − tarifa ML − frete do ML naquele preço − custo − imposto − despesas${d.ads ? ' − ADS' : ''}) ÷ preço</span>
-        <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._pmAtualizar()">Atualizar</button>
+        <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._pmAtualizar()" title="Busca de novo no Mercado Livre todos os anúncios e as promoções de cada um">Atualizar</button>
       </div>
-      ${st.carregando || st.emLote ? `<div class="pm-prog">⏳ ${h(st.progresso)}</div>` : ''}
+      ${st.carregando || st.emLote ? `<div class="pm-prog">⏳ ${h(st.progresso)}${st.progresso.startsWith('buscando') ? ' (pode levar até 1 minuto em contas grandes)' : ''}</div>` : st.buscadoEm ? `<div class="pm-mut" style="margin:-4px 0 10px">Promoções buscadas no ML ${(() => { const m = Math.round((Date.now() - st.buscadoEm) / 60000); return m < 1 ? 'agora' : m < 60 ? `há ${m} min` : `há ${Math.round(m / 60)} h`; })()}${st.guardado ? ' (guardadas para a equipe — abre na hora)' : st.tempoBusca ? ` em ${st.tempoBusca} s` : ''}${st.falhas ? ` · ${st.falhas} anúncio(s) sem resposta do ML: clique em Atualizar para tentar de novo` : ''}. Atualizar busca de novo.</div>` : ''}
       ${itens.length ? `
       <div class="pm-cards">
         ${card('todos', 'Anúncios ativos', itens.length, 'com promoções avaliadas', 'var(--accent)')}
@@ -409,7 +410,7 @@ const PM = (() => {
                 : `<div class="pm-sem">⚠️ sem custo<input class="pm-inp" placeholder="R$ custo" onkeydown="if(event.key==='Enter')window._pmCusto('${it.id}',this.value)" onchange="window._pmCusto('${it.id}',this.value)"></div><div class="pm-mut">salva também em Vendas</div>`}</td>
               <td>${it.ativa ? `<div class="pm-mut">${h(TIPO[it.ativa.promo.type] || it.ativa.promo.type)}</div><b>${R(it.ativa.preco)}</b> ${chipM(it.ativa.margem)}` : '<span class="pm-mut">—</span>'}</td>
               <td>${it.erroPromo ? `<span class="pm-mut" style="color:var(--red)">erro ao buscar: ${h(it.erroPromo)}</span>` : it.opcoes?.length ? `<select class="pm-sel" onchange="window._pmEscolha('${it.id}',this.value)">${it.opcoes.map((o, i) => `<option value="${i}" ${i === st.escolha[it.id] ? 'selected' : ''}>${o.bate ? '✅' : o.margem == null ? '•' : '⚠️'} ${h(TIPO[o.promo.type] || o.promo.type)}${o.promo.name ? ' · ' + h(o.promo.name) : ''} — ${R(o.preco)} (−${o.desconto.toFixed(0)}%)</option>`).join('')}</select>${op ? `<div class="pm-mut">${h(op.motivo)}${op.promo.finish_date ? ` · até ${new Date(op.promo.finish_date).toLocaleDateString('pt-BR')}` : ''}</div>` : ''}` : '<span class="pm-mut">sem promoção disponível</span>'}</td>
-              <td class="pm-n">${op ? `<b>${R(op.recebe)}</b><div class="pm-mut">tarifa ${R(op.tarifa)}${op.frete ? ` · frete ${R(op.frete)}` : ''}</div>` : '—'}</td>
+              <td class="pm-n">${op && op.recebe != null ? `<b>${R(op.recebe)}</b><div class="pm-mut">tarifa ${R(op.tarifa)}${op.frete ? ` · frete ${R(op.frete)}` : ''}</div>` : '—'}</td>
               <td class="pm-n">${op ? chipM(op.margem) + (op.lucro != null ? `<div class="pm-mut">lucro ${R(op.lucro)}</div>${d.ads ? `<div class="pm-mut">ADS ${R(op.adsValor)} · antes do ADS ${op.margemAntesAds.toFixed(1).replace('.', ',')}%</div>` : ''}` : '') : '—'}</td>
               <td>${op ? `<button class="btn btn-sm ${op.bate ? 'btn-primary' : 'btn-secondary'}" ${st.aplicando[it.id] || st.emLote ? 'disabled' : ''} onclick="window._pmAplicar('${it.id}')" title="${op.bate ? 'Bate a margem mínima' : 'Fica abaixo da margem mínima'}">${st.aplicando[it.id] ? '⏳' : 'Aplicar'}</button>` : ''}
                 ${res ? `<div class="pm-res" style="color:${res.ok ? 'var(--green)' : 'var(--red)'}">${h(res.txt)}</div>` : ''}</td>

@@ -36,6 +36,9 @@
     },
     "api/atendimento.js": {
       "maxDuration": 60
+    },
+    "api/promos.js": {
+      "maxDuration": 300
     }
   },
   "headers": [

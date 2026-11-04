@@ -26,6 +26,7 @@ const ALLOWED_ACTIONS = new Set([
   'shopee_ads_campaign_settings','shopee_ads_campaign_daily',
   'shopee_ads_balance',
   'ml_ads_campaigns',
+  'ml_item_promotions',           // Central de Promoções (só leitura; a conta é conferida abaixo)
 ]);
 
 // Portal: ações administrativas da GLR nunca; escrita livre nunca.
