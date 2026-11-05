@@ -1062,6 +1062,9 @@ const ADAPTADORES = {
   },
   magalu: {
     async incremental(apiKey, id, cursor, t, prazo) {
+      // Recuperação única depois da correção do formato (05/11/2026): relê 14 dias e refaz a
+      // conferência de 45 dias, porque o cursor avançou enquanto a Tiops devolvia pedidos errados.
+      if (!cursor.fix_formato_v2) { cursor.ate_update = t - 14 * DIA; cursor.reproc_dia = null; cursor.fix_formato_v2 = true; }
       const desde = Math.max((cursor.ate_update || t - 2 * DIA) - 600, t - 14 * DIA);
       const r = await gravarPedidosMagalu(apiKey, id, { updated_at__gte: new Date(desde * SEG).toISOString() }, prazo);
       if (r.completo) cursor.ate_update = t;
