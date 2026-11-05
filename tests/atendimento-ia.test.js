@@ -12,7 +12,7 @@ function ambiente({ perguntas = [], unread = [], packs = {}, magalu = [], magalu
     if (acao === 'ml_messages_get') return packs[p.pack_id];
     if (acao === 'raw_read') return { id: 55, status: 'paid', date_created: '2026-11-01', order_items: [{ quantity: 1, item: { title: 'Mesa de centro' } }] };
     if (acao === 'magalu_list_conversations') return { results: magalu };
-    if (acao === 'magalu_conversation_messages') return { results: magaluMsgs[p.params.conversation_id] || [] };
+    if (acao === 'magalu_conversation_messages') return { results: magaluMsgs[p.conversation_id] || [] };
     if (/answer|send/.test(acao)) { if (falhaEnvio) throw new Error('400 bloqueado'); return { ok: true }; }
     throw new Error('ação inesperada ' + acao);
   };
@@ -64,8 +64,8 @@ test('Magalu: responde a conversa cuja última mensagem é do comprador', async 
   const r = await ia.atenderConta(ctx, 'magalu', 'GENPUB.x');
   assert.equal(r.respondidas, 1);
   const env = chamadas.find(c => c.acao === 'magalu_send_conversation_message');
-  assert.deepEqual(env.p, { magalu_account_id: 'GENPUB.x', params: { conversation_id: 'c1', content: 'Olá! Temos sim, na cor preta.' } });
-  assert.ok(!chamadas.some(c => c.acao === 'magalu_conversation_messages' && c.p.params.conversation_id === 'c2'));
+  assert.deepEqual(env.p, { magalu_account_id: 'GENPUB.x', conversation_id: 'c1', content: 'Olá! Temos sim, na cor preta.' });
+  assert.ok(!chamadas.some(c => c.acao === 'magalu_conversation_messages' && c.p.conversation_id === 'c2'));
 });
 test('envio recusado pela plataforma vira pendente com o rascunho', async () => {
   const { ctx, logs } = ambiente({ perguntas: [{ id: 9, item_id: 'MLB1', text: 'Tem preta?' }], falhaEnvio: true });

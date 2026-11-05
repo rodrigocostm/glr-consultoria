@@ -7,7 +7,7 @@
 // RESPONDE SOZINHO ao comprador (decisão do analista, 04/11/2026):
 //  • Mercado Livre — perguntas nos anúncios (com os dados do anúncio) e
 //    mensagens pós-venda (com o status do pedido e do envio);
-//  • Magalu — conversas com compradores.
+//  • Magalu — conversas com compradores (chamadas no formato PLANO: conta e campos no mesmo nível).
 // Shopee (a Shopee só libera o chat para sistema próprio do vendedor) e TikTok
 // Shop (chat ainda não liberado para a integração) não têm API de chat.
 // A IA só responde com o que está nos dados: reclamação, defeito, troca,
@@ -146,11 +146,11 @@ async function atenderConta(ctx, mkt, conta) {
         enviar: texto => mcpCall(apiKey, 'ml_messages_send', { meliUserId: conta, pack_id: pack, buyer_id: buyer, text: texto }) });
     }
   } else if (mkt === 'magalu') {
-    const lc = await mcpCall(apiKey, 'magalu_list_conversations', { magalu_account_id: conta, params: { status: 'OPENED', _limit: 30 } }).catch(() => null);
+    const lc = await mcpCall(apiKey, 'magalu_list_conversations', { magalu_account_id: conta, status: 'OPENED', _limit: 30 }).catch(() => null);
     for (const c of (lc?.results || lc?.data?.results || [])) {
       if (!tempo()) break;
       if (c.last_message?.user?.type === 'SELLER') continue; // a loja já respondeu por último
-      const mm = await mcpCall(apiKey, 'magalu_conversation_messages', { magalu_account_id: conta, params: { conversation_id: c.id, _limit: 15 } }).catch(() => null);
+      const mm = await mcpCall(apiKey, 'magalu_conversation_messages', { magalu_account_id: conta, conversation_id: c.id, _limit: 15 }).catch(() => null);
       const msgs = (mm?.results || mm?.data?.results || []).slice().sort((a, b) => String(a.when_at).localeCompare(String(b.when_at)));
       const ult = [...msgs].reverse().find(m => m.content !== 'PRODUCT_MESSAGE');
       if (!ult || ult.from_user?.type !== 'CUSTOMER') continue;
@@ -159,7 +159,7 @@ async function atenderConta(ctx, mkt, conta) {
       const conversa = msgs.filter(m => m.content !== 'PRODUCT_MESSAGE').slice(-10).map(m => `${m.from_user?.type === 'CUSTOMER' ? 'Comprador' : 'Loja'}: ${corta(m.content, 600)}${m.attachments?.length ? ' [enviou anexo/foto]' : ''}`).join('\n');
       await tratar({ canal: 'Conversa com comprador na Magalu', rotulo: 'conversa na Magalu', ref, envio: { tipo: 'magalu', conversation_id: c.id }, pergunta: ult.content, produto: prod,
         dados: prod ? `Produto da conversa: ${prod}` : null, conversa, limite: 1000,
-        enviar: texto => mcpCall(apiKey, 'magalu_send_conversation_message', { magalu_account_id: conta, params: { conversation_id: c.id, content: texto } }) });
+        enviar: texto => mcpCall(apiKey, 'magalu_send_conversation_message', { magalu_account_id: conta, conversation_id: c.id, content: texto }) });
     }
   }
   return res;
@@ -169,7 +169,7 @@ async function atenderConta(ctx, mkt, conta) {
 async function enviarManual(mcpCall, apiKey, conta, envio, texto) {
   if (envio?.tipo === 'ml_pergunta') return mcpCall(apiKey, 'ml_answer_question', { meliUserId: conta, question_id: envio.question_id, text: texto });
   if (envio?.tipo === 'ml_mensagem') return mcpCall(apiKey, 'ml_messages_send', { meliUserId: conta, pack_id: envio.pack_id, buyer_id: envio.buyer_id, text: texto });
-  if (envio?.tipo === 'magalu') return mcpCall(apiKey, 'magalu_send_conversation_message', { magalu_account_id: conta, params: { conversation_id: envio.conversation_id, content: texto } });
+  if (envio?.tipo === 'magalu') return mcpCall(apiKey, 'magalu_send_conversation_message', { magalu_account_id: conta, conversation_id: envio.conversation_id, content: texto });
   throw new Error('Canal sem envio');
 }
 

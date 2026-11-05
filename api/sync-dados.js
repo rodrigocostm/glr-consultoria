@@ -738,10 +738,10 @@ async function gravarPedidosMagalu(apiKey, accId, filtro, prazo) {
   for (let off = 0; off < 20000; off += 50) {
     if (prazo && Date.now() > prazo) return { n, completo: false };
     const q = { magalu_account_id: accId, _limit: 50, _offset: off, ...filtro };
-    const r = await comRetry(async () => {
-      try { return await mcpCall(apiKey, 'magalu_list_orders', { magalu_account_id: accId, params: q }); }
-      catch (e) { return await mcpCall(apiKey, 'magalu_list_orders', q); }
-    });
+    // Formato PLANO (conta + filtros no mesmo nível). O formato aninhado { magalu_account_id, params }
+    // responde 200 mas a Tiops ignora filtros e _offset e devolve sempre os 50 pedidos mais antigos
+    // da loja — foi isso que deixou a Magalu sem pedidos de novembro (confirmado em 05/11/2026).
+    const r = await comRetry(() => mcpCall(apiKey, 'magalu_list_orders', q));
     const d = r.data?.results ? r.data : r;
     const res = d.results || [];
     // a API às vezes ignora o _offset e devolve sempre a mesma página — sem isto
