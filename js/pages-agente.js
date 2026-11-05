@@ -1088,15 +1088,17 @@
     // pra ter um jeito de agir mesmo quando o pipeline automático (que
     // depende de listar campanhas primeiro) está bloqueado pela
     // instabilidade do conector. ──
-    async function executarAcaoManual() {
+    // over: { campaignId, nome, tipo, valor, explicacao } — vem da janela "Ajustar à mão" da linha
+    // da campanha; sem ele, lê o painel "Ajuste manual avançado" da aba Ações.
+    async function executarAcaoManual(over) {
       const contaId = state.contaAbertaId;
       const cfg = configDaConta(contaId);
       const v = id => document.getElementById(id)?.value?.trim();
-      const campaignId = v('ag-man-campanha');
-      const nome = v('ag-man-nome') || `Campanha ${campaignId}`;
-      const tipo = v('ag-man-tipo');
-      const valor = parseFloat(v('ag-man-valor'));
-      const explicacaoInput = v('ag-man-explicacao');
+      const campaignId = over ? String(over.campaignId) : v('ag-man-campanha');
+      const nome = (over ? over.nome : v('ag-man-nome')) || `Campanha ${campaignId}`;
+      const tipo = over ? over.tipo : v('ag-man-tipo');
+      const valor = parseFloat(over ? over.valor : v('ag-man-valor'));
+      const explicacaoInput = over ? over.explicacao : v('ag-man-explicacao');
 
       if (!campaignId) { alert('Cola o ID da campanha (aparece na tabela "Campanhas ao vivo", coluna ID).'); return; }
       if (tipo !== 'pausar' && (isNaN(valor) || valor <= 0)) { alert('Preenche o valor novo (orçamento ou meta de ROAS).'); return; }
@@ -1138,10 +1140,8 @@
           titulo: `${acaoLabel} — ${nome}`, explicacao, dados: { ...dados, campaign_id: Number(campaignId) },
           resultado: 'executado', origem: 'analista',
         });
-        document.getElementById('ag-man-campanha').value = '';
-        document.getElementById('ag-man-nome').value = '';
-        document.getElementById('ag-man-valor').value = '';
-        document.getElementById('ag-man-explicacao').value = '';
+        ['ag-man-campanha', 'ag-man-nome', 'ag-man-valor', 'ag-man-explicacao'].forEach(k => { const e = document.getElementById(k); if (e) e.value = ''; });
+        document.getElementById('ag-ajuste-modal')?.remove();
         await carregarTudo();
       } catch (e) {
         try {
@@ -2114,7 +2114,7 @@
             ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agBoostCampanha('${c.id}', '${nomeJs}', ${c.budget || 0}, ${c.roasTarget != null ? c.roasTarget : 'null'}, ${c.acos === Infinity ? 'Infinity' : c.acos})">Sugerir mais investimento</button>` : ''}
             ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agSugerirCampanha('${c.id}', 'pausar', '${nomeJs}')">⏸ Sugerir pausar</button>` : ''}
             ${pausada ? `<button onclick="this.closest('details').removeAttribute('open');window._agSugerirCampanha('${c.id}', 'retomar', '${nomeJs}')">▶ Sugerir reativar</button>` : ''}
-            <button onclick="this.closest('details').removeAttribute('open');window._agUsarCampanhaManual('${c.id}', '${nomeJs}')">Ajustar à mão</button>
+            <button onclick="this.closest('details').removeAttribute('open');window._agUsarCampanhaManual('${c.id}', '${nomeJs}', ${c.budget || 0}, ${c.roasTarget != null ? c.roasTarget : 'null'}, ${pausada})">Ajustar à mão</button>
           </div></details></td>
         </tr>`;
       };
@@ -2706,13 +2706,63 @@
     window._agAprovarAlerta = aprovarAlerta;
     window._agDescartarAlerta = descartarAlerta;
     window._agBoostCampanha = boostCampanha;
-    window._agUsarCampanhaManual = (id, nome) => {
-      state.sec.manual = true; render(); // abre o painel antes de preencher
-      const campoId = document.getElementById('ag-man-campanha');
-      const campoNome = document.getElementById('ag-man-nome');
-      if (campoId) campoId.value = id;
-      if (campoNome) campoNome.value = nome;
-      campoId?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // "Ajustar à mão" na linha da campanha: abre uma janela ali mesmo, já com a meta de ROAS e o
+    // orçamento atuais (antes só preenchia o painel da aba Ações, que não aparece na aba Campanhas).
+    window._agUsarCampanhaManual = (id, nome, budget, roas, pausada) => {
+      document.getElementById('ag-ajuste-modal')?.remove();
+      const temRoas = roas != null && roas > 0;
+      const tipo0 = temRoas ? 'roas' : 'orcamento';
+      const atual = t => t === 'roas' ? (temRoas ? `${String(roas).replace('.', ',')}x` : 'sem meta de ROAS') : t === 'orcamento' ? (budget > 0 ? R$(budget) + '/dia' : 'sem limite') : '';
+      const w = document.createElement('div');
+      w.id = 'ag-ajuste-modal';
+      w.innerHTML = `<div class="ag-aj-fundo" onclick="if(event.target===this)this.parentElement.remove()">
+        <div class="ag-aj-box" role="dialog" aria-modal="true" aria-labelledby="ag-aj-tit">
+          <h3 id="ag-aj-tit">Ajustar à mão</h3>
+          <div class="ag-aj-camp">${h(nome)} <span>ID ${h(id)}</span></div>
+          <label class="form-label" for="ag-aj-tipo">O que mudar</label>
+          <select class="form-select" id="ag-aj-tipo">
+            <option value="roas" ${tipo0 === 'roas' ? 'selected' : ''}>Meta de ROAS (x) — atual: ${h(atual('roas'))}</option>
+            <option value="orcamento" ${tipo0 === 'orcamento' ? 'selected' : ''}>Orçamento diário (R$) — atual: ${h(atual('orcamento'))}</option>
+            ${pausada ? '' : '<option value="pausar">Pausar campanha</option>'}
+          </select>
+          <div id="ag-aj-valor-wrap"><label class="form-label" for="ag-aj-valor" id="ag-aj-valor-lb">Novo valor</label>
+            <input type="number" step="0.1" min="0" class="form-input" id="ag-aj-valor" value="${tipo0 === 'roas' ? (temRoas ? roas : '') : (budget > 0 ? budget : '')}">
+            <div class="ag-aj-dica" id="ag-aj-dica"></div></div>
+          <label class="form-label" for="ag-aj-motivo">Motivo (vai para o histórico)</label>
+          <input type="text" class="form-input" id="ag-aj-motivo" placeholder="Opcional — ex.: campanha de Black Friday">
+          <div class="ag-aj-bts"><button class="btn btn-secondary btn-sm" onclick="document.getElementById('ag-ajuste-modal').remove()">Cancelar</button>
+            <button class="btn btn-primary btn-sm" id="ag-aj-ok">Aplicar agora</button></div>
+        </div></div>
+        <style>.ag-aj-fundo{position:fixed;inset:0;background:rgba(10,15,30,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px}
+        .ag-aj-box{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.3);width:420px;max-width:100%;padding:20px;display:flex;flex-direction:column;gap:8px}
+        .ag-aj-box h3{margin:0;font-size:17px}.ag-aj-camp{font-size:13px;font-weight:600;margin-bottom:6px}.ag-aj-camp span{display:block;font-weight:400;font-size:12px;color:var(--text-muted)}
+        .ag-aj-dica{font-size:12px;color:var(--text-muted);margin-top:4px;min-height:16px}.ag-aj-bts{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}</style>`;
+      document.body.appendChild(w);
+      const sel = w.querySelector('#ag-aj-tipo'), inp = w.querySelector('#ag-aj-valor'), dica = w.querySelector('#ag-aj-dica');
+      const atualizar = () => {
+        const t = sel.value;
+        w.querySelector('#ag-aj-valor-wrap').style.display = t === 'pausar' ? 'none' : '';
+        w.querySelector('#ag-aj-valor-lb').textContent = t === 'roas' ? 'Nova meta de ROAS (x)' : 'Novo orçamento diário (R$)';
+        const n = parseFloat(String(inp.value).replace(',', '.')), base = t === 'roas' ? roas : budget;
+        dica.textContent = t === 'pausar' ? 'A campanha para de rodar na Shopee na hora.'
+          : !(n > 0) ? `Atual: ${atual(t)}.`
+          : t === 'roas' ? `${base > 0 ? `${String(base).replace('.', ',')}x → ${String(n).replace('.', ',')}x · ` : ''}${base > 0 && n < base ? 'lance mais agressivo (mais volume e gasto)' : base > 0 && n > base ? 'lance mais conservador (menos gasto)' : 'meta de ROAS'}`
+          : `${base > 0 ? `${R$(base)} → ` : ''}${R$(n)} por dia`;
+      };
+      sel.addEventListener('change', () => { inp.value = sel.value === 'roas' ? (temRoas ? roas : '') : (budget > 0 ? budget : ''); atualizar(); });
+      inp.addEventListener('input', atualizar);
+      w.addEventListener('keydown', e => { if (e.key === 'Escape') w.remove(); });
+      atualizar(); inp.focus(); inp.select();
+      w.querySelector('#ag-aj-ok').addEventListener('click', async () => {
+        const t = sel.value, n = parseFloat(String(inp.value).replace(',', '.'));
+        if (t !== 'pausar' && !(n > 0)) { alert('Preencha o novo valor.'); inp.focus(); return; }
+        if (t === 'roas' && n < 1) { alert('A Shopee não aceita meta de ROAS abaixo de 1,0x.'); return; }
+        const resumo = t === 'pausar' ? `Pausar "${nome}"?` : t === 'roas' ? `Mudar a meta de ROAS de "${nome}" para ${String(n).replace('.', ',')}x?` : `Mudar o orçamento de "${nome}" para ${R$(n)} por dia?`;
+        if (!confirm(resumo + '\n\nA mudança vai direto para a Shopee.')) return;
+        const b = w.querySelector('#ag-aj-ok'); b.disabled = true; b.textContent = 'Aplicando…';
+        await executarAcaoManual({ campaignId: id, nome, tipo: t, valor: n, explicacao: w.querySelector('#ag-aj-motivo').value.trim() || 'Ajuste manual do analista pela tabela de campanhas.' });
+        document.getElementById('ag-ajuste-modal')?.remove();
+      });
     };
     window._agAtualizarTipoManual = () => {
       const tipo = document.getElementById('ag-man-tipo')?.value;
