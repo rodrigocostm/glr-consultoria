@@ -29,8 +29,19 @@ const MarketplaceAPI = {
     return json;
   },
 
-  // Chamada genérica à API
+  // Chamada genérica à API. A Tiops às vezes recusa por um instante com 403 "Você tem N contas
+  // conectadas. Seu plano cobre até 100" mesmo com o plano ativo e sem limite (05/11/2026): tenta
+  // de novo sozinho algumas vezes antes de mostrar o erro.
   async call(action, params = {}, apiKey = null) {
+    for (let t = 0; ; t++) {
+      try { return await this._call(action, params, apiKey); }
+      catch (e) {
+        if (t >= 3 || !/plano cobre|contas conectadas/i.test(String(e?.message || ''))) throw e;
+        await new Promise(r => setTimeout(r, 1500 * (t + 1)));
+      }
+    }
+  },
+  async _call(action, params = {}, apiKey = null) {
     if (window._portalConfig) return this._callPortal(action, params);
     const key = apiKey || this.getApiKey();
     if (!key) throw new Error('API key não configurada');

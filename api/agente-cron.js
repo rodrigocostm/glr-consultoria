@@ -143,6 +143,13 @@ async function sbUpsert(table, row, onConflict) {
 }
 
 async function mcpCall(apiKey, action, params) {
+  // 403 "plano cobre até 100 contas" da Tiops vem de vez em quando com o plano ativo: tenta de novo
+  for (let t = 0; ; t++) {
+    try { return await mcpCall1(apiKey, action, params); }
+    catch (e) { if (t >= 2 || !/plano cobre|contas conectadas/i.test(String(e?.message || ''))) throw e; await new Promise(r => setTimeout(r, 1500 * (t + 1))); }
+  }
+}
+async function mcpCall1(apiKey, action, params) {
   consumo.contar(action);
   const r = await fetch('https://mcp.tiops.com.br', {
     method: 'POST',
