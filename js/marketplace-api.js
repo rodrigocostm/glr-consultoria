@@ -36,7 +36,12 @@ const MarketplaceAPI = {
     for (let t = 0; ; t++) {
       try { return await this._call(action, params, apiKey); }
       catch (e) {
-        if (t >= 3 || !/plano cobre|contas conectadas/i.test(String(e?.message || ''))) throw e;
+        const mensagem = String(e?.message || '');
+        const limiteInstavel = /plano cobre|contas conectadas/i.test(mensagem);
+        // Repetir falhas transitórias apenas na consulta de produtos, que é de leitura.
+        const falhaProdutos = action === 'ml_ads_items'
+          && /\bHTTP (502|503|504)\b|\bconnection timeout\b/i.test(mensagem);
+        if (t >= (limiteInstavel ? 3 : 2) || (!limiteInstavel && !falhaProdutos)) throw e;
         await new Promise(r => setTimeout(r, 1500 * (t + 1)));
       }
     }
