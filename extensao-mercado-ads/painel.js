@@ -370,7 +370,7 @@
       const acosT = a.tot.receita ? a.tot.invest / a.tot.receita * 100 : null;
       const resumo = `<div class="res"><div><span>Investimento</span><b>${R$(a.tot.invest)}</b></div><div><span>Receita</span><b>${R$(a.tot.receita)}</b></div><div><span>ACOS</span><b>${pct(acosT)}</b></div><div><span>Vendas</span><b>${n0(a.tot.vendas)}</b></div></div>
         <div class="chips">${['corrigir', 'conter', 'escalar', 'aguardar', 'manter', 'semdados'].filter(k => cont[k]).map(k => `${chipV(k)}<b class="q2">${cont[k]}</b>`).join(' ')}</div>
-        <div class="pq0">${a.itens.length} campanha(s) desta página · últimos ${a.dias} dias · ${metaTxt}</div>`;
+        <div class="pq0">${a.fonte === 'api' ? `${a.itens.length} campanha(s) da conta · dados do Mercado Ads até ${a.ate.split('-').reverse().slice(0, 2).join('/')} (escada 7/15/30 dias)` : `${a.itens.length} campanha(s) desta página · últimos ${a.dias} dias${st.iaErro ? ' · leitura da tela (dados completos indisponíveis agora)' : ''}`} · ${metaTxt}</div>`;
       if (st.expert) {
         const cols = [['nome', 'Campanha'], ['v', 'Veredito'], ['roasObj', 'ROAS obj.'], ['orc', 'Orç./dia'], ['uso', 'Uso orç.'], ['acos', 'ACOS'], ['roas', 'ROAS'], ['invest', 'Invest.'], ['receita', 'Receita'], ['vendas', 'Vendas']];
         const val = (x, k) => k === 'v' ? ({ corrigir: 0, conter: 1, escalar: 2, aguardar: 3, manter: 4, semdados: 5 }[x.v]) : k === 'nome' ? x.nome : k === 'uso' ? x.uso : typeof x[k] === 'object' ? x[k]?.v : x[k];
@@ -380,7 +380,7 @@
       return `${cfg}${resumo}${a.itens.filter(x => x.v !== 'manter' && x.v !== 'semdados').concat(a.itens.filter(x => x.v === 'manter' || x.v === 'semdados')).map(x => `<div class="passo">
         <div class="topo">${chipV(x.v)}<div class="acao"><b>${esc(x.nome)}</b></div></div>
         <div class="pq">${esc(x.motivo)}${x.gargalo ? ` Gargalo: <b>${x.gargalo}</b>.` : ''}</div>
-        <div class="como">${esc(x.acao)}</div>
+        <div class="como">${esc(x.acao)}</div>${extrasIA(x)}
         <div class="pq">ROAS obj. ${xv(x.roasObj)} · ${x.orc ? R$(x.orc) + '/dia' : 'sem orçamento'}${x.uso != null ? ` (${Math.round(x.uso * 100)}% usado)` : ''} · invest. ${R$(x.invest.v)}${dl(x.invest.d)} · vendas ${n0(x.vendas.v)}${dl(x.vendas.d)}</div>
         <div class="bts"><a class="bt pri" href="${esc(x.href)}">Abrir a campanha</a></div>
       </div>`).join('')}`;
@@ -388,16 +388,16 @@
     // dentro da campanha
     const vc = a.vc, acosT = a.tot.receita ? a.tot.invest / a.tot.receita * 100 : null;
     const topo = `<div class="passo camp"><div class="topo">${chipV(vc.v)}<div class="acao"><b>Esta campanha</b> · ROAS obj. ${xv(a.cab.roasObj)} · ${a.cab.orc ? R$(a.cab.orc) + '/dia' : '—'}${a.cab.diag ? ` · ${esc(a.cab.diag.toLowerCase())}` : ''}</div></div>
-      <div class="pq">${esc(vc.motivo)}</div><div class="como">${esc(vc.acao)}</div>
+      <div class="pq">${esc(vc.motivo)}</div><div class="como">${esc(vc.acao)}</div>${extrasIA(vc)}
       <div class="pq">Soma dos anúncios: invest. ${R$(a.tot.invest)} · receita ${R$(a.tot.receita)} · ACOS ${pct(acosT)} · ${n0(a.tot.vendas)} vendas · CTR ${a.tot.imp ? pct(a.tot.cli / a.tot.imp * 100) : '—'}</div>
       ${vc.novoRoas || vc.novoOrc ? `<div class="bts">${vc.novoRoas ? `<button class="pri" data-pre-roas="${vc.novoRoas}">Preencher ROAS ${xv(vc.novoRoas)}</button>` : ''}${vc.novoOrc ? `<button class="pri" data-pre-orc="${vc.novoOrc}">Preencher orçamento ${R$(vc.novoOrc)}</button>` : ''}</div>${st.msg.camp ? `<div class="msg ${st.msg.camp.erro ? 'erro' : ''}">${esc(st.msg.camp.texto)}</div>` : ''}` : ''}</div>
-      <div class="pq0">${a.itens.length} anúncio(s) desta página · últimos ${a.dias} dias · ${a.meta ? `meta de ACOS ${pct(a.meta)}` : 'sem meta'}</div>`;
+      <div class="pq0">${a.itens.length} anúncio(s)${a.fonte === 'api' ? ` · 30 dias até ${a.ate.split('-').reverse().slice(0, 2).join('/')}` : ` desta página · últimos ${a.dias} dias`} · ${a.meta ? `meta de ACOS ${pct(a.meta)}` : 'sem meta'}</div>`;
     if (st.expert) {
       return `${cfg}${topo}<div class="tw"><table><thead><tr><th>Anúncio</th><th>Veredito</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPC</th><th>Invest.</th><th>Receita</th><th>ACOS</th></tr></thead><tbody>${a.itens.map(x => `<tr title="${esc(x.motivo + ' ' + x.acao)}"><td>${esc((x.nome || '').slice(0, 30))}<br><small>${esc(x.id || '')}</small></td><td>${chipV(x.v)}</td><td>${n0(x.imp.v)}</td><td>${n0(x.cli.v)}</td><td>${x.ctr != null ? pct(x.ctr) : '—'}</td><td>${x.conv != null ? pct(x.conv) : '—'}</td><td>${x.cpc.v != null ? R$(x.cpc.v) : '—'}</td><td>${R$(x.invest.v)}</td><td>${R$(x.receita.v)}</td><td>${pct(x.acos.v)}</td></tr>`).join('')}</tbody></table></div>`;
     }
     return `${cfg}${topo}${a.itens.map(x => `<div class="passo">
       <div class="topo">${chipV(x.v)}<div class="acao">${esc((x.nome || '').slice(0, 70))} <small>${esc(x.id || '')}</small></div></div>
-      <div class="pq">${esc(x.motivo)}</div>${x.v !== 'manter' ? `<div class="como">${esc(x.acao)}</div>` : ''}
+      <div class="pq">${esc(x.motivo)}</div>${x.v !== 'manter' ? `<div class="como">${esc(x.acao)}</div>` : ''}${(x.prob || []).length ? `<div class="prob">${x.prob.map(p => `<span>${esc(p)}</span>`).join('')}</div>` : ''}
       <div class="pq">${n0(x.imp.v)} impr. · ${n0(x.cli.v)} cliques · CTR ${x.ctr != null ? pct(x.ctr) : '—'} · conv. ${x.conv != null ? pct(x.conv) : '—'} · invest. ${R$(x.invest.v)}${dl(x.invest.d)} · ACOS ${pct(x.acos.v)}</div>
       ${x.id && ['retirar', 'mover'].includes(x.v) ? `<div class="bts"><button data-mostrar="${esc(x.id)}" data-nome="${esc((x.nome || '').slice(0, 60))}">Mostrar o anúncio</button></div>` : ''}
       ${st.msg['ad:' + x.id] ? `<div class="msg ${st.msg['ad:' + x.id].erro ? 'erro' : ''}">${esc(st.msg['ad:' + x.id].texto)}</div>` : ''}
@@ -459,6 +459,8 @@
       .abas{display:flex;gap:4px;padding:6px 10px 0} .abas button{border:0;border-bottom:2px solid transparent;border-radius:0;padding:6px 8px;color:#5b6070;background:none} .abas button.on{border-bottom-color:#5b4ff0;color:#1f2330;font-weight:600} .abas i{font-style:normal;font-size:10.5px;background:#5b4ff0;color:#fff;border-radius:99px;padding:0 6px;margin-left:3px}
       .chip{display:inline-block;flex-shrink:0;font-size:11px;font-weight:700;border-radius:99px;padding:1px 8px;white-space:nowrap}
       .res{display:grid;grid-template-columns:repeat(4,1fr);gap:6px} .res div{background:#f6f7fa;border-radius:8px;padding:6px 8px;display:flex;flex-direction:column} .res span{font-size:10.5px;color:#5b6070} .res b{font-size:13px}
+      .esc{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:4px} .degrau{font-size:11px;font-weight:600;border-radius:99px;padding:1px 7px} .conf{font-size:11px;color:#8a8fa0;margin-left:2px}
+      .notas{margin:4px 0 0;padding-left:16px;font-size:11.5px;color:#5b6070} .prob{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px} .prob span{font-size:11px;color:#c0392b;background:#fdecea;border-radius:99px;padding:1px 7px}
       .chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center} .q2{font-size:12px;margin-right:6px} .pq0{font-size:11.5px;color:#8a8fa0}
       .cfg{display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:12px;color:#5b6070} .dica{font-size:11.5px;color:#8a5a00;background:#fff8e6;border-radius:8px;padding:6px 8px} .cfg input{width:70px;font:inherit;border:1px solid #d6d9e2;border-radius:6px;padding:3px 6px;margin:0 3px}
       .passo .topo .acao b{font-weight:600} .passo.camp{border-color:#d9d4ff;background:#faf9ff} small{color:#8a8fa0;font-size:10.5px}
@@ -504,15 +506,40 @@
   raiz.addEventListener('change', e => {
     if (e.target.id !== 'glr-meta') return;
     const v = parseFloat(String(e.target.value).replace(',', '.'));
-    st.meta = v > 0 ? v : null; chrome.storage.local.set({ [chaveMeta()]: st.meta }); st.anAssin = ''; analisarTela(true);
+    st.meta = v > 0 ? v : null; chrome.storage.local.set({ [chaveMeta()]: st.meta }); st.anAssin = ''; analisarTela(true); analisarIA(true);
   });
+  // inteligência pelos dados do próprio Mercado Ads (inteligencia.js): escada 7/15/30 dias, gargalo, histórico
+  // de alterações, diagnóstico do anúncio. Refaz a cada 60 s ou ao trocar de tela/meta; se falhar, fica a leitura da tela.
+  let ia = { chave: '', em: 0, rodando: false, res: null };
+  const chaveIA = () => `${location.pathname}|${AN.anunciante()}|${st.meta || ''}`;
+  async function analisarIA(forcar) {
+    if (!window.__glrIA || ia.rodando) return;
+    const chave = chaveIA();
+    if (!forcar && chave === ia.chave && Date.now() - ia.em < 60000) return;
+    ia.rodando = true; ia.chave = chave; ia.em = Date.now();
+    try { const r = await window.__glrIA.analisar({ metaAcos: st.meta }); ia.res = r ? { ...r, chave } : null; st.iaErro = null; }
+    catch (e) { ia.res = null; st.iaErro = String(e.message || e); }
+    ia.rodando = false; analisarTela(true);
+  }
+  function mesclarIA(dom) {
+    const r = ia.res;
+    if (!r || r.chave !== chaveIA() || r.tipo !== (dom.tipo === 'carregando' ? 'campanha' : dom.tipo === 'nada' ? r.tipo : dom.tipo)) return dom;
+    // mantém o selo nas linhas da tabela do ML, agora com o veredito da inteligência
+    const linhas = new Map((dom.itens || []).map(x => [String(x.id), x.tr]));
+    r.itens.forEach(x => { const tr = linhas.get(String(x.id)) || [...linhas.entries()].find(([k]) => k && String(x.id).includes(k.replace(/\D/g, '')))?.[1]; if (tr) AN.selo(tr, x.v, `${x.motivo} ${x.acao}`); });
+    return r;
+  }
+  const escada = esc0 => (esc0 || []).map(e => { const [rot, cor, fundo] = { folga: ['folga', '#0f8a4b', '#e7f6ee'], ok: ['na meta', '#4a5568', '#eef0f4'], alto: ['alto', '#b45309', '#fff3e0'], pouco: ['pouco dado', '#8a8fa0', '#f3f4f7'] }[e.cl] || []; return `<span class="degrau" style="color:${cor};background:${fundo}" title="ACOS em ${e.d} dias">${e.d}d ${e.acos != null ? pct(e.acos) : '—'} · ${rot}</span>`; }).join('');
+  const extrasIA = x => !x.esc ? '' : `<div class="esc">${escada(x.esc)}<span class="conf">confiança ${x.conf}</span></div>${(x.notas || []).length ? `<ul class="notas">${x.notas.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}`;
   // lê a tela e refaz a análise só quando a tabela mudou
   let metaDe = '';
   async function analisarTela(forcar) {
     if (!AN) return;
     if (metaDe !== chaveMeta()) { metaDe = chaveMeta(); try { st.meta = (await chrome.storage.local.get(metaDe))[metaDe] || null; } catch (e) {} }
-    const a = AN.analisar({ metaAcos: st.meta });
-    const assin = JSON.stringify([a.tipo, (a.itens || []).map(x => [x.id, x.v, x.invest?.v, x.acos?.v]), a.vc?.v, st.meta]);
+    const dom = AN.analisar({ metaAcos: st.meta });
+    analisarIA();
+    const a = mesclarIA(dom);
+    const assin = JSON.stringify([a.tipo, a.fonte, (a.itens || []).map(x => [x.id, x.v, x.invest?.v, x.acos?.v]), a.vc?.v, st.meta, st.iaErro]);
     if (!forcar && assin === st.anAssin) return;
     st.anAssin = assin; st.an = a;
     const ativo = raiz.activeElement && raiz.activeElement.id === 'glr-meta'; if (!ativo) render();

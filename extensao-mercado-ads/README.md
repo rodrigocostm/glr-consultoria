@@ -20,6 +20,24 @@ Copiloto do Mercado Ads. Abre um painel ao lado da tela de **Product Ads** com d
 2. **Carregar sem compactação** → escolha esta pasta (`extensao-mercado-ads`). Para atualizar, clique em ↻ na extensão.
 3. Fixe o ícone **GLR Copiloto ADS** na barra do Chrome.
 
+## Inteligência (inteligencia.js + ponte.js) — v1.1
+Além da tabela da tela, o copiloto lê os mesmos dados que o próprio Mercado Ads usa
+(`pa.mercadolivre.com.br/pa/api/admin-pads/ajax`, só leitura, com a sua sessão; nada vai para a GLR):
+- **Escada 7/15/30 dias** terminando em D-2 (os 2 últimos dias ainda recebem vendas atribuídas):
+  cada janela vira *folga* (ACOS < 80% da meta), *na meta*, *alto* (> 120%) ou *pouco dado*
+  (menos de 2 vendas e 40 cliques). Só mexe quando as janelas concordam.
+- **Confiança** pelas vendas em 30 dias (alta 15+, média 5+, baixa) define o tamanho do passo do
+  ROAS: até 25% / 15% / 8%.
+- **Aguardar**: campanha com menos de 14 dias ou ROAS/orçamento mudado há menos de 7 dias
+  (lido do histórico de alterações da campanha), salvo ACOS acima do dobro da meta.
+- **Gargalo** ao escalar: *orçamento* (gasto/dia ≥ 85% do orçamento → subir orçamento), *mercado*
+  (SOV ≥ 80% → colocar mais anúncios) ou *lance* (baixar o ROAS, nunca abaixo do ROAS da meta).
+- **Notas**: orgânico forte (o ADS pode estar pagando venda que viria de graça), SOV, dias em que
+  bateu o orçamento, dias gastando sem vender.
+- **Anúncio**: vendas esperadas pela conversão da campanha; problemas do anúncio (sem estoque
+  imediato, foto ruim, experiência ruim, perdendo a buy box do catálogo com o preço para ganhar).
+Se essa leitura falhar, o painel segue com a leitura da tabela (analise.js).
+
 ## Regras dos vereditos (analise.js → LIM)
 - Campanha: *Conter* com ACOS > 120% da meta (sugere subir o ROAS objetivo 12%); *Escalar* com ACOS ≤ 80%
   da meta e 3+ vendas — se o orçamento já é usado em 85%+, aumentar orçamento 20%; senão, baixar o ROAS
@@ -29,7 +47,7 @@ Copiloto do Mercado Ads. Abre um painel ao lado da tela de **Product Ads** com d
   *Escalar* com ACOS ≤ 60% da meta e 2+ vendas.
 
 ## Segurança
-- A Análise não envia nada para fora do navegador.
+- A Análise não envia nada para fora do navegador. A ponte (ponte.js) só faz GET no endereço de leitura do Mercado Ads.
 - O Pacote GLR usa o login próprio no Supabase com a chave pública (a mesma do site), com as regras de acesso do site.
 
 Tela mapeada em 05/11/2026 (ads.mercadolivre.com.br/product-ads/admin). Se o Mercado Livre mudar as

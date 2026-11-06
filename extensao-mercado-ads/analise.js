@@ -179,5 +179,5 @@
     return { tipo: 'lista', dias, metaCfg, tot, itens };
   }
 
-  window.__glrAnalise = { analisar, anunciante, VER, num, celula, LIM };
+  window.__glrAnalise = { analisar, anunciante, VER, num, celula, LIM, selo };
 })();

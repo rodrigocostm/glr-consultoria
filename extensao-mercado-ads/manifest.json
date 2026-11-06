@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GLR Copiloto ADS",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Copiloto do Mercado Ads: lê a tela de Product Ads e dá veredito por campanha e por anúncio (escalar, conter, retirar…) com a ação sugerida. Funciona sem login; com o login da GLR mostra também o pacote do dia.",
   "permissions": [
     "storage"
@@ -23,7 +23,19 @@
         "https://ads.mercadolivre.com.br/product-ads/*"
       ],
       "js": [
+        "ponte.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://vendedores.mercadolivre.com.br/publicidade/*",
+        "https://ads.mercadolivre.com.br/product-ads/*"
+      ],
+      "js": [
         "analise.js",
+        "inteligencia.js",
         "painel.js"
       ],
       "run_at": "document_idle"
