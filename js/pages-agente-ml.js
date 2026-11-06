@@ -294,7 +294,7 @@ Router.register('agente-ml', (params, el) => {
     const todos = [...cur, ...prev, meta].filter(v => v != null);
     if (!todos.length) return vazio('Sem dados por dia para esta métrica.');
     // escala "redonda" para os rótulos do eixo
-    const bruto = Math.max(...todos) * 1.1 || 1, mag = 10 ** Math.floor(Math.log10(bruto)), topo = [1, 2, 2.5, 5, 10].map(x => x * mag).find(x => x >= bruto);
+    const bruto = Math.max(...todos) * 1.1 || 1, mag = 10 ** Math.floor(Math.log10(bruto)), topo = [1, 2, 4, 8, 10].map(x => x * mag).find(x => x >= bruto);
     const W = 760, H = 210, L = 64, R = 14, T = 12, B = 26, nDias = Math.max(diasMes, diasAnt), passo = (W - L - R) / (nDias - 1);
     const X = i => L + i * passo, Y = v => T + (H - T - B) * (1 - v / topo);
     const linha = arr => arr.map((v, i) => v == null ? null : `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).reduce((acc, p) => { if (p == null) acc.push([]); else acc[acc.length - 1].push(p); return acc; }, [[]]).filter(s => s.length).map(s => s.length === 1 ? `M${s[0]}h0.01` : `M${s.join('L')}`).join('');
