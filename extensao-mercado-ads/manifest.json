@@ -1,16 +1,31 @@
 {
   "manifest_version": 3,
-  "name": "GLR Copiloto Mercado Ads",
-  "version": "0.3.2",
-  "description": "Mostra no painel do Mercado Ads o pacote do dia da GLR, preenche os campos e destaca onde clicar. Quem salva é sempre o analista.",
-  "permissions": ["storage"],
-  "host_permissions": ["https://rrodqlejqyaoomutriiw.supabase.co/*"],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_title": "GLR Copiloto Mercado Ads", "default_popup": "popup.html" },
+  "name": "GLR Copiloto ADS",
+  "version": "1.0.1",
+  "description": "Copiloto do Mercado Ads: lê a tela de Product Ads e dá veredito por campanha e por anúncio (escalar, conter, retirar…) com a ação sugerida. Funciona sem login; com o login da GLR mostra também o pacote do dia.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://rrodqlejqyaoomutriiw.supabase.co/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "GLR Copiloto ADS",
+    "default_popup": "popup.html"
+  },
   "content_scripts": [
     {
-      "matches": ["https://vendedores.mercadolivre.com.br/publicidade/*", "https://ads.mercadolivre.com.br/product-ads/*"],
-      "js": ["painel.js"],
+      "matches": [
+        "https://vendedores.mercadolivre.com.br/publicidade/*",
+        "https://ads.mercadolivre.com.br/product-ads/*"
+      ],
+      "js": [
+        "analise.js",
+        "painel.js"
+      ],
       "run_at": "document_idle"
     }
   ]

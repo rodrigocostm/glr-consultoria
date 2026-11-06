@@ -7,12 +7,13 @@ async function mostrar() {
   const st = await enviar({ tipo: 'estado' });
   if (st?.email) {
     raiz.innerHTML = `<div class="ok">Conectado como <b>${esc(st.email)}</b>.</div>
-      <p style="margin-top:10px">Abra uma campanha em <b>Publicidade → Product Ads</b> no Mercado Livre: o pacote do dia da GLR aparece no canto da tela.</p>
+      <p style="margin-top:10px">Abra <b>Product Ads</b> no Mercado Ads: a aba <b>Análise</b> dá o veredito de cada campanha e anúncio, e a aba <b>Pacote GLR</b> mostra o pacote do dia.</p>
       <button class="sec" id="sair">Sair</button>`;
     document.getElementById('sair').onclick = async () => { await enviar({ tipo: 'sair' }); mostrar(); };
     return;
   }
-  raiz.innerHTML = `<p>Entre com o seu login do sistema da GLR.</p>
+  raiz.innerHTML = `<div class="ok">A <b>Análise</b> já funciona sem login: abra <b>Product Ads</b> no Mercado Ads e o painel aparece no canto da tela.</div>
+    <p style="margin-top:10px">Cliente da GLR? Entre para ver também o <b>pacote do dia</b> (opcional).</p>
     <form id="f"><label for="em">E-mail</label><input id="em" type="email" autocomplete="username" required>
     <label for="se">Senha</label><input id="se" type="password" autocomplete="current-password" required>
     <button type="submit">Entrar</button><div class="erro" id="er"></div></form>`;

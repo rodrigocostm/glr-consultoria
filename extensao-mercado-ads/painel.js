@@ -311,7 +311,10 @@
   host.id = 'glr-copiloto';
   const raiz = host.attachShadow({ mode: 'open' });
   document.documentElement.appendChild(host);
-  const st = { itens: [], aberto: true, carregando: true, erro: null, msg: {}, chave: '' };
+  const st = { itens: [], aberto: true, carregando: true, erro: null, msg: {}, chave: '', aba: 'analise', an: null, anAssin: '', meta: null, expert: false, ordem: 'prior' };
+  const AN = window.__glrAnalise;
+  const chaveMeta = () => `glr_meta_acos_${AN?.anunciante() || ''}`;
+  chrome.storage.local.get(['glr_aba', 'glr_expert']).then(v => { if (v.glr_aba) st.aba = v.glr_aba; st.expert = !!v.glr_expert; render(); }).catch(() => {});
 
   const ACAO = {
     roas_target: d => `${+d.para > +d.de ? 'Subir' : 'Baixar'} o ROAS objetivo de ${xv(d.de)} para <b>${xv(d.para)}</b>`,
@@ -351,11 +354,62 @@
     return 'Revise os anúncios desta campanha (fotos, título, ficha, frete e buy box).';
   };
 
+  // ── Aba Análise (funciona sem login: lê a tela do Mercado Ads) ──
+  const chipV = v => { const [rot, cor, fundo] = AN.VER[v] || AN.VER.manter; return `<span class="chip" style="color:${cor};background:${fundo}">${rot}</span>`; };
+  const n0 = v => v == null ? '—' : Math.round(v).toLocaleString('pt-BR');
+  const dl = d => d == null || d === 0 ? '' : `<span class="dl ${d > 0 ? 'up' : 'dn'}">${d > 0 ? '▲' : '▼'}${Math.abs(Math.round(d))}%</span>`;
+  function corpoAnalise() {
+    const a = st.an;
+    if (!AN) return '<div class="vazio erro">Não consegui carregar a análise.</div>';
+    if (!a || a.tipo === 'nada') return '<div class="vazio">Abra <b>Product Ads → Campanhas</b> ou uma campanha: a análise lê a tabela da tela.</div>';
+    if (a.tipo === 'carregando') return '<div class="vazio">Esperando a tabela de anúncios carregar…</div>';
+    const metaTxt = st.meta ? `meta de ACOS da conta: <b>${pct(st.meta)}</b>` : 'meta de ACOS: a de cada campanha (100 ÷ ROAS objetivo)';
+    const cfg = `<div class="cfg"><label>Meta de ACOS da conta <input id="glr-meta" type="number" step="0.5" min="0" placeholder="por campanha" value="${st.meta || ''}">%</label><button data-expert="1">${st.expert ? 'Modo simples' : 'Modo Expert'}</button></div>${st.meta ? '' : '<div class="dica">Defina a meta de ACOS desta conta (o máximo que a margem aguenta): sem ela, o copiloto usa o ROAS objetivo de cada campanha, que costuma ser mais apertado que o ACOS real.</div>'}`;
+    if (a.tipo === 'lista') {
+      const cont = {}; a.itens.forEach(x => { cont[x.v] = (cont[x.v] || 0) + 1; });
+      const acosT = a.tot.receita ? a.tot.invest / a.tot.receita * 100 : null;
+      const resumo = `<div class="res"><div><span>Investimento</span><b>${R$(a.tot.invest)}</b></div><div><span>Receita</span><b>${R$(a.tot.receita)}</b></div><div><span>ACOS</span><b>${pct(acosT)}</b></div><div><span>Vendas</span><b>${n0(a.tot.vendas)}</b></div></div>
+        <div class="chips">${['corrigir', 'conter', 'escalar', 'aguardar', 'manter', 'semdados'].filter(k => cont[k]).map(k => `${chipV(k)}<b class="q2">${cont[k]}</b>`).join(' ')}</div>
+        <div class="pq0">${a.itens.length} campanha(s) desta página · últimos ${a.dias} dias · ${metaTxt}</div>`;
+      if (st.expert) {
+        const cols = [['nome', 'Campanha'], ['v', 'Veredito'], ['roasObj', 'ROAS obj.'], ['orc', 'Orç./dia'], ['uso', 'Uso orç.'], ['acos', 'ACOS'], ['roas', 'ROAS'], ['invest', 'Invest.'], ['receita', 'Receita'], ['vendas', 'Vendas']];
+        const val = (x, k) => k === 'v' ? ({ corrigir: 0, conter: 1, escalar: 2, aguardar: 3, manter: 4, semdados: 5 }[x.v]) : k === 'nome' ? x.nome : k === 'uso' ? x.uso : typeof x[k] === 'object' ? x[k]?.v : x[k];
+        const ord = [...a.itens].sort((p, q) => { if (st.ordem === 'prior') return 0; const [k, dir] = st.ordem.split(':'); const A = val(p, k), B = val(q, k); return (A == null) - (B == null) || (A > B ? 1 : A < B ? -1 : 0) * (dir === 'd' ? -1 : 1); });
+        return `${cfg}${resumo}<div class="tw"><table><thead><tr>${cols.map(([k, t]) => `<th data-ord="${k}">${t}${st.ordem.startsWith(k + ':') ? (st.ordem.endsWith(':d') ? ' ▼' : ' ▲') : ''}</th>`).join('')}</tr></thead><tbody>${ord.map(x => `<tr title="${esc(x.motivo + ' ' + x.acao)}"><td><a href="${esc(x.href)}">${esc(x.nome.slice(0, 34))}</a></td><td>${chipV(x.v)}</td><td>${xv(x.roasObj)}</td><td>${x.orc ? R$(x.orc) : '—'}</td><td>${x.uso != null ? Math.round(x.uso * 100) + '%' : '—'}</td><td>${pct(x.acos.v)}${dl(x.acos.d)}</td><td>${xv(x.roas.v)}</td><td>${R$(x.invest.v)}</td><td>${R$(x.receita.v)}</td><td>${n0(x.vendas.v)}</td></tr>`).join('')}</tbody></table></div>`;
+      }
+      return `${cfg}${resumo}${a.itens.filter(x => x.v !== 'manter' && x.v !== 'semdados').concat(a.itens.filter(x => x.v === 'manter' || x.v === 'semdados')).map(x => `<div class="passo">
+        <div class="topo">${chipV(x.v)}<div class="acao"><b>${esc(x.nome)}</b></div></div>
+        <div class="pq">${esc(x.motivo)}${x.gargalo ? ` Gargalo: <b>${x.gargalo}</b>.` : ''}</div>
+        <div class="como">${esc(x.acao)}</div>
+        <div class="pq">ROAS obj. ${xv(x.roasObj)} · ${x.orc ? R$(x.orc) + '/dia' : 'sem orçamento'}${x.uso != null ? ` (${Math.round(x.uso * 100)}% usado)` : ''} · invest. ${R$(x.invest.v)}${dl(x.invest.d)} · vendas ${n0(x.vendas.v)}${dl(x.vendas.d)}</div>
+        <div class="bts"><a class="bt pri" href="${esc(x.href)}">Abrir a campanha</a></div>
+      </div>`).join('')}`;
+    }
+    // dentro da campanha
+    const vc = a.vc, acosT = a.tot.receita ? a.tot.invest / a.tot.receita * 100 : null;
+    const topo = `<div class="passo camp"><div class="topo">${chipV(vc.v)}<div class="acao"><b>Esta campanha</b> · ROAS obj. ${xv(a.cab.roasObj)} · ${a.cab.orc ? R$(a.cab.orc) + '/dia' : '—'}${a.cab.diag ? ` · ${esc(a.cab.diag.toLowerCase())}` : ''}</div></div>
+      <div class="pq">${esc(vc.motivo)}</div><div class="como">${esc(vc.acao)}</div>
+      <div class="pq">Soma dos anúncios: invest. ${R$(a.tot.invest)} · receita ${R$(a.tot.receita)} · ACOS ${pct(acosT)} · ${n0(a.tot.vendas)} vendas · CTR ${a.tot.imp ? pct(a.tot.cli / a.tot.imp * 100) : '—'}</div>
+      ${vc.novoRoas || vc.novoOrc ? `<div class="bts">${vc.novoRoas ? `<button class="pri" data-pre-roas="${vc.novoRoas}">Preencher ROAS ${xv(vc.novoRoas)}</button>` : ''}${vc.novoOrc ? `<button class="pri" data-pre-orc="${vc.novoOrc}">Preencher orçamento ${R$(vc.novoOrc)}</button>` : ''}</div>${st.msg.camp ? `<div class="msg ${st.msg.camp.erro ? 'erro' : ''}">${esc(st.msg.camp.texto)}</div>` : ''}` : ''}</div>
+      <div class="pq0">${a.itens.length} anúncio(s) desta página · últimos ${a.dias} dias · ${a.meta ? `meta de ACOS ${pct(a.meta)}` : 'sem meta'}</div>`;
+    if (st.expert) {
+      return `${cfg}${topo}<div class="tw"><table><thead><tr><th>Anúncio</th><th>Veredito</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPC</th><th>Invest.</th><th>Receita</th><th>ACOS</th></tr></thead><tbody>${a.itens.map(x => `<tr title="${esc(x.motivo + ' ' + x.acao)}"><td>${esc((x.nome || '').slice(0, 30))}<br><small>${esc(x.id || '')}</small></td><td>${chipV(x.v)}</td><td>${n0(x.imp.v)}</td><td>${n0(x.cli.v)}</td><td>${x.ctr != null ? pct(x.ctr) : '—'}</td><td>${x.conv != null ? pct(x.conv) : '—'}</td><td>${x.cpc.v != null ? R$(x.cpc.v) : '—'}</td><td>${R$(x.invest.v)}</td><td>${R$(x.receita.v)}</td><td>${pct(x.acos.v)}</td></tr>`).join('')}</tbody></table></div>`;
+    }
+    return `${cfg}${topo}${a.itens.map(x => `<div class="passo">
+      <div class="topo">${chipV(x.v)}<div class="acao">${esc((x.nome || '').slice(0, 70))} <small>${esc(x.id || '')}</small></div></div>
+      <div class="pq">${esc(x.motivo)}</div>${x.v !== 'manter' ? `<div class="como">${esc(x.acao)}</div>` : ''}
+      <div class="pq">${n0(x.imp.v)} impr. · ${n0(x.cli.v)} cliques · CTR ${x.ctr != null ? pct(x.ctr) : '—'} · conv. ${x.conv != null ? pct(x.conv) : '—'} · invest. ${R$(x.invest.v)}${dl(x.invest.d)} · ACOS ${pct(x.acos.v)}</div>
+      ${x.id && ['retirar', 'mover'].includes(x.v) ? `<div class="bts"><button data-mostrar="${esc(x.id)}" data-nome="${esc((x.nome || '').slice(0, 60))}">Mostrar o anúncio</button></div>` : ''}
+      ${st.msg['ad:' + x.id] ? `<div class="msg ${st.msg['ad:' + x.id].erro ? 'erro' : ''}">${esc(st.msg['ad:' + x.id].texto)}</div>` : ''}
+    </div>`).join('')}`;
+  }
+  const atencao = () => (st.an?.itens || []).filter(x => ['corrigir', 'conter', 'retirar', 'mover', 'avaliar'].includes(x.v)).length;
+
   function render() {
     const aqui = campanhaAberta();
     const lista = st.itens;
     const corpo = st.erro === 'SEM_LOGIN'
-      ? '<div class="vazio">Entre com o seu login da GLR: clique no ícone da extensão <b>GLR Copiloto</b> na barra do Chrome.</div>'
+      ? '<div class="vazio">O pacote do dia é para clientes da GLR: entre com o login da GLR no ícone da extensão. A aba <b>Análise</b> funciona sem login.</div>'
       : st.erro ? `<div class="vazio erro">${esc(st.erro)}</div>`
       : st.carregando ? '<div class="vazio">Buscando o pacote do dia…</div>'
       : !lista.length ? `<div class="vazio">Nada pendente ${aqui ? 'para esta campanha' : 'para as campanhas desta tela'}. ✓</div>`
@@ -401,16 +455,32 @@
       button:focus-visible{outline:2px solid #5b4ff0;outline-offset:2px}
       .vazio{padding:14px 6px;color:#5b6070;font-size:12.5px}
       .rod{padding:8px 12px;border-top:1px solid #eef0f4;font-size:11px;color:#8a8fa0}
+      .p.exp{width:min(860px,calc(100vw - 32px))}
+      .abas{display:flex;gap:4px;padding:6px 10px 0} .abas button{border:0;border-bottom:2px solid transparent;border-radius:0;padding:6px 8px;color:#5b6070;background:none} .abas button.on{border-bottom-color:#5b4ff0;color:#1f2330;font-weight:600} .abas i{font-style:normal;font-size:10.5px;background:#5b4ff0;color:#fff;border-radius:99px;padding:0 6px;margin-left:3px}
+      .chip{display:inline-block;flex-shrink:0;font-size:11px;font-weight:700;border-radius:99px;padding:1px 8px;white-space:nowrap}
+      .res{display:grid;grid-template-columns:repeat(4,1fr);gap:6px} .res div{background:#f6f7fa;border-radius:8px;padding:6px 8px;display:flex;flex-direction:column} .res span{font-size:10.5px;color:#5b6070} .res b{font-size:13px}
+      .chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center} .q2{font-size:12px;margin-right:6px} .pq0{font-size:11.5px;color:#8a8fa0}
+      .cfg{display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:12px;color:#5b6070} .dica{font-size:11.5px;color:#8a5a00;background:#fff8e6;border-radius:8px;padding:6px 8px} .cfg input{width:70px;font:inherit;border:1px solid #d6d9e2;border-radius:6px;padding:3px 6px;margin:0 3px}
+      .passo .topo .acao b{font-weight:600} .passo.camp{border-color:#d9d4ff;background:#faf9ff} small{color:#8a8fa0;font-size:10.5px}
+      .dl{font-size:10.5px;margin-left:2px} .dl.up{color:#0f8a4b} .dl.dn{color:#c0392b}
+      a.bt{font-size:12px;border:1px solid #5b4ff0;background:#5b4ff0;color:#fff;border-radius:8px;padding:5px 10px;text-decoration:none;font-weight:600}
+      .tw{overflow:auto;max-height:52vh;border:1px solid #eceef3;border-radius:8px} table{border-collapse:collapse;width:100%;font-size:12px} th{position:sticky;top:0;background:#f6f7fa;text-align:left;padding:6px;cursor:pointer;white-space:nowrap;font-weight:600} td{padding:5px 6px;border-top:1px solid #f0f1f5;white-space:nowrap} td a{color:#3b32c4}
     </style>
-    <div class="p ${st.aberto ? '' : 'min'}">
-      <div class="cab" data-alternar="1"><b>GLR · pacote do dia</b><span class="q">${st.erro ? '!' : lista.length}</span></div>
-      ${st.aberto ? `<div class="lista">${barra}${corpo}</div><div class="rod">A extensão preenche e destaca; quem salva no ML é você. · v${chrome.runtime.getManifest?.().version || ''}</div>` : ''}
+    <div class="p ${st.aberto ? '' : 'min'} ${st.expert && st.aba === 'analise' && st.aberto ? 'exp' : ''}">
+      <div class="cab" data-alternar="1"><b>GLR Copiloto ADS</b><span class="q">${atencao() + (st.erro ? 0 : lista.length)}</span></div>
+      ${st.aberto ? `<div class="abas"><button class="${st.aba === 'analise' ? 'on' : ''}" data-aba="analise">Análise${atencao() ? ` <i>${atencao()}</i>` : ''}</button><button class="${st.aba === 'glr' ? 'on' : ''}" data-aba="glr">Pacote GLR${!st.erro && lista.length ? ` <i>${lista.length}</i>` : ''}</button></div>
+        <div class="lista">${st.aba === 'analise' ? corpoAnalise() : barra + corpo}</div><div class="rod">${st.aba === 'analise' ? 'Lê só a tela do Mercado Ads, no seu navegador. Sugestões: quem decide e salva no ML é você.' : 'A extensão preenche e destaca; quem salva no ML é você.'} · v${chrome.runtime.getManifest?.().version || ''}</div>` : ''}
     </div>`;
   }
 
   raiz.addEventListener('click', async e => {
-    const b = e.target.closest('[data-alternar],[data-abrir],[data-ajuda],[data-feito],[data-desc],[data-auto-iniciar],[data-auto-parar],[data-auto-fechar]'); if (!b) return;
+    const b = e.target.closest('[data-alternar],[data-abrir],[data-ajuda],[data-feito],[data-desc],[data-auto-iniciar],[data-auto-parar],[data-auto-fechar],[data-aba],[data-expert],[data-ord],[data-pre-roas],[data-pre-orc],[data-mostrar]'); if (!b) return;
     if (b.dataset.alternar) { st.aberto = !st.aberto; return render(); }
+    if (b.dataset.aba) { st.aba = b.dataset.aba; chrome.storage.local.set({ glr_aba: st.aba }); return render(); }
+    if (b.dataset.expert) { st.expert = !st.expert; chrome.storage.local.set({ glr_expert: st.expert }); return render(); }
+    if (b.dataset.ord) { const k = b.dataset.ord; st.ordem = st.ordem === `${k}:d` ? `${k}:a` : st.ordem === `${k}:a` ? 'prior' : `${k}:d`; return render(); }
+    if (b.dataset.preRoas || b.dataset.preOrc) { limparDestaques(); b.disabled = true; const erro = await (b.dataset.preRoas ? preencherRoas(+b.dataset.preRoas) : preencherOrcamento(+b.dataset.preOrc)).catch(err => String(err.message || err)); st.msg.camp = erro ? { texto: erro, erro: true } : { texto: 'Pronto: confira o valor destacado em roxo e clique em Salvar no ML.' }; return render(); }
+    if (b.dataset.mostrar) { limparDestaques(); const ok = await mostrarAnuncio(b.dataset.mostrar, b.dataset.nome).catch(() => false); st.msg['ad:' + b.dataset.mostrar] = ok ? { texto: 'Anúncio destacado: use o ⋮ da linha → Pausar (ou Mover em Anúncios patrocinados).' } : { texto: 'Não achei o anúncio nesta página da tabela.', erro: true }; return render(); }
     if (b.dataset.autoIniciar) { b.disabled = true; return iniciarAuto(); }
     if (b.dataset.autoParar) return pararAuto();
     if (b.dataset.autoFechar) { await chrome.storage.local.remove(FILA); st.auto = null; st.chave = ''; return carregar(); }
@@ -430,6 +500,23 @@
     else st.msg[l.id] = { texto: `Não consegui marcar: ${r?.erro || 'erro'}`, erro: true };
     render();
   });
+
+  raiz.addEventListener('change', e => {
+    if (e.target.id !== 'glr-meta') return;
+    const v = parseFloat(String(e.target.value).replace(',', '.'));
+    st.meta = v > 0 ? v : null; chrome.storage.local.set({ [chaveMeta()]: st.meta }); st.anAssin = ''; analisarTela(true);
+  });
+  // lê a tela e refaz a análise só quando a tabela mudou
+  let metaDe = '';
+  async function analisarTela(forcar) {
+    if (!AN) return;
+    if (metaDe !== chaveMeta()) { metaDe = chaveMeta(); try { st.meta = (await chrome.storage.local.get(metaDe))[metaDe] || null; } catch (e) {} }
+    const a = AN.analisar({ metaAcos: st.meta });
+    const assin = JSON.stringify([a.tipo, (a.itens || []).map(x => [x.id, x.v, x.invest?.v, x.acos?.v]), a.vc?.v, st.meta]);
+    if (!forcar && assin === st.anAssin) return;
+    st.anAssin = assin; st.an = a;
+    const ativo = raiz.activeElement && raiz.activeElement.id === 'glr-meta'; if (!ativo) render();
+  }
 
   async function carregar() {
     const aqui = campanhaAberta();
@@ -454,6 +541,6 @@
   lerFila().then(f => { st.auto = f; render(); if (f?.status === 'rodando') setTimeout(rodar, 3000); });
   // o painel do ML é uma página de uma tela só: acompanha a troca de campanha pela URL e a lista que carrega
   let ultimaUrl = '';
-  setInterval(() => { if (location.href !== ultimaUrl) { ultimaUrl = location.href; st.chave = ''; limparDestaques(); } carregar(); }, 1500);
+  setInterval(() => { if (location.href !== ultimaUrl) { ultimaUrl = location.href; st.chave = ''; st.anAssin = ''; st.msg = {}; limparDestaques(); } analisarTela(); carregar(); }, 1500);
   chrome.storage.onChanged.addListener(m => { if (m.sessao) { st.chave = ''; st.erro = null; carregar(); } });
 })();
