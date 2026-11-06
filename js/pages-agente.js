@@ -28,6 +28,7 @@
 
   function renderPage(params, el) {
     const state = {
+      shpDiario: {}, // ADS da Shopee por dia (Resumo de ADS)
       carregando: true,
       contasShopee: [], // conexões de marketplace disponíveis (pra onboarding de novo piloto)
       contas: [], // todas as linhas de glr_agente_config (portfólio)
@@ -2035,11 +2036,91 @@
       </div>`;
     }
 
+    // ── Resumo de ADS da Shopee: o mesmo formato do "Resumo de Product Ads" do ML
+    // (faixa de métricas + gráfico por dia, este mês × mês anterior, meta/objetivo).
+    // ADS por dia = performance diária da loja inteira (já inclui o GMV Max), do
+    // dia 1 do mês anterior até hoje, em blocos de 15 dias (a API recusa mais de 30).
+    // Faturamento e TACOS por dia vêm da base automática; as vendas por ADS tiram
+    // a parte cancelada/devolvida do mês (a Shopee conta os cancelados no GMV).
+    async function carregarDiarioShopee(contaId, forcar) {
+      if (!contaId || (!forcar && state.shpDiario[contaId])) return;
+      state.shpDiario[contaId] = { carregando: true };
+      try {
+        const hoje = new Date(), blocos = [], dias = {};
+        for (const m of [-1, 0]) {
+          const ini = new Date(hoje.getFullYear(), hoje.getMonth() + m, 1);
+          const fim = m === 0 ? new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()) : new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+          for (const d = new Date(ini); d <= fim; d.setDate(d.getDate() + 15)) {
+            const f = new Date(d); f.setDate(f.getDate() + 14);
+            blocos.push([isoDe(d), isoDe(f > fim ? fim : f)]);
+          }
+        }
+        const resps = await Promise.all(blocos.map(([de, ate]) => MarketplaceAPI.call('shopee_ads_daily_performance', { shopId: contaId, start_date: isoParaBR(de), end_date: isoParaBR(ate) })));
+        resps.forEach(r => (r.data?.response || r.response || []).forEach(d => { if (d.date) dias[isoParaBR(String(d.date))] = d; }));
+        state.shpDiario[contaId] = { dias };
+      } catch (e) { state.shpDiario[contaId] = { erro: e.message || String(e) }; }
+      render();
+    }
+
+    function renderResumoShopee(cfg) {
+      if (!window.AdsResumo) return '';
+      const contaId = cfg.conta_id, dd = state.shpDiario[contaId];
+      if (!dd) setTimeout(() => carregarDiarioShopee(contaId), 0);
+      const hoje = new Date(), ano = hoje.getFullYear(), mes = hoje.getMonth(), hojeD = hoje.getDate();
+      const dia = (m, d) => isoDe(new Date(ano, mes + m, d));
+      const diasMes = new Date(ano, mes + 1, 0).getDate(), diasAnt = new Date(ano, mes, 0).getDate();
+      const mesIni = dia(0, 1), hojeIso = dia(0, hojeD);
+      const m = mesDaConta(contaId); // também dispara a carga da base automática
+      const info = state.baseMapa ? state.baseMapa[BaseDados.chave('shopee', String(contaId))] : null;
+      let tx = 0;
+      if (info && BaseDados.cobre(info, mesIni)) { const t = BaseDados.somar(info, mesIni, hojeIso), b = t.faturamento + t.valor_cancelado + t.valor_devolvido; tx = b > 0 ? (t.valor_cancelado + t.valor_devolvido) / b : 0; }
+      const meta = parseFloat(cfg.meta_acos) || null;
+      const ads = d => dd?.dias ? (dd.dias[d] || {}) : null; // dia sem registro = sem gasto
+      const base = d => info && BaseDados.cobre(info, d) ? (info.dias?.[d] || {}) : null;
+      const vend = a => a ? (parseFloat(a.broad_gmv) || 0) * (1 - tx) : null, gast = a => a ? parseFloat(a.expense) || 0 : null;
+      const fin = v => v == null || !isFinite(v) ? null : v;
+      const serie = (f, extra) => ({ cur: Array.from({ length: hojeD }, (_, i) => fin(f(dia(0, i + 1)))), prev: Array.from({ length: diasAnt }, (_, i) => fin(f(dia(-1, i + 1)))), ...extra });
+      let gasto = null, vendas = null, pedidos = null;
+      if (dd?.dias) { gasto = 0; vendas = 0; pedidos = 0; for (let i = 1; i <= hojeD; i++) { const a = dd.dias[dia(0, i)]; if (a) { gasto += gast(a); vendas += vend(a); pedidos += parseInt(a.broad_order) || 0; } } }
+      const acos = gasto > 0 ? (vendas > 0 ? gasto / vendas * 100 : Infinity) : null;
+      const ativas = state.dadosAoVivoPorConta[contaId]?.todasCampanhas?.filter(c => (c.status || '').toLowerCase() === 'ongoing').length;
+      const espera = !dd || dd.carregando ? '…' : '—';
+      const pct = v => v == null ? '—' : fmtPct(v), roasX = v => v == null ? '—' : `${fmtNum(v)}x`;
+      const cor = (v, mt) => v != null && mt ? (v <= mt ? 'var(--green)' : v <= mt * 1.3 ? 'var(--yellow)' : 'var(--red)') : null;
+      const compR$ = v => v >= 1000 ? `R$ ${(v / 1000).toFixed(v >= 10000 ? 0 : 1).replace('.', ',')} mil` : `R$ ${Math.round(v)}`;
+      const eixoPct = v => `${Math.round(v)}%`;
+      const semAds = dd?.erro ? `Não consegui buscar o ADS por dia: ${dd.erro}` : (!dd || dd.carregando) ? 'Carregando o gráfico…' : null;
+      const semBase = info ? null : (state.carregandoBaseMapa || !state.baseMapa ? 'Carregando a base automática…' : 'A base automática ainda não tem os dias desta conta.');
+      const dm = x => x.split('-').reverse().slice(0, 2).join('/');
+      return AdsResumo.render({
+        chave: `shopee:${contaId}`, titulo: 'Resumo de ADS Shopee', cor: '#ee4d2d', aoMudar: render,
+        sub: `${dm(mesIni)} a ${dm(hojeIso)} · vendas sem cancelados · loja inteira (inclui GMV Max)`,
+        nomeCur: hoje.toLocaleString('pt-BR', { month: 'long' }), nomePrev: new Date(ano, mes - 1, 1).toLocaleString('pt-BR', { month: 'long' }), diasMes, diasAnt,
+        mets: [
+          { k: 'vendas', rot: 'Vendas por ADS', val: vendas == null ? espera : R$(vendas), sub: pedidos == null ? '' : `${pedidos} pedido${pedidos === 1 ? '' : 's'}` },
+          { k: 'invest', rot: 'Investimento', val: gasto == null ? espera : R$(gasto), sub: ativas == null ? '' : `${ativas} campanha${ativas === 1 ? '' : 's'} ativa${ativas === 1 ? '' : 's'}` },
+          { k: 'acos', rot: 'ACOS', val: pct(acos), sub: meta ? `meta ${pct(meta)}` : 'defina a meta em Configuração', cor: acos === Infinity ? 'var(--red)' : cor(acos, meta) },
+          { k: 'roas', rot: 'ROAS', val: gasto > 0 ? roasX(vendas / gasto) : '—', sub: meta ? `objetivo ${roasX(100 / meta)}` : 'sem meta definida' },
+          { k: 'fat', rot: 'Faturamento da loja', val: m ? R$(m.fat) : '—', sub: m ? `projeção ${R$(m.projecao).replace(/,\d{2}$/, '')}` : 'base automática sem o mês' },
+          { k: 'tacos', rot: 'TACOS', val: pct(m?.tacos), sub: meta ? `meta ${pct(meta)}` : '', cor: cor(m?.tacos, meta) },
+        ],
+        series: {
+          vendas: semAds ? { vazio: semAds } : serie(d => vend(ads(d)), { rot: 'Vendas por ADS', fmt: R$, eixo: compR$ }),
+          invest: semAds ? { vazio: semAds } : serie(d => gast(ads(d)), { rot: 'Investimento', fmt: R$, eixo: compR$ }),
+          acos: semAds ? { vazio: semAds } : serie(d => { const a = ads(d), v = vend(a); return v > 0 ? gast(a) / v * 100 : null; }, { rot: 'ACOS', fmt: pct, eixo: eixoPct, meta, metaRot: 'meta' }),
+          roas: semAds ? { vazio: semAds } : serie(d => { const a = ads(d), g = gast(a); return g > 0 ? vend(a) / g : null; }, { rot: 'ROAS', fmt: roasX, eixo: v => `${Math.round(v)}x`, meta: meta ? 100 / meta : null, metaRot: 'objetivo' }),
+          fat: semBase ? { vazio: semBase } : serie(d => { const b = base(d); return b ? parseFloat(b.faturamento) || 0 : null; }, { rot: 'Faturamento da loja', fmt: R$, eixo: compR$ }),
+          tacos: semBase ? { vazio: semBase } : serie(d => { const b = base(d); return b && b.faturamento > 0 ? (parseFloat(b.ads) || 0) / b.faturamento * 100 : null; }, { rot: 'TACOS', fmt: pct, eixo: eixoPct, meta, metaRot: 'meta' }),
+        },
+      });
+    }
+
     // ── 5. Tabela de campanhas (por quê, não só o quê) ──
     const ORDENACAO = {
       nome: c => (c.nome || '').toLowerCase(), status: c => c.status || '', orcamento: c => c.budget || 0,
       gasto: c => c.gasto, impressoes: c => c.impressoes, cliques: c => c.cliques, ctr: c => c.ctr, pedidos: c => c.pedidos,
       gmv: c => c.gmv, acos: c => (c.acos === Infinity ? 1e12 : c.acos),
+      roasMeta: c => c.roasTarget ?? -1, roas: c => (c.gasto > 0 ? c.gmv / c.gasto : -1),
     };
 
     function statusCampanha(contaId, c, cfg) {
@@ -2094,7 +2175,10 @@
         const ultHtml = ult
           ? `<span class="ag-camp-quando">${quandoCurto(ult.criado_em)}</span> ${ult.tipo === 'alerta' ? '<i>Sugestão pendente:</i> ' : ''}${h(textoAcao(ult))}<div class="ag-camp-motivo">${h(motivoCurto(ult.explicacao, 110))}</div>`
           : ((c.status || '').toLowerCase() === 'paused' ? '<span class="ag-camp-motivo">Sem registro do agente — pausada direto na Shopee.</span>' : '<span class="ag-camp-motivo">—</span>');
-        const orc = c.budget > 0 ? R$(c.budget) : `Sem limite${c.roasTarget != null ? ` <div class="ag-camp-motivo">meta de ${sigla('ROAS')} ${fmtNum(c.roasTarget)}x</div>` : ''}`;
+        const orc = c.budget > 0 ? R$(c.budget) : 'Sem limite';
+        const roas = c.gasto > 0 ? c.gmv / c.gasto : null;
+        const metaRoas = c.roasTarget != null ? `${fmtNum(c.roasTarget)}x` : '<span class="ag-camp-motivo" title="Campanha sem meta de ROAS: lance manual ou por palavra-chave">manual</span>';
+        const corRoas = roas == null || c.roasTarget == null ? '' : roas >= c.roasTarget ? 'color:var(--green);' : roas >= c.roasTarget * 0.7 ? 'color:var(--yellow);' : 'color:var(--red);';
         const nomeJs = esc(c.nome).replace(/'/g, "\\'");
         const ativa = (c.status || '').toLowerCase() === 'ongoing', pausada = (c.status || '').toLowerCase() === 'paused';
         const cAcos = corAcos(c.acos, cfg);
@@ -2103,6 +2187,7 @@
           <td><span class="ag-action-chip" style="color:${s.cor};background:color-mix(in srgb,${s.cor} 10%,transparent);">${s.txt}</span>${s.anomalia ? `<div class="ag-camp-anom" title="Pausada com ACOS dentro da meta — vale checar se a pausa foi intencional.">⚠ pausada com ACOS bom</div>` : ''}</td>
           <td style="min-width:200px;max-width:280px;">${ultHtml}</td>
           <td class="ag-mono">${orc}</td>
+          <td class="ag-mono">${metaRoas}</td>
           <td class="ag-mono">${R$(c.gasto)}</td>
           <td class="ag-mono">${(c.impressoes || 0).toLocaleString('pt-BR')}</td>
           <td class="ag-mono">${(c.cliques || 0).toLocaleString('pt-BR')}</td>
@@ -2110,6 +2195,7 @@
           <td class="ag-mono">${c.pedidos || 0}</td>
           <td class="ag-mono" style="font-weight:700;">${R$(c.gmv)}</td>
           <td class="ag-mono" style="font-weight:700;${cAcos ? `color:${cAcos};` : ''}">${fmtPct(c.acos)}</td>
+          <td class="ag-mono" style="font-weight:700;${corRoas}">${roas == null ? '—' : `${fmtNum(roas)}x`}</td>
           <td><details class="ag-menu"><summary title="Ações">⋯</summary><div class="ag-menu-lista">
             ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agBoostCampanha('${c.id}', '${nomeJs}', ${c.budget || 0}, ${c.roasTarget != null ? c.roasTarget : 'null'}, ${c.acos === Infinity ? 'Infinity' : c.acos})">Sugerir mais investimento</button>` : ''}
             ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agSugerirCampanha('${c.id}', 'pausar', '${nomeJs}')">⏸ Sugerir pausar</button>` : ''}
@@ -2125,13 +2211,13 @@
         <div style="overflow-x:auto;">
         <table class="ag-tech-table">
           <thead><tr>
-            ${th('nome', 'Campanha')}${th('status', 'Status')}<th>Última ação do agente / motivo</th>${th('orcamento', 'Orçamento')}${th('gasto', 'Gasto')}${th('impressoes', 'Impressões')}${th('cliques', 'Cliques')}${th('ctr', sigla('CTR'))}${th('pedidos', 'Pedidos')}${th('gmv', sigla('GMV'))}${th('acos', sigla('ACOS'))}<th></th>
+            ${th('nome', 'Campanha')}${th('status', 'Status')}<th>Última ação do agente / motivo</th>${th('orcamento', 'Orçamento')}${th('roasMeta', `Meta ${sigla('ROAS')}`)}${th('gasto', 'Gasto')}${th('impressoes', 'Impressões')}${th('cliques', 'Cliques')}${th('ctr', sigla('CTR'))}${th('pedidos', 'Pedidos')}${th('gmv', sigla('GMV'))}${th('acos', sigla('ACOS'))}${th('roas', sigla('ROAS'))}<th></th>
           </tr></thead>
           <tbody>${linhas.map(linha).join('')}</tbody>
         </table>
         </div>
         ${linhasOrd.length > LIMITE ? `<div style="text-align:center;margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="window._agTabelaTodas()">${state.tabTodas ? 'Mostrar só as 10 primeiras' : `Ver todas (${linhasOrd.length})`}</button></div>` : ''}
-        <div class="ag-nota" style="margin-top:10px;">“Sem limite” = campanha sem orçamento diário fixo (lance automático por meta de ${sigla('ROAS')}). Cores do ${sigla('ACOS')}: verde dentro da meta, amarelo acima da meta, vermelho perto do limite de pausa. Ações do menu ⋯ viram sugestões pra você aprovar em “Precisa de você”.</div>
+        <div class="ag-nota" style="margin-top:10px;">“Sem limite” = campanha sem orçamento diário fixo. “Meta ${sigla('ROAS')}” = o ROAS objetivo configurado na campanha (“manual” = lance manual, sem meta); o ${sigla('ROAS')} fica verde quando bate a meta, amarelo até 70% dela e vermelho abaixo. Cores do ${sigla('ACOS')}: verde dentro da meta, amarelo acima da meta, vermelho perto do limite de pausa. Ações do menu ⋯ viram sugestões pra você aprovar em “Precisa de você”.</div>
       </div>`;
     }
 
@@ -2363,7 +2449,7 @@
       let corpo = '';
       if (aba === 'geral') corpo = `${renderKPIs(cfg)}${resumoPendencias(cfg.conta_id, nPend)}${renderComparativoVisualizacoes(cfg)}`;
       else if (aba === 'acoes') corpo = `${renderPrecisaDeVoce(cfg.conta_id)}${renderResultadosAds(cfg.conta_id)}${renderTimeline(cfg.conta_id)}<div class="ag-secundarias">${renderAcaoManual(cfg.conta_id)}</div>`;
-      else if (aba === 'campanhas') { const funil = renderImpressoesCliquesVendas(cfg.conta_id); corpo = `${renderTabelaCampanhas(cfg)}${renderGmvLoja(cfg.conta_id)}<div class="ag-secundarias">${secaoColapsavel('funil', 'Funil de ADS (impressões → cliques → pedidos)', funil || '<div class="ag-vazio">Sem dados de ADS no período.</div>')}</div>`; }
+      else if (aba === 'campanhas') { const funil = renderImpressoesCliquesVendas(cfg.conta_id); corpo = `${renderResumoShopee(cfg)}${renderTabelaCampanhas(cfg)}${renderGmvLoja(cfg.conta_id)}<div class="ag-secundarias">${secaoColapsavel('funil', 'Funil de ADS (impressões → cliques → pedidos)', funil || '<div class="ag-vazio">Sem dados de ADS no período.</div>')}</div>`; }
       else if (aba === 'produtos') corpo = `<div class="ag-secundarias">${blocoABC(cfg.conta_id)}</div>`;
       else if (aba === 'config') corpo = renderRegras(cfg);
       else corpo = `${renderLog(cfg.conta_id)}<div class="ag-secundarias">${secaoColapsavel('relatorios', 'Relatórios diários (gerados às 07:00 sobre o dia anterior)', renderRelatorios(cfg.conta_id))}</div>`;
@@ -2613,7 +2699,7 @@
     window._agSalvarConfig = salvarConfig;
     window._agEnviarChat = enviarChat;
     window._agFiltrarLog = (t) => { state.filtroLog = t; state.logMostrar = LOG_POR_PAGINA; render(); };
-    window._agAtualizarDados = () => buscarDadosAoVivo(state.contaAbertaId, state.negocioPeriodo, true);
+    window._agAtualizarDados = () => { carregarDiarioShopee(state.contaAbertaId, true); buscarDadosAoVivo(state.contaAbertaId, state.negocioPeriodo, true); };
     // Troca o período da tela inteira: indicadores e tabela de campanhas.
     window._agMudarPeriodo = (periodo) => {
       state.negocioPeriodo = periodo;
