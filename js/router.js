@@ -55,6 +55,7 @@ const Router = {
 
     // Update header title
     const titles = {
+      'segundo-cerebro': 'Segundo Cérebro da operação',
       adviser: 'Adviser · Estratégia GLR',
       dashboard: 'Dashboard Executivo',
       decisoes: 'Caixa de decisões',

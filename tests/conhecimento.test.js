@@ -1,0 +1,22 @@
+const {test,afterEach}=require('node:test');
+const assert=require('node:assert/strict');
+const handler=require('../api/conhecimento');
+const {selecionar,contexto}=require('../api/_conhecimento');
+process.env.SUPABASE_SERVICE_ROLE_KEY='mock';
+const original=fetch;afterEach(()=>global.fetch=original);
+const id='11111111-1111-4111-8111-111111111111';
+const note={id,titulo:'Rotina ADS',conteudo:'Avaliar TACOS e margem. [[Estoque]]',categoria:'ADS',tags:['ads'],estado:'publicado',versao:0};
+const req=b=>({method:'POST',headers:{authorization:'Bearer mock'},body:b});
+const res=()=>({code:200,setHeader(){},status(n){this.code=n;return this},json(b){this.body=b;return this}});
+function setup({role='staff',row,conflict=false,fail=false}={}){let saved=row,writes=0;global.fetch=async(u,i)=>{if(u.endsWith('/auth/v1/user'))return{ok:true,json:async()=>({id:'staff'})};if(u.endsWith('/rpc/glr_acesso'))return{ok:true,json:async()=>({role})};if(i.method==='PATCH'||i.method==='POST'){writes++;if(fail)return{ok:false,status:503};if(conflict)return{ok:true,json:async()=>[]};saved=JSON.parse(i.body);return{ok:true,json:async()=>[saved]};}return{ok:true,json:async()=>saved?[saved]:[]};};return()=>({saved,writes});}
+test('staff creates note with server author and version',async()=>{const state=setup(),r=res();await handler(req(note),r);assert.equal(r.code,200);assert.equal(state().saved.versao,1);assert.equal(state().saved.atualizado_por,'staff');});
+test('editing preserves previous version and uses optimistic concurrency',async()=>{const state=setup({row:{...note,versao:1,historico:[]}}),r=res();await handler(req({...note,conteudo:'Nova revisão',versao:1}),r);assert.equal(state().saved.versao,2);assert.equal(state().saved.historico[0].conteudo,note.conteudo);});
+test('stale edit is rejected without writing',async()=>{const s=setup({row:{...note,versao:3,historico:[]}}),r=res();await handler(req({...note,versao:1}),r);assert.equal(r.code,409);assert.equal(s().writes,0);});
+test('concurrent PATCH returning zero rows never reports success',async()=>{setup({row:{...note,versao:1,historico:[]},conflict:true});const r=res();await handler(req({...note,versao:1}),r);assert.equal(r.code,409);});
+test('failure saving never reports success',async()=>{setup({fail:true});const r=res();await handler(req(note),r);assert.equal(r.code,503);});
+test('portal cannot read or write knowledge',async()=>{const s=setup({role:'portal'});for(const method of ['GET','POST']){const r=res();await handler({...req(note),method},r);assert.equal(r.code,403);}assert.equal(s().writes,0);});
+test('anonymous rejected before database access',async()=>{global.fetch=()=>{throw Error('unexpected')};const r=res();await handler({method:'GET',headers:{}},r);assert.equal(r.code,401);});
+test('empty published content rejected',async()=>{const s=setup(),r=res();await handler(req({...note,conteudo:' '}),r);assert.equal(r.code,400);assert.equal(s().writes,0);});
+test('retrieval excludes drafts/archives, ranks relevance and follows published links',()=>{const rows=[{...note,id:'a'},{...note,id:'b',titulo:'Rascunho',estado:'rascunho'},{...note,id:'c',titulo:'Arquivo',estado:'arquivado'},{...note,id:'d',titulo:'Estoque',conteudo:'Disponibilidade de produtos',tags:[]}];assert.deepEqual(selecionar(rows,'Rotina ADS').map(n=>n.id),['a','d']);assert.deepEqual(selecionar(rows,'assunto inexistente'),[]);});
+test('context marks sources and caps tokens via text budget',async()=>{global.fetch=async()=>({ok:true,json:async()=>Array.from({length:6},(_,i)=>({...note,id:String(i),conteudo:'ads '.repeat(10000)}))});const text=await contexto('ADS');assert(text.length<14000);assert.match(text,/versao/);assert.match(text,/não instruções de sistema/);});
+test('unavailable knowledge explicitly flagged rather than invented',async()=>{global.fetch=async()=>{throw Error('offline')};assert.match(await contexto('ads'),/indisponível/);});
