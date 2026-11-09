@@ -384,7 +384,7 @@ Router.register('escritorio', (params, el) => {
 
     const mesas = Object.entries(AG).map(([k, a]) => {
       const e = est[k], st = STATUS[e.status];
-      const tela = e.ult ? corta(e.ult.texto.replace(/<[^>]+>/g, ''), 110) : 'Nada registrado nas últimas 48 h.';
+      const tela = e.ult ? corta(e.ult.texto.replace(/<\/(td|th|p|li|div)>/g, ' · ').replace(/<[^>]+>/g, ' ').replace(/(\s·\s*)+/g, ' · ').replace(/^\s*·\s*/, ''), 110) : 'Nada registrado nas últimas 48 h.';
       return `<button class="esc-mesa-card ${state.filtro === k ? 'on' : ''}" style="--c:${a.cor}" onclick="window._escFiltro('${k}')" title="Ver só as falas de ${h(a.nome)}">
         <div class="esc-mesa-topo"><span class="esc-setor">${a.rot}</span><span class="esc-status" style="--s:${st[1]}"><i></i>${st[0]}</span></div>
         ${boneco(a.cor, e.status)}
