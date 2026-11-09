@@ -14,7 +14,7 @@ test('nota do cliente traz placar do ADS, exemplos, estoque/margem e links', () 
   assert.match(t, /Baixar a meta de ROAS \(lance mais forte\): 2 de 2 melhoraram/);
   assert.match(t, /Subir a meta de ROAS \(conter\): 0 de 1 melhoraram, 1 pioraram/);
   assert.match(t, /2 sem estoque \(ex\.: Armário X\); 1 acabam em até 7 dias \(ex\.: Mesa Y, ~4 d\); 1 com margem negativa \(ex\.: Cadeira Z, -3,5%\); 10 produto\(s\) vendendo sem custo/);
-  assert.match(t, /\[\[Agentes · Carteira\]\]/); assert.match(t, /\[\[Agentes · Cliente X\]\]/);
+  assert.match(t, /\[\[Agentes · Carteira\]\]/);
   assert.match(t, /TACOS do mês: \*\*6,2%\*\* \(meta 6% — acima\)/);
 });
 

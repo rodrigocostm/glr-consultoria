@@ -26,7 +26,7 @@ const corta = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); retur
 const dm = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' }); };
 const agoraTxt = () => new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 const semLinks = s => String(s || '').replace(/\[\[|\]\]/g, '');
-const ATUALIZADO = /^_Atualizado pelos agentes em [^_]*_\s*$/m;
+const ATUALIZADO = /^_?Atualizado pelos agentes em [^\n]*$/m; // a data da atualização não conta como mudança
 
 // Tipo de ajuste de ADS (para o placar do que funciona)
 function tipoAjuste(l) {
@@ -54,8 +54,8 @@ function notaCliente(c, plano, lojas, medidos) {
   const med = medicoes(medidos, contas);
   const L = [];
   L.push(`# ${semLinks(c.nome)} — o que os agentes sabem`, '');
-  L.push(`_Atualizado pelos agentes em ${agoraTxt()}_`, '');
-  L.push(`Nota escrita e reescrita todo dia pelos agentes a partir dos dados registrados. Observações da equipe: crie outra nota e ligue com [[${tituloCliente(c.nome)}]]. Visão da carteira: [[${HUB}]].`, '');
+  L.push(`Atualizado pelos agentes em ${agoraTxt()}.`, '');
+  L.push(`Nota escrita e reescrita todo dia pelos agentes a partir dos dados registrados. Observações da equipe: crie outra nota e cite o título desta entre colchetes duplos para ligar as duas. Visão da carteira: [[${HUB}]].`, '');
 
   L.push('## Situação do mês (Gerente de Conta)');
   L.push(`- Projeção: **${R$(m.projecao)}**${m.meta ? ` — ${pct(m.pctMeta)} da meta de ${R$(m.meta)}` : ' (sem meta cadastrada)'}${m.varMes != null ? ` · ${m.varMes >= 0 ? '+' : ''}${pct(m.varMes)} contra o mesmo período do mês passado` : ''}.`);
@@ -108,7 +108,7 @@ function notaCliente(c, plano, lojas, medidos) {
 
 function notaHub(planos, medidosTodos, contasTodas) {
   const med = medicoes(medidosTodos, contasTodas);
-  const L = [`# Agentes · Carteira`, '', `_Atualizado pelos agentes em ${agoraTxt()}_`, '',
+  const L = [`# Agentes · Carteira`, '', `Atualizado pelos agentes em ${agoraTxt()}.`, '',
     'Índice das notas que os agentes mantêm por cliente, e o placar do que funciona no ADS na carteira inteira (cada ajuste medido 7 dias antes × 7 depois).', '',
     '## O que funciona no ADS (carteira, últimos 45 dias)'];
   if (!med.length) L.push('Nenhum ajuste medido ainda.');
