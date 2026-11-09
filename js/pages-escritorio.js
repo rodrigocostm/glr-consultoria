@@ -7,9 +7,12 @@
 //  • ADS Shopee e Copiloto ML → glr_agente_log (ações, sugestões, detecção, medição)
 //  • Coletor, Vigia de preços, Caçador de oportunidades → glr_sync_estado
 //  • Redator → glr_agente_relatorios (relatório diário escrito com IA)
-// Os agentes não trocam mensagens entre si de verdade: as menções (@) só
-// aparecem onde o trabalho de um depende do outro (ex.: o relatório do Redator
-// sai da revisão do ADS Shopee) ou quando precisam do analista.
+// Conversas entre agentes: quando um agente decide algo com base no trabalho de
+// outro (o ADS segura o aumento porque o Estoque avisou que o produto acaba, a
+// Promoção não sugere porque falta estoque, o ADS desfaz um aperto porque as
+// vendas caíram…), o registro guarda essa consulta (dados.colaboracoes). Ela
+// vira um diálogo: quem decide pergunta, quem tem o dado responde com o dado
+// real, e quem decide fecha com a decisão que tomou. Nada além do registrado.
 // ============================================================
 Router.register('escritorio', (params, el) => {
   const h = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -38,6 +41,7 @@ Router.register('escritorio', (params, el) => {
     rel:    { nome: 'Redator', cargo: 'Escreve o relatório diário de cada conta com IA', cor: '#4f46e5', rot: 'Entrega' },
   };
   const ANALISTA = { nome: 'Analista', cor: 'var(--text-secondary)' };
+  const CONVERSAS_POR_RODADA = 4; // diálogos mostrados por revisão (o resto fica no registro)
 
   const state = {
     carregando: true, erro: null, logs: [], sync: [], sinais: [], repu: [], quali: [], planos: [], rels: [], agenda: {}, pendentes: 0,
@@ -88,6 +92,36 @@ Router.register('escritorio', (params, el) => {
     const add = (de, t, texto, extra = {}) => { if (t && !isNaN(t)) msgs.push({ de, t, texto, ...extra }); };
     const limite = Date.now() - 48 * HORA;
     const camp = t => String(t || '').replace(/^.*? — /, '');
+    // ── Diálogo entre agentes a partir de uma consulta registrada ──
+    // x = { de: 'estoque'|'margem'|'promocoes'|'reputacao'|'qualidade'|'faturamento'|'meta', campanha, texto }
+    const QUEM = { estoque: 'estoque', margem: 'margem', promocoes: 'promo', reputacao: 'rep', qualidade: 'qa', faturamento: 'gerente', meta: 'gerente' };
+    const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+    const semPonto = s => String(s || '').trim().replace(/[.;]+$/, '');
+    const dialogo = (quem, x, cli, t) => {
+      const fonte = QUEM[x.de]; if (!fonte || !AG[fonte] || !x.texto) return;
+      const txt = String(x.texto).replace(/^revisão de 3 dias: /, '');
+      const alvo = (txt.match(/"([^"]+)"/) || [])[1] || x.campanha || '';
+      // separa a decisão (de quem pergunta) do dado (de quem responde)
+      let acao = '', fato = txt;
+      if (x.de === 'meta') { const i = txt.indexOf(': '); if (i > 0) { fato = txt.slice(0, i); acao = txt.slice(i + 2); } }
+      else if (txt.includes(' — ')) { [acao, fato] = [txt.slice(0, txt.indexOf(' — ')), txt.slice(txt.indexOf(' — ') + 3)]; }
+      else { const i = txt.indexOf(': '); if (i > 0) { acao = txt.slice(0, i); fato = txt.slice(i + 2); } }
+      if (/^"/.test(acao)) acao = ''; // ex.: '"Produto" tem ACOS de 9%' é contexto, não decisão
+      const oQue = alvo ? `<b>"${h(corta(alvo, 50))}"</b>` : 'esta campanha';
+      const P = {
+        estoque: `@Estoque, posso mexer em ${oQue} na <b>${h(cli)}</b>? Como está o estoque?`,
+        margem: `@Margem, quanto de ACOS a margem aguenta em ${oQue}?`,
+        promocoes: `@Promoções, ${oQue} está com produto em promoção? Muda a margem que eu posso usar.`,
+        reputacao: `@Reputação, a <b>${h(cli)}</b> aguenta mais vendas em ${oQue} agora?`,
+        qualidade: `@Qualidade, o anúncio de ${oQue} está pronto para receber mais verba?`,
+        faturamento: `@Gerente de Conta, como estão as vendas da <b>${h(cli)}</b>? Vou decidir sobre ${oQue}.`,
+        meta: `@Gerente de Conta, a <b>${h(cli)}</b> está no ritmo da meta do mês?`,
+      }[x.de];
+      const fio = `${quem}|${t}`;
+      add(quem, t, P, { conta: cli, fio, colab: true });
+      add(fonte, t + 1, `@${AG[quem].nome}, ${h(semPonto(fato))}.`, { conta: cli, fio, colab: true, resp: AG[quem].nome });
+      if (acao) add(quem, t + 2, `Combinado. ${h(cap(semPonto(acao)))}.`, { conta: cli, fio, colab: true, resp: AG[fonte].nome });
+    };
 
     // Agentes de ADS (Shopee e ML)
     const sugestoesPor = new Map(); // conta + janela de 10 min → sugestões criadas juntas
@@ -114,13 +148,13 @@ Router.register('escritorio', (params, el) => {
           if (r.parados) partes.push(`${N(r.parados)} são para girar estoque parado que o @Estoque apontou.`);
           if (r.emPromo) partes.push(`${N(r.emPromo)} produto(s) já estão em promoção: ${ads}, usem o ACOS do preço promocional.`);
           if (r.promoApertada) partes.push(`@Analista, ${N(r.promoApertada)} promoção(ões) em vigor deixam margem abaixo da mínima.`);
-          if ((d.colaboracoes || []).length) partes.push(`Não sugeri ${N(d.colaboracoes.length)} por falta de estoque.`);
           add('promo', t, partes.join(' '), { conta: cli, chama: !!r.promoApertada, menor: !r.sugeridas && !r.promoApertada });
+          (d.colaboracoes || []).slice(0, CONVERSAS_POR_RODADA).forEach((x, i) => dialogo('promo', x, cli, t + 1 + i * 3));
         }
         else if (/^Colaboração com Estoque e Margem/.test(l.titulo)) {
           const cs = d.colaboracoes || [];
-          const quem = [cs.some(x => x.de === 'estoque') ? '@Estoque' : '', cs.some(x => x.de === 'margem') ? '@Margem' : '', cs.some(x => x.de === 'promocoes') ? '@Promoções' : '', cs.some(x => x.de === 'reputacao') ? '@Reputação' : '', cs.some(x => x.de === 'qualidade') ? '@Qualidade' : '', cs.some(x => x.de === 'faturamento') ? '@Gerente (faturamento)' : '', cs.some(x => x.de === 'meta') ? '@Gerente (meta do mês)' : ''].filter(Boolean).join(', ');
-          add(ag, t, `Levei em conta os avisos de ${quem || '@Estoque'} na <b>${h(cli)}</b>: ${cs.slice(0, 3).map(x => h(x.texto)).join('; ')}${cs.length > 3 ? ` (+${cs.length - 3})` : ''}.`, { conta: cli, colab: true });
+          cs.slice(0, CONVERSAS_POR_RODADA).forEach((x, i) => dialogo(ag, x, cli, t + i * 3));
+          if (cs.length > CONVERSAS_POR_RODADA) add(ag, t + CONVERSAS_POR_RODADA * 3, `Na <b>${h(cli)}</b> ainda consultei a equipe em mais ${cs.length - CONVERSAS_POR_RODADA} decisão(ões) — todas no registro da revisão.`, { conta: cli, menor: true });
         }
         else if (/Aumento represado|Maturação segurando/.test(l.titulo)) add(ag, t, `${h(corta(l.titulo, 90))} (<b>${h(cli)}</b>) — ${h(primeiraFrase(l.explicacao))}`, { conta: cli, menor: true });
         continue;
@@ -334,23 +368,30 @@ Router.register('escritorio', (params, el) => {
       </button>`;
     }).join('');
 
-    const lista = state.filtro === 'todos' ? msgs : state.filtro === 'analista' ? msgs.filter(m => m.de === 'analista' || m.chama) : msgs.filter(m => m.de === state.filtro);
-    let ultimoDia = '';
+    const lista = state.filtro === 'todos' ? msgs : state.filtro === 'analista' ? msgs.filter(m => m.de === 'analista' || m.chama)
+      : state.filtro === 'conversas' ? msgs.filter(m => m.fio)
+      : msgs.filter(m => m.de === state.filtro || (m.fio && msgs.some(o => o.fio === m.fio && o.de === state.filtro))); // na mesa de um agente, mostra a conversa inteira em que ele entrou
+    let ultimoDia = '', fioAtual = '';
     const bolhas = lista.slice(-160).map(m => {
       const a = m.de === 'analista' ? ANALISTA : AG[m.de];
       const dia = diaTxt(m.t); const sep = dia !== ultimoDia ? `<div class="esc-dia"><span>${dia}</span></div>` : ''; ultimoDia = dia;
       const id = `${m.de}|${m.t}|${m.texto.length}`;
       const novo = state.vistos.size && !state.vistos.has(id);
       state.novos.add(id);
-      const texto = m.texto.replace(/@(Analista|ADS Shopee|Coletor|Copiloto ADS ML|Redator|Estoque|Margem|Promoções|Reputação|Qualidade)/g, '<span class="esc-mencao">@$1</span>');
-      return `${sep}<div class="esc-msg ${m.de === 'analista' ? 'humano' : ''} ${m.menor ? 'menor' : ''} ${m.erro ? 'erro' : ''} ${novo ? 'novo' : ''}" style="--c:${a.cor}">
+      const texto = m.texto.replace(/@(Analista|ADS Shopee|Coletor|Copiloto ADS ML|Redator|Estoque|Margem|Promoções|Reputação e Atendimento|Reputação|Qualidade|Gerente de Conta|Vigia de Preços|Caçador de Oportunidades)/g, '<span class="esc-mencao">@$1</span>');
+      // conversa entre agentes: as falas do mesmo fio ficam juntas num bloco
+      const fio = m.fio || '';
+      const fecha = fioAtual && (fio !== fioAtual || sep) ? '</div>' : '';
+      const abre = fio && (fio !== fioAtual || sep) ? '<div class="esc-fio"><div class="esc-fio-t">conversa entre agentes</div>' : '';
+      fioAtual = fio;
+      return `${fecha}${sep}${abre}<div class="esc-msg ${m.de === 'analista' ? 'humano' : ''} ${m.menor ? 'menor' : ''} ${m.erro ? 'erro' : ''} ${m.resp ? 'resposta' : ''} ${novo ? 'novo' : ''}" style="--c:${a.cor}">
         <div class="esc-av">${h(a.nome.split(' ').filter(p => p.length > 2).map(p => p[0]).join('').slice(0, 2).toUpperCase())}</div>
-        <div class="esc-bal"><div class="esc-de"><b>${h(a.nome)}</b><span>${hora(m.t)}</span></div><div class="esc-txt">${texto}</div></div>
+        <div class="esc-bal"><div class="esc-de"><b>${h(a.nome)}</b>${m.resp ? `<em>respondendo a ${h(m.resp)}</em>` : ''}<span>${hora(m.t)}</span></div><div class="esc-txt">${texto}</div></div>
       </div>`;
-    }).join('');
+    }).join('') + (fioAtual ? '</div>' : '');
     state.vistos = new Set(state.novos); state.novos = new Set();
 
-    const chips = [['todos', 'Todos'], ...Object.entries(AG).map(([k, a]) => [k, a.nome]), ['analista', 'Com você']];
+    const chips = [['todos', 'Todos'], ['conversas', `Conversas entre agentes (${new Set(msgs.filter(m => m.fio).map(m => m.fio)).size})`], ...Object.entries(AG).map(([k, a]) => [k, a.nome]), ['analista', 'Com você']];
     root.innerHTML = `
       ${state.erro ? `<div class="esc-aviso">Não consegui ler o registro dos agentes: ${h(state.erro)}</div>` : ''}
       <div class="esc-kpis">
@@ -371,7 +412,7 @@ Router.register('escritorio', (params, el) => {
           </div>
           <div class="esc-chips">${chips.map(([k, t]) => `<button class="${state.filtro === k ? 'on' : ''}" onclick="window._escFiltro('${k}')">${h(t)}</button>`).join('')}</div>
           <div class="esc-msgs" id="esc-msgs">${bolhas || '<div class="esc-sub" style="padding:24px;text-align:center">Nenhuma fala neste filtro nas últimas 48 h.</div>'}</div>
-          <div class="esc-nota">As falas são montadas a partir do registro real de cada agente: ações, sugestões, sincronizações, medições e relatórios. Os agentes não trocam mensagens entre si; as menções (@) mostram onde o trabalho de um depende do outro ou precisa de você.</div>
+          <div class="esc-nota">As falas são montadas a partir do registro real de cada agente: ações, sugestões, sincronizações, medições e relatórios. As conversas entre agentes mostram as consultas que um agente fez ao trabalho do outro antes de decidir — a resposta é o dado que ele leu e o fechamento é a decisão que tomou.</div>
         </section>
       </div>`;
     const box = document.getElementById('esc-msgs'); if (box) box.scrollTop = box.scrollHeight;
@@ -442,6 +483,10 @@ Router.register('escritorio', (params, el) => {
     .esc-msg.novo{animation:esc-entra .5s ease-out}
     @keyframes esc-entra{from{opacity:.2;transform:translateY(6px)}to{opacity:1;transform:none}}
     .esc-mencao{color:var(--accent);font-weight:600}
+    .esc-fio{display:flex;flex-direction:column;gap:8px;border-left:2px solid var(--border-strong);padding:2px 0 2px 10px;margin-left:14px}
+    .esc-fio-t{font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px}
+    .esc-msg.resposta{margin-left:18px}
+    .esc-de em{font-style:normal;font-size:11px;color:var(--text-muted)}
     .esc-v-melhorou{color:var(--green)} .esc-v-piorou{color:var(--red)} .esc-v-neutro{color:var(--text-muted)}
     .esc-nota{font-size:11px;color:var(--text-muted);line-height:1.5;padding:10px 16px;border-top:1px solid var(--border)}
     @media (prefers-reduced-motion:reduce){.esc-boneco *{animation:none!important}.esc-msg.novo{animation:none}.esc-mesa-card{transition:none}}
