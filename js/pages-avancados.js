@@ -1037,6 +1037,10 @@ Router.register('projecao', (params, el) => {
     const badge = document.getElementById('pn-fonte');
     if (badge) badge.innerHTML = r.nBase ? `base automática · ${r.nBase} conta${r.nBase === 1 ? '' : 's'}` : (r.nContas ? 'contas sem base — use Buscar dados' : 'nenhuma conta vinculada');
     const mkt = l => { const m = String(l.p.marketplace || l.p._platNome || '').toLowerCase(); return m.includes('shopee') ? { t: 'Shopee', c: '#eb6834' } : (m.includes('ml') || m.includes('meli') || m.includes('mercado')) ? { t: 'Mercado Livre', c: '#d9a400' } : { t: l.p.contaId ? 'Conta' : 'Manual', c: 'var(--text-muted)' }; };
+    // teto de ADS do cliente (Plano de ação → TACOS): acima dele o ADS/TACOS fica vermelho, dentro, verde
+    const teto = (() => { try { const v = parseFloat(JSON.parse(localStorage.getItem('glr_metas_tacos') || '{}')[clienteIdAtivo]); return v > 0 ? v : null; } catch (e) { return null; } })();
+    const corTeto = t => t == null || !teto ? '' : ` style="color:${t <= teto ? 'var(--pn-bom)' : 'var(--pn-ruim)'}"`;
+    const tetoTxt = teto ? `teto ${teto.toFixed(1).replace('.', ',')}%` : '';
     const inp = (i, campo, v, ph) => `<input class="pn-inp" value="${v ?? ''}" placeholder="${ph || '0'}" onchange="updatePlat(${i},'${campo}',this.value)">`;
 
     box.innerHTML = `
@@ -1062,8 +1066,8 @@ Router.register('projecao', (params, el) => {
 
       <div class="pn-kpis">
         <div class="pn-kpi"><div class="pn-rot">Vendas projetadas</div><div class="pn-val">${Math.round(tot.vendasProj).toLocaleString('pt-BR')}</div><div class="pn-sub">${Math.round(tot.vendas).toLocaleString('pt-BR')} até agora${tot.ticket ? ` · ticket ${_pnFmt0(tot.ticket)}` : ''}</div></div>
-        <div class="pn-kpi"><div class="pn-rot">ADS projetado</div><div class="pn-val">${tot.adsProj > 0 ? _pnFmt0(tot.adsProj) : '—'}</div><div class="pn-sub">${tot.ads > 0 ? `${_pnFmt0(tot.ads)} investidos até agora` : 'sem ADS no período'}</div></div>
-        <div class="pn-kpi"><div class="pn-rot">TACOS</div><div class="pn-val">${tot.tacos != null ? tot.tacos.toFixed(1).replace('.', ',') + '%' : '—'}</div><div class="pn-sub">ADS ÷ faturamento</div></div>
+        <div class="pn-kpi"><div class="pn-rot">ADS projetado</div><div class="pn-val"${corTeto(tot.tacos)}>${tot.adsProj > 0 ? _pnFmt0(tot.adsProj) : '—'}</div><div class="pn-sub">${tot.ads > 0 ? `${_pnFmt0(tot.ads)} investidos até agora` : 'sem ADS no período'}</div></div>
+        <div class="pn-kpi"><div class="pn-rot">TACOS</div><div class="pn-val"${corTeto(tot.tacos)}>${tot.tacos != null ? tot.tacos.toFixed(1).replace('.', ',') + '%' : '—'}</div><div class="pn-sub">ADS ÷ faturamento${teto ? ` · ${tetoTxt}${tot.tacos != null ? (tot.tacos <= teto ? ' (dentro)' : ' (acima)') : ''}` : ' · sem teto no Plano de ação'}</div></div>
       </div>
 
       <div class="pn-graficos">
@@ -1084,8 +1088,8 @@ Router.register('projecao', (params, el) => {
             <div class="pn-conta-grid">
               <div><span>Até agora</span><b>${l.base ? _pnFmt0(l.fat) : inp(l.i, 'fatBase', l.p.fatBase, '0,00')}</b></div>
               <div><span>Vendas</span><b>${l.base ? Math.round(l.vendas).toLocaleString('pt-BR') : inp(l.i, 'vendasBase', l.p.vendasBase)}</b></div>
-              <div><span>ADS</span><b>${l.base && l.ads ? _pnFmt0(l.ads) : l.base ? '—' : inp(l.i, 'adsBase', l.p.adsBase, '0,00')}</b></div>
-              <div><span>TACOS</span><b>${l.tacos != null ? l.tacos.toFixed(1).replace('.', ',') + '%' : '—'}</b></div>
+              <div><span>ADS</span><b${l.base && l.ads ? corTeto(l.tacos) : ''}>${l.base && l.ads ? _pnFmt0(l.ads) : l.base ? '—' : inp(l.i, 'adsBase', l.p.adsBase, '0,00')}</b></div>
+              <div title="${teto ? `Teto de ADS do cliente: ${tetoTxt} do faturamento (Plano de ação)` : 'Defina o teto de ADS no Plano de ação'}"><span>TACOS</span><b${corTeto(l.tacos)}>${l.tacos != null ? l.tacos.toFixed(1).replace('.', ',') + '%' : '—'}</b>${teto && l.tacos != null ? `<small class="pn-teto">${tetoTxt}</small>` : ''}</div>
             </div>
             <div class="pn-conta-meses">${[['marco', l.m3, projecaoAtiva.labelM3 || _labelM3Default], ['abril', l.m2, projecaoAtiva.labelM2 || _labelM2Default], ['maio', l.m1, projecaoAtiva.labelM1 || _labelM1Default]].map(([campo, v, lb]) => `<div><span>${_pnEsc(lb.split(' ')[0].slice(0, 3))}</span>${l.base ? `<b>${v ? _pnFmt0(v) : '—'}</b>` : inp(l.i, campo, l.p[campo], '0,00')}</div>`).join('')}</div>
           </div>`; }).join('') || '<div class="card pn-vazio">Nenhuma conta nesta projeção. Use <b>Vincular contas</b> para puxar os números da base automática.</div>'}
@@ -1205,6 +1209,7 @@ Router.register('projecao', (params, el) => {
       .pn-conta-grid>div,.pn-conta-meses>div{background:var(--bg-card-hover);border-radius:10px;padding:9px 11px;}
       .pn-conta-grid span,.pn-conta-meses span{display:block;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;}
       .pn-conta-grid b,.pn-conta-meses b{color:var(--text-primary);font-variant-numeric:tabular-nums;font-size:16px;}
+      .pn-teto{display:block;color:var(--text-muted);font-size:11px;margin-top:2px;}
       @media (max-width:520px){.pn-conta-grid{grid-template-columns:repeat(2,1fr);}}
       .pn-inp{width:100%;background:var(--bg-card-hover);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);padding:3px 6px;font-size:12px;font-weight:600;}
       .pn-vazio{padding:28px;text-align:center;color:var(--text-muted);grid-column:1/-1;}
