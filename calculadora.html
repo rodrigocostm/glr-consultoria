@@ -339,9 +339,16 @@
             <input class="form-input" id="f-margem" type="number" step="0.1" min="0" placeholder="0,00" oninput="calcular(true)">
           </div>
         </div>
-        <div class="form-group">
-          <label>Preço Praticado (R$) — opcional</label>
-          <input class="form-input" id="f-praticado" type="number" step="0.01" min="0" placeholder="0,00" oninput="calcular(true)">
+        <div class="form-row2">
+          <div class="form-group">
+            <label>Preço Praticado (R$) — opcional</label>
+            <input class="form-input" id="f-praticado" type="number" step="0.01" min="0" placeholder="0,00" oninput="calcular(true)">
+          </div>
+          <div class="form-group">
+            <label for="f-rebate">Rebate (R$) — opcional</label>
+            <input class="form-input" id="f-rebate" type="number" step="0.01" min="0" placeholder="0,00" oninput="calcular(true)" aria-describedby="rebate-ajuda">
+            <small id="rebate-ajuda" style="display:block;margin-top:4px;font-size:11px;color:var(--muted, #8b90a0);line-height:1.4;">Por unidade: o que a plataforma devolve da comissão (ex.: rebate de campanha). Desconta da comissão, até zerá-la.</small>
+          </div>
         </div>
 
         <button class="btn-calcular" onclick="calcular()">🧮 Calcular</button>
@@ -489,7 +496,7 @@
   // "R$80–R$99,99", com comissão/taxa diferentes). Resolve por tentativa:
   // chuta uma faixa, calcula o preço com ela, confere se o preço ainda cai
   // na mesma faixa — repete até convergir (no máximo 5 faixas existem).
-  function resolverFaixaShopee(valor, custos, taxafixaExtra, percentuaisResto) {
+  function resolverFaixaShopee(valor, custos, taxafixaExtra, percentuaisResto, rebate = 0) {
     let faixa = shopeeFaixa(valor);
     for (let i = 0; i < 6; i++) {
       const comissaoTentativa = (faixa.comissao + taxafixaExtra.campanhaPct) / 100;
@@ -497,7 +504,7 @@
       const totalTentativa = comissaoTentativa + percentuaisResto;
       if (totalTentativa >= 1) break; // deixa o erro de "passou de 100%" aparecer depois, com esses valores
       const custoBaseTentativa = valor + custos + taxafixaTentativa;
-      const precoTentativo = custoBaseTentativa / (1 - totalTentativa);
+      const precoTentativo = precoComRebate(custoBaseTentativa, totalTentativa, comissaoTentativa, rebate);
       const novaFaixa = shopeeFaixa(precoTentativo);
       if (novaFaixa.label === faixa.label) break; // convergiu
       faixa = novaFaixa;
@@ -520,6 +527,18 @@
   // quando ainda não dá pra calcular (valor vazio, percentuais inválidos) —
   // só fica quieto e espera o usuário terminar de preencher. silencioso
   // falsy (clique no botão "Calcular") continua avisando com alert.
+  // Preço que cobre os custos com o REBATE: o rebate (R$ por unidade) é abatido da
+  // comissão do marketplace, mas nunca a deixa negativa. Se ele cobre a comissão
+  // inteira, a comissão some do cálculo (o que sobra do rebate não vira receita).
+  //   preço = (custoBase − rebate) ÷ (1 − total)   enquanto rebate ≤ preço × comissão
+  //   preço = custoBase ÷ (1 − (total − comissão)) quando o rebate cobre a comissão toda
+  function precoComRebate(custoBase, total, comissao, rebate) {
+    if (!(rebate > 0)) return custoBase / (1 - total);
+    const p = (custoBase - rebate) / (1 - total);
+    return rebate <= p * comissao ? p : custoBase / (1 - (total - comissao));
+  }
+  const comissaoLiquida = (preco, comissao, rebate) => Math.max(0, preco * comissao - (rebate || 0)); // R$ de comissão depois do rebate
+
   function calcular(silencioso) {
     const valor      = parseFloat(document.getElementById('f-valor').value) || 0;
     const custos     = parseFloat(document.getElementById('f-custos').value) || 0;
@@ -528,6 +547,7 @@
     const custofixo  = (parseFloat(document.getElementById('f-custofixo').value) || 0) / 100;
     const margem     = (parseFloat(document.getElementById('f-margem').value) || 0) / 100;
     const praticado  = parseFloat(document.getElementById('f-praticado').value) || 0;
+    const rebate     = Math.max(0, parseFloat(document.getElementById('f-rebate').value) || 0);
 
     let comissao = (parseFloat(document.getElementById('f-comissao').value) || 0) / 100;
     let taxafixa = parseFloat(document.getElementById('f-taxafixa').value) || 0;
@@ -542,7 +562,7 @@
       const campanha = document.getElementById('shopee-campanha').checked;
       const extras = { cpfExtra: cpf ? 3 : 0, campanhaPct: campanha ? 2.5 : 0 };
       const percentuaisResto = ads + imposto + custofixo + margem;
-      const faixa = resolverFaixaShopee(valor, custos, extras, percentuaisResto);
+      const faixa = resolverFaixaShopee(valor, custos, extras, percentuaisResto, rebate);
       comissao = (faixa.comissao + extras.campanhaPct) / 100;
       taxafixa = faixa.taxafixa + extras.cpfExtra;
       document.getElementById('f-comissao').value = faixa.comissao + extras.campanhaPct;
@@ -561,7 +581,7 @@
       return;
     }
     const custoBase = valor + custos + taxafixa;
-    const precoSugerido = custoBase / (1 - totalPercentual);
+    const precoSugerido = precoComRebate(custoBase, totalPercentual, comissao, rebate);
 
     // Preço mínimo = break-even de verdade (margem ZERO), sempre calculado
     // à parte do Preço Sugerido (que embute a Margem Desejada). Quando a
@@ -569,7 +589,7 @@
     // isso o Preço Mínimo existe como rótulo separado, pra deixar claro que
     // aquele valor é só o ponto de equilíbrio, não um preço com lucro.
     const totalPercentualSemMargem = comissao + ads + imposto + custofixo;
-    const precoMinimo = totalPercentualSemMargem < 1 ? custoBase / (1 - totalPercentualSemMargem) : null;
+    const precoMinimo = totalPercentualSemMargem < 1 ? precoComRebate(custoBase, totalPercentualSemMargem, comissao, rebate) : null;
     document.getElementById('r-preco-minimo').textContent = precoMinimo != null ? fmtBRL(precoMinimo) : '—';
 
     document.getElementById('r-preco').textContent = fmtBRL(precoSugerido);
@@ -582,7 +602,7 @@
     // acima), então a barra sempre fecha em 100% sem sobra nem falta.
     const fatias = [
       { label: 'Custo do produto', valor: valor + custos, cor: '#64748B' },
-      { label: 'Taxas marketplace', valor: taxafixa + precoSugerido * comissao, cor: '#F2555A' },
+      { label: rebate > 0 ? 'Taxas marketplace (já com o rebate)' : 'Taxas marketplace', valor: taxafixa + comissaoLiquida(precoSugerido, comissao, rebate), cor: '#F2555A' },
       { label: 'ADS', valor: precoSugerido * ads, cor: '#855CD6' },
       { label: 'Imposto', valor: precoSugerido * imposto, cor: '#F2B43C' },
       { label: 'Custo fixo', valor: precoSugerido * custofixo, cor: '#8B90A0' },
@@ -636,7 +656,7 @@
           (baseSugeridaTxt ? ` — ${baseSugeridaTxt.replace('taxas na faixa do preço sugerido:', 'o preço sugerido usa')}` : '');
       }
       precoBase = praticado; comissaoUsada = comissaoP; taxafixaUsada = taxafixaP;
-      const custosTotais = (valor + custos + taxafixaP) + praticado * (comissaoP + ads + imposto + custofixo);
+      const custosTotais = (valor + custos + taxafixaP) + comissaoLiquida(praticado, comissaoP, rebate) + praticado * (ads + imposto + custofixo);
       lucroReal = praticado - custosTotais;
       margemExibidaPct = (lucroReal / praticado) * 100;
       document.getElementById('r-margem-real-sub').textContent = `sobre o preço praticado (${fmtBRL(praticado)})${notaTaxas}`;
@@ -650,9 +670,10 @@
     // conta); "Sobra final" = depois de descontar absolutamente tudo.
     const NOME_MP = { shopee: 'Shopee', ml: 'Mercado Livre', amazon: 'Amazon', tiktok: 'TikTok Shop', outro: 'marketplace' }[mpAtual] || 'marketplace';
     const vComissao = precoBase * comissaoUsada;
-    const repasseMp = precoBase - vComissao - taxafixaUsada;
+    const vRebate = Math.min(rebate, vComissao); // o rebate abate a comissão, até zerá-la
+    const repasseMp = precoBase - vComissao + vRebate - taxafixaUsada;
     const sobraFinal = repasseMp - valor - custos - precoBase * (ads + imposto + custofixo);
-    const linhaExtrato = (rotulo, v, tipo, cor) => `<div class="extrato-linha ${tipo || ''}"><span>${rotulo}</span><span style="${cor ? 'color:' + cor + ';' : ''}">${tipo === 'sub' ? '− ' : ''}${fmtBRL(v)}</span></div>`;
+    const linhaExtrato = (rotulo, v, tipo, cor) => `<div class="extrato-linha ${tipo || ''}"><span>${rotulo}</span><span style="${cor ? 'color:' + cor + ';' : ''}">${tipo === 'sub' ? '− ' : tipo === 'add' ? '+ ' : ''}${fmtBRL(v)}</span></div>`;
     const pc = x => (x * 100).toFixed(1).replace('.', ',') + '%';
     document.getElementById('r-extrato').innerHTML = `
       <div class="extrato-final"><span>💰 Sobra final no bolso <small>(descontando absolutamente tudo)</small></span><strong style="color:${sobraFinal >= 0 ? 'var(--green)' : 'var(--red)'};">${fmtBRL(sobraFinal)}</strong></div>
@@ -660,6 +681,7 @@
         <summary>Ver extrato completo · base: ${praticado > 0 ? 'preço praticado' : 'preço sugerido'} ${fmtBRL(precoBase)}</summary>
         ${linhaExtrato('Preço de venda', precoBase, 'topo')}
         ${linhaExtrato(`Comissão ${NOME_MP} (${pc(comissaoUsada)})`, vComissao, 'sub')}
+        ${vRebate > 0 ? linhaExtrato(`Rebate (devolvido da comissão)${vRebate < rebate ? ' — limitado ao valor da comissão' : ''}`, vRebate, 'add', 'var(--green)') : ''}
         ${linhaExtrato('Taxa fixa', taxafixaUsada, 'sub')}
         ${linhaExtrato(`Repasse do ${NOME_MP} (cai na conta)`, repasseMp, 'total')}
         ${linhaExtrato('Custo do produto', valor, 'sub')}
