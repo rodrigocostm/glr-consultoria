@@ -19,6 +19,7 @@ const ALLOWED_ACTIONS = new Set([
   'get_item','get_items','product_items','raw',
   'shopee_list_orders','shopee_get_order_detail',
   'shopee_get_escrow_detail','shopee_get_escrow_detail_batch',
+  'shopee_get_escrow_list',       // Conciliação: data em que a Shopee liberou cada repasse (só leitura)
   'shopee_list_items','shopee_get_items_batch',
   'low_stock_items','list_items',
   'shopee_search_items','search',

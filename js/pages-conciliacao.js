@@ -211,6 +211,26 @@ Router.register('conciliacao', async (params, el) => {
       } catch(e) {}
     }
 
+    // Data em que a Shopee liberou o repasse de cada pedido: o detalhe em lote NÃO traz
+    // escrow_release_time; ele vem da lista de repasses (por data de liberação). A lista
+    // volta da liberação mais recente para a mais antiga e ignora paginação por página —
+    // então anda pela data: pede até 100, e continua do repasse mais antigo recebido.
+    const liberados = new Map(); // order_sn → { ts, valor }
+    try {
+      const fimLib = Math.floor(Date.now() / 1000), iniLib = tsFrom;
+      for (let ate = fimLib; ate > iniLib; ate -= 15 * 86400) {
+        let de = Math.max(iniLib, ate - 15 * 86400), to = ate;
+        for (let pag = 0; pag < 60 && to > de; pag++) {
+          const rl = await MarketplaceAPI.call('shopee_get_escrow_list', { shopId, release_time_from: de, release_time_to: to, page_size: 100 });
+          const resp = rl.data?.response || rl.response || {}, lista = resp.escrow_list || [];
+          lista.forEach(e => { if (e.order_sn && !liberados.has(e.order_sn)) liberados.set(e.order_sn, { ts: e.escrow_release_time, valor: parseFloat(e.payout_amount) || 0 }); });
+          if (!resp.more || !lista.length) break;
+          const maisAntigo = Math.min(...lista.map(e => e.escrow_release_time || to));
+          to = maisAntigo < to ? maisAntigo : to - 1; // mesmo segundo repetido: recua 1 s
+        }
+      }
+    } catch (e) { console.warn('[Conciliação] lista de repasses da Shopee:', e.message); }
+
     const resultado = [];
     for (let i=0; i<completed.length; i+=50) {
       const lote = completed.slice(i,i+50).map(o=>o.sn);
@@ -233,7 +253,7 @@ Router.register('conciliacao', async (params, el) => {
           const liquidoEsperado = bruto - taxasEsperadas;
           const liquidoReal = n(oi.escrow_amount);
           const diff = liquidoReal - liquidoEsperado;
-          const releaseTs = oi.escrow_release_time;
+          const releaseTs = oi.escrow_release_time || liberados.get(sn)?.ts || null;
           const informativos = Object.entries(oi)
             .filter(([k,v]) => SHOPEE_INFORMATIVOS.has(k) && Math.abs(parseFloat(v)||0) > 0.01)
             .map(([k,v]) => ({ nome: `${_shopeeFeeLabel(k)} (informativo, não afeta o repasse)`, valor: 0, exibirValor: parseFloat(v)||0 }));
