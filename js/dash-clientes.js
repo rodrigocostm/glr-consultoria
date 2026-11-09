@@ -2,8 +2,8 @@
 // GLR Consultoria — Dashboard: clientes em cards
 // ------------------------------------------------------------
 // Um card por cliente com a projeção do mês (contra a meta), o ADS do mês com o
-// TACOS e se está crescendo ou caindo: últimos 7 dias contra os 7 anteriores
-// (firme mesmo no começo do mês) e a projeção contra o mês passado fechado.
+// TACOS e se está crescendo ou caindo: o mês até ontem contra o mesmo período do
+// mês passado (dia 1 até o mesmo dia) e a projeção contra o mês passado fechado.
 // Projeção do mês = realizado até ontem + ritmo dos últimos 7 dias × dias que
 // faltam — a mesma regra da Receita GLR do Adviser (api/_adviser-revenue.js).
 // Também preenche os indicadores do topo do Dashboard: "Projeção do mês" (soma
@@ -28,33 +28,35 @@ window.GLRDashClientes = (function () {
   function calcular() {
     const ontem = diaMais(new Date(), -1), oIso = isoD(ontem);
     const mesIni = isoD(new Date(ontem.getFullYear(), ontem.getMonth(), 1)), dd = ontem.getDate(), dm = new Date(ontem.getFullYear(), ontem.getMonth() + 1, 0).getDate();
-    const a7de = isoD(diaMais(ontem, -6)), b7de = isoD(diaMais(ontem, -13)), b7ate = isoD(diaMais(ontem, -7));
     const m1 = new Date(ontem.getFullYear(), ontem.getMonth() - 1, 1), m1de = isoD(m1), m1ate = isoD(new Date(m1.getFullYear(), m1.getMonth() + 1, 0));
+    // mesmo período do mês passado: dia 1 até o mesmo dia (ou o último, se o mês passado for mais curto)
+    const m1fimPer = isoD(new Date(m1.getFullYear(), m1.getMonth(), Math.min(dd, new Date(m1.getFullYear(), m1.getMonth() + 1, 0).getDate())));
     const vinc = lerJSON('glr_mc_vinculos', {}), metas = lerJSON('glr_metas', {}), tetos = lerJSON('glr_metas_tacos', {}); // teto de ADS: Plano de ação
     const gest = id => (GLR.gestores || []).find(g => String(g.id) === String(id));
     const out = [];
     for (const c of (GLR.clientes || [])) {
       if (/inativ|cancel|encerr/i.test(String(c.status || ''))) continue;
-      const r = { mtd: 0, adsMtd: 0, temAds: false, a7: 0, b7: 0, m1: 0, temM1: false, tem7: false, serie: {}, cob: 0, ritmo: 0, contas: [] };
+      const r = { mtd: 0, adsMtd: 0, temAds: false, per1: 0, temPer1: false, m1: 0, temM1: false, serie: {}, cob: 0, ritmo: 0, contas: [] };
       for (const ct of (vinc[String(c.id)] || [])) {
         const mkt = BaseDados.mktDe(ct.marketplace), id = String(ct.param_to_use?.shopId || ct.param_to_use?.meliUserId || ct.contaId || ct.external_id);
         const info = mkt ? st.base[BaseDados.chave(mkt, id)] : null;
-        if (!info || !BaseDados.cobre(info, b7de < mesIni ? b7de : mesIni)) continue;
+        if (!info || !BaseDados.cobre(info, mesIni)) continue;
         r.cob++;
-        const mtd = BaseDados.somar(info, mesIni, oIso), a7 = BaseDados.somar(info, a7de, oIso), b7 = BaseDados.somar(info, b7de, b7ate);
-        r.mtd += mtd.faturamento; r.a7 += a7.faturamento; r.b7 += b7.faturamento; r.tem7 = true;
+        const mtd = BaseDados.somar(info, mesIni, oIso);
+        r.mtd += mtd.faturamento;
         const ritmo = mtd.faturamento / dd; // média do mês (mesma regra da Projeção e do Perfil)
         r.ritmo += ritmo;
         const temAds = BaseDados.cobreAds(info, mesIni);
         if (temAds) { r.adsMtd += mtd.ads; r.temAds = true; }
         r.contas.push({ mkt, nome: GLR.nomeConta(mkt, id) || id, proj: mtd.faturamento + ritmo * (dm - dd), ads: temAds ? mtd.ads : null, tacos: temAds && mtd.faturamento > 0 ? mtd.ads / mtd.faturamento * 100 : null });
-        if (BaseDados.cobre(info, m1de)) { r.m1 += BaseDados.somar(info, m1de, m1ate).faturamento; r.temM1 = true; }
-        for (let i = 13; i >= 0; i--) { const d = isoD(diaMais(ontem, -i)); r.serie[d] = (r.serie[d] || 0) + (parseFloat(info.dias?.[d]?.faturamento) || 0); }
+        if (BaseDados.cobre(info, m1de)) { r.m1 += BaseDados.somar(info, m1de, m1ate).faturamento; r.per1 += BaseDados.somar(info, m1de, m1fimPer).faturamento; r.temM1 = true; r.temPer1 = true; }
+        // linha do card: faturamento por dia do mês até ontem
+        for (let i = 1; i <= dd; i++) { const d = isoD(new Date(ontem.getFullYear(), ontem.getMonth(), i)); r.serie[d] = (r.serie[d] || 0) + (parseFloat(info.dias?.[d]?.faturamento) || 0); }
       }
-      if (!r.cob || (r.mtd <= 0 && r.a7 <= 0)) continue;
+      if (!r.cob || r.mtd <= 0) continue;
       const proj = r.mtd + r.ritmo * (dm - dd); // = faturado ÷ dias decorridos × dias do mês
       const meta = parseFloat(metas[c.id]) || parseFloat(c.metaMensal) || 0, teto = parseFloat(tetos[c.id]) || null;
-      const t7 = r.b7 > 0 ? (r.a7 / r.b7 - 1) * 100 : null;
+      const t7 = r.temPer1 && r.per1 > 0 ? (r.mtd / r.per1 - 1) * 100 : null; // mês até ontem × mesmo período do mês passado
       const g = gest(c.gestorId);
       out.push({ id: String(c.id), nome: c.nome, gestorId: g ? String(g.id) : 'sem', gestor: g?.nome || c.gestor || 'Sem gestor',
         proj, m1: r.temM1 ? r.m1 : 0, meta, pctMeta: meta > 0 ? proj / meta * 100 : null, ads: r.temAds ? r.adsMtd : null, tacos: r.temAds && r.mtd > 0 ? r.adsMtd / r.mtd * 100 : null,
@@ -64,6 +66,7 @@ window.GLRDashClientes = (function () {
   }
 
   function spark(vals, cor) {
+    if (vals.length < 2) vals = [vals[0] || 0, vals[0] || 0]; // dia 1: linha reta
     const max = Math.max(1, ...vals), w = 120, hh = 32, n = vals.length;
     const pts = vals.map((v, i) => `${(i / (n - 1) * w).toFixed(1)},${(hh - 2 - v / max * (hh - 4)).toFixed(1)}`).join(' ');
     return `<svg class="dc-spark" viewBox="0 0 ${w} ${hh}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${cor}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
@@ -77,7 +80,7 @@ window.GLRDashClientes = (function () {
     const T = TEND[x.tend], pm = x.pctMeta != null ? Math.min(100, x.pctMeta) : null;
     const corMeta = x.pctMeta == null ? 'var(--accent)' : x.pctMeta >= 100 ? 'var(--green)' : x.pctMeta >= 85 ? '#d98b00' : 'var(--red)';
     return `<button type="button" class="dc-card" style="--t:${T[1]}" onclick="GLR.ctx?.definir('${h(x.id)}', true); Router.navigate('cliente-perfil', { id: ${JSON.stringify(x.id)} })">
-      <div class="dc-top"><div><b>${h(x.nome)}</b><span>${h(x.gestor)}</span></div><span class="dc-tend" title="Últimos 7 dias contra os 7 anteriores">${T[2]} ${x.t7 != null ? `${x.t7 > 0 ? '+' : ''}${pct(x.t7)}` : T[0]}</span></div>
+      <div class="dc-top"><div><b>${h(x.nome)}</b><span>${h(x.gestor)}</span></div><span class="dc-tend" title="Mês até ontem contra o mesmo período do mês passado">${T[2]} ${x.t7 != null ? `${x.t7 > 0 ? '+' : ''}${pct(x.t7)}` : T[0]}</span></div>
       <div class="dc-proj"><span>Projeção do mês</span><b>${R0(x.proj)}</b>
         <small>${x.pctMeta != null ? `<b style="color:${corMeta}">${pct(x.pctMeta)}</b> da meta de ${R0(x.meta)}` : 'sem meta'}${x.vsM1 != null ? ` · <span style="color:${x.vsM1 >= 0 ? 'var(--green)' : 'var(--red)'}">${x.vsM1 >= 0 ? '+' : ''}${pct(x.vsM1)}</span> vs mês passado` : ''}</small></div>
       ${pm != null ? `<div class="dc-bar"><i style="width:${pm}%;background:${corMeta}"></i></div>` : ''}
@@ -121,7 +124,7 @@ window.GLRDashClientes = (function () {
     const vis = st.todos ? ls : ls.slice(0, POR_PAGINA);
     el.innerHTML = `<div class="card dc">
       <div class="section-header dc-cab">
-        <div><div class="section-title">Clientes</div><div class="section-subtitle">Projeção do mês, ADS e tendência — últimos 7 dias contra os 7 anteriores</div></div>
+        <div><div class="section-title">Clientes</div><div class="section-subtitle">Projeção do mês, ADS e tendência — o mês até ontem contra o mesmo período do mês passado</div></div>
         <div class="dc-ctrl">
           <select class="form-control" aria-label="Gestor" onchange="GLRDashClientes.gestor(this.value)"><option value="todos">Todos os gestores</option>${gestores.map(([id, nome]) => `<option value="${h(id)}" ${st.gestor === id ? 'selected' : ''}>${h(nome)}</option>`).join('')}</select>
           <select class="form-control" aria-label="Ordenar" onchange="GLRDashClientes.ordem(this.value)">${[['projecao', 'Maior projeção'], ['queda', 'Mais caindo'], ['alta', 'Mais crescendo'], ['meta', 'Mais longe da meta'], ['tacos', 'Maior TACOS']].map(([k, t]) => `<option value="${k}" ${st.ordem === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
