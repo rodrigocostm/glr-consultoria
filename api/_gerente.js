@@ -17,6 +17,7 @@
 
 const MAX_ACOES = 7;
 const oportunidades = require('../js/plano-oportunidades');
+const cerebro = require('./_cerebro-agentes');
 const { visitasItem, visitasConta } = require('./_funil');
 const r1 = v => Math.round(v * 10) / 10;
 const R$ = v => 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -486,7 +487,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
   const ant = new Date(`${mesIni}T12:00:00Z`); ant.setUTCMonth(ant.getUTCMonth() - 1);
   const antIni = ant.toISOString().slice(0, 10), antFim = (() => { const d = new Date(`${antIni}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + dd - 1); return d.toISOString().slice(0, 10); })();
   const gestorNome = id => (gestores.find(g => g.id === id) || {}).nome || '';
-  const saida = [];
+  const saida = [], paraCerebro = [], contasCerebro = new Set();
   const prazo = Date.now() + 200000; // raio-x lê pedidos; depois disso os planos saem sem ele
   const alvo = clientes.filter(c => !filtroCliente || String(c.id) === String(filtroCliente));
   let iCli = 0;
@@ -585,11 +586,16 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
       semaforo, metricas, acoes, resultados, raioX, caminho: caminho ? { ...caminho, promosMeta } : null, diagnostico: txt?.diagnostico || diagRegra, pauta: txt?.pauta || pautaRegra, fonteTexto: txt ? 'ia' : 'regra',
     };
     plano.oportunidades = oportunidades.build(plano, todas);
+    // Segundo Cérebro: a nota "Agentes · <Cliente>" com o que os agentes sabem e aprenderam
+    try { await cerebro.anotarCliente(c, plano, lojas, medidos); lojas.forEach(L => contasCerebro.add(String(L.conta))); paraCerebro.push({ nome: c.nome, semaforo, pctMeta: metricas.pctMeta, tacos: metricas.tacos }); }
+    catch (e) { console.warn('[gerente] segundo cérebro', c.nome, e.message); }
     await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `cliente:${c.id}`, recurso: 'plano', ultimo_sucesso: new Date().toISOString(), ultima_tentativa: new Date().toISOString(), ultimo_erro: null, registros: acoes.length, cursor: plano }, 'marketplace,conta_id,recurso');
     saida.push({ cliente: c.nome, semaforo, acoes: acoes.length });
   };
   // 2 clientes por vez (a IA leva alguns segundos por cliente; mais que isso esbarra no limite da API)
   await Promise.all(Array.from({ length: Math.min(2, alvo.length) }, async () => { while (iCli < alvo.length) { const c = alvo[iCli++]; try { await processar(c); } catch (e) { saida.push({ cliente: c.nome, erro: e.message }); } } }));
+  // nota-índice da carteira (só na rodada de todos os clientes)
+  if (!filtroCliente && paraCerebro.length) { try { await cerebro.anotarCarteira(paraCerebro, medidos, contasCerebro); } catch (e) { console.warn('[gerente] segundo cérebro (carteira)', e.message); } }
   return saida;
 }
 

@@ -189,11 +189,16 @@ const FERRAMENTAS = [
     acao: { type: 'string', enum: ['roas', 'orcamento', 'pausar', 'retomar', 'informativa'] }, campaign_id: { type: 'string' }, valor_atual: { type: 'number' }, valor_sugerido: { type: 'number' },
     impacto: { type: 'number', description: 'R$ por semana estimado' }, tipo_impacto: { type: 'string', enum: ['ganho', 'economia'] } }, required: ['conta_id', 'titulo', 'explicacao'] } },
 ];
-const EXEC = { carteira, plano_cliente: planoCliente, vendas, produtos, curva_abc: curvaAbc, ads, estoque_margem: estoqueMargem, campanhas_shopee: campanhasShopee, campanhas_ml: campanhasML, decisoes_pendentes: decisoesPendentes, historico_agentes: historicoAgentes, propor_acao: proporAcao };
+FERRAMENTAS.push({ name: 'anotar_cerebro', description: 'Grava no Segundo Cérebro da GLR (notas que os agentes consultam). Use SÓ quando o analista pedir para anotar, lembrar, guardar ou registrar um aprendizado, regra ou combinado (ex.: "anota que a Mega Facil não aceita promoção abaixo de 10% de margem"). Se a nota já existir, o texto entra no fim com data e autor. Título curto e estável, ex.: "Mega Facil — combinados" ou "Regra — promoções".', input_schema: { type: 'object', properties: { titulo: { type: 'string', description: 'até 160 caracteres, sem colchetes' }, texto: { type: 'string', description: 'o que anotar, em markdown, com o contexto e a fonte' }, tags: { type: 'array', items: { type: 'string' } } }, required: ['titulo', 'texto'] } });
+async function anotarCerebro(S, i) {
+  const r = await require('./_cerebro-agentes').anotar({ titulo: i.titulo, texto: i.texto, tags: Array.isArray(i.tags) ? i.tags : [], autor: `${S.persona || 'Copiloto'} · pedido de ${S.usuario}` });
+  return { ok: true, nota: r.titulo, nova: !!r.nova, aviso: 'Gravado no Segundo Cérebro (publicado: os agentes já consultam).' };
+}
+const EXEC = { anotar_cerebro: anotarCerebro, carteira, plano_cliente: planoCliente, vendas, produtos, curva_abc: curvaAbc, ads, estoque_margem: estoqueMargem, campanhas_shopee: campanhasShopee, campanhas_ml: campanhasML, decisoes_pendentes: decisoesPendentes, historico_agentes: historicoAgentes, propor_acao: proporAcao };
 const ADVISER_BASE = ['carteira', 'plano_cliente', 'vendas', 'decisoes_pendentes']; // do copiloto que o Adviser também usa
 const ferramentasDe = ag => ag === 'adviser' ? [...FERRAMENTAS.filter(f => ADVISER_BASE.includes(f.name)), ...adviserChat.FERRAMENTAS] : FERRAMENTAS;
 const execDe = ag => ag === 'adviser' ? { ...Object.fromEntries(ADVISER_BASE.map(k => [k, EXEC[k]])), ...adviserChat.EXEC } : EXEC;
-const ROTULO = { ...adviserChat.ROTULO, carteira: 'carteira', plano_cliente: 'plano do Gerente', vendas: 'vendas', produtos: 'produtos', curva_abc: 'curva ABC', ads: 'ADS', estoque_margem: 'estoque e margem', campanhas_shopee: 'campanhas Shopee', campanhas_ml: 'campanhas ML', decisoes_pendentes: 'Caixa de decisões', historico_agentes: 'histórico dos agentes', propor_acao: 'sugestão criada' };
+const ROTULO = { ...adviserChat.ROTULO, carteira: 'carteira', plano_cliente: 'plano do Gerente', vendas: 'vendas', produtos: 'produtos', curva_abc: 'curva ABC', ads: 'ADS', estoque_margem: 'estoque e margem', campanhas_shopee: 'campanhas Shopee', campanhas_ml: 'campanhas ML', decisoes_pendentes: 'Caixa de decisões', historico_agentes: 'histórico dos agentes', propor_acao: 'sugestão criada', anotar_cerebro: 'Segundo Cérebro' };
 const dm = iso => `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}`;
 const resumo = (n, i) => `${ROTULO[n] || n}${i?.cliente ? ` · ${i.cliente}` : ''}${i?.inicio && i?.fim ? ` · ${dm(i.inicio)} a ${dm(i.fim)}` : ''}${n === 'propor_acao' && i?.titulo ? ` · ${corta(i.titulo, 50)}` : ''}`;
 
@@ -215,7 +220,8 @@ COMO TRABALHAR:
 - Antes de sugerir acelerar ADS, confira o TACOS da loja contra o teto, o ACOS contra a meta e a margem do produto, e o estoque.
 - Responda com a conclusão primeiro, depois os números que a sustentam (com os períodos), e termine com "Próximos passos" numerados e concretos. Use tabelas em markdown quando comparar vários itens. Sem enrolação.
 - Quando o analista pedir para preparar, criar ou aplicar ações, use propor_acao (uma por ação) — vão para a Caixa de decisões para aprovação; diga quantas criou. Sem esse pedido, só ofereça criar.
-- Nunca diga que aplicou algo: você só lê e cria sugestões. Promoção e ADS do ML ficam sempre para o analista aprovar/aplicar.`;
+- Nunca diga que aplicou algo: você só lê e cria sugestões. Promoção e ADS do ML ficam sempre para o analista aprovar/aplicar.
+- Quando o analista pedir para anotar, lembrar ou guardar um aprendizado/regra/combinado, grave no Segundo Cérebro com anotar_cerebro e diga o título da nota.`;
 }
 
 // ── Agentes do Escritório: o analista fala direto com um agente (tela Escritório).
@@ -245,7 +251,8 @@ NESTA CONVERSA VOCÊ É O AGENTE "${p.nome}" do Escritório dos agentes da GLR (
 - Fale em primeira pessoa como ${p.nome}, curto e direto, como numa conversa de equipe: a resposta primeiro, depois os números que a sustentam (com período). Até ~10 linhas; tabela só se comparar vários itens; "Próximos passos" só se pedirem.
 - Seu foco: ${p.foco}. Busque os dados com as ferramentas antes de responder — nunca invente.
 - Se a pergunta for da área de um colega (${colegas}), responda com o que as ferramentas mostram e diga quem cuida disso com @Nome (ex.: "@Estoque acompanha isso"), sem inventar o que o colega diria.
-- Quando o analista pedir para fazer algo, crie a sugestão com propor_acao (vai para a Caixa de decisões) e diga que criou; você não aplica nada por esta conversa.`;
+- Quando o analista pedir para fazer algo, crie a sugestão com propor_acao (vai para a Caixa de decisões) e diga que criou; você não aplica nada por esta conversa.
+- Quando o analista pedir para anotar/lembrar/guardar algo, grave com anotar_cerebro e diga o título da nota.`;
 }
 
 // ── Conversas (por usuário) ──────────────────────────────────
@@ -296,7 +303,7 @@ module.exports = async function handler(req, res) {
     const conv = (await lerConversa(uid, id)) || { titulo: corta(texto, 60), criado: new Date().toISOString(), msgs: [], agente: novoAg };
     const persona = personaDe(conv.agente);
     const ag = conv.agente === 'adviser' ? 'adviser' : 'copiloto', TOOLS = ferramentasDe(ag), RUN = execDe(ag);
-    const S = { carteira: await carregarCarteira(), mcKey, usuario: usuario.email || uid, criadas: 0, sbSelect, sbUpsert };
+    const S = { carteira: await carregarCarteira(), mcKey, usuario: usuario.email || uid, criadas: 0, sbSelect, sbUpsert, persona: persona?.nome || null };
     const foco = cliente_id ? S.carteira.find(c => c.id === String(cliente_id)) || null : null;
     if (foco) { conv.cliente_id = foco.id; conv.cliente_nome = foco.nome; }
 
