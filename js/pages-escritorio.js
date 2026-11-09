@@ -15,6 +15,7 @@
 // real, e quem decide fecha com a decisão que tomou. Nada além do registrado.
 // ============================================================
 Router.register('escritorio', (params, el) => {
+  if (window._portalConfig) { Router.navigate('meu-dashboard'); return; }
   const h = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const R$ = v => 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const N = v => (parseFloat(v) || 0).toLocaleString('pt-BR');
@@ -44,6 +45,7 @@ Router.register('escritorio', (params, el) => {
   const CONVERSAS_POR_RODADA = 4; // diálogos mostrados por revisão (o resto fica no registro)
 
   const state = {
+    visual: 'mapa',
     carregando: true, erro: null, logs: [], sync: [], sinais: [], repu: [], quali: [], planos: [], rels: [], agenda: {}, pendentes: 0,
     filtro: (() => { try { return localStorage.getItem('glr_esc_filtro') || 'todos'; } catch (e) { return 'todos'; } })(),
     atualizadoEm: 0, novos: new Set(), vistos: new Set(),
@@ -395,6 +397,14 @@ Router.register('escritorio', (params, el) => {
       </button>`;
     }).join('');
 
+    const scene = window.GLROfficeScene;
+    const mapa = scene ? `<div class="office-scroll"><div class="office-world">${scene.floor()}${Object.entries(AG).map(([k,a]) => {
+      const [x,y,nome] = scene.positions[k], e = est[k];
+      return `<button type="button" class="office-agent ${e.status} ${state.filtro === k ? 'selected' : ''}" style="left:${x/9.6}%;top:${y/10}%" onclick="window._escMesa('${k}')" aria-label="${h(a.nome)} — ${STATUS[e.status][0]} — abrir mesa" aria-pressed="${state.filtro===k}" title="${h(a.nome)} · ${STATUS[e.status][0]}">${scene.avatar(a.cor,e.status==='trabalhando',['promo','rep','rel'].includes(k))}<span class="office-agent-name"><i></i>${h(nome)}</span><span class="office-agent-label">${e.status==='trabalhando'?'Atividade recente':e.status==='erro'?'Atenção necessária':e.status==='sem_registro'?'Sem registro':'Em pausa'}</span></button>`;
+    }).join('')}</div></div>` : `<div class="office-list esc-mesas">${mesas}</div>`;
+    const selected = AG[state.filtro] ? state.filtro : null, detail = selected ? est[selected] : null;
+    const detalhe = selected ? `<div class="office-detail"><div class="office-detail-top"><h3>${h(AG[selected].nome)}</h3><span class="esc-status" style="--s:${STATUS[detail.status][1]}"><i></i>${STATUS[detail.status][0]}</span></div><p>${h(AG[selected].cargo)}</p><p>${detail.ult ? h(corta(detail.ult.texto.replace(/<\/(td|th|p|li|div)>/g,' · ').replace(/<[^>]*>/g,' '),230)) : 'Ainda não há trabalho registrado nas últimas 48 horas.'}</p><div class="office-detail-top"><small>${detail.hoje} registros hoje${detail.prox?' · '+h(detail.prox):''}</small><button class="btn btn-primary btn-sm" onclick="window._escAbrirConversa()">Conversar com agente →</button></div></div>` : `<div class="office-detail"><h3>Entre no escritório</h3><p>Selecione um agente na planta para ver seu último trabalho e conversar com ele. As salas são ilustrativas; os indicadores vêm dos registros reais da operação.</p></div>`;
+
     const lista = state.filtro === 'todos' ? msgs : state.filtro === 'analista' ? msgs.filter(m => m.de === 'analista' || m.chama || m.direto)
       : state.filtro === 'conversas' ? msgs.filter(m => m.fio)
       : msgs.filter(m => m.de === state.filtro || m.para === state.filtro || (m.fio && msgs.some(o => o.fio === m.fio && o.de === state.filtro))); // na mesa de um agente, mostra a conversa inteira em que ele entrou e o que você falou com ele
@@ -429,8 +439,8 @@ Router.register('escritorio', (params, el) => {
       </div>
       <div class="esc-grid">
         <section class="esc-planta" aria-label="Mesas dos agentes">
-          <div class="esc-planta-cab"><b>Planta do escritório</b><span class="esc-sub">clique numa mesa para ver só as falas daquele agente</span></div>
-          <div class="esc-mesas">${mesas}</div>
+          <div class="office-toolbar"><div><strong>GLR · Escritório</strong><small>12 agentes · um time conectado</small></div><div class="office-switch" role="group" aria-label="Visualização do escritório"><button class="${state.visual==='mapa'?'on':''}" aria-pressed="${state.visual==='mapa'}" onclick="window._escVisual('mapa')">Planta</button><button class="${state.visual==='lista'?'on':''}" aria-pressed="${state.visual==='lista'}" onclick="window._escVisual('lista')">Lista</button></div></div>
+          ${state.visual==='mapa'?`<p class="office-mobile-hint">Deslize a planta para os lados e toque em um agente.</p>${mapa}<div class="office-legend"><span><i class="active"></i>Atividade recente</span><span><i></i>Pausa / sem registro</span><span><i class="error"></i>Precisa de atenção</span></div>${detalhe}`:`<div class="office-list esc-mesas">${mesas}</div>`}
         </section>
         <section class="esc-chat" aria-label="Conversa dos agentes">
           <div class="esc-chat-cab">
@@ -454,6 +464,9 @@ Router.register('escritorio', (params, el) => {
     if (focado) { const ta = document.getElementById('esc-txt'); if (ta) { ta.focus(); try { ta.setSelectionRange(cursor, cursor); } catch (e) {} } }
   }
 
+  window._escVisual = v => { state.visual = v === 'lista' ? 'lista' : 'mapa'; render(); };
+  window._escMesa = k => { if (!AG[k]) return; state.filtro = k; state.para = k; try { localStorage.setItem('glr_esc_filtro',k); localStorage.setItem('glr_esc_para',k); } catch(e) {} render(); };
+  window._escAbrirConversa = () => { const input = document.getElementById('esc-txt'); input?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'}); input?.focus({preventScroll:true}); };
   window._escFiltro = k => { state.filtro = state.filtro === k && k !== 'todos' ? 'todos' : k; try { localStorage.setItem('glr_esc_filtro', state.filtro); } catch (e) {} render(); };
   window._escAtualizar = () => carregar();
   window._escRascunho = v => { state.rascunho = v; };
