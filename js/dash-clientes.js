@@ -2,8 +2,8 @@
 // GLR Consultoria — Dashboard: clientes em cards
 // ------------------------------------------------------------
 // Um card por cliente com a projeção do mês (contra a meta), o ADS do mês com o
-// TACOS e se está crescendo ou caindo: o mês até ontem contra o mesmo período do
-// mês passado (dia 1 até o mesmo dia) e a projeção contra o mês passado fechado.
+// TACOS e se está crescendo ou caindo: a projeção do mês contra o mês passado
+// fechado — a mesma conta da tela Projeção de Crescimento ("vs Outubro").
 // Projeção do mês = realizado até ontem + ritmo dos últimos 7 dias × dias que
 // faltam — a mesma regra da Receita GLR do Adviser (api/_adviser-revenue.js).
 // Também preenche os indicadores do topo do Dashboard: "Projeção do mês" (soma
@@ -29,14 +29,12 @@ window.GLRDashClientes = (function () {
     const ontem = diaMais(new Date(), -1), oIso = isoD(ontem);
     const mesIni = isoD(new Date(ontem.getFullYear(), ontem.getMonth(), 1)), dd = ontem.getDate(), dm = new Date(ontem.getFullYear(), ontem.getMonth() + 1, 0).getDate();
     const m1 = new Date(ontem.getFullYear(), ontem.getMonth() - 1, 1), m1de = isoD(m1), m1ate = isoD(new Date(m1.getFullYear(), m1.getMonth() + 1, 0));
-    // mesmo período do mês passado: dia 1 até o mesmo dia (ou o último, se o mês passado for mais curto)
-    const m1fimPer = isoD(new Date(m1.getFullYear(), m1.getMonth(), Math.min(dd, new Date(m1.getFullYear(), m1.getMonth() + 1, 0).getDate())));
     const vinc = lerJSON('glr_mc_vinculos', {}), metas = lerJSON('glr_metas', {}), tetos = lerJSON('glr_metas_tacos', {}); // teto de ADS: Plano de ação
     const gest = id => (GLR.gestores || []).find(g => String(g.id) === String(id));
     const out = [];
     for (const c of (GLR.clientes || [])) {
       if (/inativ|cancel|encerr/i.test(String(c.status || ''))) continue;
-      const r = { mtd: 0, adsMtd: 0, temAds: false, per1: 0, temPer1: false, m1: 0, temM1: false, serie: {}, cob: 0, ritmo: 0, contas: [] };
+      const r = { mtd: 0, adsMtd: 0, temAds: false, m1: 0, temM1: false, serie: {}, cob: 0, ritmo: 0, contas: [] };
       for (const ct of (vinc[String(c.id)] || [])) {
         const mkt = BaseDados.mktDe(ct.marketplace), id = String(ct.param_to_use?.shopId || ct.param_to_use?.meliUserId || ct.contaId || ct.external_id);
         const info = mkt ? st.base[BaseDados.chave(mkt, id)] : null;
@@ -49,18 +47,19 @@ window.GLRDashClientes = (function () {
         const temAds = BaseDados.cobreAds(info, mesIni);
         if (temAds) { r.adsMtd += mtd.ads; r.temAds = true; }
         r.contas.push({ mkt, nome: GLR.nomeConta(mkt, id) || id, proj: mtd.faturamento + ritmo * (dm - dd), ads: temAds ? mtd.ads : null, tacos: temAds && mtd.faturamento > 0 ? mtd.ads / mtd.faturamento * 100 : null });
-        if (BaseDados.cobre(info, m1de)) { r.m1 += BaseDados.somar(info, m1de, m1ate).faturamento; r.per1 += BaseDados.somar(info, m1de, m1fimPer).faturamento; r.temM1 = true; r.temPer1 = true; }
+        if (BaseDados.cobre(info, m1de)) { r.m1 += BaseDados.somar(info, m1de, m1ate).faturamento; r.temM1 = true; }
         // linha do card: faturamento por dia do mês até ontem
         for (let i = 1; i <= dd; i++) { const d = isoD(new Date(ontem.getFullYear(), ontem.getMonth(), i)); r.serie[d] = (r.serie[d] || 0) + (parseFloat(info.dias?.[d]?.faturamento) || 0); }
       }
       if (!r.cob || r.mtd <= 0) continue;
       const proj = r.mtd + r.ritmo * (dm - dd); // = faturado ÷ dias decorridos × dias do mês
       const meta = parseFloat(metas[c.id]) || parseFloat(c.metaMensal) || 0, teto = parseFloat(tetos[c.id]) || null;
-      const t7 = r.temPer1 && r.per1 > 0 ? (r.mtd / r.per1 - 1) * 100 : null; // mês até ontem × mesmo período do mês passado
+      // tendência = projeção do mês × mês passado fechado (igual à Projeção de Crescimento)
+      const t7 = r.temM1 && r.m1 > 0 ? (proj / r.m1 - 1) * 100 : null;
       const g = gest(c.gestorId);
       out.push({ id: String(c.id), nome: c.nome, gestorId: g ? String(g.id) : 'sem', gestor: g?.nome || c.gestor || 'Sem gestor',
         proj, m1: r.temM1 ? r.m1 : 0, meta, pctMeta: meta > 0 ? proj / meta * 100 : null, ads: r.temAds ? r.adsMtd : null, tacos: r.temAds && r.mtd > 0 ? r.adsMtd / r.mtd * 100 : null,
-        t7, vsM1: r.temM1 && r.m1 > 0 ? (proj / r.m1 - 1) * 100 : null, tend: t7 == null ? 'sem' : t7 >= 5 ? 'cresce' : t7 <= -5 ? 'cai' : 'estavel', serie: Object.values(r.serie), teto, contas: r.contas.sort((a, b) => b.proj - a.proj) });
+        t7, vsM1: r.temM1 && r.m1 > 0 ? (proj / r.m1 - 1) * 100 : null, tend: t7 == null ? 'sem' : t7 >= 2 ? 'cresce' : t7 <= -2 ? 'cai' : 'estavel', serie: Object.values(r.serie), teto, contas: r.contas.sort((a, b) => b.proj - a.proj) });
     }
     return out;
   }
@@ -80,7 +79,7 @@ window.GLRDashClientes = (function () {
     const T = TEND[x.tend], pm = x.pctMeta != null ? Math.min(100, x.pctMeta) : null;
     const corMeta = x.pctMeta == null ? 'var(--accent)' : x.pctMeta >= 100 ? 'var(--green)' : x.pctMeta >= 85 ? '#d98b00' : 'var(--red)';
     return `<button type="button" class="dc-card" style="--t:${T[1]}" onclick="GLR.ctx?.definir('${h(x.id)}', true); Router.navigate('cliente-perfil', { id: ${JSON.stringify(x.id)} })">
-      <div class="dc-top"><div><b>${h(x.nome)}</b><span>${h(x.gestor)}</span></div><span class="dc-tend" title="Mês até ontem contra o mesmo período do mês passado">${T[2]} ${x.t7 != null ? `${x.t7 > 0 ? '+' : ''}${pct(x.t7)}` : T[0]}</span></div>
+      <div class="dc-top"><div><b>${h(x.nome)}</b><span>${h(x.gestor)}</span></div><span class="dc-tend" title="Projeção do mês contra o mês passado fechado (igual à Projeção de Crescimento)">${T[2]} ${x.t7 != null ? `${x.t7 > 0 ? '+' : ''}${pct(x.t7)}` : T[0]}</span></div>
       <div class="dc-proj"><span>Projeção do mês</span><b>${R0(x.proj)}</b>
         <small>${x.pctMeta != null ? `<b style="color:${corMeta}">${pct(x.pctMeta)}</b> da meta de ${R0(x.meta)}` : 'sem meta'}${x.vsM1 != null ? ` · <span style="color:${x.vsM1 >= 0 ? 'var(--green)' : 'var(--red)'}">${x.vsM1 >= 0 ? '+' : ''}${pct(x.vsM1)}</span> vs mês passado` : ''}</small></div>
       ${pm != null ? `<div class="dc-bar"><i style="width:${pm}%;background:${corMeta}"></i></div>` : ''}
@@ -124,7 +123,7 @@ window.GLRDashClientes = (function () {
     const vis = st.todos ? ls : ls.slice(0, POR_PAGINA);
     el.innerHTML = `<div class="card dc">
       <div class="section-header dc-cab">
-        <div><div class="section-title">Clientes</div><div class="section-subtitle">Projeção do mês, ADS e tendência — o mês até ontem contra o mesmo período do mês passado</div></div>
+        <div><div class="section-title">Clientes</div><div class="section-subtitle">Projeção do mês, ADS e tendência — projeção do mês contra o mês passado fechado</div></div>
         <div class="dc-ctrl">
           <select class="form-control" aria-label="Gestor" onchange="GLRDashClientes.gestor(this.value)"><option value="todos">Todos os gestores</option>${gestores.map(([id, nome]) => `<option value="${h(id)}" ${st.gestor === id ? 'selected' : ''}>${h(nome)}</option>`).join('')}</select>
           <select class="form-control" aria-label="Ordenar" onchange="GLRDashClientes.ordem(this.value)">${[['projecao', 'Maior projeção'], ['queda', 'Mais caindo'], ['alta', 'Mais crescendo'], ['meta', 'Mais longe da meta'], ['tacos', 'Maior TACOS']].map(([k, t]) => `<option value="${k}" ${st.ordem === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
