@@ -16,7 +16,7 @@
     { id: 'saude', titulo: 'Saúde das contas', paginas: ['estoque-margem', 'atendimento', 'qualidade-anuncios', 'rastreamento', 'conexoes'] },
     { id: 'anuncios', titulo: 'Anúncios', paginas: ['expansao', 'produtos', 'anuncios-ml', 'anuncios-shopee', 'anuncios-tiktok', 'anuncios-amazon', 'fotos'] },
     { id: 'financeiro', titulo: 'Financeiro', paginas: ['financeiro', 'dre', 'conciliacao'] },
-    { id: 'sistema', titulo: 'Sistema', paginas: ['escritorio', 'integracoes', 'timeline', 'diagnostico'] },
+    { id: 'sistema', titulo: 'Sistema', paginas: ['segundo-cerebro', 'escritorio', 'integracoes', 'timeline', 'diagnostico'] },
   ];
   const K_ABERTOS = 'glr_nav_abertos';
   const lerAbertos = () => { try { const v = JSON.parse(localStorage.getItem(K_ABERTOS) || 'null'); return Array.isArray(v) ? v : ['hoje']; } catch (e) { return ['hoje']; } };

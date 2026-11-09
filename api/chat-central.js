@@ -304,6 +304,7 @@ module.exports = async function handler(req, res) {
     while (mensagens.length && mensagens[0].role !== 'user') mensagens.shift();
     mensagens.push({ role: 'user', content: texto });
 
+    const conhecimento = await require('./_conhecimento').contexto(texto + " " + (persona?.nome || conv.agente || ""));
     const client = new Anthropic();
     const usadas = [], inicio = Date.now();
     let resposta = null;
@@ -311,7 +312,7 @@ module.exports = async function handler(req, res) {
       const semTempo = Date.now() - inicio > ORCAMENTO_MS || rodada >= MAX_RODADAS;
       resposta = await client.beta.messages.create({
         model: MODELO, max_tokens: 16000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' },
-        system: ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco), tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+        system: (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + conhecimento, tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
       });
       if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
       if (resposta.stop_reason !== 'tool_use') break;

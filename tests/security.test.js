@@ -21,6 +21,7 @@ function mockRole(role) {
     calls.push(String(url));
     if (url.endsWith('/auth/v1/user')) return { ok: true, json: async () => ({ id: 'user1', email: 'user@example.test' }) };
     if (url.endsWith('/rpc/glr_acesso')) return { ok: true, json: async () => role };
+    if (url.includes('/rest/v1/glr_conhecimento?')) return { ok: true, json: async () => [] };
     if (url === 'https://api.anthropic.com/v1/messages') return { ok: true, json: async () => ({ content: [{ text: 'ok' }] }) };
     if (url === 'https://mcp.tiops.com.br') return { ok: true, status: 200, json: async () => ({ data: { accounts: [{external_id:'own'}, {external_id:'other'}] } }) };
     throw new Error('Unexpected external request: ' + url);
@@ -51,7 +52,7 @@ for (const name of ['chat', 'analyze-photo', 'generate-photo']) {
 test('staff chat still works with a verified staff session', async () => {
   const calls = mockRole({ role: 'staff' }); const r = res();
   await require('../api/chat')(req({ messages: [{ role: 'user', content: 'test' }] }), r);
-  assert.equal(r.code, 200); assert.equal(r.body.content, 'ok'); assert.equal(calls.length, 3);
+  assert.equal(r.code, 200); assert.equal(r.body.content, 'ok'); assert.equal(calls.length, 4); assert(calls[2].includes('/glr_conhecimento?'));
 });
 test('authorization outage fails closed', async () => {
   global.fetch = async () => { throw Error('offline'); };

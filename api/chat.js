@@ -13,6 +13,7 @@ module.exports = async function handler(req, res) {
   try {
     const { messages, system } = req.body;
 
+    const conhecimento = await require('./_conhecimento').contexto((Array.isArray(messages) ? messages : []).filter(m=>m.role==='user' && typeof m.content==='string').slice(-2).map(m=>m.content).join(' '));
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -23,7 +24,7 @@ module.exports = async function handler(req, res) {
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 4096,
-        system: system || 'Você é um especialista em ADS para marketplaces (Mercado Livre e Shopee). Responda de forma objetiva e prática em português.',
+        system: (system || 'Você é um especialista em ADS para marketplaces (Mercado Livre e Shopee). Responda de forma objetiva e prática em português.') + conhecimento,
         messages,
       }),
     });

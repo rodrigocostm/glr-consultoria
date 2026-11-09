@@ -511,7 +511,7 @@ module.exports = async function handler(req, res) {
 
   const ctx = { mcKey, shopId: String(conta_id), nome: cfg.cliente_nome || null };
   const client = new Anthropic();
-  const sistema = String(system || 'Você é o Agente Autônomo de ADS da GLR Consultoria. Responda em português.') + guiaFerramentas(hojeBRT(), ctx.shopId, cfg.cliente_nome);
+  const sistema = String(system || 'Você é o Agente Autônomo de ADS da GLR Consultoria. Responda em português.') + guiaFerramentas(hojeBRT(), ctx.shopId, cfg.cliente_nome) + await require('./_conhecimento').contexto(historico.filter(m => m.role === "user").slice(-2).map(m => m.content).join(" "));
   const mensagens = [...historico];
   const usadas = [];
   const inicio = Date.now();
