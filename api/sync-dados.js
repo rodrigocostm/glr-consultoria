@@ -320,6 +320,8 @@ async function gravarAds(apiKey, shopId, de, ate) {
 //    cancelado/inválido fica fora do faturamento válido ──
 function mapearPedidoML(contaId, o) {
   const status = String(o.status || '').toLowerCase();
+  // reembolso parcial: o pedido segue válido, mas sem a parte devolvida ao comprador
+  const reembolsado = status === 'partially_refunded' ? r2((o.payments || []).reduce((s, p) => s + (parseFloat(p.transaction_amount_refunded) || 0), 0)) : 0;
   const itens = (o.order_items || []).map(i => ({
     item_id: i.item?.id || '', sku: i.item?.seller_sku || '', nome: i.item?.title || '',
     qtd: parseInt(i.quantity) || 1, preco: r2(i.unit_price), tarifa_venda: r2(i.sale_fee),
@@ -329,10 +331,10 @@ function mapearPedidoML(contaId, o) {
     criado_em: new Date(o.date_created).toISOString(), atualizado_mkt: o.last_updated ? new Date(o.last_updated).toISOString() : null,
     status_original: o.status || '',
     situacao: status.includes('cancel') || status === 'invalid' ? 'cancelado' : 'valido',
-    valor_bruto: r2(o.total_amount),
+    valor_bruto: r2(Math.max(0, (parseFloat(o.total_amount) || 0) - reembolsado)),
     valor_itens: r2(itens.reduce((s, i) => s + i.preco * i.qtd, 0)),
     // líquido e frete do vendedor vêm depois, do recebimento (/collections)
-    taxas: { tarifa_venda: r2(itens.reduce((s, i) => s + i.tarifa_venda * i.qtd, 0)), pack_id: o.pack_id || null, payment_id: o.payments?.[0]?.id || null },
+    taxas: { tarifa_venda: r2(itens.reduce((s, i) => s + i.tarifa_venda * i.qtd, 0)), pack_id: o.pack_id || null, payment_id: o.payments?.[0]?.id || null, ...(reembolsado > 0 ? { reembolsado } : {}) },
     itens, sincronizado_em: new Date().toISOString(),
   };
 }
@@ -345,6 +347,13 @@ async function gravarPedidosML(apiKey, contaId, dataDe, dataAte, prazo) {
     const d = r.data || r;
     const res = d.results || [];
     const linhas = res.filter(o => o && o.id && o.date_created).map(o => mapearPedidoML(contaId, o));
+    if (linhas.length) {
+      // Devolução/reembolso vem das reclamações (marcarDevolucoesML) e o pedido segue
+      // "paid" no ML — não deixa a releitura do pedido desfazer a marcação.
+      const dev = await sbSelect('glr_pedidos', `marketplace=eq.ml&conta_id=eq.${contaId}&situacao=eq.devolvido&pedido_id=in.(${linhas.map(l => l.pedido_id).join(',')})&select=pedido_id`).catch(() => []);
+      const devSet = new Set(dev.map(x => x.pedido_id));
+      for (const l of linhas) if (devSet.has(l.pedido_id) && l.situacao === 'valido') l.situacao = 'devolvido';
+    }
     linhas.forEach(l => tocar('ml', contaId, l.criado_em));
     if (linhas.length) await sbUpsert('glr_pedidos', [...new Map(linhas.map(l => [l.pedido_id, l])).values()], 'marketplace,conta_id,pedido_id');
     n += linhas.length;
@@ -397,6 +406,46 @@ async function marcarDevolucoesShopee(apiKey, shopId, de, ate, prazo) {
     const rows = await sbSelect('glr_pedidos', `marketplace=eq.shopee&conta_id=eq.${shopId}&situacao=eq.valido&pedido_id=in.(${lote.join(',')})&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto`);
     if (!rows.length) continue;
     rows.forEach(r => { r.situacao = 'devolvido'; tocar('shopee', shopId, r.criado_em); });
+    await sbUpsert('glr_pedidos', rows, 'marketplace,conta_id,pedido_id');
+    n += rows.length;
+  }
+  return { n, completo: true };
+}
+
+// ── Mercado Livre: reclamação encerrada a favor do comprador (devolução do
+//    produto ou reembolso) tira o pedido do faturamento válido. O pedido segue
+//    "paid" no ML, então a fonte são as reclamações, por data de atualização.
+//    Reembolso parcial (quantity_type "partial") já sai pelo status
+//    partially_refunded do pedido, descontando só a parte devolvida. ──
+async function marcarDevolucoesML(apiKey, contaId, de, ate, prazo) {
+  const ids = new Set();
+  const desde = new Date((de - 3 * 3600) * SEG).toISOString().slice(0, 19) + '.000-03:00';
+  for (let offset = 0; offset < 2000; offset += 50) {
+    if (Date.now() > prazo) return { n: 0, completo: false };
+    const path = `/post-purchase/v1/claims/search?status=closed&type=mediations&sort=last_updated:desc&range=last_updated:after:${encodeURIComponent(desde)}&limit=50&offset=${offset}`;
+    const r = await comRetry(() => mcpCall(apiKey, 'raw', { method: 'GET', path, meliUserId: contaId }));
+    // a resposta da busca já vem como { paging, data: [...] } (às vezes embrulhada em mais um data)
+    const d = Array.isArray(r.data) ? r : (r.data || r), lista = Array.isArray(d.data) ? d.data : [];
+    for (const c of lista) {
+      const aFavor = (c.resolution?.benefited || []).includes('complainant');
+      if (aFavor && c.quantity_type !== 'partial' && c.resource_id) ids.add(String(c.resource_id));
+    }
+    if (lista.length < 50 || offset + 50 >= (parseInt(d.paging?.total) || 0)) break;
+  }
+  if (!ids.size) return { n: 0, completo: true };
+  const lista = [...ids];
+  let n = 0;
+  const sel = 'select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto';
+  for (let i = 0; i < lista.length; i += 100) {
+    const lote = lista.slice(i, i + 100).join(',');
+    // a reclamação aponta para o pedido; em carrinho, pode apontar para o pacote
+    const [porPedido, porPack] = await Promise.all([
+      sbSelect('glr_pedidos', `marketplace=eq.ml&conta_id=eq.${contaId}&situacao=eq.valido&pedido_id=in.(${lote})&${sel}`).catch(() => []),
+      sbSelect('glr_pedidos', `marketplace=eq.ml&conta_id=eq.${contaId}&situacao=eq.valido&taxas->>pack_id=in.(${lote})&${sel}`).catch(() => []),
+    ]);
+    const rows = [...new Map([...porPedido, ...porPack].map(x => [x.pedido_id, x])).values()];
+    if (!rows.length) continue;
+    rows.forEach(x => { x.situacao = 'devolvido'; tocar('ml', contaId, x.criado_em); });
     await sbUpsert('glr_pedidos', rows, 'marketplace,conta_id,pedido_id');
     n += rows.length;
   }
@@ -1038,6 +1087,13 @@ const ADAPTADORES = {
     // cancelamento de venda mais antiga é pego pela reconferência diária dos 45 dias.
     async incremental(apiKey, id, cursor, t, prazo) { return (await gravarPedidosML(apiKey, id, dataBR(t - DIA), dataBR(t), prazo)).n; },
     async bloco(apiKey, id, de, ate, prazo) { return gravarPedidosML(apiKey, id, dataBR(de), dataBR(ate), prazo); },
+    // 1ª vez: reclamações encerradas nos últimos 90 dias; depois, só as atualizadas desde a última rodada
+    async devolucoes(apiKey, id, cursor, t, prazo) {
+      const de = Math.max((cursor.dev_ate || t - DIAS_HISTORICO * DIA) - 600, t - DIAS_HISTORICO * DIA);
+      const r = await marcarDevolucoesML(apiKey, id, de, t, prazo);
+      if (r.completo) cursor.dev_ate = t;
+      return r.n;
+    },
     taxas: enriquecerTaxasML,
     ads: gravarAdsML,
   },
@@ -1366,3 +1422,4 @@ module.exports = async function handler(req, res) {
     .catch(e => console.error('[sync-dados] falhou', e)));
   return res.status(202).json({ ok: true, modo });
 };
+module.exports._teste = { mapearPedidoML, marcarDevolucoesML, gravarPedidosML };
