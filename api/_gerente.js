@@ -475,6 +475,15 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     // faturamento das outras plataformas (Amazon, TikTok, Magalu, Shein): entra na meta e na projeção, como no Dashboard
     sbSelect('glr_sync_estado', 'recurso=eq.resumo&marketplace=in.(amazon,tiktok,magalu,shein)&select=marketplace,conta_id,cursor').catch(() => []),
   ]);
+  // Ações já MEDIDAS (7 dias antes × depois) dos últimos 46 dias, paginadas: o banco devolve no
+  // máximo 1.000 linhas por consulta e a lista "medidos" acima traz as mais recentes, quase todas
+  // ainda sem medição. Alimenta o resultado da semana do plano e o Segundo Cérebro.
+  const medicoes = [];
+  for (let off = 0; off < 10000; off += 1000) {
+    const pg = await sbSelect('glr_agente_log', `resultado=eq.executado&dados->medicao->>veredito=in.(melhorou,piorou,neutro)&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 46 * 864e5).toISOString())}&select=conta_id,titulo,criado_em,medicao:dados->medicao,roas_de:dados->roas_de,roas_para:dados->roas_para,budget_de:dados->budget_de,budget_para:dados->budget_para,marketplace:dados->>marketplace&order=criado_em.desc&limit=1000&offset=${off}`).catch(() => []);
+    medicoes.push(...pg.map(r => ({ conta_id: r.conta_id, titulo: r.titulo, criado_em: r.criado_em, dados: { medicao: r.medicao, roas_de: r.roas_de, roas_para: r.roas_para, budget_de: r.budget_de, budget_para: r.budget_para, marketplace: r.marketplace } })));
+    if (pg.length < 1000) break;
+  }
   const resumoOutro = Object.fromEntries(resumosOutros.map(e => [`${e.marketplace}:${e.conta_id}`, e.cursor]));
   const mktOutro = m => { m = String(m || '').toLowerCase(); return m === 'amazon' ? 'amazon' : ['tiktok', 'tiktok_shop', 'tiktokshop'].includes(m) ? 'tiktok' : m === 'magalu' ? 'magalu' : m === 'shein' ? 'shein' : null; };
   const est = {};
@@ -554,7 +563,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     for (const a of todas) { if (vistos.has(a.id)) continue; vistos.add(a.id); acoes.push(a); if (acoes.length >= MAX_ACOES) break; }
     // Resultado medido dos últimos 7 dias (o que levar ao cliente)
     const contasCli = new Set(lojas.map(L => L.conta));
-    const med = medidos.filter(l => contasCli.has(String(l.conta_id)) && l.dados?.medicao?.medido_em && new Date(l.dados.medicao.medido_em).getTime() >= desde7 && ['melhorou', 'piorou', 'neutro'].includes(l.dados.medicao.veredito));
+    const med = medicoes.filter(l => contasCli.has(String(l.conta_id)) && l.dados?.medicao?.medido_em && new Date(l.dados.medicao.medido_em).getTime() >= desde7 && ['melhorou', 'piorou', 'neutro'].includes(l.dados.medicao.veredito));
     const resultados = { medidas: med.length, melhoraram: med.filter(l => l.dados.medicao.veredito === 'melhorou').length, exemplos: med.filter(l => l.dados.medicao.veredito === 'melhorou').slice(0, 3).map(l => `${corta(String(l.titulo).replace(/^.*? — /, '').replace(/^Sugestão: /, ''), 50)}: ${l.dados.medicao.resumo}`) };
     // Semáforo
     const repAlto = lojas.some(L => L.reputacao?.risco === 'alto');
@@ -587,7 +596,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
     };
     plano.oportunidades = oportunidades.build(plano, todas);
     // Segundo Cérebro: a nota "Agentes · <Cliente>" com o que os agentes sabem e aprenderam
-    try { await cerebro.anotarCliente(c, plano, lojas, medidos); lojas.forEach(L => contasCerebro.add(String(L.conta))); paraCerebro.push({ nome: c.nome, semaforo, pctMeta: metricas.pctMeta, tacos: metricas.tacos }); }
+    try { await cerebro.anotarCliente(c, plano, lojas, medicoes); lojas.forEach(L => contasCerebro.add(String(L.conta))); paraCerebro.push({ nome: c.nome, semaforo, pctMeta: metricas.pctMeta, tacos: metricas.tacos }); }
     catch (e) { console.warn('[gerente] segundo cérebro', c.nome, e.message); }
     await sbUpsert('glr_sync_estado', { marketplace: 'sistema', conta_id: `cliente:${c.id}`, recurso: 'plano', ultimo_sucesso: new Date().toISOString(), ultima_tentativa: new Date().toISOString(), ultimo_erro: null, registros: acoes.length, cursor: plano }, 'marketplace,conta_id,recurso');
     saida.push({ cliente: c.nome, semaforo, acoes: acoes.length });
@@ -595,7 +604,7 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
   // 2 clientes por vez (a IA leva alguns segundos por cliente; mais que isso esbarra no limite da API)
   await Promise.all(Array.from({ length: Math.min(2, alvo.length) }, async () => { while (iCli < alvo.length) { const c = alvo[iCli++]; try { await processar(c); } catch (e) { saida.push({ cliente: c.nome, erro: e.message }); } } }));
   // nota-índice da carteira (só na rodada de todos os clientes)
-  if (!filtroCliente && paraCerebro.length) { try { await cerebro.anotarCarteira(paraCerebro, medidos, contasCerebro); } catch (e) { console.warn('[gerente] segundo cérebro (carteira)', e.message); } }
+  if (!filtroCliente && paraCerebro.length) { try { await cerebro.anotarCarteira(paraCerebro, medicoes, contasCerebro); } catch (e) { console.warn('[gerente] segundo cérebro (carteira)', e.message); } }
   return saida;
 }
 
