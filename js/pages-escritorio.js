@@ -47,10 +47,25 @@ Router.register('escritorio', (params, el) => {
     carregando: true, erro: null, logs: [], sync: [], sinais: [], repu: [], quali: [], planos: [], rels: [], agenda: {}, pendentes: 0,
     filtro: (() => { try { return localStorage.getItem('glr_esc_filtro') || 'todos'; } catch (e) { return 'todos'; } })(),
     atualizadoEm: 0, novos: new Set(), vistos: new Set(),
+    // conversa direta com um agente (api/chat-central.js, persona do agente)
+    direto: [], pend: [], para: (() => { try { return localStorage.getItem('glr_esc_para') || 'gerente'; } catch (e) { return 'gerente'; } })(), rascunho: '', enviando: false,
   };
+
+  async function apiChat(corpo) {
+    const { data } = await _sb.auth.getSession();
+    const r = await fetch('/api/chat-central', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data?.session?.access_token || ''}` }, body: JSON.stringify(corpo) });
+    const j = await r.json().catch(() => ({ error: `Resposta inválida do servidor (HTTP ${r.status}).` }));
+    if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  }
+  async function carregarDireto() {
+    try { state.direto = (await apiChat({ acao: 'escritorio' })).conversas || []; } catch (e) { /* sem conversa direta: segue só com o registro */ }
+    render();
+  }
 
 
   async function carregar() {
+    carregarDireto();
     const desde = new Date(Date.now() - 48 * HORA).toISOString();
     try {
       const COLS = 'id,conta_id,cliente_nome,tipo,titulo,explicacao,dados,resultado,origem,criado_em';
@@ -285,6 +300,17 @@ Router.register('escritorio', (params, el) => {
       else if (g.recurso === 'pedidos') add('sync', g.t, `Sincronizei os pedidos de ${n} loja(s)${g.reg ? `: ${N(g.reg)} pedido(s) novos ou atualizados nesta rodada` : ', sem pedidos novos'}. A base que os agentes de ADS e o Vendômetro leem está em dia.`, { menor: !g.reg });
       else add('sync', g.t, `Atualizei o investimento em ADS de ${n} loja(s).`, { menor: true });
     }
+    // Conversa direta do analista com um agente (o que você escreveu e o que ele respondeu)
+    const md = t => (window.glrMarkdown ? window.glrMarkdown(t) : h(t));
+    for (const c of state.direto) {
+      if (!AG[c.agente]) continue;
+      for (const m of c.msgs) {
+        const t = Date.parse(m.em); if (!t) continue;
+        if (m.r === 'user') add('analista', t, `@${AG[c.agente].nome} ${h(m.t)}`, { para: c.agente, direto: true });
+        else add(c.agente, t, `${md(m.t)}${m.criadas ? `<div class="esc-criadas">${m.criadas} sugestão(ões) na Caixa de decisões</div>` : ''}`, { para: c.agente, direto: true, resp: 'Analista' });
+      }
+    }
+    for (const m of state.pend) add(m.de, m.t, m.texto, { para: m.para, direto: true, digitando: m.digitando, erro: m.erro, resp: m.de === 'analista' ? '' : 'Analista' });
     return msgs.sort((a, b) => a.t - b.t);
   }
 
@@ -346,6 +372,7 @@ Router.register('escritorio', (params, el) => {
 
   function render() {
     const root = document.getElementById('esc-root'); if (!root) return;
+    const focado = document.activeElement && document.activeElement.id === 'esc-txt', cursor = focado ? document.activeElement.selectionStart : null;
     if (state.carregando) { root.innerHTML = '<div class="esc-sub" style="padding:30px">Carregando o escritório…</div>'; return; }
     const msgs = montarConversa();
     const est = estadoAgentes(msgs);
@@ -368,9 +395,9 @@ Router.register('escritorio', (params, el) => {
       </button>`;
     }).join('');
 
-    const lista = state.filtro === 'todos' ? msgs : state.filtro === 'analista' ? msgs.filter(m => m.de === 'analista' || m.chama)
+    const lista = state.filtro === 'todos' ? msgs : state.filtro === 'analista' ? msgs.filter(m => m.de === 'analista' || m.chama || m.direto)
       : state.filtro === 'conversas' ? msgs.filter(m => m.fio)
-      : msgs.filter(m => m.de === state.filtro || (m.fio && msgs.some(o => o.fio === m.fio && o.de === state.filtro))); // na mesa de um agente, mostra a conversa inteira em que ele entrou
+      : msgs.filter(m => m.de === state.filtro || m.para === state.filtro || (m.fio && msgs.some(o => o.fio === m.fio && o.de === state.filtro))); // na mesa de um agente, mostra a conversa inteira em que ele entrou e o que você falou com ele
     let ultimoDia = '', fioAtual = '';
     const bolhas = lista.slice(-160).map(m => {
       const a = m.de === 'analista' ? ANALISTA : AG[m.de];
@@ -384,7 +411,7 @@ Router.register('escritorio', (params, el) => {
       const fecha = fioAtual && (fio !== fioAtual || sep) ? '</div>' : '';
       const abre = fio && (fio !== fioAtual || sep) ? '<div class="esc-fio"><div class="esc-fio-t">conversa entre agentes</div>' : '';
       fioAtual = fio;
-      return `${fecha}${sep}${abre}<div class="esc-msg ${m.de === 'analista' ? 'humano' : ''} ${m.menor ? 'menor' : ''} ${m.erro ? 'erro' : ''} ${m.resp ? 'resposta' : ''} ${novo ? 'novo' : ''}" style="--c:${a.cor}">
+      return `${fecha}${sep}${abre}<div class="esc-msg ${m.de === 'analista' ? 'humano' : ''} ${m.menor ? 'menor' : ''} ${m.erro ? 'erro' : ''} ${m.resp ? 'resposta' : ''} ${m.digitando ? 'digitando' : ''} ${novo ? 'novo' : ''}" style="--c:${a.cor}">
         <div class="esc-av">${h(a.nome.split(' ').filter(p => p.length > 2).map(p => p[0]).join('').slice(0, 2).toUpperCase())}</div>
         <div class="esc-bal"><div class="esc-de"><b>${h(a.nome)}</b>${m.resp ? `<em>respondendo a ${h(m.resp)}</em>` : ''}<span>${hora(m.t)}</span></div><div class="esc-txt">${texto}</div></div>
       </div>`;
@@ -412,14 +439,45 @@ Router.register('escritorio', (params, el) => {
           </div>
           <div class="esc-chips">${chips.map(([k, t]) => `<button class="${state.filtro === k ? 'on' : ''}" onclick="window._escFiltro('${k}')">${h(t)}</button>`).join('')}</div>
           <div class="esc-msgs" id="esc-msgs">${bolhas || '<div class="esc-sub" style="padding:24px;text-align:center">Nenhuma fala neste filtro nas últimas 48 h.</div>'}</div>
+          <form class="esc-falar" onsubmit="event.preventDefault();window._escEnviar()">
+            <label class="esc-para">Falar com <select id="esc-para" onchange="window._escPara(this.value)">${Object.entries(AG).map(([k, a]) => `<option value="${k}" ${state.para === k ? 'selected' : ''}>${h(a.nome)}</option>`).join('')}</select></label>
+            <div class="esc-falar-linha">
+              <textarea id="esc-txt" rows="2" placeholder="Escreva para ${h(AG[state.para]?.nome || 'o agente')}… (Enter envia, Shift+Enter quebra linha)" oninput="window._escRascunho(this.value)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window._escEnviar()}" ${state.enviando ? 'disabled' : ''}>${h(state.rascunho)}</textarea>
+              <button class="btn btn-primary btn-sm" type="submit" ${state.enviando ? 'disabled' : ''}>${state.enviando ? 'Respondendo…' : 'Enviar'}</button>
+            </div>
+            <div class="esc-falar-dica">O agente lê os dados da conta para responder${GLR.ctx?.cliente?.() ? ' — cliente em foco no topo' : ''}. Pedidos de mudança viram sugestão na Caixa de decisões; nada é aplicado por aqui.</div>
+          </form>
           <div class="esc-nota">As falas são montadas a partir do registro real de cada agente: ações, sugestões, sincronizações, medições e relatórios. As conversas entre agentes mostram as consultas que um agente fez ao trabalho do outro antes de decidir — a resposta é o dado que ele leu e o fechamento é a decisão que tomou.</div>
         </section>
       </div>`;
     const box = document.getElementById('esc-msgs'); if (box) box.scrollTop = box.scrollHeight;
+    if (focado) { const ta = document.getElementById('esc-txt'); if (ta) { ta.focus(); try { ta.setSelectionRange(cursor, cursor); } catch (e) {} } }
   }
 
   window._escFiltro = k => { state.filtro = state.filtro === k && k !== 'todos' ? 'todos' : k; try { localStorage.setItem('glr_esc_filtro', state.filtro); } catch (e) {} render(); };
   window._escAtualizar = () => carregar();
+  window._escRascunho = v => { state.rascunho = v; };
+  window._escPara = k => { if (!AG[k]) return; state.para = k; try { localStorage.setItem('glr_esc_para', k); } catch (e) {} render(); };
+  window._escEnviar = async () => {
+    let texto = String(state.rascunho || '').trim();
+    if (!texto || state.enviando) return;
+    // "@Estoque quanto dura…" escolhe o agente pela menção do começo
+    const alvo = Object.entries(AG).sort((a, b) => b[1].nome.length - a[1].nome.length).find(([, a]) => texto.toLowerCase().startsWith('@' + a.nome.toLowerCase()));
+    if (alvo) { state.para = alvo[0]; texto = texto.slice(alvo[1].nome.length + 1).trim() || texto; }
+    const para = state.para, t = Date.now();
+    state.enviando = true; state.rascunho = '';
+    if (state.filtro !== 'todos' && state.filtro !== para && state.filtro !== 'analista') state.filtro = para; // mostra a conversa que acabou de começar
+    state.pend = [{ de: 'analista', t, texto: `@${AG[para].nome} ${h(texto)}`, para }, { de: para, t: t + 1, texto: 'digitando…', para, digitando: true }];
+    render();
+    try {
+      await apiChat({ acao: 'enviar', conversa_id: `escritorio${para}`, mensagem: texto, agente: `esc:${para}`, cliente_id: GLR.ctx?.cliente?.() || null });
+      state.pend = [];
+      await carregarDireto();
+    } catch (e) {
+      state.pend = [state.pend[0], { de: para, t: t + 1, texto: `Não consegui responder agora: ${h(e.message || e)}`, para, erro: true }];
+    }
+    state.enviando = false; render();
+  };
 
   el.innerHTML = `<div class="page esc">
     <div class="esc-titulo"><h1>Escritório dos agentes</h1><span class="esc-sub">o que cada agente automático da GLR está fazendo, em tempo real</span></div>
@@ -483,6 +541,17 @@ Router.register('escritorio', (params, el) => {
     .esc-msg.novo{animation:esc-entra .5s ease-out}
     @keyframes esc-entra{from{opacity:.2;transform:translateY(6px)}to{opacity:1;transform:none}}
     .esc-mencao{color:var(--accent);font-weight:600}
+    .esc-falar{display:flex;flex-direction:column;gap:6px;padding:10px 16px;border-top:1px solid var(--border)}
+    .esc-para{font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:6px}
+    .esc-para select{font:inherit;font-size:12.5px;border:1px solid var(--border);border-radius:8px;padding:3px 6px;background:var(--bg-card);color:var(--text-primary)}
+    .esc-falar-linha{display:flex;gap:8px;align-items:flex-end}
+    .esc-falar textarea{flex:1;min-width:0;resize:vertical;font:inherit;font-size:13px;border:1px solid var(--border);border-radius:10px;padding:8px 10px;background:var(--bg-card);color:var(--text-primary)}
+    .esc-falar textarea:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+    .esc-falar-dica{font-size:11px;color:var(--text-muted)}
+    .esc-msg.digitando .esc-txt{color:var(--text-muted);font-style:italic;animation:esc-pisca 1.2s ease-in-out infinite}
+    @keyframes esc-pisca{50%{opacity:.45}}
+    .esc-txt p{margin:0 0 6px} .esc-txt p:last-child{margin:0} .esc-txt ul,.esc-txt ol{margin:4px 0 6px;padding-left:18px} .esc-txt table{border-collapse:collapse;font-size:12px;margin:6px 0;display:block;overflow-x:auto} .esc-txt th,.esc-txt td{border:1px solid var(--border);padding:3px 6px;text-align:left}
+    .esc-criadas{margin-top:6px;font-size:11.5px;color:var(--accent);font-weight:600}
     .esc-fio{display:flex;flex-direction:column;gap:8px;border-left:2px solid var(--border-strong);padding:2px 0 2px 10px;margin-left:14px}
     .esc-fio-t{font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px}
     .esc-msg.resposta{margin-left:18px}

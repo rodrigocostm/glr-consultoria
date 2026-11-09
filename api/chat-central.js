@@ -218,6 +218,36 @@ COMO TRABALHAR:
 - Nunca diga que aplicou algo: você só lê e cria sugestões. Promoção e ADS do ML ficam sempre para o analista aprovar/aplicar.`;
 }
 
+// ── Agentes do Escritório: o analista fala direto com um agente (tela Escritório).
+// Mesmo cérebro e ferramentas do copiloto (só leitura + sugestão na Caixa), mas
+// respondendo como aquele agente, curto como numa conversa de equipe. Uma
+// conversa por agente e por usuário (id "escritorio<agente>"). ──
+const PERSONAS = {
+  gerente: { nome: 'Gerente de Conta', cargo: 'monto o plano do dia de cada cliente às 08:00', foco: 'meta do mês, projeção, caminho até a meta, prioridades do dia e o que cada colega apontou (plano_cliente, carteira, vendas)' },
+  sync: { nome: 'Coletor', cargo: 'sincronizo pedidos, ADS e o resumo das lojas a cada 15 min', foco: 'se os números das lojas estão em dia, pedidos, cancelados, devolvidos e faturamento por período (vendas, ads)' },
+  precos: { nome: 'Vigia de Preços', cargo: 'confiro o preço dos anúncios do Mercado Livre a cada 4 h', foco: 'preço, mudanças de preço, ticket e efeito do preço nas vendas (produtos, vendas)' },
+  estoque: { nome: 'Estoque', cargo: 'calculo em quantos dias cada produto acaba, a cada 3 h', foco: 'estoque, dias de estoque, ruptura, produto parado (estoque_margem)' },
+  margem: { nome: 'Margem', cargo: 'calculo a margem e o ACOS máximo de cada produto, a cada 3 h', foco: 'custo, margem, lucro e o ACOS que a margem aguenta (estoque_margem)' },
+  promo: { nome: 'Promoções', cargo: 'escolho, 1x por dia, as promoções que cabem na margem e no estoque — sempre com aprovação manual', foco: 'promoções que valem a pena pela margem e pelo estoque; nunca aplico promoção sozinho' },
+  rep: { nome: 'Reputação e Atendimento', cargo: 'vigio perguntas, reclamações e a saúde das contas a cada 30 min', foco: 'reputação, reclamações, devoluções, perguntas sem resposta (historico_agentes, plano_cliente)' },
+  qa: { nome: 'Qualidade', cargo: 'reviso nota, conversão e pendências dos anúncios 1x por dia', foco: 'qualidade dos anúncios, conversão, produtos com visita e sem venda (produtos, curva_abc, plano_cliente)' },
+  oport: { nome: 'Caçador de Oportunidades', cargo: 'procuro produtos com espaço para crescer', foco: 'produtos e lojas com potencial de crescer: curva ABC, altas, quedas e funil (curva_abc, produtos, plano_cliente)' },
+  shopee: { nome: 'ADS Shopee', cargo: 'reviso as campanhas da Shopee às 07:00 e ajusto sozinho dentro dos limites', foco: 'campanhas da Shopee, ROAS, orçamento, ACOS e TACOS contra o teto (campanhas_shopee, ads, historico_agentes)' },
+  ml: { nome: 'Copiloto ADS ML', cargo: 'analiso as campanhas do Mercado Livre e monto o pacote do dia (o ML não libera escrita: o analista aplica)', foco: 'Product Ads do Mercado Livre, ROAS/ACOS objetivo, orçamento e o que aplicar no painel (campanhas_ml, ads, historico_agentes)' },
+  rel: { nome: 'Redator', cargo: 'escrevo o relatório diário de cada conta', foco: 'resumo do que aconteceu na conta para mandar ao cliente (historico_agentes, vendas, ads, plano_cliente)' },
+};
+const personaDe = ag => String(ag || '').startsWith('esc:') ? PERSONAS[ag.slice(4)] || null : null;
+function sistemaPersona(S, foco, p) {
+  const colegas = Object.values(PERSONAS).filter(x => x !== p).map(x => x.nome).join(', ');
+  return `${sistema(S, foco)}
+
+NESTA CONVERSA VOCÊ É O AGENTE "${p.nome}" do Escritório dos agentes da GLR (${p.cargo}). O analista escreveu direto para você no chat da equipe.
+- Fale em primeira pessoa como ${p.nome}, curto e direto, como numa conversa de equipe: a resposta primeiro, depois os números que a sustentam (com período). Até ~10 linhas; tabela só se comparar vários itens; "Próximos passos" só se pedirem.
+- Seu foco: ${p.foco}. Busque os dados com as ferramentas antes de responder — nunca invente.
+- Se a pergunta for da área de um colega (${colegas}), responda com o que as ferramentas mostram e diga quem cuida disso com @Nome (ex.: "@Estoque acompanha isso"), sem inventar o que o colega diria.
+- Quando o analista pedir para fazer algo, crie a sugestão com propor_acao (vai para a Caixa de decisões) e diga que criou; você não aplica nada por esta conversa.`;
+}
+
 // ── Conversas (por usuário) ──────────────────────────────────
 const chaveConv = (uid, id) => `chat:${uid}:${id}`;
 async function lerConversa(uid, id) {
@@ -240,7 +270,13 @@ module.exports = async function handler(req, res) {
   try {
     if (acao === 'listar') {
       const rows = await sbSelect('glr_sync_estado', `marketplace=eq.sistema&recurso=eq.chat&conta_id=like.${encodeURIComponent(`chat:${uid}:*`)}&select=conta_id,ultimo_sucesso,titulo:cursor->>titulo,cliente:cursor->>cliente_nome,agente:cursor->>agente&order=ultimo_sucesso.desc&limit=60`).catch(() => []);
-      return res.status(200).json({ conversas: rows.map(r => ({ id: r.conta_id.split(':').pop(), titulo: r.titulo || 'Conversa', cliente: r.cliente || null, agente: r.agente || 'copiloto', em: r.ultimo_sucesso })) });
+      return res.status(200).json({ conversas: rows.filter(r => !/:escritorio/.test(r.conta_id)).map(r => ({ id: r.conta_id.split(':').pop(), titulo: r.titulo || 'Conversa', cliente: r.cliente || null, agente: r.agente || 'copiloto', em: r.ultimo_sucesso })) });
+    }
+    // conversas do Escritório (uma por agente) com as mensagens das últimas 48 h
+    if (acao === 'escritorio') {
+      const rows = await sbSelect('glr_sync_estado', `marketplace=eq.sistema&recurso=eq.chat&conta_id=like.${encodeURIComponent(`chat:${uid}:escritorio*`)}&select=conta_id,cursor`).catch(() => []);
+      const desde = Date.now() - 48 * 3600e3;
+      return res.status(200).json({ conversas: rows.map(r => ({ agente: String(r.cursor?.agente || '').replace(/^esc:/, ''), msgs: (r.cursor?.msgs || []).filter(m => Date.parse(m.em) >= desde).map(m => ({ r: m.r, t: m.t, em: m.em, criadas: m.criadas || 0 })) })).filter(c => PERSONAS[c.agente]) });
     }
     if (acao === 'abrir') {
       const conv = idOk(conversa_id) ? await lerConversa(uid, String(conversa_id)) : null;
@@ -256,7 +292,9 @@ module.exports = async function handler(req, res) {
     const texto = String(mensagem || '').trim().slice(0, 6000);
     if (!texto) return res.status(400).json({ error: 'Mensagem vazia.' });
     const id = idOk(conversa_id) ? String(conversa_id) : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-    const conv = (await lerConversa(uid, id)) || { titulo: corta(texto, 60), criado: new Date().toISOString(), msgs: [], agente: agente === 'adviser' ? 'adviser' : 'copiloto' };
+    const novoAg = agente === 'adviser' ? 'adviser' : personaDe(agente) ? String(agente) : 'copiloto';
+    const conv = (await lerConversa(uid, id)) || { titulo: corta(texto, 60), criado: new Date().toISOString(), msgs: [], agente: novoAg };
+    const persona = personaDe(conv.agente);
     const ag = conv.agente === 'adviser' ? 'adviser' : 'copiloto', TOOLS = ferramentasDe(ag), RUN = execDe(ag);
     const S = { carteira: await carregarCarteira(), mcKey, usuario: usuario.email || uid, criadas: 0, sbSelect, sbUpsert };
     const foco = cliente_id ? S.carteira.find(c => c.id === String(cliente_id)) || null : null;
@@ -273,7 +311,7 @@ module.exports = async function handler(req, res) {
       const semTempo = Date.now() - inicio > ORCAMENTO_MS || rodada >= MAX_RODADAS;
       resposta = await client.beta.messages.create({
         model: MODELO, max_tokens: 16000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' },
-        system: ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : sistema(S, foco), tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+        system: ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco), tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
       });
       if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
       if (resposta.stop_reason !== 'tool_use') break;
@@ -301,7 +339,7 @@ module.exports = async function handler(req, res) {
     conv.msgs.push({ r: 'user', t: texto, em: new Date(inicio).toISOString() }, { r: 'assistant', t: final, em: new Date().toISOString(), ferramentas: usadas, criadas: S.criadas });
     if (conv.msgs.length > 80) conv.msgs = conv.msgs.slice(-80);
     await salvarConversa(uid, id, conv).catch(() => {});
-    return res.status(200).json({ conversa_id: id, titulo: conv.titulo, agente: ag, missoes: S.missoesCriadas || 0, resposta: final, ferramentas: usadas, criadas: S.criadas, cortada: resposta.stop_reason === 'max_tokens', segundos: Math.round((Date.now() - inicio) / 1000) });
+    return res.status(200).json({ conversa_id: id, titulo: conv.titulo, agente: persona ? conv.agente : ag, missoes: S.missoesCriadas || 0, resposta: final, ferramentas: usadas, criadas: S.criadas, cortada: resposta.stop_reason === 'max_tokens', segundos: Math.round((Date.now() - inicio) / 1000) });
   } catch (e) {
     if (e instanceof Anthropic.RateLimitError) return res.status(429).json({ error: 'Muitas perguntas ao mesmo tempo — espere alguns segundos e tente de novo.' });
     if (e instanceof Anthropic.APIError && /credit balance is too low/i.test(e.message)) return res.status(402).json({ error: 'Os créditos da API da Anthropic acabaram — recarregue em console.anthropic.com → Plans & Billing e o chat volta na hora.' });
