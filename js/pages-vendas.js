@@ -379,7 +379,7 @@ Router.register('vendas', async (params, el) => {
   // ── Trocar aba ───────────────────────────────────────────────
   function setAba(aba) {
     abaAtiva = aba;
-    ['dashboard','pedidos','oportunidades','semanal'].forEach(a => {
+    ['dashboard','pedidos','oportunidades','semanal','funil'].forEach(a => {
       const btn = document.getElementById(`tab-${a}`);
       const sec = document.getElementById(`sec-${a}`);
       if (btn) btn.style.cssText = a===aba
@@ -391,6 +391,13 @@ Router.register('vendas', async (params, el) => {
     if (aba==='pedidos')   renderPedidos();
     if (aba==='oportunidades') renderOportunidades();
     if (aba==='semanal')   renderComparativoSemanal();
+    // Funil de vendas (tela própria, montada aqui dentro na 1ª vez): tem filtros próprios de dia, cliente e conta
+    const filtros = document.getElementById('vendas-filtros');
+    if (filtros) filtros.style.display = aba === 'funil' ? 'none' : 'flex';
+    if (aba === 'funil') {
+      const sec = document.getElementById('sec-funil');
+      if (sec && !sec.dataset.montado && Router.routes?.funil) { sec.dataset.montado = '1'; Router.routes.funil({}, sec); }
+    }
   }
 
   // Executa promessas com concorrência limitada — evita disparar centenas de
@@ -2865,7 +2872,7 @@ Router.register('vendas', async (params, el) => {
       <div>
         <div id="vendas-status" style="font-size:12px;color:var(--text-muted);margin-top:4px;">Carregando...</div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div id="vendas-filtros" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <select id="sel-periodo" class="form-input" style="width:155px;">
           <option value="hoje">Hoje</option>
           <option value="ontem">Ontem</option>
@@ -2903,6 +2910,7 @@ Router.register('vendas', async (params, el) => {
       <button id="tab-pedidos"   style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">Pedidos</button>
       <button id="tab-oportunidades" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">Oportunidades</button>
       <button id="tab-semanal" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">Curva ABC Semanal</button>
+      ${window._portalConfig ? '' : '<button id="tab-funil" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">Funil de vendas</button>'}
     </div>
 
     <!-- Aba Dashboard -->
@@ -2912,6 +2920,10 @@ Router.register('vendas', async (params, el) => {
 
     <!-- Aba Oportunidades -->
     <div id="sec-oportunidades" style="display:none;"></div>
+
+    <!-- Aba Funil de vendas (js/pages-funil.js) -->
+    <div id="sec-funil" class="vd-funil" style="display:none;"></div>
+    <style>.vd-funil .fn-wrap{padding:0;max-width:none}</style>
 
     <!-- Aba Comparativo Semanal -->
     <div id="sec-semanal" style="display:none;"></div>
@@ -2995,10 +3007,11 @@ Router.register('vendas', async (params, el) => {
   document.getElementById('tab-pedidos').addEventListener('click',   () => setAba('pedidos'));
   document.getElementById('tab-oportunidades').addEventListener('click', () => setAba('oportunidades'));
   document.getElementById('tab-semanal').addEventListener('click', () => setAba('semanal'));
+  document.getElementById('tab-funil')?.addEventListener('click', () => setAba('funil'));
 
   renderLinhasExtras();
   // Aba pedida pela rota (no portal: Dashboard, Pedidos, Curva ABC, Oportunidades como páginas)
-  if (params?.aba && ['dashboard', 'pedidos', 'oportunidades', 'semanal'].includes(params.aba)) setAba(params.aba);
+  if (params?.aba && ['dashboard', 'pedidos', 'oportunidades', 'semanal', ...(window._portalConfig ? [] : ['funil'])].includes(params.aba)) setAba(params.aba);
 
   // Ao abrir a página: busca contas para popular filtros, depois usa cache de pedidos se existir
   (async () => {

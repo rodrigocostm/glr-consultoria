@@ -13,6 +13,8 @@
 // Por padrão mostra ONTEM (dia fechado) × anteontem.
 // ============================================================
 Router.register('funil', (params, el) => {
+  // mora dentro da tela Vendas (aba "Funil de vendas"); quem abre a rota direto vai para lá
+  if (el.id !== 'sec-funil') { Router.navigate('vendas', { aba: 'funil' }); return; }
   const h = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const N = v => v == null ? '—' : Math.round(v).toLocaleString('pt-BR');
   const R$ = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
