@@ -53,7 +53,7 @@ Router.register('data-combinada', (params, el) => {
         const p = ct.param_to_use || {};
         const id = String(p.shopId || p.meliUserId || p.amazon_account_id || p.magalu_account_id || p.shein_supplier_id || ct.contaId || ct.external_id);
         const info = st.base ? (st.base[BaseDados.chave(mkt, id)] || st.base[BaseDados.chave(mkt, ct.external_id)]) : null;
-        const cobre = !!(info && BaseDados.cobre(info, st.dia));
+        const cobre = st.dia <= hojeIso && !!(info && BaseDados.cobre(info, st.dia)); // data futura: ainda sem faturamento
         const t = cobre ? BaseDados.somar(info, st.dia, st.dia) : null;
         const temAds = !!(info && BaseDados.cobreAds(info, st.dia));
         const nome = String(GLR.nomeConta(mkt, id) || id).replace(new RegExp(`^${String(c.nome).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · `), '');
@@ -75,7 +75,7 @@ Router.register('data-combinada', (params, el) => {
       <td>${h(MKT[l.mkt] || l.mkt)}</td>
       <td class="dc-loja">${h(l.nome)}</td>
       <td class="num"><label class="dc-meta"><span>R$</span><input type="number" min="0" step="100" inputmode="decimal" value="${l.meta || ''}" placeholder="0" aria-label="Meta de ${h(cli)} — ${h(l.nome)} em ${dm(st.dia)}" onchange="window._dcMeta('${h(l.chave)}', this.value)"></label></td>
-      <td class="num">${l.cobre ? R$(l.fat) : '<span class="dc-mut" title="A base automática ainda não tem este dia desta loja">sem dados</span>'}</td>
+      <td class="num">${l.cobre ? R$(l.fat) : st.dia > hojeIso ? '—' : '<span class="dc-mut" title="A base automática ainda não tem este dia desta loja">sem dados</span>'}</td>
       <td class="num" style="color:${corMeta(p)};font-weight:700">${pct(p)}</td>
       <td class="num">${falta == null ? '—' : falta === 0 ? '<span style="color:var(--green);font-weight:700">bateu</span>' : R$(falta)}</td>
       <td class="num">${l.ads == null ? '—' : R$(l.ads)}</td>
