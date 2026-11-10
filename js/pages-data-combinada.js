@@ -67,6 +67,14 @@ Router.register('data-combinada', (params, el) => {
     return out.sort((a, b) => b.meta - a.meta || a.nome.localeCompare(b.nome));
   }
 
+  // meta digitada em reais: mostra "25.000,00"; aceita "25000", "25.000", "25.000,50" ou "25000.5"
+  const moeda = v => (+v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const lerMoeda = v => {
+    let t = String(v || '').replace(/[^\d,.]/g, '');
+    if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');           // padrão brasileiro: 25.000,50
+    else if ((t.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(t)) t = t.replace(/\./g, ''); // 25.000 = vinte e cinco mil
+    const n = parseFloat(t); return isFinite(n) ? n : 0;
+  };
   const corMeta = p => p == null ? 'var(--text-muted)' : p >= 100 ? 'var(--green)' : p >= 80 ? 'var(--yellow)' : 'var(--red)';
   function linha(l, cli) {
     const p = l.meta > 0 && l.fat != null ? l.fat / l.meta * 100 : null, falta = l.meta > 0 && l.fat != null ? Math.max(0, l.meta - l.fat) : null;
@@ -74,7 +82,7 @@ Router.register('data-combinada', (params, el) => {
     return `<tr>
       <td>${h(MKT[l.mkt] || l.mkt)}</td>
       <td class="dc-loja" title="${h(l.nome)}">${h(l.nome)}</td>
-      <td class="num"><label class="dc-meta"><span>R$</span><input type="number" min="0" step="100" inputmode="decimal" value="${l.meta || ''}" placeholder="0" aria-label="Meta de ${h(cli)} — ${h(l.nome)} em ${dm(st.dia)}" onchange="window._dcMeta('${h(l.chave)}', this.value)"></label></td>
+      <td class="num"><label class="dc-meta"><span>R$</span><input type="text" inputmode="decimal" value="${l.meta ? moeda(l.meta) : ''}" placeholder="0,00" onfocus="this.select()" onkeydown="if(event.key==='Enter')this.blur()" aria-label="Meta de ${h(cli)} — ${h(l.nome)} em ${dm(st.dia)}" onchange="window._dcMeta('${h(l.chave)}', this.value)"></label></td>
       <td class="num">${l.cobre ? R$(l.fat) : st.dia > hojeIso ? '—' : '<span class="dc-mut" title="A base automática ainda não tem este dia desta loja">sem dados</span>'}</td>
       <td class="num" style="color:${corMeta(p)};font-weight:700">${pct(p)}</td>
       <td class="num">${falta == null ? '—' : falta === 0 ? '<span style="color:var(--green);font-weight:700">bateu</span>' : R$(falta)}</td>
@@ -122,7 +130,7 @@ Router.register('data-combinada', (params, el) => {
 
   window._dcMeta = (chave, v) => {
     const todas = lerJSON(K_METAS, {}) || {}, m = todas[st.dia] || {};
-    const n = parseFloat(String(v).replace(',', '.'));
+    const n = lerMoeda(v);
     if (n > 0) m[chave] = Math.round(n * 100) / 100; else delete m[chave];
     todas[st.dia] = m; gravar(K_METAS, todas); render();
   };
