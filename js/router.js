@@ -83,6 +83,7 @@ const Router = {
       'precos-shopee': 'Monitor de preços Shopee',
       'conexoes': 'Saúde das conexões',
       'datas-especiais': 'Datas especiais',
+      'data-combinada': 'Data combinada',
       'expansao': 'Expansão de canais',
       'retencao': 'Retenção',
       'conversao-ml': 'Catálogo e Buy Box',
