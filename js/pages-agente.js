@@ -29,6 +29,7 @@
   function renderPage(params, el) {
     const state = {
       shpDiario: {}, // ADS da Shopee por dia (Resumo de ADS)
+      vendasItemShp: {}, // venda total do mês/período por anúncio (orgânico + ADS) — TACOS do produto
       carregando: true,
       contasShopee: [], // conexões de marketplace disponíveis (pra onboarding de novo piloto)
       contas: [], // todas as linhas de glr_agente_config (portfólio)
@@ -407,7 +408,7 @@
           pedidosTotal += d.pedidos;
           if ((s.campaign_status || '').toLowerCase() === 'ongoing') ativas++;
           const acos = d.gmv > 0 ? (d.gasto / d.gmv * 100) : (d.gasto > 0 ? Infinity : 0);
-          porCampanha.push({ id, nome: s.ad_name || `Campanha ${id}`, budget: parseFloat(s.campaign_budget) || 0, roasTarget: s.roas_target, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status, impressoes: d.impressoes || 0, cliques: d.cliques || 0, pedidos: d.pedidos || 0, ctr: d.impressoes > 0 ? (d.cliques / d.impressoes * 100) : 0 });
+          porCampanha.push({ id, nome: s.ad_name || `Campanha ${id}`, itens: (s.item_id_list || []).map(String), budget: parseFloat(s.campaign_budget) || 0, roasTarget: s.roas_target, gasto: d.gasto, gmv: d.gmv, acos, status: s.campaign_status, impressoes: d.impressoes || 0, cliques: d.cliques || 0, pedidos: d.pedidos || 0, ctr: d.impressoes > 0 ? (d.cliques / d.impressoes * 100) : 0 });
         });
         porCampanha.sort((a, b) => b.gasto - a.gasto);
 
@@ -2115,12 +2116,36 @@
       });
     }
 
+    // Venda total de cada anúncio no período (orgânico + ADS, sem cancelados), da base de
+    // pedidos — denominador do TACOS do produto (gasto da campanha ÷ o que o produto vendeu).
+    async function carregarVendasItemShp(contaId, periodo) {
+      const k = `${contaId}:${periodo}`;
+      if (state.vendasItemShp[k]) return;
+      state.vendasItemShp[k] = { carregando: true };
+      try {
+        const de = janelasNegocio(periodo).atualDe, porItem = {};
+        for (let off = 0; off < 40000; off += 1000) {
+          const { data, error } = await _sb.from('glr_pedidos').select('itens').eq('marketplace', 'shopee').eq('conta_id', String(contaId)).eq('situacao', 'valido')
+            .gte('criado_em', new Date(`${de}T00:00:00-03:00`).toISOString()).range(off, off + 999);
+          if (error) throw error;
+          for (const r of data || []) for (const it of (r.itens || [])) { const id = String(it.item_id || ''); if (id) porItem[id] = (porItem[id] || 0) + (parseFloat(it.preco) || 0) * (parseInt(it.qtd) || 1); }
+          if ((data || []).length < 1000) break;
+        }
+        state.vendasItemShp[k] = { porItem };
+      } catch (e) { state.vendasItemShp[k] = { erro: e.message || String(e) }; }
+      render();
+    }
+    // teto de ADS do cliente (Plano de ação → TACOS) ou a meta da conta
+    const tetoAdsDe = cfg => { try { const cli = GLR.ctx?.clienteDaConta?.('shopee', cfg.conta_id); const v = parseFloat(JSON.parse(localStorage.getItem('glr_metas_tacos') || '{}')[cli]); if (v > 0) return v; } catch (e) {} return parseFloat(cfg.meta_acos) || null; };
+    const corTetoAds = (t, teto) => t == null || !teto ? '' : t === Infinity || t > teto * 1.3 ? 'var(--red)' : t > teto ? 'var(--yellow)' : 'var(--green)';
+
     // ── 5. Tabela de campanhas (por quê, não só o quê) ──
     const ORDENACAO = {
       nome: c => (c.nome || '').toLowerCase(), status: c => c.status || '', orcamento: c => c.budget || 0,
       gasto: c => c.gasto, impressoes: c => c.impressoes, cliques: c => c.cliques, ctr: c => c.ctr, pedidos: c => c.pedidos,
       gmv: c => c.gmv, acos: c => (c.acos === Infinity ? 1e12 : c.acos),
       roasMeta: c => c.roasTarget ?? -1, roas: c => (c.gasto > 0 ? c.gmv / c.gasto : -1),
+      tacos: c => c._tacos ?? -1, tacosProd: c => (c._tacosProd === Infinity ? 1e12 : c._tacosProd ?? -1),
     };
 
     function statusCampanha(contaId, c, cfg) {
@@ -2162,6 +2187,15 @@
       const abas = `<div class="ag-periodos" style="margin-bottom:12px;">
         ${[['todas', 'Todas'], ['ativas', 'Ativas'], ['pausadas', '⏸ Pausadas']].map(([k, l]) => `<button class="btn btn-sm ${filtro === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agTabFiltro('${k}')">${l} (${contagem(k)})</button>`).join('')}
       </div>`;
+      // TACOS da campanha (gasto ÷ faturamento da loja no período) e do produto (gasto ÷ venda total dos itens dela)
+      const vis = state.vendasItemShp[`${contaId}:${state.negocioPeriodo}`];
+      if (!vis) setTimeout(() => carregarVendasItemShp(contaId, state.negocioPeriodo), 0);
+      const tetoAds = tetoAdsDe(cfg);
+      d.todasCampanhas.forEach(c => {
+        c._tacos = d.faturamentoTotal > 0 && c.gasto > 0 ? c.gasto / d.faturamentoTotal * 100 : null;
+        const vt = vis?.porItem && (c.itens || []).length ? c.itens.reduce((s, i) => s + (vis.porItem[i] || 0), 0) : null;
+        c._vendaProd = vt; c._tacosProd = vt == null || !(c.gasto > 0) ? null : vt > 0 ? c.gasto / vt * 100 : Infinity;
+      });
       const linhasOrd = d.todasCampanhas.filter(FILTROS_CAMP[filtro]).sort((a, b) => { const x = acesso(a), y = acesso(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
       if (!linhasOrd.length) return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">${cab}${abas}<div class="ag-vazio">${filtro === 'pausadas' ? '✅ Nenhuma campanha pausada agora.' : 'Nenhuma campanha neste filtro.'}</div></div>`;
       const LIMITE = 10;
@@ -2196,6 +2230,8 @@
           <td class="ag-mono" style="font-weight:700;">${R$(c.gmv)}</td>
           <td class="ag-mono" style="font-weight:700;${cAcos ? `color:${cAcos};` : ''}">${fmtPct(c.acos)}</td>
           <td class="ag-mono" style="font-weight:700;${corRoas}">${roas == null ? '—' : `${fmtNum(roas)}x`}</td>
+          <td class="ag-mono" style="font-weight:700;color:${corTetoAds(c._tacos, tetoAds) || 'inherit'};">${c._tacos == null ? '—' : fmtPct(c._tacos, 2)}</td>
+          <td class="ag-mono" style="font-weight:700;color:${corTetoAds(c._tacosProd, tetoAds) || 'inherit'};" title="${c._vendaProd != null ? `o produto vendeu ${R$(c._vendaProd)} no período (orgânico + ADS)` : (c.itens || []).length ? '' : 'campanha sem produto identificado'}">${vis?.carregando ? '…' : c._tacosProd === Infinity ? '∞' : c._tacosProd == null ? '—' : fmtPct(c._tacosProd)}</td>
           <td><details class="ag-menu"><summary title="Ações">⋯</summary><div class="ag-menu-lista">
             ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agBoostCampanha('${c.id}', '${nomeJs}', ${c.budget || 0}, ${c.roasTarget != null ? c.roasTarget : 'null'}, ${c.acos === Infinity ? 'Infinity' : c.acos})">Sugerir mais investimento</button>` : ''}
             ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agSugerirCampanha('${c.id}', 'pausar', '${nomeJs}')">⏸ Sugerir pausar</button>` : ''}
@@ -2211,13 +2247,13 @@
         <div style="overflow-x:auto;">
         <table class="ag-tech-table">
           <thead><tr>
-            ${th('nome', 'Campanha')}${th('status', 'Status')}<th>Última ação do agente / motivo</th>${th('orcamento', 'Orçamento')}${th('roasMeta', `Meta ${sigla('ROAS')}`)}${th('gasto', 'Gasto')}${th('impressoes', 'Impressões')}${th('cliques', 'Cliques')}${th('ctr', sigla('CTR'))}${th('pedidos', 'Pedidos')}${th('gmv', sigla('GMV'))}${th('acos', sigla('ACOS'))}${th('roas', sigla('ROAS'))}<th></th>
+            ${th('nome', 'Campanha')}${th('status', 'Status')}<th>Última ação do agente / motivo</th>${th('orcamento', 'Orçamento')}${th('roasMeta', `Meta ${sigla('ROAS')}`)}${th('gasto', 'Gasto')}${th('impressoes', 'Impressões')}${th('cliques', 'Cliques')}${th('ctr', sigla('CTR'))}${th('pedidos', 'Pedidos')}${th('gmv', sigla('GMV'))}${th('acos', sigla('ACOS'))}${th('roas', sigla('ROAS'))}${th('tacos', sigla('TACOS'), ' <span style="font-size:10px;color:var(--text-muted);font-weight:400" title="Gasto da campanha ÷ faturamento da loja no período">loja</span>')}${th('tacosProd', `${sigla('TACOS')} do produto`, '')}<th></th>
           </tr></thead>
           <tbody>${linhas.map(linha).join('')}</tbody>
         </table>
         </div>
         ${linhasOrd.length > LIMITE ? `<div style="text-align:center;margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="window._agTabelaTodas()">${state.tabTodas ? 'Mostrar só as 10 primeiras' : `Ver todas (${linhasOrd.length})`}</button></div>` : ''}
-        <div class="ag-nota" style="margin-top:10px;">“Sem limite” = campanha sem orçamento diário fixo. “Meta ${sigla('ROAS')}” = o ROAS objetivo configurado na campanha (“manual” = lance manual, sem meta); o ${sigla('ROAS')} fica verde quando bate a meta, amarelo até 70% dela e vermelho abaixo. Cores do ${sigla('ACOS')}: verde dentro da meta, amarelo acima da meta, vermelho perto do limite de pausa. Ações do menu ⋯ viram sugestões pra você aprovar em “Precisa de você”.</div>
+        <div class="ag-nota" style="margin-top:10px;">“Sem limite” = campanha sem orçamento diário fixo. “Meta ${sigla('ROAS')}” = o ROAS objetivo configurado na campanha (“manual” = lance manual, sem meta); o ${sigla('ROAS')} fica verde quando bate a meta, amarelo até 70% dela e vermelho abaixo. ${sigla('TACOS')} (loja) = gasto da campanha ÷ faturamento da loja no período; ${sigla('TACOS')} do produto = gasto ÷ tudo o que o produto da campanha vendeu (orgânico + ADS, sem cancelados) — verde até ${tetoAds ? fmtPct(tetoAds) : 'a meta'}, amarelo até 30% acima, vermelho além. Cores do ${sigla('ACOS')}: verde dentro da meta, amarelo acima da meta, vermelho perto do limite de pausa. Ações do menu ⋯ viram sugestões pra você aprovar em “Precisa de você”.</div>
       </div>`;
     }
 
@@ -2699,7 +2735,7 @@
     window._agSalvarConfig = salvarConfig;
     window._agEnviarChat = enviarChat;
     window._agFiltrarLog = (t) => { state.filtroLog = t; state.logMostrar = LOG_POR_PAGINA; render(); };
-    window._agAtualizarDados = () => { carregarDiarioShopee(state.contaAbertaId, true); buscarDadosAoVivo(state.contaAbertaId, state.negocioPeriodo, true); };
+    window._agAtualizarDados = () => { state.vendasItemShp = {}; carregarDiarioShopee(state.contaAbertaId, true); buscarDadosAoVivo(state.contaAbertaId, state.negocioPeriodo, true); };
     // Troca o período da tela inteira: indicadores e tabela de campanhas.
     window._agMudarPeriodo = (periodo) => {
       state.negocioPeriodo = periodo;
