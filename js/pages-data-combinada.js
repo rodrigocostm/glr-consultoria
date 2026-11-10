@@ -110,7 +110,7 @@ Router.register('data-combinada', (params, el) => {
         return `<section class="card dc-cli">
           <div class="dc-cli-cab"><div><b>${h(c.nome)}</b><span>${h(c.gestor)}</span></div>
             <div class="dc-cli-tot"><span>Meta <b>${R$(c.meta)}</b></span><span>Faturado <b>${R$(c.fat)}</b></span><span style="color:${corMeta(p)}"><b style="color:inherit">${pct(p)}</b></span><span>Pedidos <b>${Math.round(c.pedidos).toLocaleString('pt-BR')}</b></span></div></div>
-          <div class="dc-scroll"><table class="dc-tab">
+          <div class="dc-scroll"><table class="dc-tab" data-todas-colunas>
             <colgroup><col style="width:11%"><col style="width:21%"><col style="width:14%"><col style="width:12%"><col style="width:9%"><col style="width:11%"><col style="width:9%"><col style="width:6%"><col style="width:7%"></colgroup>
             <thead><tr><th>Marketplace</th><th>Loja</th><th class="num">Meta</th><th class="num">Faturamento ${dm(st.dia)}</th><th class="num">% sobre meta</th><th class="num">Falta para meta</th><th class="num">ADS</th><th class="num" title="ADS ÷ faturamento do dia">% ADS</th><th class="num">Pedidos</th></tr></thead>
             <tbody>${c.lojas.map(l => linha(l, c.nome)).join('')}</tbody>
