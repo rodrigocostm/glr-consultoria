@@ -14,7 +14,7 @@
     { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'projecao', 'vendas', 'gestores', 'rentabilidade', 'onboarding', 'retencao', 'relatorios', 'relatorio-semanal', 'blog', 'leads', 'portal-admin'] },
     { id: 'ads', titulo: 'ADS e preço', paginas: ['agente', 'agente-ml', 'promocoes', 'precos-ml', 'precos-shopee', 'conversao-ml', 'datas-especiais', 'black-friday', 'afiliados'] },
     { id: 'saude', titulo: 'Saúde das contas', paginas: ['estoque-margem', 'atendimento', 'qualidade-anuncios', 'rastreamento', 'conexoes'] },
-    { id: 'anuncios', titulo: 'Anúncios', paginas: ['expansao', 'produtos', 'anuncios-ml', 'anuncios-shopee', 'anuncios-tiktok', 'anuncios-amazon', 'fotos'] },
+    { id: 'anuncios', titulo: 'Anúncios', paginas: ['mercado-tiops', 'expansao', 'produtos', 'anuncios-ml', 'anuncios-shopee', 'anuncios-tiktok', 'anuncios-amazon', 'fotos'] },
     { id: 'financeiro', titulo: 'Financeiro', paginas: ['financeiro', 'dre', 'conciliacao'] },
     { id: 'sistema', titulo: 'Sistema', paginas: ['segundo-cerebro', 'escritorio', 'integracoes', 'timeline', 'diagnostico'] },
   ];
