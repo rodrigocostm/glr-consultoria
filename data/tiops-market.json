@@ -1,0 +1,276 @@
+{
+  "source": "https://marketplaces.tiops.com.br/desenvolvedores/openapi-rest.json",
+  "consulted": "2026-11-09",
+  "actions": {
+    "get_description": {
+      "description": "Buscar descrição do anúncio",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string"
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      }
+    },
+    "get_item": {
+      "description": "Detalhes de um anúncio ML. Retorna logistic_type no nível raiz.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "ID do item (ex: MLB123)"
+          },
+          "account_id": {
+            "type": "string",
+            "description": "ID da conta MELI (alias de meliUserId)."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      }
+    },
+    "get_product": {
+      "description": "Detalhes de um produto do catálogo ML",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "product_id": {
+            "type": "string"
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        },
+        "required": [
+          "productId"
+        ]
+      }
+    },
+    "ml_catalog_buybox": {
+      "description": "Status do buybox de um item",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string"
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      }
+    },
+    "ml_catalog_eligibility": {
+      "description": "Verificar elegibilidade de item pro catálogo",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string"
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      }
+    },
+    "ml_catalog_price_to_win": {
+      "description": "Preço pra ganhar o buybox no catálogo",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string"
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      }
+    },
+    "ml_catalog_search_products": {
+      "description": "Buscar produtos no catálogo ML",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string"
+          },
+          "domain_id": {
+            "type": "string"
+          },
+          "product_identifier": {
+            "type": "string"
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        },
+        "required": [
+          "q"
+        ]
+      }
+    },
+    "ml_highlights": {
+      "description": "Itens mais vendidos em uma categoria",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Categoria (ex: MLB1051)"
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        },
+        "required": [
+          "category"
+        ]
+      }
+    },
+    "ml_site_categories": {
+      "description": "Listar categorias de um site ML",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "default MLB"
+          },
+          "siteId": {
+            "type": "string"
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        }
+      }
+    },
+    "ml_trends": {
+      "description": "Os 50 termos mais buscados no Mercado Livre, atualizados semanalmente. Vêm separados por critério: maior_crescimento_de_receita (10), mais_buscados (20) e maior_crescimento_de_buscas (20) — este último é onde a demanda está virando, não onde já é grande. Filtre por categoria para pauta útil: o ranking geral é previsível, o da categoria não.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Categoria para filtrar (ex: MLB1430). Use ml_site_categories ou search_categories para descobrir."
+          },
+          "site_id": {
+            "type": "string",
+            "description": "País: MLB (Brasil, padrão), MLA (Argentina), MLM (México), MLC (Chile), MCO (Colômbia), MLU (Uruguai), MPE (Peru)."
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        }
+      }
+    },
+    "product_items": {
+      "description": "Anúncios associados a um produto do catálogo",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "product_id": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number",
+            "description": "default 10, max 50"
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        },
+        "required": [
+          "productId"
+        ]
+      }
+    },
+    "search_categories": {
+      "description": "Buscar categoria por termo",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string"
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        },
+        "required": [
+          "q"
+        ]
+      }
+    },
+    "search_sellers": {
+      "description": "Buscar vendedores no ML",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "seller_id": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "q": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "medal": {
+            "type": "string"
+          },
+          "min_sales": {
+            "type": "number"
+          },
+          "location_state": {
+            "type": "string"
+          },
+          "meliUserId": {
+            "type": "string",
+            "description": "ID da conta do Mercado Livre (opcional; use list_accounts para descobrir)"
+          }
+        }
+      }
+    }
+  }
+}

@@ -18,6 +18,7 @@ const Anthropic = sdk.default || sdk;
 const { base } = require('./agente-chat');
 const { sbSelect, sbTodos, mcpCall, usuarioLogado, lerStorage, nomesDasLojas, hojeBRT, MKT, NOME_MKT, r2 } = base;
 const adviserChat = require('./_adviser-chat');
+const tiopsMarket = require('./_tiops-market');
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -194,8 +195,9 @@ async function anotarCerebro(S, i) {
   const r = await require('./_cerebro-agentes').anotar({ titulo: i.titulo, texto: i.texto, tags: Array.isArray(i.tags) ? i.tags : [], autor: `${S.persona || 'Copiloto'} · pedido de ${S.usuario}` });
   return { ok: true, nota: r.titulo, nova: !!r.nova, aviso: 'Gravado no Segundo Cérebro (publicado: os agentes já consultam).' };
 }
-const EXEC = { anotar_cerebro: anotarCerebro, carteira, plano_cliente: planoCliente, vendas, produtos, curva_abc: curvaAbc, ads, estoque_margem: estoqueMargem, campanhas_shopee: campanhasShopee, campanhas_ml: campanhasML, decisoes_pendentes: decisoesPendentes, historico_agentes: historicoAgentes, propor_acao: proporAcao };
-const ADVISER_BASE = ['carteira', 'plano_cliente', 'vendas', 'decisoes_pendentes']; // do copiloto que o Adviser também usa
+FERRAMENTAS.push(...tiopsMarket.tools);
+const EXEC = { recursos_tiops: (S,i) => tiopsMarket.descobrir(S.mcKey,i.termo), consultar_mercado_tiops: (S,i) => tiopsMarket.consultar(S.mcKey,i.action,i.params), anotar_cerebro: anotarCerebro, carteira, plano_cliente: planoCliente, vendas, produtos, curva_abc: curvaAbc, ads, estoque_margem: estoqueMargem, campanhas_shopee: campanhasShopee, campanhas_ml: campanhasML, decisoes_pendentes: decisoesPendentes, historico_agentes: historicoAgentes, propor_acao: proporAcao };
+const ADVISER_BASE = ['recursos_tiops', 'consultar_mercado_tiops', 'carteira', 'plano_cliente', 'vendas', 'decisoes_pendentes']; // do copiloto que o Adviser também usa
 const ferramentasDe = ag => ag === 'adviser' ? [...FERRAMENTAS.filter(f => ADVISER_BASE.includes(f.name)), ...adviserChat.FERRAMENTAS] : FERRAMENTAS;
 const execDe = ag => ag === 'adviser' ? { ...Object.fromEntries(ADVISER_BASE.map(k => [k, EXEC[k]])), ...adviserChat.EXEC } : EXEC;
 const ROTULO = { ...adviserChat.ROTULO, carteira: 'carteira', plano_cliente: 'plano do Gerente', vendas: 'vendas', produtos: 'produtos', curva_abc: 'curva ABC', ads: 'ADS', estoque_margem: 'estoque e margem', campanhas_shopee: 'campanhas Shopee', campanhas_ml: 'campanhas ML', decisoes_pendentes: 'Caixa de decisões', historico_agentes: 'histórico dos agentes', propor_acao: 'sugestão criada', anotar_cerebro: 'Segundo Cérebro' };
@@ -319,7 +321,7 @@ module.exports = async function handler(req, res) {
       const semTempo = Date.now() - inicio > ORCAMENTO_MS || rodada >= MAX_RODADAS;
       resposta = await client.beta.messages.create({
         model: MODELO, max_tokens: 16000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' },
-        system: (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + conhecimento, tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+        system: (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + conhecimento + tiopsMarket.guide, tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
       });
       if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
       if (resposta.stop_reason !== 'tool_use') break;

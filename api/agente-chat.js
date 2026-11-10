@@ -411,7 +411,9 @@ async function adsBase(ctx, { inicio, fim, escopo, agrupar }) {
 }
 
 const ESCOPO = { type: 'string', enum: ['loja', 'cliente'], description: 'loja = só esta loja Shopee; cliente = todas as lojas do mesmo cliente (Shopee + Mercado Livre)' };
+const tiopsMarket = require('./_tiops-market');
 const FERRAMENTAS = [
+  ...tiopsMarket.tools,
   {
     name: 'vendas_base',
     description: 'INSTANTÂNEO. Faturamento válido (sem cancelados), bruto, cancelado, pedidos e ticket médio num período, com série por dia/semana/mês e quebra por loja — da base sincronizada a cada 15 min. Com escopo "cliente" soma TODAS as lojas do cliente (Shopee e Mercado Livre). Primeira escolha para saber se a conta/cliente cresce ou cai e para comparar períodos. Leia os avisos de cobertura: se o histórico de uma loja ainda não cobre o período, use faturamento_loja para o trecho que falta.',
@@ -465,6 +467,8 @@ const FERRAMENTAS = [
 ];
 
 const EXECUTORES = {
+  recursos_tiops: (ctx,i) => tiopsMarket.descobrir(ctx.mcKey,i.termo),
+  consultar_mercado_tiops: (ctx,i) => tiopsMarket.consultar(ctx.mcKey,i.action,i.params),
   vendas_base: vendasBase,
   produtos_base: produtosBase,
   curva_abc_semanal: curvaAbcSemanal,
@@ -511,7 +515,7 @@ module.exports = async function handler(req, res) {
 
   const ctx = { mcKey, shopId: String(conta_id), nome: cfg.cliente_nome || null };
   const client = new Anthropic();
-  const sistema = String(system || 'Você é o Agente Autônomo de ADS da GLR Consultoria. Responda em português.') + guiaFerramentas(hojeBRT(), ctx.shopId, cfg.cliente_nome) + await require('./_conhecimento').contexto(historico.filter(m => m.role === "user").slice(-2).map(m => m.content).join(" "));
+  const sistema = String(system || 'Você é o Agente Autônomo de ADS da GLR Consultoria. Responda em português.') + tiopsMarket.guide + guiaFerramentas(hojeBRT(), ctx.shopId, cfg.cliente_nome) + await require('./_conhecimento').contexto(historico.filter(m => m.role === "user").slice(-2).map(m => m.content).join(" "));
   const mensagens = [...historico];
   const usadas = [];
   const inicio = Date.now();
