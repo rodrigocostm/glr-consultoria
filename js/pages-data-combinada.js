@@ -73,7 +73,7 @@ Router.register('data-combinada', (params, el) => {
     const pa = l.fat > 0 && l.ads != null ? l.ads / l.fat * 100 : (l.ads > 0 ? Infinity : null);
     return `<tr>
       <td>${h(MKT[l.mkt] || l.mkt)}</td>
-      <td class="dc-loja">${h(l.nome)}</td>
+      <td class="dc-loja" title="${h(l.nome)}">${h(l.nome)}</td>
       <td class="num"><label class="dc-meta"><span>R$</span><input type="number" min="0" step="100" inputmode="decimal" value="${l.meta || ''}" placeholder="0" aria-label="Meta de ${h(cli)} — ${h(l.nome)} em ${dm(st.dia)}" onchange="window._dcMeta('${h(l.chave)}', this.value)"></label></td>
       <td class="num">${l.cobre ? R$(l.fat) : st.dia > hojeIso ? '—' : '<span class="dc-mut" title="A base automática ainda não tem este dia desta loja">sem dados</span>'}</td>
       <td class="num" style="color:${corMeta(p)};font-weight:700">${pct(p)}</td>
@@ -111,6 +111,7 @@ Router.register('data-combinada', (params, el) => {
           <div class="dc-cli-cab"><div><b>${h(c.nome)}</b><span>${h(c.gestor)}</span></div>
             <div class="dc-cli-tot"><span>Meta <b>${R$(c.meta)}</b></span><span>Faturado <b>${R$(c.fat)}</b></span><span style="color:${corMeta(p)}"><b style="color:inherit">${pct(p)}</b></span><span>Pedidos <b>${Math.round(c.pedidos).toLocaleString('pt-BR')}</b></span></div></div>
           <div class="dc-scroll"><table class="dc-tab">
+            <colgroup><col style="width:11%"><col style="width:21%"><col style="width:14%"><col style="width:12%"><col style="width:9%"><col style="width:11%"><col style="width:9%"><col style="width:6%"><col style="width:7%"></colgroup>
             <thead><tr><th>Marketplace</th><th>Loja</th><th class="num">Meta</th><th class="num">Faturamento ${dm(st.dia)}</th><th class="num">% sobre meta</th><th class="num">Falta para meta</th><th class="num">ADS</th><th class="num" title="ADS ÷ faturamento do dia">% ADS</th><th class="num">Pedidos</th></tr></thead>
             <tbody>${c.lojas.map(l => linha(l, c.nome)).join('')}</tbody>
           </table></div>
@@ -163,13 +164,13 @@ Router.register('data-combinada', (params, el) => {
     .dc-cli-cab b{font-size:15px} .dc-cli-cab>div:first-child span{display:block;font-size:12px;color:var(--text-muted)}
     .dc-cli-tot{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--text-secondary);font-variant-numeric:tabular-nums} .dc-cli-tot span b{color:var(--text-primary)}
     .dc-scroll{overflow-x:auto}
-    .dc-tab{width:100%;border-collapse:collapse;font-size:13px}
+    .dc-tab{width:100%;min-width:980px;table-layout:fixed;border-collapse:collapse;font-size:13px} /* mesmas colunas em todos os clientes */
     .dc-tab th{font-size:11.5px;font-weight:600;color:var(--text-secondary);text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
     .dc-tab td{padding:6px 12px;border-bottom:1px solid var(--border);white-space:nowrap;font-variant-numeric:tabular-nums}
     .dc-tab tr:last-child td{border-bottom:none}
-    .dc-tab .num{text-align:right} .dc-tab th.num{text-align:right} .dc-loja{font-weight:600}
-    .dc-meta{display:inline-flex;align-items:center;gap:4px;justify-content:flex-end} .dc-meta span{font-size:12px;color:var(--text-muted)}
-    .dc-meta input{width:110px;text-align:right;font:inherit;font-variant-numeric:tabular-nums;border:1px solid var(--border);border-radius:8px;padding:4px 8px;background:var(--bg-card);color:var(--text-primary)}
+    .dc-tab .num{text-align:right} .dc-tab th.num{text-align:right} .dc-loja{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+    .dc-meta{display:flex;align-items:center;gap:4px;justify-content:flex-end} .dc-meta span{font-size:12px;color:var(--text-muted)}
+    .dc-meta input{width:100%;max-width:120px;min-width:0;text-align:right;font:inherit;font-variant-numeric:tabular-nums;border:1px solid var(--border);border-radius:8px;padding:4px 8px;background:var(--bg-card);color:var(--text-primary)}
     .dc-meta input:focus-visible{outline:2px solid var(--accent);outline-offset:0}
     .dc-mut{font-size:12px;color:var(--text-muted)} .dc-vazio{padding:28px;text-align:center;color:var(--text-secondary)} .dc-aviso{padding:10px 14px;color:var(--red);margin-bottom:10px}
   </style>`;
