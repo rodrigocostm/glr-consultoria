@@ -95,9 +95,9 @@ Router.register('vendometro', (params, el) => {
       const { dia: hoje, inicio: iniHoje, inicioComparar: iniOntem } = periodo();
       const [rh, ro, ra, base] = await Promise.all([
         paginar(() => _sb.from('glr_pedidos').select('marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto,itens')
-          .gte('criado_em', new Date(iniHoje).toISOString()).lt('criado_em', new Date(iniHoje + DIA).toISOString()).order('criado_em').order('pedido_id')),
+          .gte('criado_em', new Date(iniHoje).toISOString()).lt('criado_em', new Date(iniHoje + DIA).toISOString()).order('criado_em')),
         paginar(() => _sb.from('glr_pedidos').select('marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto')
-          .gte('criado_em', new Date(iniOntem).toISOString()).lt('criado_em', new Date(iniOntem + DIA).toISOString()).order('criado_em').order('pedido_id')),
+          .gte('criado_em', new Date(iniOntem).toISOString()).lt('criado_em', new Date(iniOntem + DIA).toISOString()).order('criado_em')),
         _sb.from('glr_ads_diario').select('marketplace,conta_id,gasto').eq('data', hoje),
         BaseDados.carregar ? BaseDados.carregar() : Promise.resolve({}),
       ]);
