@@ -972,6 +972,25 @@ Router.register('projecao', (params, el) => {
   const _pnEsc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   let _pnUltimo = null; // números do último render (usados pelos gráficos)
   let _pnMetasAg = null; // meta de TACOS do agente de ADS por conta (fallback do teto do cliente)
+  let _pnPlataformaDiaria = '';
+
+  function renderDiario() {
+    const dados = GLROperacao.diario(projecaoAtiva.plataformas || [], projecaoAtiva.dataBase, infoBaseDe, BaseDados);
+    if (!dados.dias.length || !dados.grupos.length) return '';
+    const indices = dados.grupos.map((g, i) => i).filter(i => !_pnPlataformaDiaria || dados.grupos[i].id === _pnPlataformaDiaria);
+    const moeda = (v, parcial) => v == null ? '<span class="pn-mut">sem dados</span>' : `${v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}${parcial ? '<small class="pn-diario-parcial">parcial</small>' : ''}`;
+    const celulas = v => `<td>${moeda(v.fat, v.parcialFat)}</td><td>${moeda(v.ads, v.parcialAds)}</td><td>${v.tacos == null ? '<span class="pn-mut" title="TACOS exige faturamento positivo e cobertura de vendas e ADS de todas as contas">—</span>' : v.tacos.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'}</td>`;
+    const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+    return `<section class="card pn-diario" aria-label="Faturamento e TACOS por dia">
+      <div class="pn-diario-top"><div><div class="pn-graf-t">Dia a dia · faturamento e TACOS</div><div class="pn-sub">Do início do mês até a data base. TACOS = ADS do dia ÷ faturamento do dia.</div></div>
+      <label class="pn-mut">Plataforma <select class="pn-btn" onchange="window._pnFiltrarDiario(this.value)"><option value="" ${!_pnPlataformaDiaria ? 'selected' : ''}>Geral e plataformas</option>${dados.grupos.map(g => `<option value="${_pnEsc(g.id)}" ${_pnPlataformaDiaria === g.id ? 'selected' : ''}>${_pnEsc(g.nome)}</option>`).join('')}</select></label></div>
+      <div class="pn-diario-scroll"><table class="pn-diario-tab"><thead><tr><th rowspan="2" scope="col">Dia</th>${indices.map(i => `<th colspan="3" scope="colgroup">${_pnEsc(dados.grupos[i].nome)}</th>`).join('')}</tr><tr>${indices.map(() => '<th scope="col">Faturamento</th><th scope="col">ADS</th><th scope="col">TACOS</th>').join('')}</tr></thead>
+      <tbody>${dados.dias.map(d => `<tr><th scope="row">${d.iso.slice(8)}/${d.iso.slice(5, 7)}${d.iso === hoje ? '<small class="pn-diario-parcial">em andamento</small>' : ''}</th>${indices.map(i => celulas(d.valores[i])).join('')}</tr>`).join('')}</tbody>
+      <tfoot><tr><th scope="row">Total do período</th>${indices.map(i => celulas(dados.totais[i])).join('')}</tr></tfoot></table></div>
+      <div class="pn-sub" style="margin-top:10px;">Dados da base sincronizada. “Parcial” indica contas sem cobertura; “sem dados” indica ausência de histórico. TACOS fica em branco quando falta cobertura ou não há faturamento. Totais usam a soma de ADS dividida pela soma do faturamento.</div>
+    </section>`;
+  }
+  window._pnFiltrarDiario = valor => { _pnPlataformaDiaria = valor; renderTabela(); };
 
   function calcularPainel() {
     const plats = projecaoAtiva.plataformas || [];
@@ -1092,6 +1111,7 @@ Router.register('projecao', (params, el) => {
         <div class="card pn-graf"><div class="pn-graf-t">Últimos meses</div><div class="pn-sub">Meses fechados e a projeção de ${_pnEsc(mesNome)}</div><div class="pn-graf-area"><canvas id="pn-chart-meses"></canvas></div></div>
       </div>
 
+      ${renderDiario()}
       <div class="pn-sec-t">Por conta</div>
       <div class="pn-contas">
         ${linhas.map(l => { const m = mkt(l); return `
@@ -1160,6 +1180,16 @@ Router.register('projecao', (params, el) => {
     st.textContent = `
       .pn{--pn-azul:var(--accent);--pn-cinza:var(--text-muted);--pn-bom:var(--green);--pn-ruim:var(--red);}
       .pn-mut{font-size:12px;color:var(--text-muted);}
+      .pn-diario{padding:18px;margin:18px 0;}
+      .pn-diario-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+      .pn-diario-scroll{overflow:auto;max-height:520px;}
+      .pn-diario-tab{border-collapse:separate;border-spacing:0;width:100%;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+      .pn-diario-tab th,.pn-diario-tab td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:right;}
+      .pn-diario-tab thead th{background:var(--bg-card);color:var(--text-muted);text-align:center;}
+      .pn-diario-tab th:first-child{position:sticky;left:0;text-align:left;background:var(--bg-card);z-index:1;}
+      .pn-diario-tab tbody tr:hover td{background:var(--bg-card-hover);}
+      .pn-diario-tab tfoot th,.pn-diario-tab tfoot td{font-weight:700;border-top:2px solid var(--border);}
+      .pn-diario-parcial{display:block;font-size:10px;color:var(--yellow);font-weight:500;}
       .pn-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:10px;}
       .pn-head-l{min-width:0;}
       .pn-cliente{appearance:none;-webkit-appearance:none;background:transparent;border:none;font-size:26px;font-weight:800;color:var(--text-primary);cursor:pointer;outline:none;padding:0 22px 0 0;max-width:100%;

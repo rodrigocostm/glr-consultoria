@@ -964,8 +964,15 @@
     }
     function renderSaldos() {
       if (!state.saldos) return '';
-      const todas = Object.entries(state.saldos).map(([id, s]) => ({ id, ...s }));
-      if (!todas.length) return `<div class="card ag-saldos"><div class="ag-saldos-top"><div><div class="ag-saldos-t">Saldo de ADS das lojas</div><div class="ag-saldos-sub">O monitor ainda não leu os saldos. Ele roda de hora em hora, das 06h às 23h.</div></div>
+      const gestores = GLR.gestores || [];
+      let vinculos = {}; try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
+      const filtroGestor = `<label style="display:flex;align-items:center;gap:6px;font-size:12px;">Selecionar gestor <select class="form-select" style="width:auto;max-width:220px;" onchange="window._agSaldosGestor(this.value)">
+        <option value="" ${!state.saldosGestor ? 'selected' : ''}>Todos os gestores</option>
+        ${gestores.map(g => `<option value="${h(g.id)}" ${String(g.id) === state.saldosGestor ? 'selected' : ''}>${h(g.nome)}</option>`).join('')}
+        <option value="sem" ${state.saldosGestor === 'sem' ? 'selected' : ''}>Sem gestor</option></select></label>`;
+      const saldos = Object.entries(state.saldos).map(([id, s]) => ({ ...s, id, gestores: GLROperacao.gestoresDaConta(id, GLR.clientes || [], gestores, vinculos, state.contas || []) }));
+      const todas = saldos.filter(s => !state.saldosGestor || (state.saldosGestor === 'sem' ? !s.gestores.length : s.gestores.some(g => String(g.id) === state.saldosGestor)));
+      if (!saldos.length) return `<div class="card ag-saldos"><div class="ag-saldos-top"><div><div class="ag-saldos-t">Saldo de ADS das lojas</div><div class="ag-saldos-sub">O monitor ainda não leu os saldos. Ele roda de hora em hora, das 06h às 23h.</div></div>${filtroGestor}
         <button class="btn btn-secondary btn-sm" ${state.atualizandoSaldo ? 'disabled' : ''} onclick="window._agSaldosAgora()">${state.atualizandoSaldo ? '⏳ Lendo saldos…' : 'Ler saldos agora'}</button></div></div>`;
       const ordem = s => s.erro && !s.nivel ? 3 : (SALDO_NIV[s.nivel]?.o ?? 4);
       todas.sort((a, b) => ordem(a) - ordem(b) || (a.dias ?? 1e9) - (b.dias ?? 1e9) || String(a.nome).localeCompare(String(b.nome)));
@@ -981,22 +988,25 @@
             <div class="ag-saldos-sub">${[cont('zerado') ? `<b style="color:var(--red)">${cont('zerado')} zerada(s)</b>` : '', cont('critico') ? `<b style="color:var(--red)">${cont('critico')} acaba(m) hoje</b>` : '', cont('baixo') ? `<b style="color:var(--yellow)">${cont('baixo')} baixa(s)</b>` : '', `${cont('ok')} ok`, semLeitura.length ? `${semLeitura.length} sem leitura` : ''].filter(Boolean).join(' · ')}${atual ? ` · lido ${atual}` : ''}. Duração estimada pelo gasto médio dos últimos 7 dias.</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${filtroGestor}
             <button class="btn btn-secondary btn-sm" onclick="window._agSaldosTodas()">${state.saldosTodas ? 'Só as que precisam de recarga' : `Ver todas (${todas.length})`}</button>
             <button class="btn btn-secondary btn-sm" ${state.atualizandoSaldo ? 'disabled' : ''} onclick="window._agSaldosAgora()" title="Lê o saldo de todas as lojas agora (e avisa se alguma piorou)">${state.atualizandoSaldo ? '⏳ Lendo…' : '↻ Ler agora'}</button>
           </div>
         </div>
         ${lista.length ? `<div style="overflow-x:auto;"><table class="ag-saldos-tab">
-          <thead><tr><th>Loja</th><th>Situação</th><th class="num">Saldo</th><th class="num">Gasto/dia</th><th class="num">Dura</th></tr></thead>
+          <thead><tr><th>Loja</th><th>Gestor</th><th>Situação</th><th class="num">Saldo</th><th class="num">Gasto/dia</th><th class="num">Dura</th></tr></thead>
           <tbody>${lista.map(s => `<tr${configDaConta(s.id) ? ` class="ag-saldos-link" onclick="window._agAbrirConta('${esc(s.id)}')"` : ''}>
             <td><b>${h(s.nome || s.id)}</b></td>
+            <td>${s.gestores.length ? s.gestores.map(g => h(g.nome)).join(', ') : 'Sem gestor'}</td>
             <td>${pillSaldo(s)}${s.erro && !s.nivel ? `<div class="ag-saldos-err">${h(String(s.erro).slice(0, 90))}</div>` : ''}</td>
             <td class="num" style="font-weight:700;color:${SALDO_NIV[s.nivel]?.c || 'inherit'}">${s.saldo != null ? R$(s.saldo) : '—'}</td>
             <td class="num">${s.media != null ? R$(s.media) : '—'}</td>
             <td class="num">${s.nivel ? duraTxt(s) : '—'}</td></tr>`).join('')}</tbody></table></div>`
-          : `<div class="ag-saldos-sub" style="padding:6px 0 2px;">Nenhuma loja precisando de recarga agora.</div>`}
+          : `<div class="ag-saldos-sub" style="padding:6px 0 2px;">${!todas.length ? 'Nenhuma loja com saldo lido para este gestor.' : 'Nenhuma loja precisando de recarga neste filtro. Use “Ver todas” para consultar os saldos.'}</div>`}
       </div>`;
     }
     window._agSaldosTodas = () => { state.saldosTodas = !state.saldosTodas; render(); };
+    window._agSaldosGestor = valor => { state.saldosGestor = valor; state.saldosTodas = true; render(); };
     window._agSaldosAgora = async () => {
       state.atualizandoSaldo = true; render();
       try {
