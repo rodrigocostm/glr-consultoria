@@ -25,6 +25,7 @@ const Router = {
   },
 
   resolve() {
+    if (window._glrAcessoPronto === false) return; // aguarda autenticação e sincronização inicial
     // Recarrega dados do localStorage a cada navegação
     if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();
 
