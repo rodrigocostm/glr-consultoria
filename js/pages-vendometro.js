@@ -138,7 +138,7 @@ Router.register('vendometro', (params, el) => {
           st.historico.set(chave, { ok: true, pedidos });
         } catch (e) {
           if (!ativo()) return;
-          st.historico.set(chave, { ok: false, erro: String(e.message || 'Histórico indisponível.') });
+          st.historico.set(chave, { ok: false, erro: (/refresh_token|token.*expired/i.test(String(e.message)) ? 'Há contas com conexão expirada. Reconecte-as em Integrações.' : String(e.message || 'Histórico indisponível.')) });
         }
         feitas++; st.historicoProg = `Buscando histórico no conector: ${feitas}/${total} contas/datas`; render();
       }
@@ -295,13 +295,20 @@ Router.register('vendometro', (params, el) => {
     const cv = document.getElementById('vm-grafico'); if (!cv || typeof Chart === 'undefined') return;
     const P = periodo();
     const hAgora = P.aoVivo ? horaBRT(Date.now()) : 23;
-    const hoje = T.hoje.map((v, i) => (i <= hAgora ? v : null));
+    const faltam = lacunas();
+    const serie = (dia, valores) => {
+      const parcial = faltam.some(x => x.dia === dia);
+      const disponivel = !parcial || valores.some(v => v > 0) || contasFiltradas().some(([k]) => cobertura(k, dia));
+      return { label: rotuloDia(dia) + (parcial ? ' (parcial)' : ''), data: disponivel ? valores : Array(24).fill(null) };
+    };
+    const atual = serie(P.dia, T.hoje), comparacao = serie(P.comparar, T.ontem);
+    const hoje = atual.data.map((v, i) => (i <= hAgora ? v : null));
     if (st.grafico && st.grafico.canvas === cv) {
-      st.grafico.data.datasets[0].label = rotuloDia(P.dia);
-      st.grafico.data.datasets[1].label = rotuloDia(P.comparar);
+      st.grafico.data.datasets[0].label = atual.label;
+      st.grafico.data.datasets[1].label = comparacao.label;
       st.grafico.data.datasets[0].data = hoje;
       st.grafico.data.datasets[0].pointRadius = hoje.map((v, i) => (i === hAgora ? 5 : 0));
-      st.grafico.data.datasets[1].data = lacunas().some(x => x.dia === P.comparar) ? Array(24).fill(null) : T.ontem;
+      st.grafico.data.datasets[1].data = comparacao.data;
       st.grafico.stop(); st.grafico.update(); return; // 'none' durante a animação inicial deixava as linhas no zero
     }
     const css = getComputedStyle(document.documentElement);
@@ -314,9 +321,9 @@ Router.register('vendometro', (params, el) => {
       data: {
         labels: Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0') + 'h'),
         datasets: [
-          { label: rotuloDia(P.dia), data: hoje, borderColor: '#6d6ff5', backgroundColor: grad, fill: 'origin', borderWidth: 2.5, tension: 0.35, cubicInterpolationMode: 'monotone',
+          { label: atual.label, data: hoje, borderColor: '#6d6ff5', backgroundColor: grad, fill: 'origin', borderWidth: 2.5, tension: 0.35, cubicInterpolationMode: 'monotone',
             pointRadius: hoje.map((v, i) => (i === hAgora ? 5 : 0)), pointBackgroundColor: '#6d6ff5', pointBorderColor: '#fff', pointBorderWidth: 2, pointHoverRadius: 5 },
-          { label: rotuloDia(P.comparar), data: lacunas().some(x => x.dia === P.comparar) ? Array(24).fill(null) : T.ontem, borderColor: '#1baf7a', borderDash: [5, 4], borderWidth: 1.8, tension: 0.35, cubicInterpolationMode: 'monotone', pointRadius: 0, pointHoverRadius: 4, fill: false },
+          { label: comparacao.label, data: comparacao.data, borderColor: '#1baf7a', borderDash: [5, 4], borderWidth: 1.8, tension: 0.35, cubicInterpolationMode: 'monotone', pointRadius: 0, pointHoverRadius: 4, fill: false },
         ],
       },
       options: {
