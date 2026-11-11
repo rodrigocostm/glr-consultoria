@@ -1,7 +1,7 @@
 // ============================================================
 // GLR Consultoria — Vendômetro
 // ------------------------------------------------------------
-// Vendas de HOJE da carteira inteira, ao vivo (no estilo do monitor da
+// Vendas por data da carteira inteira, ao vivo (no estilo do monitor da
 // Shopee), com a marca GLR em destaque para print:
 //  • total vendido hoje e comparação com ontem até a mesma hora;
 //  • métricas: pedidos, unidades, ticket, ADS investido, TACOS, visitas (ML);
@@ -23,6 +23,7 @@ Router.register('vendometro', (params, el) => {
   const isoDia = t => new Date(t - 3 * HORA).toISOString().slice(0, 10);
 
   const st = {
+    filtroDia: '', compararDia: '',
     mkt: (() => { try { return localStorage.getItem('glr_vm_mkt') || 'todos'; } catch (e) { return 'todos'; } })(),
     hoje: [], ontem: [], ads: [], dia: null, visitas: {}, visitasEm: 0, visitasProg: '',
     carregando: false, erro: null, atualizadoEm: 0, valorMostrado: 0, todos: false, grafico: null,
@@ -37,6 +38,17 @@ Router.register('vendometro', (params, el) => {
   const cfgPortal = window._portalConfig || null;
   if (cfgPortal) { st.cliente = String(cfgPortal.clienteId); if (st.conta && !st.conta.includes(':')) st.conta = ''; }
   else if (typeof GLR !== 'undefined' && GLR.ctx && GLR.ctx.cliente() !== st.cliente) { st.cliente = GLR.ctx.cliente(); st.conta = ''; } // cliente em foco
+
+  const inicioDia = dia => new Date(`${dia}T00:00:00-03:00`).getTime();
+  const diaAnterior = dia => isoDia(inicioDia(dia) - DIA);
+  const dataValida = dia => /^\d{4}-\d{2}-\d{2}$/.test(dia) && Number.isFinite(inicioDia(dia)) && isoDia(inicioDia(dia)) === dia && dia <= isoDia(Date.now());
+  const dataCurta = dia => dia.split('-').reverse().join('/');
+  function periodo() {
+    const dia = st.filtroDia || isoDia(Date.now());
+    const comparar = st.compararDia || diaAnterior(dia);
+    return { dia, comparar, aoVivo: dia === isoDia(Date.now()), inicio: inicioDia(dia), inicioComparar: inicioDia(comparar) };
+  }
+  const rotuloDia = dia => dia === isoDia(Date.now()) ? 'Hoje' : dia === diaAnterior(isoDia(Date.now())) ? 'Ontem' : dataCurta(dia);
 
   // ── Contas da carteira: "ml:123" → cliente ──
   function contasCarteira() {
@@ -79,45 +91,47 @@ Router.register('vendometro', (params, el) => {
           mkt: BaseDados.mktDe(c.marketplace), id: String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.param_to_use?.magalu_account_id || c.param_to_use?.shein_supplier_id || c.external_id), nome: c.tags?.find?.(t => t?.name)?.name || c.nickname || c.external_id,
         })).filter(c => c.mkt);
       }
-      const agora = Date.now(), hoje = isoDia(agora);
-      const iniHoje = new Date(`${hoje}T00:00:00-03:00`).getTime(), iniOntem = iniHoje - DIA;
+      const { dia: hoje, inicio: iniHoje, inicioComparar: iniOntem } = periodo();
       const [rh, ro, ra] = await Promise.all([
         paginar(() => _sb.from('glr_pedidos').select('marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto,itens')
-          .gte('criado_em', new Date(iniHoje).toISOString()).order('criado_em').order('pedido_id')),
+          .gte('criado_em', new Date(iniHoje).toISOString()).lt('criado_em', new Date(iniHoje + DIA).toISOString()).order('criado_em').order('pedido_id')),
         paginar(() => _sb.from('glr_pedidos').select('marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto')
-          .gte('criado_em', new Date(iniOntem).toISOString()).lt('criado_em', new Date(iniHoje).toISOString()).order('criado_em').order('pedido_id')),
+          .gte('criado_em', new Date(iniOntem).toISOString()).lt('criado_em', new Date(iniOntem + DIA).toISOString()).order('criado_em').order('pedido_id')),
         _sb.from('glr_ads_diario').select('marketplace,conta_id,gasto').eq('data', hoje),
       ]);
+      if (ra.error) throw new Error(ra.error.message);
       if (st.dia && st.dia !== hoje) { st.visitas = {}; st.visitasEm = 0; st.valorMostrado = 0; } // virou o dia
       st.hoje = rh; st.ontem = ro; st.ads = ra.data || []; st.dia = hoje; st.atualizadoEm = Date.now();
     } catch (e) { st.erro = e.message; }
     finally { st.carregando = false; render(); }
-    carregarVisitas();
+    if (!st.erro) carregarVisitas();
   }
 
-  // Visitas de hoje das contas do Mercado Livre (a cada 10 min)
+  // Visitas da data selecionada das contas do Mercado Livre (a cada 10 min)
   let buscandoVisitas = false;
   async function carregarVisitas() {
     if (buscandoVisitas || Date.now() - st.visitasEm < 10 * 60e3) return;
     const ml = [...contasCarteira().values()].filter(c => c.mkt === 'ml');
     if (!ml.length) return;
     buscandoVisitas = true;
-    const hoje = isoDia(Date.now()); let feitas = 0;
+    const hoje = st.dia, instancia = window._vmSt; let feitas = 0;
+    if (!hoje) { buscandoVisitas = false; return; }
     const fila = [...ml];
     const trabalhador = async () => {
-      while (fila.length) {
+      while (fila.length && st.dia === hoje && window._vmSt === instancia) {
         const c = fila.shift();
         try {
           const r = await MarketplaceAPI.call('ml_visits_user', { meliUserId: c.id, date_from: hoje, date_to: hoje });
           const v = r?.total_visits ?? r?.data?.total_visits;
+          if (st.dia !== hoje || window._vmSt !== instancia) return;
           if (v != null) st.visitas[`ml:${c.id}`] = Number(v) || 0;
         } catch (e) {}
         feitas++; st.visitasProg = `visitas ${feitas}/${ml.length}`;
         if (feitas % 5 === 0) render();
       }
     };
-    try { await Promise.all(Array.from({ length: 5 }, trabalhador)); st.visitasEm = Date.now(); }
-    finally { buscandoVisitas = false; st.visitasProg = ''; render(); }
+    try { await Promise.all(Array.from({ length: 5 }, trabalhador)); if (st.dia === hoje) st.visitasEm = Date.now(); }
+    finally { buscandoVisitas = false; st.visitasProg = ''; render(); if (st.dia && st.dia !== hoje && !st.carregando) carregarVisitas(); }
   }
 
   // ── Cálculo ──
@@ -130,7 +144,8 @@ Router.register('vendometro', (params, el) => {
     const linha = ct => { const id = porConta ? `${ct.mkt}:${ct.id}` : ct.cli.id; if (!clientes.has(id)) clientes.set(id, { nome: String(porConta ? ct.nome : ct.cli.nome || ''), fat: 0, ped: 0, un: 0, ads: 0, vis: 0, temML: false, mkts: new Set() }); return clientes.get(id); };
     for (const [k, ct] of contas) if (passa(k)) { const c = linha(ct); c.mkts.add(ct.mkt); if (ct.mkt === 'ml') c.temML = true; }
     const T = { fat: 0, ped: 0, un: 0, ads: 0, vis: 0, pedML: 0, fatOntem: 0, fatOntemAgora: 0, hoje: Array(24).fill(0), ontem: Array(24).fill(0) };
-    const limOntem = Date.now() - DIA;
+    const P = periodo();
+    const limOntem = P.aoVivo ? P.inicioComparar + (Date.now() - P.inicio) : P.inicioComparar + DIA - 1;
     for (const p of st.hoje) {
       const k = `${p.marketplace}:${p.conta_id}`, ct = contas.get(k);
       if (p.situacao !== 'valido' || !ct || !passa(k)) continue;
@@ -175,6 +190,11 @@ Router.register('vendometro', (params, el) => {
     if (window._vmSt !== st) return parar();
     const root = document.getElementById('vm-root'); if (!root) return;
     montarSeletores();
+    const P = periodo();
+    for (const id of ['vm-data', 'vm-comparar']) { const e = document.getElementById(id); if (e) { e.disabled = st.carregando; e.max = id === 'vm-comparar' ? P.dia : isoDia(Date.now()); } }
+    const dataInput = document.getElementById('vm-data'); if (dataInput) dataInput.value = P.dia;
+    const compararInput = document.getElementById('vm-comparar'); if (compararInput) compararInput.value = P.comparar;
+    const hojeBtn = document.getElementById('vm-voltar-hoje'); if (hojeBtn) hojeBtn.disabled = st.carregando;
     const T = calcular();
     const varPct = T.fatOntemAgora > 0 ? (T.fat / T.fatOntemAgora - 1) * 100 : null;
     const tacos = T.fat > 0 ? T.ads / T.fat * 100 : 0;
@@ -185,14 +205,17 @@ Router.register('vendometro', (params, el) => {
     const big = document.getElementById('vm-total');
     if (big) contarAte(big, T.fat);
     const setTxt = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
-    setTxt('vm-var', varPct == null ? 'primeiras vendas do dia' : `<b class="${varPct >= 0 ? 'vm-up' : 'vm-down'}">${varPct >= 0 ? '▲' : '▼'} ${Math.abs(varPct).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b> vs ontem até esta hora (${R$(T.fatOntemAgora, 0)})`);
+    setTxt('vm-var', varPct == null ? 'Sem vendas na data de comparação' : `<b class="${varPct >= 0 ? 'vm-up' : 'vm-down'}">${varPct >= 0 ? '▲' : '▼'} ${Math.abs(varPct).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b> vs ${h(rotuloDia(P.comparar).toLowerCase())}${P.aoVivo ? ' até esta hora' : ' · dia completo'} (${R$(T.fatOntemAgora, 0)})`);
 
     const met = (rot, val, sub = '') => `<div class="vm-met"><span>${rot}</span><b>${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
     setTxt('vm-metricas',
       met('Pedidos', N(T.ped)) + met('Unidades', N(T.un)) +
       met('Ticket médio', R$(T.ped ? T.fat / T.ped : 0)) + met(st.cliente ? 'Contas vendendo' : 'Clientes vendendo', `${T.vendendo}<i>/${T.clientes.length}</i>`) +
-      met('ADS investido', R$(T.ads, 0), 'hoje') + met('TACOS', T.fat > 0 ? tacos.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—', 'ADS ÷ vendas') +
+      met('ADS investido', R$(T.ads, 0), rotuloDia(P.dia)) + met('TACOS', T.fat > 0 ? tacos.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—', 'ADS ÷ vendas') +
       met('Visitas', visTxt, st.mkt !== 'todos' && st.mkt !== 'ml' ? 'só Mercado Livre informa' : 'Mercado Livre') + met('Conversão', conv == null ? '—' : conv.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%', 'pedidos ML ÷ visitas'));
+
+    setTxt('vm-graf-periodo', `por hora · ${h(rotuloDia(P.dia))} × ${h(rotuloDia(P.comparar))}`);
+    setTxt('vm-rank-periodo', `vendas de ${h(rotuloDia(P.dia).toLowerCase())}`);
 
     const lista = st.todos ? T.clientes : T.clientes.slice(0, 10);
     const nomeVis = (c, i) => oculta('nomes') ? `${st.cliente ? 'Conta' : 'Cliente'} ${i + 1}` : c.nome;
@@ -216,9 +239,12 @@ Router.register('vendometro', (params, el) => {
 
   function desenharGrafico(T) {
     const cv = document.getElementById('vm-grafico'); if (!cv || typeof Chart === 'undefined') return;
-    const hAgora = horaBRT(Date.now());
+    const P = periodo();
+    const hAgora = P.aoVivo ? horaBRT(Date.now()) : 23;
     const hoje = T.hoje.map((v, i) => (i <= hAgora ? v : null));
     if (st.grafico && st.grafico.canvas === cv) {
+      st.grafico.data.datasets[0].label = rotuloDia(P.dia);
+      st.grafico.data.datasets[1].label = rotuloDia(P.comparar);
       st.grafico.data.datasets[0].data = hoje;
       st.grafico.data.datasets[0].pointRadius = hoje.map((v, i) => (i === hAgora ? 5 : 0));
       st.grafico.data.datasets[1].data = T.ontem;
@@ -234,9 +260,9 @@ Router.register('vendometro', (params, el) => {
       data: {
         labels: Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0') + 'h'),
         datasets: [
-          { label: 'Hoje', data: hoje, borderColor: '#6d6ff5', backgroundColor: grad, fill: 'origin', borderWidth: 2.5, tension: 0.35, cubicInterpolationMode: 'monotone',
+          { label: rotuloDia(P.dia), data: hoje, borderColor: '#6d6ff5', backgroundColor: grad, fill: 'origin', borderWidth: 2.5, tension: 0.35, cubicInterpolationMode: 'monotone',
             pointRadius: hoje.map((v, i) => (i === hAgora ? 5 : 0)), pointBackgroundColor: '#6d6ff5', pointBorderColor: '#fff', pointBorderWidth: 2, pointHoverRadius: 5 },
-          { label: 'Ontem', data: T.ontem, borderColor: '#1baf7a', borderDash: [5, 4], borderWidth: 1.8, tension: 0.35, cubicInterpolationMode: 'monotone', pointRadius: 0, pointHoverRadius: 4, fill: false },
+          { label: rotuloDia(P.comparar), data: T.ontem, borderColor: '#1baf7a', borderDash: [5, 4], borderWidth: 1.8, tension: 0.35, cubicInterpolationMode: 'monotone', pointRadius: 0, pointHoverRadius: 4, fill: false },
         ],
       },
       options: {
@@ -264,6 +290,16 @@ Router.register('vendometro', (params, el) => {
   }
 
   // ── Ações ──
+  window._vmData = (campo, valor) => {
+    if (st.carregando) return;
+    if (campo !== 'hoje' && !dataValida(valor)) { render(); return; }
+    if (campo === 'hoje') { st.filtroDia = ''; st.compararDia = ''; }
+    else if (campo === 'data') { st.filtroDia = valor; st.compararDia = ''; }
+    else if (campo === 'comparar') { if (valor > periodo().dia) { render(); return; } st.compararDia = valor; }
+    else return;
+    st.hoje = []; st.ontem = []; st.ads = []; st.visitas = {}; st.visitasEm = 0; st.visitasProg = ''; st.dia = null; st.valorMostrado = 0;
+    carregar();
+  };
   function salvarSel() { try { localStorage.setItem('glr_vm_sel', JSON.stringify({ cliente: st.cliente, conta: st.conta })); } catch (e) {} }
   window._vmCliente = v => { st.cliente = v; GLR.ctx?.definir(v, true); st.conta = ''; st.todos = false; salvarSel(); render(); };
   window._vmConta = v => { st.conta = v; salvarSel(); render(); };
@@ -279,7 +315,7 @@ Router.register('vendometro', (params, el) => {
     if (sc && !cfgPortal) sc.innerHTML = `<option value="">Todos os clientes</option>` + [...clientes].sort((a, b) => String(a[1]).localeCompare(String(b[1]))).map(([id, n]) => `<option value="${h(id)}" ${id === st.cliente ? 'selected' : ''}>${h(n)}</option>`).join('');
     if (sk) { sk.hidden = doCli.length < 2 || oculta('nomes'); sk.innerHTML = `<option value="">Todas as contas</option>` + doCli.map(([k, ct]) => `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${MKT[ct.mkt].sigla} · ${h(ct.nome)}</option>`).join(''); }
     const nomeCli = clientes.get(st.cliente), conta = doCli.find(([k]) => k === st.conta)?.[1];
-    const t = document.getElementById('vm-hoje'); if (t) t.textContent = `Vendas hoje · ${nomeCli ? (oculta('nomes') ? (conta ? `${MKT[conta.mkt].sigla} · conta selecionada` : 'cliente selecionado') : nomeCli + (conta ? ` · ${MKT[conta.mkt].sigla} ${conta.nome}` : '')) : 'carteira GLR'}`;
+    const t = document.getElementById('vm-hoje'); if (t) t.textContent = `Vendas ${rotuloDia(periodo().dia).toLowerCase()} · ${nomeCli ? (oculta('nomes') ? (conta ? `${MKT[conta.mkt].sigla} · conta selecionada` : 'cliente selecionado') : nomeCli + (conta ? ` · ${MKT[conta.mkt].sigla} ${conta.nome}` : '')) : 'carteira GLR'}`;
     const r = document.getElementById('vm-rank-t'); if (r) r.textContent = st.cliente ? 'Ranking das contas' : 'Ranking de clientes';
   }
   window._vmMkt = v => { st.mkt = v; try { localStorage.setItem('glr_vm_mkt', v); } catch (e) {} document.querySelectorAll('.vm-filtro button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); render(); };
@@ -317,6 +353,11 @@ Router.register('vendometro', (params, el) => {
           <button class="vm-cheia" title="Tela cheia" onclick="window._vmTelaCheia()">⛶</button>
         </div>
       </div>
+      <div class="vm-datas">
+        <label>Data das vendas<input class="vm-sel" type="date" id="vm-data" onchange="window._vmData('data', this.value)"></label>
+        <label>Comparar com<input class="vm-sel" type="date" id="vm-comparar" onchange="window._vmData('comparar', this.value)"></label>
+        <button class="vm-sel" id="vm-voltar-hoje" onclick="window._vmData('hoje')">Voltar para hoje</button>
+      </div>
       <div class="vm-hoje" id="vm-hoje">Vendas hoje · carteira GLR</div>
       <div class="vm-relogio" id="vm-relogio"></div>
       <div><div class="vm-total"><span class="vm-rs">R$</span><span id="vm-total">0,00</span></div></div>
@@ -324,8 +365,8 @@ Router.register('vendometro', (params, el) => {
     </div>
     <div class="vm-grid" id="vm-root">
       <div class="vm-card"><div class="vm-card-t">Métricas principais</div><div class="vm-mets" id="vm-metricas"></div></div>
-      <div class="vm-card"><div class="vm-card-t">Tendência de vendas <small>por hora · hoje × ontem</small></div><div class="vm-graf"><canvas id="vm-grafico"></canvas></div></div>
-      <div class="vm-card"><div class="vm-card-t"><span id="vm-rank-t">Ranking de clientes</span> <small>vendas de hoje</small></div><div class="vm-rank" id="vm-ranking"></div><div class="vm-todos" id="vm-ver-todos"></div></div>
+      <div class="vm-card"><div class="vm-card-t">Tendência de vendas <small id="vm-graf-periodo">por hora · hoje × ontem</small></div><div class="vm-graf"><canvas id="vm-grafico"></canvas></div></div>
+      <div class="vm-card"><div class="vm-card-t"><span id="vm-rank-t">Ranking de clientes</span> <small id="vm-rank-periodo">vendas de hoje</small></div><div class="vm-rank" id="vm-ranking"></div><div class="vm-todos" id="vm-ver-todos"></div></div>
     </div>
     <div class="vm-rodape"><img src="logo.png" alt=""><span>GLR Consultoria · consultoriaglr.com.br</span><span class="vm-status" id="vm-status"></span></div>
   </div>
@@ -334,6 +375,9 @@ Router.register('vendometro', (params, el) => {
     .vm:fullscreen{overflow:auto;padding:16px;background:var(--bg-base,#0d0d14)}
     .vm-hero{position:relative;overflow:hidden;border-radius:18px;padding:18px 28px 30px;text-align:center;color:#fff;
       background:radial-gradient(1200px 400px at 85% -20%,#4b48d8 0%,transparent 60%),linear-gradient(135deg,#07070f 0%,#141634 55%,#262a7a 100%)}
+    .vm-datas{position:relative;display:flex;justify-content:center;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-top:20px}
+    .vm-datas label{display:flex;flex-direction:column;gap:5px;text-align:left;font-size:12px;color:rgba(255,255,255,.8)}
+    .vm-datas input{color-scheme:dark;min-height:34px}.vm-datas button{min-height:34px;cursor:pointer}.vm-datas :disabled{opacity:.55;cursor:wait}
     .vm-marca-agua{position:absolute;right:-60px;top:50%;transform:translateY(-50%) rotate(-8deg);width:420px;height:420px;object-fit:contain;mix-blend-mode:screen;opacity:.09;pointer-events:none}
     .vm-topo{position:relative;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}
     .vm-marca{display:flex;align-items:center;gap:10px;text-align:left}
