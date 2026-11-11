@@ -23,7 +23,7 @@ Router.register('vendometro', (params, el) => {
   const isoDia = t => new Date(t - 3 * HORA).toISOString().slice(0, 10);
 
   const st = {
-    filtroDia: '', compararDia: '',
+    filtroDia: '', compararDia: '', baseInfo: {}, historico: new Map(), historicoAtivo: false, historicoProg: '', geracao: 0, pendentes: [],
     mkt: (() => { try { return localStorage.getItem('glr_vm_mkt') || 'todos'; } catch (e) { return 'todos'; } })(),
     hoje: [], ontem: [], ads: [], dia: null, visitas: {}, visitasEm: 0, visitasProg: '',
     carregando: false, erro: null, atualizadoEm: 0, valorMostrado: 0, todos: false, grafico: null,
@@ -82,6 +82,7 @@ Router.register('vendometro', (params, el) => {
     return out;
   }
   async function carregar() {
+    if (st.historicoAtivo) return;
     if (st.carregando || typeof _sb === 'undefined') return;
     st.carregando = true; st.erro = null; render();
     try {
@@ -92,19 +93,69 @@ Router.register('vendometro', (params, el) => {
         })).filter(c => c.mkt);
       }
       const { dia: hoje, inicio: iniHoje, inicioComparar: iniOntem } = periodo();
-      const [rh, ro, ra] = await Promise.all([
+      const [rh, ro, ra, base] = await Promise.all([
         paginar(() => _sb.from('glr_pedidos').select('marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto,itens')
           .gte('criado_em', new Date(iniHoje).toISOString()).lt('criado_em', new Date(iniHoje + DIA).toISOString()).order('criado_em').order('pedido_id')),
         paginar(() => _sb.from('glr_pedidos').select('marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto')
           .gte('criado_em', new Date(iniOntem).toISOString()).lt('criado_em', new Date(iniOntem + DIA).toISOString()).order('criado_em').order('pedido_id')),
         _sb.from('glr_ads_diario').select('marketplace,conta_id,gasto').eq('data', hoje),
+        BaseDados.carregar ? BaseDados.carregar() : Promise.resolve({}),
       ]);
       if (ra.error) throw new Error(ra.error.message);
       if (st.dia && st.dia !== hoje) { st.visitas = {}; st.visitasEm = 0; st.valorMostrado = 0; } // virou o dia
+      st.baseInfo = base;
       st.hoje = rh; st.ontem = ro; st.ads = ra.data || []; st.dia = hoje; st.atualizadoEm = Date.now();
     } catch (e) { st.erro = e.message; }
     finally { st.carregando = false; render(); }
-    if (!st.erro) carregarVisitas();
+    if (!st.erro) { carregarVisitas(); carregarHistorico(); }
+  }
+
+  // A base automática cobre uma janela móvel, não qualquer data do calendário.
+  // Busca só contas com lacuna e mantém o resultado na instância atual da tela.
+  function contasFiltradas() {
+    return [...contasCarteira().entries()].filter(([k, c]) => (st.mkt === 'todos' || c.mkt === st.mkt) && (!st.cliente || String(c.cli.id) === st.cliente) && (!st.conta || k === st.conta));
+  }
+  function cobertura(k, dia) {
+    if (BaseDados.cobre?.(st.baseInfo[k], dia)) return true;
+    return st.historico.get(`${dia}|${k}`)?.ok === true;
+  }
+  function lacunas() {
+    const P = periodo();
+    return [...new Set([P.dia, P.comparar])].flatMap(dia => contasFiltradas().filter(([k]) => !cobertura(k, dia)).map(([k, conta]) => ({ dia, k, conta })));
+  }
+  async function carregarHistorico() {
+    if (st.carregando || st.historicoAtivo || st.erro || !st.dia || window._vmSt !== st) return;
+    const fila = lacunas().filter(({dia, k}) => !st.historico.has(`${dia}|${k}`));
+    if (!fila.length) { render(); return; }
+    st.historicoAtivo = true; const geracao = st.geracao, total = fila.length; let feitas = 0;
+    const ativo = () => geracao === st.geracao && window._vmSt === st;
+    const trabalhador = async () => {
+      while (fila.length && ativo()) {
+        const {dia, k, conta} = fila.shift(), chave = `${dia}|${k}`;
+        try {
+          const pedidos = await VendometroHistorico.buscar((acao, params) => MarketplaceAPI._callPortal(acao, params), conta, dia, ativo);
+          if (!ativo()) return;
+          st.historico.set(chave, { ok: true, pedidos });
+        } catch (e) {
+          if (!ativo()) return;
+          st.historico.set(chave, { ok: false, erro: String(e.message || 'Histórico indisponível.') });
+        }
+        feitas++; st.historicoProg = `Buscando histórico no conector: ${feitas}/${total} contas/datas`; render();
+      }
+    };
+    try { await Promise.all(Array.from({length: 3}, trabalhador)); }
+    finally { if (ativo()) { st.historicoAtivo = false; st.historicoProg = ''; render(); if (!st.carregando) carregarHistorico(); } }
+  }
+  function pedidosDia(rows, dia) {
+    const map = new Map(rows.map(p => [`${p.marketplace}:${p.conta_id}:${p.pedido_id}`, p]));
+    for (const [k] of contasFiltradas()) {
+      const hist = st.historico.get(`${dia}|${k}`);
+      if (!hist?.ok) continue;
+      // Substitui a conta incompleta inteira, nunca soma por cima da base parcial.
+      for (const [id, p] of map) if (`${p.marketplace}:${p.conta_id}` === k) map.delete(id);
+      for (const p of hist.pedidos) map.set(`${p.marketplace}:${p.conta_id}:${p.pedido_id}`, p);
+    }
+    return [...map.values()];
   }
 
   // Visitas da data selecionada das contas do Mercado Livre (a cada 10 min)
@@ -146,7 +197,7 @@ Router.register('vendometro', (params, el) => {
     const T = { fat: 0, ped: 0, un: 0, ads: 0, vis: 0, pedML: 0, fatOntem: 0, fatOntemAgora: 0, hoje: Array(24).fill(0), ontem: Array(24).fill(0) };
     const P = periodo();
     const limOntem = P.aoVivo ? P.inicioComparar + (Date.now() - P.inicio) : P.inicioComparar + DIA - 1;
-    for (const p of st.hoje) {
+    for (const p of pedidosDia(st.hoje, P.dia)) {
       const k = `${p.marketplace}:${p.conta_id}`, ct = contas.get(k);
       if (p.situacao !== 'valido' || !ct || !passa(k)) continue;
       const v = Number(p.valor_bruto) || 0, t = new Date(p.criado_em).getTime();
@@ -154,7 +205,7 @@ Router.register('vendometro', (params, el) => {
       T.fat += v; T.ped++; T.un += u; T.hoje[horaBRT(t)] += v; if (ct.mkt === 'ml') T.pedML++;
       const c = linha(ct); c.fat += v; c.ped++; c.un += u;
     }
-    for (const p of st.ontem) {
+    for (const p of pedidosDia(st.ontem, P.comparar)) {
       const k = `${p.marketplace}:${p.conta_id}`;
       if (p.situacao !== 'valido' || !contas.has(k) || !passa(k)) continue;
       const v = Number(p.valor_bruto) || 0, t = new Date(p.criado_em).getTime();
@@ -196,7 +247,8 @@ Router.register('vendometro', (params, el) => {
     const compararInput = document.getElementById('vm-comparar'); if (compararInput) compararInput.value = P.comparar;
     const hojeBtn = document.getElementById('vm-voltar-hoje'); if (hojeBtn) hojeBtn.disabled = st.carregando;
     const T = calcular();
-    const varPct = T.fatOntemAgora > 0 ? (T.fat / T.fatOntemAgora - 1) * 100 : null;
+    const faltam = lacunas();
+    const varPct = !faltam.length && T.fatOntemAgora > 0 ? (T.fat / T.fatOntemAgora - 1) * 100 : null;
     const tacos = T.fat > 0 ? T.ads / T.fat * 100 : 0;
     const conv = T.vis > 0 ? T.pedML / T.vis * 100 : null;
     const temVisitas = Object.keys(st.visitas).length > 0;
@@ -205,7 +257,7 @@ Router.register('vendometro', (params, el) => {
     const big = document.getElementById('vm-total');
     if (big) contarAte(big, T.fat);
     const setTxt = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
-    setTxt('vm-var', varPct == null ? 'Sem vendas na data de comparação' : `<b class="${varPct >= 0 ? 'vm-up' : 'vm-down'}">${varPct >= 0 ? '▲' : '▼'} ${Math.abs(varPct).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b> vs ${h(rotuloDia(P.comparar).toLowerCase())}${P.aoVivo ? ' até esta hora' : ' · dia completo'} (${R$(T.fatOntemAgora, 0)})`);
+    setTxt('vm-var', faltam.length ? (st.historicoAtivo ? 'Buscando vendas históricas no conector…' : 'Comparativo indisponível: histórico incompleto para a seleção.') : varPct == null ? 'Sem vendas na data de comparação' : `<b class="${varPct >= 0 ? 'vm-up' : 'vm-down'}">${varPct >= 0 ? '▲' : '▼'} ${Math.abs(varPct).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b> vs ${h(rotuloDia(P.comparar).toLowerCase())}${P.aoVivo ? ' até esta hora' : ' · dia completo'} (${R$(T.fatOntemAgora, 0)})`);
 
     const met = (rot, val, sub = '') => `<div class="vm-met"><span>${rot}</span><b>${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
     setTxt('vm-metricas',
@@ -216,6 +268,8 @@ Router.register('vendometro', (params, el) => {
 
     setTxt('vm-graf-periodo', `por hora · ${h(rotuloDia(P.dia))} × ${h(rotuloDia(P.comparar))}`);
     setTxt('vm-rank-periodo', `vendas de ${h(rotuloDia(P.dia).toLowerCase())}`);
+
+    setTxt('vm-historico-status', st.historicoProg ? h(st.historicoProg) : faltam.length ? `Vendas encontradas em ${h(dataCurta(P.comparar))}${P.aoVivo ? ' até esta hora' : ''}: ${R$(T.fatOntemAgora)} (parcial). Histórico não carregado em ${faltam.length} contas/datas. Os valores disponíveis são parciais; isso não significa zero vendas. ${[...new Set(faltam.map(({dia,k}) => st.historico.get(`${dia}|${k}`)?.erro).filter(Boolean))].slice(0,2).map(h).join(' · ')} <button class="btn btn-secondary" onclick="window._vmRepetirHistorico()">Tentar novamente</button>` : '');
 
     const lista = st.todos ? T.clientes : T.clientes.slice(0, 10);
     const nomeVis = (c, i) => oculta('nomes') ? `${st.cliente ? 'Conta' : 'Cliente'} ${i + 1}` : c.nome;
@@ -247,7 +301,7 @@ Router.register('vendometro', (params, el) => {
       st.grafico.data.datasets[1].label = rotuloDia(P.comparar);
       st.grafico.data.datasets[0].data = hoje;
       st.grafico.data.datasets[0].pointRadius = hoje.map((v, i) => (i === hAgora ? 5 : 0));
-      st.grafico.data.datasets[1].data = T.ontem;
+      st.grafico.data.datasets[1].data = lacunas().some(x => x.dia === P.comparar) ? Array(24).fill(null) : T.ontem;
       st.grafico.stop(); st.grafico.update(); return; // 'none' durante a animação inicial deixava as linhas no zero
     }
     const css = getComputedStyle(document.documentElement);
@@ -262,7 +316,7 @@ Router.register('vendometro', (params, el) => {
         datasets: [
           { label: rotuloDia(P.dia), data: hoje, borderColor: '#6d6ff5', backgroundColor: grad, fill: 'origin', borderWidth: 2.5, tension: 0.35, cubicInterpolationMode: 'monotone',
             pointRadius: hoje.map((v, i) => (i === hAgora ? 5 : 0)), pointBackgroundColor: '#6d6ff5', pointBorderColor: '#fff', pointBorderWidth: 2, pointHoverRadius: 5 },
-          { label: rotuloDia(P.comparar), data: T.ontem, borderColor: '#1baf7a', borderDash: [5, 4], borderWidth: 1.8, tension: 0.35, cubicInterpolationMode: 'monotone', pointRadius: 0, pointHoverRadius: 4, fill: false },
+          { label: rotuloDia(P.comparar), data: lacunas().some(x => x.dia === P.comparar) ? Array(24).fill(null) : T.ontem, borderColor: '#1baf7a', borderDash: [5, 4], borderWidth: 1.8, tension: 0.35, cubicInterpolationMode: 'monotone', pointRadius: 0, pointHoverRadius: 4, fill: false },
         ],
       },
       options: {
@@ -297,12 +351,14 @@ Router.register('vendometro', (params, el) => {
     else if (campo === 'data') { st.filtroDia = valor; st.compararDia = ''; }
     else if (campo === 'comparar') { if (valor > periodo().dia) { render(); return; } st.compararDia = valor; }
     else return;
+    st.geracao++; st.historicoAtivo = false; st.historicoProg = '';
     st.hoje = []; st.ontem = []; st.ads = []; st.visitas = {}; st.visitasEm = 0; st.visitasProg = ''; st.dia = null; st.valorMostrado = 0;
     carregar();
   };
+  window._vmRepetirHistorico = () => { if (st.historicoAtivo) return; for (const [k, v] of st.historico) if (!v.ok) st.historico.delete(k); carregarHistorico(); };
   function salvarSel() { try { localStorage.setItem('glr_vm_sel', JSON.stringify({ cliente: st.cliente, conta: st.conta })); } catch (e) {} }
-  window._vmCliente = v => { st.cliente = v; GLR.ctx?.definir(v, true); st.conta = ''; st.todos = false; salvarSel(); render(); };
-  window._vmConta = v => { st.conta = v; salvarSel(); render(); };
+  window._vmCliente = v => { st.cliente = v; GLR.ctx?.definir(v, true); st.conta = ''; st.todos = false; salvarSel(); render(); carregarHistorico(); };
+  window._vmConta = v => { st.conta = v; salvarSel(); render(); carregarHistorico(); };
   // listas de cliente e conta (só clientes com conta vinculada)
   function montarSeletores() {
     const contas = [...contasCarteira().entries()];
@@ -318,7 +374,7 @@ Router.register('vendometro', (params, el) => {
     const t = document.getElementById('vm-hoje'); if (t) t.textContent = `Vendas ${rotuloDia(periodo().dia).toLowerCase()} · ${nomeCli ? (oculta('nomes') ? (conta ? `${MKT[conta.mkt].sigla} · conta selecionada` : 'cliente selecionado') : nomeCli + (conta ? ` · ${MKT[conta.mkt].sigla} ${conta.nome}` : '')) : 'carteira GLR'}`;
     const r = document.getElementById('vm-rank-t'); if (r) r.textContent = st.cliente ? 'Ranking das contas' : 'Ranking de clientes';
   }
-  window._vmMkt = v => { st.mkt = v; try { localStorage.setItem('glr_vm_mkt', v); } catch (e) {} document.querySelectorAll('.vm-filtro button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); render(); };
+  window._vmMkt = v => { st.mkt = v; try { localStorage.setItem('glr_vm_mkt', v); } catch (e) {} document.querySelectorAll('.vm-filtro button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); render(); carregarHistorico(); };
   // Modo foto
   function pintarFoto() {
     const b = document.getElementById('vm-foto-btn'); if (b) b.classList.toggle('on', st.foto.on);
@@ -362,6 +418,7 @@ Router.register('vendometro', (params, el) => {
       <div class="vm-relogio" id="vm-relogio"></div>
       <div><div class="vm-total"><span class="vm-rs">R$</span><span id="vm-total">0,00</span></div></div>
       <div class="vm-var" id="vm-var"></div>
+      <div class="vm-var" id="vm-historico-status" role="status" aria-live="polite"></div>
     </div>
     <div class="vm-grid" id="vm-root">
       <div class="vm-card"><div class="vm-card-t">Métricas principais</div><div class="vm-mets" id="vm-metricas"></div></div>
