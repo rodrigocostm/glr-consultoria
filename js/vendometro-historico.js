@@ -32,6 +32,7 @@ const VendometroHistorico = (() => {
           guardar(o.id, o.date_created, Math.max(0, (Number(o.total_amount) || 0) - estorno), (o.order_items || []).map(i => ({ qtd: Number(i.quantity) || 1 })), !/cancel|invalid|^refunded$/.test(status));
         }
         const total = Number(d.paging?.total);
+        if (total > pagina * 50 + d.results.length && d.results.length < 50) throw Error('Página histórica incompleta.');
         if (d.results.length < 50 || (total > 0 && (pagina + 1) * 50 >= total)) return [...porId.values()];
       }
       throw Error('Histórico excedeu o limite de paginação; comparação incompleta.');
@@ -62,7 +63,7 @@ const VendometroHistorico = (() => {
     const ids = [...sns];
     for (let i = 0; i < ids.length; i += 50) {
       const lote = ids.slice(i, i + 50);
-      const d = await consultar('shopee_get_order_detail', { shopId: conta.id, order_sn_list: lote, response_optional_fields: 'total_amount,item_list,order_status,create_time' });
+      const d = await consultar('shopee_get_order_detail', { shopId: conta.id, order_sn_list: lote, response_optional_fields: 'total_amount,item_list,order_status' });
       if (!Array.isArray(d.order_list)) throw Error('Detalhes históricos incompletos.');
       const recebidos = new Set(d.order_list.map(o => String(o.order_sn)));
       if (lote.some(id => !recebidos.has(id))) throw Error('Faltam detalhes de pedidos históricos.');
