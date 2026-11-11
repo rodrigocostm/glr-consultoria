@@ -20,3 +20,11 @@ test('aceita eventos novos e ignora histórico antigo',()=>{
  assert.equal(liveEvent({messageTimestamp:now-1},'append',now),false);
  assert.equal(liveEvent({},'append',now),false);
 });
+
+test('comandos de participantes em mensagens temporárias e encapsuladas',()=>{
+ for(const wrapper of ['ephemeralMessage','viewOnceMessageV2']){
+  const msg=m(undefined,false);
+  msg.message={[wrapper]:{message:{extendedTextMessage:{text:' !gerente faturamento de hoje? '}}}};
+  assert.equal(command(msg,'g@g.us',new Set()).agent,'esc:gerente');
+ }
+});
