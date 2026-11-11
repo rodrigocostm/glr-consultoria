@@ -234,6 +234,32 @@ Router.register('integracoes', (params, el) => {
 
   // Renderiza a lista de contas + o select de vínculo a partir de um array já
   // carregado (do cache sincronizado ou de uma busca nova) — sem chamada de API
+  // Nome real da loja: o conector devolve só "Shopee 123…" quando a conta não tem etiqueta.
+  // Usa o nome que veio do conector quando ele é de verdade (TikTok, Magalu); senão busca o
+  // nome da loja na plataforma (Shopee: vitrine; Mercado Livre: apelido do vendedor) e guarda.
+  const K_NOMES = 'glr_mc_nomes_loja';
+  let nomesLoja = (() => { try { return JSON.parse(localStorage.getItem(K_NOMES) || '{}') || {}; } catch (e) { return {}; } })();
+  const escNome = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const mktNome = c => platNome[c.marketplace] || ({ tiktok_shop: 'TikTok Shop', tiktok: 'TikTok Shop', shein: 'Shein' })[c.marketplace] || c.marketplace;
+  const nomeGenerico = (n, c) => { n = String(n || '').trim(); return !n || n === String(c.external_id) || /^(mercado ?livre|meli|ml|shopee|amazon|magalu|tiktok([ _]shop)?|shein)(\s+\S*\d\S*)?$/i.test(n); };
+  const nomeDaLoja = c => nomesLoja[c.external_id] || [c.label, c.nickname].find(n => !nomeGenerico(n, c)) || '';
+  const nomesTentados = new Set();
+  async function buscarNomesDasLojas(contas, contasTodas) {
+    const faltam = contas.filter(c => !nomeDaLoja(c) && !nomesTentados.has(String(c.external_id)) && /^(shopee|meli|ml|mercadolivre)$/.test(String(c.marketplace)));
+    if (!faltam.length) return;
+    let achou = false;
+    for (const c of faltam.slice(0, 20)) {
+      const id = String(c.external_id); nomesTentados.add(id);
+      try {
+        let nome = '';
+        if (c.marketplace === 'shopee') { const r = await MarketplaceAPI.call('shopee_get_profile', { shopId: c.param_to_use?.shopId || id }); nome = r?.data?.response?.shop_name || r?.response?.shop_name || ''; }
+        else { const u = c.param_to_use?.meliUserId || id; const r = await MarketplaceAPI.call('raw', { method: 'GET', path: `/users/${u}`, meliUserId: u }); nome = (r?.data || r)?.nickname || ''; }
+        if (nome) { nomesLoja[id] = String(nome).slice(0, 80); achou = true; }
+      } catch (e) { /* sem nome: o cartão segue com a plataforma e o ID */ }
+    }
+    if (achou) { try { localStorage.setItem(K_NOMES, JSON.stringify(nomesLoja)); } catch (e) {} renderContasNaTela(contasTodas); }
+  }
+
   function renderContasNaTela(contasTodas) {
     const el = document.getElementById('lista-contas');
     const sel = document.getElementById('sel-conta-vinc');
@@ -258,8 +284,8 @@ Router.register('integracoes', (params, el) => {
         <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;align-items:flex-start;gap:10px;">
           <span style="font-size:22px;margin-top:2px;">${platIcon[c.marketplace] || '🏪'}</span>
           <div style="min-width:0;flex:1;">
-            <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${platNome[c.marketplace] || c.marketplace}</div>
-            <div style="font-size:11px;color:var(--text-muted);">ID: ${c.external_id}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow-wrap:anywhere;">${escNome(nomeDaLoja(c) || mktNome(c))}</div>
+            <div style="font-size:11px;color:var(--text-muted);overflow-wrap:anywhere;">${nomeDaLoja(c) ? escNome(mktNome(c)) + ' · ' : ''}ID: ${c.external_id}</div>
             ${tags ? `<div style="font-size:10px;color:var(--accent-light);margin-top:2px;font-weight:600;">${tags}</div>` : ''}
             <input type="text" value="${nick}" placeholder="Apelido (opcional)"
               onchange="salvarNickname('${c.external_id}', this.value)"
@@ -279,9 +305,10 @@ Router.register('integracoes', (params, el) => {
       contas.map(c => {
         const tags = contaTagsStr(c);
         const nick = nicknames[c.external_id];
-        const label = nick || tags || c.nickname || c.external_id;
-        return `<option value='${JSON.stringify(c).replace(/'/g,"&apos;")}'>${platIcon[c.marketplace]||'🏪'} ${platNome[c.marketplace]||c.marketplace} ${c.external_id} — ${label}</option>`;
+        const label = nick || tags || nomeDaLoja(c) || c.nickname || c.external_id;
+        return `<option value='${JSON.stringify(c).replace(/'/g,"&apos;")}'>${platIcon[c.marketplace]||'🏪'} ${escNome(mktNome(c))} ${c.external_id} — ${escNome(label)}</option>`;
       }).join('');
+    buscarNomesDasLojas(contas, contasTodas);
   }
 
   window.recarregarContas = async () => {
