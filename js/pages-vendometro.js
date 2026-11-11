@@ -275,7 +275,7 @@ Router.register('vendometro', (params, el) => {
     const hojeBtn = document.getElementById('vm-voltar-hoje'); if (hojeBtn) hojeBtn.disabled = st.carregando;
     const T = calcular();
     const faltam = lacunas();
-    const varPct = !faltam.length && T.fatOntemAgora > 0 ? (T.fat / T.fatOntemAgora - 1) * 100 : null;
+    const varPct = T.fatOntemAgora > 0 ? (T.fat / T.fatOntemAgora - 1) * 100 : null;
     const tacos = T.fat > 0 ? T.ads / T.fat * 100 : 0;
     const conv = T.vis > 0 ? T.pedML / T.vis * 100 : null;
     const temVisitas = Object.keys(st.visitas).length > 0;
@@ -286,11 +286,9 @@ Router.register('vendometro', (params, el) => {
     const setTxt = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
     // Comparativo compacto no destaque, mesmo quando o histórico ainda é parcial.
     const comparacao = `vs ${h(rotuloDia(P.comparar).toLowerCase())}${P.aoVivo ? ' até esta hora' : ' · dia completo'}: ${R$(T.fatOntemAgora, 0)}`;
-    setTxt('vm-var', faltam.length
-      ? `${comparacao} <small>(parcial)</small>`
-      : varPct == null
-        ? `${comparacao} · sem base para variação percentual`
-        : `<b class="${varPct >= 0 ? 'vm-up' : 'vm-down'}">${varPct >= 0 ? '▲' : '▼'} ${Math.abs(varPct).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b> ${comparacao}`);
+    setTxt('vm-var', varPct == null
+      ? `${comparacao} · ${faltam.length ? 'histórico parcial, sem base para percentual' : 'sem base para percentual'}`
+      : `<b class="${varPct >= 0 ? 'vm-up' : 'vm-down'}">${varPct >= 0 ? '▲' : '▼'} ${Math.abs(varPct).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b> ${comparacao}${faltam.length ? ' <small>(variação parcial)</small>' : ''}`);
 
     const met = (rot, val, sub = '') => `<div class="vm-met"><span>${rot}</span><b>${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
     setTxt('vm-metricas',
