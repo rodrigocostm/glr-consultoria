@@ -6,9 +6,33 @@
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyb2RxbGVqcXlhb29tdXRyaWl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjU5NjUsImV4cCI6MjA5NjQ0MTk2NX0.JaKQHoGH8S3ZdLQInLErpC21SZ0j4FmIGtvWKcBes-A';
 
+// Só libera as telas depois de validar o acesso e carregar os dados.
+window._glrAcessoPronto = false;
+const GLR_CONEXAO_INDISPONIVEL = 'Não foi possível conectar aos dados agora. Sua sessão e seus lançamentos locais foram mantidos. Tente novamente em instantes.';
+function _comPrazo(promessa, ms = 20000) {
+  let timer;
+  return Promise.race([promessa, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(GLR_CONEXAO_INDISPONIVEL)), ms);
+  })]).finally(() => clearTimeout(timer));
+}
+// Interrompe leituras penduradas, sem repetir chamadas que já estão falhando.
+async function _glrFetchLimitado(input, init = {}) {
+  const url = typeof input === 'string' ? input : input.url;
+  const leitura = /^(GET|HEAD)$/i.test(init.method || 'GET') || url.includes('/auth/v1/') || url.includes('/rpc/glr_acesso');
+  if (!leitura) return fetch(input, init); // não interrompe gravações de relatórios
+  const controller = new AbortController(), sinal = init.signal;
+  const cancelar = () => controller.abort();
+  if (sinal?.aborted) cancelar(); else sinal?.addEventListener('abort', cancelar, { once: true });
+  const timer = setTimeout(cancelar, 20000);
+  try { return await fetch(input, { ...init, signal: controller.signal }); }
+  finally { clearTimeout(timer); sinal?.removeEventListener('abort', cancelar); }
+}
+
 // Cliente Supabase global
 const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true }
+  auth: { persistSession: true, autoRefreshToken: true },
+  db: { retry: false },
+  global: { fetch: _glrFetchLimitado }
 });
 
 // Sends the session only to same-origin application API routes.
@@ -165,8 +189,8 @@ function _mesclarProfundo(remoto, local) {
 
 // ── Carrega todos os dados do Supabase para o localStorage local ──
 async function sincronizarDoSupabase() {
-  const { data, error } = await _sb.from('glr_storage').select('chave, dados');
-  if (error) { console.warn('[Supabase] Erro ao carregar:', error.message); return; }
+  const { data, error } = await _comPrazo(_sb.from('glr_storage').select('chave, dados'));
+  if (error) throw new Error(GLR_CONEXAO_INDISPONIVEL);
   // Chaves que antes viviam só em cada navegador: na 1ª sincronização deste
   // navegador, MESCLA o que ele tinha com o que já está no banco (vindo de
   // outros PCs) em vez de sobrescrever — senão um PC apagaria os lançamentos
@@ -299,7 +323,8 @@ window.fazerLogin = async function() {
 
   if (btn) { btn.textContent = 'Entrando...'; btn.disabled = true; btn.style.opacity = '0.7'; }
 
-  const { error } = await _sb.auth.signInWithPassword({ email, password: senha });
+  try {
+  const { error } = await _comPrazo(_sb.auth.signInWithPassword({ email, password: senha }));
 
   if (error) {
     // mostra o motivo de verdade: "e-mail não confirmado" aparecia como senha errada
@@ -318,6 +343,8 @@ window.fazerLogin = async function() {
   document.getElementById('glr-login-overlay')?.remove();
 
   if (portalCfg) {
+    window._glrAcessoPronto = true;
+    _ocultarLoadingInicial();
     // Cliente do portal — NÃO sincroniza dados admin, NÃO ativa realtime admin
     atualizarSidebarUsuario();
     if (typeof window._initPortalCliente === 'function') await window._initPortalCliente(portalCfg);
@@ -327,6 +354,8 @@ window.fazerLogin = async function() {
   // Admin GLR — limpa qualquer estado do portal e inicia normalmente
   window._portalConfig = null;
   await sincronizarDoSupabase();
+  window._glrAcessoPronto = true;
+  _ocultarLoadingInicial();
   ativarRealtime();
   window.glrRecuperarAcoesPendentes?.().catch(()=>{});
   atualizarSidebarUsuario();
@@ -338,6 +367,10 @@ window.fazerLogin = async function() {
     else if (typeof Router.resolve === 'function') Router.resolve();
   }
   if (typeof atualizarBadges === 'function') atualizarBadges();
+  } catch (e) {
+    window._glrAcessoPronto = false;
+    _mostrarConexaoIndisponivel();
+  }
 };
 
 // ── Esqueci minha senha ───────────────────────────────────────
@@ -414,12 +447,27 @@ function _ocultarLoadingInicial() {
   if (app) app.style.visibility = 'visible';
 }
 
+function _mostrarConexaoIndisponivel() {
+  window._glrAcessoPronto = false;
+  document.getElementById('glr-loading-inicial')?.remove();
+  const app = document.getElementById('app'); if (app) app.style.visibility = 'hidden';
+  document.getElementById('glr-login-overlay')?.remove();
+  const overlay = document.createElement('div'); overlay.id = 'glr-login-overlay';
+  overlay.innerHTML = `<section class="glr-auth-card" aria-labelledby="glr-conexao-title">
+    <div class="glr-auth-mark"><b aria-hidden="true">GLR</b><span>GLR Consultoria</span></div>
+    <h1 id="glr-conexao-title">Conexão indisponível</h1>
+    <p class="glr-auth-lead" role="alert">Não foi possível conectar aos dados agora. Sua sessão e seus lançamentos locais foram mantidos.</p>
+    <button class="glr-auth-submit" onclick="window.location.reload()">Tentar novamente</button>
+  </section>`;
+  document.body.appendChild(overlay);
+}
+
 // ── Inicialização ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   // O overlay e #app{visibility:hidden} já estão no HTML — não precisamos criar nada.
   // Qualquer erro aqui revelaria uma tela em branco; o try/finally garante fallback.
   try {
-    const { data: { session } } = await _sb.auth.getSession();
+    const { data: { session } } = await _comPrazo(_sb.auth.getSession(), 12000);
 
     if (!session) {
       // Sem sessão: só mostra o login direto se veio da própria landing (?login=1) —
@@ -442,6 +490,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (portalCfg?.bloqueado) { _ocultarLoadingInicial(); return; }
 
     if (portalCfg) {
+      window._glrAcessoPronto = true;
       // Cliente do portal — NUNCA sincroniza dados admin, NUNCA ativa realtime admin
       _ocultarLoadingInicial();
       atualizarSidebarUsuario();
@@ -452,6 +501,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Admin GLR — limpa qualquer estado do portal e inicia normalmente
     window._portalConfig = null;
     await sincronizarDoSupabase();
+    window._glrAcessoPronto = true;
+    if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();
     ativarRealtime();
   window.glrRecuperarAcoesPendentes?.().catch(()=>{});
     _ocultarLoadingInicial();
@@ -460,18 +511,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       const rotasPortal = ['portal-dashboard','portal-vendas','curva-abc'];
       const hashAtual = window.location.hash.replace('#','');
       if (rotasPortal.includes(hashAtual)) Router.navigate('dashboard');
+      else Router.resolve?.();
     }
 
   } catch (err) {
     console.error('[GLR] Erro na inicialização:', err);
-    _ocultarLoadingInicial();
-    mostrarLogin('Erro ao inicializar. Tente novamente.');
+    _mostrarConexaoIndisponivel();
   }
 });
 
 // ── Detecta se email é de cliente do portal ───────────────────
 async function _detectarPortalCliente(email) {
-  const { data: access, error } = await _sb.rpc('glr_acesso');
+  const { data: access, error } = await _comPrazo(_sb.rpc('glr_acesso'));
+  // Falha de infraestrutura não é acesso negado: mantém sessão e dados locais.
+  if (error) throw new Error(GLR_CONEXAO_INDISPONIVEL);
   if (!error && access?.role === 'staff') return null;
   if (!error && access?.role === 'portal' && access.portal) return access.portal;
   await _sb.auth.signOut();
