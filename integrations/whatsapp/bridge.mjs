@@ -1,5 +1,6 @@
-import makeWASocket,{useMultiFileAuthState}from'@whiskeysockets/baileys';
+import baileys,{useMultiFileAuthState}from'@whiskeysockets/baileys';
 import qr from'qrcode-terminal';import pino from'pino';import{createInterface}from'node:readline/promises';import{readFile,mkdir}from'node:fs/promises';import{fileURLToPath}from'node:url';import{createHash}from'node:crypto';import{command,agents}from'./routing.mjs';
+const makeWASocket=typeof baileys==='function'?baileys:baileys.default;
 process.umask(0o077);if(!process.stdin.isTTY)throw Error('Use um terminal interativo.');
 const SB='https://rrodqlejqyaoomutriiw.supabase.co',GLR='https://consultoriaglr.com.br';
 const src=await readFile(new URL('../../js/supabase-init.js',import.meta.url),'utf8'),anon=src.match(/const SUPABASE_KEY = '([^']+)'/)?.[1];if(!anon)throw Error('Chave pública GLR não encontrada.');
