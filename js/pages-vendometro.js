@@ -257,7 +257,13 @@ Router.register('vendometro', (params, el) => {
     const big = document.getElementById('vm-total');
     if (big) contarAte(big, T.fat);
     const setTxt = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
-    setTxt('vm-var', faltam.length ? (st.historicoAtivo ? 'Buscando vendas históricas no conector…' : 'Comparativo indisponível: histórico incompleto para a seleção.') : varPct == null ? 'Sem vendas na data de comparação' : `<b class="${varPct >= 0 ? 'vm-up' : 'vm-down'}">${varPct >= 0 ? '▲' : '▼'} ${Math.abs(varPct).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b> vs ${h(rotuloDia(P.comparar).toLowerCase())}${P.aoVivo ? ' até esta hora' : ' · dia completo'} (${R$(T.fatOntemAgora, 0)})`);
+    // Comparativo compacto no destaque, mesmo quando o histórico ainda é parcial.
+    const comparacao = `vs ${h(rotuloDia(P.comparar).toLowerCase())}${P.aoVivo ? ' até esta hora' : ' · dia completo'}: ${R$(T.fatOntemAgora, 0)}`;
+    setTxt('vm-var', faltam.length
+      ? `${comparacao} <small>(parcial)</small>`
+      : varPct == null
+        ? `${comparacao} · sem base para variação percentual`
+        : `<b class="${varPct >= 0 ? 'vm-up' : 'vm-down'}">${varPct >= 0 ? '▲' : '▼'} ${Math.abs(varPct).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b> ${comparacao}`);
 
     const met = (rot, val, sub = '') => `<div class="vm-met"><span>${rot}</span><b>${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
     setTxt('vm-metricas',
@@ -425,13 +431,13 @@ Router.register('vendometro', (params, el) => {
       <div class="vm-relogio" id="vm-relogio"></div>
       <div><div class="vm-total"><span class="vm-rs">R$</span><span id="vm-total">0,00</span></div></div>
       <div class="vm-var" id="vm-var"></div>
-      <div class="vm-var" id="vm-historico-status" role="status" aria-live="polite"></div>
     </div>
     <div class="vm-grid" id="vm-root">
       <div class="vm-card"><div class="vm-card-t">Métricas principais</div><div class="vm-mets" id="vm-metricas"></div></div>
       <div class="vm-card"><div class="vm-card-t">Tendência de vendas <small id="vm-graf-periodo">por hora · hoje × ontem</small></div><div class="vm-graf"><canvas id="vm-grafico"></canvas></div></div>
       <div class="vm-card"><div class="vm-card-t"><span id="vm-rank-t">Ranking de clientes</span> <small id="vm-rank-periodo">vendas de hoje</small></div><div class="vm-rank" id="vm-ranking"></div><div class="vm-todos" id="vm-ver-todos"></div></div>
     </div>
+    <div class="vm-historico-aviso" id="vm-historico-status" role="status" aria-live="polite"></div>
     <div class="vm-rodape"><img src="logo.png" alt=""><span>GLR Consultoria · consultoriaglr.com.br</span><span class="vm-status" id="vm-status"></span></div>
   </div>
   <style>
@@ -439,7 +445,7 @@ Router.register('vendometro', (params, el) => {
     .vm:fullscreen{overflow:auto;padding:16px;background:var(--bg-base,#0d0d14)}
     .vm-hero{position:relative;overflow:hidden;border-radius:18px;padding:18px 28px 30px;text-align:center;color:#fff;
       background:radial-gradient(1200px 400px at 85% -20%,#4b48d8 0%,transparent 60%),linear-gradient(135deg,#07070f 0%,#141634 55%,#262a7a 100%)}
-    .vm-datas{position:relative;display:flex;justify-content:center;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-top:20px}
+    .vm-historico-aviso{font-size:12px;line-height:1.5;color:var(--text-muted,#9295a6);margin:16px 8px 8px;text-align:center;overflow-wrap:anywhere}\n    .vm-datas{position:relative;display:flex;justify-content:center;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-top:20px}
     .vm-datas label{display:flex;flex-direction:column;gap:5px;text-align:left;font-size:12px;color:rgba(255,255,255,.8)}
     .vm-datas input{color-scheme:dark;min-height:34px}.vm-datas button{min-height:34px;cursor:pointer}.vm-datas :disabled{opacity:.55;cursor:wait}
     .vm-marca-agua{position:absolute;right:-60px;top:50%;transform:translateY(-50%) rotate(-8deg);width:420px;height:420px;object-fit:contain;mix-blend-mode:screen;opacity:.09;pointer-events:none}
