@@ -70,6 +70,34 @@ Router.register('vendometro', (params, el) => {
     return mapa;
   }
 
+  // Cache local de datas encerradas, isolado por usuário/portal.
+  // TTL de 24h permite correções tardias de pedidos sem recarregar a cada 2 minutos.
+  const cacheScope = cfgPortal ? 'portal:' + cfgPortal.clienteId : 'gestor:' + (GLR?.usuario?.id || GLR?.user?.id || 'local');
+  const cachePrefix = 'glr_vm_dia_v1:' + cacheScope + ':';
+  function lerCacheDia(dia) {
+    if (dia >= isoDia(Date.now())) return null;
+    try {
+      const item = JSON.parse(localStorage.getItem(cachePrefix + dia) || 'null');
+      if (!item || !Array.isArray(item.rows) || Date.now() - item.em > 24 * HORA) return null;
+      return item.rows;
+    } catch (e) { return null; }
+  }
+  function salvarCacheDia(dia, rows) {
+    if (dia >= isoDia(Date.now()) || !Array.isArray(rows)) return;
+    try { localStorage.setItem(cachePrefix + dia, JSON.stringify({ em: Date.now(), rows })); }
+    catch (e) { /* armazenamento cheio: segue consultando normalmente */ }
+  }
+  async function pedidosDaData(dia, inicio, incluirItens = false) {
+    const cached = lerCacheDia(dia);
+    if (cached) return cached;
+    const campos = 'marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto' + (incluirItens ? ',itens' : '');
+    const rows = await paginar(() => _sb.from('glr_pedidos').select(campos)
+      .gte('criado_em', new Date(inicio).toISOString())
+      .lt('criado_em', new Date(inicio + DIA).toISOString()).order('criado_em'));
+    salvarCacheDia(dia, rows);
+    return rows;
+  }
+
   // ── Leitura da base ──
   async function paginar(q) {
     const out = [];
@@ -93,11 +121,10 @@ Router.register('vendometro', (params, el) => {
         })).filter(c => c.mkt);
       }
       const { dia: hoje, inicio: iniHoje, inicioComparar: iniOntem } = periodo();
+      const comparar = periodo().comparar;
       const [rh, ro, ra, base] = await Promise.all([
-        paginar(() => _sb.from('glr_pedidos').select('marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto,itens')
-          .gte('criado_em', new Date(iniHoje).toISOString()).lt('criado_em', new Date(iniHoje + DIA).toISOString()).order('criado_em')),
-        paginar(() => _sb.from('glr_pedidos').select('marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto')
-          .gte('criado_em', new Date(iniOntem).toISOString()).lt('criado_em', new Date(iniOntem + DIA).toISOString()).order('criado_em')),
+        pedidosDaData(hoje, iniHoje, true),
+        pedidosDaData(comparar, iniOntem),
         _sb.from('glr_ads_diario').select('marketplace,conta_id,gasto').eq('data', hoje),
         BaseDados.carregar ? BaseDados.carregar() : Promise.resolve({}),
       ]);
