@@ -74,6 +74,10 @@ async function _renderPortalAdminLista() {
               style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid ${cfg.atendimentoIA ? 'var(--green)' : 'var(--border)'};background:${cfg.atendimentoIA ? 'var(--green-bg)' : 'var(--bg-base)'};color:${cfg.atendimentoIA ? 'var(--green)' : 'var(--text-secondary)'};font-weight:${cfg.atendimentoIA ? 600 : 400};">
               ${cfg.atendimentoIA ? 'IA atendimento: ligada' : 'Liberar atendimento IA'}
             </button>
+            <button onclick="window._portalAdminChat('${cfg.id}')" title="Módulo pago: o cliente conversa com a IA sobre as vendas, ADS, estoque e produtos dele no portal (gasta tokens)"
+              style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid ${cfg.chatIA ? 'var(--green)' : 'var(--border)'};background:${cfg.chatIA ? 'var(--green-bg)' : 'var(--bg-base)'};color:${cfg.chatIA ? 'var(--green)' : 'var(--text-secondary)'};font-weight:${cfg.chatIA ? 600 : 400};">
+              ${cfg.chatIA ? 'Chat IA: ligado' : 'Liberar chat IA'}
+            </button>
             <button onclick="window._portalAdminLiberar('${cfg.id}')" title="Libera o login sem precisar do e-mail de confirmação"
               style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid var(--border);background:var(--bg-base);color:var(--text-secondary);">
               Liberar login
@@ -232,6 +236,14 @@ window._portalAdminSalvar = async function(editId) {
   const clientes = GLR?.clientes || [];
   const cliente = clientes.find(c => String(c.id) === String(clienteId));
   const clienteNome = cliente?.nome || 'Cliente';
+  // nome e plataforma de cada loja: o portal não lê os vínculos da GLR, então vai junto no acesso
+  let vincNomes = {}; try { vincNomes = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
+  const contas = contaIds.map(id => {
+    const ct = (vincNomes[String(clienteId)] || []).find(c => [c.external_id, c.param_to_use?.shopId, c.param_to_use?.meliUserId].map(String).includes(id));
+    const mkt = window.BaseDados ? BaseDados.mktDe(ct?.marketplace) : null;
+    const nome = String((GLR.nomeConta && GLR.nomeConta(mkt, id)) || id).replace(`${clienteNome} · `, '');
+    return { id, mkt, nome };
+  });
 
   let senhaAlterada = false;
   _portalAdminSaving = true;
@@ -244,7 +256,7 @@ window._portalAdminSalvar = async function(editId) {
       if (idx < 0) throw new Error('Acesso não encontrado. Reabra o cadastro.');
       if (email.toLowerCase() !== String(configs[idx].email || '').toLowerCase()) throw new Error('O e-mail do login existente não pode ser alterado neste formulário.');
       if (idx >= 0) {
-        configs[idx] = { ...configs[idx], email, clienteId, clienteNome, contaIds };
+        configs[idx] = { ...configs[idx], email, clienteId, clienteNome, contaIds, contas };
       }
       if (senha) {
         const response = await window.glrApiFetch('/api/portal-password', {
@@ -262,7 +274,7 @@ window._portalAdminSalvar = async function(editId) {
       try { await _loginPortalServidor({ tipo: 'criar', email, senha }); }
       catch (e) { msg.textContent = '❌ Erro ao criar usuário: ' + e.message; msg.style.color = 'var(--red)'; return; }
       const novoId = 'portal_' + Date.now();
-      configs.push({ id: novoId, email, clienteId, clienteNome, contaIds, ativo: true, criadoEm: new Date().toISOString() });
+      configs.push({ id: novoId, email, clienteId, clienteNome, contaIds, contas, ativo: true, criadoEm: new Date().toISOString() });
     }
 
     await _salvarConfigs(configs);
@@ -291,6 +303,20 @@ window._portalAdminIA = async function(id) {
     : `Desligar o Atendimento com IA de ${cfg.clienteNome || cfg.email}? A IA para de responder em até 5 minutos.`)) return;
   cfg.atendimentoIA = ligar;
   cfg.atendimentoIAEm = new Date().toISOString();
+  try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
+  await _renderPortalAdminLista();
+};
+// Módulo Chat com IA no portal (pago à parte: cada pergunta gasta tokens)
+window._portalAdminChat = async function(id) {
+  let configs;
+  try { const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave', 'glr_portal_configs').single(); if (error) throw error; configs = Array.isArray(data?.dados) ? data.dados : []; }
+  catch (e) { alert('Não consegui ler os acessos: ' + (e.message || e)); return; }
+  const cfg = configs.find(c => c.id === id); if (!cfg) return;
+  const ligar = !cfg.chatIA;
+  if (!confirm(ligar
+    ? `Liberar o Chat com IA para ${cfg.clienteNome || cfg.email}?\n\nO cliente passa a conversar no portal com a IA, que lê só as lojas dele (vendas, ADS, produtos, estoque, reembolsos). Ela não muda nada nas contas. Cada pergunta gasta tokens.`
+    : `Desligar o Chat com IA de ${cfg.clienteNome || cfg.email}?`)) return;
+  cfg.chatIA = ligar; cfg.chatIAEm = new Date().toISOString();
   try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
   await _renderPortalAdminLista();
 };

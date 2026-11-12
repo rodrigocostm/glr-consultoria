@@ -39,6 +39,9 @@
     },
     "api/promos.js": {
       "maxDuration": 300
+    },
+    "api/portal-chat.js": {
+      "maxDuration": 300
     }
   },
   "headers": [

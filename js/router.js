@@ -95,7 +95,7 @@ const Router = {
       'relatorio-semanal': 'Relatório semanal',
       'notas': 'Notas e etiquetas',
       'meu-estoque': 'Estoque',
-      'meu-dashboard': 'Dashboard', 'meus-pedidos': 'Pedidos', 'minha-curva-abc': 'Curva ABC', 'minhas-oportunidades': 'Oportunidades',
+      'meus-ads': 'ADS', 'meu-analitico': 'Analítico', 'meus-reembolsos': 'Reembolsos', 'calculadora': 'Calculadora de precificação', 'meu-chat': 'Chat com IA', 'meu-dashboard': 'Dashboard', 'meus-pedidos': 'Pedidos', 'minha-curva-abc': 'Curva ABC', 'minhas-oportunidades': 'Oportunidades',
       financeiro: 'Financeiro',
       vendas: 'Vendas',
       integracoes: 'Integrações',

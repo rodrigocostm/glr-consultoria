@@ -861,7 +861,7 @@ window._initPortalCliente = async function(cfg) {
 };
 
 // Telas liberadas para o cliente do portal (o router bloqueia o resto)
-window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'notas', 'meu-estoque', 'vendas', 'atendimento-ia'];
+window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'notas', 'meu-estoque', 'vendas', 'atendimento-ia', 'meus-ads', 'meu-analitico', 'meus-reembolsos', 'calculadora', 'meu-chat'];
 
 function _portalMostrarLoading(msg) {
   const el = document.getElementById('page-content');
@@ -963,6 +963,27 @@ function _configurarSidebarCliente(cfg) {
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
         Estoque
       </button>
+      <div class="sidebar-section-title" style="margin-top:10px;">Análises</div>
+      <button class="nav-item" data-page="meus-ads" onclick="Router.navigate('meus-ads')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2-8-8-2z"/></svg>
+        ADS
+      </button>
+      <button class="nav-item" data-page="meu-analitico" onclick="Router.navigate('meu-analitico')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>
+        Analítico
+      </button>
+      <button class="nav-item" data-page="meus-reembolsos" onclick="Router.navigate('meus-reembolsos')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>
+        Reembolsos
+      </button>
+      <button class="nav-item" data-page="calculadora" onclick="Router.navigate('calculadora')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M8 6h8M8 11h2M12 11h2M8 15h2M12 15h2M8 19h8"/></svg>
+        Calculadora
+      </button>
+      ${cfg.chatIA ? `<button class="nav-item" data-page="meu-chat" onclick="Router.navigate('meu-chat')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h5"/></svg>
+        Chat com IA
+      </button>` : ''}
       ${cfg.atendimentoIA ? `<div class="sidebar-section-title" style="margin-top:10px;">Clientes</div>
       <button class="nav-item" data-page="atendimento-ia" onclick="Router.navigate('atendimento-ia')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h5"/></svg>

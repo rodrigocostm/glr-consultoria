@@ -357,3 +357,5 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: e.message || String(e) });
   }
 };
+// peças reaproveitadas pelo chat do portal do cliente (api/portal-chat.js)
+module.exports.interno = { carregarCarteira, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO };
