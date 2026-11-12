@@ -24,7 +24,7 @@
   const somaDias = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
   const dm = iso => iso.split('-').reverse().slice(0, 2).join('/');
   const MKT = { ml: 'Mercado Livre', shopee: 'Shopee', amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' };
-  const COR = { ml: '#d9a400', shopee: '#ee4d2d', amazon: '#232f3e', tiktok: '#111111', magalu: '#0086ff', shein: '#6b7280' };
+  const COR = { ml: '#d9a400', shopee: '#ee4d2d', amazon: '#ff9900', tiktok: '#06b6d4', magalu: '#0086ff', shein: '#6b7280' };
   const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
   const ehPortal = () => !!window._portalConfig;
 
