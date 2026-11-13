@@ -234,17 +234,31 @@ Router.register('vendas', async (params, el) => {
   // Empresa = cliente real vinculado à conta em Integrações (glr_mc_vinculos), não a
   // tag crua da conta na API — a tag muitas vezes nem bate com o cliente de fato
   // (ex: conta 1036862626 tem tag "EAP - Mercado Livre" mas está vinculada à Mega Facil).
-  function contaEmpresas(c) {
-    const vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}');
-    const clientes = JSON.parse(localStorage.getItem('glr_clientes')||'[]');
-    const nomes = [];
-    for (const [clienteId, contasVinc] of Object.entries(vinc)) {
-      if ((contasVinc||[]).some(v => String(v.external_id) === String(c.external_id))) {
-        const cli = clientes.find(cl => String(cl.id) === String(clienteId));
-        if (cli?.nome) nomes.push(cli.nome);
+  // Índice conta → empresas montado uma vez (antes relia e decodificava os vínculos e
+  // os clientes do localStorage a cada chamada — milhares de vezes por clique no filtro).
+  // Revalida no máximo a cada 1,5 s, comparando o conteúdo cru.
+  let _empIdx = null;
+  function _indiceEmpresas() {
+    const agora = Date.now();
+    if (_empIdx && agora - _empIdx.em < 1500) return _empIdx.mapa;
+    const rawV = localStorage.getItem('glr_mc_vinculos') || '{}', rawC = localStorage.getItem('glr_clientes') || '[]';
+    if (_empIdx && _empIdx.rawV === rawV && _empIdx.rawC === rawC) { _empIdx.em = agora; return _empIdx.mapa; }
+    let vinc = {}, clientes = []; try { vinc = JSON.parse(rawV); clientes = JSON.parse(rawC); } catch (e) {}
+    const nomeCli = new Map(clientes.map(cl => [String(cl.id), cl.nome]));
+    const mapa = new Map();
+    for (const [clienteId, contasVinc] of Object.entries(vinc || {})) {
+      const nome = nomeCli.get(String(clienteId)); if (!nome) continue;
+      for (const v of contasVinc || []) {
+        const k = String(v.external_id), arr = mapa.get(k) || [];
+        if (!arr.includes(nome)) arr.push(nome);
+        mapa.set(k, arr);
       }
     }
-    return nomes.length ? nomes : ['Sem vínculo'];
+    _empIdx = { em: agora, rawV, rawC, mapa };
+    return mapa;
+  }
+  function contaEmpresas(c) {
+    return _indiceEmpresas().get(String(c.external_id)) || ['Sem vínculo'];
   }
 
   window._vendasLimparContas = () => { filtroEmpresas = new Set(); filtroContasSel = new Set(); renderFiltroEmpresaConta(); _filtroMudou(); };
@@ -258,9 +272,13 @@ Router.register('vendas', async (params, el) => {
       ? contas
       : contas.filter(c => contaEmpresas(c).some(e => filtroEmpresas.has(e)));
 
+    // contagem de contas por plataforma de cada empresa — uma passada só
+    const porEmp = new Map();
+    for (const c of contas) { const m = _MKT_DCB[BaseDados.mktDe(c.marketplace)]?.sigla || '?'; for (const e of contaEmpresas(c)) { const n = porEmp.get(e) || {}; n[m] = (n[m] || 0) + 1; porEmp.set(e, n); } }
+    const subEmp = new Map([...porEmp].map(([e, n]) => [e, Object.entries(n).map(([k, v]) => `${v} ${k}`).join(' · ')]));
     _renderCheckboxDropdown(wrapEmp, {
       label: 'Empresa', icon: '🏢',
-      itens: empresas.map(e => ({ valor: e, label: e, sub: (() => { const cs = contas.filter(c => contaEmpresas(c).includes(e)); const n = {}; cs.forEach(c => { const m = _MKT_DCB[BaseDados.mktDe(c.marketplace)]?.sigla || '?'; n[m] = (n[m] || 0) + 1; }); return Object.entries(n).map(([k, v]) => `${v} ${k}`).join(' · '); })() })),
+      itens: empresas.map(e => ({ valor: e, label: e, sub: subEmp.get(e) || '' })),
       selecionados: filtroEmpresas,
       textoVazio: filtroContasSel.size ? (() => { const es = [...new Set(contas.filter(c => filtroContasSel.has(c.external_id)).flatMap(contaEmpresas))]; return es.length === 1 ? `🏢 ${es[0]}` : `🏢 ${es.length} empresas (pelas contas)`; })() : null,
       onChange: (novoSet) => {
