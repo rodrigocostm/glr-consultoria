@@ -9,16 +9,23 @@
 // O portal do cliente monta o próprio menu (pages-portal.js) e não passa por aqui.
 // ============================================================
 (function () {
+  // Agrupado por tipo de trabalho, grupos curtos (2–7 telas). Só um grupo fica
+  // aberto por vez (o da tela atual), para o menu não virar uma lista enorme.
   const GRUPOS = [
-    { id: 'hoje', titulo: 'Hoje', paginas: ['adviser', 'decisoes', 'chat', 'dashboard', 'vendometro', 'plano-acao', 'tarefas'] },
-    { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'projecao', 'vendas', 'gestores', 'rentabilidade', 'onboarding', 'retencao', 'relatorios', 'relatorio-semanal', 'blog', 'leads', 'portal-admin'] },
-    { id: 'ads', titulo: 'ADS e preço', paginas: ['agente', 'agente-ml', 'promocoes', 'precos-ml', 'precos-shopee', 'conversao-ml', 'datas-especiais', 'data-combinada', 'meta-diaria', 'black-friday', 'afiliados'] },
-    { id: 'saude', titulo: 'Saúde das contas', paginas: ['estoque-margem', 'atendimento', 'qualidade-anuncios', 'rastreamento', 'conexoes'] },
-    { id: 'anuncios', titulo: 'Anúncios', paginas: ['mercado-tiops', 'expansao', 'produtos', 'anuncios-ml', 'anuncios-shopee', 'anuncios-tiktok', 'anuncios-amazon', 'fotos'] },
+    { id: 'hoje', titulo: 'Hoje', paginas: ['dashboard', 'decisoes', 'vendometro', 'tarefas', 'plano-acao'] },
+    { id: 'vendas', titulo: 'Vendas e metas', paginas: ['vendas', 'projecao', 'meta-diaria', 'data-combinada', 'datas-especiais'] },
+    { id: 'ads', titulo: 'ADS e promoções', paginas: ['agente', 'agente-ml', 'promocoes', 'afiliados'] },
+    { id: 'precos', titulo: 'Preço e concorrência', paginas: ['precos-ml', 'precos-shopee', 'conversao-ml', 'mercado-tiops'] },
+    { id: 'anuncios', titulo: 'Anúncios e produtos', paginas: ['produtos', 'anuncios-ml', 'anuncios-shopee', 'anuncios-tiktok', 'anuncios-amazon', 'fotos', 'expansao'] },
+    { id: 'saude', titulo: 'Saúde das contas', paginas: ['estoque-margem', 'atendimento', 'qualidade-anuncios', 'rastreamento'] },
+    { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'gestores', 'onboarding', 'retencao', 'rentabilidade', 'portal-admin'] },
+    { id: 'relatorios', titulo: 'Relatórios', paginas: ['relatorios', 'relatorio-semanal', 'timeline'] },
     { id: 'financeiro', titulo: 'Financeiro', paginas: ['financeiro', 'dre', 'conciliacao'] },
-    { id: 'sistema', titulo: 'Sistema', paginas: ['segundo-cerebro', 'escritorio', 'integracoes', 'timeline', 'diagnostico'] },
+    { id: 'comercial', titulo: 'Comercial', paginas: ['leads', 'blog'] },
+    { id: 'ia', titulo: 'Agentes de IA', paginas: ['adviser', 'chat', 'escritorio', 'segundo-cerebro'] },
+    { id: 'sistema', titulo: 'Sistema', paginas: ['integracoes', 'conexoes', 'diagnostico'] },
   ];
-  const K_ABERTOS = 'glr_nav_abertos';
+  const K_ABERTOS = 'glr_nav_abertos_v2'; // v2: grupos novos (o estado antigo tinha outros ids)
   const lerAbertos = () => { try { const v = JSON.parse(localStorage.getItem(K_ABERTOS) || 'null'); return Array.isArray(v) ? v : ['hoje']; } catch (e) { return ['hoje']; } };
   const salvarAbertos = v => { try { localStorage.setItem(K_ABERTOS, JSON.stringify(v)); } catch (e) {} };
   const paginaAtual = () => (location.hash.replace('#', '') || 'dashboard').split('?')[0];
@@ -33,9 +40,8 @@
     const botoes = new Map();
     secoes.forEach(s => s.querySelectorAll('.nav-item[data-page]').forEach(b => botoes.set(b.dataset.page, b)));
     if (!botoes.size) return;
-    const abertos = new Set(lerAbertos());
     const atualG = grupoDe(paginaAtual());
-    if (atualG) abertos.add(atualG);
+    const abertos = new Set(atualG ? [atualG] : lerAbertos().slice(0, 1));
     const frag = document.createDocumentFragment();
     for (const g of GRUPOS) {
       const itens = g.paginas.map(p => botoes.get(p)).filter(Boolean);
@@ -59,11 +65,11 @@
     const sec = document.querySelector(`.nav-grupo[data-grupo="${id}"]`);
     if (!sec) return;
     const abrir = forcar ?? !sec.classList.contains('aberto');
+    // sanfona: abrir um grupo fecha os outros
+    if (abrir) document.querySelectorAll('.nav-grupo.aberto').forEach(o => { if (o !== sec) { o.classList.remove('aberto'); o.querySelector('.nav-grupo-tit')?.setAttribute('aria-expanded', 'false'); } });
     sec.classList.toggle('aberto', abrir);
     sec.querySelector('.nav-grupo-tit')?.setAttribute('aria-expanded', String(abrir));
-    const a = new Set(lerAbertos());
-    abrir ? a.add(id) : a.delete(id);
-    salvarAbertos([...a]);
+    salvarAbertos(abrir ? [id] : []);
   }
 
   // ── Busca rápida ⌘K / Ctrl+K ──
