@@ -9,8 +9,8 @@
 // O portal do cliente monta o próprio menu (pages-portal.js) e não passa por aqui.
 // ============================================================
 (function () {
-  // Agrupado por tipo de trabalho, grupos curtos (2–7 telas). Só um grupo fica
-  // aberto por vez (o da tela atual), para o menu não virar uma lista enorme.
+  // Agrupado por tipo de trabalho, grupos curtos (2–7 telas). O grupo da tela
+  // atual abre sozinho; os outros ficam abertos/fechados como o usuário deixou.
   const GRUPOS = [
     { id: 'hoje', titulo: 'Hoje', paginas: ['dashboard', 'decisoes', 'vendometro', 'tarefas', 'plano-acao'] },
     { id: 'vendas', titulo: 'Vendas e metas', paginas: ['vendas', 'projecao', 'meta-diaria', 'data-combinada', 'datas-especiais'] },
@@ -40,8 +40,9 @@
     const botoes = new Map();
     secoes.forEach(s => s.querySelectorAll('.nav-item[data-page]').forEach(b => botoes.set(b.dataset.page, b)));
     if (!botoes.size) return;
+    const abertos = new Set(lerAbertos());
     const atualG = grupoDe(paginaAtual());
-    const abertos = new Set(atualG ? [atualG] : lerAbertos().slice(0, 1));
+    if (atualG) abertos.add(atualG);
     const frag = document.createDocumentFragment();
     for (const g of GRUPOS) {
       const itens = g.paginas.map(p => botoes.get(p)).filter(Boolean);
@@ -65,11 +66,12 @@
     const sec = document.querySelector(`.nav-grupo[data-grupo="${id}"]`);
     if (!sec) return;
     const abrir = forcar ?? !sec.classList.contains('aberto');
-    // sanfona: abrir um grupo fecha os outros
-    if (abrir) document.querySelectorAll('.nav-grupo.aberto').forEach(o => { if (o !== sec) { o.classList.remove('aberto'); o.querySelector('.nav-grupo-tit')?.setAttribute('aria-expanded', 'false'); } });
+    // cada grupo fica como o usuário deixou (abrir um não fecha os outros)
     sec.classList.toggle('aberto', abrir);
     sec.querySelector('.nav-grupo-tit')?.setAttribute('aria-expanded', String(abrir));
-    salvarAbertos(abrir ? [id] : []);
+    const a = new Set(lerAbertos());
+    abrir ? a.add(id) : a.delete(id);
+    salvarAbertos([...a]);
   }
 
   // ── Busca rápida ⌘K / Ctrl+K ──

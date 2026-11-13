@@ -1195,7 +1195,6 @@ tbody td { padding: 12px 14px; font-variant-numeric: tabular-nums; }
 .nav-grupo-itens { overflow: hidden; }
 .nav-grupo.aberto .nav-grupo-itens { grid-template-rows: 1fr; }
 .nav-grupo:not(.aberto) .nav-grupo-itens { display: none; }
-.nav-grupo:not(.aberto):has(.nav-item.active) .nav-grupo-itens { display: block; }
 body.sidebar-mini .nav-grupo-tit { display: none; }
 body.sidebar-mini .nav-grupo .nav-grupo-itens { display: block !important; }
 
