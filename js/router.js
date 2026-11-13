@@ -85,6 +85,7 @@ const Router = {
       'conexoes': 'Saúde das conexões',
       'datas-especiais': 'Datas especiais',
       'data-combinada': 'Data combinada',
+      'meta-diaria': 'Meta diária',
       'expansao': 'Expansão de canais',
       'retencao': 'Retenção',
       'conversao-ml': 'Catálogo e Buy Box',

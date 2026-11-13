@@ -175,6 +175,10 @@
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M7 15h4M7 18h7"/></svg>
         Data combinada
       </button>
+      <button class="nav-item" data-page="meta-diaria" onclick="Router.navigate('meta-diaria')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>
+        Meta diária
+      </button>
       <button class="nav-item" data-page="estoque-margem" onclick="Router.navigate('estoque-margem')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
         Estoque e margem
@@ -499,8 +503,8 @@
   }
   atualizarBadges();
 </script>
-<script src="js/router.js?v=boot-timeout-1-px"></script>
-<script src="js/nav.js?v=data-comb-1"></script>
+<script src="js/router.js?v=boot-timeout-1-px-md"></script>
+<script src="js/nav.js?v=data-comb-1-md"></script>
 <script src="js/ui.js?v=6"></script>
 <script src="js/dash-clientes.js?v=tend-proj-1"></script>
 <script src="js/pages-dashboard.js?v=comissao-composicao-1"></script>
@@ -549,6 +553,7 @@
 <script src="js/pages-conexoes.js?v=1"></script>
 <script src="js/pages-datas-especiais.js?v=1"></script>
 <script src="js/pages-data-combinada.js?v=5"></script>
+<script src="js/pages-meta-diaria.js?v=1"></script>
 <script src="js/pages-relatorio-semanal.js?v=1"></script>
 <script src="js/pages-notas.js?v=1"></script>
 <script src="js/pages-meu-estoque.js?v=1"></script>
