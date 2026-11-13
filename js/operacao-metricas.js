@@ -27,7 +27,13 @@ const GLROperacao = (() => {
       const key = p.contaId ? `${mkt}:${p.contaId}` : `manual:${i}`;
       if (!contas.has(key)) contas.set(key, { p, mkt, info: infoDe(raw, p.contaId) });
     });
-    const grupos = [{ id: 'geral', nome: 'Geral' }, ...[...new Set([...contas.values()].map(c => c.mkt))].map(id => ({ id, nome: nomes[id] || id }))];
+    // Geral, cada plataforma e — quando a plataforma tem mais de uma conta — cada conta logo abaixo dela
+    const grupos = [{ id: 'geral', nome: 'Geral' }];
+    for (const mkt of new Set([...contas.values()].map(c => c.mkt))) {
+      grupos.push({ id: mkt, nome: nomes[mkt] || mkt });
+      const daPlat = [...contas.entries()].filter(([k, c]) => c.mkt === mkt && c.p.contaId);
+      if (daPlat.length > 1) daPlat.forEach(([k, c]) => { c.grupoConta = k; grupos.push({ id: k, nome: `${nomes[mkt] || mkt} · ${c.p.nome || c.p.contaId}`, conta: true, mkt }); });
+    }
     const nova = () => ({ fat: 0, ads: 0, n: 0, nFat: 0, nAds: 0 });
     const finalizar = v => ({ ...v, fat: v.nFat ? v.fat : null, ads: v.nAds ? v.ads : null,
       parcialFat: v.nFat > 0 && v.nFat < v.n, parcialAds: v.nAds > 0 && v.nAds < v.n,
@@ -38,7 +44,7 @@ const GLROperacao = (() => {
       for (const c of contas.values()) {
         const fatOk = base.cobre(c.info, iso), adsOk = !!c.info && base.cobreAds(c.info, iso);
         const t = c.info?.dias?.[iso] || {};
-        for (const index of [0, grupos.findIndex(g => g.id === c.mkt)]) {
+        for (const index of [0, grupos.findIndex(g => g.id === c.mkt), ...(c.grupoConta ? [grupos.findIndex(g => g.id === c.grupoConta)] : [])]) {
           const v = valores[index]; v.n++;
           if (fatOk) { v.nFat++; v.fat += Number(t.faturamento) || 0; }
           if (adsOk) { v.nAds++; v.ads += Number(t.ads) || 0; }

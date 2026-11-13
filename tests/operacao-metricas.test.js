@@ -34,6 +34,14 @@ test('canonical platform duplicates are counted once, future dates are not inven
   assert.equal(d.dias[2].valores[0].fat, 0); assert.equal(d.dias[2].valores[0].tacos, null);
   assert.equal(executar({}, [], '2026-12-01').dias.length, 0);
 });
+test('platforms with several accounts get one group per account; single-account platforms do not', () => {
+  const plats = [{ marketplace: 'shopee', contaId: 'S', nome: 'Loja A' }, { marketplace: 'shopee', contaId: 'S2', nome: 'Loja B' }, { marketplace: 'mercadolivre', contaId: 'M' }];
+  const d = executar({ S: info(100, 10), S2: info(50, 5), M: info(900, 9) }, plats);
+  assert.equal(d.grupos.map(g => g.id).join(), ['geral', 'shopee', 'shopee:S', 'shopee:S2', 'ml'].join());
+  assert.equal(d.grupos[2].nome, 'Shopee · Loja A'); assert.equal(d.grupos[2].conta, true);
+  assert.equal(d.dias[0].valores[0].fat, 1050); assert.equal(d.dias[0].valores[1].fat, 150);
+  assert.equal(d.dias[0].valores[2].fat, 100); assert.equal(d.dias[0].valores[3].tacos, 10); assert.equal(d.dias[0].valores[4].fat, 900);
+});
 test('manager lookup handles numeric/string IDs, legacy name, shop aliases and platform collisions', () => {
   const gestores = [{ id: 1, nome: 'Mateus' }, { id: 2, nome: 'Gabriel' }];
   const clientes = [{ id: 10, gestorId: '1' }, { id: 20, gestor: 'Gabriel' }];

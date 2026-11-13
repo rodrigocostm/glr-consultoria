@@ -977,17 +977,45 @@ Router.register('projecao', (params, el) => {
   function renderDiario() {
     const dados = GLROperacao.diario(projecaoAtiva.plataformas || [], projecaoAtiva.dataBase, infoBaseDe, BaseDados);
     if (!dados.dias.length || !dados.grupos.length) return '';
-    const indices = dados.grupos.map((g, i) => i).filter(i => !_pnPlataformaDiaria || dados.grupos[i].id === _pnPlataformaDiaria);
+    const G = dados.grupos, sel = _pnPlataformaDiaria;
+    if (sel && !G.some(g => g.id === sel)) _pnPlataformaDiaria = '';
+    // sem filtro: Geral + plataformas; plataforma: ela e as contas dela; conta: só a conta
+    const indices = G.map((g, i) => i).filter(i => !_pnPlataformaDiaria ? !G[i].conta
+      : G[i].id === _pnPlataformaDiaria || (G[i].conta && G[i].mkt === _pnPlataformaDiaria));
     const moeda = (v, parcial) => v == null ? '<span class="pn-mut">sem dados</span>' : `${v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}${parcial ? '<small class="pn-diario-parcial">parcial</small>' : ''}`;
     const celulas = v => `<td>${moeda(v.fat, v.parcialFat)}</td><td>${moeda(v.ads, v.parcialAds)}</td><td>${v.tacos == null ? '<span class="pn-mut" title="TACOS exige faturamento positivo e cobertura de vendas e ADS de todas as contas">—</span>' : v.tacos.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'}</td>`;
     const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+    // meta do mês do cliente ÷ dias do mês = meta do dia (vale para o Geral)
+    const db = projecaoAtiva.dataBase, diasMes = new Date(Number(db.slice(0, 4)), Number(db.slice(5, 7)), 0).getDate();
+    const metaMes = parseFloat(_pnUltimo?.tot?.meta) || 0, metaDia = metaMes > 0 ? metaMes / diasMes : null;
+    const comMeta = i => metaDia != null && G[i].id === 'geral';
+    const pctMeta = fat => fat == null || !metaDia ? '<span class="pn-mut">—</span>'
+      : `<span class="pn-diario-meta ${fat >= metaDia ? 'ok' : 'abaixo'}">${(fat / metaDia * 100).toFixed(0)}%</span>`;
+    // média por dia: só dias fechados (hoje entra apenas se for o único dia)
+    const media = i => {
+      const fechados = dados.dias.filter(d => d.iso < hoje && d.valores[i].fat != null);
+      const lista = fechados.length ? fechados : dados.dias.filter(d => d.valores[i].fat != null);
+      return lista.length ? { fat: lista.reduce((s, d) => s + d.valores[i].fat, 0) / lista.length, n: lista.length } : null;
+    };
+    const principal = indices[0], mPrinc = media(principal);
+    const fmt = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+    const chip = (rot, val, extra = '') => `<div class="pn-diario-chip ${extra}"><span>${rot}</span><b>${val}</b></div>`;
+    const resumo = `<div class="pn-diario-resumo">
+        ${chip(`Média/dia · ${_pnEsc(G[principal].nome)}`, mPrinc ? fmt(mPrinc.fat) : '—')}
+        ${metaDia != null ? chip('Meta do mês', fmt(metaMes)) + chip(`Meta do dia (÷ ${diasMes} dias)`, fmt(metaDia))
+          + (G[principal].id === 'geral' && mPrinc ? chip('Média vs meta do dia', `${(mPrinc.fat / metaDia * 100).toFixed(0)}%`, mPrinc.fat >= metaDia ? 'ok' : 'abaixo') : '')
+          : chip('Meta do mês', '<span class="pn-mut">não definida</span>')}
+      </div>`;
+    const opcoes = G.map(g => `<option value="${_pnEsc(g.id)}" ${_pnPlataformaDiaria === g.id ? 'selected' : ''}>${g.conta ? '\u2003' + _pnEsc(g.nome.split(' · ').slice(1).join(' · ')) : _pnEsc(g.nome)}</option>`).filter((o, i) => G[i].id !== 'geral').join('');
     return `<section class="card pn-diario" aria-label="Faturamento e TACOS por dia">
       <div class="pn-diario-top"><div><div class="pn-graf-t">Dia a dia · faturamento e TACOS</div><div class="pn-sub">Do início do mês até a data base. TACOS = ADS do dia ÷ faturamento do dia.</div></div>
-      <label class="pn-mut">Plataforma <select class="pn-btn" onchange="window._pnFiltrarDiario(this.value)"><option value="" ${!_pnPlataformaDiaria ? 'selected' : ''}>Geral e plataformas</option>${dados.grupos.map(g => `<option value="${_pnEsc(g.id)}" ${_pnPlataformaDiaria === g.id ? 'selected' : ''}>${_pnEsc(g.nome)}</option>`).join('')}</select></label></div>
-      <div class="pn-diario-scroll"><table class="pn-diario-tab"><thead><tr><th rowspan="2" scope="col">Dia</th>${indices.map(i => `<th colspan="3" scope="colgroup">${_pnEsc(dados.grupos[i].nome)}</th>`).join('')}</tr><tr>${indices.map(() => '<th scope="col">Faturamento</th><th scope="col">ADS</th><th scope="col">TACOS</th>').join('')}</tr></thead>
-      <tbody>${dados.dias.map(d => `<tr><th scope="row">${d.iso.slice(8)}/${d.iso.slice(5, 7)}${d.iso === hoje ? '<small class="pn-diario-parcial">em andamento</small>' : ''}</th>${indices.map(i => celulas(d.valores[i])).join('')}</tr>`).join('')}</tbody>
-      <tfoot><tr><th scope="row">Total do período</th>${indices.map(i => celulas(dados.totais[i])).join('')}</tr></tfoot></table></div>
-      <div class="pn-sub" style="margin-top:10px;">Dados da base sincronizada. “Parcial” indica contas sem cobertura; “sem dados” indica ausência de histórico. TACOS fica em branco quando falta cobertura ou não há faturamento. Totais usam a soma de ADS dividida pela soma do faturamento.</div>
+      <label class="pn-mut">Plataforma / conta <select class="pn-btn" onchange="window._pnFiltrarDiario(this.value)"><option value="" ${!_pnPlataformaDiaria ? 'selected' : ''}>Geral e plataformas</option>${opcoes}</select></label></div>
+      ${resumo}
+      <div class="pn-diario-scroll"><table class="pn-diario-tab" data-todas-colunas><thead><tr><th rowspan="2" scope="col">Dia</th>${indices.map(i => `<th colspan="${comMeta(i) ? 4 : 3}" scope="colgroup">${_pnEsc(G[i].nome)}</th>`).join('')}</tr><tr>${indices.map(i => '<th scope="col">Faturamento</th><th scope="col">ADS</th><th scope="col">TACOS</th>' + (comMeta(i) ? '<th scope="col" title="Faturamento do dia ÷ meta do dia">% meta</th>' : '')).join('')}</tr></thead>
+      <tbody>${dados.dias.map(d => `<tr><th scope="row">${d.iso.slice(8)}/${d.iso.slice(5, 7)}${d.iso === hoje ? '<small class="pn-diario-parcial">em andamento</small>' : ''}</th>${indices.map(i => celulas(d.valores[i]) + (comMeta(i) ? `<td>${pctMeta(d.valores[i].fat)}</td>` : '')).join('')}</tr>`).join('')}</tbody>
+      <tfoot><tr><th scope="row">Total do período</th>${indices.map(i => celulas(dados.totais[i]) + (comMeta(i) ? `<td>${dados.totais[i].fat != null ? pctMeta(dados.totais[i].fat / dados.dias.length) : '—'}</td>` : '')).join('')}</tr>
+      <tr class="pn-diario-media"><th scope="row">Média por dia${metaDia != null ? `<small class="pn-diario-parcial" style="color:var(--text-muted)">meta/dia ${fmt(metaDia)}</small>` : ''}</th>${indices.map(i => { const m = media(i); return `<td>${m ? moeda(m.fat) : '<span class="pn-mut">—</span>'}</td><td colspan="2" class="pn-mut" style="text-align:left">${m ? `${m.n} dia${m.n > 1 ? 's' : ''} fechado${m.n > 1 ? 's' : ''}` : ''}</td>` + (comMeta(i) ? `<td>${m ? pctMeta(m.fat) : '—'}</td>` : ''); }).join('')}</tr></tfoot></table></div>
+      <div class="pn-sub" style="margin-top:10px;">Dados da base sincronizada. “Parcial” indica contas sem cobertura; “sem dados” indica ausência de histórico. TACOS fica em branco quando falta cobertura ou não há faturamento. Meta do dia = meta do mês ÷ dias do mês; a média por dia usa só os dias já fechados.</div>
     </section>`;
   }
   window._pnFiltrarDiario = valor => { _pnPlataformaDiaria = valor; renderTabela(); };
@@ -1190,6 +1218,14 @@ Router.register('projecao', (params, el) => {
       .pn-diario-tab tbody tr:hover td{background:var(--bg-card-hover);}
       .pn-diario-tab tfoot th,.pn-diario-tab tfoot td{font-weight:700;border-top:2px solid var(--border);}
       .pn-diario-parcial{display:block;font-size:10px;color:var(--yellow);font-weight:500;}
+      .pn-diario-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+      .pn-diario-chip{display:flex;flex-direction:column;gap:2px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;min-width:140px;}
+      .pn-diario-chip span{font-size:11px;color:var(--text-muted);}
+      .pn-diario-chip b{font-size:15px;font-variant-numeric:tabular-nums;}
+      .pn-diario-chip.ok b,.pn-diario-meta.ok{color:var(--green);}
+      .pn-diario-chip.abaixo b,.pn-diario-meta.abaixo{color:var(--red);}
+      .pn-diario-meta{font-weight:600;}
+      .pn-diario-tab tfoot tr.pn-diario-media th,.pn-diario-tab tfoot tr.pn-diario-media td{border-top:1px solid var(--border);font-weight:600;}
       .pn-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:10px;}
       .pn-head-l{min-width:0;}
       .pn-cliente{appearance:none;-webkit-appearance:none;background:transparent;border:none;font-size:26px;font-weight:800;color:var(--text-primary);cursor:pointer;outline:none;padding:0 22px 0 0;max-width:100%;
