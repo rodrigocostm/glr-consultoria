@@ -227,7 +227,7 @@ Router.register('decisoes', (params, el) => {
             ${tipos.map(([k, t, n]) => `<button type="button" class="dc-tp ${st.tipo === k ? 'on' : ''}" onclick="window._dcTipo('${k}')"><i style="--c:${TIPOS[k].c}"></i>${h(t)}<b>${n}</b></button>`).join('')}
           </div>
           ${clientes.length > 1 || st.cli ? `<div class="dc-lado-t">Cliente</div>
-          <div class="dc-clis">${clientes.slice(0, st.clisTodos ? 999 : 10).map(c => `<button type="button" class="dc-tp ${st.cli === c.k ? 'on' : ''}" onclick="window._dcCli('${h(c.k)}')"><span class="dc-tp-n">${h(c.nome)}</span>${c.u ? `<em>${c.u}</em>` : ''}<b>${c.n}</b></button>`).join('')}
+          <div class="dc-clis">${clientes.slice(0, st.clisTodos ? 999 : 10).map(c => `<button type="button" class="dc-tp ${st.cli === c.k ? 'on' : ''}" onclick="window._dcCli('${h(c.k)}')"><span class="dc-tp-n">${h(c.nome)}</span><b class="${c.u ? 'dc-urg' : ''}" title="${c.u ? `${c.u} urgente(s)` : ''}">${c.n}</b></button>`).join('')}
             ${clientes.length > 10 && !st.clisTodos ? `<button type="button" class="dc-link" onclick="window._dcClisTodos()">ver os ${clientes.length} clientes</button>` : ''}</div>` : ''}
         </aside>
         <section class="dc-fila" aria-label="Decisões">
@@ -356,7 +356,7 @@ Router.register('decisoes', (params, el) => {
     .dc-tp:hover{background:var(--bg-subtle);color:var(--text-primary)} .dc-tp.on{background:var(--accent-glow);color:var(--text-primary);font-weight:600}
     .dc-tp i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--c)} .dc-tp b{margin-left:auto;font-size:12px;font-weight:600;color:var(--text-muted);font-variant-numeric:tabular-nums}
     .dc-tp-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dc-tp em{font-style:normal;font-size:11px;font-weight:700;color:var(--red)}
-    .dc-tp-n + b{margin-left:0}
+    .dc-tp b.dc-urg{color:var(--red)}
     .dc-link{all:unset;cursor:pointer;font-size:12.5px;color:var(--accent);padding:6px 8px}
     .dc-fila{min-width:0;background:var(--bg-card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
     .dc-ativos{display:flex;gap:6px;padding:10px 14px 0;flex-wrap:wrap}
