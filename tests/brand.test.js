@@ -9,7 +9,7 @@ test('all first-party entry pages load the same brand after their own styles', (
     assert.ok(html.indexOf('/css/brand.css') > html.slice(0,html.indexOf('</head>')).lastIndexOf('</style>'), file);
     assert.match(html, /glr-monogram-180.png/);
   }
-  assert.match(read('api/blog.js'), /brand.css\?v=20261115-1.*<\/head><body class="glr-blog">/);
+  assert.match(read('api/blog.js'), /brand.css\?v=20261115-2.*<\/head><body class="glr-blog">/);
 });
 test('brand assets referenced in every modified page exist and vectors are standalone', () => {
   for (const f of ['index.html','landing.html','shopee.html','calculadora.html','api/blog.js','js/supabase-init.js','sw.js']) {
