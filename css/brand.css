@@ -1,0 +1,141 @@
+/* GLR Consultoria · identidade institucional compartilhada por todas as superfícies. */
+:root {
+  --glr-navy:#0B1F3B; --glr-blue:#0E6BFF; --glr-cyan:#19C2FF;
+  --glr-gray:#E9ECF1; --glr-white:#FFFFFF; --glr-ice:#EAF4FF;
+  --glr-success:#16A34A; --glr-warning:#F59E0B; --glr-danger:#EF4444;
+  --glr-strategy:#7C3AED; --glr-results:#14B8A6;
+  --glr-gradient:linear-gradient(125deg,#0B1F3B 0%,#0E6BFF 100%);
+  --glr-gradient-cyan:linear-gradient(125deg,#0B1F3B 0%,#19C2FF 100%);
+  --glr-gradient-soft:linear-gradient(125deg,#0E6BFF 0%,#EAF4FF 100%);
+  --font-ui:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+.glr-app {
+  --bg-base:#071426; --bg-surface:#0B1F3B; --bg-card:#102744;
+  --bg-card-hover:#163454; --bg-input:#0A1C34; --bg-subtle:#142E4C;
+  --text-primary:#F5F9FF; --text-secondary:#BED0E4; --text-muted:#92ABC5;
+  --border:rgba(166,201,237,.14); --border-strong:rgba(166,201,237,.28);
+  --accent:var(--glr-cyan); --accent-light:#7ADBFF; --accent-strong:#61D4FF;
+  --accent-glow:rgba(25,194,255,.12); --border-active:var(--glr-cyan);
+  --action-fill:var(--glr-blue); --action-hover:#075ADC; --on-accent:#fff;
+  --green:#6CDD96; --green-bg:rgba(22,163,74,.14);
+  --yellow:#FFD174; --yellow-bg:rgba(245,158,11,.14);
+  --red:#FF9B9B; --red-bg:rgba(239,68,68,.14);
+  --purple:#BAA2FF; --purple-bg:rgba(124,58,237,.14);
+  --cyan:var(--glr-cyan); --cyan-bg:rgba(25,194,255,.12);
+  --material:rgba(11,31,59,.92); --sidebar-material:var(--glr-navy);
+  --ring:0 0 0 4px rgba(25,194,255,.18);
+}
+body.glr-app.light {
+  --bg-base:#F3F6FB; --bg-surface:#FFFFFF; --bg-card:#FFFFFF;
+  --bg-card-hover:#F4F8FE; --bg-input:#FFFFFF; --bg-subtle:var(--glr-gray);
+  --text-primary:var(--glr-navy); --text-secondary:#425B77; --text-muted:#5C7088;
+  --border:rgba(11,31,59,.10); --border-strong:rgba(11,31,59,.22);
+  --accent:var(--glr-blue); --accent-light:#075DDF; --accent-strong:#0754C7;
+  --accent-glow:rgba(14,107,255,.08); --border-active:var(--glr-blue);
+  --green:#15803D; --green-bg:#EAF8EF; --red:#B91C1C; --red-bg:#FFF0F0;
+  --yellow:#946000; --yellow-bg:#FFF6E4; --purple:var(--glr-strategy); --purple-bg:#F3EDFF;
+  --cyan:#00769E; --cyan-bg:#E8F8FF;
+  --material:rgba(255,255,255,.93); --sidebar-material:var(--glr-navy);
+  --shadow-xs:0 1px 3px rgba(11,31,59,.04);
+  --shadow-sm:0 5px 22px rgba(11,31,59,.06);
+  --shadow:0 20px 64px rgba(11,31,59,.14);
+  --ring:0 0 0 4px rgba(14,107,255,.14);
+}
+.glr-app #sidebar {
+  --text-primary:#FFFFFF; --text-secondary:#C4D6EA; --text-muted:#9BB4D0;
+  --border:rgba(255,255,255,.12); --border-strong:rgba(255,255,255,.24);
+  --bg-subtle:#173657; --bg-card:#102B4B; --bg-surface:#0B1F3B;
+  --accent:#19C2FF;
+  background:linear-gradient(165deg,#0B1F3B 0%,#091C34 100%);
+  color:#fff; border-right:1px solid rgba(25,194,255,.16);
+}
+.glr-app #sidebar .sidebar-logo {
+  display:flex; flex-direction:column!important; align-items:flex-start!important;
+  gap:12px!important; padding:24px 22px 20px!important;
+}
+.glr-app #sidebar .sidebar-logo img {
+  width:174px!important; height:auto!important; max-width:100%;
+  filter:none!important; mix-blend-mode:normal!important; object-fit:contain;
+}
+.glr-app #sidebar .sidebar-logo .glr-brand-compact {display:none;}
+.glr-app #sidebar .logo-text strong {display:none;}
+.glr-app #sidebar .logo-text span {color:#9BB4D0;font-size:10px;letter-spacing:.08em;text-transform:uppercase;}
+.glr-app #sidebar .nav-item {color:#C4D6EA;}
+.glr-app #sidebar .nav-item:hover {background:rgba(25,194,255,.08);color:#fff;}
+.glr-app #sidebar .nav-item.active {background:linear-gradient(110deg,#0754C7,#0E6BFF);color:#fff;box-shadow:0 3px 14px rgba(0,0,0,.12);}
+.glr-app #sidebar .nav-item.active .nav-icon {color:#fff;}
+.glr-app #sidebar .nav-grupo-tit,.glr-app #sidebar .sidebar-section-title {color:#9BB4D0;}
+.glr-app #sidebar .user-avatar {background:linear-gradient(135deg,#0E6BFF,#087FAF);color:#fff;}
+.glr-app #sidebar .sidebar-footer {border-color:rgba(255,255,255,.12);}
+.glr-app #header {border-top:3px solid var(--glr-blue);}
+.glr-app :is(.btn-primary,.glr-auth-submit,#glr-login-btn) {background:linear-gradient(110deg,#0754C7,#0E6BFF);color:#fff;}
+.glr-app :is(.btn-primary,.glr-auth-submit,#glr-login-btn):hover {background:linear-gradient(110deg,#0648AE,#075ADC);}
+.glr-app :is(.card,.kpi-card,.modal) {border-color:var(--border);}
+.glr-app .vm {--vm-ind:var(--glr-blue);}
+.glr-app .vm-hero {background:linear-gradient(135deg,rgba(25,194,255,.12),transparent 60%),var(--glr-gradient);}
+.glr-app .vm-total {color:var(--glr-navy);}
+.glr-app .vm-marca img,.glr-app .vm-rodape img {mix-blend-mode:normal;background:transparent;}
+.glr-app .office-toolbar,.glr-app .office-legend,.glr-app .office-mobile-hint {background:var(--glr-navy);border-color:rgba(25,194,255,.2);}
+.glr-app .office-switch button.on {background:var(--glr-blue);color:#fff;}
+.glr-brand-light {display:none;}
+body.light .glr-brand-light {display:block;}
+body.light .glr-brand-dark {display:none;}
+.glr-auth-mark {min-height:70px;justify-content:center;}
+.glr-auth-mark img {width:205px;height:auto;max-width:100%;}
+.glr-app :is(#glr-login-overlay,#glr-nova-senha) {
+  background:linear-gradient(135deg,rgba(14,107,255,.08),transparent 55%),var(--bg-base);
+}
+.glr-auth-card {border-top:3px solid var(--glr-blue);}
+.glr-loading-logo {display:block;width:150px;height:auto;margin:0 auto 25px;}
+@media(min-width:769px) {
+  body.glr-app.sidebar-mini #sidebar .sidebar-logo {align-items:center!important;padding:20px 12px!important;}
+  body.glr-app.sidebar-mini #sidebar .sidebar-logo .glr-brand-full {display:none;}
+  body.glr-app.sidebar-mini #sidebar .sidebar-logo .glr-brand-compact {display:block;width:38px!important;height:38px!important;}
+}
+/* Páginas públicas compartilham os mesmos tokens, sem herdar a estrutura do app. */
+body:is(.glr-landing,.glr-blog,.glr-shopee,.glr-calculadora) {font-family:var(--font-ui);}
+.glr-landing,.glr-blog {
+  --noite:var(--glr-navy); --noite2:#102F55; --azul:var(--glr-blue); --azul2:#0754C7;
+  --ceu:var(--glr-ice); --nevoa:#F4F7FB; --tinta:var(--glr-navy); --sec:#425B77;
+  --mute:#5C7088; --linha:var(--glr-gray); --papel:#FFFFFF;
+}
+.glr-landing .marca img,.glr-blog .marca img {width:140px;height:auto;max-width:100%;}
+.glr-landing .hero {background:linear-gradient(135deg,transparent 63%,rgba(14,107,255,.25) 63%,rgba(25,194,255,.06) 78%,transparent 78%),linear-gradient(120deg,#0B1F3B,#08192E);}
+.glr-landing .hero :is(h1 em,.olho),.glr-landing .srv.g .mono {color:#6CD6FF;}
+.glr-landing .hero p.sub {color:#C4D6EA;}
+.glr-landing .mesa {background:linear-gradient(145deg,#102F55,#0B1F3B);border-color:rgba(25,194,255,.22);}
+.glr-landing .dor .mono {color:#0754C7;}
+.glr-landing :is(.bt-p,.bt-azul),.glr-blog .bt {background:var(--glr-blue);color:#fff;}
+.glr-landing footer .marca img {width:180px;height:auto!important;}
+.glr-blog .topo {border-top:3px solid var(--glr-blue);}
+.glr-blog .marca span {color:#88DFFF;}
+.glr-shopee {
+  --orange:var(--glr-blue); --orange-dark:#0754C7; --orange-soft:var(--glr-ice);
+  --ink:var(--glr-navy); --text:var(--glr-navy); --paper-soft:#F4F7FB; --border:var(--glr-gray);
+}
+.glr-shopee header {border-top:3px solid var(--glr-blue);}
+.glr-shopee .logo-row img {width:185px!important;height:auto!important;}
+.glr-calculadora {
+  --bg:#071426; --card:var(--glr-navy); --input-bg:#0A1C34; --fg:#F5F9FF;
+  --muted:#A3B9D2; --primary:var(--glr-cyan); --accent:var(--glr-blue);
+  --panel-border:rgba(25,194,255,.13); --border:rgba(166,201,237,.20);
+}
+.glr-calculadora header {border-top:3px solid var(--glr-blue);}
+.glr-calculadora .logo-row img {width:150px;height:auto;}
+@media(max-width:768px) {
+  .glr-app #sidebar .sidebar-logo {padding:20px!important;}
+  .glr-landing .marca img {width:132px;}
+  .glr-landing .topo .wrap {gap:10px;}
+  .glr-landing .topo-cta {gap:10px;}
+  .glr-landing .topo .bt {padding:10px 12px;font-size:12px;}
+  .glr-blog .marca img {width:126px;}
+  .glr-calculadora .logo-row {flex-wrap:wrap;gap:8px;}
+}
+@media(max-width:400px) {
+  .glr-landing .marca img {width:110px;}
+  .glr-landing .topo .bt {font-size:11px;padding:9px 10px;}
+  .glr-landing .topo-cta .entrar {font-size:12px;}
+}
+@media print {
+  .glr-app,.glr-app.light {--bg-base:#fff;--bg-surface:#fff;--bg-card:#fff;--text-primary:#0B1F3B;--text-secondary:#425B77;}
+}

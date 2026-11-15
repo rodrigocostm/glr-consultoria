@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="icon" href="/img/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+  <link rel="icon" href="/favicon.ico?v=20261115" sizes="48x48"><link rel="icon" href="/img/favicon.svg?v=20261115" type="image/svg+xml"><link rel="apple-touch-icon" href="/img/brand/glr-monogram-180.png">
   <title>GLR Consultoria — Centro de Operações</title>
   <link rel="stylesheet" href="css/styles.css?v=23">
   <link rel="stylesheet" href="css/apple-interface.css?v=2">
@@ -35,17 +35,20 @@
   </style>
   <link rel="stylesheet" href="css/segundo-cerebro.css?v=1">
   <link rel="stylesheet" href="css/office-scene.css?v=1">
+  <link rel="stylesheet" href="/css/brand.css?v=20261115-1">
+  <meta name="theme-color" content="#0B1F3B">
 </head>
-<body>
+<body class="glr-app">
 <script>
   // Tema antes de pintar a tela (padrão: claro). Evita o "flash" escuro no carregamento.
   (function () { try { var t = localStorage.getItem('glr_tema') || 'light'; document.body.classList.toggle('light', t === 'light');
-    if (t !== 'light') document.write('<style>#glr-loading-inicial{background:#0b0c10!important}</style>');
+    if (t !== 'light') document.write('<style>#glr-loading-inicial{background:#071426!important}</style>');
     if (localStorage.getItem('glr_sidebar_mini') === '1') document.body.classList.add('sidebar-mini'); } catch (e) { document.body.classList.add('light'); } })();
 </script>
 <!-- Loading overlay — aparece antes de qualquer conteúdo do app -->
 <div id="glr-loading-inicial">
   <div style="text-align:center;">
+    <img class="glr-loading-logo" src="/img/brand/glr-monogram.svg" alt="GLR Consultoria" width="90" height="90">
     <div class="spinner"></div>
     <p style="color:#8a90a1;font-size:13px;margin:0;">Carregando…</p>
   </div>
@@ -56,9 +59,8 @@
   <!-- SIDEBAR -->
   <nav id="sidebar" aria-label="Navegação principal">
     <div class="sidebar-logo">
-      <img src="img/logo-glr-branco.png" alt="GLR"
-           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-      <div class="logo-icon" style="display:none;">GLR</div>
+      <img class="glr-brand-full" src="/img/brand/glr-consultoria-white.svg" alt="GLR Consultoria" width="174" height="77">
+      <img class="glr-brand-compact" src="/img/brand/glr-monogram.svg" alt="GLR Consultoria" width="38" height="38">
       <div class="logo-text">
         <strong>GLR Consultoria</strong>
         <span>Centro de Operações</span>
@@ -358,7 +360,7 @@
 
 <!-- Scripts -->
 <script src="js/data.js?v=7"></script>
-<script src="js/supabase-init.js?v=boot-timeout-1"></script>
+<script src="js/supabase-init.js?v=brand-20261115"></script>
 <script src="js/push-notifications.js?v=1"></script>
 <script src="js/base-dados.js?v=4"></script>
 <script>
@@ -567,7 +569,7 @@
 <script src="js/pages-chat.js?v=3"></script>
 <script src="js/plano-oportunidades.js?v=1"></script>
 <script src="js/pages-plano.js?v=22"></script>
-<script src="js/pages-portal.js?v=34"></script>
+<script src="js/pages-portal.js?v=brand-20261115-34"></script>
 <script src="js/pages-portal-extra.js?v=2"></script>
 <script src="js/pages-atendimento-ia.js?v=1"></script>
 <script src="js/pages-portal-admin.js?v=7"></script>

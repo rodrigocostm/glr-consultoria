@@ -11,8 +11,8 @@ self.addEventListener('push', event => {
   const title = data.title || 'GLR Consultoria';
   const options = {
     body: data.body || '',
-    icon: data.icon || '/logo.png',
-    badge: '/logo.png',
+    icon: data.icon || '/img/brand/glr-monogram-192.png',
+    badge: '/img/brand/glr-monogram-192.png',
     tag: data.tag || undefined,
     data: { url: data.url || '/' },
   };

@@ -916,6 +916,8 @@ function _configurarSidebarCliente(cfg) {
 
   // Injeta menu do portal
   const logo = sidebar.querySelector('.sidebar-logo');
+  const contexto = logo?.querySelector('.logo-text span');
+  if (contexto) contexto.textContent = 'Portal do cliente';
   const nav = document.createElement('div');
   nav.id = 'portal-nav';
   nav.innerHTML = `

@@ -108,12 +108,12 @@ function pagina({ titulo, descricao, url, corpo, jsonld, editoriaAtual, imagem }
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(titulo)}</title><meta name="description" content="${esc(descricao)}"><link rel="canonical" href="${esc(url)}">
 <meta property="og:type" content="${jsonld ? 'article' : 'website'}"><meta property="og:title" content="${esc(titulo)}"><meta property="og:description" content="${esc(descricao)}"><meta property="og:url" content="${esc(url)}"><meta property="og:site_name" content="GLR Notícias">${imagem ? `<meta property="og:image" content="${esc(imagem)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="675"><meta name="twitter:card" content="summary_large_image">` : ''}<meta property="og:locale" content="pt_BR">
-<meta name="theme-color" content="#0A1633"><link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="icon" href="/img/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/img/apple-touch-icon.png"><link rel="alternate" type="application/rss+xml" title="GLR Notícias" href="/blog?formato=rss">
+<meta name="theme-color" content="#0B1F3B"><link rel="icon" href="/favicon.ico?v=20261115" sizes="48x48"><link rel="icon" href="/img/favicon.svg?v=20261115" type="image/svg+xml"><link rel="apple-touch-icon" href="/img/brand/glr-monogram-180.png"><link rel="alternate" type="application/rss+xml" title="GLR Notícias" href="/blog?formato=rss">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld).replace(/</g, '\\u003c')}</script>` : ''}
-<style>${CSS}</style></head><body>
-<header class="topo"><div class="wrap"><a class="marca" href="/blog"><img src="/img/logo-glr-branco.png" alt="GLR" width="56" height="28"><span>Notícias</span></a>
+<style>${CSS}</style><link rel="stylesheet" href="/css/brand.css?v=20261115-1"></head><body class="glr-blog">
+<header class="topo"><div class="wrap"><a class="marca" href="/blog"><img src="/img/brand/glr-consultoria-white.svg" alt="GLR" width="56" height="28"><span>Notícias</span></a>
 <nav><a class="l" href="/landing.html">A consultoria</a><a class="l" href="/calculadora.html">Calculadora de taxas</a><a class="bt" href="${WHATS}" target="_blank" rel="noopener"><span class="l">Falar com um especialista</span><span class="cel">WhatsApp</span></a></nav></div></header>
 <nav class="editorias" aria-label="Editorias"><div class="wrap"><a class="todas ${!editoriaAtual ? 'on' : ''}" style="--c:var(--tinta)" href="/blog">Últimas</a>${blog.EDITORIAS.map(e => `<a class="${editoriaAtual === e.id ? 'on' : ''}" style="--c:${e.cor}" href="/blog/editoria/${e.id}">${esc(e.nome)}</a>`).join('')}</div></nav>
 <main>${corpo}</main>
@@ -154,7 +154,7 @@ function htmlPost(p, pub) {
   const relac = pub.filter(x => x.id !== p.id).sort((a, b) => (ed(b).id === e.id) - (ed(a).id === e.id)).slice(0, 3);
   const txt = encodeURIComponent(`${p.titulo} — ${url}`);
   return pagina({ titulo: `${p.titulo} | GLR Notícias`, descricao: p.resumo || p.titulo, url, editoriaAtual: e.id, imagem: p.foto?.url || null,
-    jsonld: { '@context': 'https://schema.org', '@type': 'NewsArticle', headline: p.titulo, description: p.resumo, ...(p.foto?.url ? { image: [p.foto.url] } : {}), articleSection: e.nome, datePublished: p.publicado_em, dateModified: p.atualizado_em || p.publicado_em, mainEntityOfPage: url, author: { '@type': 'Organization', name: 'Equipe GLR Consultoria' }, publisher: { '@type': 'Organization', name: 'GLR Consultoria', logo: { '@type': 'ImageObject', url: `${SITE}/logo.png` } }, isBasedOn: p.fonte?.url },
+    jsonld: { '@context': 'https://schema.org', '@type': 'NewsArticle', headline: p.titulo, description: p.resumo, ...(p.foto?.url ? { image: [p.foto.url] } : {}), articleSection: e.nome, datePublished: p.publicado_em, dateModified: p.atualizado_em || p.publicado_em, mainEntityOfPage: url, author: { '@type': 'Organization', name: 'Equipe GLR Consultoria' }, publisher: { '@type': 'Organization', name: 'GLR Consultoria', logo: { '@type': 'ImageObject', url: `${SITE}/img/brand/glr-consultoria.png` } }, isBasedOn: p.fonte?.url },
     corpo: `<article class="post">${etiqueta(p, true)}<h1 class="d">${esc(p.titulo)}</h1><p class="lead">${esc(p.resumo)}</p>
 <div class="assina"><span>Por <b>Equipe GLR</b></span><span>${dataBR(p.publicado_em)}</span><span>${minutos(p)} min de leitura</span><span>Com informações de <a href="${esc(p.fonte?.url)}" target="_blank" rel="noopener nofollow">${esc(p.fonte?.nome)}</a></span></div>
 ${capa(p, 'x')}

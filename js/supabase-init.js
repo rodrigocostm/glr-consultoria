@@ -295,7 +295,7 @@ function mostrarLogin(erroMsg) {
   overlay.innerHTML = `
     <section class="glr-auth-card" aria-labelledby="glr-auth-title">
       <button class="glr-auth-back" onclick="window.location.href='/landing.html'">← Voltar</button>
-      <div class="glr-auth-mark"><b aria-hidden="true">GLR</b><span>GLR Consultoria</span></div>
+      <div class="glr-auth-mark"><img class="glr-brand-dark" src="/img/brand/glr-consultoria-white.svg" alt="GLR Consultoria" width="205" height="90"><img class="glr-brand-light" src="/img/brand/glr-consultoria.svg" alt="GLR Consultoria" width="205" height="90"></div>
       <h1 id="glr-auth-title">Seu próximo resultado<br>começa aqui.</h1>
       <p class="glr-auth-lead">Entre no seu Centro de Operações.</p>
       ${erroMsg ? `<div class="glr-auth-error" role="alert"></div>` : ''}
@@ -388,7 +388,7 @@ function mostrarNovaSenha(msg) {
   const o = document.createElement('div');
   o.id = 'glr-nova-senha';
   o.innerHTML = `<section class="glr-auth-card" aria-labelledby="glr-recovery-title">
-    <div class="glr-auth-mark"><b aria-hidden="true">GLR</b><span>GLR Consultoria</span></div>
+    <div class="glr-auth-mark"><img class="glr-brand-dark" src="/img/brand/glr-consultoria-white.svg" alt="GLR Consultoria" width="205" height="90"><img class="glr-brand-light" src="/img/brand/glr-consultoria.svg" alt="GLR Consultoria" width="205" height="90"></div>
     <h1 id="glr-recovery-title">Criar nova senha</h1>
     <p class="glr-auth-lead">Use pelo menos 8 caracteres.</p>
     ${msg ? '<div class="glr-auth-error" role="alert"></div>' : ''}
@@ -454,7 +454,7 @@ function _mostrarConexaoIndisponivel() {
   document.getElementById('glr-login-overlay')?.remove();
   const overlay = document.createElement('div'); overlay.id = 'glr-login-overlay';
   overlay.innerHTML = `<section class="glr-auth-card" aria-labelledby="glr-conexao-title">
-    <div class="glr-auth-mark"><b aria-hidden="true">GLR</b><span>GLR Consultoria</span></div>
+    <div class="glr-auth-mark"><img class="glr-brand-dark" src="/img/brand/glr-consultoria-white.svg" alt="GLR Consultoria" width="205" height="90"><img class="glr-brand-light" src="/img/brand/glr-consultoria.svg" alt="GLR Consultoria" width="205" height="90"></div>
     <h1 id="glr-conexao-title">Conexão indisponível</h1>
     <p class="glr-auth-lead" role="alert">Não foi possível conectar aos dados agora. Sua sessão e seus lançamentos locais foram mantidos.</p>
     <button class="glr-auth-submit" onclick="window.location.reload()">Tentar novamente</button>
