@@ -12,10 +12,11 @@
 //  • Estoque: produto que o ADS empurra e acaba em até 7 dias (repor antes de zerar).
 // Limpeza: o servidor fecha de hora em hora as sugestões vencidas e as que uma
 // mais nova substituiu (api/agente-cron.js limparDecisoes); cada loja mostra as
-// 3 de maior impacto e o resto fica em "ver mais".
+// fila mostra 40 por vez ("Mostrar mais").
 // "Abrir" leva para a tela certa já no cliente da decisão (cliente em foco).
-// Tela: um card por cliente (gestor, tipos, prazos, R$ em jogo e as 3 principais);
-// o card abre as decisões do cliente separadas por loja. Filtro por gestor.
+// Tela: três faixas (Urgente → Aprovar com 1 clique → Revisar), filtro lateral por
+// tipo e cliente, e uma fila única de linhas compactas. Resolver tira a linha com
+// animação; atalhos de teclado (J/K, Enter, F, A, X, Espaço) para passar rápido.
 // ============================================================
 Router.register('decisoes', (params, el) => {
   const R$ = v => 'R$ ' + (Math.round(parseFloat(v) || 0)).toLocaleString('pt-BR');
@@ -165,135 +166,133 @@ Router.register('decisoes', (params, el) => {
     window.dispatchEvent(new CustomEvent('glr:decisoes', { detail: { n: st.itens.length } }));
   }
 
-  // gestor do cliente pelo cadastro (o filtro e o card mostram o nome)
+  // gestor do cliente pelo cadastro (o filtro e a linha mostram o nome)
   const gestorDe = cid => { const c = (GLR.clientes || []).find(x => String(x.id) === String(cid)); const g = (GLR.gestores || []).find(x => String(x.id) === String(c?.gestorId)); return { id: g ? String(g.id) : 'sem', nome: g?.nome || c?.gestor || 'Sem gestor' }; };
   const doGestor = it => st.gestor === 'todos' || gestorDe(it.clienteId).id === st.gestor;
-  const visiveis = () => {
-    const foco = GLR.ctx?.cliente();
-    return st.itens.filter(it => (!foco || it.clienteId === foco) && doGestor(it) && (st.filtro === 'todos' || it.tipo === st.filtro || (st.filtro === 'aprovar' && it.exec)));
-  };
+  // ── Faixas: o que fazer primeiro ──
+  // urgente (prazo/saldo/conexão) → aprovar com 1 clique → revisar (o resto)
+  const FAIXAS = [
+    { k: 'urgente', t: 'Urgente', d: 'prazo vencendo, saldo ou conexão parada', c: 'var(--red)', ok: it => !!it.urgente },
+    { k: 'aprovar', t: 'Aprovar com 1 clique', d: 'o sistema executa ao aprovar', c: 'var(--accent)', ok: it => !it.urgente && !!it.exec },
+    { k: 'revisar', t: 'Revisar', d: 'abrir a tela e decidir', c: 'var(--text-muted)', ok: it => !it.urgente && !it.exec },
+    { k: 'todas', t: 'Todas', d: '', c: 'var(--text-muted)', ok: () => true },
+  ];
+  const NOME_MKT = { ML: 'Mercado Livre', Shopee: 'Shopee', AMZ: 'Amazon', TT: 'TikTok Shop' };
+  const partes = it => { const t = String(it.loja || it.cliente || ''); const i = t.indexOf(' · '); const [c, l] = i > 0 ? [t.slice(0, i), t.slice(i + 3)] : [t || 'Sem cliente', '']; return [c, NOME_MKT[l] || l.replace(/^ML /, 'Mercado Livre · ')]; };
+  const cliK = it => it.clienteId || partes(it)[0];
+  const base = () => { const foco = GLR.ctx?.cliente(); return st.itens.filter(it => (!foco || it.clienteId === foco) && doGestor(it)); };
+  const faixaDe = k => FAIXAS.find(f => f.k === k) || FAIXAS[3];
+  const passa = (it, { faixa = true, tipo = true, cli = true } = {}) =>
+    (!faixa || faixaDe(st.faixa).ok(it)) && (!tipo || st.tipo === 'todos' || it.tipo === st.tipo) && (!cli || !st.cli || cliK(it) === st.cli);
+  const visiveis = () => base().filter(it => passa(it));
+  if (!st.faixa) st.faixa = null; st.tipo = 'todos'; st.cli = null; st.limite = 40; st.foco = 0;
 
   function render() {
     if (window._dcSt !== st) return;
     const root = document.getElementById('dc-root'); if (!root) return;
-    if (st.carregando && !st.itens.length) { root.innerHTML = '<div class="card" style="padding:18px">Carregando…</div>'; return; }
+    if (st.carregando && !st.itens.length) { root.innerHTML = '<div class="dc-carregando"><span></span><span></span><span></span></div>'; return; }
     if (st.erro) { root.innerHTML = `<div class="card" style="padding:18px;color:var(--red)">Não consegui carregar as decisões: ${h(st.erro)} <button class="btn btn-secondary btn-sm" onclick="window._dcRecarregar()">Tentar de novo</button></div>`; return; }
-    const foco = GLR.ctx?.cliente();
-    const base = st.itens.filter(it => (!foco || it.clienteId === foco) && doGestor(it));
+    const B = base();
+    // abre na faixa mais importante que tem algo
+    if (!st.faixa) st.faixa = (FAIXAS.find(f => f.k !== 'todas' && B.some(f.ok)) || FAIXAS[3]).k;
+    const lista = B.filter(it => passa(it));
+    const emJogo = B.reduce((s, it) => s + (it.impacto || 0), 0);
     const gestores = [...new Map(st.itens.map(it => { const g = gestorDe(it.clienteId); return [g.id, g.nome]; })).entries()].sort((a, b) => a[1].localeCompare(b[1]));
-    const lista = visiveis();
-    const emJogo = lista.reduce((s, it) => s + (it.impacto || 0), 0);
-    const nExec = base.filter(it => it.exec).length;
-    const selExec = lista.filter(it => it.exec && st.sel.has(it.id));
-    const chips = [['todos', 'Tudo', base.length], ['aprovar', 'Aprovar com 1 clique', nExec], ...Object.entries(TIPOS).map(([k, v]) => [k, v.t, base.filter(it => it.tipo === k).length])].filter(([k, , n]) => k === 'todos' || n);
-    root.innerHTML = `
-      <div class="dc-topo">
-        <div class="dc-num"><b>${lista.length}</b><span>decisão(ões)${foco ? ' deste cliente' : ''}</span></div>
-        ${emJogo > 0 ? `<div class="dc-num"><b>${R$(emJogo)}</b><span>por semana em jogo</span></div>` : ''}
-        <div class="dc-num"><b>${lista.filter(it => it.urgente).length}</b><span>com prazo vencendo</span></div>
-        <span style="flex:1"></span>
-        ${selExec.length ? `<button class="btn btn-primary btn-sm" ${st.lote ? 'disabled' : ''} onclick="window._dcAprovarSel()">${st.lote ? h(st.lote) : `Aprovar ${selExec.length} selecionada(s)`}</button>` : ''}
-        <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._dcRecarregar()" title="Buscar de novo">↻</button>
-      </div>
-      <div class="dc-nota">Sugestões vencidas ou repetidas fecham sozinhas a cada hora — se ainda valer, o agente sugere de novo. Em cada loja aparecem as 3 de maior impacto.</div>
-      <div class="dc-filtros"><div class="dc-chips">${chips.map(([k, t, n]) => `<button class="dc-chip ${st.filtro === k ? 'on' : ''}" onclick="window._dcFiltro('${k}')">${h(t)} <b>${n}</b></button>`).join('')}</div>
-        <select class="form-control dc-gestor" aria-label="Gestor" onchange="window._dcGestor(this.value)"><option value="todos">Todos os gestores</option>${gestores.map(([id, nome]) => `<option value="${h(id)}" ${st.gestor === id ? 'selected' : ''}>${h(nome)}</option>`).join('')}</select></div>
-      ${lista.length ? renderGrupos(lista, !!foco)
-        : `<div class="card dc-vazio"><b>Nada esperando você${foco ? ' neste cliente' : ''}.</b><span>Os agentes não encontraram nada que precise de decisão agora.</span></div>`}`;
-  }
-
-  // ── Agrupado por cliente → loja (o nome da conta vem como "Cliente · Loja") ──
-  const NOME_MKT = { ML: 'Mercado Livre', Shopee: 'Shopee', AMZ: 'Amazon', TT: 'TikTok Shop' };
-  const partes = it => { const t = String(it.loja || it.cliente || ''); const i = t.indexOf(' · '); const [c, l] = i > 0 ? [t.slice(0, i), t.slice(i + 3)] : [t || 'Sem cliente', t || '']; return [c, NOME_MKT[l] || l.replace(/^ML /, 'Mercado Livre · ')]; };
-  function agrupar(lista) {
+    const tipos = Object.entries(TIPOS).map(([k, v]) => [k, v.t, B.filter(it => passa(it, { tipo: false }) && it.tipo === k).length]).filter(x => x[2]);
+    // clientes da faixa/tipo atuais (lateral): mais urgentes e com mais itens primeiro
     const cls = new Map();
-    for (const it of lista) {
-      const [cn, ln] = partes(it), ck = it.clienteId || cn;
-      const c = cls.get(ck) || { k: ck, nome: cn, itens: [], lojas: new Map() };
-      c.itens.push(it);
-      const lk = `${it.mkt}:${it.conta}`, l = c.lojas.get(lk) || { k: lk, nome: ln, itens: [] };
-      l.itens.push(it); c.lojas.set(lk, l); cls.set(ck, c);
-    }
-    const soma = xs => xs.reduce((s2, it) => s2 + (it.impacto || 0), 0), urg = xs => xs.filter(it => it.urgente).length;
-    return [...cls.values()].map(c => ({ ...c, rs: soma(c.itens), urg: urg(c.itens), lojas: [...c.lojas.values()].map(l => ({ ...l, rs: soma(l.itens), urg: urg(l.itens) })).sort((a, b) => b.urg - a.urg || b.rs - a.rs || b.itens.length - a.itens.length) }))
-      .sort((a, b) => b.urg - a.urg || b.rs - a.rs || b.itens.length - a.itens.length);
-  }
-  const POR_LOJA = 3; // as 3 de maior impacto (a lista já vem em ordem de prazo e R$)
-  function renderGrupos(lista, umCliente) {
-    const gs = agrupar(lista);
-    const g = umCliente && gs.length === 1 ? gs[0] : gs.find(x => x.k === st.aberto);
-    if (g) return detalhe(g, !umCliente);
-    // um card por cliente: o que tem prazo vencendo e mais R$ em jogo vem primeiro
-    return `<div class="dc-grade">${gs.map(c => {
-      const porTipo = Object.entries(c.itens.reduce((m, it) => { m[it.tipo] = (m[it.tipo] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]);
-      const ex = c.itens.filter(it => it.exec).length, cor = c.urg ? 'var(--red)' : c.rs > 0 ? 'var(--accent)' : 'var(--border)';
-      return `<button type="button" class="dc-card" style="--c:${cor}" onclick="window._dcAbrirCliente('${h(c.k)}')">
-        <div class="dc-card-top"><div><b>${h(c.nome)}</b><span>${h(gestorDe(c.itens[0]?.clienteId).nome)}${c.lojas.length > 1 ? ` · ${c.lojas.length} lojas` : ''}</span></div>${c.urg ? `<span class="dc-card-urg">${c.urg} vencendo</span>` : ''}</div>
-        <div class="dc-card-nums"><div><b>${c.itens.length}</b><span>decisão(ões)</span></div>${c.rs > 0 ? `<div><b>${R$(c.rs)}</b><span>por semana em jogo</span></div>` : ''}${ex ? `<div><b>${ex}</b><span>aprovar com 1 clique</span></div>` : ''}</div>
-        <div class="dc-g-tipos">${porTipo.map(([t, n]) => `<span class="dc-g-t" style="--c:${TIPOS[t]?.c || 'var(--text-muted)'}">${TIPOS[t]?.t || t} ${n}</span>`).join('')}</div>
-        <ul class="dc-card-top3">${c.itens.slice(0, 3).map(it => `<li style="--c:${TIPOS[it.tipo]?.c || 'var(--text-muted)'}"><i></i><span>${h(corta(it.titulo, 70))}${c.lojas.length > 1 && partes(it)[1] ? `<small> · ${h(corta(partes(it)[1], 30))}</small>` : ''}</span>${it.impacto ? `<b>${R$(it.impacto)}</b>` : ''}</li>`).join('')}</ul>
-        <span class="dc-card-ir">Ver as ${c.itens.length} decisão(ões) →</span>
-      </button>`;
-    }).join('')}</div>`;
-  }
-  // decisões de um cliente, separadas por loja
-  function detalhe(g, comVoltar) {
-    return `<div class="card dc-det">
-      <div class="dc-det-cab">${comVoltar ? `<button type="button" class="dc-voltar" onclick="window._dcAbrirCliente(null)">← Todos os clientes</button>` : ''}
-        <div class="dc-det-nome"><b>${h(g.nome)}</b><span>${h(gestorDe(g.itens[0]?.clienteId).nome)} · ${g.itens.length} decisão(ões)${g.rs > 0 ? ` · ${R$(g.rs)}/sem em jogo` : ''}${g.urg ? ` · <b class="dc-prazo">${g.urg} vencendo</b>` : ''}</span></div></div>
-      ${g.lojas.map(l => { const ex = l.itens.filter(it => it.exec);
-        return `<div class="dc-loja">
-          <div class="dc-loja-cab"><span class="dc-loja-nome">${h(l.nome || 'Loja')}</span><span class="pl-sub">${l.itens.length} decisão(ões)${l.rs > 0 ? ` · ${R$(l.rs)}/sem` : ''}</span><span style="flex:1"></span>
-            ${ex.length >= 2 ? `<button class="btn btn-secondary btn-sm" ${st.lote ? 'disabled' : ''} onclick="window._dcAprovarLoja('${h(g.k)}','${h(l.k)}')">Aprovar as ${ex.length} desta loja</button>` : ''}</div>
-          ${(st.lojasTodas.has(l.k) ? l.itens : l.itens.slice(0, POR_LOJA)).map(linha).join('')}
-          ${l.itens.length > POR_LOJA && !st.lojasTodas.has(l.k) ? `<button type="button" class="dc-mais" onclick="window._dcLojaTodas('${h(l.k)}')">ver mais ${l.itens.length - POR_LOJA} desta loja</button>` : ''}
-        </div>`; }).join('')}
-    </div>`;
-  }
-
-  function linha(it) {
-    const T = TIPOS[it.tipo], proc = st.proc[it.id], aberto = st.abertos.has(it.id);
-    const prazo = it.prazo ? (() => { const d = Math.round((new Date(it.prazo).getTime() - Date.now()) / 864e5); return d <= 0 ? 'vence hoje' : `vence em ${d} dia(s)`; })() : '';
-    return `<div class="dc-li ${it.urgente ? 'urgente' : ''}" style="--c:${T.c}">
-      <div class="dc-sel">${it.exec ? `<input type="checkbox" aria-label="Selecionar" ${st.sel.has(it.id) ? 'checked' : ''} onchange="window._dcMarcarSel('${h(it.id)}', this.checked)">` : ''}</div>
-      <div class="dc-txt" onclick="window._dcAbrirTxt('${h(it.id)}')">
-        <div class="dc-meta"><span class="dc-tipo">${T.t}</span>${prazo ? `<span class="dc-prazo">${prazo}</span>` : ''}${it.freio ? '<span class="dc-freio" title="O agente parou de apertar porque a venda do produto caiu">freio de volume</span>' : ''}${it.quando && !prazo ? `<span>${dataCurta(it.quando)}</span>` : ''}</div>
-        <div class="dc-tit">${h(it.titulo)}${it.acao ? ` <span class="dc-acao">${h(it.acao)}</span>` : ''}</div>
-        ${it.porque ? `<div class="dc-porque ${aberto ? 'aberto' : ''}">${h(it.porque)}</div>` : ''}
+    for (const it of B.filter(it => passa(it, { cli: false }))) { const k = cliK(it), c = cls.get(k) || { k, nome: partes(it)[0], n: 0, u: 0, rs: 0 }; c.n++; c.u += it.urgente ? 1 : 0; c.rs += it.impacto || 0; cls.set(k, c); }
+    const clientes = [...cls.values()].sort((a, b) => b.u - a.u || b.n - a.n);
+    const selExec = lista.filter(it => it.exec && st.sel.has(it.id));
+    const mostrando = lista.slice(0, st.limite);
+    st.foco = Math.min(st.foco, Math.max(0, mostrando.length - 1));
+    const foco = GLR.ctx?.cliente();
+    root.innerHTML = `
+      <div class="dc-cab">
+        <p class="dc-resumo"><b>${B.length}</b> decisões${foco ? ' deste cliente' : ''}${emJogo > 0 ? ` · <b>${R$(emJogo)}</b>/semana em jogo` : ''}</p>
+        <div class="dc-cab-dir">
+          <select class="form-control dc-gestor" aria-label="Gestor" onchange="window._dcGestor(this.value)"><option value="todos">Todos os gestores</option>${gestores.map(([id, nome]) => `<option value="${h(id)}" ${st.gestor === id ? 'selected' : ''}>${h(nome)}</option>`).join('')}</select>
+          <button class="btn btn-secondary btn-sm" ${st.carregando ? 'disabled' : ''} onclick="window._dcRecarregar()" title="Buscar de novo — sugestões vencidas ou repetidas fecham sozinhas a cada hora">${st.carregando ? '…' : '↻'}</button>
+        </div>
       </div>
-      <div class="dc-imp">${it.impacto ? `<b>${R$(it.impacto)}</b><small>${it.impactoTipo === 'economia' ? 'a cortar/sem' : 'por semana'}</small>` : ''}</div>
-      <div class="dc-bt">${proc ? `<span class="dc-proc">${h(proc)}</span>` : `
-        ${it.exec ? `<button class="btn btn-primary btn-sm" onclick="window._dcAprovar('${h(it.id)}')">Aprovar</button>` : `<button class="btn btn-secondary btn-sm" onclick="window._dcIr('${h(it.id)}')">Abrir</button>`}
-        ${it.exec ? `<button class="btn btn-ghost btn-sm" title="Abrir na tela do ADS" onclick="window._dcIr('${h(it.id)}')">↗</button>` : `<button class="btn btn-ghost btn-sm" title="Já fiz" onclick="window._dcFeito('${h(it.id)}')">Feito</button>`}
-        <button class="dc-x" title="Descartar" aria-label="Descartar" onclick="window._dcDescartar('${h(it.id)}')">✕</button>`}</div>
-    </div>`;
+      <div class="dc-faixas" role="tablist">${FAIXAS.map(f => { const n = B.filter(it => f.ok(it) && passa(it, { faixa: false })).length; return `
+        <button type="button" role="tab" aria-selected="${st.faixa === f.k}" class="dc-faixa ${st.faixa === f.k ? 'on' : ''} ${f.k === 'todas' ? 'mini' : ''}" style="--c:${f.c}" onclick="window._dcFaixa('${f.k}')">
+          <b>${n}</b><span>${f.t}</span>${f.d ? `<small>${f.d}</small>` : ''}</button>`; }).join('')}
+      </div>
+      <div class="dc-corpo">
+        <aside class="dc-lado">
+          <div class="dc-lado-t">Tipo</div>
+          <div class="dc-tipos">
+            <button type="button" class="dc-tp ${st.tipo === 'todos' ? 'on' : ''}" onclick="window._dcTipo('todos')"><i style="--c:var(--text-muted)"></i>Todos</button>
+            ${tipos.map(([k, t, n]) => `<button type="button" class="dc-tp ${st.tipo === k ? 'on' : ''}" onclick="window._dcTipo('${k}')"><i style="--c:${TIPOS[k].c}"></i>${h(t)}<b>${n}</b></button>`).join('')}
+          </div>
+          ${clientes.length > 1 || st.cli ? `<div class="dc-lado-t">Cliente</div>
+          <div class="dc-clis">${clientes.slice(0, st.clisTodos ? 999 : 10).map(c => `<button type="button" class="dc-tp ${st.cli === c.k ? 'on' : ''}" onclick="window._dcCli('${h(c.k)}')"><span class="dc-tp-n">${h(c.nome)}</span>${c.u ? `<em>${c.u}</em>` : ''}<b>${c.n}</b></button>`).join('')}
+            ${clientes.length > 10 && !st.clisTodos ? `<button type="button" class="dc-link" onclick="window._dcClisTodos()">ver os ${clientes.length} clientes</button>` : ''}</div>` : ''}
+        </aside>
+        <section class="dc-fila" aria-label="Decisões">
+          ${st.cli || st.tipo !== 'todos' ? `<div class="dc-ativos">${st.tipo !== 'todos' ? `<button type="button" class="dc-tag" onclick="window._dcTipo('todos')">${h(TIPOS[st.tipo]?.t || st.tipo)} ✕</button>` : ''}${st.cli ? `<button type="button" class="dc-tag" onclick="window._dcCli(null)">${h(clientes.find(c => c.k === st.cli)?.nome || 'Cliente')} ✕</button>` : ''}</div>` : ''}
+          ${lista.some(it => it.exec) ? `<div class="dc-lote">
+            <label><input type="checkbox" ${selExec.length && selExec.length === lista.filter(it => it.exec).length ? 'checked' : ''} onchange="window._dcSelTodas(this.checked)"> Selecionar as ${lista.filter(it => it.exec).length} que aprovo com 1 clique</label>
+            ${selExec.length ? `<button class="btn btn-primary btn-sm" ${st.lote ? 'disabled' : ''} onclick="window._dcAprovarSel()">${st.lote ? h(st.lote) : `Aprovar ${selExec.length}`}</button>` : ''}</div>` : ''}
+          ${lista.length ? `<div class="dc-linhas">${mostrando.map((it, i) => linha(it, i)).join('')}</div>
+            ${lista.length > mostrando.length ? `<button type="button" class="dc-mais" onclick="window._dcMais()">Mostrar mais ${Math.min(40, lista.length - mostrando.length)} de ${lista.length - mostrando.length}</button>` : ''}
+            <div class="dc-atalhos"><kbd>J</kbd><kbd>K</kbd> navegar · <kbd>Enter</kbd> abrir · <kbd>F</kbd> feito · <kbd>A</kbd> aprovar · <kbd>X</kbd> descartar · <kbd>Espaço</kbd> detalhes</div>`
+            : `<div class="dc-vazio"><b>${st.faixa === 'urgente' ? 'Nada urgente agora.' : 'Nada por aqui.'}</b><span>${B.length ? 'Veja as outras faixas acima.' : 'Os agentes não encontraram nada que precise de decisão.'}</span></div>`}
+        </section>
+      </div>`;
   }
 
+  function linha(it, i) {
+    const T = TIPOS[it.tipo] || { t: it.tipo, c: 'var(--text-muted)' }, proc = st.proc[it.id], aberto = st.abertos.has(it.id);
+    const [cn, ln] = partes(it);
+    const prazo = it.prazo ? (() => { const d = Math.round((new Date(it.prazo).getTime() - Date.now()) / 864e5); return d <= 0 ? 'vence hoje' : `vence em ${d} dia(s)`; })() : '';
+    return `<article class="dc-row ${it.urgente ? 'urg' : ''} ${aberto ? 'aberto' : ''} ${i === st.foco ? 'foco' : ''}" style="--c:${T.c}" data-id="${h(it.id)}" data-i="${i}">
+      <div class="dc-sel">${it.exec ? `<input type="checkbox" aria-label="Selecionar" ${st.sel.has(it.id) ? 'checked' : ''} onchange="window._dcMarcarSel('${h(it.id)}', this.checked)">` : `<i class="dc-dot"></i>`}</div>
+      <div class="dc-main" onclick="window._dcAbrirTxt('${h(it.id)}')">
+        <div class="dc-l1"><span class="dc-tit">${h(it.titulo)}</span>${it.acao ? `<span class="dc-acao">${h(it.acao)}</span>` : ''}</div>
+        <div class="dc-l2"><span class="dc-tipo">${h(T.t)}</span><span>${h(cn)}${ln ? ` · ${h(ln)}` : ''}</span>${prazo ? `<span class="dc-prazo">${prazo}</span>` : it.quando ? `<span>${dataCurta(it.quando)}</span>` : ''}${it.freio ? '<span class="dc-freio" title="O agente parou de apertar porque a venda do produto caiu">freio de volume</span>' : ''}</div>
+        ${it.porque ? `<div class="dc-porque">${h(it.porque)}</div>` : ''}
+      </div>
+      <div class="dc-imp">${it.impacto ? `<b>${R$(it.impacto)}</b><small>${it.impactoTipo === 'economia' ? 'a cortar/sem' : '/semana'}</small>` : ''}</div>
+      <div class="dc-bt">${proc ? `<span class="dc-proc">${h(proc)}</span>` : `
+        ${it.exec ? `<button class="btn btn-primary btn-sm" onclick="window._dcAprovar('${h(it.id)}')">Aprovar</button><button class="dc-ic" title="Abrir na tela" aria-label="Abrir na tela" onclick="window._dcIr('${h(it.id)}')">↗</button>`
+          : `<button class="btn btn-secondary btn-sm" onclick="window._dcIr('${h(it.id)}')">Abrir</button><button class="dc-ic dc-ok" title="Já fiz" aria-label="Marcar como feito" onclick="window._dcFeito('${h(it.id)}')">✓</button>`}
+        <button class="dc-ic dc-x" title="Descartar" aria-label="Descartar" onclick="window._dcDescartar('${h(it.id)}')">✕</button>`}</div>
+    </article>`;
+  }
+
+  // ── Ações: a linha sai com animação, os números se ajustam e aparece um aviso ──
   const achar = id => st.itens.find(x => x.id === id);
   const tirar = id => { st.itens = st.itens.filter(x => x.id !== id); st.sel.delete(id); window.dispatchEvent(new CustomEvent('glr:decisoes', { detail: { n: st.itens.length } })); };
+  const sair = id => new Promise(ok => { const r = document.querySelector(`.dc-row[data-id="${CSS.escape(id)}"]`); if (!r || matchMedia('(prefers-reduced-motion: reduce)').matches) return ok(); r.style.height = r.offsetHeight + 'px'; r.getBoundingClientRect(); r.classList.add('saindo'); setTimeout(ok, 260); });
+  function aviso(txt) {
+    let t = document.getElementById('dc-aviso'); if (!t) { t = document.createElement('div'); t.id = 'dc-aviso'; t.className = 'dc-aviso'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+    t.textContent = txt; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2200);
+  }
   window._dcRecarregar = () => carregar();
-  window._dcFiltro = k => { st.filtro = k; render(); };
-  window._dcGestor = g => { st.gestor = g; st.aberto = null; try { localStorage.setItem('glr_dc_gestor', g); } catch (e) {} render(); };
-  window._dcAbrirCliente = k => { st.aberto = k; render(); window.scrollTo({ top: 0 }); };
-  window._dcLojaTodas = k => { st.lojasTodas.add(k); render(); };
-  window._dcAprovarLoja = (ck, lk) => {
-    const g = agrupar(visiveis()).find(x => x.k === ck), l = g?.lojas.find(x => x.k === lk);
-    if (l) aprovarLote(l.itens.filter(it => it.exec), `${g.nome} · ${l.nome}`);
-  };
-  window._dcAbrirTxt = id => { st.abertos.has(id) ? st.abertos.delete(id) : st.abertos.add(id); render(); };
+  const mudou = () => { st.limite = 40; st.foco = 0; render(); };
+  window._dcFaixa = k => { st.faixa = k; mudou(); };
+  window._dcTipo = k => { st.tipo = k; mudou(); };
+  window._dcCli = k => { st.cli = st.cli === k ? null : k; mudou(); };
+  window._dcClisTodos = () => { st.clisTodos = true; render(); };
+  window._dcMais = () => { st.limite += 40; render(); };
+  window._dcGestor = g => { st.gestor = g; st.cli = null; try { localStorage.setItem('glr_dc_gestor', g); } catch (e) {} mudou(); };
+  window._dcAbrirTxt = id => { st.abertos.has(id) ? st.abertos.delete(id) : st.abertos.add(id); const r = document.querySelector(`.dc-row[data-id="${CSS.escape(id)}"]`); if (r) r.classList.toggle('aberto', st.abertos.has(id)); else render(); };
   window._dcMarcarSel = (id, on) => { on ? st.sel.add(id) : st.sel.delete(id); render(); };
+  window._dcSelTodas = on => { visiveis().filter(it => it.exec).forEach(it => on ? st.sel.add(it.id) : st.sel.delete(it.id)); render(); };
   window._dcIr = id => { const it = achar(id); if (!it) return; if (it.clienteId) GLR.ctx?.definir(it.clienteId, true); Router.navigate(it.tela); };
   window._dcAprovar = async id => {
     const it = achar(id); if (!it?.exec) return;
     st.proc[id] = 'Executando…'; render();
-    try { await GLRAcoes.executar(it.log); tirar(id); }
+    try { await GLRAcoes.executar(it.log); delete st.proc[id]; await sair(id); tirar(id); aviso('Aprovada e executada'); }
     catch (e) { alert('Não consegui executar: ' + (e.message || e)); }
     delete st.proc[id]; render();
   };
   window._dcAprovarSel = () => aprovarLote(visiveis().filter(it => it.exec && st.sel.has(it.id)));
-  async function aprovarLote(sel, onde) {
+  async function aprovarLote(sel) {
     if (!sel.length || st.lote) return;
-    if (!confirm(`Aprovar e executar agora ${sel.length} sugestão(ões)${onde ? ` de ${onde}` : ''}?\n\n${sel.slice(0, 12).map(it => `• ${it.acao || ''} — ${corta(it.titulo, 60)}`).join('\n')}${sel.length > 12 ? `\n… e mais ${sel.length - 12}` : ''}`)) return;
+    if (!confirm(`Aprovar e executar agora ${sel.length} sugestão(ões)?\n\n${sel.slice(0, 12).map(it => `• ${it.acao || ''} — ${corta(it.titulo, 60)}`).join('\n')}${sel.length > 12 ? `\n… e mais ${sel.length - 12}` : ''}`)) return;
     const falhas = []; let n = 0;
     for (const it of sel) {
       st.lote = `Executando ${++n} de ${sel.length}…`; render();
@@ -301,6 +300,7 @@ Router.register('decisoes', (params, el) => {
     }
     st.lote = null; render();
     if (falhas.length) alert(`Executei ${sel.length - falhas.length} de ${sel.length}. Falharam:\n${falhas.slice(0, 8).join('\n')}`);
+    else aviso(`${sel.length} aprovada(s) e executada(s)`);
   }
   async function resolver(id, resultado) {
     const it = achar(id); if (!it) return;
@@ -309,67 +309,93 @@ Router.register('decisoes', (params, el) => {
       if (it.log) await GLRAcoes.marcar(it.log, resultado);
       else if (it.planoId) { const s = lerJSON('glr_plano_status', {}); s[it.planoId] = { st: resultado === 'executado' ? 'feito' : 'descartada', em: Date.now() }; localStorage.setItem('glr_plano_status', JSON.stringify(s)); }
       else resolverLocal(id);
-      tirar(id);
+      delete st.proc[id]; await sair(id); tirar(id);
+      aviso(resultado === 'executado' ? 'Marcada como feita' : 'Descartada');
     } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
     delete st.proc[id]; render();
   }
   window._dcFeito = id => resolver(id, 'executado');
   window._dcDescartar = id => resolver(id, 'descartado');
 
+  // ── Teclado: J/K navegam, Enter abre, F feito, A aprova, X descarta, Espaço detalhes ──
+  if (window._dcTeclas) document.removeEventListener('keydown', window._dcTeclas);
+  window._dcTeclas = e => {
+    if (window._dcSt !== st || !document.getElementById('dc-root')) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || /input|select|textarea/i.test(e.target.tagName)) return;
+    const rows = [...document.querySelectorAll('.dc-row')]; if (!rows.length) return;
+    const k = e.key.toLowerCase(), id = rows[st.foco]?.dataset.id;
+    const mover = d => { st.foco = Math.max(0, Math.min(rows.length - 1, st.foco + d)); rows.forEach((r, i) => r.classList.toggle('foco', i === st.foco)); rows[st.foco].scrollIntoView({ block: 'nearest', behavior: 'smooth' }); };
+    if (k === 'j' || e.key === 'ArrowDown') { e.preventDefault(); mover(1); }
+    else if (k === 'k' || e.key === 'ArrowUp') { e.preventDefault(); mover(-1); }
+    else if (e.key === 'Enter' && id) { e.preventDefault(); window._dcIr(id); }
+    else if (e.key === ' ' && id) { e.preventDefault(); window._dcAbrirTxt(id); }
+    else if (k === 'f' && id && !achar(id)?.exec) window._dcFeito(id);
+    else if (k === 'a' && id && achar(id)?.exec) window._dcAprovar(id);
+    else if (k === 'x' && id) window._dcDescartar(id);
+  };
+  document.addEventListener('keydown', window._dcTeclas);
+
   el.innerHTML = `<div class="page"><div id="dc-root"></div></div>
   <style>
-    .dc-topo{display:flex;align-items:center;gap:22px;flex-wrap:wrap;margin-bottom:12px}
-    .dc-num{display:flex;flex-direction:column} .dc-num b{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.1} .dc-num span{font-size:12px;color:var(--text-muted)}
-    .dc-nota{font-size:12px;color:var(--text-muted);margin:-4px 0 10px}
-    .dc-filtros{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px} .dc-filtros .dc-chips{margin-bottom:0}
-    .dc-gestor{width:auto;max-width:220px}
-    .dc-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-    .dc-card{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:14px;background:var(--bg-card);border:1px solid var(--border);box-shadow:inset 4px 0 0 var(--c)}
-    .dc-card:hover{border-color:color-mix(in srgb,var(--c) 45%,var(--border))} .dc-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-    .dc-card-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start} .dc-card-top>div{display:flex;flex-direction:column;min-width:0} .dc-card-top b{font-size:14.5px;font-weight:650;color:var(--text-primary)} .dc-card-top span{font-size:12px;color:var(--text-muted)}
-    .dc-card-urg{font-size:11.5px !important;font-weight:700;color:var(--red) !important;background:color-mix(in srgb,var(--red) 10%,transparent);border-radius:99px;padding:2px 8px;white-space:nowrap}
-    .dc-card-nums{display:flex;gap:18px;flex-wrap:wrap} .dc-card-nums>div{display:flex;flex-direction:column} .dc-card-nums b{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text-primary)} .dc-card-nums span{font-size:11px;color:var(--text-muted)}
-    .dc-card-top3{list-style:none;margin:0;padding:10px 0 0;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
-    .dc-card-top3 li{display:flex;gap:8px;align-items:baseline;font-size:12.5px;color:var(--text-secondary);line-height:1.35} .dc-card-top3 i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--c);transform:translateY(-1px)} .dc-card-top3 span{flex:1;min-width:0} .dc-card-top3 b{font-size:12px;font-weight:650;color:var(--text-primary);white-space:nowrap}
-    .dc-card-top3 small{color:var(--text-muted);font-size:11.5px}
-    .dc-card-ir{font-size:12.5px;font-weight:600;color:var(--accent)}
-    .dc-det{padding:0;overflow:hidden}
-    .dc-det-cab{display:flex;flex-direction:column;gap:8px;padding:14px 16px}
-    .dc-voltar{all:unset;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--accent);width:fit-content} .dc-voltar:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-    .dc-det-nome{display:flex;flex-direction:column} .dc-det-nome > b{font-size:16px;font-weight:650} .dc-det-nome span{font-size:12.5px;color:var(--text-muted)} .dc-det-nome span b{font-size:inherit}
-    .dc-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
-    .dc-chip{border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);border-radius:99px;padding:5px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
-    .dc-chip b{color:var(--text-primary);font-weight:650;margin-left:2px} .dc-chip.on{border-color:var(--accent);background:var(--accent-glow);color:var(--accent-light)}
-    .dc-grupos{display:flex;flex-direction:column;gap:10px}
-    .dc-g{padding:0;overflow:hidden}
-    .dc-g-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap;width:100%;padding:13px 16px;border:0;background:none;cursor:pointer;text-align:left;font-family:inherit;color:var(--text-primary)}
-    .dc-g-cab:hover{background:var(--bg-subtle)} .dc-g-cab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-    .dc-g-seta{color:var(--text-muted);transition:transform .15s;display:inline-block} .dc-g.aberto .dc-g-seta{transform:rotate(90deg)}
-    .dc-g-nome{font-size:14.5px;font-weight:650}
-    .dc-g-tipos{display:flex;gap:6px;flex-wrap:wrap} .dc-g-t{font-size:11.5px;font-weight:600;color:var(--c);background:color-mix(in srgb,var(--c) 10%,transparent);border-radius:99px;padding:2px 8px}
-    .dc-g-res{margin-left:auto;display:flex;gap:14px;font-size:12.5px;color:var(--text-muted);white-space:nowrap} .dc-g-res b{color:var(--text-primary);font-variant-numeric:tabular-nums}
-    .dc-loja{border-top:1px solid var(--border)}
-    .dc-loja-cab{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 16px;background:var(--bg-subtle)} .dc-loja-nome{font-size:12.5px;font-weight:650;color:var(--text-secondary)}
-    .dc-mais{display:block;width:100%;border:0;border-top:1px solid var(--border);background:none;padding:9px 16px;font-size:12.5px;color:var(--accent);cursor:pointer;font-family:inherit;text-align:left} .dc-mais:hover{background:var(--bg-subtle)}
-    .dc-lista{padding:4px 0}
-    .dc-li{display:grid;grid-template-columns:28px minmax(0,1fr) 110px auto;gap:12px;align-items:start;padding:12px 16px;border-top:1px solid var(--border);border-left:3px solid transparent}
-    .dc-loja-cab + .dc-li{border-top:0} .dc-li.urgente{border-left-color:var(--red);background:color-mix(in srgb,var(--red) 4%,transparent)}
-    .dc-li:hover{background:var(--bg-subtle)}
-    .dc-sel{padding-top:2px} .dc-sel input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent)}
-    .dc-txt{cursor:pointer;min-width:0}
-    .dc-meta{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text-muted);margin-bottom:3px}
-    .dc-tipo{color:var(--c);font-weight:650}
-    .dc-prazo{color:var(--red);font-weight:650} .dc-freio{color:var(--accent);font-weight:600}
-    .dc-tit{font-size:13.5px;font-weight:600;color:var(--text-primary);line-height:1.4}
-    .dc-acao{display:inline-block;font-size:12px;font-weight:600;color:var(--text-secondary);background:var(--bg-subtle);border-radius:6px;padding:1px 7px;margin-left:4px}
-    .dc-porque{font-size:12.5px;color:var(--text-secondary);line-height:1.5;margin-top:3px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
-    .dc-porque.aberto{-webkit-line-clamp:unset;display:block}
-    .dc-imp{text-align:right;display:flex;flex-direction:column} .dc-imp b{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums} .dc-imp small{font-size:11px;color:var(--text-muted)}
-    .dc-bt{display:flex;gap:6px;align-items:center;justify-content:flex-end;white-space:nowrap}
-    .dc-x{border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:4px 6px;border-radius:6px} .dc-x:hover{color:var(--red);background:var(--bg-subtle)}
+    .dc-cab{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+    .dc-resumo{margin:0;font-size:14px;color:var(--text-secondary)} .dc-resumo b{color:var(--text-primary);font-variant-numeric:tabular-nums}
+    .dc-cab-dir{display:flex;gap:8px;align-items:center} .dc-gestor{width:auto;max-width:220px}
+    .dc-faixas{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:10px;margin-bottom:16px}
+    .dc-faixa{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:auto 1fr;column-gap:12px;align-items:center;padding:12px 16px;border-radius:12px;background:var(--bg-card);border:1px solid var(--border);transition:border-color .15s,box-shadow .15s,transform .15s}
+    .dc-faixa b{grid-row:span 2;font-size:26px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:var(--c)}
+    .dc-faixa span{font-size:13.5px;font-weight:650;color:var(--text-primary)} .dc-faixa small{font-size:11.5px;color:var(--text-muted)}
+    .dc-faixa:hover{border-color:color-mix(in srgb,var(--c) 40%,var(--border));transform:translateY(-1px)}
+    .dc-faixa.on{border-color:var(--c);box-shadow:0 0 0 1px var(--c) inset;background:color-mix(in srgb,var(--c) 6%,var(--bg-card))}
+    .dc-faixa.mini{grid-template-columns:auto;justify-items:center;padding:12px 18px} .dc-faixa.mini b{grid-row:auto;font-size:18px}
+    .dc-faixa:focus-visible,.dc-tp:focus-visible,.dc-tag:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    .dc-corpo{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px;align-items:start}
+    .dc-lado{position:sticky;top:12px;display:flex;flex-direction:column;gap:4px;max-height:calc(100vh - 120px);overflow:auto}
+    .dc-lado-t{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);padding:10px 8px 4px}
+    .dc-tipos,.dc-clis{display:flex;flex-direction:column;gap:1px}
+    .dc-tp{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;font-size:13px;color:var(--text-secondary)}
+    .dc-tp:hover{background:var(--bg-subtle);color:var(--text-primary)} .dc-tp.on{background:var(--accent-glow);color:var(--text-primary);font-weight:600}
+    .dc-tp i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--c)} .dc-tp b{margin-left:auto;font-size:12px;font-weight:600;color:var(--text-muted);font-variant-numeric:tabular-nums}
+    .dc-tp-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dc-tp em{font-style:normal;font-size:11px;font-weight:700;color:var(--red)}
+    .dc-tp-n + b{margin-left:0}
+    .dc-link{all:unset;cursor:pointer;font-size:12.5px;color:var(--accent);padding:6px 8px}
+    .dc-fila{min-width:0;background:var(--bg-card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+    .dc-ativos{display:flex;gap:6px;padding:10px 14px 0;flex-wrap:wrap}
+    .dc-tag{all:unset;cursor:pointer;font-size:12px;font-weight:600;padding:3px 10px;border-radius:99px;background:var(--accent-glow);color:var(--accent-light)}
+    .dc-lote{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-secondary)}
+    .dc-lote label{display:flex;gap:8px;align-items:center;cursor:pointer} .dc-lote input{accent-color:var(--accent);width:15px;height:15px}
+    .dc-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);box-shadow:inset 3px 0 0 transparent;transition:background .12s,box-shadow .12s,opacity .25s,transform .25s,height .25s,padding .25s;overflow:hidden}
+    .dc-row:hover{background:var(--bg-subtle)} .dc-row.foco{box-shadow:inset 3px 0 0 var(--accent);background:var(--bg-subtle)}
+    .dc-row.urg{box-shadow:inset 3px 0 0 var(--red)} .dc-row.urg.foco{box-shadow:inset 3px 0 0 var(--red),inset 0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
+    .dc-row.saindo{opacity:0;transform:translateX(24px);height:0 !important;padding-top:0;padding-bottom:0;border-bottom-width:0}
+    .dc-sel{display:flex;justify-content:center} .dc-sel input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent)}
+    .dc-dot{width:8px;height:8px;border-radius:50%;background:var(--c)}
+    .dc-main{min-width:0;cursor:pointer}
+    .dc-l1{display:flex;align-items:baseline;gap:8px;min-width:0}
+    .dc-tit{font-size:13.5px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+    .dc-row.aberto .dc-tit{white-space:normal}
+    .dc-acao{flex:none;font-size:12px;font-weight:600;color:var(--text-secondary);background:var(--bg-subtle);border:1px solid var(--border);border-radius:6px;padding:1px 7px;white-space:nowrap}
+    .dc-l2{display:flex;gap:6px 10px;flex-wrap:wrap;font-size:12px;color:var(--text-muted);margin-top:2px}
+    .dc-tipo{color:var(--c);font-weight:650} .dc-prazo{color:var(--red);font-weight:650} .dc-freio{color:var(--accent);font-weight:600}
+    .dc-porque{font-size:12.5px;color:var(--text-secondary);line-height:1.5;overflow:hidden;max-height:0;margin-top:0;transition:max-height .25s ease,margin .2s}
+    .dc-row.aberto .dc-porque{max-height:240px;margin-top:6px}
+    .dc-imp{text-align:right;display:flex;flex-direction:column;min-width:76px} .dc-imp b{font-size:13.5px;font-weight:650;font-variant-numeric:tabular-nums} .dc-imp small{font-size:11px;color:var(--text-muted)}
+    .dc-bt{display:flex;gap:4px;align-items:center;justify-content:flex-end;white-space:nowrap}
+    .dc-ic{border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:14px;width:30px;height:30px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
+    .dc-ic:hover{background:var(--bg-card-hover);color:var(--text-primary)} .dc-ok:hover{color:var(--green)} .dc-x:hover{color:var(--red)}
+    .dc-ic:focus-visible{outline:2px solid var(--accent)}
+    .dc-row .dc-bt .dc-ic{opacity:.55} .dc-row:hover .dc-bt .dc-ic,.dc-row.foco .dc-bt .dc-ic{opacity:1}
     .dc-proc{font-size:12px;color:var(--text-muted)}
-    .dc-vazio{padding:28px;text-align:center;display:flex;flex-direction:column;gap:4px} .dc-vazio span{font-size:13px;color:var(--text-muted)}
-    @media (max-width:760px){.dc-li{grid-template-columns:24px minmax(0,1fr);}.dc-imp{text-align:left;grid-column:2}.dc-bt{grid-column:2;justify-content:flex-start}}
+    .dc-mais{display:block;width:100%;border:0;background:none;padding:12px 16px;font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;font-family:inherit} .dc-mais:hover{background:var(--bg-subtle)}
+    .dc-atalhos{padding:10px 16px;font-size:11.5px;color:var(--text-muted);border-top:1px solid var(--border)}
+    .dc-atalhos kbd{font-family:inherit;font-size:10.5px;border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;padding:0 5px;margin-right:2px;color:var(--text-secondary)}
+    .dc-vazio{padding:40px 20px;text-align:center;display:flex;flex-direction:column;gap:4px} .dc-vazio span{font-size:13px;color:var(--text-muted)}
+    .dc-carregando{display:flex;flex-direction:column;gap:10px} .dc-carregando span{height:58px;border-radius:12px;background:linear-gradient(90deg,var(--bg-card) 0%,var(--bg-subtle) 50%,var(--bg-card) 100%);background-size:200% 100%;animation:dcPulse 1.2s infinite}
+    @keyframes dcPulse{to{background-position:-200% 0}}
+    .dc-aviso{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);opacity:0;pointer-events:none;background:var(--text-primary);color:var(--bg-base);font-size:13px;font-weight:600;padding:9px 16px;border-radius:99px;box-shadow:0 8px 24px rgba(0,0,0,.2);transition:opacity .2s,transform .2s;z-index:200}
+    .dc-aviso.on{opacity:1;transform:translate(-50%,0)}
+    @media (max-width:980px){.dc-corpo{grid-template-columns:1fr}.dc-lado{position:static;max-height:none;flex-direction:row;flex-wrap:wrap;gap:6px}.dc-lado-t{display:none}.dc-tipos,.dc-clis{flex-direction:row;flex-wrap:wrap;gap:4px}.dc-clis{display:none}.dc-tp{border:1px solid var(--border);border-radius:99px;padding:4px 10px}.dc-atalhos{display:none}}
+    @media (max-width:760px){.dc-faixas{grid-template-columns:1fr 1fr}.dc-row{grid-template-columns:18px minmax(0,1fr)}.dc-imp{grid-column:2;text-align:left;flex-direction:row;gap:4px;align-items:baseline}.dc-bt{grid-column:2;justify-content:flex-start}.dc-tit{white-space:normal}}
+    @media (prefers-reduced-motion:reduce){.dc-row,.dc-faixa,.dc-porque,.dc-aviso{transition:none}.dc-carregando span{animation:none}}
   </style>`;
   carregar();
 });
