@@ -6,3 +6,17 @@ test('consulta uses fixed Tiops origin and returns provenance',async()=>{global.
 test('upstream errors never converted into empty result',async()=>{global.fetch=async()=>({ok:true,json:async()=>({status:503,error:'no healthy upstream'})});await assert.rejects(market.consultar('mock','ml_trends',{}),/upstream/);});
 test('discovery lists new names but does not execute them',async()=>{let count=0;global.fetch=async(u,i)=>{count++;assert.equal(JSON.parse(i.body).action,'list_actions');return{ok:true,json:async()=>({data:{actions:['ml_trends','new_market_action','update_price']}})}};const r=await market.descobrir('mock');assert.equal(count,1);assert(r.acoes_na_conexao.includes('new_market_action'));assert.throws(()=>market.validate('new_market_action',{}));});
 test('anonymous and portal cannot access market API',async()=>{for(const role of [null,'portal']){let tiops=0;global.fetch=async u=>{if(u.endsWith('/auth/v1/user'))return{ok:true,json:async()=>({id:'test'})};if(u.endsWith('/rpc/glr_acesso'))return{ok:true,json:async()=>({role})};tiops++;throw Error('unexpected')};const r=res();await handler({method:'POST',headers:role?{authorization:'Bearer x'}:{},body:{action:'ml_trends',params:{}}},r);assert.equal(r.code,role?403:401);assert.equal(tiops,0);}});
+
+test('pesquisa guiada tenta a próxima conta quando o token do ML falha', async () => {
+  const m = require('../api/_tiops-market.js');
+  const usadas = [];
+  global.fetch = async (url, init) => {
+    const b = JSON.parse(init.body); usadas.push(b.params.meliUserId);
+    if (b.params.meliUserId === '111') return { ok: false, status: 500, json: async () => ({ error: 'Falha ao renovar token Meli' }) };
+    return { ok: true, status: 200, json: async () => ({ items: [{ category_id: 'MLB455938', category_name: 'Armário de Parede', domain_name: 'Armário' }] }) };
+  };
+  const r = await m.pesquisar('k', 'categorias', { termo: 'armario aereo' }, ['111', '222']);
+  require('node:assert/strict').deepEqual(usadas, ['111', '222']);
+  require('node:assert/strict').equal(r.categorias[0].id, 'MLB455938');
+  await require('node:assert/strict').rejects(() => m.pesquisar('k', 'mais_vendidos', { categoria: 'abc' }, []), /categoria/);
+});

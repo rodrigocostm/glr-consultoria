@@ -6,9 +6,10 @@ module.exports=async(req,res)=>{
  if(!await requireStaff(req,res))return;
  if(req.method==='GET')return res.json(market.catalog);
  const b=req.body||{};
+ if(b.acao==='pesquisa'){try{return res.json(await market.pesquisar(process.env.MCP_API_KEY,b.tipo,b.dados||{},Array.isArray(b.contas)?b.contas:[]));}catch(e){return res.status(e.message?.startsWith('Digite')||e.message?.startsWith('Escolha')?400:503).json({error:e.message});}}
  if(b.acao==='descobrir'){try{return res.json(await market.descobrir(process.env.MCP_API_KEY,b.termo));}catch(e){return res.status(503).json({error:e.message});}}
  try{
   market.validate(b.action,b.params);
  }catch(e){return res.status(400).json({error:e.message});}
- try{return res.json(await market.consultar(process.env.MCP_API_KEY,b.action,b.params));}catch(e){return res.status(503).json({error:e.message});}
+ try{return res.json(await market.consultar(process.env.MCP_API_KEY,b.action,b.params,Array.isArray(b.contas)?b.contas:[]));}catch(e){return res.status(503).json({error:e.message});}
 };
