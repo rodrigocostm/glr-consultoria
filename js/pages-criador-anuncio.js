@@ -300,19 +300,25 @@
       cn.iaFicha = true; tudo();
       try {
         const lista = alvo.map(a => `${a.id} | ${a.nome}${a.tipo === 'numero' ? ` | número em ${a.unidades?.join('/') || a.unidade || ''}` : ''}${a.opcoes?.length ? ` | opções: ${a.opcoes.slice(0, 40).map(o => o.nome).join('; ')}` : ''}`).join('\n');
-        const r = await chatJSON('Você preenche a ficha técnica de um anúncio de marketplace. Devolva APENAS JSON {"valores": {"<id>": "<valor>"}}. Para campos com opções, use EXATAMENTE o texto de uma das opções. Para número, só o número (ponto decimal), na primeira unidade listada. Preencha SOMENTE o que dá para afirmar com certeza a partir dos dados do produto; o que não dá, deixe fora do JSON. Nunca invente.',
+        const r = await chatJSON('Você preenche a ficha técnica de um anúncio de marketplace. Devolva APENAS JSON {"valores": {"<id>": "<valor>"}}. Para campos com opções, use EXATAMENTE o texto de uma das opções. Para número, responda o número com a unidade, ex.: "80 cm" ou "12 kg" (use uma das unidades listadas). Preencha SOMENTE o que dá para afirmar com certeza a partir dos dados do produto; o que não dá, deixe fora do JSON. Nunca invente.',
           `PRODUTO\nTítulo: ${st.p.titulo}\nMarca: ${st.p.marca || '—'}\nDescrição: ${st.p.descricao.slice(0, 1500)}\nEmbalagem: ${st.p.compr}x${st.p.larg}x${st.p.alt} cm, ${st.p.peso} kg\n\nCAMPOS (id | nome | regras)\n${lista}`);
         let n = 0;
         for (const [id, v] of Object.entries(r.valores || {})) {
           const a = alvo.find(x => String(x.id) === String(id)); if (!a || v == null || v === '') continue;
           if (a.tipo === 'lista' || a.tipo === 'multi') { const o = a.opcoes.find(o => o.nome.toLowerCase() === String(v).toLowerCase()); if (o) { cn.vals[a.id] = a.tipo === 'multi' ? [String(o.id)] : String(o.id); n++; } }
-          else if (a.tipo === 'numero') { if (num(v) != null) { cn.vals[a.id] = { num: String(num(v)), unit: a.unidades?.[0] || a.unidade }; n++; } }
+          else if (a.tipo === 'numero') {
+            const mm = String(v).trim().match(/^(-?[\d.,]+)\s*(.*)$/); if (!mm || num(mm[1]) == null) continue;
+            const un = (a.unidades || []).find(u => u.toLowerCase() === mm[2].trim().toLowerCase()) || (a.unidades?.length ? unidadeBoa(a) : undefined);
+            cn.vals[a.id] = { num: String(num(mm[1])), unit: un }; n++;
+          }
           else { cn.vals[a.id] = String(v); n++; }
         }
         aviso(n ? `A IA preencheu ${n} campo(s) — confira antes de publicar.` : 'A IA não encontrou nada seguro para preencher com os dados do produto.');
       } catch (e) { aviso('A IA não respondeu: ' + e.message); }
       cn.iaFicha = false; tudo(); salvarDepois();
     }
+    // unidade preferida quando não vem explícita: cm para medida, kg para peso
+    const unidadeBoa = a => { const u = a.unidades || []; return u.find(x => x === 'cm') || u.find(x => x === 'kg') || a.unidade || u[0]; };
     const preenchido = (cn, a) => { const v = cn.vals[a.id]; if (v == null || v === '') return false; if (Array.isArray(v)) return v.length > 0; if (typeof v === 'object') return !!v.num; return true; };
 
     // ── Preço, taxas e margem ───────────────────────────────────
@@ -617,7 +623,7 @@
       let inp;
       if (a.tipo === 'lista') inp = `<select class="form-select" id="${idc}" onchange="_ca.attr('${m}','${ida}',this.value)"><option value="">—</option>${a.opcoes.map(o => `<option value="${h(o.id)}" ${String(v) === String(o.id) ? 'selected' : ''}>${h(o.nome)}</option>`).join('')}</select>`;
       else if (a.tipo === 'multi') inp = `<select class="form-select" id="${idc}" multiple size="3" onchange="_ca.attrMulti('${m}','${ida}',this)">${a.opcoes.map(o => `<option value="${h(o.id)}" ${(Array.isArray(v) ? v : []).map(String).includes(String(o.id)) ? 'selected' : ''}>${h(o.nome)}</option>`).join('')}</select>`;
-      else if (a.tipo === 'numero') inp = `<div class="ca-nu"><input class="form-input" id="${idc}" inputmode="decimal" value="${h(v?.num || '')}" oninput="_ca.attrNum('${m}','${ida}',this.value,null)">${a.unidades?.length ? `<select class="form-select" id="${idc}-u" onchange="_ca.attrNum('${m}','${ida}',null,this.value)">${a.unidades.map(u => `<option ${(v?.unit || a.unidade) === u ? 'selected' : ''}>${h(u)}</option>`).join('')}</select>` : ''}</div>`;
+      else if (a.tipo === 'numero') inp = `<div class="ca-nu"><input class="form-input" id="${idc}" inputmode="decimal" value="${h(v?.num || '')}" oninput="_ca.attrNum('${m}','${ida}',this.value,null)">${a.unidades?.length ? `<select class="form-select" id="${idc}-u" onchange="_ca.attrNum('${m}','${ida}',null,this.value)">${a.unidades.map(u => `<option ${(v?.unit || unidadeBoa(a)) === u ? 'selected' : ''}>${h(u)}</option>`).join('')}</select>` : ''}</div>`;
       else inp = `<input class="form-input" id="${idc}" value="${h(v || '')}" ${a.max ? `maxlength="${a.max}"` : ''} oninput="_ca.attr('${m}','${ida}',this.value)">`;
       return `<label class="ca-f${a.obrig && !preenchido(cn, a) ? ' falta' : ''}"><span>${h(a.nome)}${a.obrig ? ' <i>*</i>' : ''}</span>${inp}${a.dica ? `<small>${h(String(a.dica).slice(0, 140))}</small>` : ''}</label>`;
     }
@@ -777,7 +783,7 @@
       canal(m, k, v, re) { st.canal[m][k] = v; if (k === 'tipo') consultarTaxaML(); if (re) tudo(); else ladoSo(); salvarDepois(); },
       attr(m, id, v) { const cn = st.canal[m], a = [...cn.req, ...cn.opt].find(x => String(x.id) === String(id)); if (!a) return; const antes = preenchido(cn, a); cn.vals[a.id] = v || null; if (a.obrig && antes !== preenchido(cn, a)) tudo(); else ladoSo(); salvarDepois(); },
       attrMulti(m, id, sel) { const cn = st.canal[m], a = [...cn.req, ...cn.opt].find(x => String(x.id) === String(id)); if (!a) return; cn.vals[a.id] = [...sel.selectedOptions].map(o => o.value); ladoSo(); salvarDepois(); },
-      attrNum(m, id, n, u) { const cn = st.canal[m], a = [...cn.req, ...cn.opt].find(x => String(x.id) === String(id)); if (!a) return; const antes = preenchido(cn, a); const v = Object.assign({ unit: a.unidade || a.unidades?.[0] }, cn.vals[a.id] || {}); if (n != null) v.num = n; if (u != null) v.unit = u; cn.vals[a.id] = v; if (a.obrig && antes !== preenchido(cn, a)) tudo(); else ladoSo(); salvarDepois(); },
+      attrNum(m, id, n, u) { const cn = st.canal[m], a = [...cn.req, ...cn.opt].find(x => String(x.id) === String(id)); if (!a) return; const antes = preenchido(cn, a); const v = Object.assign({ unit: unidadeBoa(a) }, cn.vals[a.id] || {}); if (n != null) v.num = n; if (u != null) v.unit = u; cn.vals[a.id] = v; if (a.obrig && antes !== preenchido(cn, a)) tudo(); else ladoSo(); salvarDepois(); },
       opc(m) { st.canal[m].mostrarOpc = !st.canal[m].mostrarOpc; tudo(); },
       mapa(i, v) { st.canal.ml.mapaEixo[i] = v; tudo(); salvarDepois(); },
       iaFicha,
