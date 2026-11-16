@@ -156,7 +156,7 @@
       await Promise.all(lista.map(async t => {
         const g = st.gerando.find(x => x.t === t);
         try {
-          const j = await api('/api/generate-photo', { ...(refMenor ? { image_base64: refMenor } : { image_url: ref }), product_name: st.p.titulo, details: st.p.descricao.slice(0, 600), stage: 'tipo', tipo: t });
+          const j = await api('/api/generate-photo', { ...(refMenor ? { image_base64: refMenor } : { image_url: ref }), product_name: st.p.titulo, details: st.p.descricao.slice(0, 600), instrucoes: st.p.instrucoesFoto || '', stage: 'tipo', tipo: t });
           const img = j.images?.[0]; if (!img) throw new Error('sem imagem');
           const foto = { id: Date.now() + Math.random(), url: img.url, ia: true, tipo: t };
           if (t === 'fundo_branco') st.fotos.unshift(foto); else st.fotos.push(foto);
@@ -612,6 +612,7 @@
             <div class="ca-foto-ac">${i > 0 ? `<button type="button" title="Mover para a esquerda" onclick="_ca.moverFoto(${i},-1)">‹</button><button type="button" title="Usar como capa" onclick="_ca.capa(${i})">★</button>` : ''}${i < st.fotos.length - 1 ? `<button type="button" title="Mover para a direita" onclick="_ca.moverFoto(${i},1)">›</button>` : ''}<button type="button" title="Remover" onclick="_ca.tirarFoto(${i})">✕</button></div></figure>`).join('')}
           <label class="ca-foto-add"><input type="file" accept="image/*" multiple onchange="_ca.arquivos(this.files)"><span>＋</span><small>${st.fotos.length ? 'Mais fotos' : 'Arraste as fotos aqui ou clique'}</small></label>
         </div>
+        <label class="ca-f ca-instr"><span>Instruções para as fotos (IA) <em>a IA segue isso em todas as fotos geradas</em></span><textarea class="form-textarea" id="ca-instr-foto" rows="2" maxlength="800" placeholder="Ex.: manter os puxadores brancos; não colocar objetos em cima da bancada; não mudar a cor rosa; ambiente de quarto infantil; sem pessoas." oninput="_ca.p('instrucoesFoto',this.value)">${h(st.p.instrucoesFoto || '')}</textarea></label>
         ${st.gerando.length ? `<div class="ca-gerando">${st.gerando.map(g => `<div class="ca-ger ${g.status}"><span>${g.status === 'erro' ? '!' : ''}</span><b>${h(KIT[g.t])}</b><small>${g.status === 'erro' ? h(g.msg || 'falhou') : 'gerando…'}</small></div>`).join('')}</div>` : ''}
         <div class="ca-ia">
           <button class="btn btn-primary btn-sm" ${!st.fotos.length || st.gerando.some(g => g.status === 'gerando') ? 'disabled' : ''} onclick="_ca.kit()">${st.gerando.some(g => g.status === 'gerando') ? 'Gerando fotos…' : 'Gerar fotos com IA'}</button>
@@ -916,6 +917,7 @@
         .ca-fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;border:2px dashed transparent;border-radius:12px;padding:2px}.ca-fotos.arr{border-color:var(--accent)}
         .ca-foto{position:relative;margin:0;aspect-ratio:1;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--bg-subtle)}.ca-foto img{width:100%;height:100%;object-fit:cover;display:block}
         .ca-foto.capa{outline:2px solid var(--accent);outline-offset:1px}.ca-foto>b{position:absolute;top:6px;left:6px;background:var(--accent);color:#fff;font-size:10px;padding:2px 7px;border-radius:99px}.ca-foto>i{position:absolute;bottom:6px;left:6px;background:#111827cc;color:#fff;font-size:10px;font-style:normal;padding:2px 6px;border-radius:99px}
+        .ca-instr{margin:12px 0 0}.ca-instr textarea{resize:vertical;min-height:52px}
         .ca-foto-ver{display:block;width:100%;height:100%;padding:0;border:none;background:none;cursor:zoom-in}.ca-foto-ver img{width:100%;height:100%;object-fit:cover;display:block}.ca-foto-ver:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
         .ca-prev-img .ca-foto-ver img{object-fit:contain;background:#fff}.ca-prev-th .ca-foto-ver{width:36px;height:36px}.ca-prev-th .ca-foto-ver img{border-radius:5px;border:1px solid #e5e7eb}
         #ca-visor{position:fixed;inset:0;z-index:10000;background:rgba(10,12,18,.92);display:flex;flex-direction:column;color:#fff;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}

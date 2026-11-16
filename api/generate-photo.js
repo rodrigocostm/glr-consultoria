@@ -21,7 +21,9 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { image_base64, image_url, product_name, details, stage, ambientada_base64, prompt } = req.body || {};
+    const { image_base64, image_url, product_name, details, stage, ambientada_base64, prompt, instrucoes } = req.body || {};
+    // Instruções do vendedor (Criar anúncio): regras obrigatórias para não inventar nada na foto
+    const regras = String(instrucoes || '').replace(/\s+/g, ' ').trim().slice(0, 800);
 
     function decodeDataUrl(raw, fallbackMime) {
       const s = String(raw);
@@ -52,6 +54,7 @@ module.exports = async function handler(req, res) {
       'Mantenha o produto totalmente fiel — mesmo formato, cor, proporções e textura. Não invente nem altere o produto.',
       product_name ? `Produto: ${product_name}.` : '',
       details ? `Detalhes do produto: ${details}.` : '',
+      regras ? `INSTRUÇÕES OBRIGATÓRIAS DO VENDEDOR (têm prioridade sobre qualquer outra orientação desta mensagem; nunca as contrarie): ${regras}.` : '',
     ].filter(Boolean).join(' ');
 
     async function gerarImagem(promptExtra, imagensExtra = []) {
