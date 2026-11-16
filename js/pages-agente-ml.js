@@ -621,7 +621,8 @@ Router.register('agente-ml', (params, el) => {
           // TACOS da campanha: gasto ÷ o que os produtos dela venderam no mês (orgânico + ADS); anúncio movido para outra campanha não entra
           const pc = state.produtos[`${id}:${x.id}`], vic = state.vendasItem[id];
           const fatC = pc?.lista && vic?.porItem ? pc.lista.reduce((s, f) => s + f.itens.filter(it => it.status !== 'moved').reduce((a, it) => a + (vic.porItem[String(it.id)] || 0), 0), 0) : null;
-          const tacosC = !(g > 0) ? null : fatC == null ? undefined : fatC > 0 ? g / fatC * 100 : Infinity;
+          const denC = fatC == null ? null : Math.max(fatC, v); // venda total nunca é menor que a venda por ADS (pedido ainda não chegou na base)
+          const tacosC = !(g > 0) ? null : denC == null ? undefined : denC > 0 ? g / denC * 100 : Infinity;
           const roasAlvo = parseFloat(x.roas_target) || (x.acos_target ? 100 / x.acos_target : 0);
           const aberta = state.aberto === String(x.id);
           const estrat = { PROFITABILITY: 'Rentabilidade', INCREASE: 'Crescimento', VISIBILITY: 'Visibilidade' }[x.strategy] || x.strategy || '';
@@ -650,7 +651,7 @@ Router.register('agente-ml', (params, el) => {
     // TACOS do produto: gasto ÷ faturamento total dele no mês (orgânico + ADS, base de pedidos)
     const vi = state.vendasItem[contaId], tetoT = tetoCliente(contaId) || parseFloat(cfg?.meta_acos) || null;
     const vendaTotal = f => vi?.porItem ? f.itens.reduce((s, it) => s + (vi.porItem[String(it.id)] || 0), 0) : null;
-    const tacosP = f => { const vt = vendaTotal(f); return vt == null || !(f.gasto > 0) ? null : vt > 0 ? f.gasto / vt * 100 : Infinity; };
+    const tacosP = f => { let vt = vendaTotal(f); if (vt == null || !(f.gasto > 0)) return null; vt = Math.max(vt, f.vendas * (1 - tx)); return vt > 0 ? f.gasto / vt * 100 : Infinity; };
     return `<div class="aml-prods"><table class="aml-tab"><thead><tr><th>Produto (variações somadas)</th><th>Anúncios ativos</th><th class="num">Investimento</th><th class="num">% do investimento</th><th class="num">Vendas por publicidade</th><th class="num">Unidades</th><th class="num">ROAS</th><th class="num">ACOS</th><th class="num" title="Investimento do produto ÷ tudo o que ele vendeu no mês (orgânico + ADS, sem cancelados)">TACOS</th></tr></thead><tbody>
       ${p.lista.map(f => {
         const v = f.vendas * (1 - tx), acos = v > 0 ? f.gasto / v * 100 : (f.gasto > 0 ? Infinity : null);
