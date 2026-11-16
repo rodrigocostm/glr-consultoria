@@ -23,8 +23,8 @@ Router.register('plano-acao', (params, el) => {
     filtro: (() => { try { return localStorage.getItem('glr_plano_filtro') || 'todos'; } catch (e) { return 'todos'; } })(),
     gestor: (() => { try { return localStorage.getItem('glr_plano_gestor') || 'todos'; } catch (e) { return 'todos'; } })(),
     meuGestor: null, carregando: true, erro: null, gerando: false, copiado: false,
-    aba: (() => { try { return localStorage.getItem('glr_plano_aba') || 'oportunidades'; } catch (e) { return 'oportunidades'; } })(),
-    contaOportunidade: '', acaoAberta: null, metaEd: null, diagAberto: false, rxTodos: false, pautaEd: {},
+    aba: (() => { try { return localStorage.getItem('glr_plano_aba2') || 'acoes'; } catch (e) { return 'oportunidades'; } })(),
+    contaOportunidade: '', acaoAberta: null, secFechadas: new Set(['verde']), opAberta: null, opLimite: 10, metaEd: null, diagAberto: false, rxTodos: false, pautaEd: {},
   };
   const status = () => lerJSON('glr_plano_status', {});
   const salvarStatus = (id, v) => { const s = status(); if (v) s[id] = v; else delete s[id]; localStorage.setItem('glr_plano_status', JSON.stringify(s)); };
@@ -83,21 +83,26 @@ Router.register('plano-acao', (params, el) => {
         <select class="form-control pl-gestor" aria-label="Gestor" onchange="window._plGestor(this.value)"><option value="todos">Todos os gestores</option>${gestores.map(g => `<option value="${h(g.id)}" ${st.gestor === g.id ? 'selected' : ''}>${h(g.nome)}</option>`).join('')}</select>
         <span class="pl-sub"><b style="color:var(--red)">${cont('vermelho')}</b> precisam de atenção hoje · <b style="color:var(--yellow)">${cont('amarelo')}</b> em atenção · <b style="color:var(--green)">${cont('verde')}</b> em dia</span>
       </div>
-      <div class="pl-grade">${ps.map(p => {
-        const s = SEM[p.semaforo], pend = pendentesDe(p), hoje = pend.filter(a => a.quando === 'hoje').length, m = p.metricas || {}, rx = p.raioX, q = rx?.caiu?.[0];
-        const tacosAlto = m.metaTacos && m.tacos > m.metaTacos, pm = m.pctMeta != null ? Math.min(100, m.pctMeta) : null;
-        return `<button type="button" class="pl-card" style="--c:${s[1]}" onclick="window._plAbrir('${h(p.cliente.id)}')">
-          <div class="pl-card-top"><div><b>${h(p.cliente.nome)}</b><span class="pl-sub">${h(gestorDe(p).nome)}</span></div><span class="pl-sem"><i></i>${p.semaforo === 'vermelho' ? 'Agir hoje' : s[0]}</span></div>
-          <div class="pl-card-proj"><span class="pl-sub">Projeção do mês</span><b>${R$(m.projecao)}</b><span class="pl-sub">${m.pctMeta != null ? `${pct(m.pctMeta)} da meta` : 'sem meta'}</span></div>
-          ${pm != null ? `<div class="pl-card-bar"><i style="width:${pm}%"></i></div>` : ''}
-          <div class="pl-card-nums">
-            <div><span>Última semana</span>${rx ? `<b>${R$(rx.semanaAgora)}</b><small style="color:${rx.var >= 0 ? 'var(--green)' : 'var(--red)'}">${rx.var >= 0 ? '▲ +' : '▼ '}${pct(rx.var)}</small>` : '<b>—</b>'}</div>
-            <div><span>TACOS</span><b style="color:${tacosAlto ? 'var(--red)' : 'inherit'}">${pct(m.tacos)}</b><small>${m.metaTacos ? `meta ${pct(m.metaTacos)}` : '&nbsp;'}</small></div>
-            <div><span>Ações hoje</span><b>${hoje}</b><small>${pend.length} abertas</small></div>
-          </div>
-          ${q ? `<div class="pl-card-queda"><span>Maior queda</span>${h(q.nome)} <b>−${R$(q.perdaSem)}/sem</b>${q.causas?.[0] ? `<small>${h(q.causas[0].t)}</small>` : ''}</div>` : ''}
-        </button>`;
-      }).join('') || '<div class="card pl-sub" style="padding:20px">Nenhum cliente neste filtro.</div>'}</div>`;
+      ${ps.length ? ['vermelho', 'amarelo', 'verde'].map(k => { const doGrupo = ps.filter(p => p.semaforo === k); if (!doGrupo.length) return '';
+        const fechado = st.secFechadas.has(k), [tit, cor] = { vermelho: ['Agir hoje', 'var(--red)'], amarelo: ['Atenção', 'var(--yellow)'], verde: ['Em dia', 'var(--green)'] }[k];
+        return `<section class="pl-sec ${fechado ? 'fechada' : ''}" style="--c:${cor}">
+          <button type="button" class="pl-sec-cab" aria-expanded="${!fechado}" onclick="window._plSec('${k}')"><span class="pl-sec-seta">›</span><i></i><b>${tit}</b><span>${doGrupo.length}</span></button>
+          ${fechado ? '' : `<div class="pl-tab" role="table">
+            <div class="pl-tr pl-th" role="row"><span>Cliente</span><span>Projeção do mês</span><span>Última semana</span><span>TACOS</span><span>Maior queda</span><span>Ações</span></div>
+            ${doGrupo.map(linhaCliente).join('')}</div>`}
+        </section>`; }).join('') : '<div class="card pl-sub" style="padding:20px">Nenhum cliente neste filtro.</div>'}`;
+  }
+  function linhaCliente(p) {
+    const pend = pendentesDe(p), hoje = pend.filter(a => a.quando === 'hoje').length, m = p.metricas || {}, rx = p.raioX, q = rx?.caiu?.[0];
+    const tacosAlto = m.metaTacos && m.tacos > m.metaTacos, pm = m.pctMeta != null ? Math.min(100, m.pctMeta) : null;
+    return `<button type="button" class="pl-tr" role="row" onclick="window._plAbrir('${h(p.cliente.id)}')">
+      <span class="pl-td-cli"><b>${h(p.cliente.nome)}</b><small>${h(gestorDe(p).nome)}</small></span>
+      <span class="pl-td-proj"><b>${R$(m.projecao)}</b>${pm != null ? `<span class="pl-mini-bar"><i style="width:${pm}%;background:${corPct(m.pctMeta)}"></i></span><small style="color:${corPct(m.pctMeta)}">${pct(m.pctMeta)} da meta</small>` : '<small>sem meta</small>'}</span>
+      <span>${rx ? `<b>${R$(rx.semanaAgora)}</b><small style="color:${rx.var >= 0 ? 'var(--green)' : 'var(--red)'}">${rx.var >= 0 ? '▲ +' : '▼ '}${pct(rx.var)}</small>` : '<b>—</b>'}</span>
+      <span><b style="color:${tacosAlto ? 'var(--red)' : 'inherit'}">${pct(m.tacos)}</b><small>${m.metaTacos ? `meta ${pct(m.metaTacos)}` : ''}</small></span>
+      <span class="pl-td-queda">${q ? `<span class="pl-td-q-nome">${h(q.nome)}</span><small><b style="color:var(--red)">−${R$(q.perdaSem)}/sem</b>${q.causas?.[0] ? ` · ${h(q.causas[0].t)}` : ''}</small>` : '<small>—</small>'}</span>
+      <span class="pl-td-ac">${hoje ? `<b class="pl-pill">${hoje} hoje</b>` : ''}<small>${pend.length} aberta(s)</small></span>
+    </button>`;
   }
 
   // Ação numa linha: quem, o quê e o impacto; o porquê abre ao clicar
@@ -107,9 +112,9 @@ Router.register('plano-acao', (params, el) => {
     const cid = h(p.cliente.id), id = h(a.id);
     const tarefa = `<button class="btn btn-${a.tela ? 'secondary' : 'primary'} btn-sm" onclick="window._plTarefa('${cid}','${id}')">Virar tarefa</button>`;
     const principal = s ? `<span class="pl-sub">${s.st === 'feito' ? 'Feito' : s.st === 'tarefa' ? 'Virou tarefa' : 'Descartada'}${s.motivo ? ` — ${h(s.motivo)}` : ''}</span><button class="pl-x" title="Reabrir" onclick="window._plReabrir('${id}')">↺</button>`
-      : a.tela ? `<button class="btn btn-primary btn-sm" onclick="window._plIr('${h(a.tela)}')">Fazer agora</button>` : tarefa;
+      : a.tela ? `<button class="btn btn-primary btn-sm" onclick="window._plIr('${h(a.tela)}')">Fazer agora</button>` : `<button class="btn btn-secondary btn-sm" onclick="window._plFeito('${id}')">Feito</button>`;
     // o resto (virar tarefa, feito, descartar) fica no detalhe — a linha mostra só a ação principal
-    const outras = s ? '' : `${a.tela ? tarefa : ''}<button class="btn btn-secondary btn-sm" onclick="window._plFeito('${id}')">Marcar como feito</button><button class="btn btn-secondary btn-sm" onclick="window._plDescartar('${id}')">Descartar</button>`;
+    const outras = s ? '' : `<button class="btn btn-secondary btn-sm" onclick="window._plFeito('${id}')">Marcar como feito</button><button class="btn btn-secondary btn-sm" onclick="window._plDescartar('${id}')">Descartar</button>`;
     return `<div class="pl-acao ${s ? 'resolvida' : ''} ${ab ? 'aberta' : ''}" style="--q:${a.quem === 'cliente' ? 'var(--purple)' : 'var(--accent)'}">
       <button type="button" class="pl-acao-main" aria-expanded="${ab}" title="${ab ? 'Fechar' : 'Ver o porquê e mais opções'}" onclick="window._plAcaoTog('${id}')">
         <span class="pl-quem">${QUEM[a.quem] || h(a.quem)}</span>
@@ -299,21 +304,30 @@ Router.register('plano-acao', (params, el) => {
       <p class="pl-sub">Ordenadas por urgência e peso dos sinais do plano. Estimativas podem se sobrepor e não devem ser somadas. Confira estoque e margem antes de aumentar Ads.</p>
       <label>Conta <select class="form-control" onchange="window._plOpConta(this.value)"><option value="">Todas as contas + ações consolidadas</option>${contas.map(([id,nome]) => `<option value="${h(id)}" ${conta === id ? 'selected' : ''}>${h(nome)}</option>`).join('')}</select></label>
       <div class="pl-sub">${ordered.length} oportunidade(s) · plano atualizado em ${p.em ? h(new Date(p.em).toLocaleString('pt-BR')) : 'data não informada'}${!p.oportunidades ? ' · Atualize o plano para incluir todos os sinais dos agentes.' : ''}</div></div>
-      ${ordered.map(a => {
-        const idx = all.findIndex(x => x.id === a.id), saved = status()[a.id];
-        return `<article class="pl-op-card"><div class="pl-sub">${h(a.loja || 'Cliente consolidado')} · ${a.quando === 'hoje' ? 'Agir hoje' : 'Esta semana'} · Confiança: ${h(a.confianca)}</div>
-          <h4>${h(a.titulo)}</h4><div class="pl-op-impact"><b>${h(a.impacto || 'Impacto financeiro não quantificado')}</b><span class="pl-sub">${h(a.impactoNatureza)}</span></div>
-          <dl><dt>Evidência / sinal disponível</dt><dd>${h(a.evidencia)}</dd><dt>Hipótese a validar</dt><dd>${h(a.hipotese)}</dd>
-          <dt>Dados e verificações pendentes</dt><dd>${h(a.faltantes.join(' · ') || 'Sem pendência adicional identificada; conferir a atualidade do sinal.')}</dd>
-          <dt>Responsável</dt><dd>${h(saved?.responsavel || a.responsavel)}</dd></dl>
-          ${saved?.st ? `<div class="pl-sub">${h(({feito:'Feita',tarefa:'Virou tarefa',descartado:'Descartada'})[saved.st] || saved.st)}${saved.em ? ' em '+h(new Date(saved.em).toLocaleDateString('pt-BR')) : ''}${saved.motivo ? ' · '+h(saved.motivo) : ''}</div>` : ''}
-          ${saved?.baseline ? `<div class="pl-sub">Contexto ao concluir: TACOS ${pct(saved.baseline.tacos)} · projeção do cliente ${R$(saved.baseline.projecao)}. São dados consolidados, não resultado atribuível à ação.</div>` : ''}
-          ${saved?.resultado ? `<p><b>Resultado observado:</b> ${h(saved.resultado)}<br><span class="pl-sub">Registro manual · ${h(new Date(saved.resultadoEm).toLocaleDateString('pt-BR'))}; não comprova causalidade.</span></p>` : ''}
-          <div class="pl-acao-mais">${a.tela ? `<button class="btn btn-primary btn-sm" onclick="window._plOpAcao(${idx},'ir')">Abrir ação</button>` : ''}
-          ${!saved?.st ? `<button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'tarefa')">Virar tarefa</button><button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'feito')">Concluir</button><button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'descartar')">Descartar</button>` : `<button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'resultado')">Registrar resultado</button><button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'reabrir')">Reabrir</button>`}
-          <button class="btn btn-secondary btn-sm" onclick="window._plOpAcao(${idx},'responsavel')">Definir responsável</button></div>
+      <div class="pl-ops">${ordered.slice(0, st.opLimite).map(a => {
+        const idx = all.findIndex(x => x.id === a.id), saved = status()[a.id], ab = st.opAberta === a.id;
+        const estado = saved?.st ? ({ feito: 'Feita', tarefa: 'Virou tarefa', descartado: 'Descartada' })[saved.st] || saved.st : '';
+        return `<article class="pl-op ${ab ? 'aberta' : ''} ${saved?.st ? 'resolvida' : ''}">
+          <div class="pl-op-linha">
+            <button type="button" class="pl-op-main" aria-expanded="${ab}" onclick="window._plOpTog('${h(a.id)}')">
+              <span class="pl-op-tit">${h(a.titulo)}</span>
+              <span class="pl-op-meta"><span class="${a.quando === 'hoje' ? 'pl-op-hoje' : ''}">${a.quando === 'hoje' ? 'Agir hoje' : 'Esta semana'}</span> · ${h(a.loja || 'Cliente consolidado')} · confiança ${h(a.confianca)}${estado ? ` · <b>${h(estado)}</b>` : ''}</span>
+            </button>
+            <span class="pl-op-imp">${a.impacto ? h(a.impacto) : ''}</span>
+            <span class="pl-op-bt">${saved?.st ? `<button class="pl-ic" title="Reabrir" aria-label="Reabrir" onclick="window._plOpAcao(${idx},'reabrir')">↺</button>`
+              : `${a.tela ? `<button class="btn btn-primary btn-sm" onclick="window._plOpAcao(${idx},'ir')">Abrir</button>` : ''}<button class="pl-ic pl-ic-ok" title="Concluir" aria-label="Concluir" onclick="window._plOpAcao(${idx},'feito')">✓</button><button class="pl-ic pl-ic-x" title="Descartar" aria-label="Descartar" onclick="window._plOpAcao(${idx},'descartar')">✕</button>`}</span>
+          </div>
+          ${ab ? `<div class="pl-op-det">
+            <dl><dt>Sinal</dt><dd>${h(a.evidencia)}</dd><dt>Hipótese</dt><dd>${h(a.hipotese)}</dd>
+            <dt>Conferir antes</dt><dd>${h(a.faltantes.join(' · ') || 'Conferir a atualidade do sinal.')}</dd>
+            <dt>Responsável</dt><dd>${h(saved?.responsavel || a.responsavel)} <button class="pl-link" onclick="window._plOpAcao(${idx},'responsavel')">trocar</button></dd></dl>
+            ${a.impactoNatureza ? `<div class="pl-sub">${h(a.impactoNatureza)}</div>` : ''}
+            ${saved?.resultado ? `<div class="pl-sub"><b>Resultado observado:</b> ${h(saved.resultado)}</div>` : ''}
+            ${saved?.st ? `<button class="pl-link" onclick="window._plOpAcao(${idx},'resultado')">Registrar resultado</button>` : ''}
+          </div>` : ''}
         </article>`;
-      }).join('') || '<div class="pl-vazio">Nenhuma oportunidade para esta conta no plano atual.</div>'}
+      }).join('') || '<div class="pl-vazio">Nenhuma oportunidade para esta conta no plano atual.</div>'}</div>
+      ${ordered.length > st.opLimite ? `<button type="button" class="pl-op-mais" onclick="window._plOpMais()">Mostrar mais ${Math.min(10, ordered.length - st.opLimite)} de ${ordered.length - st.opLimite}</button>` : ''}
       <div class="pl-op-card"><h4>Medições dos agentes · últimos 7 dias · cliente consolidado</h4><p>${Number(resultado.medidas)||0} ajuste(s) medido(s) · ${Number(resultado.melhoraram)||0} melhoraram.</p>${(resultado.exemplos || []).map(t => `<p class="pl-sub">${h(t)}</p>`).join('')}<p class="pl-sub">Comparações antes/depois não isolam sazonalidade, preço, estoque ou outras alterações.</p></div>`;
   }
 
@@ -326,7 +340,7 @@ Router.register('plano-acao', (params, el) => {
 
   function renderPlano(p) {
     const abertas = pendentesDe(p).length, c = p.caminho;
-    const ABAS = [['oportunidades', 'Oportunidades'], ['acoes', `O que fazer${abertas ? ` <b>${abertas}</b>` : ''}`], ['caminho', `Caminho da meta${c && !c.atinge && c.cobertura != null ? ` <small>${c.cobertura}%</small>` : ''}`],
+    const ABAS = [['acoes', `O que fazer${abertas ? ` <b>${abertas}</b>` : ''}`], ['oportunidades', 'Oportunidades'], ['caminho', `Caminho da meta${c && !c.atinge && c.cobertura != null ? ` <small>${c.cobertura}%</small>` : ''}`],
       ['raiox', 'Por que mudou'], ['pauta', 'Pauta do cliente'], ['ajustes', 'Autonomia']];
     const aba = ABAS.some(x => x[0] === st.aba) ? st.aba : 'acoes';
     const corpo = { oportunidades: () => renderOportunidades(p), acoes: () => renderAcoes(p), caminho: () => renderCaminho(p), raiox: () => renderRaioX(p.raioX, p.metricas || {}), pauta: () => renderPauta(p), ajustes: () => renderContrato(p) }[aba]();
@@ -349,6 +363,9 @@ Router.register('plano-acao', (params, el) => {
     root.innerHTML = p ? renderPlano(p) : renderLista();
   }
 
+  window._plSec = k => { st.secFechadas.has(k) ? st.secFechadas.delete(k) : st.secFechadas.add(k); render(); };
+  window._plOpTog = id => { st.opAberta = st.opAberta === id ? null : id; render(); };
+  window._plOpMais = () => { st.opLimite += 10; render(); };
   window._plGestor = g => { st.gestor = g; try { localStorage.setItem('glr_plano_gestor', g); } catch (e) {} render(); };
   window._plFiltro = k => { st.filtro = k; try { localStorage.setItem('glr_plano_filtro', k); } catch (e) {} render(); };
   window._plAbrir = id => { st.aberto = String(id || ''); GLR.ctx?.definir(st.aberto, true); st.copiado = false; st.acaoAberta = null; st.metaEd = null; st.diagAberto = false; st.rxTodos = false; try { localStorage.setItem('glr_plano_cliente', st.aberto); } catch (e) {} render(); window.scrollTo?.(0, 0); };
@@ -390,7 +407,7 @@ Router.register('plano-acao', (params, el) => {
     render();
   };
   window._plCopiar = () => { const t = document.getElementById('pl-pauta')?.value || ''; navigator.clipboard?.writeText(t).then(() => { st.copiado = true; render(); }, () => alert('Não consegui copiar — selecione o texto e copie.')); };
-  window._plAba = k => { st.aba = k; st.copiado = false; try { localStorage.setItem('glr_plano_aba', k); } catch (e) {} render(); };
+  window._plAba = k => { st.aba = k; st.copiado = false; try { localStorage.setItem('glr_plano_aba2', k); } catch (e) {} render(); };
   window._plAcaoTog = id => { st.acaoAberta = st.acaoAberta === id ? null : id; render(); };
   window._plMetaEd = cid => { st.metaEd = cid ? String(cid) : null; render(); if (cid) document.getElementById('pl-meta-fat')?.focus(); };
   window._plDiag = () => { st.diagAberto = !st.diagAberto; render(); };
@@ -437,6 +454,36 @@ Router.register('plano-acao', (params, el) => {
   </div>
   <style>
     .pl-sub{font-size:12px;color:var(--text-muted)}
+    .pl-sec{margin-bottom:14px}
+    .pl-sec-cab{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px;color:var(--text-secondary)}
+    .pl-sec-cab i{width:9px;height:9px;border-radius:50%;background:var(--c)} .pl-sec-cab b{color:var(--text-primary);font-size:14px} .pl-sec-cab span:last-child{font-variant-numeric:tabular-nums;color:var(--text-muted)}
+    .pl-sec-seta{display:inline-block;transition:transform .15s;transform:rotate(90deg);color:var(--text-muted)} .pl-sec.fechada .pl-sec-seta{transform:none}
+    .pl-sec-cab:focus-visible{outline:2px solid var(--accent);border-radius:6px}
+    .pl-tab{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-top:6px;box-shadow:inset 3px 0 0 var(--c)}
+    .pl-tr{all:unset;box-sizing:border-box;display:grid;grid-template-columns:minmax(150px,1.3fr) minmax(170px,1.2fr) 120px 90px minmax(200px,2fr) 100px;gap:14px;align-items:center;width:100%;padding:11px 16px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px}
+    .pl-tr:last-child{border-bottom:0} button.pl-tr:hover{background:var(--bg-subtle)} button.pl-tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+    .pl-tr>span{display:flex;flex-direction:column;min-width:0;gap:2px} .pl-tr b{font-weight:650;font-variant-numeric:tabular-nums;color:var(--text-primary)} .pl-tr small{font-size:11.5px;color:var(--text-muted)}
+    .pl-th{cursor:default;padding:8px 16px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);background:var(--bg-subtle)}
+    .pl-td-cli b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pl-mini-bar{display:block;height:4px;border-radius:99px;background:var(--bg-subtle);overflow:hidden;max-width:160px} .pl-mini-bar i{display:block;height:100%;border-radius:99px}
+    .pl-td-q-nome{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary)}
+    .pl-td-ac{align-items:flex-start} .pl-pill{font-size:11.5px;color:var(--red) !important;background:color-mix(in srgb,var(--red) 10%,transparent);border-radius:99px;padding:1px 8px}
+    @media (max-width:1100px){.pl-tr{grid-template-columns:minmax(140px,1fr) minmax(150px,1fr) 110px 80px 90px}.pl-tr>.pl-td-queda{display:none}}
+    @media (max-width:700px){.pl-th{display:none}.pl-tr{grid-template-columns:1fr 1fr}.pl-tr>span:nth-child(n+3){display:none}}
+    .pl-ops{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-top:10px}
+    .pl-op{border-bottom:1px solid var(--border)} .pl-op:last-child{border-bottom:0} .pl-op.resolvida{opacity:.55}
+    .pl-op-linha{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:10px 14px}
+    .pl-op:hover{background:var(--bg-subtle)}
+    .pl-op-main{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:2px;min-width:0}
+    .pl-op-main:focus-visible{outline:2px solid var(--accent);border-radius:4px}
+    .pl-op-tit{font-size:13.5px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .pl-op.aberta .pl-op-tit{white-space:normal}
+    .pl-op-meta{font-size:12px;color:var(--text-muted)} .pl-op-hoje{color:var(--red);font-weight:650}
+    .pl-op-imp{font-size:13px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--text-primary)}
+    .pl-op-bt{display:flex;gap:4px;align-items:center}
+    .pl-ic{border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:14px;width:30px;height:30px;border-radius:8px} .pl-ic:hover{background:var(--bg-card-hover);color:var(--text-primary)} .pl-ic-ok:hover{color:var(--green)} .pl-ic-x:hover{color:var(--red)}
+    .pl-op-det{padding:0 14px 12px;font-size:12.5px;color:var(--text-secondary)}
+    .pl-op-det dl{display:grid;grid-template-columns:120px 1fr;gap:4px 12px;margin:0 0 6px} .pl-op-det dt{color:var(--text-muted);font-weight:600} .pl-op-det dd{margin:0}
+    .pl-op-mais{display:block;width:100%;margin-top:8px;border:0;background:none;padding:10px;font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;font-family:inherit}
     .pl-topo{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
     .pl-gestor{width:auto;max-width:220px}
     .pl-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}

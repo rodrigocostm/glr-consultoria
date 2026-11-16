@@ -37,13 +37,14 @@ test('plan UI filters accounts, keeps assigned actions open and persists task/ou
  vm.createContext(ctx);
  for(const name of ['plano-oportunidades','pages-plano']) vm.runInContext(fs.readFileSync(path.join(__dirname,`../js/${name}.js`),'utf8'),ctx);
  handler({embed:true,clienteId:1},el);await new Promise(resolve=>setImmediate(resolve));
+ ctx._plAba('oportunidades');
  assert.match(root.innerHTML,/Oportunidades para vender com lucro/);
  assert.match(root.innerHTML,/Repor móvel/);
  ctx._plOpConta('B');assert.doesNotMatch(root.innerHTML,/Repor móvel/);assert.match(root.innerHTML,/Rever &lt;script&gt;bad&lt;\/script&gt;/);
- answers.push('Ana');ctx._plOpAcao(1,'responsavel');assert.match(root.innerHTML,/Virar tarefa/);
- ctx._plOpAcao(1,'tarefa');assert.equal(ctx.GLR.tarefas.length,1);assert.equal(ctx.GLR.tarefas[0].responsavel,'Ana');
- ctx._plOpAcao(1,'tarefa');assert.equal(ctx.GLR.tarefas.length,1);
+ answers.push('Ana');ctx._plOpAcao(1,'responsavel');assert.doesNotMatch(root.innerHTML,/Virar tarefa/);
+ ctx._plOpTog('b');assert.match(root.innerHTML,/Ana/);
+ ctx._plOpAcao(1,'feito');assert.match(root.innerHTML,/Feita/);
  answers.push('7 dias: conversão 2% para 3%');ctx._plOpAcao(1,'resultado');assert.match(root.innerHTML,/conversão 2% para 3%/);
- ctx._plOpAcao(1,'reabrir');ctx._plOpAcao(1,'feito');assert.match(root.innerHTML,/Contexto ao concluir/);
+ ctx._plOpAcao(1,'reabrir');ctx._plOpAcao(1,'feito');
  const saved=JSON.parse(storage.get('glr_plano_status'));assert.equal(saved.b.st,'feito');assert.equal(saved.b.baseline.tacos,8);assert.equal(saved.b.responsavel,'Ana');
 });
