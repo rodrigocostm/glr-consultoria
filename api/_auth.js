@@ -36,10 +36,22 @@ async function requireStaff(req, res) {
     res.status(503).json({ error: 'Não foi possível verificar as permissões.' }); return null;
   }
 }
+// Equipe ou cliente do portal (telas que o portal também usa, ex.: Criar anúncio).
+// Devolve a identidade inteira: { user, role, portal: { contaIds, clienteId… } }.
+async function requireEquipeOuPortal(req, res) {
+  try {
+    const identity = await access(req);
+    if (!identity) { res.status(401).json({ error: 'Faça login para continuar.' }); return null; }
+    if (!['staff', 'portal'].includes(identity.role)) { res.status(403).json({ error: 'Acesso não autorizado.' }); return null; }
+    return identity;
+  } catch {
+    res.status(503).json({ error: 'Não foi possível verificar as permissões.' }); return null;
+  }
+}
 function internalOrigin() {
   const value = process.env.GLR_INTERNAL_ORIGIN || 'https://consultoriaglr.com.br';
   const url = new URL(value);
   if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('GLR_INTERNAL_ORIGIN inválida');
   return url.origin;
 }
-module.exports = { access, requireStaff, cronAuthorized, internalOrigin };
+module.exports = { access, requireStaff, requireEquipeOuPortal, cronAuthorized, internalOrigin };

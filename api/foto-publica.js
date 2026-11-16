@@ -10,7 +10,7 @@
 // ============================================================
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  if (!await require('./_auth').requireStaff(req, res)) return;
+  if (!await require('./_auth').requireEquipeOuPortal(req, res)) return;
   try {
     const m = String(req.body?.image_base64 || '').match(/^data:(image\/(jpeg|png|webp));base64,(.+)$/);
     if (!m) return res.status(400).json({ error: 'Envie a foto em JPEG, PNG ou WebP.' });

@@ -1985,9 +1985,8 @@
     carregarContas().then(async () => { if (rasc && state.contaId) { if (!state.warehouseId) await carregarWarehouse(); sugerirCategoria(); } });
   }
 
-  // Equipe: as três telas antigas viraram o Criar anúncio (js/pages-criador-anuncio.js).
-  // O portal do cliente ainda usa as de ML e Shopee.
-  const paraCriador = render => (params, el) => { if (!window._portalConfig) { Router.navigate('criar-anuncio'); return; } render(params, el); };
+  // As três telas antigas viraram o Criar anúncio (js/pages-criador-anuncio.js), para a equipe e o portal.
+  const paraCriador = render => (params, el) => { Router.navigate('criar-anuncio'); };
   Router.register('anuncios-ml', paraCriador(renderML));
   Router.register('anuncios-shopee', paraCriador(renderShopee));
   Router.register('anuncios-tiktok', paraCriador(renderTikTok));

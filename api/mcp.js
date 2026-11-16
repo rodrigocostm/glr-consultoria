@@ -35,7 +35,9 @@ const BLOQUEADAS_PORTAL = /^(credits_status|ai_credits_status|me|raw_write|marke
 // Consultas de catálogo (categorias/atributos) não são de conta nenhuma
 const CATALOGO_LIVRE = new Set(['search_categories', 'ml_site_categories', 'ml_category_detail', 'category_attributes', 'ml_catalog_domain_categories', 'ml_category_sale_terms', 'ml_listing_fees', 'ml_lookup_ncm', 'tiktok_get_categories', 'tiktok_category_rules', 'tiktok_get_category_attributes', 'tiktok_recommend_category']);
 
-const CAMPOS_CONTA = ['meliUserId', 'meli_user_id', 'account_id', 'shopId', 'shop_id', 'seller_id', 'amazon_account_id', 'magalu_account_id'];
+// Criar anúncio no portal (js/pages-criador-anuncio.js): só nas contas do próprio cliente (conferidas abaixo)
+const CRIACAO_PORTAL = new Set(['create_item', 'ml_shipping_options_free', 'shopee_get_categories', 'shopee_recommend_category', 'shopee_get_attributes', 'shopee_get_brand_list', 'shopee_upload_image', 'shopee_create_item', 'shopee_init_variation', 'tiktok_get_warehouses', 'tiktok_upload_image', 'tiktok_listing_schemas', 'tiktok_create_product']);
+const CAMPOS_CONTA = ['open_id', 'meliUserId', 'meli_user_id', 'account_id', 'shopId', 'shop_id', 'seller_id', 'amazon_account_id', 'magalu_account_id'];
 
 // Medidor de consumo da cota (api/_consumo.js): as telas também gastam ações da
 // Tiops. Conta em memória e grava no máximo 1x por minuto por instância.
@@ -207,7 +209,7 @@ module.exports = async function handler(req, res) {
   const p = params || {};
   if (contasPermitidas) {
     // Portal: apenas consultas explicitamente permitidas e custo validado.
-    if ((!ALLOWED_ACTIONS.has(action) && action !== 'glr_portal_salvar_custo' && action !== 'glr_portal_produtos' && !/^glr_nfe_|^glr_estoque_|^glr_portal_(ncm|salvar_ncm)$/.test(action) && !CATALOGO_LIVRE.has(action)) || action === 'raw' || BLOQUEADAS_PORTAL.test(action)) return res.status(403).json({ error: 'Ação não disponível no portal' });
+    if ((!ALLOWED_ACTIONS.has(action) && !CRIACAO_PORTAL.has(action) && action !== 'glr_portal_salvar_custo' && action !== 'glr_portal_produtos' && !/^glr_nfe_|^glr_estoque_|^glr_portal_(ncm|salvar_ncm)$/.test(action) && !CATALOGO_LIVRE.has(action)) || action === 'raw' || BLOQUEADAS_PORTAL.test(action)) return res.status(403).json({ error: 'Ação não disponível no portal' });
     if (action !== 'list_accounts' && action !== 'glr_portal_produtos' && !/^glr_nfe_|^glr_estoque_|^glr_portal_(ncm|salvar_ncm)$/.test(action) && !CATALOGO_LIVRE.has(action)) { // as ações glr_nfe_*/ncm conferem a conta por conta própria
       const contas = CAMPOS_CONTA.map(k => p[k]).filter(v => v != null && v !== '').map(String);
       if (!contas.length) return res.status(403).json({ error: 'Informe a conta da consulta' });

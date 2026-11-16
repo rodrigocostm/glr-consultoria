@@ -174,11 +174,6 @@
       if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
       return j;
     }
-    async function chatJSON(system, texto) {
-      const j = await api('/api/chat', { system, messages: [{ role: 'user', content: texto }] });
-      const m = String(j.content || '').match(/\{[\s\S]*\}/); if (!m) throw new Error('resposta sem JSON');
-      return JSON.parse(m[0]);
-    }
     // SEO: pesquisa real de busca do ML + IA (api/anuncio-seo.js) → título por canal e descrição
     async function iaSEO() {
       if (!st.fotos.length && !st.p.titulo.trim()) return aviso('Envie uma foto ou escreva o nome do produto.');
@@ -213,7 +208,7 @@
       return (st.arvore.shopee = lista);
     }
     async function termosAlternativos() {
-      try { const r = await chatJSON('Devolva APENAS JSON {"termos":["...","...","..."]}: 3 frases curtas (2 a 4 palavras) com o TIPO do produto para achar a categoria num marketplace — nunca nome comercial ou marca. Do mais específico ao mais genérico.', `Produto: ${st.p.titulo}\n${st.p.descricao.slice(0, 400)}`); return (r.termos || []).slice(0, 3); } catch (e) { return []; }
+      try { const r = await api('/api/anuncio-seo', { acao: 'termos', titulo: st.p.titulo, descricao: st.p.descricao }); return (r.termos || []).slice(0, 3); } catch (e) { return []; }
     }
     const ADP = {
       ml: {
@@ -333,8 +328,7 @@
       cn.iaFicha = true; tudo();
       try {
         const lista = alvo.map(a => `${a.id} | ${a.nome}${a.tipo === 'numero' ? ` | número em ${a.unidades?.join('/') || a.unidade || ''}` : ''}${a.opcoes?.length ? ` | opções: ${a.opcoes.slice(0, 40).map(o => o.nome).join('; ')}` : ''}`).join('\n');
-        const r = await chatJSON('Você preenche a ficha técnica de um anúncio de marketplace. Devolva APENAS JSON {"valores": {"<id>": "<valor>"}}. Para campos com opções, use EXATAMENTE o texto de uma das opções. Para número, responda o número com a unidade, ex.: "80 cm" ou "12 kg" (use uma das unidades listadas). Preencha SOMENTE o que dá para afirmar com certeza a partir dos dados do produto; o que não dá, deixe fora do JSON. Nunca invente.',
-          `PRODUTO\nTítulo: ${st.p.titulo}\nMarca: ${st.p.marca || '—'}\nDescrição: ${st.p.descricao.slice(0, 1500)}\nEmbalagem: ${st.p.compr}x${st.p.larg}x${st.p.alt} cm, ${st.p.peso} kg\n\nCAMPOS (id | nome | regras)\n${lista}`);
+        const r = await api('/api/anuncio-seo', { acao: 'ficha', titulo: st.p.titulo, marca: st.p.marca, descricao: st.p.descricao, embalagem: `${st.p.compr}x${st.p.larg}x${st.p.alt} cm, ${st.p.peso} kg`, campos: lista });
         let n = 0;
         for (const [id, v] of Object.entries(r.valores || {})) {
           const a = alvo.find(x => String(x.id) === String(id)); if (!a || v == null || v === '') continue;

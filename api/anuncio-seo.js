@@ -11,12 +11,16 @@
 //     técnico (o que não dá para afirmar volta em "faltam").
 // Corpo: { titulo, descricao, marca, extras, foto (data URL, opcional),
 //          categoria_ml (opcional), contas: [meliUserId…] }
+// acao 'termos' (termos para achar categoria) e 'ficha' (preencher ficha técnica)
+// usam prompts fixos daqui — o portal não usa o /api/chat, que leva a base interna.
+// Equipe e portal (no portal, a pesquisa só usa as contas do próprio cliente).
 // ============================================================
 const sdk = require('@anthropic-ai/sdk');
 const Anthropic = sdk.default || sdk;
 const market = require('./_tiops-market');
 
 const MODELO = 'claude-opus-5-5';
+const MODELO_RAPIDO = 'claude-sonnet-5-5'; // termos e ficha: respostas curtas
 const corta = (s, n) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
 // corta no limite sem quebrar palavra
 const limite = (s, n) => { s = corta(s, 400); if (s.length <= n) return s; const c = s.slice(0, n + 1); const i = c.lastIndexOf(' '); return (i > n * 0.6 ? c.slice(0, i) : s.slice(0, n)).trim(); };
@@ -44,15 +48,31 @@ function jsonDe(txt) {
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  if (!await require('./_auth').requireStaff(req, res)) return;
+  const quem = await require('./_auth').requireEquipeOuPortal(req, res); if (!quem) return;
   const apiKey = process.env.ANTHROPIC_API_KEY, mcpKey = process.env.MCP_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'A chave da IA não está configurada no servidor.' });
 
   try {
     const b = req.body || {};
-    const contas = (Array.isArray(b.contas) ? b.contas : []).map(String).slice(0, 6);
+    let contas = (Array.isArray(b.contas) ? b.contas : []).map(String).slice(0, 6);
+    if (quem.role === 'portal') { const minhas = new Set((quem.portal?.contaIds || []).map(String)); contas = contas.filter(c => minhas.has(c)); }
     const img = imagemDe(b.foto);
     const client = new Anthropic({ apiKey });
+    const texto = r => r.content.filter(x => x.type === 'text').map(x => x.text).join('\n');
+
+    // termos para achar categoria quando o nome não acha nada
+    if (b.acao === 'termos') {
+      const r = await client.messages.create({ model: MODELO_RAPIDO, max_tokens: 300, system: 'Devolva APENAS JSON {"termos":["...","...","..."]}: 3 frases curtas (2 a 4 palavras) com o TIPO do produto para achar a categoria num marketplace brasileiro — nunca nome comercial ou marca. Do mais específico ao mais genérico.', messages: [{ role: 'user', content: `Produto: ${corta(b.titulo, 200)}\n${corta(b.descricao, 400)}` }] });
+      return res.status(200).json({ termos: (jsonDe(texto(r)).termos || []).map(x => corta(x, 60)).slice(0, 3) });
+    }
+    // ficha técnica: preenche só o que dá para afirmar
+    if (b.acao === 'ficha') {
+      const r = await client.messages.create({ model: MODELO_RAPIDO, max_tokens: 2000,
+        system: 'Você preenche a ficha técnica de um anúncio de marketplace. Devolva APENAS JSON {"valores": {"<id>": "<valor>"}}. Para campos com opções, use EXATAMENTE o texto de uma das opções. Para número, responda o número com a unidade, ex.: "80 cm" ou "12 kg" (use uma das unidades listadas). Preencha SOMENTE o que dá para afirmar com certeza a partir dos dados do produto; o que não dá, deixe fora do JSON. Nunca invente.',
+        messages: [{ role: 'user', content: `PRODUTO\nTítulo: ${corta(b.titulo, 200)}\nMarca: ${corta(b.marca, 60) || '—'}\nDescrição: ${corta(b.descricao, 1500)}\nEmbalagem: ${corta(b.embalagem, 80)}\n\nCAMPOS (id | nome | regras)\n${String(b.campos || '').slice(0, 12000)}` }] });
+      const v = jsonDe(texto(r)).valores || {};
+      return res.status(200).json({ valores: Object.fromEntries(Object.entries(v).slice(0, 60).map(([k, x]) => [String(k).slice(0, 60), corta(x, 200)])) });
+    }
     let termo = corta(b.titulo, 120);
 
     // 1) sem título: a IA diz o que é o produto pela foto

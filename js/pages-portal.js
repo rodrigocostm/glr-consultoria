@@ -861,7 +861,7 @@ window._initPortalCliente = async function(cfg) {
 };
 
 // Telas liberadas para o cliente do portal (o router bloqueia o resto)
-window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'notas', 'meu-estoque', 'vendas', 'atendimento-ia', 'meus-ads', 'meu-analitico', 'meus-reembolsos', 'calculadora', 'meu-chat'];
+window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'criar-anuncio', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'notas', 'meu-estoque', 'vendas', 'atendimento-ia', 'meus-ads', 'meu-analitico', 'meus-reembolsos', 'calculadora', 'meu-chat'];
 
 function _portalMostrarLoading(msg) {
   const el = document.getElementById('page-content');
@@ -948,13 +948,9 @@ function _configurarSidebarCliente(cfg) {
         Promoções
       </button>
       <div class="sidebar-section-title" style="margin-top:10px;">Anúncios</div>
-      <button class="nav-item" data-page="anuncios-ml" onclick="Router.navigate('anuncios-ml')">
-        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        Mercado Livre
-      </button>
-      <button class="nav-item" data-page="anuncios-shopee" onclick="Router.navigate('anuncios-shopee')">
-        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        Shopee
+      <button class="nav-item" data-page="criar-anuncio" onclick="Router.navigate('criar-anuncio')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>
+        Criar anúncio
       </button>
       <div class="sidebar-section-title" style="margin-top:10px;">Envios</div>
       <button class="nav-item" data-page="notas" onclick="Router.navigate('notas')">

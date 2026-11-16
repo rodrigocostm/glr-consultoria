@@ -12,7 +12,8 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!await require('./_auth').requireStaff(req, res)) return;
+  const quem = await require('./_auth').requireEquipeOuPortal(req, res); if (!quem) return;
+  if (quem.role === 'portal' && !['tipo', 'ambientada'].includes(String(req.body?.stage || 'ambientada'))) return res.status(403).json({ error: 'Opção não disponível no portal.' });
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
