@@ -47,7 +47,7 @@ Router.register('data-combinada', (params, el) => {
       const foco = GLR.ctx?.cliente?.(); if (foco && String(c.id) !== foco) continue; // cliente em foco (barra de cima)
       const g = gestores.find(x => String(x.id) === String(c.gestorId));
       const gestorId = g ? String(g.id) : 'sem';
-      if (st.gestor !== 'todos' && st.gestor !== gestorId) continue;
+      if (!foco && st.gestor !== 'todos' && st.gestor !== gestorId) continue; // com cliente em foco, o filtro de gestor não vale
       const lojas = [];
       for (const ct of (vinc[String(c.id)] || [])) {
         const mkt = BaseDados.mktDe(ct.marketplace); if (!mkt) continue;

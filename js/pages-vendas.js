@@ -301,7 +301,7 @@ Router.register('vendas', async (params, el) => {
       label: 'Conta', icon: '🏬',
       itens: contasFiltradas.map(c => ({ valor: c.external_id, label: contaNome(c), mkt: BaseDados.mktDe(c.marketplace), sub: contaEmpresas(c).join(', ') })),
       selecionados: filtroContasSel, porPlataforma: true,
-      onChange: (novoSet) => { filtroContasSel = novoSet; renderFiltroEmpresaConta(); _filtroMudou(); },
+      onChange: (novoSet) => { filtroContasSel = novoSet; if (!window._portalConfig) { const cs = [...new Set(contas.filter(c => novoSet.has(c.external_id)).map(c => GLR.ctx?.clienteDaConta(c.marketplace, c.external_id) || ''))]; if (cs.length === 1 && cs[0]) GLR.ctx?.definir(cs[0], true); else if (!novoSet.size) GLR.ctx?.definir('', true); } renderFiltroEmpresaConta(); _filtroMudou(); },
     });
   }
 
@@ -3040,15 +3040,18 @@ Router.register('vendas', async (params, el) => {
       contas = r.data?.accounts || [];
       // Cliente em foco (barra de cima): abre filtrada nas contas dele
       const nomeFoco = !window._portalConfig && GLR.ctx?.nome?.();
-      if (nomeFoco && !filtroEmpresas.size && !filtroContasSel.size) {
-        const doCli = contas.filter(c => contaEmpresas(c).includes(nomeFoco));
-        if (doCli.length) { filtroEmpresas = new Set([nomeFoco]); filtroContasSel = new Set(doCli.map(c => c.external_id)); }
+      if (nomeFoco) {
+        const doCli = contas.filter(c => contaEmpresas(c).includes(nomeFoco)), ids = new Set(doCli.map(c => String(c.external_id)));
+        // a seleção lembrada (cache) só fica se já for toda do cliente em foco
+        const jaDele = filtroContasSel.size > 0 && [...filtroContasSel].every(id => ids.has(String(id)));
+        if (doCli.length && !jaDele) { filtroEmpresas = new Set([nomeFoco]); filtroContasSel = new Set(doCli.map(c => c.external_id)); pedidos = []; window._vdSemCache = true; }
       }
       renderFiltroEmpresaConta();
     } catch(e) { console.warn('[Vendas] Falha ao carregar contas:', e.message); }
 
     const { dataFrom, dataTo } = _periodoParaDatas();
-    const at = carregarCache(dataFrom, dataTo);
+    const at = window._vdSemCache ? false : carregarCache(dataFrom, dataTo); // cache era de outra seleção de contas
+    window._vdSemCache = false;
     const statusEl = document.getElementById('vendas-status');
     if (at) {
       // Cache é local, não chama a API — pode mostrar direto

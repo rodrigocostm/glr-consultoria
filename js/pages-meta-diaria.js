@@ -40,7 +40,7 @@ Router.register('meta-diaria', (params, el) => {
       if (/inativ|cancel|encerr/i.test(String(c.status || ''))) continue;
       const foco = GLR.ctx?.cliente?.(); if (foco && String(c.id) !== foco) continue; // cliente em foco (barra de cima)
       const g = (GLR.gestores || []).find(x => String(x.id) === String(c.gestorId));
-      if (st.gestor !== 'todos' && st.gestor !== (g ? String(g.id) : 'sem')) continue;
+      if (!foco && st.gestor !== 'todos' && st.gestor !== (g ? String(g.id) : 'sem')) continue; // com cliente em foco, o filtro de gestor não vale
       const lojas = [];
       for (const ct of (vinc[String(c.id)] || [])) {
         const mkt = BaseDados.mktDe(ct.marketplace); if (!mkt) continue;
