@@ -449,6 +449,11 @@ Router.register('projecao', (params, el) => {
     proj.mes = lbl(0); proj.labelM1 = lbl(1); proj.labelM2 = lbl(2); proj.labelM3 = lbl(3);
   }
 
+  // Trava manual dos dias vale só no dia em que foi feita: no dia seguinte a Data Base
+  // volta a seguir ontem (antes a trava ficava salva para sempre e a projeção "parava" num dia)
+  const _hojeIsoProj = `${_hoje.getFullYear()}-${String(_hoje.getMonth()+1).padStart(2,'0')}-${String(_hoje.getDate()).padStart(2,'0')}`;
+  for (const p of projecoes) if (p && p._diasEditadosManualmente && p._diasEditadosEm !== _hojeIsoProj) { p._diasEditadosManualmente = false; delete p._diasEditadosEm; }
+
   if (!projecaoAtiva) {
     const clienteObj = GLR.clientes.find(c => c.id === clienteIdAtivo);
     projecaoAtiva = {
@@ -1350,6 +1355,7 @@ Router.register('projecao', (params, el) => {
     // Edição direta dos campos "trava" o auto-cálculo pela Data Base até o
     // usuário mudar a Data Base de novo (aí volta a seguir automaticamente)
     projecaoAtiva._diasEditadosManualmente = true;
+    projecaoAtiva._diasEditadosEm = _hojeIsoProj; // só vale hoje
     projecaoAtiva.diasDecorridos = parseInt(document.getElementById('inp-dias-dec').value) || projecaoAtiva.diasDecorridos;
     projecaoAtiva.diasNoMes = parseInt(document.getElementById('inp-dias-mes').value) || projecaoAtiva.diasNoMes;
     salvar(); // auto-save ao alterar dias
