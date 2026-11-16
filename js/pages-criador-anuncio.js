@@ -463,7 +463,19 @@
       }
       return out;
     }
-    const fotoDaVar = c => { const i = parseInt(c.foto); return isFinite(i) && st.fotos[i] ? st.fotos[i].url : null; };
+    // fotos num endereço público (uma vez por foto; vale para todas as contas)
+    async function fotosPublicas() {
+      for (const f of st.fotos) {
+        if (f.pub) continue;
+        if (/^https?:/.test(f.url)) { f.pub = f.url; continue; }
+        const menor = await reduzir(f.url, 1600);
+        if (!menor) throw new Error('não consegui preparar uma das fotos');
+        f.pub = (await api('/api/foto-publica', { image_base64: menor })).url;
+      }
+      salvarDepois();
+      return st.fotos.map(f => f.pub);
+    }
+    const fotoDaVar = c => { const i = parseInt(c.foto); return isFinite(i) && st.fotos[i] ? st.fotos[i].pub || null : null; };
     const precoVar = (m, c) => num(c.preco) || num(st.canal[m].preco);
     const tituloDe = m => (st.canal[m].titulo || st.p.titulo).trim().slice(0, MKTS[m].tituloMax);
     const PUB = {
@@ -476,16 +488,17 @@
           try { return dado(await MarketplaceAPI.call('create_item', { ...corpo, family_name: tituloDe('ml') })); }
           catch (e) { if (/family_name|title/i.test(e.message)) return dado(await MarketplaceAPI.call('create_item', { ...corpo, title: tituloDe('ml') })); throw e; }
         };
-        const fotos = st.fotos.map(f => f.url), cs = combos();
+        const fotos = await fotosPublicas(), cs = combos();
+        const pics = l => l.map(u => ({ source: u }));
         if (!cs.length) {
-          const r = await criar({ ...base, price: num(cn.preco), available_quantity: parseInt(st.p.estoque) || 0, images_base64: fotos, attributes: [...attrsBase, ...(st.p.sku ? [{ id: 'SELLER_SKU', value_name: st.p.sku }] : [])] });
+          const r = await criar({ ...base, price: num(cn.preco), available_quantity: parseInt(st.p.estoque) || 0, pictures: pics(fotos), attributes: [...attrsBase, ...(st.p.sku ? [{ id: 'SELLER_SKU', value_name: st.p.sku }] : [])] });
           return { id: r.id, link: r.permalink, txt: r.id };
         }
         const ids = []; let link = null;
         for (const c of cs) {
           const va = c.valores.map((v, i) => cn.mapaEixo[i] ? { id: cn.mapaEixo[i], value_name: v } : null).filter(Boolean);
           const capa = fotoDaVar(c);
-          const r = await criar({ ...base, price: precoVar('ml', c), available_quantity: parseInt(c.estoque) || 0, images_base64: capa ? [capa, ...fotos.filter(u => u !== capa)] : fotos, attributes: [...attrsBase, ...va, ...(c.sku ? [{ id: 'SELLER_SKU', value_name: c.sku }] : [])] });
+          const r = await criar({ ...base, price: precoVar('ml', c), available_quantity: parseInt(c.estoque) || 0, pictures: pics(capa ? [capa, ...fotos.filter(u => u !== capa)] : fotos), attributes: [...attrsBase, ...va, ...(c.sku ? [{ id: 'SELLER_SKU', value_name: c.sku }] : [])] });
           ids.push(r.id); link = link || r.permalink;
         }
         return { id: ids[0], link, txt: `${ids.length} anúncios da mesma família (${ids.join(', ')})` };
@@ -493,7 +506,15 @@
       async shopee(conta) {
         const cn = st.canal.shopee, cs = combos();
         const marca = cn.marcas.find(b => String(b.brand_id) === String(cn.marcaId));
-        const body = { shopId: conta, item_name: tituloDe('shopee'), description: st.p.descricao, category_id: parseInt(cn.cat.id, 10), original_price: num(cn.preco), stock: estoqueTotal(), condition: st.p.condicao === 'used' ? 'USED' : 'NEW', images_base64: st.fotos.map(f => f.url) };
+        // Shopee: cada foto sobe na loja de destino (shopee_upload_image) e vira image_id
+        const urls = await fotosPublicas(), ids = [];
+        for (const u of urls.slice(0, 9)) {
+          const up = dado(await MarketplaceAPI.call('shopee_upload_image', { shopId: conta, image_url: u }));
+          const id = up?.response?.image_info?.image_id || up?.image_info?.image_id || up?.image_id || up?.response?.image_id;
+          if (id) ids.push(id);
+        }
+        if (!ids.length) throw new Error('a Shopee não aceitou nenhuma foto');
+        const body = { shopId: conta, item_name: tituloDe('shopee'), description: st.p.descricao, category_id: parseInt(cn.cat.id, 10), original_price: num(cn.preco), stock: estoqueTotal(), condition: st.p.condicao === 'used' ? 'USED' : 'NEW', image: { image_id_list: ids } };
         if (st.p.sku) body.item_sku = st.p.sku; if (st.p.gtin.trim()) body.gtin_code = st.p.gtin.trim();
         if (num(st.p.peso)) body.weight = num(st.p.peso);
         if ([st.p.compr, st.p.larg, st.p.alt].every(x => num(x) > 0)) body.dimension = { package_length: num(st.p.compr), package_width: num(st.p.larg), package_height: num(st.p.alt) };
@@ -519,7 +540,11 @@
         const vend = (wr?.warehouses || []).filter(w => w.type === 'SALES_WAREHOUSE'); const wh = (vend.find(w => w.is_default) || vend[0])?.id;
         if (!wh) throw new Error('a loja não tem armazém de vendas ativo');
         const imagens = [];
-        for (const f of st.fotos) { const up = dado(await MarketplaceAPI.call('tiktok_upload_image', { open_id: conta, image_base64: f.url, use_case: 'MAIN_IMAGE' })); if (up?.uri) imagens.push({ uri: up.uri }); }
+        for (const u of (await fotosPublicas()).slice(0, 9)) {
+          let up = await MarketplaceAPI.call('tiktok_upload_image', { open_id: conta, image_url: u, use_case: 'MAIN_IMAGE' }).then(dado).catch(() => null);
+          if (!up?.uri) { const f = st.fotos.find(x => x.pub === u); const b64 = f ? await reduzir(f.url, 1200) : null; if (b64) up = dado(await MarketplaceAPI.call('tiktok_upload_image', { open_id: conta, image_base64: b64, use_case: 'MAIN_IMAGE' })); }
+          if (up?.uri) imagens.push({ uri: up.uri });
+        }
         if (!imagens.length) throw new Error('nenhuma foto foi aceita');
         const sku = (c, preco, q) => ({ seller_sku: c?.sku || st.p.sku || undefined, price: { amount: String(preco), currency: 'BRL' }, inventory: [{ warehouse_id: wh, quantity: q }], ...(st.p.gtin.trim() && !c ? { identifier_code: { code: st.p.gtin.trim() } } : {}), ...(c ? { sales_attributes: c.valores.map((v, i) => ({ name: c.eixos[i], value_name: v })) } : {}) });
         const body = { title: tituloDe('tiktok'), description: h(st.p.descricao).replace(/\n/g, '<br>'), category_id: cn.cat.id, main_images: imagens,
