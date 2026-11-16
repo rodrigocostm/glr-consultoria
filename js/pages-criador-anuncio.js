@@ -172,11 +172,11 @@
     // Atributo normalizado: { id, nome, obrig, tipo: lista|multi|texto|numero, opcoes:[{id,nome}], unidades:[], dica, max }
     async function arvoreShopee(conta) {
       if (st.arvore.shopee) return st.arvore.shopee;
-      const c = lerJSON('glr_shopee_categorias_cache', null);
+      const c = lerJSON('glr_shopee_categorias_pt', null);
       if (c && Date.now() - c.ts < 7 * 864e5) return (st.arvore.shopee = c.lista);
-      const r = await MarketplaceAPI.call('shopee_get_categories', { shopId: conta });
+      const r = await MarketplaceAPI.call('shopee_get_categories', { shopId: conta, language: 'pt-br' });
       const lista = dado(r)?.response?.category_list || r.response?.category_list || [];
-      try { localStorage.setItem('glr_shopee_categorias_cache', JSON.stringify({ ts: Date.now(), lista })); } catch (e) {}
+      try { localStorage.setItem('glr_shopee_categorias_pt', JSON.stringify({ ts: Date.now(), lista })); } catch (e) {}
       return (st.arvore.shopee = lista);
     }
     async function termosAlternativos() {
@@ -186,15 +186,16 @@
       ml: {
         async categorias(conta, q) {
           const r = await MarketplaceAPI.call('search_categories', { q, meliUserId: conta });
-          return (dado(r)?.items || r.items || []).map(c => ({ id: c.category_id, nome: c.category_name, extra: c.domain_name || '' }));
+          const d = dado(r);
+          return (Array.isArray(d) ? d : d?.items || r.items || []).map(c => ({ id: c.category_id, nome: c.category_name, extra: c.domain_name || '' }));
         },
         async ficha(conta, cat) {
           const r = await MarketplaceAPI.call('category_attributes', { categoryId: cat.id, meliUserId: conta });
-          const todos = dado(r)?.items || r.items || [];
+          const d = dado(r), todos = Array.isArray(d) ? d : d?.items || r.items || [];
           const norm = a => ({ id: a.id, nome: a.name, obrig: !!(a.tags?.required || a.tags?.catalog_required), tipo: Array.isArray(a.values) && a.values.length ? (a.tags?.multivalued ? 'multi' : 'lista') : (a.value_type === 'number_unit' || a.value_type === 'number') ? 'numero' : 'texto',
             opcoes: (a.values || []).map(v => ({ id: v.id, nome: v.name })), unidades: (a.allowed_units || []).map(u => u.id), unidade: a.default_unit, dica: a.tooltip || a.hint || '', max: a.value_max_length });
           const ok = todos.filter(a => !a.tags?.hidden && !a.tags?.read_only && !['SELLER_SKU', 'GTIN', 'EMPTY_GTIN_REASON'].includes(a.id));
-          const ehVar = a => a.tags?.variation_attribute || a.tags?.allow_variations;
+          const ehVar = a => a.tags?.variation_attribute || (a.tags?.allow_variations && !/^PACKAGE_/.test(a.id));
           const obrig = a => a.tags?.required || a.tags?.catalog_required;
           return { req: ok.filter(a => !ehVar(a) && obrig(a)).map(norm), opt: ok.filter(a => !ehVar(a) && !obrig(a)).map(norm), varAttrs: ok.filter(ehVar).map(norm) };
         },
@@ -274,6 +275,13 @@
       if (marca && st.p.marca && cn.vals[marca.id] == null) {
         if (marca.tipo === 'texto') cn.vals[marca.id] = st.p.marca;
         else { const o = marca.opcoes.find(o => o.nome.toLowerCase() === st.p.marca.toLowerCase()); if (o) cn.vals[marca.id] = String(o.id); }
+      }
+      // medidas da embalagem (ML: PACKAGE_*)
+      const med = { PACKAGE_HEIGHT: st.p.alt, PACKAGE_WIDTH: st.p.larg, PACKAGE_LENGTH: st.p.compr };
+      for (const a of todos) {
+        if (cn.vals[a.id] != null || a.tipo !== 'numero') continue;
+        if (med[a.id] && num(med[a.id])) cn.vals[a.id] = { num: String(num(med[a.id])), unit: a.unidades?.includes('cm') ? 'cm' : a.unidade };
+        if (a.id === 'PACKAGE_WEIGHT' && num(st.p.peso)) { const kg = a.unidades?.includes('kg'); cn.vals[a.id] = { num: String(kg ? num(st.p.peso) : Math.round(num(st.p.peso) * 1000)), unit: kg ? 'kg' : 'g' }; }
       }
       if (m === 'shopee' && st.p.marca && !cn.marcaId) { const b = cn.marcas.find(b => (b.original_brand_name || b.display_brand_name || '').toLowerCase() === st.p.marca.toLowerCase()); if (b) cn.marcaId = String(b.brand_id); }
       if (m === 'ml') mapearEixos();
