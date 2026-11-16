@@ -16,7 +16,7 @@
     { id: 'vendas', titulo: 'Vendas e metas', paginas: ['vendas', 'meu-analitico', 'projecao', 'meta-diaria', 'data-combinada', 'datas-especiais'] },
     { id: 'ads', titulo: 'ADS e promoções', paginas: ['agente', 'agente-ml', 'promocoes', 'afiliados'] },
     { id: 'precos', titulo: 'Preço e concorrência', paginas: ['precos-ml', 'precos-shopee', 'conversao-ml', 'mercado-tiops'] },
-    { id: 'anuncios', titulo: 'Anúncios e produtos', paginas: ['produtos', 'anuncios-ml', 'anuncios-shopee', 'anuncios-tiktok', 'anuncios-amazon', 'fotos', 'expansao'] },
+    { id: 'anuncios', titulo: 'Anúncios e produtos', paginas: ['criar-anuncio', 'produtos', 'anuncios-ml', 'anuncios-shopee', 'anuncios-tiktok', 'anuncios-amazon', 'fotos', 'expansao'] },
     { id: 'saude', titulo: 'Saúde das contas', paginas: ['estoque-margem', 'atendimento', 'qualidade-anuncios', 'rastreamento'] },
     { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'gestores', 'onboarding', 'retencao', 'rentabilidade', 'portal-admin'] },
     { id: 'relatorios', titulo: 'Relatórios', paginas: ['relatorios', 'relatorio-semanal', 'timeline'] },

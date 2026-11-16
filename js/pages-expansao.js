@@ -205,7 +205,7 @@ Router.register('expansao', (params, el) => {
       if (!r.fotos.length) throw new Error('não consegui copiar as fotos do anúncio de origem');
       window._glrRascunhoAnuncio = { alvo: o.alvo, conta: c?.canais?.[o.alvo]?.contas?.[0] || '', origem: `${NOME[o.fonte.mkt]} · ${o.fonte.item_id} (${GLR.nomeConta(o.fonte.mkt, o.fonte.conta)})`, ...r };
       delete st.proc[k]; st.preparando = null;
-      Router.navigate(`anuncios-${o.alvo}`);
+      Router.navigate(['ml', 'shopee', 'tiktok'].includes(o.alvo) ? 'criar-anuncio' : `anuncios-${o.alvo}`); // criador novo (etapas, várias contas)
       return;
     } catch (e) { alert('Não consegui preparar o anúncio: ' + (e.message || e)); }
     delete st.proc[k]; st.preparando = null; render();

@@ -657,6 +657,7 @@
         Suba a foto, deixe a IA sugerir título/descrição/categoria, confira a ficha técnica e publique — tudo numa tela só.
       </div>
       ${rasc ? avisoRascunho(rasc) : ''}
+      ${window._portalConfig ? '' : `<div style="font-size:13px;padding:10px 14px;border-radius:10px;border:1px solid var(--accent);color:var(--text-primary);margin:-8px 0 18px;max-width:780px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span><b>Novo:</b> o Criar anúncio publica no ML, na Shopee e no TikTok de uma vez, com variações, prévia, nota e margem.</span><button class="btn btn-primary btn-sm" onclick="Router.navigate('criar-anuncio')">Abrir o criador novo</button></div>`}
       <div id="an-ml-root"></div>
       <style>@media (max-width:900px){.an-grid-resp{grid-template-columns:1fr !important;}}</style>
     </div>`;
@@ -1323,6 +1324,7 @@
         Suba a foto, deixe a IA sugerir nome/descrição/categoria, confira a ficha técnica e publique — tudo numa tela só.
       </div>
       ${rasc ? avisoRascunho(rasc) : ''}
+      ${window._portalConfig ? '' : `<div style="font-size:13px;padding:10px 14px;border-radius:10px;border:1px solid var(--accent);color:var(--text-primary);margin:-8px 0 18px;max-width:780px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span><b>Novo:</b> o Criar anúncio publica no ML, na Shopee e no TikTok de uma vez, com variações, prévia, nota e margem.</span><button class="btn btn-primary btn-sm" onclick="Router.navigate('criar-anuncio')">Abrir o criador novo</button></div>`}
       <div id="an-sp-root"></div>
       <style>@media (max-width:900px){.an-grid-resp{grid-template-columns:1fr !important;}}</style>
     </div>`;
@@ -1957,6 +1959,7 @@
         Suba a foto, deixe a IA sugerir nome/descrição/categoria, confira a ficha técnica e publique — tudo numa tela só.
       </div>
       ${rasc ? avisoRascunho(rasc) : ''}
+      ${window._portalConfig ? '' : `<div style="font-size:13px;padding:10px 14px;border-radius:10px;border:1px solid var(--accent);color:var(--text-primary);margin:-8px 0 18px;max-width:780px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span><b>Novo:</b> o Criar anúncio publica no ML, na Shopee e no TikTok de uma vez, com variações, prévia, nota e margem.</span><button class="btn btn-primary btn-sm" onclick="Router.navigate('criar-anuncio')">Abrir o criador novo</button></div>`}
       <div id="an-tt-root"></div>
       <style>@media (max-width:900px){.an-grid-resp{grid-template-columns:1fr !important;}}</style>
     </div>`;
