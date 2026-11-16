@@ -79,10 +79,13 @@
       st.origemRasc = rasc.origem || '';
     }
 
+    // fotos ficam no IndexedDB (base64 grande não cabe no localStorage); o resto do rascunho no localStorage
+    const idb = (modo, fn) => new Promise((ok, erro) => { try { const r = indexedDB.open('glr_criador', 1); r.onupgradeneeded = () => r.result.createObjectStore('fotos'); r.onerror = () => erro(r.error); r.onsuccess = () => { const tx = r.result.transaction('fotos', modo); const q = fn(tx.objectStore('fotos')); tx.oncomplete = () => ok(q?.result); tx.onerror = () => erro(tx.error); }; } catch (e) { erro(e); } });
+    const salvarFotos = () => idb('readwrite', os => os.put(st.fotos, 'rascunho')).catch(() => {});
     function salvar() {
-      const { contas, carregandoContas, ia, gerandoFoto, iaTexto, pub, arvore, gerando, kitAberto, ...resto } = st;
-      try { localStorage.setItem(K_RASC, JSON.stringify(resto)); }
-      catch (e) { try { localStorage.setItem(K_RASC, JSON.stringify({ ...resto, fotos: resto.fotos.filter(f => /^https?:/.test(f.url)) })); } catch (e2) {} }
+      const { contas, carregandoContas, ia, gerandoFoto, iaTexto, pub, arvore, gerando, kitAberto, fotos, ...resto } = st;
+      try { localStorage.setItem(K_RASC, JSON.stringify({ ...resto, nFotos: fotos.length })); } catch (e) {}
+      salvarFotos();
     }
     let tSalvar; const salvarDepois = () => { clearTimeout(tSalvar); tSalvar = setTimeout(salvar, 600); };
 
@@ -837,7 +840,7 @@
       ir(n) { st.passo = Math.max(1, Math.min(5, n)); if (st.passo === 4 && mktsSel().includes('ml')) consultarTaxaML(); tudo(); salvarDepois(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
       publicar, republicar,
       limparPub() { st.pub = null; tudo(); },
-      novo() { if (st.pub?.rodando) return; try { localStorage.removeItem(K_RASC); } catch (e) {} window._caSt = null; Router.resolve(); },
+      novo() { if (st.pub?.rodando) return; clearTimeout(tSalvar); try { localStorage.removeItem(K_RASC); } catch (e) {} idb('readwrite', os => os.delete('rascunho')).catch(() => {}).finally(() => { window._caSt = null; Router.resolve(); }); },
       zerar() { if (st.pub?.rodando) return; if (!confirm('Apagar este rascunho e começar do zero?')) return; window._ca.novo(); },
     };
 
@@ -922,5 +925,7 @@
     </div>`;
     tudo();
     carregarContas();
+    // fotos do rascunho (IndexedDB); quem veio da Expansão já trouxe as dele
+    if (!rasc && !st.fotos.length) idb('readonly', os => os.get('rascunho')).then(f => { if (Array.isArray(f) && f.length && window._caSt === st && !st.fotos.length) { st.fotos = f; tudo(); } }).catch(() => {});
   });
 })();
