@@ -74,6 +74,7 @@ const Router = {
       'agente-ml': 'ADS Mercado Livre',
       'produtos': 'Produtos',
       'criar-anuncio': 'Criar anúncio',
+      'anuncios-amazon': 'Buy Box Amazon',
       'vendometro': 'Vendômetro',
       'funil': 'Funil de vendas',
       'escritorio': 'Escritório dos agentes',

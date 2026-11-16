@@ -1985,9 +1985,12 @@
     carregarContas().then(async () => { if (rasc && state.contaId) { if (!state.warehouseId) await carregarWarehouse(); sugerirCategoria(); } });
   }
 
-  Router.register('anuncios-ml', renderML);
-  Router.register('anuncios-shopee', renderShopee);
-  Router.register('anuncios-tiktok', renderTikTok);
+  // Equipe: as três telas antigas viraram o Criar anúncio (js/pages-criador-anuncio.js).
+  // O portal do cliente ainda usa as de ML e Shopee.
+  const paraCriador = render => (params, el) => { if (!window._portalConfig) { Router.navigate('criar-anuncio'); return; } render(params, el); };
+  Router.register('anuncios-ml', paraCriador(renderML));
+  Router.register('anuncios-shopee', paraCriador(renderShopee));
+  Router.register('anuncios-tiktok', paraCriador(renderTikTok));
   // anuncios-amazon: página própria em js/pages-amazon.js (Buy Box, Promoções e Margem)
 
 })();
