@@ -88,7 +88,17 @@ Router.register('agente-ml', (params, el) => {
       state.campanhas[id] = { lista: todas, em: Date.now() };
     } catch (e) { state.campanhas[id] = { erro: e.message || String(e) }; }
     state.carregandoCamp = false; render();
-    if (state.campanhas[id]?.lista) carregarDiario(id);
+    if (state.campanhas[id]?.lista) { carregarDiario(id); tacosCampanhas(id, forcar); }
+  }
+  // TACOS da campanha = investimento ÷ tudo o que os produtos DELA venderam no mês
+  // (orgânico + ADS). Precisa dos produtos de cada campanha: carrega em segundo
+  // plano, 3 por vez, só das campanhas que gastaram.
+  async function tacosCampanhas(id, forcar) {
+    const lista = (state.campanhas[id]?.lista || []).filter(x => (parseFloat(x.metrics?.cost) || 0) > 0);
+    if (forcar) for (const x of lista) delete state.produtos[`${id}:${x.id}`];
+    carregarVendasItem(id);
+    const fila = lista.slice();
+    await Promise.all([0, 1, 2].map(async () => { while (fila.length) { const x = fila.shift(); await carregarProdutos(id, x.id).catch(() => {}); } }));
   }
 
   // ADS por dia (mês anterior inteiro + mês atual até hoje) para o gráfico do resumo.
@@ -603,26 +613,29 @@ Router.register('agente-ml', (params, el) => {
     else {
       const pend = new Set(pendentes(id).map(l => String(l.dados?.campaign_id)));
       const linhas = [...c.lista].sort((a, b) => (parseFloat(b.metrics?.cost) || 0) - (parseFloat(a.metrics?.cost) || 0));
-      corpo = `<div style="overflow-x:auto;"><table class="aml-tab"><thead><tr><th>Campanha</th><th>Status</th><th class="num">Orçamento diário</th><th class="num">ROAS objetivo</th><th class="num">Investimento</th><th class="num">Vendas por publicidade</th><th class="num">ROAS</th><th class="num">ACOS</th><th class="num" title="Investimento da campanha ÷ faturamento da loja no mês (sem cancelados)">TACOS</th></tr></thead><tbody>
+      corpo = `<div style="overflow-x:auto;"><table class="aml-tab"><thead><tr><th>Campanha</th><th>Status</th><th class="num">Orçamento diário</th><th class="num">ROAS objetivo</th><th class="num">Investimento</th><th class="num">Vendas por publicidade</th><th class="num">ROAS</th><th class="num">ACOS</th><th class="num" title="Investimento da campanha ÷ tudo o que os produtos dela venderam no mês (orgânico + ADS, sem cancelados)">TACOS</th></tr></thead><tbody>
         ${linhas.map(x => {
           const mm = x.metrics || {}, g = parseFloat(mm.cost) || 0, v = (parseFloat(mm.total_amount) || 0) * (1 - tx);
           const acos = v > 0 ? g / v * 100 : (g > 0 ? Infinity : null);
           const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity || acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? 'var(--red)' : acos > cfg.meta_acos ? 'var(--yellow)' : 'var(--green)';
-          const tacosC = m?.fat > 0 ? g / m.fat * 100 : null; // TACOS da campanha: o gasto dela sobre o faturamento da loja
+          // TACOS da campanha: gasto ÷ o que os produtos dela venderam no mês (orgânico + ADS); anúncio movido para outra campanha não entra
+          const pc = state.produtos[`${id}:${x.id}`], vic = state.vendasItem[id];
+          const fatC = pc?.lista && vic?.porItem ? pc.lista.reduce((s, f) => s + f.itens.filter(it => it.status !== 'moved').reduce((a, it) => a + (vic.porItem[String(it.id)] || 0), 0), 0) : null;
+          const tacosC = !(g > 0) ? null : fatC == null ? undefined : fatC > 0 ? g / fatC * 100 : Infinity;
           const roasAlvo = parseFloat(x.roas_target) || (x.acos_target ? 100 / x.acos_target : 0);
           const aberta = state.aberto === String(x.id);
           const estrat = { PROFITABILITY: 'Rentabilidade', INCREASE: 'Crescimento', VISIBILITY: 'Visibilidade' }[x.strategy] || x.strategy || '';
           return `<tr class="aml-linha${aberta ? ' aberta' : ''}" onclick="window._amlProdutos('${x.id}')"><td><div class="aml-c-nome"><span class="aml-seta">${aberta ? '▾' : '▸'}</span><div><div class="aml-c-n">${h(x.name)}${pend.has(String(x.id)) ? ' <span class="aml-chip" title="Tem sugestão pendente">sugestão</span>' : ''}</div>${estrat ? `<div class="aml-sub">${h(estrat)}</div>` : ''}</div></div></td>
             <td>${statusPill(x.status)}</td>
             <td class="num">${x.budget ? R$(x.budget) : '—'}</td><td class="num">${roasAlvo ? roasX(roasAlvo) : '—'}</td>
-            <td class="num">${R$(g)}</td><td class="num">${R$(v)}</td><td class="num">${g > 0 ? roasX(v / g) : '—'}</td><td class="num" style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td><td class="num" style="color:${corTacos(tacosC, tetoT)};font-weight:700;">${tacosC == null ? '—' : pct(tacosC)}</td></tr>
+            <td class="num">${R$(g)}</td><td class="num">${R$(v)}</td><td class="num">${g > 0 ? roasX(v / g) : '—'}</td><td class="num" style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td><td class="num" style="color:${tacosC === Infinity ? 'var(--red)' : corTacos(tacosC, tetoT)};font-weight:700;" title="${fatC != null ? `os produtos da campanha venderam ${R$(fatC)} no mês (orgânico + ADS)` : 'calculando pelos produtos da campanha…'}">${tacosC === undefined ? '…' : tacosC === Infinity ? '∞' : tacosC == null ? '—' : pct(tacosC)}</td></tr>
             ${aberta ? `<tr><td colspan="9" style="padding:0;white-space:normal;">${renderProdutos(id, x.id, tx, cfg)}</td></tr>` : ''}`;
         }).join('')}</tbody></table></div>`;
     }
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
         <div><div style="font-weight:600;font-size:16px;">Campanhas <span class="aml-sub" style="font-weight:400;">Product Ads · mês atual</span></div>
-        <div class="aml-sub">Clique numa campanha para ver os produtos dentro dela. ACOS sem cancelados${tx > 0.005 ? ` (cancelamentos/devoluções da loja no mês: ${pct(tx * 100)})` : ''}. TACOS da campanha = investimento dela ÷ faturamento da loja no mês; do produto = investimento ÷ tudo o que ele vendeu (orgânico + ADS)${tetoT ? `; verde até ${pct(tetoT)}` : ''}.</div></div>
+        <div class="aml-sub">Clique numa campanha para ver os produtos dentro dela. ACOS sem cancelados${tx > 0.005 ? ` (cancelamentos/devoluções da loja no mês: ${pct(tx * 100)})` : ''}. TACOS da campanha = investimento dela ÷ tudo o que os produtos dela venderam no mês (orgânico + ADS); do produto = investimento ÷ tudo o que ele vendeu (orgânico + ADS)${tetoT ? `; verde até ${pct(tetoT)}` : ''}.</div></div>
         <button class="btn btn-secondary btn-sm" title="Atualizar" ${state.carregandoCamp ? 'disabled' : ''} onclick="window._amlCampanhas()">🔄</button>
       </div>${corpo}</div>`;
   }
