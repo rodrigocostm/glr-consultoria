@@ -136,3 +136,27 @@ test('browser helper attaches the session only to same-origin API requests', asy
   await assert.rejects(context.window.glrApiFetch('/api/chat'));
   assert.equal(sent.length, 1);
 });
+
+// ── Chat com IA do portal: nunca alcança dados de outro cliente ──
+test('portal-chat: equipe ou acesso sem o módulo não usam o chat do portal', async () => {
+  const resH = () => Object.assign(res(), { setHeader() {} });
+  let calls = mockRole({ role: 'staff' }); let r = resH();
+  await require('../api/portal-chat')(req({ acao: 'enviar', mensagem: 'oi' }), r);
+  assert.equal(r.code, 403); assert(!calls.includes('https://api.anthropic.com/v1/messages'));
+  calls = mockRole({ role: 'portal', portal: { contaIds: ['own'], clienteId: '1', chatIA: false } }); r = resH();
+  await require('../api/portal-chat')(req({ acao: 'enviar', mensagem: 'oi' }), r);
+  assert.equal(r.code, 403); assert(!calls.includes('https://api.anthropic.com/v1/messages'));
+});
+test('portal-chat: ferramentas do portal recusam loja e cliente fora do acesso', async () => {
+  const { EXEC } = require('../api/chat-central').interno;
+  const S = { carteira: [{ id: '1', nome: 'Cliente Um', gestor: '', lojas: [{ marketplace: 'shopee', conta_id: 'own', nome: 'Loja Um' }] }], mcKey: 'mock-mcp' };
+  global.fetch = async url => { throw new Error('Unexpected external request: ' + url); };
+  await assert.rejects(() => EXEC.campanhas_shopee(S, { conta_id: 'other', inicio: '2026-11-01', fim: '2026-11-15' }), /não está na carteira/);
+  await assert.rejects(() => EXEC.campanhas_ml(S, { conta_id: 'other', inicio: '2026-11-01', fim: '2026-11-15' }), /não está na carteira/);
+  await assert.rejects(() => EXEC.vendas(S, { cliente: 'Cliente Dois', inicio: '2026-11-01', fim: '2026-11-15' }), /não encontrado/);
+});
+test('portal-chat: o portal não recebe as ferramentas internas da GLR', () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '../api/portal-chat.js'), 'utf8');
+  const m = src.match(/const PERMITIDAS = \[([^\]]*)\]/); assert(m);
+  for (const interna of ['carteira', 'plano_cliente', 'decisoes_pendentes', 'historico_agentes', 'propor_acao', 'anotar_cerebro', 'consultar_mercado_tiops', 'recursos_tiops']) assert(!m[1].includes(`'${interna}'`), interna);
+});

@@ -347,6 +347,7 @@
         const j = await api({ acao: 'enviar', conversa_id: st.id, mensagem: texto });
         st.id = j.conversa_id; try { localStorage.setItem(K, st.id); } catch (e) {}
         st.msgs.push({ r: 'assistant', t: j.resposta });
+        if (j.restantes != null && j.restantes <= 5) st.erro = j.restantes ? `Restam ${j.restantes} pergunta(s) hoje.` : 'Esta foi a última pergunta de hoje.';
       } catch (e) { st.erro = e.message || String(e); }
       st.enviando = false; render();
     };

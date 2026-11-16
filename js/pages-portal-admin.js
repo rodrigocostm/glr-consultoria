@@ -9,7 +9,10 @@ Router.register('portal-admin', async (params, el) => {
         <h2 style="font-size:20px;font-weight:700;margin:0 0 4px;color:var(--text-primary);">Portal dos Clientes</h2>
         <p style="font-size:13px;color:var(--text-secondary);margin:0;">Gerencie os acessos dos seus clientes ao portal de vendas</p>
       </div>
-      <button onclick="window._portalAdminNovo()" style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;">+ Novo Acesso</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="window._portalAdminChatTodos()" title="Liga o Chat com IA em todos os acessos do portal (cada um só enxerga as próprias lojas)" style="background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:99px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;">Liberar chat IA para todos</button>
+        <button onclick="window._portalAdminNovo()" style="background:var(--primary);color:#fff;border:none;border-radius:99px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;">+ Novo Acesso</button>
+      </div>
     </div>
     <div id="portal-admin-lista">Carregando...</div>
   </div>`;
@@ -317,6 +320,18 @@ window._portalAdminChat = async function(id) {
     ? `Liberar o Chat com IA para ${cfg.clienteNome || cfg.email}?\n\nO cliente passa a conversar no portal com a IA, que lê só as lojas dele (vendas, ADS, produtos, estoque, reembolsos). Ela não muda nada nas contas. Cada pergunta gasta tokens.`
     : `Desligar o Chat com IA de ${cfg.clienteNome || cfg.email}?`)) return;
   cfg.chatIA = ligar; cfg.chatIAEm = new Date().toISOString();
+  try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
+  await _renderPortalAdminLista();
+};
+window._portalAdminChatTodos = async function() {
+  let configs;
+  try { const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave', 'glr_portal_configs').single(); if (error) throw error; configs = Array.isArray(data?.dados) ? data.dados : []; }
+  catch (e) { alert('Não consegui ler os acessos: ' + (e.message || e)); return; }
+  const faltam = configs.filter(c => !c.chatIA && (c.contaIds || []).length);
+  if (!faltam.length) { alert('O Chat com IA já está ligado em todos os acessos com lojas.'); return; }
+  if (!confirm(`Liberar o Chat com IA para ${faltam.length} acesso(s)?\n\n${faltam.slice(0, 12).map(c => '• ' + (c.clienteNome || c.email)).join('\n')}${faltam.length > 12 ? `\n… e mais ${faltam.length - 12}` : ''}\n\nCada cliente só enxerga as próprias lojas, a IA só lê (não muda nada) e cada usuário tem até 40 perguntas por dia.`)) return;
+  const agora = new Date().toISOString();
+  for (const c of faltam) { c.chatIA = true; c.chatIAEm = agora; }
   try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
   await _renderPortalAdminLista();
 };
