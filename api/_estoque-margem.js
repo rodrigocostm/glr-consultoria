@@ -151,7 +151,10 @@ async function calcularSinais(ctx, mkt, conta) {
 const MIN_VENDAS_RUPTURA = 3, MIN_VENDAS_PREJUIZO = 2, MIN_VENDAS_MARGEM = 5;
 function alertasDe(itens, margemMin) {
   const L = Object.entries(itens || {}).map(([id, i]) => ({ id, ...i }));
-  const ruptura = L.filter(i => i.ne && i.ne !== 'ok' && i.u30 >= MIN_VENDAS_RUPTURA)
+  const morto = st => /delete|closed|inactive|banned/i.test(String(st || ''));
+  const ruptura = L.filter(i => i.ne && i.ne !== 'ok' && i.u30 >= MIN_VENDAS_RUPTURA && !morto(i.st)
+      && (i.ne !== 'zerado' || i.u14 >= 2)                 // zerado que não vende há 2 semanas: produto descontinuado
+      && (i.ne !== 'baixo' || (i.vd || 0) * (i.p || 0) >= 30)) // 8–15 dias: só o que pesa no faturamento
     .map(i => ({ t: 'ruptura', id: i.id, n: i.n, e: i.e, d: i.d, ne: i.ne, vd: i.vd, rd: r2((i.vd || 0) * (i.p || 0)) }))
     .sort((a, b) => b.rd - a.rd).slice(0, 8);
   const prejuizo = L.filter(i => i.nm === 'negativa' && i.u30 >= MIN_VENDAS_PREJUIZO)

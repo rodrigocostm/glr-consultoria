@@ -158,14 +158,8 @@ Router.register('decisoes', (params, el) => {
         if (!r.em || Date.now() - r.em > 2 * 864e5) continue; // mural velho: a loja parou de sincronizar (aparece em Conexões)
         for (const a of r.al || []) {
           const base = { mkt: r.marketplace, conta: String(r.conta_id), exec: false, tela: 'estoque-margem', quando: new Date(r.em).toISOString() };
-          if (a.t === 'ruptura') {
-            const id = `rup:${r.conta_id}:${a.id}:${a.ne}`;
-            if (locais[id] || estoqueAds.has(`${r.conta_id}:${a.id}`) || estoqueAds.has(`${r.conta_id}:${a.n}`)) continue;
-            itens.push({ ...base, id, tipo: 'estoque', titulo: `${a.ne === 'zerado' ? 'Sem estoque' : 'Repor estoque'} — ${a.n}`,
-              acao: a.ne === 'zerado' ? `zerado · vendia ~${dias1(a.vd)}/dia` : `${a.e} un. · acaba em ~${dias1(a.d)} dia(s)`,
-              porque: `Vende ~${dias1(a.vd)} un./dia (${R$(a.rd)}/dia). ${a.ne === 'zerado' ? 'Cada dia parado é venda perdida e o anúncio cai no ranking.' : 'Avisar o cliente para repor antes de zerar e, se estiver no ADS, segurar o investimento.'}`,
-              impacto: a.rd * 7, impactoTipo: 'ganho', urgente: a.ne === 'zerado' || (a.d != null && a.d <= 3) });
-          } else if (a.t === 'prejuizo') {
+          if (a.t === 'ruptura') continue; // agrupado por loja logo abaixo
+          if (a.t === 'prejuizo') {
             const id = `marg:${r.conta_id}:${a.id}`; if (locais[id]) continue;
             itens.push({ ...base, id, tipo: 'margem', titulo: `Vendendo no prejuízo — ${a.n}`,
               acao: `margem ${String(a.m).replace('.', ',')}% antes do ADS · preço ${R2(a.p)}`,
@@ -178,6 +172,19 @@ Router.register('decisoes', (params, el) => {
               porque: `Lucra pouco antes do ADS (${a.u30} vendas em 30 dias, ${R$(a.rec)}). Qualquer real de ADS nele tende a virar prejuízo — vale subir o preço ou revisar o custo.`, urgente: false });
           }
         }
+      }
+      // ruptura: uma decisão por loja com os produtos que zeraram ou zeram em até 15 dias
+      for (const r of sinais?.data || []) {
+        if (!r.em || Date.now() - r.em > 2 * 864e5) continue;
+        const rup = (r.al || []).filter(a => a.t === 'ruptura' && !estoqueAds.has(`${r.conta_id}:${a.id}`) && !estoqueAds.has(`${r.conta_id}:${a.n}`));
+        if (!rup.length) continue;
+        const id = `rup:${r.conta_id}:${rup.map(a => a.id + a.ne[0]).sort().join(',')}`; if (locais[id]) continue;
+        const zer = rup.filter(a => a.ne === 'zerado'), linhaP = a => `${corta(a.n, 55)} (${a.ne === 'zerado' ? 'zerado' : `${a.e} un., ~${dias1(a.d)} dia(s)`}, ${R$(a.rd)}/dia)`;
+        itens.push({ id, tipo: 'estoque', mkt: r.marketplace, conta: String(r.conta_id), exec: false, tela: 'estoque-margem', quando: new Date(r.em).toISOString(),
+          titulo: rup.length === 1 ? `${zer.length ? 'Sem estoque' : 'Repor estoque'} — ${rup[0].n}` : `Repor estoque — ${rup.length} produtos${zer.length ? ` (${zer.length} zerado${zer.length > 1 ? 's' : ''})` : ''}`,
+          acao: rup.length === 1 ? (zer.length ? `zerado · vendia ~${dias1(rup[0].vd)}/dia` : `${rup[0].e} un. · acaba em ~${dias1(rup[0].d)} dia(s)`) : `${R$(rup.reduce((s, a) => s + a.rd, 0))}/dia em risco`,
+          porque: `${rup.slice(0, 4).map(linhaP).join(' · ')}${rup.length > 4 ? ` · +${rup.length - 4}` : ''}. Avisar o cliente para repor; produto zerado perde venda e cai no ranking, e o ADS dele deve ser segurado.`,
+          impacto: rup.reduce((s, a) => s + a.rd, 0) * 7, impactoTipo: 'ganho', urgente: rup.some(a => (a.ne === 'zerado' || (a.d != null && a.d <= 3)) && a.rd >= 100) });
       }
       const hoje = new Date().toISOString().slice(0, 10);
       for (const r of promos.data || []) {
