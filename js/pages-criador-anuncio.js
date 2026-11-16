@@ -608,7 +608,7 @@
       return `<section class="ca-bloco">
         <h4>Fotos <span class="ca-dica">${st.fotos.length} de até 10 · a primeira é a capa</span></h4>
         <div class="ca-fotos" ondragover="event.preventDefault();this.classList.add('arr')" ondragleave="this.classList.remove('arr')" ondrop="event.preventDefault();this.classList.remove('arr');_ca.arquivos(event.dataTransfer.files)">
-          ${st.fotos.map((f, i) => `<figure class="ca-foto${i === 0 ? ' capa' : ''}"><img src="${h(f.url)}" alt="foto ${i + 1}">${i === 0 ? '<b>Capa</b>' : ''}${f.ia ? `<i>${h(KIT[f.tipo] ? KIT[f.tipo].replace(/ \(.*\)/, '') : 'IA')}</i>` : ''}
+          ${st.fotos.map((f, i) => `<figure class="ca-foto${i === 0 ? ' capa' : ''}"><button type="button" class="ca-foto-ver" title="Ampliar" aria-label="Ampliar foto ${i + 1}" onclick="_ca.ver(${i})"><img src="${h(f.url)}" alt="foto ${i + 1}"></button>${i === 0 ? '<b>Capa</b>' : ''}${f.ia ? `<i>${h(KIT[f.tipo] ? KIT[f.tipo].replace(/ \(.*\)/, '') : 'IA')}</i>` : ''}
             <div class="ca-foto-ac">${i > 0 ? `<button type="button" title="Mover para a esquerda" onclick="_ca.moverFoto(${i},-1)">‹</button><button type="button" title="Usar como capa" onclick="_ca.capa(${i})">★</button>` : ''}${i < st.fotos.length - 1 ? `<button type="button" title="Mover para a direita" onclick="_ca.moverFoto(${i},1)">›</button>` : ''}<button type="button" title="Remover" onclick="_ca.tirarFoto(${i})">✕</button></div></figure>`).join('')}
           <label class="ca-foto-add"><input type="file" accept="image/*" multiple onchange="_ca.arquivos(this.files)"><span>＋</span><small>${st.fotos.length ? 'Mais fotos' : 'Arraste as fotos aqui ou clique'}</small></label>
         </div>
@@ -777,9 +777,9 @@
       const eixos = st.vars.ativo ? st.vars.eixos.filter(e => e.valores.length) : [];
       return `<div class="ca-prev-tabs">${ms.map(k => `<button class="${k === m ? 'on' : ''}" style="--c:${MKTS[k].cor}" onclick="_ca.prev('${k}')">${MKTS[k].nome}</button>`).join('')}</div>
         <div class="ca-prev ca-prev-${m}">
-          <div class="ca-prev-img">${capa ? `<img src="${h(capa)}" alt="capa">` : '<span>Sem foto</span>'}${st.fotos.length > 1 ? `<em>1/${st.fotos.length}</em>` : ''}</div>
+          <div class="ca-prev-img">${capa ? `<button type="button" class="ca-foto-ver" title="Ampliar" aria-label="Ampliar a capa" onclick="_ca.ver(0)"><img src="${h(capa)}" alt="capa"></button>` : '<span>Sem foto</span>'}${st.fotos.length > 1 ? `<em>1/${st.fotos.length}</em>` : ''}</div>
           <div class="ca-prev-b">
-            ${st.fotos.length > 1 ? `<div class="ca-prev-th">${st.fotos.slice(1, 6).map(f => `<img src="${h(f.url)}" alt="">`).join('')}</div>` : ''}
+            ${st.fotos.length > 1 ? `<div class="ca-prev-th">${st.fotos.slice(1, 6).map((f, i) => `<button type="button" class="ca-foto-ver" aria-label="Ampliar foto ${i + 2}" onclick="_ca.ver(${i + 1})"><img src="${h(f.url)}" alt=""></button>`).join('')}</div>` : ''}
             ${m === 'ml' ? `<small class="ca-prev-cond">${st.p.condicao === 'used' ? 'Usado' : 'Novo'}</small>` : ''}
             <div class="ca-prev-t">${h(tit)}</div>
             <div class="ca-prev-p">${preco ? R$(preco) : 'R$ —'}</div>
@@ -814,6 +814,26 @@
       }
     }
 
+    // ── Visualizador de fotos ───────────────────────────────────
+    function desenharVisor() {
+      let v = document.getElementById('ca-visor');
+      if (st.verFoto == null || !st.fotos[st.verFoto]) { if (v) v.remove(); document.removeEventListener('keydown', teclaVisor); st.verFoto = null; return; }
+      if (!v) { v = document.createElement('div'); v.id = 'ca-visor'; v.setAttribute('role', 'dialog'); v.setAttribute('aria-modal', 'true'); v.setAttribute('aria-label', 'Foto ampliada'); document.body.appendChild(v); v.addEventListener('click', e => { if (e.target === v || e.target.classList.contains('ca-visor-palco')) window._ca.fecharVer(); }); document.addEventListener('keydown', teclaVisor); }
+      const i = st.verFoto, f = st.fotos[i], n = st.fotos.length;
+      const rot = i === 0 ? 'Capa' : f.tipo && KIT[f.tipo] ? KIT[f.tipo] : f.ia ? 'Gerada por IA' : `Foto ${i + 1}`;
+      v.innerHTML = `<div class="ca-visor-topo"><span><b>${i + 1}</b> de ${n} · ${h(rot)}${f.ia && i === 0 && f.tipo && KIT[f.tipo] ? ` · ${h(KIT[f.tipo])}` : ''}</span>
+          <span class="ca-visor-ac">${i > 0 ? '<button type="button" onclick="_ca.verCapa()">Usar como capa</button>' : ''}<button type="button" onclick="_ca.verTirar()">Remover</button><button type="button" class="ca-visor-x" aria-label="Fechar" onclick="_ca.fecharVer()">✕</button></span></div>
+        <div class="ca-visor-palco">${n > 1 ? '<button type="button" class="ca-visor-seta esq" aria-label="Foto anterior" onclick="_ca.verPasso(-1)">‹</button>' : ''}<img src="${h(f.url)}" alt="${h(rot)}">${n > 1 ? '<button type="button" class="ca-visor-seta dir" aria-label="Próxima foto" onclick="_ca.verPasso(1)">›</button>' : ''}</div>
+        ${n > 1 ? `<div class="ca-visor-tira">${st.fotos.map((x, j) => `<button type="button" class="${j === i ? 'on' : ''}" aria-label="Foto ${j + 1}" onclick="_ca.ver(${j})"><img src="${h(x.url)}" alt=""></button>`).join('')}</div>` : ''}`;
+      v.querySelector('.ca-visor-x')?.focus();
+    }
+    function teclaVisor(e) {
+      if (st.verFoto == null) return;
+      if (e.key === 'Escape') { e.preventDefault(); window._ca.fecharVer(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); window._ca.verPasso(1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); window._ca.verPasso(-1); }
+    }
+
     // ── Ações (handlers globais) ────────────────────────────────
     window._ca = {
       p(k, v) { st.p[k] = v; if (k === 'titulo') { const c = el.querySelector('#ca-cont-tit'); if (c) c.textContent = `${v.length} caracteres`; } if (k === 'custo') ladoEPreco(); else ladoSo(); salvarDepois(); },
@@ -822,6 +842,12 @@
       moverFoto(i, d) { const j = i + d; if (j < 0 || j >= st.fotos.length) return; [st.fotos[i], st.fotos[j]] = [st.fotos[j], st.fotos[i]]; tudo(); salvarDepois(); },
       capa(i) { st.fotos.unshift(st.fotos.splice(i, 1)[0]); tudo(); salvarDepois(); },
       iaSEO, gerarKit,
+      // visualizador: foto grande, setas, Esc; capa e remover direto daqui
+      ver(i) { st.verFoto = Math.max(0, Math.min(st.fotos.length - 1, i)); desenharVisor(); },
+      verPasso(d) { if (st.verFoto == null || !st.fotos.length) return; st.verFoto = (st.verFoto + d + st.fotos.length) % st.fotos.length; desenharVisor(); },
+      fecharVer() { st.verFoto = null; desenharVisor(); },
+      verCapa() { const i = st.verFoto; if (i > 0) { st.fotos.unshift(st.fotos.splice(i, 1)[0]); st.verFoto = 0; tudo(); salvarDepois(); desenharVisor(); } },
+      verTirar() { const i = st.verFoto; if (i == null) return; st.fotos.splice(i, 1); st.verFoto = st.fotos.length ? Math.min(i, st.fotos.length - 1) : null; tudo(); salvarDepois(); desenharVisor(); },
       kit() { st.kitAberto = !st.kitAberto; tudo(); },
       kitTipo(k, on) { st.kit = on ? [...new Set([...st.kit, k])] : st.kit.filter(x => x !== k); tudo(); salvarDepois(); },
       varsAtivo(v) { st.vars.ativo = v; if (v) mapearEixos(); tudo(); salvarDepois(); },
@@ -889,7 +915,17 @@
         .ca-ia{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
         .ca-fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;border:2px dashed transparent;border-radius:12px;padding:2px}.ca-fotos.arr{border-color:var(--accent)}
         .ca-foto{position:relative;margin:0;aspect-ratio:1;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--bg-subtle)}.ca-foto img{width:100%;height:100%;object-fit:cover;display:block}
-        .ca-foto.capa{outline:2px solid var(--accent);outline-offset:1px}.ca-foto>b{position:absolute;top:6px;left:6px;background:var(--accent);color:#fff;font-size:10px;padding:2px 7px;border-radius:99px}.ca-foto>i{position:absolute;top:6px;right:6px;background:#111827cc;color:#fff;font-size:10px;font-style:normal;padding:2px 6px;border-radius:99px}
+        .ca-foto.capa{outline:2px solid var(--accent);outline-offset:1px}.ca-foto>b{position:absolute;top:6px;left:6px;background:var(--accent);color:#fff;font-size:10px;padding:2px 7px;border-radius:99px}.ca-foto>i{position:absolute;bottom:6px;left:6px;background:#111827cc;color:#fff;font-size:10px;font-style:normal;padding:2px 6px;border-radius:99px}
+        .ca-foto-ver{display:block;width:100%;height:100%;padding:0;border:none;background:none;cursor:zoom-in}.ca-foto-ver img{width:100%;height:100%;object-fit:cover;display:block}.ca-foto-ver:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+        .ca-prev-img .ca-foto-ver img{object-fit:contain;background:#fff}.ca-prev-th .ca-foto-ver{width:36px;height:36px}.ca-prev-th .ca-foto-ver img{border-radius:5px;border:1px solid #e5e7eb}
+        #ca-visor{position:fixed;inset:0;z-index:60;background:rgba(10,12,18,.92);display:flex;flex-direction:column;color:#fff;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+        .ca-visor-topo{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;font-size:13px;flex-wrap:wrap}.ca-visor-ac{display:flex;gap:8px}
+        .ca-visor-ac button{border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;border-radius:8px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}.ca-visor-ac button:hover{background:rgba(255,255,255,.18)}
+        .ca-visor-palco{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative;padding:0 56px}.ca-visor-palco img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;background:#fff}
+        .ca-visor-seta{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,.14);color:#fff;font-size:28px;line-height:1;cursor:pointer}.ca-visor-seta:hover{background:rgba(255,255,255,.28)}.ca-visor-seta.esq{left:8px}.ca-visor-seta.dir{right:8px}
+        .ca-visor-tira{display:flex;gap:6px;justify-content:center;padding:12px 16px;overflow-x:auto}.ca-visor-tira button{flex:none;width:56px;height:56px;padding:0;border:2px solid transparent;border-radius:6px;overflow:hidden;cursor:pointer;background:none;opacity:.6}.ca-visor-tira button.on{border-color:#fff;opacity:1}.ca-visor-tira img{width:100%;height:100%;object-fit:cover}
+        #ca-visor button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+        @media (max-width:700px){.ca-visor-palco{padding:0 8px}.ca-visor-seta{width:36px;height:36px;font-size:22px}}
         .ca-foto-ac{position:absolute;inset:auto 0 0 0;display:flex;justify-content:center;gap:4px;padding:6px;background:linear-gradient(transparent,#0009);opacity:0;transition:opacity .15s}.ca-foto:hover .ca-foto-ac,.ca-foto:focus-within .ca-foto-ac{opacity:1}
         @media (hover:none){.ca-foto-ac{opacity:1}}
         .ca-foto-ac button{width:26px;height:26px;border-radius:50%;border:none;background:#fff;color:#111;cursor:pointer;font-size:13px;line-height:1}
