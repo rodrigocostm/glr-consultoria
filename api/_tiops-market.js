@@ -66,11 +66,17 @@ async function pesquisar(key,tipo,dados={},contas=[]){
   return {em,categoria:cat,itens:itens.map((x,i)=>({pos:x.position,id:x.id,tipo:x.type,link:link(x),...(prods[i]||{})}))};
  }
  if(tipo==='em_alta'){
-  const {r}=await comConta(key,'ml_trends',{category:cat},contas);const d=r.data||r;
+  // categoria muito específica costuma vir vazia: sobe para a categoria de cima (até 3 níveis)
+  let {r,conta}=await comConta(key,'ml_trends',{category:cat},contas),d=r.data||r,usada=null;
+  const vazio=x=>!['items','mais_buscados','maior_crescimento_de_buscas','maior_crescimento_de_receita'].some(k=>Array.isArray(x?.[k])&&x[k].length);
+  if(vazio(d)){
+   try{const {r:c}=await comConta(key,'raw_read',{path:`/categories/${cat}`},conta?[conta]:contas);const path=((c.data||c).path_from_root||[]).slice(0,-1).reverse().slice(0,3);
+    for(const pai of path){const {r:t}=await comConta(key,'ml_trends',{category:pai.id},conta?[conta]:contas);const dt=t.data||t;if(!vazio(dt)){d=dt;usada={id:pai.id,nome:pai.name};break;}}}catch(e){}
+  }
   const lista=Array.isArray(d.items)?d.items:[];
   const grupos=d.maior_crescimento_de_buscas||d.mais_buscados?{crescendo:d.maior_crescimento_de_buscas||[],buscados:d.mais_buscados||[],receita:d.maior_crescimento_de_receita||[]}:{buscados:lista};
   const norm=a=>(a||[]).slice(0,20).map(x=>({termo:x.keyword||x.termo||String(x),link:x.url||`https://lista.mercadolivre.com.br/${encodeURIComponent(x.keyword||'')}`}));
-  return {em,categoria:cat,crescendo:norm(grupos.crescendo),buscados:norm(grupos.buscados),receita:norm(grupos.receita)};
+  return {em,categoria:cat,usada,crescendo:norm(grupos.crescendo),buscados:norm(grupos.buscados),receita:norm(grupos.receita)};
  }
  throw Error('Pesquisa inválida.');
 }
