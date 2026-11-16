@@ -16,6 +16,9 @@
     "api/generate-photo.js": {
       "maxDuration": 60
     },
+    "api/anuncio-seo.js": {
+      "maxDuration": 120
+    },
     "api/agente-cron.js": {
       "maxDuration": 300
     },

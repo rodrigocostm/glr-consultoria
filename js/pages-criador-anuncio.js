@@ -62,7 +62,8 @@
       canal: { ml: novoCanal(), shopee: novoCanal(), tiktok: novoCanal() },
       margemAlvo: 15, adsPct: 0, prevMkt: 'ml',
     });
-    const st = Object.assign(vazio(), lerJSON(K_RASC, {}), { contas: [], carregandoContas: true, ia: false, gerandoFoto: false, iaTexto: false, pub: null, arvore: {} });
+    const st = Object.assign(vazio(), lerJSON(K_RASC, {}), { contas: [], carregandoContas: true, ia: false, gerandoFoto: false, iaTexto: false, pub: null, arvore: {}, gerando: [], kitAberto: false });
+    if (!Array.isArray(st.kit)) st.kit = ['fundo_branco', 'ambientada', 'angulo', 'detalhe'];
     st.p = Object.assign(vazio().p, st.p || {});
     for (const m of Object.keys(MKTS)) st.canal[m] = Object.assign(novoCanal(), st.canal?.[m] || {}, { buscando: false, carregando: false, iaFicha: false });
     window._caSt = st;
@@ -79,7 +80,7 @@
     }
 
     function salvar() {
-      const { contas, carregandoContas, ia, gerandoFoto, iaTexto, pub, arvore, ...resto } = st;
+      const { contas, carregandoContas, ia, gerandoFoto, iaTexto, pub, arvore, gerando, kitAberto, ...resto } = st;
       try { localStorage.setItem(K_RASC, JSON.stringify(resto)); }
       catch (e) { try { localStorage.setItem(K_RASC, JSON.stringify({ ...resto, fotos: resto.fotos.filter(f => /^https?:/.test(f.url)) })); } catch (e2) {} }
     }
@@ -130,41 +131,70 @@
       if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
       return j;
     }
-    async function iaFoto() {
-      if (!st.fotos[0]) return aviso('Envie uma foto do produto primeiro.');
-      st.ia = true; tudo();
-      try {
-        const j = await api('/api/analyze-photo', { image_base64: st.fotos[0].url });
-        if (j.titulo) st.p.titulo = j.titulo; if (j.descricao) st.p.descricao = j.descricao;
-        if (j.categoria_busca) st.termoCategoria = j.categoria_busca;
-        aviso('Título e descrição preenchidos pela IA — confira.');
-      } catch (e) { aviso('A IA não conseguiu analisar a foto: ' + e.message); }
-      st.ia = false; tudo(); salvarDepois();
+    // foto de referência para a IA: a primeira foto real (não gerada); reduzida para caber no envio
+    const fotoRef = () => (st.fotos.find(f => !f.ia) || st.fotos[0])?.url || null;
+    function reduzir(url, max = 1024) {
+      return new Promise(ok => {
+        const im = new Image(); im.crossOrigin = 'anonymous';
+        im.onload = () => { try { const k = Math.min(1, max / Math.max(im.width, im.height)); const c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', 0.86)); } catch (e) { ok(/^data:/.test(url) ? url : null); } };
+        im.onerror = () => ok(/^data:/.test(url) ? url : null);
+        im.src = url;
+      });
     }
-    async function iaGerarFoto() {
-      if (!st.fotos[0]) return aviso('Envie uma foto do produto primeiro.');
-      st.gerandoFoto = true; tudo();
-      try {
-        const j = await api('/api/generate-photo', { image_base64: st.fotos[0].url, product_name: st.p.titulo, details: st.p.descricao, stage: 'ambientada' });
-        const img = j.images?.[0]; if (!img) throw new Error('a IA não devolveu imagem');
-        st.fotos.push({ id: Date.now() + Math.random(), url: img.url, ia: true });
-      } catch (e) { aviso('Não consegui gerar a foto: ' + e.message); }
-      st.gerandoFoto = false; tudo(); salvarDepois();
+    const KIT = { fundo_branco: 'Fundo branco (capa)', ambientada: 'Ambientada', angulo: 'Outro ângulo', detalhe: 'Detalhe de perto', uso: 'Em uso / tamanho real' };
+    async function gerarKit() {
+      const ref = fotoRef(); if (!ref) return aviso('Envie uma foto real do produto primeiro.');
+      const tipos = st.kit.filter(t => KIT[t]); if (!tipos.length) return aviso('Escolha pelo menos um tipo de foto.');
+      const cabe = 10 - st.fotos.length; if (cabe <= 0) return aviso('Já são 10 fotos — remova alguma para gerar mais.');
+      const lista = tipos.slice(0, cabe);
+      const refMenor = await reduzir(ref, 1280);
+      st.kitAberto = false; st.gerando = lista.map(t => ({ t, status: 'gerando' })); tudo();
+      let ok = 0;
+      await Promise.all(lista.map(async t => {
+        const g = st.gerando.find(x => x.t === t);
+        try {
+          const j = await api('/api/generate-photo', { ...(refMenor ? { image_base64: refMenor } : { image_url: ref }), product_name: st.p.titulo, details: st.p.descricao.slice(0, 600), stage: 'tipo', tipo: t });
+          const img = j.images?.[0]; if (!img) throw new Error('sem imagem');
+          const foto = { id: Date.now() + Math.random(), url: img.url, ia: true, tipo: t };
+          if (t === 'fundo_branco') st.fotos.unshift(foto); else st.fotos.push(foto);
+          st.gerando = st.gerando.filter(x => x !== g); ok++;
+        } catch (e) { g.status = 'erro'; g.msg = e.message; }
+        tudo();
+      }));
+      st.gerando = st.gerando.filter(x => x.status === 'erro');
+      aviso(ok === lista.length ? `${ok} foto(s) geradas.${lista.includes('fundo_branco') ? ' A de fundo branco virou a capa.' : ''}` : `${ok} de ${lista.length} foto(s) geradas — as que falharam podem ser geradas de novo.`);
+      tudo(); salvarDepois();
+    }
+    async function api(path, corpo) {
+      const r = await window.glrApiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+      return j;
     }
     async function chatJSON(system, texto) {
       const j = await api('/api/chat', { system, messages: [{ role: 'user', content: texto }] });
       const m = String(j.content || '').match(/\{[\s\S]*\}/); if (!m) throw new Error('resposta sem JSON');
       return JSON.parse(m[0]);
     }
-    async function iaMelhorarTexto() {
-      if (!st.p.titulo.trim()) return aviso('Escreva pelo menos um nome para o produto.');
+    // SEO: pesquisa real de busca do ML + IA (api/anuncio-seo.js) → título por canal e descrição
+    async function iaSEO() {
+      if (!st.fotos.length && !st.p.titulo.trim()) return aviso('Envie uma foto ou escreva o nome do produto.');
       st.iaTexto = true; tudo();
       try {
-        const r = await chatJSON('Você escreve anúncios de marketplace no Brasil (Mercado Livre, Shopee, TikTok Shop). Devolva APENAS JSON: {"titulo": "...", "descricao": "..."}. Título: tipo do produto + principais características buscadas (material, medida, cor, quantidade), sem marca repetida, sem CAIXA ALTA, sem emoji, até 60 caracteres. Descrição: 6 a 12 linhas em texto simples (sem HTML, sem markdown, sem emoji), com parágrafo de abertura, lista de características com "- ", medidas e itens inclusos quando informados, e cuidados/garantia se houver. Use SÓ o que foi informado — nunca invente medida, material ou certificação.',
-          `Produto: ${st.p.titulo}\nMarca: ${st.p.marca || '—'}\nDescrição atual: ${st.p.descricao || '—'}\nEmbalagem: ${st.p.compr || '?'}x${st.p.larg || '?'}x${st.p.alt || '?'} cm, ${st.p.peso || '?'} kg${st.vars.ativo ? `\nVariações: ${st.vars.eixos.map(e => `${e.nome}: ${e.valores.join(', ')}`).join('; ')}` : ''}`);
-        if (r.titulo) st.p.titulo = String(r.titulo).slice(0, 120);
-        if (r.descricao) st.p.descricao = String(r.descricao);
-      } catch (e) { aviso('A IA não respondeu: ' + e.message); }
+        const ref = fotoRef(), foto = ref ? await reduzir(ref, 1024) : null;
+        const foco = contasDoCliente();
+        const ml = [...selDe('ml'), ...st.contas.filter(c => MKT_DE(c.marketplace) === 'ml' && (!foco || foco.has(idConta(c))))].map(idConta);
+        const extras = [st.p.compr && `embalagem ${st.p.compr}x${st.p.larg}x${st.p.alt} cm`, st.p.peso && `${st.p.peso} kg`, st.p.garantia && `garantia ${st.p.garantia}`, st.vars.ativo && st.vars.eixos.filter(e => e.valores.length).map(e => `${e.nome}: ${e.valores.join(', ')}`).join('; ')].filter(Boolean).join(' · ');
+        const j = await api('/api/anuncio-seo', { titulo: st.p.titulo, descricao: st.p.descricao, marca: st.p.marca, extras, foto, categoria_ml: st.canal.ml.cat?.id, categoria_nome: st.canal.ml.cat?.nome, contas: [...new Set(ml)].slice(0, 6) });
+        if (j.titulos?.ml) st.p.titulo = j.titulos.ml;
+        if (j.descricao) st.p.descricao = j.descricao;
+        if (j.titulos?.shopee) st.canal.shopee.titulo = j.titulos.shopee;
+        if (j.titulos?.tiktok) st.canal.tiktok.titulo = j.titulos.tiktok;
+        st.canal.ml.titulo = '';
+        st.seo = { chaves: j.palavras_chave || [], principal: j.palavra_principal || '', faltam: j.faltam || [], fontes: j.fontes || {}, titulos: j.titulos || {} };
+        if (j.palavra_principal) st.termoCategoria = j.palavra_principal;
+        aviso('Título e descrição com SEO prontos — confira os dados técnicos.');
+      } catch (e) { aviso('Não consegui gerar o SEO: ' + e.message); }
       st.iaTexto = false; tudo(); salvarDepois();
     }
 
@@ -556,20 +586,29 @@
       return `<section class="ca-bloco">
         <h4>Fotos <span class="ca-dica">${st.fotos.length} de até 10 · a primeira é a capa</span></h4>
         <div class="ca-fotos" ondragover="event.preventDefault();this.classList.add('arr')" ondragleave="this.classList.remove('arr')" ondrop="event.preventDefault();this.classList.remove('arr');_ca.arquivos(event.dataTransfer.files)">
-          ${st.fotos.map((f, i) => `<figure class="ca-foto${i === 0 ? ' capa' : ''}"><img src="${h(f.url)}" alt="foto ${i + 1}">${i === 0 ? '<b>Capa</b>' : ''}${f.ia ? '<i>IA</i>' : ''}
+          ${st.fotos.map((f, i) => `<figure class="ca-foto${i === 0 ? ' capa' : ''}"><img src="${h(f.url)}" alt="foto ${i + 1}">${i === 0 ? '<b>Capa</b>' : ''}${f.ia ? `<i>${h(KIT[f.tipo] ? KIT[f.tipo].replace(/ \(.*\)/, '') : 'IA')}</i>` : ''}
             <div class="ca-foto-ac">${i > 0 ? `<button type="button" title="Mover para a esquerda" onclick="_ca.moverFoto(${i},-1)">‹</button><button type="button" title="Usar como capa" onclick="_ca.capa(${i})">★</button>` : ''}${i < st.fotos.length - 1 ? `<button type="button" title="Mover para a direita" onclick="_ca.moverFoto(${i},1)">›</button>` : ''}<button type="button" title="Remover" onclick="_ca.tirarFoto(${i})">✕</button></div></figure>`).join('')}
           <label class="ca-foto-add"><input type="file" accept="image/*" multiple onchange="_ca.arquivos(this.files)"><span>＋</span><small>${st.fotos.length ? 'Mais fotos' : 'Arraste as fotos aqui ou clique'}</small></label>
         </div>
+        ${st.gerando.length ? `<div class="ca-gerando">${st.gerando.map(g => `<div class="ca-ger ${g.status}"><span>${g.status === 'erro' ? '!' : ''}</span><b>${h(KIT[g.t])}</b><small>${g.status === 'erro' ? h(g.msg || 'falhou') : 'gerando…'}</small></div>`).join('')}</div>` : ''}
         <div class="ca-ia">
-          <button class="btn btn-secondary btn-sm" ${!st.fotos.length || st.ia ? 'disabled' : ''} onclick="_ca.iaFoto()">${st.ia ? 'Analisando a foto…' : 'Preencher pela foto (IA)'}</button>
-          <button class="btn btn-secondary btn-sm" ${!st.fotos.length || st.gerandoFoto ? 'disabled' : ''} onclick="_ca.iaGerarFoto()">${st.gerandoFoto ? 'Gerando foto…' : 'Gerar foto ambientada (IA)'}</button>
-          <span class="ca-dica">Capa: fundo claro, produto inteiro, sem texto.</span>
+          <button class="btn btn-primary btn-sm" ${!st.fotos.length || st.gerando.some(g => g.status === 'gerando') ? 'disabled' : ''} onclick="_ca.kit()">${st.gerando.some(g => g.status === 'gerando') ? 'Gerando fotos…' : 'Gerar fotos com IA'}</button>
+          <span class="ca-dica">A IA usa a primeira foto real como referência e mantém o produto igual.</span>
         </div>
+        ${st.kitAberto ? `<div class="ca-kit"><div class="ca-sub" style="margin-top:0">Quais fotos gerar</div><div class="ca-kit-op">${Object.entries(KIT).map(([k, t]) => `<label class="ca-conta${st.kit.includes(k) ? ' on' : ''}"><input type="checkbox" ${st.kit.includes(k) ? 'checked' : ''} onchange="_ca.kitTipo('${k}',this.checked)">${t}</label>`).join('')}</div>
+          <div class="ca-ia"><button class="btn btn-primary btn-sm" onclick="_ca.gerarKit()">Gerar ${Math.min(st.kit.length, 10 - st.fotos.length)} foto(s)</button><button class="btn btn-secondary btn-sm" onclick="_ca.kit()">Cancelar</button><span class="ca-dica">Cerca de 20 segundos; elas aparecem conforme ficam prontas.</span></div></div>` : ''}
       </section>
       <section class="ca-bloco">
         <label class="ca-f"><span>Título <em id="ca-cont-tit">${p.titulo.length} caracteres</em></span><input class="form-input" id="ca-titulo" value="${h(p.titulo)}" placeholder="Ex.: Armário de Cozinha 4 Portas MDF Branco" oninput="_ca.p('titulo',this.value)"></label>
         <label class="ca-f"><span>Descrição</span><textarea class="form-textarea" id="ca-descricao" rows="7" placeholder="Material, medidas, o que vem na caixa, diferenciais…" oninput="_ca.p('descricao',this.value)">${h(p.descricao)}</textarea></label>
-        <div class="ca-ia" style="margin-top:0;margin-bottom:12px"><button class="btn btn-secondary btn-sm" ${st.iaTexto ? 'disabled' : ''} onclick="_ca.iaTexto()">${st.iaTexto ? 'Escrevendo…' : 'Melhorar título e descrição (IA)'}</button><span class="ca-dica">Cada marketplace pode ter um título próprio na etapa 3.</span></div>
+        <div class="ca-ia" style="margin-top:0;margin-bottom:12px"><button class="btn btn-primary btn-sm" ${st.iaTexto ? 'disabled' : ''} onclick="_ca.iaSEO()">${st.iaTexto ? 'Pesquisando buscas e escrevendo…' : 'Criar título e descrição com SEO (IA)'}</button><span class="ca-dica">Usa as buscas reais do Mercado Livre (sugestões, termos em alta e mais vendidos da categoria).</span></div>
+        ${st.seo ? `<div class="ca-seo">
+          <div class="ca-sub" style="margin-top:0">Títulos por canal</div>
+          ${['ml', 'shopee', 'tiktok'].map(m => { const t = m === 'ml' ? st.p.titulo : st.canal[m].titulo || st.p.titulo; return `<div class="ca-seo-t" style="--c:${MKTS[m].cor}"><b>${MKTS[m].nome}</b><span>${h(t)}</span><em>${t.length}/${MKTS[m].tituloMax}</em></div>`; }).join('')}
+          ${st.seo.chaves.length ? `<div class="ca-sub">Palavras-chave usadas</div><div class="ca-chips ca-chips-ro">${st.seo.chaves.map((c, i) => `<span class="ca-chip${i === 0 || c === st.seo.principal ? ' forte' : ''}">${h(c)}</span>`).join('')}</div>` : ''}
+          <div class="ca-dica" style="margin-top:6px">Fonte: ${st.seo.fontes.categoria ? `categoria ${h(st.seo.fontes.categoria.nome || st.seo.fontes.categoria.id)} · ` : ''}${st.seo.fontes.busca || 0} sugestões da busca · ${st.seo.fontes.em_alta || 0} termos em alta · ${st.seo.fontes.mais_vendidos || 0} mais vendidos. Os títulos da Shopee e do TikTok ficam editáveis na etapa 3.</div>
+          ${st.seo.faltam.length ? `<div class="ca-sub">Para completar o anúncio, informe</div><ul class="ca-pend">${st.seo.faltam.map(f => `<li class="leve">${h(f)}</li>`).join('')}</ul>` : ''}
+        </div>` : ''}
         <div class="ca-g4">
           ${campo('marca', 'Marca', p.marca)}${campo('sku', 'SKU', p.sku)}${campo('gtin', 'Código de barras (EAN)', p.gtin, 'inputmode="numeric" placeholder="se tiver"')}
           <label class="ca-f"><span>Condição</span><select class="form-select" id="ca-condicao" onchange="_ca.p('condicao',this.value)"><option value="new" ${p.condicao === 'new' ? 'selected' : ''}>Novo</option><option value="used" ${p.condicao === 'used' ? 'selected' : ''}>Usado</option></select></label>
@@ -760,7 +799,9 @@
       tirarFoto(i) { st.fotos.splice(i, 1); tudo(); salvarDepois(); },
       moverFoto(i, d) { const j = i + d; if (j < 0 || j >= st.fotos.length) return; [st.fotos[i], st.fotos[j]] = [st.fotos[j], st.fotos[i]]; tudo(); salvarDepois(); },
       capa(i) { st.fotos.unshift(st.fotos.splice(i, 1)[0]); tudo(); salvarDepois(); },
-      iaFoto, iaGerarFoto, iaTexto: iaMelhorarTexto,
+      iaSEO, gerarKit,
+      kit() { st.kitAberto = !st.kitAberto; tudo(); },
+      kitTipo(k, on) { st.kit = on ? [...new Set([...st.kit, k])] : st.kit.filter(x => x !== k); tudo(); salvarDepois(); },
       varsAtivo(v) { st.vars.ativo = v; if (v) mapearEixos(); tudo(); salvarDepois(); },
       eixoNome(i, v) { st.vars.eixos[i].nome = v; ladoSo(); salvarDepois(); },
       addValor(i, v) { v = String(v || '').replace(/,/g, '').trim(); if (!v) return; if (!st.vars.eixos[i].valores.includes(v)) st.vars.eixos[i].valores.push(v); mapearEixos(); tudo(); const e = document.getElementById(`ca-eixo-${i}`); if (e) { e.value = ''; e.focus(); } salvarDepois(); },
@@ -831,6 +872,11 @@
         @media (hover:none){.ca-foto-ac{opacity:1}}
         .ca-foto-ac button{width:26px;height:26px;border-radius:50%;border:none;background:#fff;color:#111;cursor:pointer;font-size:13px;line-height:1}
         .ca-foto-add{aspect-ratio:1;border:2px dashed var(--border);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;color:var(--text-secondary);text-align:center;padding:8px}.ca-foto-add:hover,.ca-foto-add:focus-within{border-color:var(--accent);color:var(--accent)}.ca-foto-add input{position:absolute;opacity:0;width:1px;height:1px}.ca-foto-add span{font-size:26px;line-height:1}.ca-foto-add small{font-size:11px}
+        .ca-gerando{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-top:10px}.ca-ger{aspect-ratio:1;border-radius:10px;border:1px dashed var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;padding:8px;background:linear-gradient(110deg,var(--bg-subtle) 30%,color-mix(in srgb,var(--accent) 10%,var(--bg-subtle)) 50%,var(--bg-subtle) 70%);background-size:200% 100%;animation:caBrilho 1.4s linear infinite}.ca-ger b{font-size:12px}.ca-ger small{font-size:11px;color:var(--text-muted)}.ca-ger.erro{border-color:var(--red);animation:none;background:var(--bg-subtle)}.ca-ger.erro span{color:var(--red);font-weight:700}
+        @keyframes caBrilho{to{background-position:-200% 0}}
+        .ca-kit{margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--bg-subtle)}.ca-kit-op{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px}.ca-kit .ca-conta{background:var(--bg-card);margin:0}
+        .ca-seo{border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px;background:var(--bg-subtle)}.ca-seo-t{display:grid;grid-template-columns:100px 1fr auto;gap:8px;align-items:baseline;font-size:13px;padding:5px 0;border-bottom:1px dashed var(--border)}.ca-seo-t b{color:var(--c);font-size:12px}.ca-seo-t em{font-style:normal;font-size:11px;color:var(--text-muted)}
+        .ca-chips-ro{border:none;padding:0;background:none;min-height:0;cursor:default}.ca-chip.forte{background:var(--accent);color:#fff}
         .ca-switch{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;cursor:pointer;position:relative}.ca-switch input{position:absolute;opacity:0;width:1px;height:1px}.ca-switch span{width:38px;height:22px;border-radius:99px;background:var(--border);position:relative;transition:background .15s;flex:none}.ca-switch span::after{content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}.ca-switch input:checked+span{background:var(--accent)}.ca-switch input:checked+span::after{transform:translateX(16px)}.ca-switch input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
         .ca-eixos{display:flex;flex-direction:column;gap:10px;margin:14px 0}.ca-eixo{display:grid;grid-template-columns:150px 1fr auto;gap:8px;align-items:start}
         .ca-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:10px;padding:6px 8px;min-height:40px;background:var(--bg-card);cursor:text}
@@ -871,7 +917,7 @@
         #ca-aviso{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:var(--text-primary);color:var(--bg-card);padding:10px 16px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50;max-width:min(560px,calc(100vw - 32px))}#ca-aviso.on{opacity:1;transform:translate(-50%,0)}
         @media (max-width:1100px){.ca-corpo{grid-template-columns:1fr}.ca-lado{position:static;order:-1}.ca-prev{display:grid;grid-template-columns:160px 1fr}}
         @media (max-width:700px){.ca-passos button{grid-template-columns:1fr;padding:8px 4px;justify-items:center}.ca-passos button b,.ca-passos button small{display:none}.ca-passos button span{grid-row:auto}.ca-eixo{grid-template-columns:1fr}.ca-prev{grid-template-columns:110px 1fr}.ca-prev-th{display:none}.ca-publ{grid-template-columns:1fr auto}.ca-publ small{grid-column:1/-1}}
-        @media (prefers-reduced-motion:reduce){.ca-foto-ac,#ca-aviso,.ca-switch span,.ca-switch span::after{transition:none}}
+        @media (prefers-reduced-motion:reduce){.ca-ger{animation:none}.ca-foto-ac,#ca-aviso,.ca-switch span,.ca-switch span::after{transition:none}}
       </style>
     </div>`;
     tudo();

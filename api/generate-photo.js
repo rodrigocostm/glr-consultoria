@@ -152,6 +152,21 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ images, erros: erros.length ? erros : undefined });
     }
 
+    // stage === 'tipo': uma foto do kit do Criar anúncio (o front pede vários tipos em paralelo)
+    if (stage === 'tipo') {
+      const TIPOS = {
+        fundo_branco: 'Foto de estúdio para CAPA de marketplace: fundo 100% branco puro (#FFFFFF) e liso, produto inteiro e centralizado ocupando cerca de 85% do quadro, ângulo frontal levemente em 3/4, iluminação de estúdio suave e uniforme, sombra de contato leve e natural, nitidez máxima, sem nenhum texto, logotipo, marca d\'água, moldura ou objeto extra.',
+        ambientada: 'Foto ambientada lifestyle: produto inserido num ambiente real e sofisticado condizente com o uso dele (decoração moderna, materiais nobres, luz natural suave), composição de catálogo, plano médio, ângulo em 3/4, produto em destaque e em foco, sem texto.',
+        angulo: 'Foto do MESMO produto por OUTRO ângulo (lateral ou 3/4 do lado oposto, ou costas se for relevante) para mostrar volume, profundidade e acabamento lateral, fundo neutro claro e limpo, iluminação de estúdio, sem texto.',
+        detalhe: 'Close-up macro de um detalhe de destaque do produto (acabamento, textura, relevo, costura, encaixe ou material), fundo desfocado, iluminação lateral que realça a textura, sem texto.',
+        uso: 'Foto do produto em uso ou no contexto real de uso, com uma pessoa ou mãos interagindo de forma natural (sem mostrar rosto em close), deixando claro o tamanho real e a função, ambiente claro e acolhedor, sem texto.',
+      };
+      const tipo = String(req.body?.tipo || '');
+      if (!TIPOS[tipo]) return res.status(400).json({ error: 'Tipo de foto inválido.' });
+      const foto = await gerarImagem(TIPOS[tipo]);
+      return res.status(200).json({ images: [{ url: comoDataUrl(foto), tipo }] });
+    }
+
     // stage === 'ambientada' (padrão): gera só 1 foto, mais barato que o kit inteiro.
     const promptAmbientada = 'Foto ambientada em ambiente premium: produto inserido em um ambiente premium sofisticado (ex.: sala/ambiente moderno e elegante, materiais nobres, iluminação suave e clean, condizente com um produto de alto padrão), em uso, boa composição, câmera em plano aberto/meio plano, ângulo em 3/4 (nunca de frente reta), estilo lifestyle de catálogo — foto principal.';
     const foto = await gerarImagem(promptAmbientada);
