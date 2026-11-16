@@ -2155,7 +2155,7 @@
       gasto: c => c.gasto, impressoes: c => c.impressoes, cliques: c => c.cliques, ctr: c => c.ctr, pedidos: c => c.pedidos,
       gmv: c => c.gmv, acos: c => (c.acos === Infinity ? 1e12 : c.acos),
       roasMeta: c => c.roasTarget ?? -1, roas: c => (c.gasto > 0 ? c.gmv / c.gasto : -1),
-      tacos: c => c._tacos ?? -1, tacosProd: c => (c._tacosProd === Infinity ? 1e12 : c._tacosProd ?? -1),
+      tacos: c => (c._tacosProd === Infinity ? 1e12 : c._tacosProd ?? -1), tacosProd: c => (c._tacosProd === Infinity ? 1e12 : c._tacosProd ?? -1),
     };
 
     function statusCampanha(contaId, c, cfg) {
@@ -2197,14 +2197,15 @@
       const abas = `<div class="ag-periodos" style="margin-bottom:12px;">
         ${[['todas', 'Todas'], ['ativas', 'Ativas'], ['pausadas', '⏸ Pausadas']].map(([k, l]) => `<button class="btn btn-sm ${filtro === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agTabFiltro('${k}')">${l} (${contagem(k)})</button>`).join('')}
       </div>`;
-      // TACOS da campanha (gasto ÷ faturamento da loja no período) e do produto (gasto ÷ venda total dos itens dela)
+      // TACOS da campanha = gasto ÷ tudo o que os produtos dela venderam no período (orgânico + ADS).
+      // Antes havia também o "TACOS (loja)" = gasto ÷ faturamento da loja inteira: só uma fatia, que somada dava o TACOS geral.
       const vis = state.vendasItemShp[`${contaId}:${state.negocioPeriodo}`];
       if (!vis) setTimeout(() => carregarVendasItemShp(contaId, state.negocioPeriodo), 0);
       const tetoAds = tetoAdsDe(cfg);
       d.todasCampanhas.forEach(c => {
-        c._tacos = d.faturamentoTotal > 0 && c.gasto > 0 ? c.gasto / d.faturamentoTotal * 100 : null;
         const vt = vis?.porItem && (c.itens || []).length ? c.itens.reduce((s, i) => s + (vis.porItem[i] || 0), 0) : null;
-        c._vendaProd = vt; c._tacosProd = vt == null || !(c.gasto > 0) ? null : vt > 0 ? c.gasto / vt * 100 : Infinity;
+        const den = vt == null ? null : Math.max(vt, c.gmv || 0); // venda total nunca é menor que a venda por ADS (pedido ainda não chegou na base)
+        c._vendaProd = den; c._tacosProd = den == null || !(c.gasto > 0) ? null : den > 0 ? c.gasto / den * 100 : Infinity;
       });
       const linhasOrd = d.todasCampanhas.filter(FILTROS_CAMP[filtro]).sort((a, b) => { const x = acesso(a), y = acesso(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
       if (!linhasOrd.length) return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">${cab}${abas}<div class="ag-vazio">${filtro === 'pausadas' ? '✅ Nenhuma campanha pausada agora.' : 'Nenhuma campanha neste filtro.'}</div></div>`;
@@ -2240,8 +2241,7 @@
           <td class="ag-mono" style="font-weight:700;">${R$(c.gmv)}</td>
           <td class="ag-mono" style="font-weight:700;${cAcos ? `color:${cAcos};` : ''}">${fmtPct(c.acos)}</td>
           <td class="ag-mono" style="font-weight:700;${corRoas}">${roas == null ? '—' : `${fmtNum(roas)}x`}</td>
-          <td class="ag-mono" style="font-weight:700;color:${corTetoAds(c._tacos, tetoAds) || 'inherit'};">${c._tacos == null ? '—' : fmtPct(c._tacos, 2)}</td>
-          <td class="ag-mono" style="font-weight:700;color:${corTetoAds(c._tacosProd, tetoAds) || 'inherit'};" title="${c._vendaProd != null ? `o produto vendeu ${R$(c._vendaProd)} no período (orgânico + ADS)` : (c.itens || []).length ? '' : 'campanha sem produto identificado'}">${vis?.carregando ? '…' : c._tacosProd === Infinity ? '∞' : c._tacosProd == null ? '—' : fmtPct(c._tacosProd)}</td>
+          <td class="ag-mono" style="font-weight:700;color:${corTetoAds(c._tacosProd, tetoAds) || 'inherit'};" title="${c._vendaProd != null ? `os produtos da campanha venderam ${R$(c._vendaProd)} no período (orgânico + ADS)` : (c.itens || []).length ? '' : 'campanha sem produto identificado'}">${vis?.carregando ? '…' : c._tacosProd === Infinity ? '∞' : c._tacosProd == null ? '—' : fmtPct(c._tacosProd)}</td>
           <td><details class="ag-menu"><summary title="Ações">⋯</summary><div class="ag-menu-lista">
             ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agBoostCampanha('${c.id}', '${nomeJs}', ${c.budget || 0}, ${c.roasTarget != null ? c.roasTarget : 'null'}, ${c.acos === Infinity ? 'Infinity' : c.acos})">Sugerir mais investimento</button>` : ''}
             ${ativa ? `<button onclick="this.closest('details').removeAttribute('open');window._agSugerirCampanha('${c.id}', 'pausar', '${nomeJs}')">⏸ Sugerir pausar</button>` : ''}
@@ -2257,13 +2257,13 @@
         <div style="overflow-x:auto;">
         <table class="ag-tech-table">
           <thead><tr>
-            ${th('nome', 'Campanha')}${th('status', 'Status')}<th>Última ação do agente / motivo</th>${th('orcamento', 'Orçamento')}${th('roasMeta', `Meta ${sigla('ROAS')}`)}${th('gasto', 'Gasto')}${th('impressoes', 'Impressões')}${th('cliques', 'Cliques')}${th('ctr', sigla('CTR'))}${th('pedidos', 'Pedidos')}${th('gmv', sigla('GMV'))}${th('acos', sigla('ACOS'))}${th('roas', sigla('ROAS'))}${th('tacos', sigla('TACOS'), ' <span style="font-size:10px;color:var(--text-muted);font-weight:400" title="Gasto da campanha ÷ faturamento da loja no período">loja</span>')}${th('tacosProd', `${sigla('TACOS')} do produto`, '')}<th></th>
+            ${th('nome', 'Campanha')}${th('status', 'Status')}<th>Última ação do agente / motivo</th>${th('orcamento', 'Orçamento')}${th('roasMeta', `Meta ${sigla('ROAS')}`)}${th('gasto', 'Gasto')}${th('impressoes', 'Impressões')}${th('cliques', 'Cliques')}${th('ctr', sigla('CTR'))}${th('pedidos', 'Pedidos')}${th('gmv', sigla('GMV'))}${th('acos', sigla('ACOS'))}${th('roas', sigla('ROAS'))}${th('tacos', sigla('TACOS'), '')}<th></th>
           </tr></thead>
           <tbody>${linhas.map(linha).join('')}</tbody>
         </table>
         </div>
         ${linhasOrd.length > LIMITE ? `<div style="text-align:center;margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="window._agTabelaTodas()">${state.tabTodas ? 'Mostrar só as 10 primeiras' : `Ver todas (${linhasOrd.length})`}</button></div>` : ''}
-        <div class="ag-nota" style="margin-top:10px;">“Sem limite” = campanha sem orçamento diário fixo. “Meta ${sigla('ROAS')}” = o ROAS objetivo configurado na campanha (“manual” = lance manual, sem meta); o ${sigla('ROAS')} fica verde quando bate a meta, amarelo até 70% dela e vermelho abaixo. ${sigla('TACOS')} (loja) = gasto da campanha ÷ faturamento da loja no período; ${sigla('TACOS')} do produto = gasto ÷ tudo o que o produto da campanha vendeu (orgânico + ADS, sem cancelados) — verde até ${tetoAds ? fmtPct(tetoAds) : 'a meta'}, amarelo até 30% acima, vermelho além. Cores do ${sigla('ACOS')}: verde dentro da meta, amarelo acima da meta, vermelho perto do limite de pausa. Ações do menu ⋯ viram sugestões pra você aprovar em “Precisa de você”.</div>
+        <div class="ag-nota" style="margin-top:10px;">“Sem limite” = campanha sem orçamento diário fixo. “Meta ${sigla('ROAS')}” = o ROAS objetivo configurado na campanha (“manual” = lance manual, sem meta); o ${sigla('ROAS')} fica verde quando bate a meta, amarelo até 70% dela e vermelho abaixo. ${sigla('TACOS')} da campanha = gasto ÷ tudo o que os produtos dela venderam no período (orgânico + ADS, sem cancelados) — verde até ${tetoAds ? fmtPct(tetoAds) : 'a meta'}, amarelo até 30% acima, vermelho além. Cores do ${sigla('ACOS')}: verde dentro da meta, amarelo acima da meta, vermelho perto do limite de pausa. Ações do menu ⋯ viram sugestões pra você aprovar em “Precisa de você”.</div>
       </div>`;
     }
 
