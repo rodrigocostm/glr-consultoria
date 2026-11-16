@@ -452,7 +452,9 @@ Router.register('projecao', (params, el) => {
   // Trava manual dos dias vale só no dia em que foi feita: no dia seguinte a Data Base
   // volta a seguir ontem (antes a trava ficava salva para sempre e a projeção "parava" num dia)
   const _hojeIsoProj = `${_hoje.getFullYear()}-${String(_hoje.getMonth()+1).padStart(2,'0')}-${String(_hoje.getDate()).padStart(2,'0')}`;
-  for (const p of projecoes) if (p && p._diasEditadosManualmente && p._diasEditadosEm !== _hojeIsoProj) { p._diasEditadosManualmente = false; delete p._diasEditadosEm; }
+  let _travasVencidas = 0;
+  for (const p of projecoes) if (p && p._diasEditadosManualmente && p._diasEditadosEm !== _hojeIsoProj) { p._diasEditadosManualmente = false; delete p._diasEditadosEm; _travasVencidas++; }
+  if (_travasVencidas) try { localStorage.setItem(storageKey, JSON.stringify(projecoes)); } catch (e) {}
 
   if (!projecaoAtiva) {
     const clienteObj = GLR.clientes.find(c => c.id === clienteIdAtivo);
