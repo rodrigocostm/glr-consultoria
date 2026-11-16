@@ -180,7 +180,46 @@ async function calcularReputacao(ctx, mkt, conta, ant) {
     mensagens: out.mensagensNaoLidas ?? null, devolucoes: out.devolucoes ? out.devolucoes.length : null, pedemResposta: out.pedemResposta ?? null,
     produtosProblema: Object.keys(out.itens || {}).length, risco: out.risco, riscoMotivo: out.riscoMotivo, nivel: out.reputacao?.nivel || null,
   };
+  alertasRep(mkt, out, ant);
+  // queda de nível nova: aviso no celular (uma vez por queda)
+  if (out.quedaNivel && out.quedaNivel.em === out.em && ctx.sbSelect) {
+    await require('./_alerta').avisar(ctx.sbSelect, `⚠️ Reputação caiu — ${mkt === 'ml' ? 'Mercado Livre' : 'Shopee'} ${conta}`, `${out.quedaNivel.de} → ${out.quedaNivel.para}. Veja na Caixa de decisões.`, `rep-${conta}`).catch(() => {});
+  }
   return out;
+}
+
+// ── Alertas para a Caixa de decisões ──
+// ML: taxa de reclamações/cancelamentos/atrasos chegando no limite da cor verde
+// (avisa a partir de 70% do limite, antes de a conta mudar de cor), queda de
+// nível e pergunta parada há mais de 24 h. Shopee: métrica fora da meta, queda
+// da nota e devolução esperando resposta da loja com prazo em até 2 dias.
+// Limites do ML para manter o verde (conferir na central de reputação se o ML mudar):
+const LIMITE_ML = { reclamacoes: { lim: 0.01, nome: 'Reclamações' }, cancelamentos: { lim: 0.005, nome: 'Cancelamentos' }, atrasos: { lim: 0.06, nome: 'Despachos com atraso' } };
+const AVISO_EM = 0.7, MIN_VENDAS_TAXA = 10;
+function alertasRep(mkt, out, ant) {
+  const al = [];
+  const nota = mkt === 'ml' ? out.reputacao?.nota : out.reputacao?.notaLoja;
+  const notaAnt = mkt === 'ml' ? ant?.reputacao?.nota : ant?.reputacao?.notaLoja;
+  const nome = n => mkt === 'ml' ? (Object.values(NIVEL).find(v => v[1] === n)?.[0] || String(n)) : `nota ${String(n).replace('.', ',')}`;
+  if (nota != null && notaAnt != null && nota < notaAnt) out.quedaNivel = { de: nome(notaAnt), para: nome(nota), em: out.em };
+  else if (ant?.quedaNivel && Date.now() - ant.quedaNivel.em < 7 * 864e5 && !(nota != null && notaAnt != null && nota > notaAnt)) out.quedaNivel = ant.quedaNivel;
+  if (out.quedaNivel) al.push({ t: 'queda_nivel', chave: `queda:${out.quedaNivel.em}`, de: out.quedaNivel.de, para: out.quedaNivel.para, em: out.quedaNivel.em });
+  if (mkt === 'ml') {
+    const r = out.reputacao || {};
+    if ((r.vendas60 || 0) >= MIN_VENDAS_TAXA) for (const [k, cfg] of Object.entries(LIMITE_ML)) {
+      const taxa = r[k]?.taxa; if (taxa == null) continue;
+      const uso = taxa / cfg.lim;
+      if (uso >= AVISO_EM) al.push({ t: 'taxa', chave: `taxa:${k}:${uso >= 1 ? 'acima' : 'perto'}`, nome: cfg.nome, taxa, lim: cfg.lim, n: r[k]?.n ?? null, acima: uso >= 1 });
+    }
+    const h = out.resumo?.perguntaMaisAntigaH;
+    if (h != null && h > 24) al.push({ t: 'perguntas', chave: 'perguntas', n: out.resumo.perguntas, h, rascunhos: out.resumo.rascunhos });
+  } else {
+    for (const m of (out.reputacao?.metricas || []).filter(m => !m.ok)) al.push({ t: 'metrica', chave: `met:${m.nome}`, nome: m.nome, atual: m.atual, meta: m.meta, unidade: m.unidade });
+    const limite = Date.now() + 2 * 864e5;
+    for (const d of (out.devolucoes || []).filter(d => d.prazo && new Date(d.prazo).getTime() <= limite && new Date(d.prazo).getTime() > Date.now() && (/PENDING/.test(d.negociacao) || d.status === 'PROCESSING')).slice(0, 5))
+      al.push({ t: 'devolucao', chave: `dev:${d.id}`, id: d.id, produto: d.produto, prazo: d.prazo, valor: d.valor, motivo: d.motivo });
+  }
+  out.alertas = al;
 }
 
 module.exports = { calcularReputacao, dadosDoAnuncio };

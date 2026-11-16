@@ -141,7 +141,26 @@ async function calcularSinais(ctx, mkt, conta) {
     negativos: lista.filter(i => i.nm === 'negativa').sort((a, b) => a.m - b.m).slice(0, 3).map(i => ({ n: i.n, m: i.m })),
     apertados: lista.filter(i => i.nm === 'apertada').slice(0, 3).map(i => ({ n: i.n, aa: i.aa })),
   };
-  return { em: agora, mkt, conta, dias: 30, aliquota: aliq, destaques, margem_minima: margemMin, razao_conta: razaoConta == null ? null : Math.round(razaoConta * 1000) / 1000, itens, resumo };
+  return { em: agora, mkt, conta, dias: 30, aliquota: aliq, destaques, alertas: alertasDe(itens, margemMin), margem_minima: margemMin, razao_conta: razaoConta == null ? null : Math.round(razaoConta * 1000) / 1000, itens, resumo };
+}
+
+// ── Alertas para a Caixa de decisões (lista curta; a Caixa não baixa todos os itens) ──
+// ruptura: produto que vende e zera em até 15 dias (vale para todos, não só os do ADS)
+// prejuizo: margem antes do ADS ≤ 0 (cada venda perde dinheiro)
+// margem_baixa: margem positiva, mas abaixo da margem mínima da conta
+const MIN_VENDAS_RUPTURA = 3, MIN_VENDAS_PREJUIZO = 2, MIN_VENDAS_MARGEM = 5;
+function alertasDe(itens, margemMin) {
+  const L = Object.entries(itens || {}).map(([id, i]) => ({ id, ...i }));
+  const ruptura = L.filter(i => i.ne && i.ne !== 'ok' && i.u30 >= MIN_VENDAS_RUPTURA)
+    .map(i => ({ t: 'ruptura', id: i.id, n: i.n, e: i.e, d: i.d, ne: i.ne, vd: i.vd, rd: r2((i.vd || 0) * (i.p || 0)) }))
+    .sort((a, b) => b.rd - a.rd).slice(0, 8);
+  const prejuizo = L.filter(i => i.nm === 'negativa' && i.u30 >= MIN_VENDAS_PREJUIZO)
+    .map(i => ({ t: 'prejuizo', id: i.id, n: i.n, m: i.m, p: i.p, u30: i.u30, c: i.c, perda: r2(-(i.m / 100) * i.p * i.u30) }))
+    .sort((a, b) => b.perda - a.perda).slice(0, 6);
+  const baixa = L.filter(i => i.m != null && i.m > 0 && i.m < margemMin && i.u30 >= MIN_VENDAS_MARGEM)
+    .map(i => ({ t: 'margem_baixa', id: i.id, n: i.n, m: i.m, mm: margemMin, p: i.p, u30: i.u30, rec: r2(i.p * i.u30) }))
+    .sort((a, b) => b.rec - a.rec).slice(0, 4);
+  return [...ruptura, ...prejuizo, ...baixa];
 }
 
 // ── Leitura pelos agentes de ADS ──
@@ -162,4 +181,4 @@ function avisosDe(sinais, ids) {
   return { ne, dias: principal?.d ?? null, nome: principal?.n || its[0].n, estoque: principal?.e ?? null, aa, m, promo: its.find(i => i.pr)?.pr || null, rp: its.find(i => i.rp)?.rp || null, qa: its.find(i => i.qa)?.qa || null, nm: m == null ? null : m <= 0 ? 'negativa' : aa < 3 ? 'apertada' : 'ok' };
 }
 
-module.exports = { calcularSinais, avisosDe, MARGEM_MINIMA_PADRAO };
+module.exports = { calcularSinais, avisosDe, alertasDe, MARGEM_MINIMA_PADRAO };

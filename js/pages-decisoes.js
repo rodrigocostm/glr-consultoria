@@ -9,7 +9,11 @@
 //  • Faturamento: as quedas do Raio-X do Gerente (Plano de ação);
 //  • Reputação: reclamação com prazo vencendo;
 //  • Promoções: promoções que cabem na margem;
-//  • Estoque: produto que o ADS empurra e acaba em até 7 dias (repor antes de zerar).
+//  • Estoque: produto que o ADS empurra e acaba em até 7 dias (repor antes de zerar)
+//    e qualquer produto que vende e zera em até 15 dias (mural 'sinais');
+//  • Margem: produto vendendo no prejuízo ou abaixo da margem mínima da conta;
+//  • Reputação também: conta perto do limite do verde (ML), queda de nível,
+//    perguntas paradas, métrica fora da meta e devolução com prazo (Shopee).
 // Limpeza: o servidor fecha de hora em hora as sugestões vencidas e as que uma
 // mais nova substituiu (api/agente-cron.js limparDecisoes); cada loja mostra as
 // fila mostra 40 por vez ("Mostrar mais").
@@ -34,6 +38,7 @@ Router.register('decisoes', (params, el) => {
     'ads-shopee': { t: 'ADS Shopee', c: '#eb6834' },
     'ads-ml': { t: 'ADS ML', c: '#d9a400' },
     'estoque': { t: 'Estoque', c: '#1f9d74' },
+    'margem': { t: 'Margem', c: '#b45309' },
     'conversao': { t: 'Catálogo ML', c: '#d9a400' },
     'faturamento': { t: 'Faturamento', c: 'var(--accent)' },
     'promocoes': { t: 'Promoções', c: 'var(--purple)' },
@@ -60,14 +65,16 @@ Router.register('decisoes', (params, el) => {
     st.carregando = true; render();
     try {
       const desde = new Date(Date.now() - 10 * 864e5).toISOString();
-      const [logs, planos, reps, promos, conex] = await Promise.all([
+      const [logs, planos, reps, promos, conex, sinais] = await Promise.all([
         _sb.from('glr_agente_log').select('id,conta_id,cliente_nome,titulo,explicacao,dados,criado_em').eq('tipo', 'alerta').eq('resultado', 'so_alerta').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(3000),
         _sb.from('glr_sync_estado').select('conta_id,cursor').eq('marketplace', 'sistema').eq('recurso', 'plano'),
-        _sb.from('glr_sync_estado').select('marketplace,conta_id,rec:cursor->reclamacoes').eq('recurso', 'reputacao'),
+        _sb.from('glr_sync_estado').select('marketplace,conta_id,rec:cursor->reclamacoes,al:cursor->alertas').eq('recurso', 'reputacao'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,res:cursor->resumo,dest:cursor->destaques').eq('recurso', 'promocoes'),
         _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('conta_id', 'conexoes').eq('recurso', 'todas').maybeSingle(),
+        _sb.from('glr_sync_estado').select('marketplace,conta_id,em:cursor->em,al:cursor->alertas').eq('recurso', 'sinais'),
       ]);
       for (const r of [logs, planos, reps, promos]) if (r.error) throw r.error;
+      const estoqueAds = new Set(); // produto que o agente de ADS já avisou (estoque_minimo): não repete
       const itens = [], locais = resolvidasLocais(), planoSt = lerJSON('glr_plano_status', {});
       for (const l of logs.data || []) {
         const d = l.dados || {};
@@ -103,6 +110,8 @@ Router.register('decisoes', (params, el) => {
           continue;
         }
         if (d.acao === 'estoque_minimo') { // agente de ADS: produto da campanha acabando — repor é com o cliente
+          for (const iid of d.item_ids || []) estoqueAds.add(`${l.conta_id}:${iid}`);
+          if (d.produto) estoqueAds.add(`${l.conta_id}:${String(d.produto).slice(0, 90)}`);
           const diasTxt = d.dias != null ? ` · acaba em ~${String(d.dias).replace('.', ',')} dia(s)` : '';
           itens.push({ id: 'log:' + l.id, log: l, tipo: 'estoque', mkt, conta: String(l.conta_id), titulo: `Repor estoque — ${d.produto || ''}`,
             acao: `${d.estoque ?? '?'} un.${diasTxt}`, porque: String(l.explicacao || ''), urgente: d.dias != null && d.dias <= 3, exec: false, tela: 'estoque-margem', quando: l.criado_em });
@@ -130,6 +139,44 @@ Router.register('decisoes', (params, el) => {
           if (dias > 3 || locais[id]) continue;
           itens.push({ id, tipo: 'reputacao', mkt: r.marketplace, conta: String(r.conta_id), titulo: `${ACAO_REC[c.acao] || 'Agir'} na reclamação${c.produto ? ` — ${corta(c.produto, 50)}` : ''}`,
             porque: `${c.etapa === 'dispute' ? 'Mediação' : 'Reclamação'} do pedido ${c.pedido}. Perder o prazo derruba a reputação e trava o ADS da conta.`, prazo: c.prazo, urgente: true, tela: 'atendimento' });
+        }
+      }
+      // Agente de Reputação: conta perto de mudar de cor, queda de nível, perguntas paradas, devolução com prazo (Shopee)
+      const pctTxt = v => `${(v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+      for (const r of reps.data || []) for (const a of r.al || []) {
+        const id = `repal:${r.conta_id}:${a.chave}`; if (locais[id]) continue;
+        const base = { id, tipo: 'reputacao', mkt: r.marketplace, conta: String(r.conta_id), exec: false, tela: 'atendimento' };
+        if (a.t === 'queda_nivel') itens.push({ ...base, titulo: `Reputação caiu — ${a.de} → ${a.para}`, porque: 'A conta perdeu cor/nota. Com reputação pior o marketplace mostra menos os anúncios e os agentes de ADS seguram a aceleração. Veja o que puxou (reclamações, atrasos, cancelamentos) em Reputação e atendimento.', urgente: true, quando: new Date(a.em).toISOString() });
+        else if (a.t === 'taxa') itens.push({ ...base, titulo: `${a.acima ? 'Acima do limite' : 'Perto do limite'} — ${a.nome}`, acao: `${pctTxt(a.taxa)} de ${pctTxt(a.lim)}${a.n != null ? ` · ${a.n} caso(s)` : ''}`, porque: a.acima ? `${a.nome} já passou do limite para manter o verde no Mercado Livre. Se continuar, a conta muda de cor.` : `${a.nome} já usa ${Math.round(a.taxa / a.lim * 100)}% do limite para manter o verde. Dá tempo de agir antes de a conta mudar de cor.`, urgente: !!a.acima });
+        else if (a.t === 'perguntas') itens.push({ ...base, titulo: `Responder ${a.n || ''} pergunta(s) parada(s)`.replace('  ', ' '), acao: `a mais antiga há ${a.h >= 48 ? `${Math.round(a.h / 24)} dias` : `${a.h} h`}${a.rascunhos ? ` · ${a.rascunhos} rascunho(s) prontos` : ''}`, porque: 'Pergunta sem resposta perde a venda e pesa no tempo de resposta da conta. A IA já deixou rascunhos onde tinha informação no anúncio.', urgente: a.h > 48 });
+        else if (a.t === 'metrica') itens.push({ ...base, titulo: `Fora da meta da Shopee — ${a.nome}`, acao: `${String(a.atual ?? '—').replace('.', ',')}${a.unidade || ''}${a.meta ? ` · meta ${a.meta}${a.unidade || ''}` : ''}`, porque: 'Métrica fora da meta gera ponto de penalidade e pode limitar a loja (menos exposição, sem campanhas).', urgente: false });
+        else if (a.t === 'devolucao') itens.push({ ...base, titulo: `Responder devolução — ${corta(a.produto, 50)}`, acao: a.valor ? `${R2(a.valor)}` : '', porque: `Devolução ${a.id}${a.motivo ? ` (${String(a.motivo).toLowerCase().replace(/_/g, ' ')})` : ''} espera resposta da loja. Sem resposta no prazo, a Shopee decide a favor do comprador.`, prazo: a.prazo, urgente: true });
+      }
+      // Agentes de Estoque e de Margem (mural 'sinais', a cada 3 h): ruptura em até 15 dias e produto vendendo no prejuízo
+      const dias1 = v => String(Math.round(v * 10) / 10).replace('.', ',');
+      for (const r of sinais?.data || []) {
+        if (!r.em || Date.now() - r.em > 2 * 864e5) continue; // mural velho: a loja parou de sincronizar (aparece em Conexões)
+        for (const a of r.al || []) {
+          const base = { mkt: r.marketplace, conta: String(r.conta_id), exec: false, tela: 'estoque-margem', quando: new Date(r.em).toISOString() };
+          if (a.t === 'ruptura') {
+            const id = `rup:${r.conta_id}:${a.id}:${a.ne}`;
+            if (locais[id] || estoqueAds.has(`${r.conta_id}:${a.id}`) || estoqueAds.has(`${r.conta_id}:${a.n}`)) continue;
+            itens.push({ ...base, id, tipo: 'estoque', titulo: `${a.ne === 'zerado' ? 'Sem estoque' : 'Repor estoque'} — ${a.n}`,
+              acao: a.ne === 'zerado' ? `zerado · vendia ~${dias1(a.vd)}/dia` : `${a.e} un. · acaba em ~${dias1(a.d)} dia(s)`,
+              porque: `Vende ~${dias1(a.vd)} un./dia (${R$(a.rd)}/dia). ${a.ne === 'zerado' ? 'Cada dia parado é venda perdida e o anúncio cai no ranking.' : 'Avisar o cliente para repor antes de zerar e, se estiver no ADS, segurar o investimento.'}`,
+              impacto: a.rd * 7, impactoTipo: 'ganho', urgente: a.ne === 'zerado' || (a.d != null && a.d <= 3) });
+          } else if (a.t === 'prejuizo') {
+            const id = `marg:${r.conta_id}:${a.id}`; if (locais[id]) continue;
+            itens.push({ ...base, id, tipo: 'margem', titulo: `Vendendo no prejuízo — ${a.n}`,
+              acao: `margem ${String(a.m).replace('.', ',')}% antes do ADS · preço ${R2(a.p)}`,
+              porque: `Com taxas do marketplace, imposto e o custo cadastrado (${R2(a.c)}), cada venda perde dinheiro — ${a.u30} vendas em 30 dias. Revise o preço; se o custo estiver errado, corrija em Produtos.`,
+              impacto: a.perda / 30 * 7, impactoTipo: 'perda', urgente: false });
+          } else if (a.t === 'margem_baixa') {
+            const id = `margb:${r.conta_id}:${a.id}`; if (locais[id]) continue;
+            itens.push({ ...base, id, tipo: 'margem', titulo: `Margem abaixo do mínimo — ${a.n}`,
+              acao: `${String(a.m).replace('.', ',')}% · mínimo da conta ${String(a.mm).replace('.', ',')}%`,
+              porque: `Lucra pouco antes do ADS (${a.u30} vendas em 30 dias, ${R$(a.rec)}). Qualquer real de ADS nele tende a virar prejuízo — vale subir o preço ou revisar o custo.`, urgente: false });
+          }
         }
       }
       const hoje = new Date().toISOString().slice(0, 10);
@@ -254,7 +301,7 @@ Router.register('decisoes', (params, el) => {
         <div class="dc-l2"><span class="dc-tipo">${h(T.t)}</span><span>${h(cn)}${ln ? ` · ${h(ln)}` : ''}</span>${prazo ? `<span class="dc-prazo">${prazo}</span>` : it.quando ? `<span>${dataCurta(it.quando)}</span>` : ''}${it.freio ? '<span class="dc-freio" title="O agente parou de apertar porque a venda do produto caiu">freio de volume</span>' : ''}</div>
         ${it.porque ? `<div class="dc-porque">${h(it.porque)}</div>` : ''}
       </div>
-      <div class="dc-imp">${it.impacto ? `<b>${R$(it.impacto)}</b><small>${it.impactoTipo === 'economia' ? 'a cortar/sem' : '/semana'}</small>` : ''}</div>
+      <div class="dc-imp">${it.impacto ? `<b>${R$(it.impacto)}</b><small>${it.impactoTipo === 'economia' ? 'a cortar/sem' : it.impactoTipo === 'perda' ? 'perde/semana' : '/semana'}</small>` : ''}</div>
       <div class="dc-bt">${proc ? `<span class="dc-proc">${h(proc)}</span>` : `
         ${it.exec ? `<button class="btn btn-primary btn-sm" onclick="window._dcAprovar('${h(it.id)}')">Aprovar</button><button class="dc-ic" title="Abrir na tela" aria-label="Abrir na tela" onclick="window._dcIr('${h(it.id)}')">↗</button>`
           : `<button class="btn btn-secondary btn-sm" onclick="window._dcIr('${h(it.id)}')">Abrir</button><button class="dc-ic dc-ok" title="Já fiz" aria-label="Marcar como feito" onclick="window._dcFeito('${h(it.id)}')">✓</button>`}
