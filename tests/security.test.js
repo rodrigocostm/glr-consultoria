@@ -43,12 +43,29 @@ for (const name of ['chat', 'analyze-photo', 'generate-photo']) {
     const r = res(); await require(`../api/${name}`)({ method: 'POST', headers: {}, body: {} }, r);
     assert.equal(r.code, 401); assert.equal(calls, 0);
   });
-  for (const role of ['portal', 'denied']) test(`${name}: ${role} cannot use staff IA`, async () => {
+  // generate-photo é liberado ao portal (Criar anúncio) só nos tipos prontos — testado abaixo
+  for (const role of name === 'generate-photo' ? ['denied'] : ['portal', 'denied']) test(`${name}: ${role} cannot use staff IA`, async () => {
     const calls = mockRole({ role }); const r = res();
     await require(`../api/${name}`)(req({}), r);
     assert.equal(r.code, 403); assert.equal(calls.length, 2);
   });
 }
+test('generate-photo: portal só usa os tipos prontos do Criar anúncio, nunca prompt livre', async () => {
+  let calls = mockRole({ role: 'portal', portal: { contaIds: ['own'] } }); let r = res();
+  await require('../api/generate-photo')(req({ stage: 'custom', prompt: 'qualquer coisa' }), r);
+  assert.equal(r.code, 403); assert.equal(calls.length, 2);
+  calls = mockRole({ role: 'portal', portal: { contaIds: ['own'] } }); r = res();
+  await require('../api/generate-photo')(req({ stage: 'tipo', tipo: 'fundo_branco' }), r);
+  assert.equal(r.code, 400); assert.equal(calls.length, 2); // passou da permissão; parou por falta de foto, sem chamar a IA paga
+});
+test('mcp: portal cria anúncio só na própria conta', async () => {
+  let calls = mockRole({ role: 'portal', portal: { contaIds: ['own'] } }); let r = res();
+  await require('../api/mcp')(req({ action: 'create_item', params: { meliUserId: 'other', price: 10, category_id: 'MLB1', available_quantity: 1 } }), r);
+  assert.equal(r.code, 403); assert(!calls.includes('https://mcp.tiops.com.br'));
+  calls = mockRole({ role: 'portal', portal: { contaIds: ['own'] } }); r = res();
+  await require('../api/mcp')(req({ action: 'tiktok_create_product', params: { open_id: 'other', body: {} } }), r);
+  assert.equal(r.code, 403); assert(!calls.includes('https://mcp.tiops.com.br'));
+});
 test('staff chat still works with a verified staff session', async () => {
   const calls = mockRole({ role: 'staff' }); const r = res();
   await require('../api/chat')(req({ messages: [{ role: 'user', content: 'test' }] }), r);
