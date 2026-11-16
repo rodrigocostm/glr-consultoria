@@ -13,7 +13,7 @@
   // atual abre sozinho; os outros ficam abertos/fechados como o usuário deixou.
   const GRUPOS = [
     { id: 'hoje', titulo: 'Hoje', paginas: ['dashboard', 'decisoes', 'vendometro', 'plano-acao'] },
-    { id: 'vendas', titulo: 'Vendas e metas', paginas: ['vendas', 'projecao', 'meta-diaria', 'data-combinada', 'datas-especiais'] },
+    { id: 'vendas', titulo: 'Vendas e metas', paginas: ['vendas', 'meu-analitico', 'projecao', 'meta-diaria', 'data-combinada', 'datas-especiais'] },
     { id: 'ads', titulo: 'ADS e promoções', paginas: ['agente', 'agente-ml', 'promocoes', 'afiliados'] },
     { id: 'precos', titulo: 'Preço e concorrência', paginas: ['precos-ml', 'precos-shopee', 'conversao-ml', 'mercado-tiops'] },
     { id: 'anuncios', titulo: 'Anúncios e produtos', paginas: ['produtos', 'anuncios-ml', 'anuncios-shopee', 'anuncios-tiktok', 'anuncios-amazon', 'fotos', 'expansao'] },

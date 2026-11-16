@@ -29,23 +29,27 @@
   const ehPortal = () => !!window._portalConfig;
 
   // Lojas que o usuário pode ver: portal = as contas do acesso; equipe = o cliente em foco
-  async function lojasDoAcesso() {
+  // opc.carteira: equipe sem cliente em foco vê todas as lojas da base
+  async function lojasDoAcesso(opc = {}) {
     const base = await BaseDados.carregar();
     const cfg = window._portalConfig;
     let alvos = null;
     if (cfg) alvos = new Set((cfg.contaIds || []).map(String));
     else {
       const cli = GLR.ctx?.cliente?.();
-      if (!cli) return [];
+      if (!cli && !opc.carteira) return [];
+      if (!cli) alvos = null;
+      else {
       let vinc = {}; try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
       alvos = new Set((vinc[String(cli)] || []).flatMap(c => [c.external_id, c.param_to_use?.shopId, c.param_to_use?.meliUserId, c.param_to_use?.amazon_account_id].filter(Boolean).map(String)));
+      }
     }
     const nomes = Object.fromEntries(((cfg && cfg.contas) || []).map(c => [String(c.id), c.nome]));
     const lojas = [];
     for (const [k, info] of Object.entries(base || {})) {
       const mkt = k.slice(0, k.indexOf(':')), id = k.slice(k.indexOf(':') + 1);
-      if (!alvos.has(id)) continue;
-      const nome = nomes[id] || (!cfg && GLR.nomeConta ? String(GLR.nomeConta(mkt, id)).replace(/^.*? · /, '') : '') || `${MKT[mkt] || mkt} ${id.slice(-4)}`;
+      if (alvos && !alvos.has(id)) continue;
+      const nome = nomes[id] || (!cfg && GLR.nomeConta ? String(GLR.nomeConta(mkt, id)).replace(alvos ? /^.*? · / : /^$/, '') : '') || `${MKT[mkt] || mkt} ${id.slice(-4)}`;
       lojas.push({ chave: k, mkt, id, nome, info });
     }
     return lojas;
@@ -149,10 +153,13 @@
   Router.register('meu-analitico', async (params, el) => {
     el.innerHTML = `<div class="page px">${estilo}<div class="px-head"><div><h1>Analítico</h1><p>Como as suas vendas estão evoluindo mês a mês, em cada marketplace, por dia da semana, e quanto foi cancelado ou devolvido.</p></div></div><div id="px-root"><div class="card px-vazio">Carregando…</div></div></div>`;
     let lojas;
-    try { lojas = await lojasDoAcesso(); } catch (e) { el.querySelector('#px-root').innerHTML = `<div class="card px-vazio">Não consegui ler os dados: ${h(e.message)}</div>`; return; }
+    const carteira = !ehPortal() && !GLR.ctx?.cliente?.();
+    try { lojas = await lojasDoAcesso({ carteira: true }); } catch (e) { el.querySelector('#px-root').innerHTML = `<div class="card px-vazio">Não consegui ler os dados: ${h(e.message)}</div>`; return; }
     const root = el.querySelector('#px-root');
-    if (semCliente()) { root.innerHTML = vazioSemCliente(); return; }
     if (!lojas.length) { root.innerHTML = '<div class="card px-vazio">Nenhuma loja com dados ainda.</div>'; return; }
+    if (!ehPortal()) el.querySelector('.px-head p').textContent = carteira
+      ? `Toda a carteira (${lojas.length} lojas): evolução mês a mês, marketplaces, dia da semana, cancelamentos e devoluções. Escolha um cliente no topo para ver só as lojas dele.`
+      : 'As lojas do cliente em foco: evolução mês a mês, marketplaces, dia da semana, cancelamentos e devoluções. É a mesma tela que o cliente vê no portal.';
     const meses = {}, porMkt = {}, semana = Array.from({ length: 7 }, () => ({ fat: 0, ped: 0 }));
     let primeiroDia = null;
     for (const l of lojas) for (const [d, v] of Object.entries(l.info?.dias || {})) {
@@ -174,6 +181,26 @@
     const mUlt = meses[atual] || {}, mAnt = meses[ord[ord.length - 2]] || {};
     const tk = x => x.ped > 0 ? x.fat / x.ped : null;
     const vendido = x => (x.fat || 0) + (x.canc || 0) + (x.dev || 0);
+    // Por loja: mês atual × mesmo período do mês passado (dia 1 até hoje), ticket e perdas
+    function porLoja() {
+      if (lojas.length < 2) return '';
+      const hoje = hojeIso(), ini = atual + '-01';
+      const dA = new Date(`${ini}T12:00:00Z`); dA.setUTCMonth(dA.getUTCMonth() - 1);
+      const iniAnt = dA.toISOString().slice(0, 10), diasAnt = new Date(Date.UTC(dA.getUTCFullYear(), dA.getUTCMonth() + 1, 0)).getUTCDate();
+      const fimAnt = iniAnt.slice(0, 8) + String(Math.min(dd, diasAnt)).padStart(2, '0');
+      const ls = lojas.map(l => {
+        let canc = 0, dev = 0;
+        for (const [d, v] of Object.entries(l.info?.dias || {})) if (d >= ini && d <= hoje) { canc += +v.valor_cancelado || 0; dev += +v.valor_devolvido || 0; }
+        const a = BaseDados.somar(l.info, ini, hoje), p = BaseDados.somar(l.info, iniAnt, fimAnt);
+        return { l, fat: a.faturamento, ped: a.pedidos, ant: p.faturamento, canc, dev, ads: a.ads };
+      }).filter(x => x.fat > 0 || x.ant > 0).sort((a, b) => b.fat - a.fat);
+      const varP = x => x.ant > 0 ? (x.fat / x.ant - 1) * 100 : null;
+      const corV = v => v == null ? 'var(--text-muted)' : v >= 0 ? 'var(--green)' : 'var(--red)';
+      return `<section class="card px-card" style="grid-column:1/-1"><h3>Por loja</h3><div class="px-sub">mês atual (até hoje) contra o mesmo período do mês passado · ${ls.length} lojas com venda</div><div class="px-tab-w"><table class="px-tab" data-todas-colunas>
+        <thead><tr><th>Loja</th><th class="num">Faturamento</th><th class="num">Mesmo período mês passado</th><th class="num">Variação</th><th class="num">Pedidos</th><th class="num">Ticket</th><th class="num">TACOS</th><th class="num">Cancel. + devol.</th></tr></thead>
+        <tbody>${ls.slice(0, 200).map(x => { const v = varP(x), perda = x.fat + x.canc + x.dev > 0 ? (x.canc + x.dev) / (x.fat + x.canc + x.dev) * 100 : null; return `<tr><td><span class="px-tag" style="--c:${COR[x.l.mkt] || 'var(--accent)'}">${h(MKT[x.l.mkt] || x.l.mkt)}</span> ${h(x.l.nome)}</td><td class="num">${R0(x.fat)}</td><td class="num">${R0(x.ant)}</td><td class="num" style="font-weight:650;color:${corV(v)}">${v == null ? '—' : (v > 0 ? '+' : '') + pct(v)}</td><td class="num">${N(x.ped)}</td><td class="num">${x.ped > 0 ? R$(x.fat / x.ped) : '—'}</td><td class="num">${x.fat > 0 && x.ads ? pct(x.ads / x.fat * 100) : '—'}</td><td class="num" style="color:${perda >= 15 ? 'var(--red)' : 'inherit'}">${pct(perda)}</td></tr>`; }).join('')}</tbody>
+      </table></div></section>`;
+    }
     root.innerHTML = `
       <div class="px-kpis">
         ${kpi('Faturamento do mês', R$(mUlt.fat), proj ? `projeção ${R0(proj)} no ritmo do mês` : '')}
@@ -196,6 +223,7 @@
         <section class="card px-card"><h3>ADS por mês</h3><div class="px-sub">investimento em anúncios (TACOS no rótulo)</div>${barras(ord.map(m => ({ rot: `${rotM(m)} · ${meses[m].fat > 0 ? pct(meses[m].ads / meses[m].fat * 100) : '—'}`, v: meses[m].ads })), { fmt: R0, cor: '#0ea5e9' })}</section>
         <section class="card px-card"><h3>Resumo mês a mês</h3><div class="px-tab-w"><table class="px-tab" data-todas-colunas><thead><tr><th>Mês</th><th class="num">Faturamento</th><th class="num">Pedidos</th><th class="num">Ticket</th><th class="num">ADS</th><th class="num">TACOS</th><th class="num">Recebido líquido</th></tr></thead>
           <tbody>${ord.slice().reverse().map(m => { const x = meses[m]; return `<tr><td>${rotM(m)}</td><td class="num">${R0(x.fat)}</td><td class="num">${N(x.ped)}</td><td class="num">${R$(tk(x))}</td><td class="num">${R0(x.ads)}</td><td class="num">${x.fat > 0 ? pct(x.ads / x.fat * 100) : '—'}</td><td class="num" title="o que cai na conta depois das taxas dos marketplaces (pedidos já conferidos)">${x.comLiq ? R0(x.liq) : '—'}</td></tr>`; }).join('')}</tbody></table></div></section>
+        ${porLoja()}
       </div>
       <p class="px-nota">Fonte: a base de vendas da GLR, desde ${primeiroDia ? primeiroDia.split('-').reverse().join('/') : '—'} (a base guarda os últimos ~3 meses). Faturamento sem cancelados e devoluções. Para lucro por produto, veja Financeiro.</p>`;
   });
