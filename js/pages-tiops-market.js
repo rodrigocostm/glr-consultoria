@@ -14,7 +14,7 @@ Router.register('mercado-tiops', async(params,el)=>{
    <button class="btn btn-ghost btn-sm" id="tm-chat" title="Peça uma análise em linguagem natural">Perguntar aos agentes →</button></div>
   <form class="mk-busca card" id="mk-form" autocomplete="off">
    <label for="mk-termo">Produto ou categoria</label>
-   <div class="mk-linha"><input id="mk-termo" class="form-control" placeholder="Ex.: armário aéreo, rack para TV, cadeira gamer…" maxlength="120"><button class="btn btn-primary" id="mk-buscar">Buscar categorias</button></div>
+   <div class="mk-linha" id="mk-linha"><input id="mk-termo" class="form-control" placeholder="Ex.: armário aéreo, rack para TV, cadeira gamer…" maxlength="120"><button class="btn btn-primary" id="mk-buscar">Buscar categorias</button></div>
    <div id="mk-cats" class="mk-cats"></div>
   </form>
   <div id="mk-res"></div>

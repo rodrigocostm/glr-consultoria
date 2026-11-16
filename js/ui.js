@@ -72,7 +72,7 @@
     raiz.querySelectorAll('div, td, p').forEach(el => {
       // só o elemento mais interno: um bloco que contém outro bloco (ex.: a área onde
       // a tela desenha) nunca é trocado — senão a tela perdia onde desenhar
-      if (el.dataset.skel || el.id || el.querySelector('div, p, td, table, ul, section')) return;
+      if (el.dataset.skel || el.id || el.querySelector('div, p, td, table, ul, section, input, select, textarea, button')) return; // bloco com campo/botão nunca vira esqueleto
       const t = el.textContent.trim();
       // progresso com número ("Buscando… 27/50") e texto de cabeçalho/botão continuam como estão
       if (!t || t.length > 80 || !RE_CARREGANDO.test(t) || /\d/.test(t) || el.closest('button, label, .section-header, .ag-sec-head, header') || /status|prog/i.test(el.id || '')) return;
