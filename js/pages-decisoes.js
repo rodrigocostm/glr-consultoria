@@ -143,14 +143,32 @@ Router.register('decisoes', (params, el) => {
       }
       // Agente de Reputação: conta perto de mudar de cor, queda de nível, perguntas paradas, devolução com prazo (Shopee)
       const pctTxt = v => `${(v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
-      for (const r of reps.data || []) for (const a of r.al || []) {
-        const id = `repal:${r.conta_id}:${a.chave}`; if (locais[id]) continue;
-        const base = { id, tipo: 'reputacao', mkt: r.marketplace, conta: String(r.conta_id), exec: false, tela: 'atendimento' };
-        if (a.t === 'queda_nivel') itens.push({ ...base, titulo: `Reputação caiu — ${a.de} → ${a.para}`, porque: 'A conta perdeu cor/nota. Com reputação pior o marketplace mostra menos os anúncios e os agentes de ADS seguram a aceleração. Veja o que puxou (reclamações, atrasos, cancelamentos) em Reputação e atendimento.', urgente: true, quando: new Date(a.em).toISOString() });
-        else if (a.t === 'taxa') itens.push({ ...base, titulo: `${a.acima ? 'Acima do limite' : 'Perto do limite'} — ${a.nome}`, acao: `${pctTxt(a.taxa)} de ${pctTxt(a.lim)}${a.n != null ? ` · ${a.n} caso(s)` : ''}`, porque: a.acima ? `${a.nome} já passou do limite para manter o verde no Mercado Livre. Se continuar, a conta muda de cor.` : `${a.nome} já usa ${Math.round(a.taxa / a.lim * 100)}% do limite para manter o verde. Dá tempo de agir antes de a conta mudar de cor.`, urgente: !!a.acima });
-        else if (a.t === 'perguntas') itens.push({ ...base, titulo: `Responder ${a.n || ''} pergunta(s) parada(s)`.replace('  ', ' '), acao: `a mais antiga há ${a.h >= 48 ? `${Math.round(a.h / 24)} dias` : `${a.h} h`}${a.rascunhos ? ` · ${a.rascunhos} rascunho(s) prontos` : ''}`, porque: 'Pergunta sem resposta perde a venda e pesa no tempo de resposta da conta. A IA já deixou rascunhos onde tinha informação no anúncio.', urgente: a.h > 48 });
-        else if (a.t === 'metrica') itens.push({ ...base, titulo: `Fora da meta da Shopee — ${a.nome}`, acao: `${String(a.atual ?? '—').replace('.', ',')}${a.unidade || ''}${a.meta ? ` · meta ${a.meta}${a.unidade || ''}` : ''}`, porque: 'Métrica fora da meta gera ponto de penalidade e pode limitar a loja (menos exposição, sem campanhas).', urgente: false });
-        else if (a.t === 'devolucao') itens.push({ ...base, titulo: `Responder devolução — ${corta(a.produto, 50)}`, acao: a.valor ? `${R2(a.valor)}` : '', porque: `Devolução ${a.id}${a.motivo ? ` (${String(a.motivo).toLowerCase().replace(/_/g, ' ')})` : ''} espera resposta da loja. Sem resposta no prazo, a Shopee decide a favor do comprador.`, prazo: a.prazo, urgente: true });
+      for (const r of reps.data || []) {
+        const als = r.al || [], base = { tipo: 'reputacao', mkt: r.marketplace, conta: String(r.conta_id), exec: false, tela: 'atendimento' };
+        for (const a of als) {
+          const id = `repal:${r.conta_id}:${a.chave}`; if (locais[id]) continue;
+          if (a.t === 'queda_nivel') itens.push({ ...base, id, titulo: `Reputação caiu — ${a.de} → ${a.para}`, porque: 'A conta perdeu cor/nota. Com reputação pior o marketplace mostra menos os anúncios e os agentes de ADS seguram a aceleração. Veja o que puxou (reclamações, atrasos, cancelamentos) em Reputação e atendimento.', urgente: true, quando: new Date(a.em).toISOString() });
+          else if (a.t === 'perguntas') itens.push({ ...base, id, titulo: `Responder ${a.n ? a.n + ' ' : ''}pergunta(s) parada(s)`, acao: `a mais antiga há ${a.h >= 48 ? `${Math.round(a.h / 24)} dias` : `${a.h} h`}${a.rascunhos ? ` · ${a.rascunhos} rascunho(s) prontos` : ''}`, porque: 'Pergunta sem resposta perde a venda e pesa no tempo de resposta da conta. A IA já deixou rascunhos onde tinha informação no anúncio.', urgente: a.h > 48 });
+          else if (a.t === 'devolucao') itens.push({ ...base, id, titulo: `Responder devolução — ${corta(a.produto, 50)}`, acao: a.valor ? `${R2(a.valor)}` : '', porque: `Devolução ${a.id}${a.motivo ? ` (${String(a.motivo).toLowerCase().replace(/_/g, ' ')})` : ''} espera resposta da loja. Sem resposta no prazo, a Shopee decide a favor do comprador.`, prazo: a.prazo, urgente: true });
+        }
+        // taxas do ML perto/acima do limite do verde: uma decisão por loja
+        const tx = als.filter(a => a.t === 'taxa');
+        if (tx.length) {
+          const id = `repal:${r.conta_id}:${tx.map(a => a.chave).sort().join(',')}`;
+          const acima = tx.filter(a => a.acima);
+          if (!locais[id]) itens.push({ ...base, id, titulo: `${acima.length ? 'Reputação acima do limite' : 'Reputação perto do limite'} — ${tx.map(a => a.nome.toLowerCase()).join(', ')}`,
+            acao: tx.map(a => `${a.nome} ${pctTxt(a.taxa)} (limite ${pctTxt(a.lim)})`).join(' · '),
+            porque: acima.length ? `Já passou do limite para manter o verde no Mercado Livre${tx.some(a => a.n) ? ` (${tx.map(a => a.n != null ? `${a.n} ${a.nome.toLowerCase()}` : '').filter(Boolean).join(', ')} nos últimos 60 dias)` : ''}. Se continuar, a conta muda de cor.` : 'Já usa mais de 70% do limite para manter o verde. Dá tempo de agir antes de a conta mudar de cor: resolver reclamações, despachar no prazo, evitar cancelar.',
+            urgente: acima.length > 0 });
+        }
+        // métricas da Shopee fora da meta: uma decisão por loja
+        const mt = als.filter(a => a.t === 'metrica');
+        if (mt.length) {
+          const id = `repal:${r.conta_id}:${mt.map(a => a.chave).sort().join(',')}`;
+          if (!locais[id]) itens.push({ ...base, id, titulo: `Fora da meta da Shopee — ${mt.length === 1 ? mt[0].nome : `${mt.length} métricas`}`,
+            acao: mt.slice(0, 3).map(a => `${a.nome} ${String(a.atual ?? '—').replace('.', ',')}${a.unidade || ''}${a.meta ? ` (meta ${a.meta}${a.unidade || ''})` : ''}`).join(' · '),
+            porque: 'Métrica fora da meta gera ponto de penalidade e pode limitar a loja (menos exposição, sem campanhas).', urgente: false });
+        }
       }
       // Agentes de Estoque e de Margem (mural 'sinais', a cada 3 h): ruptura em até 15 dias e produto vendendo no prejuízo
       const dias1 = v => String(Math.round(v * 10) / 10).replace('.', ',');
