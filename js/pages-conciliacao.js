@@ -424,7 +424,7 @@ Router.register('conciliacao', async (params, el) => {
     const _portalBusca = () => { if (window._portalConfig && contaSel && (filtroPeriodo !== 'custom' || (customFrom && customTo))) buscar(); };
     document.getElementById('conc-date-from')?.addEventListener('change', e => { customFrom = e.target.value; _portalBusca(); });
     document.getElementById('conc-date-to')?.addEventListener('change', e => { customTo = e.target.value; _portalBusca(); });
-    document.getElementById('conc-sel-conta')?.addEventListener('change', e => { contaSel = e.target.value || null; pedidos=[]; atualizadoEm=null; render(); _portalBusca(); });
+    document.getElementById('conc-sel-conta')?.addEventListener('change', e => { contaSel = e.target.value || null; pedidos=[]; atualizadoEm=null; if (contaSel && !window._portalConfig) GLR.ctx?.definirPorConta('', contaSel); render(); _portalBusca(); });
   }
 
   window._conciliacaoBuscar = () => buscar();
@@ -437,6 +437,12 @@ Router.register('conciliacao', async (params, el) => {
       render();
       if (contaSel && !pedidos.length && !carregando) buscar();
       return;
+    }
+    // Equipe: abre na conta do cliente em foco (barra de cima); o cache de outra conta não vale
+    const cli = GLR.ctx?.cliente?.();
+    if (cli && !(contaSel && GLR.ctx.clienteDaConta('', contaSel) === cli)) {
+      const doCli = contas.find(c => GLR.ctx.clienteDaConta(c.marketplace, c.external_id) === cli);
+      if (doCli) { contaSel = String(doCli.external_id); pedidos = []; atualizadoEm = null; }
     }
     render();
   });

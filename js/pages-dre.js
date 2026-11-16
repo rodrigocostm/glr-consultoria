@@ -300,7 +300,7 @@ Router.register('dre', (params, el) => {
   }
   function diasNoMes(mes, ano) { return new Date(ano, mes + 1, 0).getDate(); }
 
-  const clienteInicial  = clientes[0] || null;
+  const clienteInicial  = clientes.find(c => String(c.id) === String(GLR.ctx?.cliente?.() || '')) || clientes[0] || null; // cliente em foco (barra de cima)
   const platsIniciais   = clienteInicial ? getPlataformasDoCliente(clienteInicial.id) : [];
   let estado = {
     clienteId:  clienteInicial?.id || null,
@@ -841,6 +841,7 @@ Router.register('dre', (params, el) => {
 
   window.dreOnCliente = function() {
     estado.clienteId  = parseInt(document.getElementById('dre-cliente')?.value)||null;
+    if (estado.clienteId) GLR.ctx?.definir(String(estado.clienteId), true);
     const plats = getPlataformasDoCliente(estado.clienteId);
     estado.plataforma = plats[0]||null;
     render();

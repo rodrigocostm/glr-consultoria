@@ -73,6 +73,7 @@ async function carregarContas() {
       contaAtual = isNaN(idx) ? null : contasSel[idx];
       if (contaAtual) {
         try { localStorage.setItem('glr_promo_ultima_conta', contaAtual.external_id); } catch(e2) {}
+        GLR.ctx?.definirPorConta('ml', contaAtual.external_id);
         buscarPromocoes();
         PM.carregar(false);
       } else {
@@ -82,7 +83,8 @@ async function carregarContas() {
     });
 
     try {
-      const ultimaId = localStorage.getItem('glr_promo_ultima_conta');
+      let ultimaId = localStorage.getItem('glr_promo_ultima_conta');
+      if (GLR.ctx?.focarConta) ultimaId = GLR.ctx.focarConta('ml', contasSel.map(c => c.external_id), ultimaId); // cliente em foco (barra de cima)
       if (ultimaId) {
         const idx = contasSel.findIndex(c => String(c.external_id) === String(ultimaId));
         if (idx >= 0) {
@@ -770,6 +772,7 @@ async function carregarAgentePromo(forcarConta) {
       pa.contas = (data || []).map(r => ({ ...r, nome: GLR.nomeConta(r.marketplace, r.conta_id) }))
         .sort((a, b) => (b.resumo?.sugeridas || 0) - (a.resumo?.sugeridas || 0) || a.nome.localeCompare(b.nome));
       if (!pa.contas.some(c => `${c.marketplace}:${c.conta_id}` === pa.conta)) pa.conta = pa.contas[0] ? `${pa.contas[0].marketplace}:${pa.contas[0].conta_id}` : '';
+      { const cli = GLR.ctx?.cliente?.(); const doCli = cli ? pa.contas.find(c => GLR.ctx.clienteDaConta(c.marketplace, c.conta_id) === cli) : null; if (doCli && GLR.ctx.clienteDaConta(...pa.conta.split(':')) !== cli) pa.conta = `${doCli.marketplace}:${doCli.conta_id}`; } // cliente em foco
       GLR.quandoClientes(() => { pa.contas.forEach(c => { c.nome = GLR.nomeConta(c.marketplace, c.conta_id); }); renderAgentePromo(); });
     }
     pa.dados = null;
@@ -831,7 +834,7 @@ function renderAgentePromo() {
       .pa-prod{white-space:normal!important;min-width:220px;max-width:360px} .pa-prod a{color:var(--text-primary);text-decoration:none;font-weight:550} .pa-prod a:hover{text-decoration:underline}
     </style>`;
 }
-window._paConta = k => { pa.conta = k; try { localStorage.setItem('glr_pa_conta', k); } catch (e) {} carregarAgentePromo(); };
+window._paConta = k => { pa.conta = k; try { localStorage.setItem('glr_pa_conta', k); } catch (e) {} GLR.ctx?.definirPorConta(...k.split(':')); carregarAgentePromo(); };
 window._paAplicar = async id => {
   const d = pa.dados, x = d?.itens?.[id], o = x?.melhor; if (!o || d.mkt !== 'ml') return;
   if (!confirm(`Aplicar "${o.rot}${o.nome ? ' — ' + o.nome : ''}" em ${x.n.slice(0, 60)} por ${paR(o.preco)} (${paP(o.desconto)} de desconto)?

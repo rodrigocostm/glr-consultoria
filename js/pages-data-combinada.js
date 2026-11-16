@@ -44,6 +44,7 @@ Router.register('data-combinada', (params, el) => {
     const out = [];
     for (const c of (GLR.clientes || [])) {
       if (/inativ|cancel|encerr/i.test(String(c.status || ''))) continue;
+      const foco = GLR.ctx?.cliente?.(); if (foco && String(c.id) !== foco) continue; // cliente em foco (barra de cima)
       const g = gestores.find(x => String(x.id) === String(c.gestorId));
       const gestorId = g ? String(g.id) : 'sem';
       if (st.gestor !== 'todos' && st.gestor !== gestorId) continue;

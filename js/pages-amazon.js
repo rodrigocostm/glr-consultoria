@@ -245,7 +245,7 @@ Router.register('anuncios-amazon', (params, el) => {
   // ── Ações ──
   const itemDe = sku => st.itens.find(i => i.sku === sku);
   const salvarCache = () => { try { localStorage.setItem(`glr_amz_cache_${st.conta}`, JSON.stringify({ em: lerJSON(`glr_amz_cache_${st.conta}`, {})?.em || Date.now(), itens: st.itens })); } catch (e) {} };
-  window._azConta = v => { st.conta = v; st.itens = []; try { localStorage.setItem('glr_amz_conta', JSON.stringify(v)); } catch (e) {} render(); carregar(false); };
+  window._azConta = v => { st.conta = v; st.itens = []; GLR.ctx?.definirPorConta('amazon', v); try { localStorage.setItem('glr_amz_conta', JSON.stringify(v)); } catch (e) {} render(); carregar(false); };
   window._azAba = k => { st.aba = k; st.filtro = 'todos'; try { localStorage.setItem('glr_amz_aba', JSON.stringify(k)); } catch (e) {} render(); };
   window._azFiltro = k => { st.filtro = k; render(); };
   window._azBusca = v => { st.busca = v; clearTimeout(window._azT); window._azT = setTimeout(() => { render(); const b = document.querySelector('.az-topo input[placeholder^="Buscar"]'); if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); } }, 200); };
@@ -339,6 +339,7 @@ Router.register('anuncios-amazon', (params, el) => {
       })).sort((a, b) => a.nome.localeCompare(b.nome));
       if (!st.contas.length) { st.erro = 'Nenhuma conta Amazon conectada.'; render(); return; }
       if (!st.contas.some(c => c.id === st.conta)) st.conta = st.contas[0].id;
+      st.conta = GLR.ctx?.focarConta ? GLR.ctx.focarConta('amazon', st.contas.map(c => c.id), st.conta) : st.conta; // cliente em foco (barra de cima)
       render();
       carregar(false);
     } catch (e) { st.erro = 'Não consegui listar as contas: ' + e.message; render(); }

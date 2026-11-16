@@ -28,7 +28,7 @@ Router.register('produtos', (params, el) => {
   const portal = !!cfgPortal;
 
   const st = {
-    cliente: portal ? String(cfgPortal.clienteId) : (() => { try { return localStorage.getItem('glr_prod_cliente') || ''; } catch (e) { return ''; } })(),
+    cliente: portal ? String(cfgPortal.clienteId) : (GLR.ctx?.cliente?.() || (() => { try { return localStorage.getItem('glr_prod_cliente') || ''; } catch (e) { return ''; } })()), // cliente em foco (barra de cima) primeiro
     busca: '', pagina: 0, filtro: 'todos', conta: '', carregando: false, progresso: '', anuncios: [], contas: [], erro: null, modal: null,
     rows: [], materializados: {}, // linha virtual -> id do produto criado ao lançar o custo
   };
@@ -415,7 +415,7 @@ Router.register('produtos', (params, el) => {
   }
 
   // ── Ações ──
-  window._prCliente = v => { st.cliente = v; st.anuncios = []; st.contas = []; st.pagina = 0; st.filtro = 'todos'; st.conta = ''; try { localStorage.setItem('glr_prod_cliente', v); } catch (e) {} render(); carregarAnuncios(false); };
+  window._prCliente = v => { if (!portal && v) GLR.ctx?.definir(String(v), true); st.cliente = v; st.anuncios = []; st.contas = []; st.pagina = 0; st.filtro = 'todos'; st.conta = ''; try { localStorage.setItem('glr_prod_cliente', v); } catch (e) {} render(); carregarAnuncios(false); };
   window._prBusca = v => { st.busca = v; st.pagina = 0; clearTimeout(window._prT); window._prT = setTimeout(() => { render(); const b = document.querySelector('.pr-topo .pr-busca'); if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); } }, 200); };
   window._prConta = v => { st.conta = v; st.pagina = 0; render(); };
   window._prFiltro = f => { st.filtro = f; st.pagina = 0; render(); };

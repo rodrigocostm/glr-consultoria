@@ -261,7 +261,7 @@ Router.register('vendas', async (params, el) => {
     return _indiceEmpresas().get(String(c.external_id)) || ['Sem vínculo'];
   }
 
-  window._vendasLimparContas = () => { filtroEmpresas = new Set(); filtroContasSel = new Set(); renderFiltroEmpresaConta(); _filtroMudou(); };
+  window._vendasLimparContas = () => { if (!window._portalConfig) GLR.ctx?.definir('', true); filtroEmpresas = new Set(); filtroContasSel = new Set(); renderFiltroEmpresaConta(); _filtroMudou(); };
   function renderFiltroEmpresaConta() {
     const wrapEmp  = document.getElementById('filtro-empresa');
     const wrapCont = document.getElementById('filtro-conta');
@@ -283,6 +283,7 @@ Router.register('vendas', async (params, el) => {
       textoVazio: filtroContasSel.size ? (() => { const es = [...new Set(contas.filter(c => filtroContasSel.has(c.external_id)).flatMap(contaEmpresas))]; return es.length === 1 ? `🏢 ${es[0]}` : `🏢 ${es.length} empresas (pelas contas)`; })() : null,
       onChange: (novoSet) => {
         filtroEmpresas = novoSet;
+        if (!window._portalConfig) { const so = filtroEmpresas.size === 1 ? (GLR.clientes || []).find(c => c.nome === [...filtroEmpresas][0]) : null; GLR.ctx?.definir(so ? String(so.id) : '', true); } // barra de cima acompanha
         if (filtroEmpresas.size > 0) {
           const validas = contas.filter(c => contaEmpresas(c).some(e=>filtroEmpresas.has(e))).map(c=>c.external_id);
           // Marcar uma empresa já seleciona as contas dela — sem isso o usuário
@@ -3037,6 +3038,12 @@ Router.register('vendas', async (params, el) => {
     try {
       const r = await MarketplaceAPI.call('list_accounts');
       contas = r.data?.accounts || [];
+      // Cliente em foco (barra de cima): abre filtrada nas contas dele
+      const nomeFoco = !window._portalConfig && GLR.ctx?.nome?.();
+      if (nomeFoco && !filtroEmpresas.size && !filtroContasSel.size) {
+        const doCli = contas.filter(c => contaEmpresas(c).includes(nomeFoco));
+        if (doCli.length) { filtroEmpresas = new Set([nomeFoco]); filtroContasSel = new Set(doCli.map(c => c.external_id)); }
+      }
       renderFiltroEmpresaConta();
     } catch(e) { console.warn('[Vendas] Falha ao carregar contas:', e.message); }
 

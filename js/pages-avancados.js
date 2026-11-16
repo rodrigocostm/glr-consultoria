@@ -402,7 +402,7 @@ Router.register('performance', (params, el) => {
 
 
 // ---- Projeção de Faturamento ----
-Router.register('projecao', (params, el) => {
+const _projecaoDetalhe = (params, el) => {
   const storageKey = 'glr_projecoes';
   let projecoes = [];
   try { projecoes = JSON.parse(localStorage.getItem(storageKey) || '[]'); } catch(e) {}
@@ -1523,8 +1523,9 @@ Router.register('projecao', (params, el) => {
     // 2. Recarrega projeções do localStorage (já inclui o que acabou de salvar)
     try { projecoes = JSON.parse(localStorage.getItem(storageKey) || '[]'); } catch(e) {}
 
-    // 3. Atualiza o cliente ativo
+    // 3. Atualiza o cliente ativo (e o cliente em foco da barra de cima, se não estiver embutida)
     clienteIdAtivo = parseInt(novoId) || novoId;
+    if (!params.embed) GLR.ctx?.definir(String(clienteIdAtivo), true);
 
     // 4. Carrega (ou cria em branco) a projeção do novo cliente
     projecaoAtiva = projecoes.find(p => parseInt(p.chave) === clienteIdAtivo || p.chave === String(clienteIdAtivo)) || null;
@@ -1794,6 +1795,116 @@ Router.register('projecao', (params, el) => {
       buscarDadosProjecao(true);
     }
   }, 10 * 60 * 1000);
+};
+
+// ---- Projeção: lista de todas (recolhidas) ou a do cliente em foco ----
+// Sem cliente na barra de cima: uma linha por cliente com faturado, projeção e
+// meta; clicar abre a projeção completa ali mesmo (uma por vez). Busca por nome
+// e filtro por gestor. Com cliente em foco (ou ?clienteId): abre direto a dele.
+Router.register('projecao', (params, el) => {
+  if (params.embed) return _projecaoDetalhe(params, el);
+  const foco = params.clienteId || GLR.ctx?.cliente?.();
+  if (foco) {
+    el.innerHTML = `<div class="pj-volta"><button class="pj-link" onclick="window._pjTodas()">← Todas as projeções</button></div><div id="pj-unica"></div>`;
+    _projecaoDetalhe({ ...params, clienteId: foco }, el.querySelector('#pj-unica'));
+    window._pjTodas = () => { GLR.ctx?.definir('', true); Router.navigate('projecao'); };
+    return;
+  }
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const R0 = v => v == null || !isFinite(v) ? '—' : 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+  const pct = v => v == null || !isFinite(v) ? '—' : `${Math.round(v)}%`;
+  const lerJ = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch (e) { return d; } };
+  const sel = lerJ('glr_pj_lista', {});
+  const st = { busca: '', gestor: sel.gestor || 'todos', aberto: null, base: null, carregando: true };
+  const hoje = new Date(Date.now() - 3 * 3600e3), hojeIso = hoje.toISOString().slice(0, 10);
+  const ontemD = new Date(hoje); ontemD.setUTCDate(ontemD.getUTCDate() - 1);
+  const ontem = ontemD.toISOString().slice(0, 10), mesIni = ontem.slice(0, 8) + '01';
+  const dd = +ontem.slice(8, 10), diasMes = new Date(Date.UTC(+ontem.slice(0, 4), +ontem.slice(5, 7), 0)).getUTCDate();
+  const antIni = new Date(Date.UTC(+ontem.slice(0, 4), +ontem.slice(5, 7) - 2, 1)).toISOString().slice(0, 10);
+  const antFim = new Date(Date.UTC(+ontem.slice(0, 4), +ontem.slice(5, 7) - 1, 0)).toISOString().slice(0, 10);
+  const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+  function linhas() {
+    const vinc = lerJ('glr_mc_vinculos', {}), metas = lerJ('glr_metas', {}) || {}, projs = lerJ('glr_projecoes', []) || [];
+    const comProj = new Set(projs.map(p => String(p.chave)));
+    const out = [];
+    for (const c of (GLR.clientes || [])) {
+      if (/inativ|cancel|encerr/i.test(String(c.status || ''))) continue;
+      const contas = vinc[String(c.id)] || [];
+      if (!contas.length && !comProj.has(String(c.id))) continue;
+      const g = (GLR.gestores || []).find(x => String(x.id) === String(c.gestorId));
+      let fat = 0, ant = 0, temBase = false;
+      for (const ct of contas) {
+        const mkt = BaseDados.mktDe(ct.marketplace); if (!mkt || !st.base) continue;
+        const p = ct.param_to_use || {};
+        const id = String(p.shopId || p.meliUserId || p.amazon_account_id || p.magalu_account_id || p.shein_supplier_id || ct.external_id);
+        const info = st.base[BaseDados.chave(mkt, id)] || st.base[BaseDados.chave(mkt, ct.external_id)];
+        if (!info) continue;
+        temBase = true;
+        if (dd >= 1) fat += BaseDados.somar(info, mesIni, ontem).faturamento;
+        ant += BaseDados.somar(info, antIni, antFim).faturamento;
+      }
+      const meta = parseFloat(metas[c.id] ?? metas[String(c.id)]) || parseFloat(c.metaMensal) || 0;
+      const proj = temBase && dd > 0 ? fat / dd * diasMes : null;
+      out.push({ id: String(c.id), nome: c.nome, gestorId: g ? String(g.id) : 'sem', gestor: g?.nome || 'Sem gestor', contas: contas.length, temBase, fat, proj, ant, meta,
+        pMeta: proj != null && meta > 0 ? proj / meta * 100 : null, vsAnt: proj != null && ant > 0 ? (proj / ant - 1) * 100 : null });
+    }
+    return out;
+  }
+  function filtradas() {
+    const q = st.busca.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    return linhas().filter(l => (st.gestor === 'todos' || l.gestorId === st.gestor) && (!q || l.nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes(q)))
+      .sort((a, b) => (b.proj || 0) - (a.proj || 0));
+  }
+  const corMeta = v => v == null ? 'var(--text-muted)' : v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--yellow)' : 'var(--red)';
+  function render() {
+    const root = el.querySelector('#pj-lista'); if (!root) return;
+    if (st.carregando && !st.base) { root.innerHTML = '<div class="card pj-vazio">Carregando a base de vendas…</div>'; return; }
+    const ls = filtradas();
+    const tot = ls.reduce((s, l) => ({ fat: s.fat + (l.fat || 0), proj: s.proj + (l.proj || 0), meta: s.meta + (l.meta || 0) }), { fat: 0, proj: 0, meta: 0 });
+    el.querySelector('#pj-resumo').innerHTML = `<span><b>${ls.length}</b> cliente(s)</span><span>Faturado <b>${R0(tot.fat)}</b></span><span>Projeção <b>${R0(tot.proj)}</b></span>${tot.meta ? `<span>Meta <b>${R0(tot.meta)}</b> · <b style="color:${corMeta(tot.proj / tot.meta * 100)}">${pct(tot.proj / tot.meta * 100)}</b></span>` : ''}`;
+    root.innerHTML = ls.length ? ls.map(l => `<section class="pj-item${st.aberto === l.id ? ' aberto' : ''}" id="pj-${esc(l.id)}">
+        <button type="button" class="pj-linha" aria-expanded="${st.aberto === l.id}" onclick="window._pjAbrir('${esc(l.id)}')">
+          <span class="pj-seta" aria-hidden="true">${st.aberto === l.id ? '▾' : '▸'}</span>
+          <span class="pj-nome"><b>${esc(l.nome)}</b><small>${esc(l.gestor)} · ${l.contas} conta(s)${l.temBase ? '' : ' · sem base automática'}</small></span>
+          <span class="pj-num"><small>Faturado</small><b>${l.temBase ? R0(l.fat) : '—'}</b></span>
+          <span class="pj-num"><small>Projeção</small><b>${R0(l.proj)}</b></span>
+          <span class="pj-num"><small>vs mês passado</small><b style="color:${l.vsAnt == null ? 'var(--text-muted)' : l.vsAnt >= 0 ? 'var(--green)' : 'var(--red)'}">${l.vsAnt == null ? '—' : (l.vsAnt > 0 ? '+' : '') + pct(l.vsAnt)}</b></span>
+          <span class="pj-num pj-meta"><small>Meta ${l.meta ? R0(l.meta) : '—'}</small><b style="color:${corMeta(l.pMeta)}">${pct(l.pMeta)}</b><i><em style="width:${Math.min(100, l.pMeta || 0)}%;background:${corMeta(l.pMeta)}"></em></i></span>
+        </button>
+        ${st.aberto === l.id ? '<div class="pj-det" id="pj-det"></div>' : ''}
+      </section>`).join('') : '<div class="card pj-vazio">Nenhum cliente com esse filtro.</div>';
+    if (st.aberto && el.querySelector('#pj-det')) _projecaoDetalhe({ embed: true, clienteId: st.aberto }, el.querySelector('#pj-det'));
+  }
+  window._pjAbrir = id => { st.aberto = st.aberto === id ? null : id; render(); if (st.aberto) document.getElementById('pj-' + id)?.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
+  window._pjBusca = v => { st.busca = v; st.aberto = null; render(); };
+  window._pjGestor = v => { st.gestor = v; st.aberto = null; try { localStorage.setItem('glr_pj_lista', JSON.stringify({ gestor: v })); } catch (e) {} render(); };
+  const gestores = (GLR.gestores || []).slice().sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+  el.innerHTML = `<div class="page pj">
+    <div class="pj-head"><div><h1>Projeção de Crescimento</h1><p>Todas as projeções de ${MESES[+ontem.slice(5, 7) - 1]}, até ${ontem.split('-').reverse().slice(0, 2).join('/')} (dia ${dd} de ${diasMes}). Clique num cliente para abrir a projeção completa. Escolher o cliente na barra de cima abre direto a dele.</p></div></div>
+    <div class="pj-filtros">
+      <label class="pj-busca"><span>Cliente</span><input id="pj-busca" class="form-input" placeholder="Digite o nome do cliente…" oninput="window._pjBusca(this.value)" autocomplete="off"></label>
+      <label><span>Gestor</span><select id="pj-gestor" class="form-input" onchange="window._pjGestor(this.value)"><option value="todos">Todos</option>${gestores.map(g => `<option value="${esc(g.id)}" ${st.gestor === String(g.id) ? 'selected' : ''}>${esc(g.nome)}</option>`).join('')}<option value="sem" ${st.gestor === 'sem' ? 'selected' : ''}>Sem gestor</option></select></label>
+      <div class="pj-resumo" id="pj-resumo"></div>
+    </div>
+    <div id="pj-lista"></div>
+    <style>
+      .pj-head h1{margin:0;font-size:22px;letter-spacing:-.02em}.pj-head p{margin:4px 0 14px;color:var(--text-secondary);font-size:13px;max-width:90ch}
+      .pj-filtros{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}.pj-filtros label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)}.pj-busca{flex:1;min-width:220px;max-width:380px}
+      .pj-resumo{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--text-secondary);margin-left:auto;padding-bottom:8px}.pj-resumo b{color:var(--text-primary);font-variant-numeric:tabular-nums}
+      .pj-item{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden}.pj-item.aberto{border-color:var(--accent)}
+      .pj-linha{width:100%;display:grid;grid-template-columns:18px minmax(180px,1.6fr) repeat(3,minmax(100px,1fr)) minmax(140px,1.2fr);gap:12px;align-items:center;padding:12px 16px;background:none;border:none;font:inherit;color:var(--text-primary);text-align:left;cursor:pointer}
+      .pj-linha:hover{background:var(--bg-subtle)}.pj-linha:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+      .pj-seta{color:var(--text-muted)}.pj-nome b{display:block;font-size:14px}.pj-nome small,.pj-num small{display:block;font-size:11.5px;color:var(--text-muted)}
+      .pj-num b{font-size:14px;font-variant-numeric:tabular-nums}.pj-meta i{display:block;height:5px;border-radius:99px;background:var(--bg-subtle);margin-top:4px;overflow:hidden}.pj-meta em{display:block;height:100%}
+      .pj-det{border-top:1px solid var(--border);padding:4px 8px 8px}.pj-vazio{padding:28px;text-align:center;color:var(--text-secondary)}
+      .pj-volta{margin-bottom:8px}.pj-link{border:none;background:none;color:var(--accent);font:inherit;font-size:13px;cursor:pointer;padding:4px 0}
+      @media (max-width:900px){.pj-linha{grid-template-columns:18px 1fr 1fr;}.pj-linha .pj-num:nth-of-type(3),.pj-linha .pj-num:nth-of-type(4){display:none}}
+    </style>
+  </div>`;
+  render();
+  BaseDados.carregar().then(b => { st.base = b; st.carregando = false; render(); }).catch(() => { st.carregando = false; render(); });
+  GLR.quandoClientes?.(() => render());
 });
 
 // ---- Relatórios ----

@@ -308,7 +308,7 @@ function monitorPrecos(mkt) { return (params, el) => {
 
   // ── Ações ──
   const salvar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
-  window._pmlConta = v => { st.conta = v; salvar('glr_pml_conta' + SUF, v); carregar(); };
+  window._pmlConta = v => { st.conta = v; salvar('glr_pml_conta' + SUF, v); GLR.ctx?.definirPorConta(mkt, v); carregar(); };
   window._pmlPeriodo = v => { st.periodo = +v; st.pagina = 0; salvar('glr_pml_periodo' + SUF, +v); render(); };
   window._pmlFiltro = k => { st.filtro = k; st.pagina = 0; render(); };
   window._pmlPagina = d => { st.pagina += d; render(); };
@@ -361,6 +361,7 @@ function monitorPrecos(mkt) { return (params, el) => {
       GLR.quandoClientes(() => { st.contas.forEach(c => { c.nome = GLR.nomeConta(mkt, c.id); }); render(); });
       if (!st.contas.length) { st.erro = `Nenhuma conta ${SH ? 'da Shopee' : 'do Mercado Livre'} conectada.`; render(); return; }
       if (!st.contas.some(c => c.id === st.conta)) st.conta = st.contas[0].id;
+      st.conta = GLR.ctx?.focarConta ? GLR.ctx.focarConta(mkt, st.contas.map(c => c.id), st.conta) : st.conta; // cliente em foco (barra de cima)
       carregar();
     } catch (e) { st.erro = 'Não consegui listar as contas: ' + e.message; render(); }
   })();

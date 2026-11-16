@@ -32,7 +32,8 @@ Router.register('afiliados', async (params, el) => {
   }
 
   // Estado
-  let clienteSelecionado = parseInt(params?.clienteId) || clientesComVinc[0]?.id;
+  const _focoAfil = clientesComVinc.find(c => String(c.id) === String(GLR.ctx?.cliente?.() || ''))?.id; // cliente em foco (barra de cima)
+  let clienteSelecionado = parseInt(params?.clienteId) || _focoAfil || clientesComVinc[0]?.id;
   let plataforma = params?.plat || 'shopee';
   let _dadosCache = {};
   let _carregando = false;
@@ -123,6 +124,7 @@ Router.register('afiliados', async (params, el) => {
     // Handlers globais
     window._afilClienteChange = (id) => {
       clienteSelecionado = parseInt(id);
+      GLR.ctx?.definir(String(clienteSelecionado), true);
       _dadosCache = {};
       _atualizadoEm = {};
       carregarCacheAfil();

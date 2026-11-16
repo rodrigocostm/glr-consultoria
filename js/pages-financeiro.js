@@ -78,6 +78,8 @@ Router.register('financeiro', async (params, el) => {
   // Empresa/conta escolhidas ficam lembradas: a tela já abre carregada da base.
   let empresaSel = window._portalConfig ? 'todas' : (localStorage.getItem('glr_fin_empresa') || 'todas');  // empresa/tag selecionada (portal: só as contas dele)
   let contaSel = localStorage.getItem('glr_fin_conta') || 'todas';      // conta individual selecionada
+  // Cliente em foco (barra de cima): a empresa do Financeiro é o nome do cliente
+  if (!window._portalConfig && GLR.ctx?.nome?.()) { const n = GLR.ctx.nome(); if (n !== empresaSel) { empresaSel = n; contaSel = 'todas'; } }
   let ultimaBuscaSoBase = false; // última busca veio toda da base → pode recarregar sozinha
   let incluirReemb = true;
   let pedidos  = [];
@@ -1565,6 +1567,7 @@ Router.register('financeiro', async (params, el) => {
   document.getElementById('fin-chk-reemb').addEventListener('change', e=>{ incluirReemb=e.target.checked; renderConteudo(); });
   document.getElementById('fin-sel-empresa').addEventListener('change', e=>{
     empresaSel=e.target.value; localStorage.setItem('glr_fin_empresa', empresaSel); renderFiltroContas(); localStorage.setItem('glr_fin_conta', contaSel);
+    { const cli = (GLR.clientes || []).find(c => c.nome === empresaSel); GLR.ctx?.definir(cli ? String(cli.id) : '', true); } // barra de cima acompanha
     // Selecionar uma empresa já dispara a busca — sem isso a trava em buscar()
     // ficaria esperando pra sempre (usuário teria que clicar em Atualizar também)
     buscar();

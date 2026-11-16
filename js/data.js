@@ -170,6 +170,15 @@ GLR.ctx = (() => {
       if (!silencioso && window.Router) Router.resolve();
     },
     definirPorConta(mkt, id) { const c = clienteDaConta(mkt, id); if (c) this.definir(c, true); },
+    // entre os ids de conta da tela, o do cliente em foco (mantém o atual se já for dele; sem foco ou sem conta dele, mantém o atual)
+    focarConta(mkt, ids, atual) {
+      const c = ler(); if (!c) return atual;
+      const meus = (ids || []).map(String).filter(id => clienteDaConta(mkt, id) === c);
+      if (!meus.length) return atual;
+      return meus.includes(String(atual)) ? atual : meus[0];
+    },
+    // nome do cliente em foco ('' = todos)
+    nome() { const c = ler(); return c ? ((GLR.clientes || []).find(x => String(x.id) === c)?.nome || '') : ''; },
     // entre as contas da tela ({ k, mkt, id }), a do cliente em foco — mantém a atual se já for dele
     escolher(opcoes, atual) {
       const c = ler(); if (!c) return null;

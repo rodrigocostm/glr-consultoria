@@ -38,6 +38,7 @@ Router.register('meta-diaria', (params, el) => {
     const out = [];
     for (const c of (GLR.clientes || [])) {
       if (/inativ|cancel|encerr/i.test(String(c.status || ''))) continue;
+      const foco = GLR.ctx?.cliente?.(); if (foco && String(c.id) !== foco) continue; // cliente em foco (barra de cima)
       const g = (GLR.gestores || []).find(x => String(x.id) === String(c.gestorId));
       if (st.gestor !== 'todos' && st.gestor !== (g ? String(g.id) : 'sem')) continue;
       const lojas = [];
