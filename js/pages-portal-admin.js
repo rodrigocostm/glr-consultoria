@@ -20,29 +20,33 @@ Router.register('portal-admin', async (params, el) => {
   await _renderPortalAdminLista();
 });
 
+// O banco é a fonte da verdade: a cópia do navegador pode estar velha (ou não caber) e,
+// se fosse lida primeiro, o próximo salvamento gravaria a lista antiga por cima.
 async function _lerConfigs() {
-  try {
-    const raw = localStorage.getItem('glr_portal_configs');
-    if (raw) return JSON.parse(raw);
-    // tenta Supabase
-    const { data } = await _sb.from('glr_storage').select('dados').eq('chave','glr_portal_configs').single();
-    return data?.dados || [];
-  } catch { return []; }
+  const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave', 'glr_portal_configs').maybeSingle();
+  if (!error) return Array.isArray(data?.dados) ? data.dados : [];
+  try { const raw = localStorage.getItem('glr_portal_configs'); if (raw) return JSON.parse(raw); } catch (e) {}
+  throw new Error('Não consegui ler os acessos do portal: ' + error.message);
 }
 
 async function _salvarConfigs(configs) {
   const { error } = await _sb.from('glr_storage')
     .upsert({ chave: 'glr_portal_configs', dados: configs, atualizado_em: new Date().toISOString() }, { onConflict: 'chave' });
   if (error) throw new Error('Não foi possível salvar os dados do portal. ' + error.message);
-  const gravarLocal = typeof _localSetItem === 'function' ? _localSetItem : localStorage.setItem.bind(localStorage);
-  gravarLocal('glr_portal_configs', JSON.stringify(configs));
+  // cópia no navegador é só conveniência: sem espaço, apaga a cópia velha em vez de falhar (o banco já salvou)
+  try {
+    const gravarLocal = typeof _localSetItem === 'function' ? _localSetItem : localStorage.setItem.bind(localStorage);
+    gravarLocal('glr_portal_configs', JSON.stringify(configs));
+  } catch (e) { try { localStorage.removeItem('glr_portal_configs'); } catch (e2) {} }
 }
 
 async function _renderPortalAdminLista() {
   const lista = document.getElementById('portal-admin-lista');
   if (!lista) return;
 
-  const configs = await _lerConfigs();
+  let configs;
+  try { configs = await _lerConfigs(); }
+  catch (e) { lista.innerHTML = `<div style="padding:20px;color:var(--red);">${String(e.message || e).replace(/</g, '&lt;')}</div>`; return; }
 
   if (!configs.length) {
     lista.innerHTML = `
