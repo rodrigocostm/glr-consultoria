@@ -223,6 +223,8 @@ module.exports = async function handler(req, res) {
   // ── Notas fiscais e NCM (api/_nfe.js) — só o portal, cada cliente com a própria chave do emissor ──
   if (/^glr_nfe_|^glr_estoque_|^glr_portal_(ncm|salvar_ncm)$/.test(action)) {
     if (!contasPermitidas) return res.status(403).json({ error: 'Somente para o portal do cliente' });
+    // Notas é módulo liberado por acesso (Portal Clientes → "Liberar notas"); NCM e estoque seguem livres
+    if (/^glr_nfe_/.test(action) && identity.portal?.notas !== true) return res.status(403).json({ error: 'A tela Notas não está liberada para o seu acesso. Fale com a GLR.' });
     const cli = String(identity.portal?.clienteId ?? '');
     if (!cli) return res.status(403).json({ error: 'Acesso sem cliente vinculado' });
     const t = async (a, q) => { const j = await tiops(apiKey, a, q); if (typeof j?.error === 'string' && j.error.trim()) throw new Error(j.error); if (j?.status && j.status !== 200 && j?.data?.error) throw new Error(j.data.error); return j; };

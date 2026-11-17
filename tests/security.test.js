@@ -160,3 +160,8 @@ test('portal-chat: o portal não recebe as ferramentas internas da GLR', () => {
   const m = src.match(/const PERMITIDAS = \[([^\]]*)\]/); assert(m);
   for (const interna of ['carteira', 'plano_cliente', 'decisoes_pendentes', 'historico_agentes', 'propor_acao', 'anotar_cerebro', 'consultar_mercado_tiops', 'recursos_tiops']) assert(!m[1].includes(`'${interna}'`), interna);
 });
+test('mcp: notas fiscais só para acesso com o módulo Notas liberado', async () => {
+  const calls = mockRole({ role: 'portal', portal: { contaIds: ['own'], clienteId: '1' } }); const r = res();
+  await require('../api/mcp')(req({ action: 'glr_nfe_pedidos', params: { shopId: 'own' } }), r);
+  assert.equal(r.code, 403); assert.match(r.body.error, /Notas não está liberada/); assert(!calls.includes('https://mcp.tiops.com.br'));
+});

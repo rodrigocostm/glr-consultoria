@@ -76,7 +76,7 @@ async function _renderPortalAdminLista() {
               <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">Criado em ${new Date(cfg.criadoEm||Date.now()).toLocaleDateString('pt-BR')}${cfg.atendimentoIA ? ` · <span style="color:var(--green);font-weight:600;">Atendimento com IA ligado</span><span id="pa-ia-uso-${cfg.id}"></span>` : ''}</div>
             </div>
           </div>
-          <div style="display:flex;gap:8px;flex-shrink:0;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
             <button onclick="window._portalAdminToggle('${cfg.id}')"
               style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid var(--border);background:var(--bg-base);color:var(--text-secondary);">
               ${cfg.ativo!==false ? '⏸ Suspender' : '▶ Ativar'}
@@ -89,6 +89,10 @@ async function _renderPortalAdminLista() {
               style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid ${cfg.chatIA ? 'var(--green)' : 'var(--border)'};background:${cfg.chatIA ? 'var(--green-bg)' : 'var(--bg-base)'};color:${cfg.chatIA ? 'var(--green)' : 'var(--text-secondary)'};font-weight:${cfg.chatIA ? 600 : 400};">
               ${cfg.chatIA ? 'Chat IA: ligado' : 'Liberar chat IA'}
             </button>
+            ${[['financeiro', 'Financeiro', 'Tela Financeiro no portal (lucro, taxas e repasses das lojas dele)'], ['notas', 'Notas', 'Tela Notas e etiquetas no portal (emissão de nota fiscal e etiquetas)']].map(([k, n, dica]) => `<button onclick="window._portalAdminModulo('${cfg.id}','${k}')" title="${dica}"
+              style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid ${cfg[k] ? 'var(--green)' : 'var(--border)'};background:${cfg[k] ? 'var(--green-bg)' : 'var(--bg-base)'};color:${cfg[k] ? 'var(--green)' : 'var(--text-secondary)'};${cfg[k] ? 'font-weight:600;' : ''}">
+              ${cfg[k] ? `${n}: ligado` : `Liberar ${n.toLowerCase()}`}
+            </button>`).join('')}
             <button onclick="window._portalAdminLiberar('${cfg.id}')" title="Libera o login sem precisar do e-mail de confirmação"
               style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid var(--border);background:var(--bg-base);color:var(--text-secondary);">
               Liberar login
@@ -343,6 +347,19 @@ window._portalAdminChatTodos = async function() {
   if (!confirm(`Liberar o Chat com IA para ${faltam.length} acesso(s)?\n\n${faltam.slice(0, 12).map(c => '• ' + (c.clienteNome || c.email)).join('\n')}${faltam.length > 12 ? `\n… e mais ${faltam.length - 12}` : ''}\n\nCada cliente só enxerga as próprias lojas, a IA só lê (não muda nada) e cada usuário tem até 40 perguntas por dia.`)) return;
   const agora = new Date().toISOString();
   for (const c of faltam) { c.chatIA = true; c.chatIAEm = agora; }
+  try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
+  await _renderPortalAdminLista();
+};
+// Módulos do portal liberados por acesso (Financeiro, Notas): mesma ideia do Chat IA
+window._portalAdminModulo = async function(id, chave) {
+  const NOMES = { financeiro: 'Financeiro', notas: 'Notas e etiquetas' };
+  if (!NOMES[chave]) return;
+  let configs;
+  try { configs = await _lerConfigs(); } catch (e) { alert(e.message); return; }
+  const cfg = configs.find(c => c.id === id); if (!cfg) return;
+  const ligar = !cfg[chave];
+  if (!confirm(`${ligar ? 'Liberar' : 'Desligar'} a tela ${NOMES[chave]} no portal de ${cfg.clienteNome || cfg.email}?`)) return;
+  cfg[chave] = ligar; cfg[chave + 'Em'] = new Date().toISOString();
   try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
   await _renderPortalAdminLista();
 };

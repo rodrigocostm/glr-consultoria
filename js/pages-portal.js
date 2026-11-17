@@ -861,10 +861,12 @@ window._initPortalCliente = async function(cfg) {
 };
 
 // Telas liberadas para o cliente do portal (o router bloqueia o resto)
-// Telas desligadas no portal de TODOS os clientes (por enquanto): saem do menu e das rotas
-// permitidas — quem abrir o endereço direto cai no Dashboard. Para religar, tire da lista.
-window.PORTAL_DESLIGADAS = ['financeiro', 'notas'];
-window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'criar-anuncio', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'notas', 'meu-estoque', 'vendas', 'atendimento-ia', 'meus-ads', 'meu-analitico', 'meus-reembolsos', 'calculadora', 'meu-chat'].filter(r => !window.PORTAL_DESLIGADAS.includes(r));
+// Módulos liberados por acesso (Portal Clientes, como o Chat IA): a tela só entra no menu e nas
+// rotas permitidas quando o acesso tem a chave ligada (cfg.financeiro / cfg.notas). Desligado:
+// quem abre o endereço direto cai no Dashboard (e o servidor recusa as ações de nota fiscal).
+window.PORTAL_MODULOS = ['financeiro', 'notas'];
+const _PORTAL_ROTAS_BASE = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'criar-anuncio', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'notas', 'meu-estoque', 'vendas', 'atendimento-ia', 'meus-ads', 'meu-analitico', 'meus-reembolsos', 'calculadora', 'meu-chat'];
+Object.defineProperty(window, 'PORTAL_ROTAS', { configurable: true, get() { const cfg = window._portalConfig || {}; return _PORTAL_ROTAS_BASE.filter(r => !window.PORTAL_MODULOS.includes(r) || cfg[r] === true); } });
 
 function _portalMostrarLoading(msg) {
   const el = document.getElementById('page-content');
@@ -956,7 +958,7 @@ function _configurarSidebarCliente(cfg) {
         Criar anúncio
       </button>
       <div class="sidebar-section-title" style="margin-top:10px;">Envios</div>
-      ${window.PORTAL_DESLIGADAS.includes('notas') ? '' : `<button class="nav-item" data-page="notas" onclick="Router.navigate('notas')">
+      ${!cfg.notas ? '' : `<button class="nav-item" data-page="notas" onclick="Router.navigate('notas')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
         Notas e etiquetas
       </button>`}
@@ -990,7 +992,7 @@ function _configurarSidebarCliente(cfg) {
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h5"/></svg>
         Atendimento
       </button>` : ''}
-      ${window.PORTAL_DESLIGADAS.includes('financeiro') ? '' : `<div class="sidebar-section-title" style="margin-top:10px;">Financeiro</div>
+      ${!cfg.financeiro ? '' : `<div class="sidebar-section-title" style="margin-top:10px;">Financeiro</div>
       <button class="nav-item" data-page="financeiro" onclick="Router.navigate('financeiro')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
         Financeiro
