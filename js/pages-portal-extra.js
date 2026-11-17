@@ -261,12 +261,12 @@
     // ritmo: acumulado por dia (mês atual × mês passado) e a linha da projeção até o fim do mês
     const acum = (de, dias) => { let a = 0; return Array.from({ length: dias }, (_, i) => { const d = somaDias(de, i); a += soma(d, d).faturamento; return a; }); };
     const atual = acum(mesIni, dd), passado = acum(antIni, antDias);
-    const W = 640, H = 220, P = 34, maxV = Math.max(1, proj || 0, ...passado, meta || 0) * 1.05;
+    const W = 960, H = 260, P = 64, maxV = Math.max(1, proj || 0, ...passado, meta || 0) * 1.05;
     const X = i => P + (W - P - 8) * (i / Math.max(1, diasMes - 1)), Y = v => H - 22 - (H - 40) * (v / maxV);
     const linha = (arr, n) => arr.slice(0, n).map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
     const marcas = [0, 0.5, 1].map(f => maxV / 1.05 * f);
     const graf = `<div class="px-graf"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="faturamento acumulado do mês">
-      ${marcas.map(v => `<line x1="${P}" x2="${W - 8}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--border)"/><text x="${P - 4}" y="${Y(v) + 4}" text-anchor="end" class="px-gx">${v >= 1000 ? Math.round(v / 1000) + ' mil' : Math.round(v)}</text>`).join('')}
+      ${marcas.map(v => `<line x1="${P}" x2="${W - 8}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--border)"/><text x="${P - 6}" y="${Y(v) + 4}" text-anchor="end" class="px-gx">${v >= 1e6 ? `${(v / 1e6).toFixed(1).replace('.', ',')} mi` : v >= 1000 ? `${Math.round(v / 1000)} mil` : Math.round(v)}</text>`).join('')}
       ${meta ? `<line x1="${P}" x2="${W - 8}" y1="${Y(meta)}" y2="${Y(meta)}" stroke="#f59e0b" stroke-dasharray="2 4"/><text x="${W - 10}" y="${Y(meta) - 4}" text-anchor="end" class="px-gt" style="fill:#f59e0b">meta</text>` : ''}
       <path d="${linha(passado, Math.min(passado.length, diasMes))}" fill="none" stroke="var(--text-muted)" stroke-width="1.5"/>
       <path d="${linha(atual, atual.length)}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
