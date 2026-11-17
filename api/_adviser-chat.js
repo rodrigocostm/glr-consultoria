@@ -9,6 +9,7 @@
 // em glr_storage glr_adviser (a mesma lista da tela Adviser) quando pedido.
 // ============================================================
 const { receitaProjecao } = require('./_adviser-revenue');
+const { comissao } = require('../js/data');
 const { progresso, SYSTEM, MARCOS } = require('./_adviser');
 
 const mesBRT = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
@@ -21,7 +22,17 @@ async function lerReceita(h, mes) {
     h.sbSelect('glr_sync_estado', 'recurso=in.(resumo,pedidos)&marketplace=neq.sistema&select=marketplace,conta_id,recurso,cursor,ultimo_sucesso&limit=2000'),
   ]);
   const v = Object.fromEntries(storage.map(r => [r.chave, r.dados]));
-  return receitaProjecao({ clientes: v.glr_clientes, projecoes: v.glr_projecoes, vinculos: v.glr_mc_vinculos, excecoes: v.glr_comissao_contas, base }, mes);
+  const r = receitaProjecao({ clientes: v.glr_clientes, projecoes: v.glr_projecoes, vinculos: v.glr_mc_vinculos, excecoes: v.glr_comissao_contas, base }, mes);
+  // tipo de contrato de cada cliente: fixo NÃO é comissão (não vira % do faturamento nem "taxa")
+  const porId = new Map((Array.isArray(v.glr_clientes) ? v.glr_clientes : []).map(c => [String(c.id), c]));
+  for (const d of r.detalhes) d.contrato = contratoDe(porId.get(String(d.clienteId)));
+  return r;
+}
+// fixo: valor mensal (com valor por pedido acima da franquia só se o contrato tiver); venda/ticket: comissão variável
+function contratoDe(c) {
+  const m = comissao.modelo(c || {});
+  if (m.modelo === 'fixo') return { tipo: m.excedente > 0 && m.franquia > 0 ? 'fixo + valor por pedido acima da franquia' : 'fixo', variavel: m.excedente > 0 && m.franquia > 0, descricao: comissao.descricao(c, true) };
+  return { tipo: m.modelo === 'ticket' ? 'comissão por pedido (faixa de ticket)' : 'comissão por venda', variavel: true, descricao: comissao.descricao(c, true) };
 }
 const sistemaCursor = async (h, conta, recurso) => (await h.sbSelect('glr_sync_estado', `marketplace=eq.sistema&conta_id=eq.${encodeURIComponent(conta)}&recurso=eq.${recurso}&select=cursor`).catch(() => []))[0]?.cursor || null;
 
@@ -30,17 +41,23 @@ async function receitaGlr(h, i) {
   const r = await lerReceita(h, mes), p = progresso(r.projetada);
   return { mes, receita_projetada: r.projetada == null ? null : r0(r.projetada), acumulado_ate_data_base: r.base == null ? null : r0(r.base), dias_fechados: r.dias, projecao_instavel: r.instavel,
     meta: p.meta, falta: p.falta == null ? null : r0(p.falta), proximo_marco: p.proximo, marcos: MARCOS, clientes_sem_dados: r.faltantes,
-    por_cliente: r.detalhes.map(d => ({ cliente: d.cliente, receita_projetada: r0(d.receitaProjetada), fonte: d.fonte })).sort((a, b) => b.receita_projetada - a.receita_projetada),
-    regra: 'Receita GLR = comissão pelo contrato de cada cliente (só contas comissão), projetada pelo ritmo do mês. Não é faturamento recebido nem conciliação.' };
+    receita_fixa: r0(r.detalhes.filter(d => d.contrato?.tipo === 'fixo').reduce((s, d) => s + d.receitaProjetada, 0)),
+    receita_variavel: r0(r.detalhes.filter(d => d.contrato?.tipo !== 'fixo').reduce((s, d) => s + d.receitaProjetada, 0)),
+    por_cliente: r.detalhes.map(d => ({ cliente: d.cliente, contrato: d.contrato?.tipo, regra_contrato: d.contrato?.descricao, receita_projetada: r0(d.receitaProjetada), fonte: d.fonte })).sort((a, b) => b.receita_projetada - a.receita_projetada),
+    regra: 'Receita GLR = o que cada contrato rende no mês, projetado pelo ritmo. Contrato "fixo" é um valor mensal fechado: NÃO é comissão, não cresce com o faturamento do cliente e não entra em taxa (%) sobre GMV. Não é faturamento recebido nem conciliação.' };
 }
 async function rentabilidade(h, i) {
   const mes = mesOk(i?.mes) ? i.mes : mesBRT();
   const r = await lerReceita(h, mes);
-  const ls = r.detalhes.filter(d => d.gmvProjetado > 0).map(d => ({ cliente: d.cliente, gmv_projetado: d.gmvProjetado, comissao_projetada: r0(d.receitaProjetada), taxa_pct: Math.round(d.receitaProjetada / d.gmvProjetado * 10000) / 100 }));
+  // taxa sobre o faturamento só faz sentido em contrato de comissão; fixo fica à parte (valor mensal fechado)
+  const comGmv = r.detalhes.filter(d => d.gmvProjetado > 0);
+  const variaveis = comGmv.filter(d => d.contrato?.tipo !== 'fixo'), fixos = r.detalhes.filter(d => d.contrato?.tipo === 'fixo');
+  const ls = variaveis.map(d => ({ cliente: d.cliente, contrato: d.contrato?.tipo, regra_contrato: d.contrato?.descricao, gmv_projetado: d.gmvProjetado, comissao_projetada: r0(d.receitaProjetada), taxa_pct: Math.round(d.receitaProjetada / d.gmvProjetado * 10000) / 100 }));
   const gmv = ls.reduce((s, x) => s + x.gmv_projetado, 0), com = ls.reduce((s, x) => s + x.comissao_projetada, 0), media = gmv ? com / gmv * 100 : 0;
   return { mes, taxa_media_pct: Math.round(media * 100) / 100, comissao_total: com, gmv_total: gmv,
-    clientes: ls.map(x => ({ ...x, a_mais_na_media: Math.max(0, r0(x.gmv_projetado * media / 100 - x.comissao_projetada)) })).sort((a, b) => b.a_mais_na_media - a.a_mais_na_media),
-    regra: 'taxa = comissão ÷ faturamento (GMV) do cliente. a_mais_na_media = quanto o contrato renderia se pagasse a taxa média da carteira — hipótese para renovação, não ganho garantido.' };
+    clientes_comissao: ls.map(x => ({ ...x, a_mais_na_media: Math.max(0, r0(x.gmv_projetado * media / 100 - x.comissao_projetada)) })).sort((a, b) => b.a_mais_na_media - a.a_mais_na_media),
+    clientes_fixo: fixos.map(d => ({ cliente: d.cliente, contrato: d.contrato?.tipo, regra_contrato: d.contrato?.descricao, receita_mensal: r0(d.receitaProjetada), gmv_projetado: d.gmvProjetado || null })).sort((a, b) => b.receita_mensal - a.receita_mensal),
+    regra: 'taxa = comissão ÷ faturamento (GMV), SÓ para contratos de comissão. a_mais_na_media = quanto um contrato de comissão renderia na taxa média dos contratos de comissão — hipótese de renovação, não ganho garantido. Contratos FIXOS não pagam comissão: não calcule taxa nem "a mais na média" para eles e não sugira cobrar % deles; a revisão de um fixo é renegociar o valor mensal (ou propor mudança de modelo, deixando claro que é outra negociação).' };
 }
 async function retencao(h) {
   const c = await sistemaCursor(h, 'retencao', 'todas');
@@ -80,7 +97,7 @@ async function registrarMissao(h, i) {
 const MES = { type: 'string', description: 'AAAA-MM (padrão: mês atual)' };
 const FERRAMENTAS = [
   { name: 'receita_glr', description: 'Receita GLR do mês (comissão projetada pelos contratos), acumulado, falta para R$ 200 mil, próximo marco e a receita de cada cliente. Comece por aqui.', input_schema: { type: 'object', properties: { mes: MES } } },
-  { name: 'rentabilidade', description: 'Comissão ÷ faturamento de cada cliente e quanto cada contrato renderia na taxa média da carteira (base para revisão de contrato).', input_schema: { type: 'object', properties: { mes: MES } } },
+  { name: 'rentabilidade', description: 'Contratos de COMISSÃO: comissão ÷ faturamento e quanto renderiam na taxa média; contratos FIXOS listados à parte com o valor mensal (fixo não tem taxa sobre o faturamento).', input_schema: { type: 'object', properties: { mes: MES } } },
   { name: 'retencao', description: 'Clientes em risco de cancelar (Agente de Retenção) com motivos e plano de recuperação.', input_schema: { type: 'object', properties: {} } },
   { name: 'expansao', description: 'Venda nova estimada por cliente levando produtos a canais onde ainda não estão (Agente de Expansão de canais).', input_schema: { type: 'object', properties: {} } },
   { name: 'onboarding', description: 'Clientes em implantação e o que falta no checklist (contas, vendas na base, comissão, custos, agente de ADS…).', input_schema: { type: 'object', properties: {} } },
@@ -96,6 +113,7 @@ function sistema(hoje, clientes) {
 AGORA VOCÊ ESTÁ NUMA CONVERSA no Chat com os agentes, com um analista da GLR. Hoje é ${hoje} (Brasília). Clientes da carteira: ${clientes.join(', ')}.
 - Responda à pergunta feita, com a conclusão primeiro e os números que a sustentam (diga o mês e a fonte). Use a estrutura completa (diagnóstico, rota, até 5 missões, decisão da semana) só quando pedirem estratégia, plano ou rota.
 - Busque os números com as ferramentas antes de responder (receita_glr, rentabilidade, retencao, expansao, onboarding, missoes; e carteira, plano_cliente e vendas para olhar um cliente). Nunca invente número.
+- Contratos: "fixo" é valor mensal fechado — não é comissão, não soma comissão por cima (só existe valor por pedido quando o próprio contrato diz, e as ferramentas mostram isso em regra_contrato) e não se calcula % sobre o faturamento dele. Nunca trate cliente fixo como "comissão + fixo" nem sugira que ele pague uma taxa sobre o GMV; para crescer receita com ele, a alavanca é reajustar o valor fixo.
 - Registre missões com registrar_missao só quando o analista pedir; diga quantas registrou. Você não executa campanha, preço, contrato nem mensagem.
 - Use tabelas em markdown quando comparar clientes. Português do Brasil, direto.`;
 }
