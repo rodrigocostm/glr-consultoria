@@ -82,10 +82,28 @@ Router.register('vendometro', (params, el) => {
       return item.rows;
     } catch (e) { return null; }
   }
+  // Cache vencido (mais de 24 h) não serve mais: apaga, de qualquer usuário/escopo. Sem isso os
+  // dias antigos acumulavam (2,5 MB num dia só) e enchiam o armazenamento do navegador inteiro.
+  function limparCacheDias(manter = 3) {
+    try {
+      const itens = Object.keys(localStorage).filter(k => k.startsWith('glr_vm_dia_v1:')).map(k => {
+        let em = 0; try { em = JSON.parse(localStorage.getItem(k) || 'null')?.em || 0; } catch (e) {}
+        return { k, em };
+      });
+      const vivos = itens.filter(x => Date.now() - x.em <= 24 * HORA).sort((a, b) => b.em - a.em);
+      for (const x of itens) if (Date.now() - x.em > 24 * HORA) localStorage.removeItem(x.k);
+      for (const x of vivos.slice(manter)) localStorage.removeItem(x.k);
+    } catch (e) {}
+  }
+  limparCacheDias();
   function salvarCacheDia(dia, rows) {
     if (dia >= isoDia(Date.now()) || !Array.isArray(rows)) return;
-    try { localStorage.setItem(cachePrefix + dia, JSON.stringify({ em: Date.now(), rows })); }
-    catch (e) { /* armazenamento cheio: segue consultando normalmente */ }
+    const valor = JSON.stringify({ em: Date.now(), rows });
+    try { localStorage.setItem(cachePrefix + dia, valor); }
+    catch (e) { // sem espaço: tira os outros dias e tenta uma vez; se ainda não couber, segue consultando normalmente
+      limparCacheDias(0);
+      try { localStorage.setItem(cachePrefix + dia, valor); } catch (e2) {}
+    }
   }
   async function pedidosDaData(dia, inicio, incluirItens = false) {
     const cached = lerCacheDia(dia);
