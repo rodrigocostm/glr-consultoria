@@ -55,6 +55,12 @@ function receitaProjecao({clientes=[],projecoes=[],vinculos={},excecoes={},base=
    detalhes.push({clienteId:String(c.id),cliente:c.nome,fonte:'projecao',dataBase:p.dataBase,dias:dd,receitaBase:comissao.estimar(c,vendas,fat),receitaProjetada:comissao.estimar(c,vendas/dd*dm,fat/dd*dm),gmvBase:Math.round(fat),gmvProjetado:Math.round(fat/dd*dm)});
    continue;
   }
+  // contrato fixo é devido mesmo sem vendas na base: entra pelo valor do contrato (nunca "sem dados")
+  const mo=comissao.modelo(c);
+  if(mo.modelo==='fixo'&&mo.fixo>0){
+   detalhes.push({clienteId:String(c.id),cliente:c.nome,fonte:'contrato fixo (sem vendas na base)',dataBase:dataBaseAuto,dias:dataBaseAuto?+dataBaseAuto.slice(8,10):diasNoMes,receitaBase:mo.fixo,receitaProjetada:mo.fixo,gmvBase:0,gmvProjetado:0});
+   continue;
+  }
   faltantes.push(c.nome);
  }
  const soma=k=>detalhes.length?detalhes.reduce((s,d)=>s+d[k],0):null;
