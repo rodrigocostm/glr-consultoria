@@ -1860,6 +1860,17 @@ Router.register('projecao', (params, el) => {
   function render() {
     const root = el.querySelector('#pj-lista'); if (!root) return;
     if (st.carregando && !st.base) { root.innerHTML = '<div class="card pj-vazio">Carregando a base de vendas…</div>'; return; }
+    // Cliente aberto: a tela mostra SÓ ele — sem as outras linhas, sem os totais da carteira e sem os
+    // filtros (seguro para compartilhar a tela com o cliente sem vazar o faturamento dos outros)
+    const foco = st.aberto ? linhas().find(l => l.id === st.aberto) : null;
+    el.querySelector('.pj-filtros').hidden = !!foco;
+    el.querySelector('.pj-head p').hidden = !!foco;
+    if (foco) {
+      root.innerHTML = `<div class="pj-volta"><button class="pj-link" onclick="window._pjFechar()">← Voltar para todas as projeções</button></div>
+        <section class="pj-item aberto pj-sozinho"><div class="pj-sozinho-h"><b>${esc(foco.nome)}</b><small>${esc(foco.gestor)} · ${foco.contas} conta(s)</small></div><div class="pj-det" id="pj-det"></div></section>`;
+      _projecaoDetalhe({ embed: true, clienteId: st.aberto }, el.querySelector('#pj-det'));
+      return;
+    }
     const ls = filtradas();
     const tot = ls.reduce((s, l) => ({ fat: s.fat + (l.fat || 0), proj: s.proj + (l.proj || 0), meta: s.meta + (l.meta || 0) }), { fat: 0, proj: 0, meta: 0 });
     el.querySelector('#pj-resumo').innerHTML = `<span><b>${ls.length}</b> cliente(s)</span><span>Faturado <b>${R0(tot.fat)}</b></span><span>Projeção <b>${R0(tot.proj)}</b></span>${tot.meta ? `<span>Meta <b>${R0(tot.meta)}</b> · <b style="color:${corMeta(tot.proj / tot.meta * 100)}">${pct(tot.proj / tot.meta * 100)}</b></span>` : ''}`;
@@ -1876,12 +1887,13 @@ Router.register('projecao', (params, el) => {
       </section>`).join('') : '<div class="card pj-vazio">Nenhum cliente com esse filtro.</div>';
     if (st.aberto && el.querySelector('#pj-det')) _projecaoDetalhe({ embed: true, clienteId: st.aberto }, el.querySelector('#pj-det'));
   }
-  window._pjAbrir = id => { st.aberto = st.aberto === id ? null : id; render(); if (st.aberto) document.getElementById('pj-' + id)?.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
+  window._pjAbrir = id => { st.aberto = id; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  window._pjFechar = () => { st.aberto = null; render(); };
   window._pjBusca = v => { st.busca = v; st.aberto = null; render(); };
   window._pjGestor = v => { st.gestor = v; st.aberto = null; try { localStorage.setItem('glr_pj_lista', JSON.stringify({ gestor: v })); } catch (e) {} render(); };
   const gestores = (GLR.gestores || []).slice().sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
   el.innerHTML = `<div class="page pj">
-    <div class="pj-head"><div><h1>Projeção de Crescimento</h1><p>Todas as projeções de ${MESES[+ontem.slice(5, 7) - 1]}, até ${ontem.split('-').reverse().slice(0, 2).join('/')} (dia ${dd} de ${diasMes}). Clique num cliente para abrir a projeção completa. Escolher o cliente na barra de cima abre direto a dele.</p></div></div>
+    <div class="pj-head"><div><h1>Projeção de Crescimento</h1><p>Todas as projeções de ${MESES[+ontem.slice(5, 7) - 1]}, até ${ontem.split('-').reverse().slice(0, 2).join('/')} (dia ${dd} de ${diasMes}). Clique num cliente para abrir só a projeção dele (os outros clientes saem da tela). Escolher o cliente na barra de cima também abre direto a dele.</p></div></div>
     <div class="pj-filtros">
       <label class="pj-busca"><span>Cliente</span><input id="pj-busca" class="form-input" placeholder="Digite o nome do cliente…" oninput="window._pjBusca(this.value)" autocomplete="off"></label>
       <label><span>Gestor</span><select id="pj-gestor" class="form-input" onchange="window._pjGestor(this.value)"><option value="todos">Todos</option>${gestores.map(g => `<option value="${esc(g.id)}" ${st.gestor === String(g.id) ? 'selected' : ''}>${esc(g.nome)}</option>`).join('')}<option value="sem" ${st.gestor === 'sem' ? 'selected' : ''}>Sem gestor</option></select></label>
@@ -1898,7 +1910,7 @@ Router.register('projecao', (params, el) => {
       .pj-seta{color:var(--text-muted)}.pj-nome b{display:block;font-size:14px}.pj-nome small,.pj-num small{display:block;font-size:11.5px;color:var(--text-muted)}
       .pj-num b{font-size:14px;font-variant-numeric:tabular-nums}.pj-meta i{display:block;height:5px;border-radius:99px;background:var(--bg-subtle);margin-top:4px;overflow:hidden}.pj-meta em{display:block;height:100%}
       .pj-det{border-top:1px solid var(--border);padding:4px 8px 8px}.pj-vazio{padding:28px;text-align:center;color:var(--text-secondary)}
-      .pj-volta{margin-bottom:8px}.pj-link{border:none;background:none;color:var(--accent);font:inherit;font-size:13px;cursor:pointer;padding:4px 0}
+      .pj-volta{margin-bottom:8px}.pj-sozinho-h{padding:14px 16px 4px}.pj-sozinho-h b{display:block;font-size:16px}.pj-sozinho-h small{font-size:12px;color:var(--text-muted)}.pj-link{border:none;background:none;color:var(--accent);font:inherit;font-size:13px;cursor:pointer;padding:4px 0}
       @media (max-width:900px){.pj-linha{grid-template-columns:18px 1fr 1fr;}.pj-linha .pj-num:nth-of-type(3),.pj-linha .pj-num:nth-of-type(4){display:none}}
     </style>
   </div>`;
