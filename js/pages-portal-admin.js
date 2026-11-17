@@ -280,6 +280,9 @@ window._portalAdminSalvar = async function(editId) {
         document.getElementById('pm-senha').value = '';
       }
     } else {
+      // e-mail já tem acesso: não cria outro (um segundo clique em "Criar acesso" duplicava o cartão)
+      const ja = configs.find(c => String(c.email || '').trim().toLowerCase() === email.toLowerCase());
+      if (ja) { msg.textContent = `⚠️ Este e-mail já tem acesso (${ja.clienteNome || 'cliente'}). Para mudar contas ou senha, use "Editar" no cartão dele.`; msg.style.color = 'var(--red)'; return; }
       // Novo: cria usuário no Supabase
       // login criado pelo servidor já com o e-mail confirmado: o cliente entra sem o e-mail de confirmação
       try { await _loginPortalServidor({ tipo: 'criar', email, senha }); }
