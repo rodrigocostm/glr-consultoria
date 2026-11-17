@@ -1019,9 +1019,19 @@
     };
 
     // ── Portfólio (grid de contas) ─────────────────────────────
+    // busca de conta: nome da conta, cliente vinculado ou id (sem acento, sem maiúscula)
+    const semAcento = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const textoConta = cfg => semAcento(`${nomeExibicao(cfg)} ${clienteVinculado(cfg.conta_id).cliente_nome || ''} ${cfg.conta_id}`);
+    const filtrarContas = q => { const t = semAcento(q).trim().split(/\s+/).filter(Boolean); return state.contas.filter(c => { const x = textoConta(c); return t.every(p => x.includes(p)); }); };
     function renderPortfolio() {
-      return `${renderSaldos()}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
-        ${state.contas.map(cfg => {
+      return `${renderSaldos()}<div class="ag-busca-port"><input id="ag-busca-port" class="form-input" type="search" placeholder="Buscar conta ou cliente…" value="${esc(state.portBusca || '')}" oninput="window._agPortBusca(this.value)" autocomplete="off" aria-label="Buscar conta ou cliente"><span id="ag-busca-port-n">${cartoesPortfolio().n}</span></div>
+        <div id="ag-port-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">${cartoesPortfolio().html}</div>`;
+    }
+    function cartoesPortfolio() {
+      const lista = filtrarContas(state.portBusca || '');
+      const n = state.portBusca ? `${lista.length} de ${state.contas.length} contas` : `${state.contas.length} contas`;
+      return { n, html: `${lista.length ? '' : '<div class="ag-vazio" style="grid-column:1/-1">Nenhuma conta com esse nome.</div>'}
+        ${lista.map(cfg => {
           const saude = saudeDaConta(cfg);
           const relatorio = state.relatorios.find(r => r.conta_id === cfg.conta_id);
           const mes = mesDaConta(cfg.conta_id);
@@ -1050,8 +1060,7 @@
         }).join('')}
         <div class="ag-hud-card" style="--ag-hud-accent:var(--text-muted);cursor:pointer;border-style:dashed;display:flex;align-items:center;justify-content:center;min-height:110px;" onclick="window._agAbrirConta('__novo__')">
           <div style="text-align:center;color:var(--text-muted);font-size:13px;font-weight:600;">+ Adicionar conta</div>
-        </div>
-      </div>`;
+        </div>` };
     }
 
     // ── Rodar o agente agora: dispara o MESMO ciclo do cron (listar
@@ -1671,14 +1680,16 @@
       const ultima = logs.filter(l => l.origem === 'cron').sort(maisRecente)[0];
       const resumo = logs.filter(l => l.origem === 'cron' && /^Revisão diária concluída/.test(l.titulo || '')).sort(maisRecente)[0];
       const resumoTxt = resumo ? String(resumo.titulo).replace(/^Revisão diária concluída — /, '') : '';
-      const opcoes = state.contas.map(c => `<option value="${esc(c.conta_id)}" ${c.conta_id === cfg.conta_id ? 'selected' : ''}>${h(nomeExibicao(c))}</option>`).join('');
       return `<div class="ag-topbar" style="--ag-hud-accent:${saude.cor};">
         <div class="ag-topbar-l">
-          <select class="form-select ag-sel-conta" onchange="window._agTrocarConta(this.value)" title="Trocar de conta">
-            ${opcoes}
-            ${state.contas.length > 1 ? '<option value="__portfolio__">⟵ Todas as contas</option>' : ''}
-            <option value="__novo__">+ Adicionar conta</option>
-          </select>
+          <div class="ag-combo" id="ag-combo">
+            <button type="button" class="form-select ag-sel-conta ag-combo-btn" aria-haspopup="listbox" aria-expanded="${!!state.comboAberto}" onclick="window._agCombo()" title="Trocar de conta (digite para buscar)">${h(nomeExibicao(cfg))}</button>
+            ${state.comboAberto ? `<div class="ag-combo-painel">
+              <input id="ag-combo-q" class="form-input" type="search" placeholder="Buscar conta ou cliente…" autocomplete="off" aria-label="Buscar conta" value="${esc(state.comboBusca || '')}" oninput="window._agComboQ(this.value)" onkeydown="window._agComboTecla(event)">
+              <div class="ag-combo-lista" id="ag-combo-lista" role="listbox">${comboItens()}</div>
+              <div class="ag-combo-rod">${state.contas.length > 1 ? '<button type="button" onclick="window._agTrocarConta(\'__portfolio__\')">⟵ Todas as contas</button>' : ''}<button type="button" onclick="window._agTrocarConta(\'__novo__\')">+ Adicionar conta</button></div>
+            </div>` : ''}
+          </div>
           <span class="ag-saude-pill" style="color:${saude.cor};background:color-mix(in srgb,${saude.cor} 10%,transparent);" title="Combina o TACOS contra a meta e se há pendências antigas esperando você.">${saude.emoji} ${saude.label}</span>
           ${(() => { const s = saldoDe(cfg.conta_id); if (!s?.saldo && s?.saldo !== 0) return ''; const n = SALDO_NIV[s.nivel] || SALDO_NIV.ok;
             return `<span class="ag-saude-pill" style="color:${n.c};background:color-mix(in srgb,${n.c} 10%,transparent);" title="Saldo de ADS lido ${s.em ? quandoCurto(s.em) : ''} · gasto médio ${s.media != null ? R$(s.media) : '—'}/dia (7 dias)">Saldo ADS ${R$(s.saldo)} · ${s.nivel === 'zerado' ? 'anúncios parados' : `dura ${duraTxt(s)}`}</span>`; })()}
@@ -2588,6 +2599,18 @@
         .ag-topbar { display:flex; align-items:center; justify-content:space-between; gap:12px 18px; flex-wrap:wrap; padding:12px 16px; margin-bottom:14px; border:1px solid var(--border); border-left:4px solid var(--ag-hud-accent,var(--accent)); border-radius:12px; background:var(--bg-card); }
         .ag-topbar-l, .ag-topbar-r { display:flex; align-items:center; gap:10px 14px; flex-wrap:wrap; }
         .ag-sel-conta { width:auto; min-width:170px; font-weight:700; }
+        .ag-combo { position:relative; }
+        .ag-combo-btn { text-align:left; cursor:pointer; min-width:220px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ag-combo-painel { position:absolute; top:calc(100% + 6px); left:0; z-index:40; width:min(360px, calc(100vw - 32px)); background:var(--bg-card); border:1px solid var(--border); border-radius:12px; box-shadow:0 12px 32px rgba(15,23,42,.18); padding:8px; }
+        .ag-combo-painel .form-input { width:100%; margin-bottom:6px; }
+        .ag-combo-lista { max-height:320px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
+        .ag-combo-item { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; border:none; background:none; padding:8px 10px; border-radius:8px; font:inherit; font-size:13px; color:var(--text-primary); cursor:pointer; }
+        .ag-combo-item small { font-size:11.5px; color:var(--text-muted); } .ag-combo-item small.pausado { color:var(--yellow); }
+        .ag-combo-item.on { background:color-mix(in srgb, var(--accent) 12%, transparent); } .ag-combo-item.atual b::after { content:' · atual'; font-weight:400; color:var(--text-muted); font-size:11.5px; }
+        .ag-combo-vazio { padding:12px; font-size:13px; color:var(--text-muted); text-align:center; }
+        .ag-combo-rod { display:flex; justify-content:space-between; gap:8px; border-top:1px solid var(--border); margin-top:6px; padding-top:6px; }
+        .ag-combo-rod button { border:none; background:none; color:var(--accent); font:inherit; font-size:12.5px; cursor:pointer; padding:4px 6px; }
+        .ag-busca-port { display:flex; align-items:center; gap:12px; margin:0 0 14px; flex-wrap:wrap; } .ag-busca-port .form-input { max-width:360px; flex:1; min-width:200px; } .ag-busca-port span { font-size:12.5px; color:var(--text-muted); }
         .ag-saude-pill { font-size:12px; font-weight:700; padding:4px 11px; border-radius:99px; white-space:nowrap; }
         .ag-topbar-run { font-size:12px; color:var(--text-muted); }
         .ag-toggle { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:700; cursor:pointer; }
@@ -2764,8 +2787,39 @@
       if (id && id !== '__novo__') { buscarNegocio(id); buscarDadosAoVivo(id); abcCarregarDoCache(id); render(); }
     };
     window._agTrocarConta = (id) => {
+      state.comboAberto = false; state.comboBusca = '';
       if (id === '__portfolio__') window._agVoltarPortfolio(); else window._agAbrirConta(id);
     };
+    // seletor de conta com busca (barra de cima da conta)
+    function comboItens() {
+      const lista = filtrarContas(state.comboBusca || '');
+      state.comboSel = Math.max(0, Math.min(state.comboSel || 0, lista.length - 1));
+      state.comboLista = lista.map(c => c.conta_id);
+      if (!lista.length) return '<div class="ag-combo-vazio">Nenhuma conta com esse nome.</div>';
+      return lista.map((c, i) => { const cli = clienteVinculado(c.conta_id).cliente_nome || ''; const nome = nomeExibicao(c);
+        return `<button type="button" role="option" aria-selected="${i === state.comboSel}" class="ag-combo-item${i === state.comboSel ? ' on' : ''}${c.conta_id === state.contaAbertaId ? ' atual' : ''}" onmouseenter="window._agComboHover(${i})" onclick="window._agTrocarConta('${esc(c.conta_id)}')"><b>${h(nome)}</b>${cli && !semAcento(nome).includes(semAcento(cli).split(' ')[0]) ? `<small>${h(cli)}</small>` : ''}${!c.ativo ? '<small class="pausado">piloto pausado</small>' : ''}</button>`; }).join('');
+    }
+    const comboRedesenhar = () => { const l = document.getElementById('ag-combo-lista'); if (l) { l.innerHTML = comboItens(); l.querySelector('.on')?.scrollIntoView({ block: 'nearest' }); } };
+    window._agCombo = () => {
+      state.comboAberto = !state.comboAberto; state.comboBusca = ''; state.comboSel = Math.max(0, state.contas.findIndex(c => c.conta_id === state.contaAbertaId));
+      render();
+      if (state.comboAberto) { setTimeout(() => document.getElementById('ag-combo-q')?.focus(), 0); comboRedesenhar(); }
+    };
+    window._agComboQ = v => { state.comboBusca = v; state.comboSel = 0; comboRedesenhar(); };
+    window._agComboHover = i => { state.comboSel = i; document.querySelectorAll('#ag-combo-lista .ag-combo-item').forEach((b, j) => b.classList.toggle('on', j === i)); };
+    window._agComboTecla = e => {
+      const n = (state.comboLista || []).length;
+      if (e.key === 'ArrowDown') { e.preventDefault(); state.comboSel = Math.min(n - 1, (state.comboSel || 0) + 1); comboRedesenhar(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); state.comboSel = Math.max(0, (state.comboSel || 0) - 1); comboRedesenhar(); }
+      else if (e.key === 'Enter') { e.preventDefault(); const id = state.comboLista?.[state.comboSel]; if (id) window._agTrocarConta(id); }
+      else if (e.key === 'Escape') { e.preventDefault(); state.comboAberto = false; render(); }
+    };
+    if (!window._agComboFora) { // clique fora fecha
+      window._agComboFora = true;
+      document.addEventListener('mousedown', e => { const st = window._agComboState?.(); if (st?.comboAberto && !e.target.closest('#ag-combo')) { st.comboAberto = false; window._agComboRender?.(); } });
+    }
+    window._agComboState = () => state; window._agComboRender = () => render();
+    window._agPortBusca = v => { state.portBusca = v; const r = cartoesPortfolio(); const g = document.getElementById('ag-port-grid'); if (g) g.innerHTML = r.html; const n = document.getElementById('ag-busca-port-n'); if (n) n.textContent = r.n; };
     window._agTogglePiloto = async (ativo) => {
       const cfg = configDaConta(state.contaAbertaId);
       if (!cfg) return;
