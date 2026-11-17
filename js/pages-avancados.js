@@ -1863,8 +1863,9 @@ Router.register('projecao', (params, el) => {
     // Cliente aberto: a tela mostra SÓ ele — sem as outras linhas, sem os totais da carteira e sem os
     // filtros (seguro para compartilhar a tela com o cliente sem vazar o faturamento dos outros)
     const foco = st.aberto ? linhas().find(l => l.id === st.aberto) : null;
-    el.querySelector('.pj-filtros').hidden = !!foco;
-    el.querySelector('.pj-head p').hidden = !!foco;
+    el.querySelector('.pj-filtros').style.display = foco ? 'none' : ''; // style (o CSS da tela vence o atributo hidden)
+    el.querySelector('.pj-head p').style.display = foco ? 'none' : '';
+    if (foco) el.querySelector('#pj-resumo').innerHTML = ''; // nem no HTML: os totais da carteira saem da página
     if (foco) {
       root.innerHTML = `<div class="pj-volta"><button class="pj-link" onclick="window._pjFechar()">← Voltar para todas as projeções</button></div>
         <section class="pj-item aberto pj-sozinho"><div class="pj-sozinho-h"><b>${esc(foco.nome)}</b><small>${esc(foco.gestor)} · ${foco.contas} conta(s)</small></div><div class="pj-det" id="pj-det"></div></section>`;
