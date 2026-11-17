@@ -23,10 +23,14 @@ Router.register('portal-admin', async (params, el) => {
 // O banco é a fonte da verdade: a cópia do navegador pode estar velha (ou não caber) e,
 // se fosse lida primeiro, o próximo salvamento gravaria a lista antiga por cima.
 async function _lerConfigs() {
-  const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave', 'glr_portal_configs').maybeSingle();
-  if (!error) return Array.isArray(data?.dados) ? data.dados : [];
+  let erro;
+  try {
+    const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave', 'glr_portal_configs').maybeSingle();
+    if (!error) return Array.isArray(data?.dados) ? data.dados : [];
+    erro = error;
+  } catch (e) { erro = e; }
   try { const raw = localStorage.getItem('glr_portal_configs'); if (raw) return JSON.parse(raw); } catch (e) {}
-  throw new Error('Não consegui ler os acessos do portal: ' + error.message);
+  throw new Error('Não consegui ler os acessos do portal: ' + (erro?.message || erro));
 }
 
 async function _salvarConfigs(configs) {
