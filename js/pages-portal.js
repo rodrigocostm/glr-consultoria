@@ -864,9 +864,9 @@ window._initPortalCliente = async function(cfg) {
 // Módulos liberados por acesso (Portal Clientes, como o Chat IA): a tela só entra no menu e nas
 // rotas permitidas quando o acesso tem a chave ligada (cfg.financeiro / cfg.notas). Desligado:
 // quem abre o endereço direto cai no Dashboard (e o servidor recusa as ações de nota fiscal).
-window.PORTAL_MODULOS = ['financeiro', 'notas'];
-const _PORTAL_ROTAS_BASE = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'criar-anuncio', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'notas', 'meu-estoque', 'vendas', 'atendimento-ia', 'meus-ads', 'meu-analitico', 'meus-reembolsos', 'calculadora', 'meu-chat'];
-Object.defineProperty(window, 'PORTAL_ROTAS', { configurable: true, get() { const cfg = window._portalConfig || {}; return _PORTAL_ROTAS_BASE.filter(r => !window.PORTAL_MODULOS.includes(r) || cfg[r] === true); } });
+window.PORTAL_MODULOS = { financeiro: 'financeiro', notas: 'notas', 'minha-projecao': 'projecao' }; // rota → chave no acesso
+const _PORTAL_ROTAS_BASE = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'criar-anuncio', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'notas', 'meu-estoque', 'vendas', 'atendimento-ia', 'meus-ads', 'meu-analitico', 'minha-projecao', 'meus-reembolsos', 'calculadora', 'meu-chat'];
+Object.defineProperty(window, 'PORTAL_ROTAS', { configurable: true, get() { const cfg = window._portalConfig || {}; return _PORTAL_ROTAS_BASE.filter(r => !(r in window.PORTAL_MODULOS) || cfg[window.PORTAL_MODULOS[r]] === true); } });
 
 function _portalMostrarLoading(msg) {
   const el = document.getElementById('page-content');
@@ -975,6 +975,10 @@ function _configurarSidebarCliente(cfg) {
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>
         Analítico
       </button>
+      ${!cfg.projecao ? '' : `<button class="nav-item" data-page="minha-projecao" onclick="Router.navigate('minha-projecao')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M6 16V10M11 16V6M16 16v-4"/><path d="M15 6l3-3 3 3"/></svg>
+        Projeção do mês
+      </button>`}
       <button class="nav-item" data-page="meus-reembolsos" onclick="Router.navigate('meus-reembolsos')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>
         Reembolsos

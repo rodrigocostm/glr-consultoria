@@ -228,6 +228,76 @@
       <p class="px-nota">Fonte: a base de vendas da GLR, desde ${primeiroDia ? primeiroDia.split('-').reverse().join('/') : '—'} (a base guarda os últimos ~3 meses). Faturamento sem cancelados e devoluções. Para lucro por produto, veja Financeiro.</p>`;
   });
 
+  // ── Projeção do mês (módulo liberado por acesso: cfg.projecao) ─────
+  // Só as lojas do acesso, pela base automática: faturado até ontem ÷ dias decorridos ×
+  // dias do mês (mesma regra da Projeção da equipe). A meta vem do acesso (cfg.metaMes),
+  // copiada pela GLR ao liberar o módulo — o portal não lê as metas internas.
+  Router.register('minha-projecao', async (params, el) => {
+    const cfg = window._portalConfig || {};
+    el.innerHTML = `<div class="page px">${estilo}<div class="px-head"><div><h1>Projeção do mês</h1><p>Quanto as suas lojas devem faturar até o fim do mês no ritmo atual, contra o mês passado e a meta.</p></div></div><div id="px-root"><div class="card px-vazio">Carregando…</div></div></div>`;
+    let lojas;
+    try { lojas = await lojasDoAcesso(); } catch (e) { el.querySelector('#px-root').innerHTML = `<div class="card px-vazio">Não consegui ler os dados: ${h(e.message)}</div>`; return; }
+    const root = el.querySelector('#px-root');
+    if (semCliente()) { root.innerHTML = vazioSemCliente(); return; }
+    if (!lojas.length) { root.innerHTML = '<div class="card px-vazio">Nenhuma loja com dados ainda.</div>'; return; }
+    const hoje = hojeIso(), ontem = somaDias(hoje, -1);
+    const ano = +ontem.slice(0, 4), mes = +ontem.slice(5, 7), dd = +ontem.slice(8, 10);
+    const diasMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate(), mesIni = ontem.slice(0, 8) + '01';
+    const antIni = new Date(Date.UTC(ano, mes - 2, 1)).toISOString().slice(0, 10), antFim = new Date(Date.UTC(ano, mes - 1, 0)).toISOString().slice(0, 10);
+    const antDias = +antFim.slice(8, 10), antMesmo = antIni.slice(0, 8) + String(Math.min(dd, antDias)).padStart(2, '0');
+    const soma = (de, ate) => lojas.reduce((t, l) => { const x = BaseDados.somar(l.info, de, ate); for (const k of Object.keys(x)) t[k] = (t[k] || 0) + x[k]; return t; }, {});
+    const m = soma(mesIni, ontem), ant = soma(antIni, antFim), antP = soma(antIni, antMesmo);
+    const fator = dd > 0 ? diasMes / dd : null;
+    const proj = fator ? m.faturamento * fator : null;
+    const meta = parseFloat(cfg.metaMes) || 0;
+    const pctMeta = proj != null && meta > 0 ? proj / meta * 100 : null;
+    const vsAnt = proj != null && ant.faturamento > 0 ? (proj / ant.faturamento - 1) * 100 : null;
+    const vsAntP = antP.faturamento > 0 ? (m.faturamento / antP.faturamento - 1) * 100 : null;
+    const temAds = lojas.some(l => BaseDados.cobreAds(l.info, mesIni));
+    const tacos = temAds && m.faturamento > 0 ? m.ads / m.faturamento * 100 : null;
+    const precisaDia = meta > 0 && diasMes - dd > 0 ? Math.max(0, meta - m.faturamento) / (diasMes - dd) : null;
+    const corV = v => v == null ? 'var(--text-muted)' : v >= 0 ? 'var(--green)' : 'var(--red)';
+    const sinal = v => v == null ? '—' : `${v > 0 ? '+' : ''}${pct(v)}`;
+    // ritmo: acumulado por dia (mês atual × mês passado) e a linha da projeção até o fim do mês
+    const acum = (de, dias) => { let a = 0; return Array.from({ length: dias }, (_, i) => { const d = somaDias(de, i); a += soma(d, d).faturamento; return a; }); };
+    const atual = acum(mesIni, dd), passado = acum(antIni, antDias);
+    const W = 640, H = 220, P = 34, maxV = Math.max(1, proj || 0, ...passado, meta || 0) * 1.05;
+    const X = i => P + (W - P - 8) * (i / Math.max(1, diasMes - 1)), Y = v => H - 22 - (H - 40) * (v / maxV);
+    const linha = (arr, n) => arr.slice(0, n).map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+    const marcas = [0, 0.5, 1].map(f => maxV / 1.05 * f);
+    const graf = `<div class="px-graf"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="faturamento acumulado do mês">
+      ${marcas.map(v => `<line x1="${P}" x2="${W - 8}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--border)"/><text x="${P - 4}" y="${Y(v) + 4}" text-anchor="end" class="px-gx">${v >= 1000 ? Math.round(v / 1000) + ' mil' : Math.round(v)}</text>`).join('')}
+      ${meta ? `<line x1="${P}" x2="${W - 8}" y1="${Y(meta)}" y2="${Y(meta)}" stroke="#f59e0b" stroke-dasharray="2 4"/><text x="${W - 10}" y="${Y(meta) - 4}" text-anchor="end" class="px-gt" style="fill:#f59e0b">meta</text>` : ''}
+      <path d="${linha(passado, Math.min(passado.length, diasMes))}" fill="none" stroke="var(--text-muted)" stroke-width="1.5"/>
+      <path d="${linha(atual, atual.length)}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+      ${proj && dd ? `<path d="M${X(dd - 1)},${Y(m.faturamento)} L${X(diasMes - 1)},${Y(proj)}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 5"/><circle cx="${X(diasMes - 1)}" cy="${Y(proj)}" r="4" fill="var(--accent)"/>` : ''}
+      ${[1, 10, 20, diasMes].map(d => `<text x="${X(d - 1)}" y="${H - 6}" text-anchor="middle" class="px-gx">${d}</text>`).join('')}
+    </svg></div>`;
+    const porLoja = lojas.map(l => { const x = BaseDados.somar(l.info, mesIni, ontem); return { l, fat: x.faturamento, proj: fator ? x.faturamento * fator : null }; }).sort((a, b) => b.fat - a.fat);
+    root.innerHTML = `
+      <section class="card px-card" style="margin-bottom:14px">
+        <div class="px-sub">Projeção de ${['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'][mes - 1]} · faturado até ${dm(ontem)} (dia ${dd} de ${diasMes})</div>
+        <div style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:flex-end">
+          <div><div style="font-size:34px;font-weight:750;letter-spacing:-.02em;font-variant-numeric:tabular-nums">${R0(proj)}</div><div class="px-sub" style="margin:0">Faturado até agora: <b style="color:var(--text-primary)">${R0(m.faturamento)}</b></div></div>
+          <div class="px-kpis" style="margin:0;flex:1;max-width:620px">
+            ${kpi('vs mês passado', `<span style="color:${corV(vsAnt)}">${sinal(vsAnt)}</span>`, ant.faturamento ? `fechou em ${R0(ant.faturamento)}` : '')}
+            ${kpi('Mesmos dias do mês passado', `<span style="color:${corV(vsAntP)}">${sinal(vsAntP)}</span>`, `até o dia ${Math.min(dd, antDias)}: ${R0(antP.faturamento)}`)}
+            ${meta ? kpi('Da meta', `<span style="color:${pctMeta >= 100 ? 'var(--green)' : pctMeta >= 85 ? 'var(--yellow)' : 'var(--red)'}">${pct(pctMeta, 0)}</span>`, `meta ${R0(meta)}`) : ''}
+          </div>
+        </div>
+        ${meta ? `<div class="px-barra" style="margin-top:12px"><i style="width:${Math.min(100, m.faturamento / meta * 100)}%;background:var(--accent)"></i></div><p class="px-nota">${pct(m.faturamento / meta * 100, 0)} da meta já faturado${precisaDia != null ? ` · para bater a meta: ${R0(precisaDia)} por dia até o fim do mês` : ''}</p>` : ''}
+      </section>
+      <div class="px-kpis">
+        ${kpi('Pedidos projetados', N(fator ? m.pedidos * fator : null), `${N(m.pedidos)} até agora · ticket ${R$(m.pedidos ? m.faturamento / m.pedidos : null)}`)}
+        ${kpi('Média por dia', R0(dd ? m.faturamento / dd : null), `mês passado ${R0(antDias ? ant.faturamento / antDias : null)}/dia`)}
+        ${temAds ? kpi('ADS projetado', R0(fator ? m.ads * fator : null), `${R0(m.ads)} até agora · TACOS ${pct(tacos)}`) : ''}
+      </div>
+      <section class="card px-card" style="margin-bottom:14px"><h3>Ritmo do mês</h3><div class="px-leg"><span><i style="background:var(--accent)"></i>este mês (acumulado)</span><span><i style="background:var(--accent);opacity:.5"></i>projeção até o fim do mês</span><span><i style="background:var(--text-muted)"></i>mês passado</span>${meta ? '<span><i style="background:#f59e0b"></i>meta</span>' : ''}</div>${graf}</section>
+      ${porLoja.length > 1 ? `<section class="card px-card"><h3>Por loja</h3><div class="px-tab-w"><table class="px-tab" data-todas-colunas><thead><tr><th>Loja</th><th class="num">Faturado</th><th class="num">Projeção</th><th class="num">Participação</th></tr></thead>
+        <tbody>${porLoja.map(x => `<tr><td><span class="px-tag" style="--c:${COR[x.l.mkt] || 'var(--accent)'}">${h(MKT[x.l.mkt] || x.l.mkt)}</span> ${h(x.l.nome)}</td><td class="num">${R0(x.fat)}</td><td class="num">${R0(x.proj)}</td><td class="num">${m.faturamento > 0 ? pct(x.fat / m.faturamento * 100) : '—'}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
+      <p class="px-nota">Projeção = faturado até ontem ÷ dias decorridos × dias do mês. Faturamento sem cancelados e devoluções. Hoje fica de fora porque ainda está em andamento.</p>`;
+  });
+
   // ── Reembolsos ────────────────────────────────────────────────
   Router.register('meus-reembolsos', async (params, el) => {
     const st = { dias: (() => { try { return +localStorage.getItem('glr_px_reemb_dias') || 30; } catch (e) { return 30; } })(), busca: '', dados: null, erro: null };

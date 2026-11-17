@@ -89,7 +89,7 @@ async function _renderPortalAdminLista() {
               style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid ${cfg.chatIA ? 'var(--green)' : 'var(--border)'};background:${cfg.chatIA ? 'var(--green-bg)' : 'var(--bg-base)'};color:${cfg.chatIA ? 'var(--green)' : 'var(--text-secondary)'};font-weight:${cfg.chatIA ? 600 : 400};">
               ${cfg.chatIA ? 'Chat IA: ligado' : 'Liberar chat IA'}
             </button>
-            ${[['financeiro', 'Financeiro', 'Tela Financeiro no portal (lucro, taxas e repasses das lojas dele)'], ['notas', 'Notas', 'Tela Notas e etiquetas no portal (emissão de nota fiscal e etiquetas)']].map(([k, n, dica]) => `<button onclick="window._portalAdminModulo('${cfg.id}','${k}')" title="${dica}"
+            ${[['projecao', 'Projeção', 'Tela Projeção do mês no portal (só as lojas dele; a meta do mês vai junto ao liberar)'], ['financeiro', 'Financeiro', 'Tela Financeiro no portal (lucro, taxas e repasses das lojas dele)'], ['notas', 'Notas', 'Tela Notas e etiquetas no portal (emissão de nota fiscal e etiquetas)']].map(([k, n, dica]) => `<button onclick="window._portalAdminModulo('${cfg.id}','${k}')" title="${dica}"
               style="font-size:12px;padding:6px 14px;border-radius:99px;cursor:pointer;border:1px solid ${cfg[k] ? 'var(--green)' : 'var(--border)'};background:${cfg[k] ? 'var(--green-bg)' : 'var(--bg-base)'};color:${cfg[k] ? 'var(--green)' : 'var(--text-secondary)'};${cfg[k] ? 'font-weight:600;' : ''}">
               ${cfg[k] ? `${n}: ligado` : `Liberar ${n.toLowerCase()}`}
             </button>`).join('')}
@@ -272,6 +272,7 @@ window._portalAdminSalvar = async function(editId) {
       if (email.toLowerCase() !== String(configs[idx].email || '').toLowerCase()) throw new Error('O e-mail do login existente não pode ser alterado neste formulário.');
       if (idx >= 0) {
         configs[idx] = { ...configs[idx], email, clienteId, clienteNome, contaIds, contas };
+        if (configs[idx].projecao) { try { const metas = JSON.parse(localStorage.getItem('glr_metas') || '{}') || {}; const v = parseFloat(metas[clienteId] ?? metas[String(clienteId)]) || parseFloat(cliente?.metaMensal) || 0; if (v > 0) configs[idx].metaMes = v; } catch (e) {} } // meta atual do mês
       }
       if (senha) {
         const response = await window.glrApiFetch('/api/portal-password', {
@@ -352,7 +353,7 @@ window._portalAdminChatTodos = async function() {
 };
 // Módulos do portal liberados por acesso (Financeiro, Notas): mesma ideia do Chat IA
 window._portalAdminModulo = async function(id, chave) {
-  const NOMES = { financeiro: 'Financeiro', notas: 'Notas e etiquetas' };
+  const NOMES = { financeiro: 'Financeiro', notas: 'Notas e etiquetas', projecao: 'Projeção do mês' };
   if (!NOMES[chave]) return;
   let configs;
   try { configs = await _lerConfigs(); } catch (e) { alert(e.message); return; }
@@ -360,6 +361,8 @@ window._portalAdminModulo = async function(id, chave) {
   const ligar = !cfg[chave];
   if (!confirm(`${ligar ? 'Liberar' : 'Desligar'} a tela ${NOMES[chave]} no portal de ${cfg.clienteNome || cfg.email}?`)) return;
   cfg[chave] = ligar; cfg[chave + 'Em'] = new Date().toISOString();
+  // Projeção: a meta do mês vai no acesso (o portal não lê as metas internas da GLR)
+  if (chave === 'projecao' && ligar) { try { const metas = JSON.parse(localStorage.getItem('glr_metas') || '{}') || {}; const v = parseFloat(metas[cfg.clienteId] ?? metas[String(cfg.clienteId)]) || parseFloat((GLR.clientes || []).find(c => String(c.id) === String(cfg.clienteId))?.metaMensal) || 0; if (v > 0) cfg.metaMes = v; } catch (e) {} }
   try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
   await _renderPortalAdminLista();
 };
