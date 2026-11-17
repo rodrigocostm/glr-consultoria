@@ -861,7 +861,10 @@ window._initPortalCliente = async function(cfg) {
 };
 
 // Telas liberadas para o cliente do portal (o router bloqueia o resto)
-window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'criar-anuncio', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'notas', 'meu-estoque', 'vendas', 'atendimento-ia', 'meus-ads', 'meu-analitico', 'meus-reembolsos', 'calculadora', 'meu-chat'];
+// Telas desligadas no portal de TODOS os clientes (por enquanto): saem do menu e das rotas
+// permitidas — quem abrir o endereço direto cai no Dashboard. Para religar, tire da lista.
+window.PORTAL_DESLIGADAS = ['financeiro', 'notas'];
+window.PORTAL_ROTAS = ['meu-dashboard', 'vendometro', 'meus-pedidos', 'minha-curva-abc', 'produtos', 'promocoes', 'criar-anuncio', 'anuncios-ml', 'anuncios-shopee', 'financeiro', 'notas', 'meu-estoque', 'vendas', 'atendimento-ia', 'meus-ads', 'meu-analitico', 'meus-reembolsos', 'calculadora', 'meu-chat'].filter(r => !window.PORTAL_DESLIGADAS.includes(r));
 
 function _portalMostrarLoading(msg) {
   const el = document.getElementById('page-content');
@@ -953,10 +956,10 @@ function _configurarSidebarCliente(cfg) {
         Criar anúncio
       </button>
       <div class="sidebar-section-title" style="margin-top:10px;">Envios</div>
-      <button class="nav-item" data-page="notas" onclick="Router.navigate('notas')">
+      ${window.PORTAL_DESLIGADAS.includes('notas') ? '' : `<button class="nav-item" data-page="notas" onclick="Router.navigate('notas')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
         Notas e etiquetas
-      </button>
+      </button>`}
       <button class="nav-item" data-page="meu-estoque" onclick="Router.navigate('meu-estoque')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
         Estoque
@@ -987,11 +990,11 @@ function _configurarSidebarCliente(cfg) {
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h5"/></svg>
         Atendimento
       </button>` : ''}
-      <div class="sidebar-section-title" style="margin-top:10px;">Financeiro</div>
+      ${window.PORTAL_DESLIGADAS.includes('financeiro') ? '' : `<div class="sidebar-section-title" style="margin-top:10px;">Financeiro</div>
       <button class="nav-item" data-page="financeiro" onclick="Router.navigate('financeiro')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
         Financeiro
-      </button>
+      </button>`}
       </div>
   `;
   if (logo) logo.after(nav); else sidebar.prepend(nav);
