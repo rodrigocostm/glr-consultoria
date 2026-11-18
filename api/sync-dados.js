@@ -511,7 +511,24 @@ async function enriquecerTaxasShopee(apiKey, shopId, t, prazo) {
 }
 // ML: líquido recebido do pagamento (/collections). Frete do vendedor = o que
 // sobra além da tarifa de venda (mesma conta da tela Financeiro).
-async function enriquecerTaxasML(apiKey, contaId, t, prazo) {
+// Recebimento do ML inclui o frete que o comprador pagou (o vendedor recebe e paga o envio): o líquido
+// DO PRODUTO nunca passa de valor − tarifa de venda; o que sobra é frete repassado, não receita.
+const liquidoML = (net, valor, tarifa) => r2(Math.min(net, (parseFloat(valor) || 0) - (parseFloat(tarifa) || 0)));
+async function corrigirLiquidoML(contaId, t, cursor) {
+  if (cursor.ml_liq_v2) return 0;
+  const corr = [];
+  for (let off = 0; off < 20000; off += 1000) {
+    const rows = await sbSelect('glr_pedidos', `marketplace=eq.ml&conta_id=eq.${contaId}&liquido=not.is.null&criado_em=gte.${desdeTaxas(t)}&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto,liquido,tar:taxas->>tarifa_venda&order=pedido_id&limit=1000&offset=${off}`);
+    for (const r of rows) { const l = liquidoML(r.liquido, r.valor_bruto, r.tar); if (l < parseFloat(r.liquido) - 0.009) corr.push({ marketplace: 'ml', conta_id: r.conta_id, pedido_id: r.pedido_id, criado_em: r.criado_em, situacao: r.situacao, valor_bruto: r.valor_bruto, liquido: l }); }
+    if (rows.length < 1000) break;
+  }
+  for (let i = 0; i < corr.length; i += 500) await sbUpsert('glr_pedidos', corr.slice(i, i + 500), 'marketplace,conta_id,pedido_id');
+  corr.forEach(l => tocar('ml', contaId, l.criado_em));
+  cursor.ml_liq_v2 = true;
+  return corr.length;
+}
+async function enriquecerTaxasML(apiKey, contaId, t, prazo, cursor = {}) {
+  await corrigirLiquidoML(contaId, t, cursor).catch(e => console.warn('[sync-dados] corrigir líquido ML', contaId, e.message));
   const pend = await sbSelect('glr_pedidos', `marketplace=eq.ml&conta_id=eq.${contaId}&situacao=eq.valido&status_original=eq.paid&liquido=is.null&criado_em=gte.${desdeTaxas(t)}&order=criado_em.desc&limit=80&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto,taxas`);
   const linhas = [];
   let falhas = 0;
@@ -523,7 +540,7 @@ async function enriquecerTaxasML(apiKey, contaId, t, prazo) {
       const r = await mcpCall(apiKey, 'raw', { method: 'GET', path: `/collections/${pay}`, meliUserId: contaId });
       const d = r.data || r;
       const net = parseFloat(d.net_received_amount ?? d.collection?.net_received_amount);
-      if (!isNaN(net) && net > 0) linhas.push({ marketplace: 'ml', conta_id: p.conta_id, pedido_id: p.pedido_id, criado_em: p.criado_em, situacao: p.situacao, valor_bruto: p.valor_bruto, liquido: r2(net), frete: r2(Math.max(0, p.valor_bruto - net - (parseFloat(p.taxas?.tarifa_venda) || 0))) });
+      if (!isNaN(net) && net > 0) linhas.push({ marketplace: 'ml', conta_id: p.conta_id, pedido_id: p.pedido_id, criado_em: p.criado_em, situacao: p.situacao, valor_bruto: p.valor_bruto, liquido: liquidoML(net, p.valor_bruto, p.taxas?.tarifa_venda), frete: r2(Math.max(0, p.valor_bruto - net - (parseFloat(p.taxas?.tarifa_venda) || 0))) });
     } catch (e) { falhas++; }
   }
   if (linhas.length) { await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id'); linhas.forEach(l => tocar('ml', contaId, l.criado_em)); }
@@ -1209,7 +1226,7 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo, nome) {
     }
     // Taxas reais (escrow Shopee / recebimento ML) dos pedidos que ainda não têm.
     // taxas_v 2 (18/11/2026): a Shopee passou a buscar também os pedidos em andamento — roda já, sem esperar as 2 h
-    const taxasNaVez = cursor.taxas_v !== 2 || !cursor.taxas_em || cursor.taxas_ult > 0 || Date.now() - cursor.taxas_em > TAXAS_ESPERA_MS;
+    const taxasNaVez = cursor.taxas_v !== 2 || (mkt === 'ml' && !cursor.ml_liq_v2) || !cursor.taxas_em || cursor.taxas_ult > 0 || Date.now() - cursor.taxas_em > TAXAS_ESPERA_MS;
     cursor.taxas_v = 2;
     if (ad.taxas && Date.now() < prazo && taxasNaVez) {
       try { cursor.taxas_ult = await ad.taxas(apiKey, shopId, t, Math.min(prazo, Date.now() + TEMPO_TAXAS_POR_CONTA_MS), cursor); cursor.taxas_em = Date.now(); delete cursor.taxas_erro; }
