@@ -1206,7 +1206,9 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo, nome) {
       }
     }
     // Taxas reais (escrow Shopee / recebimento ML) dos pedidos que ainda não têm.
-    const taxasNaVez = !cursor.taxas_em || cursor.taxas_ult > 0 || Date.now() - cursor.taxas_em > TAXAS_ESPERA_MS;
+    // taxas_v 2 (18/11/2026): a Shopee passou a buscar também os pedidos em andamento — roda já, sem esperar as 2 h
+    const taxasNaVez = cursor.taxas_v !== 2 || !cursor.taxas_em || cursor.taxas_ult > 0 || Date.now() - cursor.taxas_em > TAXAS_ESPERA_MS;
+    cursor.taxas_v = 2;
     if (ad.taxas && Date.now() < prazo && taxasNaVez) {
       try { cursor.taxas_ult = await ad.taxas(apiKey, shopId, t, Math.min(prazo, Date.now() + TEMPO_TAXAS_POR_CONTA_MS), cursor); cursor.taxas_em = Date.now(); delete cursor.taxas_erro; }
       catch (e) { cursor.taxas_erro = String(e.message || e).slice(0, 200); }
