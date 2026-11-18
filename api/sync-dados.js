@@ -1418,13 +1418,24 @@ async function conferirDia(apiKey, mkt, id, dia, prazo) {
     const faltam = sns.filter(sn => !ids.has(String(sn)));
     if (faltam.length) { const r = await gravarPedidos(apiKey, id, faltam, prazo); corrigidos = r.n; pendentes = faltam.length - r.n; } // o que sobra é pedido não pago (não entra na base)
   } else if (mkt === 'ml') {
-    const r = await comRetry(() => mcpCall(apiKey, 'list_orders_detail', { meliUserId: id, date_from: dia, date_to: dia, limit: 50, offset: 0 }));
-    api = parseInt((r.data || r).paging?.total) || 0;
-    if (api > antes.length) { await gravarPedidosML(apiKey, id, dia, dia, prazo); }
+    // o ML filtra o dia no fuso dele (UTC-4): compara pedido a pedido pelo número, não a contagem do dia BRT
+    const apiIds = [];
+    for (let offset = 0; offset < 5000; offset += 50) {
+      const r = await comRetry(() => mcpCall(apiKey, 'list_orders_detail', { meliUserId: id, date_from: dia, date_to: dia, limit: 50, offset }));
+      const d = r.data || r, rs = d.results || [];
+      apiIds.push(...rs.filter(o => o && o.id).map(o => String(o.id)));
+      if (offset + 50 >= (parseInt(d.paging?.total) || 0) || !rs.length) break;
+    }
+    api = apiIds.length;
+    const naBase = async () => { const tem = new Set(); for (let i = 0; i < apiIds.length; i += 100) for (const x of await sbSelect('glr_pedidos', `marketplace=eq.ml&conta_id=eq.${id}&pedido_id=in.(${apiIds.slice(i, i + 100).join(',')})&select=pedido_id`)) tem.add(String(x.pedido_id)); return tem; };
+    let tem = await naBase();
+    const faltavam = apiIds.filter(x => !tem.has(x)).length;
+    if (faltavam) { await gravarPedidosML(apiKey, id, dia, dia, prazo); tem = await naBase(); }
+    pendentes = apiIds.filter(x => !tem.has(x)).length;
+    corrigidos = faltavam - pendentes;
   } else return null;
-  const depois = (corrigidos || mkt === 'ml') ? await pedidosDoDia(mkt, id, dia) : antes;
-  if (mkt === 'ml') { corrigidos = Math.max(0, depois.length - antes.length); pendentes = Math.max(0, api - depois.length); }
-  return { dia, api, base: depois.length, validos: depois.filter(r => r.situacao === 'valido').length, corrigidos, pendentes };
+  const depois = corrigidos ? await pedidosDoDia(mkt, id, dia) : antes;
+  return { dia, api, base: mkt === 'ml' ? api - pendentes : depois.length, validos: depois.filter(r => r.situacao === 'valido').length, corrigidos, pendentes };
 }
 async function saudeAPI(apiKey, { forcar = false } = {}) {
   const prazo = Date.now() + SAUDE_ORC_MS, t = agora(), hoje = dataBR(t), agoraMs = Date.now(), H = 3600e3;
