@@ -628,6 +628,34 @@ module.exports = async function handler(req, res) {
       return res.status(r.ok ? 200 : 500).json({ ok: r.ok, rodada: 'saude-api', ...j });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
+  // ?rodada=fotos — Agente de Fotos (api/_agente-fotos.js): campeões de conversão × anúncios fracos e o
+  // padrão visual das fotos dos campeões; de madrugada, loja analisada há mais de 7 dias; &conta=X&mkt=Y na hora
+  if (req.query?.rodada === 'fotos') {
+    const fotosAg = require('./_agente-fotos');
+    const h = { sbSelect, mcpCall, apiKey: mcApiKey, geminiKey: process.env.GEMINI_API_KEY };
+    const gravar = (mkt, id, cur) => sbUpsert('glr_sync_estado', { marketplace: mkt, conta_id: String(id), recurso: 'fotos', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), ultimo_erro: cur.erro || null, cursor: cur }, 'marketplace,conta_id,recurso');
+    try {
+      if (req.query?.conta) {
+        const mkt = req.query.mkt === 'ml' ? 'ml' : 'shopee';
+        const cur = await fotosAg.analisarConta(h, mkt, String(req.query.conta));
+        await gravar(mkt, req.query.conta, cur);
+        return res.status(200).json({ ok: true, rodada: 'fotos', ...cur });
+      }
+      const { dia, hora } = agoraBRT(), slot = `${dia}-${String(hora).padStart(2, '0')}h-fotos`;
+      if (!(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      waitUntil((async () => {
+        const prazo = Date.now() + 250000;
+        const funis = await sbSelect('glr_sync_estado', 'recurso=eq.funil&marketplace=in.(ml,shopee)&select=marketplace,conta_id&limit=1000');
+        const feitos = new Map((await sbSelect('glr_sync_estado', 'recurso=eq.fotos&select=marketplace,conta_id,em:cursor->>em&limit=1000').catch(() => [])).map(x => [`${x.marketplace}:${x.conta_id}`, parseInt(x.em) || 0]));
+        const fila = funis.filter(f => Date.now() - (feitos.get(`${f.marketplace}:${f.conta_id}`) || 0) > 7 * 864e5)
+          .sort((a, b) => (feitos.get(`${a.marketplace}:${a.conta_id}`) || 0) - (feitos.get(`${b.marketplace}:${b.conta_id}`) || 0));
+        let i = 0, n = 0;
+        await Promise.all([1, 2].map(async () => { while (i < fila.length && Date.now() < prazo - 60000) { const f = fila[i++]; try { await gravar(f.marketplace, f.conta_id, await fotosAg.analisarConta(h, f.marketplace, f.conta_id)); n++; } catch (e) { console.warn('[fotos]', f.marketplace, f.conta_id, e.message); } } }));
+        console.log('[fotos]', JSON.stringify({ analisadas: n, fila: fila.length }));
+      })().finally(gravarConsumo).catch(e => console.error('[fotos] falhou', e)));
+      return res.status(202).json({ ok: true, rodada: 'fotos', slot });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=conversao — Agente de Conversão no ML (api/_conversao.js): catálogo/Buy Box e elegíveis,
   // contas ainda não analisadas hoje (de madrugada, em várias passadas); &conta=X analisa só ela na hora
   if (req.query?.rodada === 'conversao') {

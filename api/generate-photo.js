@@ -156,6 +156,26 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ images, erros: erros.length ? erros : undefined });
     }
 
+    // stage === 'padrao' (Agente de Fotos): foto nova do produto no PADRÃO VISUAL dos anúncios que mais
+    // convertem na loja — estilo (texto da análise) + até 2 fotos dos campeões como referência de estilo
+    if (stage === 'padrao') {
+      if (quem.role === 'portal') return res.status(403).json({ error: 'Opção não disponível no portal.' });
+      const estilo = String(req.body?.estilo || '').replace(/\s+/g, ' ').trim().slice(0, 900);
+      const urls = (Array.isArray(req.body?.estilo_urls) ? req.body.estilo_urls : []).filter(u => /^https:\/\//.test(String(u))).slice(0, 2);
+      const refs = [];
+      for (const u of urls) {
+        try { const r = await fetch(u, { signal: AbortSignal.timeout(15000) }); if (!r.ok) continue; const ct = r.headers.get('content-type') || 'image/jpeg'; refs.push({ mimeType: ct.startsWith('image/') ? ct.split(';')[0] : 'image/jpeg', data: Buffer.from(await r.arrayBuffer()).toString('base64') }); } catch (e) {}
+      }
+      const instr = [
+        'Esta será a FOTO PRINCIPAL do anúncio.',
+        estilo ? `Siga este padrão visual, que é o das fotos que mais vendem nesta loja: ${estilo}.` : '',
+        refs.length ? `As ${refs.length === 1 ? 'próxima imagem é' : `próximas ${refs.length} imagens são`} SÓ referência de estilo (fundo, luz, enquadramento, ângulo e ambientação) — NÃO copie, não misture e não inclua os produtos delas; o produto da foto nova é exclusivamente o da PRIMEIRA imagem.` : '',
+        'Sem texto, logotipo ou marca d\'água que não estejam no produto original.',
+      ].filter(Boolean).join(' ');
+      const foto = await gerarImagem(instr, refs);
+      return res.status(200).json({ images: [{ url: comoDataUrl(foto), tipo: 'padrao' }] });
+    }
+
     // stage === 'tipo': uma foto do kit do Criar anúncio (o front pede vários tipos em paralelo)
     if (stage === 'tipo') {
       const TIPOS = {
