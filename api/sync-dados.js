@@ -524,6 +524,8 @@ async function enriquecerTaxasML(apiKey, contaId, t, prazo) {
 //    "resumo"): o Dashboard lê isso em vez de buscar pedido a pedido. ──
 const DIAS_RESUMO = 100;
 async function atualizarResumo(mkt, conta, resumoAtual, t, extras = []) {
+  // sem o estado anterior (leitura falhou/cortada) relê do banco — recomeçar do zero apagava os dias antigos
+  if (!resumoAtual) resumoAtual = (await sbSelect('glr_sync_estado', `marketplace=eq.${mkt}&conta_id=eq.${conta}&recurso=eq.resumo&select=cursor`))[0] || null;
   const dias = { ...(resumoAtual?.cursor?.dias || {}) };
   const hoje = dataBR(t), ontem = dataBR(t - DIA);
   const tocados = new Set([...(TOCADOS.get(`${mkt}:${conta}`) || []), hoje, ontem, ...extras]); // extras: dias que o Agente Saúde da API viu divergir
@@ -1462,6 +1464,34 @@ async function saudeAPI(apiKey, { forcar = false } = {}) {
     novo[k] = { mkt: c.mkt, id: c.id, nome: c.nome || cx?.nome || c.id, status, problemas: probs, hist, incompletoDesde,
       ultimo_dado: p?.ultimo_sucesso || null, conferido: a.conferido || null, desde: status === 'ok' ? null : (a.status === status && a.desde ? a.desde : new Date().toISOString()) };
   }
+  // Resumo diário × pedidos da base (o que Projeção, Gestores e Vendas leem): mês atual de hora em hora,
+  // 100 dias 1x por dia. Dia diferente vai para "refazer" — a próxima rodada da sincronização recalcula.
+  const conferirResumo = async x => {
+    const k = `${x.mkt}:${x.id}`, a = ant[k] || {};
+    const longo = forcar || a.resumoLongoDia !== hoje;
+    const corte = longo ? dataBR(t - (DIAS_RESUMO - 2) * DIA) : hoje.slice(0, 8) + '01';
+    const deIso = new Date(`${corte}T00:00:00-03:00`).toISOString(), ateIso = new Date(`${hoje}T00:00:00-03:00`).toISOString();
+    const porDia = {};
+    for (let off = 0; off < 60000; off += 1000) {
+      const pg = await sbSelect('glr_pedidos', `marketplace=eq.${x.mkt}&conta_id=eq.${x.id}&criado_em=gte.${encodeURIComponent(deIso)}&criado_em=lt.${encodeURIComponent(ateIso)}&situacao=eq.valido&select=criado_em&order=criado_em&limit=1000&offset=${off}`);
+      for (const r of pg) { const d = diaBRTdeISO(r.criado_em); porDia[d] = (porDia[d] || 0) + 1; }
+      if (pg.length < 1000) break;
+    }
+    const dias = res.get(k)?.cursor?.dias || {};
+    const errados = [...new Set([...Object.keys(porDia), ...Object.keys(dias)])].filter(d => d >= corte && d < hoje && (porDia[d] || 0) !== (dias[d]?.pedidos || 0)).sort();
+    if (longo) x.resumoLongoDia = hoje; else x.resumoLongoDia = a.resumoLongoDia || null;
+    if (!errados.length) { x.resumoDiv = []; return; }
+    refazer[k] = [...new Set([...(refazer[k] || []), ...errados])];
+    const persistiu = (a.resumoDiv || []).filter(d => errados.includes(d));
+    x.resumoDiv = errados;
+    const mesAtual = errados.filter(d => d >= hoje.slice(0, 8) + '01');
+    const falta = errados.reduce((s2, d) => s2 + Math.max(0, (porDia[d] || 0) - (dias[d]?.pedidos || 0)), 0);
+    x.problemas.push(`Resumo diário diferente dos pedidos em ${errados.length} dia(s)${mesAtual.length ? ` (${mesAtual.length} neste mês)` : ''}${falta ? ` — ${falta} pedido(s) não somados nas telas` : ''}. ${persistiu.length ? 'Continua diferente depois de refazer.' : 'Sendo refeito na próxima rodada da sincronização (15 min).'}`);
+    if (x.status === 'ok' || x.status === 'corrigido') { x.status = persistiu.length && mesAtual.length ? 'divergente' : 'recuperando'; x.desde = a.status === x.status && a.desde ? a.desde : new Date().toISOString(); }
+  };
+  const filaRes = Object.values(novo).filter(x => x.status !== 'erro' && x.status !== 'sem_sync');
+  let iRes = 0;
+  await Promise.all([1, 2, 3, 4, 5, 6].map(async () => { while (iRes < filaRes.length && Date.now() < prazo - 120000) { const x = filaRes[iRes++]; try { await conferirResumo(x); } catch (e) { console.warn('[saude-api] resumo', x.mkt, x.id, e.message); } } }));
   // Conferência dos pedidos (ontem e anteontem) — 1x por dia por loja Shopee/ML, quem nunca/mais antigo primeiro
   const fila = Object.values(novo).filter(x => (x.mkt === 'shopee' || x.mkt === 'ml') && x.status !== 'erro' && x.status !== 'sem_sync' && (forcar || horaBRT >= 4) && (forcar || x.conferido?.dia !== hoje))
     .sort((a, b) => String(a.conferido?.em || '').localeCompare(String(b.conferido?.em || '')));
