@@ -1960,7 +1960,8 @@ Router.register('vendas', async (params, el) => {
          </div>`;
 
     const liqCell = l.liquido != null
-      ? `<div style="text-align:right;font-size:13px;font-weight:700;color:var(--purple);">${R$(l.liquido)}<br><span style="font-size:9px;color:var(--text-muted);font-weight:400;">após taxas</span></div>`
+      ? `<div style="text-align:right;font-size:13px;font-weight:700;color:var(--purple);">${R$(l.liquido)}<br><span style="font-size:9px;color:var(--text-muted);font-weight:400;" title="${p.taxas?.estimado ? 'Valor que a Shopee informa que vai pagar; confirmado quando o pedido for concluído' : ''}">${p.taxas?.estimado ? 'estimado' : 'após taxas'}</span></div>`
+      : p.taxasPendente ? `<div style="text-align:right;font-size:11px;color:var(--yellow);" title="A Shopee ainda não informou as taxas deste pedido — a sincronização busca nos próximos minutos">aguardando<br>taxa</div>`
       : `<div style="text-align:right;font-size:12px;color:var(--text-secondary);">—</div>`;
 
     return `
@@ -1977,7 +1978,8 @@ Router.register('vendas', async (params, el) => {
               <span style="color:${cor};font-weight:600;">${p.plataforma}</span>
               <span>${p.id}</span>
               ${isCancelled ? '<span style="background:rgba(239,68,68,0.15);color:var(--red);padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;">● Cancelado</span>' : ''}
-              ${taxasAuto && !isCancelled ? '<span style="background:rgba(167,139,250,0.15);color:var(--purple);padding:1px 5px;border-radius:8px;font-size:9px;">taxas auto</span>' : ''}
+              ${taxasAuto && !isCancelled ? `<span style="background:rgba(167,139,250,0.15);color:var(--purple);padding:1px 5px;border-radius:8px;font-size:9px;">${p.taxas?.estimado ? 'taxas estimadas' : 'taxas auto'}</span>` : ''}
+              ${p.taxasPendente && !isCancelled ? '<span style="background:rgba(234,179,8,0.15);color:var(--yellow);padding:1px 5px;border-radius:8px;font-size:9px;">aguardando taxa</span>' : ''}
             </div>
           </div>
         </div>
@@ -2156,11 +2158,13 @@ Router.register('vendas', async (params, el) => {
     if (mkt === 'shopee') {
       // Shopee: chave de produto = nome (igual à busca antiga — preserva custos já salvos)
       const itens = brutos.map(i => ({ nome: i.nome || '—', qtd: parseInt(i.qtd) || 1, preco: parseFloat(i.preco) || 0, imagem: thumbs[`s:${i.item_id}`] || '', sku: i.sku || '', shopeeItemId: i.item_id }));
-      const taxas = liq != null && r.taxas ? { ...r.taxas, liquido: liq } : (r.situacao === 'valido' ? { liquido: valor, comissao: 0, taxaServico: 0, imposto: 0, frete: 0, voucher: 0 } : null);
+      // sem o valor a receber da Shopee ainda: NÃO inventa líquido = valor cheio (taxa zero) — fica pendente
+      const taxas = liq != null && r.taxas ? { ...r.taxas, liquido: liq } : null;
+      const taxasPendente = liq == null && r.situacao === 'valido';
       const frete = parseFloat(r.frete) || 0;
       return { id: r.pedido_id, plataforma: 'Shopee', contaId, shopId: r.conta_id, data: diaBR(ts), dataTs: ts,
         produto: itens.length > 1 ? `${itens[0].nome} (+${itens.length - 1})` : (itens[0]?.nome || r.pedido_id), imagem: itens[0]?.imagem || '',
-        qtd: itens.reduce((t, i) => t + i.qtd, 0) || 1, valor, valorTotal: valor + frete, freteComprador: frete, status, itens, taxas, _base: true };
+        qtd: itens.reduce((t, i) => t + i.qtd, 0) || 1, valor, valorTotal: valor + frete, freteComprador: frete, status, itens, taxas, taxasPendente, _base: true };
     }
     const tarifa = parseFloat(r.taxas?.tarifa_venda) || 0;
     const itens = brutos.map(i => ({ nome: i.nome || '—', qtd: parseInt(i.qtd) || 1, preco: parseFloat(i.preco) || 0, imagem: thumbs[i.item_id] || '', itemId: i.item_id || '', sku: i.sku || '', saleFee: parseFloat(i.tarifa_venda) || 0 }));

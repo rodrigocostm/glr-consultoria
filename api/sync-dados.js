@@ -481,7 +481,15 @@ function taxasDoEscrow(oi) {
 }
 const desdeTaxas = t => encodeURIComponent(new Date((t - 120 * DIA) * SEG).toISOString());
 async function enriquecerTaxasShopee(apiKey, shopId, t, prazo) {
-  const pend = await sbSelect('glr_pedidos', `marketplace=eq.shopee&conta_id=eq.${shopId}&status_original=eq.COMPLETED&liquido=is.null&criado_em=gte.${desdeTaxas(t)}&order=criado_em.desc&limit=300&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto`);
+  // A Shopee já informa comissão, taxa de serviço e o valor a receber (escrow_amount) desde o pagamento.
+  // Pedido ainda não concluído grava esse valor como ESTIMADO (taxas.estimado) e, quando conclui,
+  // é buscado de novo para o valor final (devolução/ajuste muda o número).
+  const sel = 'select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto,status_original';
+  const [semTaxa, aConfirmar] = await Promise.all([
+    sbSelect('glr_pedidos', `marketplace=eq.shopee&conta_id=eq.${shopId}&situacao=eq.valido&status_original=in.(READY_TO_SHIP,PROCESSED,SHIPPED,TO_CONFIRM_RECEIVE,COMPLETED,INVOICE_PENDING)&liquido=is.null&criado_em=gte.${desdeTaxas(t)}&order=criado_em.desc&limit=300&${sel}`),
+    sbSelect('glr_pedidos', `marketplace=eq.shopee&conta_id=eq.${shopId}&status_original=eq.COMPLETED&taxas->>estimado=eq.true&criado_em=gte.${desdeTaxas(t)}&order=criado_em.desc&limit=200&${sel}`).catch(() => []),
+  ]);
+  const pend = [...new Map([...semTaxa, ...aConfirmar].map(p => [p.pedido_id, p])).values()];
   let n = 0;
   for (let i = 0; i < pend.length; i += 50) {
     if (Date.now() > prazo) break;
@@ -494,7 +502,7 @@ async function enriquecerTaxasShopee(apiKey, shopId, t, prazo) {
       const oi = it.escrow_detail?.order_income || it.order_income;
       if (sn && oi) porSn[sn] = taxasDoEscrow(oi);
     }
-    const linhas = lote.filter(p => porSn[p.pedido_id]?.liquido > 0).map(p => ({ ...p, liquido: r2(porSn[p.pedido_id].liquido), taxas: porSn[p.pedido_id] }));
+    const linhas = lote.filter(p => porSn[p.pedido_id]?.liquido > 0).map(p => { const { status_original, ...base } = p; return { ...base, liquido: r2(porSn[p.pedido_id].liquido), taxas: { ...porSn[p.pedido_id], ...(status_original === 'COMPLETED' ? {} : { estimado: true }) } }; });
     if (linhas.length) { await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id'); linhas.forEach(l => tocar('shopee', shopId, l.criado_em)); n += linhas.length; }
   }
   return n;
