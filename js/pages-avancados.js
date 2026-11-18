@@ -587,7 +587,8 @@ const _projecaoDetalhe = (params, el) => {
   async function carregarBaseProj(forcar = false) {
     if (!window.BaseDados) return;
     try { baseProj = await BaseDados.carregar(forcar); } catch(e) { console.warn('[Projeção] base indisponível:', e.message); return; }
-    if (Router.currentPage !== 'projecao') return;
+    // a Projeção também aparece dentro do Perfil do Cliente: vale o painel estar na tela, não o nome da rota
+    if (!document.getElementById('pn-conteudo')) return;
     aplicarBase();
     renderTabela();
     if (typeof atualizarGrafico === 'function') setTimeout(atualizarGrafico, 50);
@@ -1779,7 +1780,7 @@ const _projecaoDetalhe = (params, el) => {
   window._projRecarregarBase = () => carregarBaseProj(true);
   if (!window._projOuvindoBase) {
     window._projOuvindoBase = true;
-    window.addEventListener('glr-base-atualizada', () => { if (Router.currentPage === 'projecao' && window._projRecarregarBase) window._projRecarregarBase(); });
+    window.addEventListener('glr-base-atualizada', () => { if (document.getElementById('pn-conteudo') && window._projRecarregarBase) window._projRecarregarBase(); });
   }
 
   // ── Auto-refresh diário às 5h — fora disso só atualiza manualmente (botão) ──
