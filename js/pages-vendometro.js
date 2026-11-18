@@ -416,6 +416,9 @@ Router.register('vendometro', (params, el) => {
   window._vmCliente = v => { st.cliente = v; GLR.ctx?.definir(v, true); st.conta = ''; st.todos = false; salvarSel(); render(); carregarHistorico(); };
   window._vmConta = v => { st.conta = v; salvarSel(); render(); carregarHistorico(); };
   // listas de cliente e conta (só clientes com conta vinculada)
+  // reescrever as opções fecha a lista aberta (o Vendômetro redesenha várias vezes enquanto as contas chegam):
+  // só troca quando as opções mudaram e nunca com a lista em uso
+  const porOpcoes = (sel, html) => { if (!sel || document.activeElement === sel || sel.dataset.html === html) return; sel.innerHTML = html; sel.dataset.html = html; };
   function montarSeletores() {
     const contas = [...contasCarteira().entries()];
     const clientes = new Map(); for (const [, ct] of contas) clientes.set(String(ct.cli.id), ct.cli.nome);
@@ -424,8 +427,8 @@ Router.register('vendometro', (params, el) => {
     if (st.conta && !doCli.some(([k]) => k === st.conta)) st.conta = '';
     const sc = document.getElementById('vm-sel-cliente'), sk = document.getElementById('vm-sel-conta');
     if (sc) sc.hidden = !!cfgPortal || oculta('nomes');
-    if (sc && !cfgPortal) sc.innerHTML = `<option value="">Todos os clientes</option>` + [...clientes].sort((a, b) => String(a[1]).localeCompare(String(b[1]))).map(([id, n]) => `<option value="${h(id)}" ${id === st.cliente ? 'selected' : ''}>${h(n)}</option>`).join('');
-    if (sk) { sk.hidden = doCli.length < 2 || oculta('nomes'); sk.innerHTML = `<option value="">Todas as contas</option>` + doCli.map(([k, ct]) => `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${MKT[ct.mkt].sigla} · ${h(ct.nome)}</option>`).join(''); }
+    if (sc && !cfgPortal) porOpcoes(sc, `<option value="">Todos os clientes</option>` + [...clientes].sort((a, b) => String(a[1]).localeCompare(String(b[1]))).map(([id, n]) => `<option value="${h(id)}" ${id === st.cliente ? 'selected' : ''}>${h(n)}</option>`).join(''));
+    if (sk) { sk.hidden = doCli.length < 2 || oculta('nomes'); porOpcoes(sk, `<option value="">Todas as contas</option>` + doCli.map(([k, ct]) => `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${MKT[ct.mkt].sigla} · ${h(ct.nome)}</option>`).join('')); }
     const nomeCli = clientes.get(st.cliente), conta = doCli.find(([k]) => k === st.conta)?.[1];
     const t = document.getElementById('vm-hoje'); if (t) t.textContent = `Vendas ${rotuloDia(periodo().dia).toLowerCase()} · ${nomeCli ? (oculta('nomes') ? (conta ? `${MKT[conta.mkt].sigla} · conta selecionada` : 'cliente selecionado') : nomeCli + (conta ? ` · ${MKT[conta.mkt].sigla} ${conta.nome}` : '')) : 'carteira GLR'}`;
     const r = document.getElementById('vm-rank-t'); if (r) r.textContent = st.cliente ? 'Ranking das contas' : 'Ranking de clientes';
