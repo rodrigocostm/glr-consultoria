@@ -403,6 +403,10 @@ Router.register('performance', (params, el) => {
 
 // ---- Projeção de Faturamento ----
 const _projecaoDetalhe = (params, el) => {
+  // cada abertura é uma instância: a anterior (outro cliente) ainda pode terminar de carregar a base
+  // em segundo plano — ela não pode mais desenhar na tela (mostrava o cliente antigo com o novo selecionado)
+  const _inst = window._projInst = {};
+  const _atual = () => window._projInst === _inst;
   const storageKey = 'glr_projecoes';
   let projecoes = [];
   try { projecoes = JSON.parse(localStorage.getItem(storageKey) || '[]'); } catch(e) {}
@@ -588,7 +592,7 @@ const _projecaoDetalhe = (params, el) => {
     if (!window.BaseDados) return;
     try { baseProj = await BaseDados.carregar(forcar); } catch(e) { console.warn('[Projeção] base indisponível:', e.message); return; }
     // a Projeção também aparece dentro do Perfil do Cliente: vale o painel estar na tela, não o nome da rota
-    if (!document.getElementById('pn-conteudo')) return;
+    if (!_atual() || !document.getElementById('pn-conteudo')) return;
     aplicarBase();
     renderTabela();
     if (typeof atualizarGrafico === 'function') setTimeout(atualizarGrafico, 50);
@@ -1086,6 +1090,7 @@ const _projecaoDetalhe = (params, el) => {
     renderTabela();
   }
   function renderTabela() {
+    if (!_atual()) return;
     const box = document.getElementById('pn-conteudo');
     if (!box) return;
     const r = calcularPainel(); _pnUltimo = r;
@@ -1716,6 +1721,7 @@ const _projecaoDetalhe = (params, el) => {
   // Gráficos (Chart.js): ritmo do mês (acumulado diário × mês anterior + linha
   // da projeção) e últimos meses × projeção. Cores do tema categórico validado.
   function atualizarGrafico() {
+    if (!_atual()) return;
     const r = _pnUltimo;
     if (!r || !window.Chart) return;
     const claro = document.body.classList.contains('light');
