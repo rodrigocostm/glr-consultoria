@@ -36,14 +36,25 @@
     const primeiro = el.firstChild;
     if (!primeiro || primeiro.nodeType !== 3) return;
     const texto = primeiro.nodeValue.replace(/^\s+/, '');
-    if (!texto || texto.length > 60) return;
-    const mkt = mktDe(texto); if (!mkt) return;
-    if (el.childElementCount > 4 || (el.textContent || '').length > 70) return; // etiqueta, não parágrafo
+    if (!texto || texto.length > 90) return;
+    let mkt = texto.length <= 60 ? mktDe(texto) : null, corte = 0;
+    if (!mkt) { // "Cliente · Shopee Loja" (GLR.nomeConta): ícone antes do marketplace, no meio do texto
+      const i = texto.indexOf(' · ');
+      if (i > 0 && i < 50) { mkt = mktDe(texto.slice(i + 3)); corte = i + 3; }
+      if (!mkt) return;
+    }
+    if (el.childElementCount > 4 || (el.textContent || '').length > 100) return; // etiqueta, não parágrafo
     if (el.closest(PULA)) return;
     const prev = el.previousElementSibling;
     if (el.querySelector(':scope > img.mkt-ic') || (prev && prev.classList?.contains('mkt-ic'))) return;
     el.dataset.mktIc = mkt;
     if (!el.getAttribute('title') && /^(ML|SH|TT|AMZ)$/.test(texto.trim())) el.setAttribute('title', NOME[mkt]);
+    if (corte) {
+      const resto = primeiro.splitText(primeiro.nodeValue.length - (texto.length - corte));
+      const t = document.createElement('template'); t.innerHTML = img(mkt);
+      el.insertBefore(t.content.firstChild, resto);
+      return;
+    }
     primeiro.nodeValue = texto;
     el.insertAdjacentHTML('afterbegin', img(mkt));
   }
