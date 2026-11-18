@@ -21,6 +21,10 @@
     const k = m[1].toLowerCase().replace(/\s+/g, '');
     return k === 'mercadolivre' || k === 'meli' || k === 'ml' ? 'ml' : k === 'shopee' || k === 'sh' ? 'shopee' : k === 'amazon' || k === 'amz' ? 'amazon' : 'tiktok';
   };
+  // nome de conta que TERMINA com o marketplace: "Zion - Shopee", "CJ Decor Shopee", "Mega Facil - ML"
+  const RE_FIM_NOME = /(?:^|[\s\-–—·|(])(mercado ?livre|shopee|amazon|tiktok(?: shop)?|meli)\s*\)?\s*$/i;
+  const RE_FIM_SIGLA = /(?:^|[\s\-–—·|(])(ML|SH|TT|AMZ)\s*\)?\s*$/;
+  const mktDoFim = t => { const m = RE_FIM_NOME.exec(t) || RE_FIM_SIGLA.exec(t); return m ? mktDe(m[1]) : null; };
   const img = mkt => `<img class="mkt-ic mkt-ic-${mkt}" src="${SRC[mkt]}" alt="" aria-hidden="true" loading="lazy">`;
 
   // ícone para usar direto no HTML; aceita 'ml', 'meli', 'mercadolivre', 'Mercado Livre', 'shopee', 'amazon', 'tiktok', 'tiktok_shop'…
@@ -41,6 +45,7 @@
     if (!mkt) { // "Cliente · Shopee Loja" (GLR.nomeConta): ícone antes do marketplace, no meio do texto
       const i = texto.indexOf(' · ');
       if (i > 0 && i < 50) { mkt = mktDe(texto.slice(i + 3)); corte = i + 3; }
+      if (!mkt && texto.length <= 60 && el.childElementCount === 0) { mkt = mktDoFim(texto); corte = 0; }
       if (!mkt) return;
     }
     if (el.childElementCount > 4 || (el.textContent || '').length > 100) return; // etiqueta, não parágrafo
