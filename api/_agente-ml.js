@@ -30,6 +30,7 @@
 // ============================================================
 
 const MAX_SUGESTOES = 15;
+const motorEscala = require('./_ml-crescimento');
 const curvaABC = require('./_curva-abc');
 const medicaoAds = require('./_medicao-ads');
 const estoqueMargem = require('./_estoque-margem');
@@ -149,6 +150,7 @@ async function vendas3x3(sbSelect, contaId, ontem, isoMenos) {
 // o contrato ("pausar"). Mover/colocar produto e as informativas não têm escrita.
 // Devolve { ok } | { ok:false, motivo } | { ok:false, bloqueado:true } (ML recusou por permissão).
 async function aplicarAcaoML(d, { cfg, contaId, mcpCall, mcApiKey }) {
+  if (d?.experimento?.requer_aprovacao) return { ok:false, motivo:'Teste em piloto: aplicar e registrar pelo gestor no painel do Mercado Livre.' };
   if (!d?.acao || d.campaign_id == null) return { ok: false };
   const nivel = k => cfg.autonomia_ml?.[k] === 'sugerir' ? 'sugerir' : 'executar';
   const de = +d.de, para = +d.para;
@@ -182,6 +184,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
   const { sbSelect, sbInsert, sbUpdate, sbUpsert, lerBase, baseCobre, baseCobreAds, somarBase, isoMenos, dataBRT, R$, mcpCall } = h;
   const contaId = String(cfg.conta_id);
   const sugestoes = [];
+  let crescimento, contextoCrescimento = () => null, resumoCrescimento = {};
   async function logar(tipo, titulo, explicacao, dados, resultado) {
     try {
       await sbInsert('glr_agente_log', { conta_id: contaId, cliente_nome: cfg.cliente_nome || null, tipo, titulo, explicacao, dados: { marketplace: 'ml', ...(dados || {}) }, resultado: resultado || 'executado', origem: 'cron' });
@@ -193,6 +196,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
   let escritaML = null;
   const aplicadas = [];
   async function tentarAplicar(d) {
+    if (d.experimento?.requer_aprovacao) return { ok: false, motivo: 'Piloto de escala: revisão e aplicação pelo gestor.' };
     if (opc.simular || escritaML === false) return { ok: false };
     const r = await aplicarAcaoML(d, { cfg, contaId, mcpCall, mcApiKey });
     if (r.ok) escritaML = true; else if (r.bloqueado) escritaML = false;
@@ -209,7 +213,9 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     const inicio = isoMenos(ontem, dias - 1);
     const diasProd = Math.max(14, dias);
     const inicioProd = isoMenos(ontem, diasProd - 1);
-    const meta = cfg.meta_acos || null;
+    const plano = (await sbSelect('glr_storage', `chave=eq.${encodeURIComponent('glr_ml_crescimento_' + contaId)}&select=dados`))[0]?.dados || {};
+    crescimento = motorEscala.configurar(plano, cfg);
+    const meta = crescimento.meta_acos;
     const roasMeta = meta ? 100 / meta : null; // ROAS equivalente à meta de ACOS
 
     // Base sincronizada (ML): taxa de cancelamento, ticket médio e TACOS do mês
@@ -224,8 +230,10 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     if (baseCobre(base, de30)) { const t30 = somarBase(base, de30, ontem); if (t30.pedidos > 0) ticketRef = t30.faturamento / t30.pedidos; }
     const mesIni = ontem.slice(0, 8) + '01';
     if (baseCobre(base, mesIni) && baseCobreAds(base, mesIni)) { const sm = somarBase(base, mesIni, ontem); if (sm.faturamento > 0) tacosMes = sm.ads / sm.faturamento * 100; }
-    // teto de ADS do cliente (Plano de ação) manda; sem ele, a meta da conta com 10% de folga
-    const tacosOk = tacosMes == null || (cfg.teto_tacos ? tacosMes <= cfg.teto_tacos : (!meta || tacosMes <= meta * 1.1));
+    // ACOS e TACOS são limites independentes; ausência de TACOS não libera escala.
+    const tacosOk = crescimento.teto_tacos != null && tacosMes != null && tacosMes < crescimento.teto_tacos;
+    const mensal = baseCobre(base, mesIni) ? somarBase(base, mesIni, ontem) : null;
+    resumoCrescimento = { tacos: tacosMes, cobertura: !!(mensal && baseCobreAds(base, mesIni)), projecao: mensal ? mensal.faturamento / +ontem.slice(8) * new Date(+ontem.slice(0,4), +ontem.slice(5,7), 0).getDate() : null };
     // Mural dos agentes de Estoque e de Margem (calculado pelo sincronizador)
     const sinais = h.lerSinais ? await h.lerSinais('ml', contaId).catch(() => null) : null;
     const avisoDe = ids => sinais ? estoqueMargem.avisosDe(sinais, ids) : null;
@@ -249,11 +257,20 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     // Nas regras de produto e de campanha (1 e 2), sugerir só PROPÕE (candidatos); o especialista
     // escolhe o pacote do dia e só as escolhidas vão para a Caixa de decisões.
     const candidatos = [];
+    const campanhasEmTeste = new Set(logs.filter(l => l.resultado === 'executado' && l.dados?.experimento && !l.dados.medicao && Date.parse(l.dados.aplicado_em || l.criado_em) > Date.now()-28*864e5).map(l=>String(l.dados.campaign_id)));
+    const campanhasNestaRodada = new Set();
     let coletando = false;
     async function sugerir(chave, titulo, explicacao, dados) {
+      if (dados && !dados.crescimento) {
+        const proposta = motorEscala.experimento(dados, contextoCrescimento(dados), crescimento, resumoCrescimento);
+        if (proposta.bloqueado) return false;
+        if (proposta.escala && !crescimento.piloto) return false;
+        dados = proposta.dados;
+      }
+      if (dados?.experimento && campanhasEmTeste.has(String(dados.campaign_id))) return false;
       if (dados && dados.impacto != null) {
         dados.impacto = Math.max(0, Math.round(dados.impacto));
-        dados.prioridade = Math.round(dados.impacto * (dados.impacto_tipo === 'economia' ? 1 : 0.1));
+        if (!dados.crescimento) dados.prioridade = Math.round(dados.impacto * (dados.impacto_tipo === 'economia' ? 1 : 0.1));
       }
       if (coletando) {
         if ((ocupadas.has(chave) && !opc.simular) || candidatos.some(c => c.chave === chave)) return false; // simulação: considera também o que já está pendente
@@ -261,6 +278,15 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         return true;
       }
       if (!livre(chave)) return false;
+      if (dados.experimento && dados.campaign_id != null) {
+        if (campanhasNestaRodada.has(String(dados.campaign_id))) return false;
+        campanhasNestaRodada.add(String(dados.campaign_id));
+      }
+      if (dados.experimento && dados.de != null && dados.para != null) {
+        titulo = `Teste controlado: ${titulo.replace(/^Sugestão:\s*/, '')}`;
+        dados.justificativa_original = explicacao;
+        explicacao = `Hipótese: ${dados.experimento.hipotese}. Ajuste proposto: ${dados.de} → ${dados.para}. ACOS observado: ${pctTxt(dados.acos)}; limite do teste: ${pctTxt(dados.experimento.meta_acos)}; teto de TACOS: ${pctTxt(dados.experimento.teto_tacos)}. ${dados.crescimento?.motivo || ''}. ${dados.experimento.criterio_recuo} Comparar 7 dias antes e 7 depois, com mais 14 dias para maturação. Não é promessa de resultado.`;
+      }
       ocupadas.add(chave);
       const exec = await tentarAplicar(dados);
       if (exec.ok) {
@@ -418,7 +444,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
       const d = l.dados || {};
       if (l.resultado !== 'executado' || d.medicao || !d.acao || d.acao === 'abc_queda') return false;
       const ap = d.aplicado_dia || (d.aplicado_em ? diaBRT(d.aplicado_em) : null);
-      return ap && isoMenos(ap, -7) <= ontem;
+      return ap && isoMenos(ap, -(d.experimento?.medir_apos_dias || 7)) <= ontem;
     });
     const porDia = new Map();
     for (const l of aMedir) { const d = l.dados; const ap = d.aplicado_dia || diaBRT(d.aplicado_em); (porDia.get(ap) || porDia.set(ap, []).get(ap)).push(l); }
@@ -437,8 +463,21 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           const d = l.dados;
           const alvo = d.acao === 'adicionar_produto' ? (d.destino_id || d.campaign_id) : d.campaign_id;
           const a = met(antes, alvo), b = met(depois, alvo);
-          const { veredito, resumo } = medicaoAds.avaliar(d.acao === 'pausar' ? 'pausar' : CONTER(d) ? 'conter' : 'acelerar', a, b, meta, R$);
-          const dados = { ...d, medicao: { campaign_id: alvo, aplicado_dia: ap, antes: a, depois: b, veredito, resumo, medido_em: new Date().toISOString() } };
+          let resultado = medicaoAds.avaliar(d.acao === 'pausar' ? 'pausar' : CONTER(d) ? 'conter' : 'acelerar', a, b, meta, R$);
+          if (d.experimento) {
+            const total = async (lista,de,ate) => {
+              let m = lista.find(c => String(c.id) === String(alvo))?.metrics;
+              if (m?.organic_units_amount == null) {
+                const r=await mcpCall(mcApiKey,'raw',{method:'GET',meliUserId:contaId,path:`/advertising/MLB/product_ads/campaigns/${alvo}?date_from=${de}&date_to=${ate}&metrics=cost,total_amount,organic_units_amount`}).catch(()=>null);
+                m=(r?.data || r)?.metrics;
+              }
+              return m && m.organic_units_amount != null && m.total_amount != null && m.cost != null ? { total:(+m.total_amount + +m.organic_units_amount)*(1-taxaCancel),ads:+m.cost } : null;
+            };
+            const [totalAntes,totalDepois]=await Promise.all([total(antes,isoMenos(ap,7),isoMenos(ap,1)),total(depois,isoMenos(ap,-1),isoMenos(ap,-7))]);
+            const sobreposta = logs.some(o => o.id !== l.id && o.resultado === 'executado' && String(o.dados?.campaign_id) === String(alvo) && (o.dados?.aplicado_em || o.criado_em) >= isoMenos(ap, 7) && (o.dados?.aplicado_em || o.criado_em).slice(0,10) <= isoMenos(ap,-7));
+            resultado = motorEscala.medir(totalAntes, totalDepois, d.experimento, d.eventos_contexto || [], sobreposta);
+          }
+          const dados = { ...d, medicao: { campaign_id: alvo, aplicado_dia: ap, antes: a, depois: b, ...resultado, medido_em: new Date().toISOString() } };
           try { await sbUpdate('glr_agente_log', `id=eq.${l.id}`, { dados }); l.dados = dados; medidas++; } catch (e) {}
         }
       } catch (e) { /* medição é bônus — tenta de novo amanhã */ }
@@ -473,6 +512,28 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     const pausaValida = new Set(); // famílias que ainda merecem pausa — as pendentes fora daqui vencem
     const analisadas = new Set();
 
+    const avisoCrescimento = f => {
+      const a=avisoDe(f.itens); if (!a) return null;
+      const itens=f.itens.map(id=>sinais?.itens?.[String(id)]);
+      if (itens.some(i=>i?.aa == null)) a.aa=null;
+      if (itens.some(i=>!i?.ne)) { a.ne=null; a.dias=null; a.estoque=null; }
+      else if (itens.some(i=>i.ne==='zerado' || i.ne==='critico' || (i.d!=null && i.d<=10))) { a.ne='critico'; a.dias=Math.min(...itens.filter(i=>i.d!=null).map(i=>i.d)); }
+      return a;
+    };
+    const familiasCrescimento = C.flatMap(x => x.familias.map(f => ({ ...motorEscala.classificar(f, avisoCrescimento(f), crescimento), familia: f.chave, nome: f.nome, campanha_id: x.id, campanha: x.nome, item_ids: f.itens, unidades: f.unidades, cliques: f.cliques, gasto: f.gasto, faturamento_ads: f.vendasAj })));
+    contextoCrescimento = d => {
+      const lista = familiasCrescimento.filter(f => d.familia ? String(f.familia) === String(d.familia) : d.item_ids?.length ? d.item_ids.some(id => f.item_ids.some(i=>String(i)===String(id))) : String(f.campanha_id) === String(d.campaign_id));
+      if (!lista.length) return null;
+      const principal = [...lista].sort((a,b) => b.faturamento_ads - a.faturamento_ads)[0];
+      const todasEscalam = lista.every(f => f.grupo === 'escalar');
+      const peso = lista.reduce((s,f) => s + f.faturamento_ads, 0);
+      return { ...principal, grupo: todasEscalam ? 'escalar' : principal.grupo === 'escalar' ? 'desenvolver' : principal.grupo,
+        limite_acos: lista.every(f => f.limite_acos != null) ? Math.min(...lista.map(f=>f.limite_acos)) : null,
+        margem_antes_ads: lista.every(f => f.margem_antes_ads != null) && peso > 0 ? lista.reduce((s,f)=>s+f.faturamento_ads*f.margem_antes_ads,0)/peso : null,
+        confianca: lista.some(f=>f.confianca==='baixa') ? 'baixa' : lista.every(f=>f.confianca==='alta') ? 'alta' : 'media',
+        bloqueios: [...new Set(lista.flatMap(f=>f.bloqueios))] };
+    };
+    if (!opc.simular && sbUpsert) await sbUpsert('glr_sync_estado', { marketplace:'ml', conta_id:contaId, recurso:'crescimento', cursor:{ versao:1, em:new Date().toISOString(), config:crescimento, mensal:resumoCrescimento, familias:familiasCrescimento }, ultimo_sucesso:new Date().toISOString() }, 'marketplace,conta_id,recurso').catch(e=>console.warn('[ML crescimento] snapshot:',e.message));
     coletando = !opc.soMomento;
     // ── 1) PRODUTOS dentro das campanhas ── (fora da rodada só da revisão de 3 dias)
     // em ordem de gasto na conta inteira, para as poucas pausas irem para o maior desperdício
@@ -484,7 +545,8 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         const chave = `p:${f.chave}`;
         const aviso = avisoDe(f.itens);
         const metaMargem = aviso?.aa != null && meta && aviso.aa < meta ? Math.max(0.5, aviso.aa) : null;
-        const metaFam = metaMargem ?? meta;
+        const contextoFam = contextoCrescimento({ familia: f.chave });
+        const metaFam = contextoFam?.limite_acos != null ? Math.min(metaMargem ?? meta ?? Infinity, contextoFam.limite_acos) : metaMargem ?? meta;
         // 1-0) Sem estoque e ainda gastando → tirar da campanha até repor
         if (aviso?.ne === 'zerado') {
           pausaValida.add(f.chave);
@@ -633,10 +695,10 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         const prejuizo = limMargem != null && acos > limMargem, muitoAcima = acos > meta * 2;
         // O TACOS da própria campanha manda: dentro do teto, não aperta (só se vende no prejuízo da margem).
         // Sem ele, vale o TACOS do mês; sem nenhum TACOS, não aperta sem prova (dobro da meta ou contenção forte).
-        const tetoCamp = cfg.teto_tacos || meta;
+        const tetoCamp = crescimento.teto_tacos;
         const segura = prejuizo ? null
-          : x.tacos30 != null ? (x.tacos30 <= tetoCamp ? `o TACOS da campanha (${r1(x.tacos30)}% em 30 dias) está dentro ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `da meta (${meta}%)`}` : null)
-          : !forte && !muitoAcima && (tacosMes == null || tacosOk) ? (tacosMes == null ? 'sem o TACOS da campanha e do mês não há prova de que apertar compensa' : `o TACOS do mês (${r1(tacosMes)}%) está dentro ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `do limite (meta ${meta}%)`} e a campanha não passa do dobro da meta`)
+          : x.tacos30 != null && tetoCamp != null ? (x.tacos30 <= tetoCamp ? `o TACOS da campanha (${r1(x.tacos30)}% em 30 dias) está dentro do teto de TACOS (${crescimento.teto_tacos ?? 'não definido'}%)` : null)
+          : !forte && !muitoAcima && (tacosMes == null || tacosOk) ? (tacosMes == null ? 'sem o TACOS da campanha e do mês não há prova de que apertar compensa' : `o TACOS do mês (${r1(tacosMes)}%) está dentro do teto de TACOS (${crescimento.teto_tacos ?? 'não definido'}%) e a campanha não passa do dobro da meta`)
           : null;
         if (segura) {
           colaboracoes.push({ de: 'faturamento', texto: `não sugeri apertar "${x.nome}" (ACOS ${acosTxt}): ${segura}${limMargem != null ? ` e o ACOS não passa do limite da margem (${r1(limMargem)}%)` : ''} — apertar só tiraria venda` });
@@ -645,7 +707,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           continue;
         }
         const motivoTacos = prejuizo ? ` A campanha passa do que a margem do produto principal aguenta (${r1(limMargem)}%) — vende no prejuízo, por isso vale apertar.`
-          : x.tacos30 != null ? ` O TACOS da campanha (${r1(x.tacos30)}% em 30 dias) passa ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `da meta (${meta}%)`} — por isso vale apertar.`
+          : x.tacos30 != null ? ` O TACOS da campanha (${r1(x.tacos30)}% em 30 dias) passa do teto de TACOS (${crescimento.teto_tacos ?? 'não definido'}%) — por isso vale apertar.`
           : tacosMes != null ? ` O TACOS do mês (${r1(tacosMes)}%) ${tacosOk ? 'está dentro do limite, mas a campanha está a mais que o dobro da meta' : 'está acima do limite'} — por isso vale apertar.` : '';
         const passo = forte ? 0.25 : 0.15;
         if (x.rentab && x.roasAlvo > 0) {
@@ -707,7 +769,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
         let a3 = 0, b3 = 0;
         for (const an of x.anuncios) if (an.status === 'active') { const v = v3.get(String(an.item_id)); if (v) { a3 += v.a; b3 += v.b; } }
         const subindo = a3 + b3 >= 200 && b3 >= a3 * 1.2 && b3 - a3 >= 100, caindo = a3 + b3 >= 200 && b3 <= a3 * 0.8 && a3 - b3 >= 100;
-        const bloq = seguraEstoque(avisoCamp) ? `o principal produto ${estoqueTxt(avisoCamp)}` : repTxt(avisoCamp) || qaTxt(avisoCamp) || (!tacosOk ? `o TACOS do mês (${r1(tacosMes)}%) está acima ${cfg.teto_tacos ? `do teto de ADS do cliente (${cfg.teto_tacos}%)` : `da meta (${meta}%)`}` : null);
+        const bloq = seguraEstoque(avisoCamp) ? `o principal produto ${estoqueTxt(avisoCamp)}` : repTxt(avisoCamp) || qaTxt(avisoCamp) || (!tacosOk ? `o TACOS do mês (${r1(tacosMes)}%) está acima do teto de TACOS (${crescimento.teto_tacos ?? 'não definido'}%)` : null);
         if ((subindo || caindo) && acos <= meta && !bloq) {
           const moTxt = `a venda dos anúncios da campanha (orgânico + ADS) foi de ${R$(a3)} nos 3 dias anteriores para ${R$(b3)} nos últimos 3 (${b3 >= a3 ? '+' : '−'}${Math.abs(a3 > 0 ? (b3 / a3 - 1) * 100 : 100).toFixed(0)}%)`;
           const porque = subindo ? `${moTxt}, com ACOS de ${acosTxt} dentro da meta (${meta}%) e TACOS com folga — acelerar para vender mais` : `${moTxt}, com ACOS de ${acosTxt} dentro da meta (${meta}%) — reforçar a exposição antes que a queda continue`;
@@ -763,7 +825,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     if (candidatos.length) {
       const conta = {
         cliente: cfg.cliente_nome || null, hoje: hojeIso, janela_campanhas_dias: dias, janela_produtos_dias: diasProd,
-        meta_acos_conta: meta, teto_tacos_cliente: cfg.teto_tacos || null, tacos_mes: tacosMes == null ? null : r1(tacosMes), taxa_cancelamento_pct: r1(taxaCancel * 100),
+        meta_acos_conta: meta, teto_tacos_cliente: crescimento.teto_tacos, meta_faturamento_conta: crescimento.meta_faturamento, projecao_mensal: resumoCrescimento.projecao, piloto_escala: crescimento.piloto, tacos_mes: tacosMes == null ? null : r1(tacosMes), taxa_cancelamento_pct: r1(taxaCancel * 100),
         campanhas: C.map(x => ({ id: x.id, nome: x.nome, estrategia: x.c.strategy || null, roas_objetivo: x.roasAlvo ? r1(x.roasAlvo) : null, orcamento_dia: x.budget, gasto_janela: r1(x.gasto), acos_sem_cancelados: x.acos == null || x.acos === Infinity ? null : r1(x.acos), unidades_ads: x.unidades,
           acos_30d_painel: x.acos30 != null ? r1(x.acos30) : null, tacos_campanha_30d: x.tacos30 != null ? r1(x.tacos30) : null, idade_dias: Number.isFinite(x.idadeDias) ? Math.floor(x.idadeDias) : null, alterada_ha_dias: Number.isFinite(x.mudouHa) ? Math.floor(x.mudouHa) : null, em_aprendizado: x.aprendendo, alterada_recente: x.recente,
           impressoes: x.share ? { ganha_pct: Math.round(x.share.ganha * 100), topo_pct: Math.round(x.share.topo * 100), perdida_orcamento_pct: Math.round(x.share.orcamento * 100), perdida_classificacao_pct: Math.round(x.share.classificacao * 100), acos_referencia_categoria: x.share.benchmark } : null })),
@@ -843,7 +905,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
     }
     const nProdutos = C.reduce((s, x) => s + x.familias.length, 0);
     await logar('sistema', `Análise ML concluída — ${aplicadas.length ? `${aplicadas.length} aplicada(s) pelo agente, ` : ''}${sugestoes.length} sugestão(ões)`,
-      `${escritaML === false ? 'O Mercado Livre ainda recusou a escrita em Product Ads por integração (permissão), então as ações ficaram como sugestão para aplicar no painel. ' : ''}Analisadas ${C.length} campanhas ativas e ${nProdutos} produtos dentro delas (campanhas: ${dias} dias; produtos: ${diasProd} dias; ${R$(C.reduce((s, x) => s + x.gasto, 0))} investidos na janela da campanha). ${tacosMes != null ? `TACOS do mês: ${r1(tacosMes)}% (meta ${meta ?? '—'}%). ` : ''}${taxaCancel > 0.005 ? `ACOS sem cancelados (cancelamentos/devoluções da loja: ${r1(taxaCancel * 100)}%). ` : ''}${sugestoes.length >= MAX_SUGESTOES ? `Parou em ${MAX_SUGESTOES} sugestões para não lotar a fila — o resto vem na próxima análise. ` : ''}${detectadas ? `${detectadas} sugestão(ões) já aplicada(s) no painel detectada(s) pela leitura das campanhas. ` : ''}${medidas ? `${medidas} resultado(s) medido(s) (7 dias antes × 7 dias depois). ` : ''}${expiradas ? `${expiradas} sugestão(ões) com mais de 7 dias venceram e foram refeitas com números novos quando ainda valiam. ` : ''}Modo copiloto: aplique no painel do ML.`,
+      `${escritaML === false ? 'O Mercado Livre ainda recusou a escrita em Product Ads por integração (permissão), então as ações ficaram como sugestão para aplicar no painel. ' : ''}Analisadas ${C.length} campanhas ativas e ${nProdutos} produtos dentro delas (campanhas: ${dias} dias; produtos: ${diasProd} dias; ${R$(C.reduce((s, x) => s + x.gasto, 0))} investidos na janela da campanha). ${tacosMes != null ? `TACOS do mês: ${r1(tacosMes)}% (teto ${crescimento.teto_tacos ?? '—'}%). ` : ''}${taxaCancel > 0.005 ? `ACOS sem cancelados (cancelamentos/devoluções da loja: ${r1(taxaCancel * 100)}%). ` : ''}${sugestoes.length >= MAX_SUGESTOES ? `Parou em ${MAX_SUGESTOES} sugestões para não lotar a fila — o resto vem na próxima análise. ` : ''}${detectadas ? `${detectadas} sugestão(ões) já aplicada(s) no painel detectada(s) pela leitura das campanhas. ` : ''}${medidas ? `${medidas} resultado(s) medido(s) (7 dias antes × 7 dias depois). ` : ''}${expiradas ? `${expiradas} sugestão(ões) com mais de 7 dias venceram e foram refeitas com números novos quando ainda valiam. ` : ''}Modo copiloto: aplique no painel do ML.`,
       { campanhas: C.length, produtos: nProdutos, sugestoes: sugestoes.length, aplicadas: aplicadas.length, escrita_ml: escritaML === null ? 'nao_testada' : escritaML ? 'liberada' : 'bloqueada', tacos_mes: tacosMes, limite_pausa: limitePausa, taxa_cancelamento: taxaCancel, detectadas, medidas, expiradas }, 'executado');
     return { conta_id: contaId, marketplace: 'ml', campanhas: C.length, produtos: nProdutos, sugestoes: sugestoes.length, aplicadas: aplicadas.length, escrita_ml: escritaML, tacos_mes: tacosMes, detectadas, medidas, expiradas };
   } catch (e) {

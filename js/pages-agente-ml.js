@@ -20,6 +20,7 @@ Router.register('agente-ml', (params, el) => {
   const diasMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
 
   const state = {
+    planos: {}, mapas: {}, planosErro: false, grupoEscala: 'todos',
     carregando: true, contasML: [], configs: [], logs: [], base: null,
     aberta: (() => { try { return localStorage.getItem('glr_aml_conta') || null; } catch (e) { return null; } })(),
     diario: {}, metResumo: 'vendas',
@@ -40,17 +41,23 @@ Router.register('agente-ml', (params, el) => {
     const cli = GLR.ctx?.clienteDaConta('ml', id); if (!cli) return null;
     try { const v = parseFloat(JSON.parse(localStorage.getItem('glr_metas_tacos') || '{}')[cli]); return v > 0 ? v : null; } catch (e) { return null; }
   };
+  const tetoConta = id => state.planos[String(id)]?.teto_tacos ?? tetoCliente(id);
   const pendentes = id => state.logs.filter(l => String(l.conta_id) === String(id) && l.tipo === 'alerta' && l.resultado === 'so_alerta' && !l.dados?.promo_aprovar); // promoção pela meta fica na Caixa de decisões
 
   async function carregar() {
     state.carregando = true; render();
     try {
-      const [contas, cfg, logs] = await Promise.all([
+      const [contas, cfg, logs, planos, mapas] = await Promise.all([
         MarketplaceAPI.listAccounts().catch(() => []),
         _sb.from('glr_agente_config').select('*').eq('marketplace', 'ml'),
         _sb.from('glr_agente_log').select('*').eq('dados->>marketplace', 'ml').order('criado_em', { ascending: false }).limit(800),
+        _sb.from('glr_storage').select('chave,dados').like('chave','glr_ml_crescimento_%'),
+        _sb.from('glr_sync_estado').select('conta_id,cursor').eq('marketplace','ml').eq('recurso','crescimento'),
       ]);
       state.contasML = (contas || []).filter(c => ['meli', 'ml', 'mercadolivre'].includes(String(c.marketplace || '').toLowerCase()));
+      state.planosErro = !!planos.error;
+      if (!planos.error) state.planos = Object.fromEntries((planos.data || []).filter(x=>x.chave.startsWith('glr_ml_crescimento_')).map(x=>[x.chave.slice('glr_ml_crescimento_'.length),x.dados]));
+      state.mapas = Object.fromEntries((mapas.data || []).map(x=>[String(x.conta_id),x.cursor]));
       state.configs = cfg.data || [];
       state.logs = logs.data || [];
       try { state.base = window.BaseDados ? await BaseDados.carregar() : null; } catch (e) { state.base = null; }
@@ -196,13 +203,29 @@ Router.register('agente-ml', (params, el) => {
     const l = state.logs.find(x => String(x.id) === String(logId)); if (!l) return;
     state.processando = logId; render();
     try {
-      const dados = { ...(l.dados || {}), [resultado === 'executado' ? 'aplicado_em' : 'descartado_em']: new Date().toISOString() };
+      const eventos = resultado === 'executado' && l.dados?.experimento ? prompt('Houve promoção, reposição, mudança de preço ou data especial? Separe por vírgulas. Deixe vazio se não houve.') : '';
+      if (eventos === null) { state.processando=null; render(); return; }
+      const dados = { ...(l.dados || {}), ...(l.dados?.experimento && resultado === 'executado' ? {eventos_contexto:String(eventos || '').split(',').map(x=>x.trim()).filter(Boolean).slice(0,10)} : {}), [resultado === 'executado' ? 'aplicado_em' : 'descartado_em']: new Date().toISOString() };
       const { error } = await _sb.from('glr_agente_log').update({ resultado, dados }).eq('id', l.id);
       if (error) throw error;
       l.resultado = resultado; l.dados = dados;
     } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
     state.processando = null; render();
   }
+
+  async function registrarContexto(logId) {
+    const l=state.logs.find(x=>String(x.id)===String(logId)); if (!l?.dados?.experimento) return;
+    const texto=prompt('Promoção, reposição, preço ou outro evento no período do teste (separe por vírgulas):',(l.dados.eventos_contexto || []).join(', '));
+    if (texto===null) return;
+    const eventos=texto.split(',').map(x=>x.trim().slice(0,200)).filter(Boolean).slice(0,10);
+    const dados={...l.dados,eventos_contexto:eventos};
+    // Recalcular na próxima análise; não reaproveitar um veredito sem o novo contexto.
+    delete dados.medicao;
+    const {error}=await _sb.from('glr_agente_log').update({dados}).eq('id',l.id);
+    if(error) {alert('Não consegui registrar o contexto: '+error.message);return;}
+    l.dados=dados;render();
+  }
+  window._amlContexto=registrarContexto;
 
   async function marcarGrupo(ids) {
     for (const id of String(ids).split(',').filter(Boolean)) await marcar(id, 'executado');
@@ -222,11 +245,17 @@ Router.register('agente-ml', (params, el) => {
       alerta_variacao_pct: 30, janela_decisao_dias: 1, notas: v('aml-notas') || '',
       atualizado_em: new Date().toISOString(),
     };
-    if (row.meta_acos == null) { alert('Defina a meta de TACOS/ACOS — é ela que guia as sugestões.'); return; }
+    if (!(row.meta_acos > 0 && row.meta_acos < 100)) { alert('Defina a meta de ACOS entre 0 e 100%.'); return; }
+    if (state.planosErro) { alert('Não foi possível ler o plano de escala. Recarregue antes de salvar.'); return; }
+    const plano = { versao:1, piloto:!!document.getElementById('aml-piloto')?.checked, teto_tacos:num('aml-teto-tacos'), meta_faturamento:num('aml-meta-fat'), margem_reserva:num('aml-margem-reserva'), passo_max:num('aml-passo'), limites_grupo:Object.fromEntries(['escalar','destravar','desenvolver','conter'].map(g=>[g,num('aml-limite-'+g)])) };
+    if ([plano.teto_tacos,...Object.values(plano.limites_grupo)].some(v=>v!=null && !(v>0 && v<100)) || (plano.margem_reserva!=null && !(plano.margem_reserva>=0 && plano.margem_reserva<100)) || (plano.meta_faturamento!=null && plano.meta_faturamento<0) || (plano.passo_max!=null && !(plano.passo_max>=5 && plano.passo_max<=25))) { alert('Confira os percentuais e a meta. O limite por teste deve ficar entre 5 e 25%.'); return; }
+    if (plano.piloto && (!plano.teto_tacos || plano.margem_reserva==null || !plano.meta_faturamento)) { alert('Para ativar o piloto, informe meta de faturamento desta conta, teto de TACOS e margem mínima após ADS.'); return; }
     state.salvando = true; render();
     try {
       const { error } = await _sb.from('glr_agente_config').upsert(row, { onConflict: 'conta_id' });
       if (error) throw error;
+      const salvoPlano = await _sb.from('glr_storage').upsert({ chave:'glr_ml_crescimento_'+contaId, dados:plano }, {onConflict:'chave'});
+      if (salvoPlano.error) throw new Error('A configuração de ACOS foi salva, mas o plano de escala não: '+salvoPlano.error.message);
       state.aberta = String(contaId); state.editando = false;
       try { localStorage.setItem('glr_aml_conta', state.aberta); } catch (e) {}
     } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
@@ -240,12 +269,12 @@ Router.register('agente-ml', (params, el) => {
     const rows = [], semMeta = [];
     for (const tr of linhas) {
       const id = tr.dataset.conta, meta = parseFloat(String(tr.querySelector('input[inputmode]')?.value || '').replace(',', '.'));
-      if (!(meta > 0)) { semMeta.push(nomeDe(id)); continue; }
+      if (!(meta > 0 && meta < 100)) { semMeta.push(nomeDe(id)); continue; }
       rows.push({ conta_id: String(id), marketplace: 'ml', cliente_nome: nomeDe(id), ativo: true, meta_acos: meta, regra_pausa_acos: null,
         regra_pausa_dias: 7, dias_maturacao_campanha: 7, orcamento_min: null, orcamento_max: null,
         alerta_variacao_pct: 30, janela_decisao_dias: 1, notas: '', atualizado_em: new Date().toISOString() });
     }
-    if (semMeta.length) { alert(`Defina a meta de TACOS de: ${semMeta.join(', ')} — ou desmarque essas contas.`); return; }
+    if (semMeta.length) { alert(`Defina a meta de ACOS de: ${semMeta.join(', ')} — ou desmarque essas contas.`); return; }
     if (!rows.length) { alert('Marque pelo menos uma conta.'); return; }
     state.salvando = true; render();
     try {
@@ -286,7 +315,7 @@ Router.register('agente-ml', (params, el) => {
         ${met('acos', 'ACOS', pct(acos), cfg?.meta_acos ? `meta ${pct(cfg.meta_acos)}` : '', corTacos(acos, cfg?.meta_acos))}
         ${met('roas', 'ROAS', gasto > 0 ? roasX(vendas / gasto) : '—', cfg?.meta_acos ? `objetivo ${roasX(100 / cfg.meta_acos)}` : '')}
         ${met('fat', 'Faturamento da loja', m ? R$(m.fat) : '—', m ? `projeção ${R$(m.proj).replace(/,\d{2}$/, '')}` : 'base automática sem o mês')}
-        ${met('tacos', 'TACOS', pct(m?.tacos), `meta ${pct(cfg?.meta_acos)}`, corTacos(m?.tacos, cfg?.meta_acos))}
+        ${met('tacos', 'TACOS', pct(m?.tacos), `teto ${pct(tetoConta(id))}`, corTacos(m?.tacos, tetoConta(id)))}
       </div>
       ${renderGrafico(id, m, cfg)}
     </div>`;
@@ -319,7 +348,8 @@ Router.register('agente-ml', (params, el) => {
     };
     const cur = Array.from({ length: hoje.getDate() }, (_, i) => valor(iso(hoje.getFullYear(), hoje.getMonth(), i + 1)));
     const prev = Array.from({ length: diasAnt }, (_, i) => valor(iso(ini.getFullYear(), ini.getMonth(), i + 1)));
-    const meta = M.meta && cfg?.meta_acos ? M.meta(+cfg.meta_acos) : null;
+    const alvo = state.metResumo === 'tacos' ? tetoConta(id) : cfg?.meta_acos;
+    const meta = M.meta && alvo ? M.meta(+alvo) : null;
     const todos = [...cur, ...prev, meta].filter(v => v != null);
     if (!todos.length) return vazio('Sem dados por dia para esta métrica.');
     // escala "redonda" para os rótulos do eixo
@@ -388,14 +418,14 @@ Router.register('agente-ml', (params, el) => {
     const com = lista.filter(x => x.teto).length;
     return `<div class="card" style="padding:18px 20px;">
       <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Ligar o agente nas contas do ML que faltam</div>
-      <div class="aml-sub" style="margin-bottom:12px;">A meta de TACOS vem do teto de ADS do cliente (Plano de ação) — ${com} de ${lista.length} contas já têm. As outras ficam desmarcadas: preencha a meta para incluir. Cada conta marcada passa a ser analisada todo dia às 07:00 (só sugere; você aplica no ML). Conta sem campanha de ADS não recebe sugestão. Contenção forte, orçamento mínimo e máximo ficam vazios — ajuste depois em Guardrails.</div>
+      <div class="aml-sub" style="margin-bottom:12px;">Informe a meta de ACOS de cada conta separadamente. O teto de TACOS do cliente será usado somente como limite de TACOS; ele está disponível em ${com} de ${lista.length} contas. Cada conta marcada passa a ser analisada todo dia às 07:00 (só sugere; você aplica no ML). Conta sem campanha de ADS não recebe sugestão. Contenção forte, orçamento mínimo e máximo ficam vazios — ajuste depois em Guardrails.</div>
       <div style="overflow-x:auto;"><table class="aml-lote">
-        <thead><tr><th></th><th>Conta</th><th>Meta de TACOS</th><th>De onde veio</th></tr></thead>
+        <thead><tr><th></th><th>Conta</th><th>Meta de ACOS</th><th>De onde veio</th></tr></thead>
         <tbody>${lista.map(x => `<tr class="aml-lote-linha" data-conta="${h(x.id)}">
-          <td><input type="checkbox" id="aml-lote-${h(x.id)}" ${x.teto ? 'checked' : ''}></td>
+          <td><input type="checkbox" id="aml-lote-${h(x.id)}" ${''}></td>
           <td><label for="aml-lote-${h(x.id)}"><b>${h(x.nome)}</b> <span class="aml-sub">${h(x.id)}</span></label></td>
-          <td><div style="display:flex;gap:6px;align-items:center;"><input class="form-control" style="width:80px;" inputmode="decimal" value="${x.teto ?? ''}" oninput="this.closest('tr').querySelector('input[type=checkbox]').checked=!!this.value.trim()"> %</div></td>
-          <td class="aml-sub">${x.teto ? 'teto de ADS do cliente' : (GLR.ctx?.clienteDaConta('ml', x.id) ? 'cliente sem teto de ADS no Plano de ação' : 'conta sem cliente vinculado')}</td>
+          <td><div style="display:flex;gap:6px;align-items:center;"><input class="form-control" style="width:80px;" inputmode="decimal" value="${''}" oninput="this.closest('tr').querySelector('input[type=checkbox]').checked=!!this.value.trim()"> %</div></td>
+          <td class="aml-sub">${x.teto ? 'TACOS do cliente disponível; informe o ACOS separadamente' : (GLR.ctx?.clienteDaConta('ml', x.id) ? 'cliente sem teto de ADS no Plano de ação' : 'conta sem cliente vinculado')}</td>
         </tr>`).join('')}</tbody>
       </table></div>
       <div style="display:flex;gap:10px;margin-top:14px;">
@@ -404,22 +434,48 @@ Router.register('agente-ml', (params, el) => {
       </div>
     </div>`;
   }
+  function renderCrescimento(id) {
+    const plano = state.planos[id] || {}, mapa = state.mapas[id];
+    const grupos = {escalar:'Escalar',destravar:'Destravar',desenvolver:'Desenvolver',conter:'Conter'};
+    const familias = mapa?.familias || [];
+    const lista = familias.filter(f=>state.grupoEscala==='todos' || f.grupo===state.grupoEscala).sort((a,b)=>b.faturamento_ads-a.faturamento_ads);
+    return `<section class="card" style="margin-bottom:18px;padding:20px;">
+      <div class="aml-t">Mapa de crescimento · ${plano.piloto ? 'piloto de sugestões ativo' : 'observação'}</div>
+      <div class="aml-sub">ACOS: ${pct(cfgDe(id)?.meta_acos)} · Teto de TACOS: ${pct(plano.teto_tacos ?? tetoCliente(id))} · Meta mensal desta conta: ${plano.meta_faturamento ? R$(plano.meta_faturamento) : 'não definida'} · Projeção na análise: ${mapa?.mensal?.projecao != null ? R$(mapa.mensal.projecao) : 'sem cobertura'}.</div>
+      <div class="aml-filtros" style="margin-top:12px;">${[['todos','Todos'],...Object.entries(grupos)].map(([g,n])=>`<button class="btn btn-secondary btn-sm" aria-pressed="${state.grupoEscala===g}" onclick="window._amlGrupoEscala('${g}')">${n} (${g==='todos' ? familias.length : familias.filter(f=>f.grupo===g).length})</button>`).join('')}</div>
+      ${mapa ? `<div class="aml-sub">Análise de ${h(new Date(mapa.em).toLocaleString('pt-BR'))}. Dados ausentes bloqueiam escala. Valores são hipóteses; confirme o resultado no acompanhamento.</div>` : '<div class="aml-sub">Clique em Analisar agora para classificar os produtos pelas métricas, margem e estoque.</div>'}
+      <div style="overflow-x:auto;max-height:420px;"><table><thead><tr><th>Produto / família</th><th>Grupo</th><th>Limite ACOS</th><th>Confiança e condição</th></tr></thead><tbody>${lista.map(f=>`<tr><td>${h(f.nome)}<small class="aml-sub" style="display:block;">${h(f.campanha)}</small></td><td>${h(grupos[f.grupo] || f.grupo)}</td><td>${pct(f.limite_acos)}</td><td>${h(f.confianca)} · ${h(f.motivo)}${f.bloqueios?.length ? '<div class="aml-sub">'+h(f.bloqueios.join('; '))+'</div>' : ''}</td></tr>`).join('') || '<tr><td colspan="4">Nenhum produto neste grupo.</td></tr>'}</tbody></table></div>
+      <button class="btn btn-secondary btn-sm" style="margin-top:12px;" onclick="window._amlEditar(true)">Configurar metas e piloto</button>
+    </section>`;
+  }
+  window._amlGrupoEscala = g => {state.grupoEscala=g;render();};
   function renderConfig(cfg) {
     const c = cfg || {};
+    const plano = state.planos[String(c.conta_id)] || {};
     const opcoes = state.contasML.filter(x => !cfgDe(idConta(x))).map(x => `<option value="${h(idConta(x))}">${h(nomeConta(x))} (${h(idConta(x))})</option>`).join('');
-    const campo = (id, rot, val, dica, suf) => `<label class="aml-campo"><span>${rot}</span><div><input id="${id}" class="form-control" value="${val ?? ''}" inputmode="decimal">${suf ? `<em>${suf}</em>` : ''}</div>${dica ? `<small>${dica}</small>` : ''}</label>`;
+    const campo = (id, rot, val, dica, suf) => `<label class="aml-campo"><span>${rot}</span><div><input id="${id}" class="form-control" value="${h(val ?? '')}" inputmode="decimal">${suf ? `<em>${suf}</em>` : ''}</div>${dica ? `<small>${dica}</small>` : ''}</label>`;
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Guardrails do copiloto</div>
       <div class="ajuda">As mesmas regras do agente da Shopee: TACOS do mês decide se dá pra acelerar; ACOS sem cancelados; pausar só quando gasta muito sem retorno.</div>
       ${!cfg ? `<label class="aml-campo"><span>Conta do Mercado Livre</span><div><select id="aml-conta" class="form-control"><option value="">Escolha…</option>${opcoes}</select></div></label>` : ''}
       <div class="aml-campos">
-        ${campo('aml-meta', 'Meta de TACOS / ACOS', c.meta_acos, 'Em ACOS (%). Ex.: 6% equivale a ROAS 16,7x. Acima disso o agente contém; abaixo de 70% dela, acelera.', '%')}
+        ${campo('aml-meta', 'Meta de ACOS do ADS', c.meta_acos, 'ADS ÷ faturamento atribuído ao ADS. Valores antigos precisam ser revisados: não use o teto de TACOS neste campo.', '%')}
         ${campo('aml-forte', 'Contenção forte acima de ACOS', c.regra_pausa_acos, 'Com venda, aperta 25% em vez de 15% — não pausa.', '%')}
         ${campo('aml-janela', 'Janela de análise', c.regra_pausa_dias ?? 7, 'Dias olhados para gasto, vendas e ACOS de cada campanha.', 'dias')}
         ${campo('aml-mat', 'Maturação mínima', c.dias_maturacao_campanha ?? 7, 'Campanha mais nova que isso não recebe sugestão de conter/pausar.', 'dias')}
         ${campo('aml-omin', 'Orçamento mínimo', c.orcamento_min, '', 'R$/dia')}
         ${campo('aml-omax', 'Orçamento máximo', c.orcamento_max, '', 'R$/dia')}
       </div>
+      <div style="margin:16px 0;font-weight:700;">Plano de crescimento desta conta</div>
+      <div class="aml-campos">
+        ${campo('aml-teto-tacos','Teto de TACOS',plano.teto_tacos ?? tetoCliente(c.conta_id),'ADS ÷ faturamento total da conta. Não é a meta de ACOS.','%')}
+        ${campo('aml-meta-fat','Meta mensal desta conta',plano.meta_faturamento,'Informe a parcela da meta do cliente correspondente a esta conta.','R$')}
+        ${campo('aml-margem-reserva','Margem mínima após ADS',plano.margem_reserva,'Reserva usada com a margem antes do ADS calculada pelos custos. Sem custos, não sugere escala.','%')}
+        ${campo('aml-passo','Variação máxima por teste',plano.passo_max ?? 15,'O teste usa amostra e confiança; este é o teto, de 5 a 25%.','%')}
+        ${['escalar','destravar','desenvolver','conter'].map(g=>campo('aml-limite-'+g,'Limite de ACOS · '+g,plano.limites_grupo?.[g],'Opcional. A margem do produto sempre limita o grupo.','%')).join('')}
+      </div>
+      <label style="display:flex;gap:8px;font-size:13px;margin:12px 0;"><input id="aml-piloto" type="checkbox" ${plano.piloto ? 'checked' : ''}> Ativar piloto de escala nesta conta — somente sugestões, aplicação pelo gestor</label>
+      <div class="aml-sub">Sem piloto, as oportunidades ficam no mapa; novas sugestões de aceleração ficam bloqueadas. Preencha os limites separadamente antes de ativar. A classificação é recalculada em Analisar agora.</div>
       <label class="aml-campo"><span>Notas para o agente</span><div><input id="aml-notas" class="form-control" value="${h(c.notas || '')}"></div></label>
       <label style="display:flex;gap:8px;align-items:center;margin:8px 0 14px;font-size:13px;"><input type="checkbox" id="aml-ativo" ${c.ativo || !cfg ? 'checked' : ''}> Analisar sozinho todo dia às 07:00</label>
       <div style="display:flex;gap:8px;"><button class="btn btn-primary" ${state.salvando ? 'disabled' : ''} onclick="window._amlSalvar()">${state.salvando ? 'Salvando…' : 'Salvar'}</button>
@@ -478,7 +534,7 @@ Router.register('agente-ml', (params, el) => {
         <button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="navigator.clipboard.writeText('${ids.join(', ')}').then(()=>{this.textContent='✓ Copiado'})">Copiar anúncios</button>
       </div>`;
     }).join('');
-    const todas = pendentes(id).map(l => ({ l, d: l.dados || {} })).sort((a, b) => (TIPOS[a.d.acao]?.ordem || 8) - (TIPOS[b.d.acao]?.ordem || 8));
+    const todas = pendentes(id).map(l => ({ l, d: l.dados || {} })).sort((a, b) => (+b.d.prioridade || 0) - (+a.d.prioridade || 0) || (TIPOS[a.d.acao]?.ordem || 8) - (TIPOS[b.d.acao]?.ordem || 8));
     const filtro = state.filtroSug || 'todas';
     const lista = filtro === 'todas' ? todas : todas.filter(x => x.d.acao === filtro);
     const roasX = v => v ? `${(+v).toFixed(1).replace('.', ',')}x` : '—';
@@ -558,6 +614,7 @@ Router.register('agente-ml', (params, el) => {
           <div class="aml-p-corpo">
             <div class="aml-p-acao"><span class="aml-p-tag">${t.rot}</span>${acaoTxt(d)}</div>
             <div class="aml-p-pq">${pqTxt(d)}</div>
+            ${d.experimento ? `<div class="aml-esp"><b>Teste controlado:</b> ${h(d.experimento.hipotese)}<br>${h(d.experimento.criterio_recuo)}<br>Confiança: ${h(d.crescimento?.confianca || 'baixa')} · Hipótese de contribuição semanal: ${d.crescimento?.contribuicao_hipotese != null ? R$(d.crescimento.contribuicao_hipotese) : 'sem margem para estimar'}. Medição após até 21 dias; sem garantia de causalidade.</div>` : ''}
             ${esp ? `<div class="aml-esp"><b>Especialista:</b> ${h(esp)}</div>` : ''}
             <details class="aml-como"><summary>${passos ? 'Como fazer no painel do ML' : 'O que revisar'}</summary>
               ${passos ? `<ol>${passos.map(x => `<li>${x}</li>`).join('')}</ol>` : `<div class="aml-sub">${h(semInstrucao(l.explicacao))}</div>`}
@@ -604,7 +661,7 @@ Router.register('agente-ml', (params, el) => {
   window._amlFiltroSug = k => { state.filtroSug = k; render(); };
   function renderCampanhas(id) {
     const c = state.campanhas[id], m = mesDe(id), cfg = cfgDe(id);
-    const tetoT = tetoCliente(id) || parseFloat(cfg?.meta_acos) || null; // teto de ADS do cliente (Plano de ação) ou meta de TACOS da conta
+    const tetoT = tetoConta(id); // TACOS tem teto independente do ACOS
     const tx = m?.taxaCancel || 0;
     let corpo;
     if (!c) corpo = '<div class="aml-sub">⏳ Carregando campanhas…</div>';
@@ -649,7 +706,7 @@ Router.register('agente-ml', (params, el) => {
     const pend = new Set(pendentes(contaId).map(l => String(l.dados?.familia || '')).filter(Boolean));
     const gastoCamp = p.lista.reduce((s, f) => s + f.gasto, 0) || 1;
     // TACOS do produto: gasto ÷ faturamento total dele no mês (orgânico + ADS, base de pedidos)
-    const vi = state.vendasItem[contaId], tetoT = tetoCliente(contaId) || parseFloat(cfg?.meta_acos) || null;
+    const vi = state.vendasItem[contaId], tetoT = tetoConta(contaId);
     const vendaTotal = f => vi?.porItem ? f.itens.reduce((s, it) => s + (vi.porItem[String(it.id)] || 0), 0) : null;
     const tacosP = f => { let vt = vendaTotal(f); if (vt == null || !(f.gasto > 0)) return null; vt = Math.max(vt, f.vendas * (1 - tx)); return vt > 0 ? f.gasto / vt * 100 : Infinity; };
     return `<div class="aml-prods"><table class="aml-tab"><thead><tr><th>Produto (variações somadas)</th><th>Anúncios ativos</th><th class="num">Investimento</th><th class="num">% do investimento</th><th class="num">Vendas por publicidade</th><th class="num">Unidades</th><th class="num">ROAS</th><th class="num">ACOS</th><th class="num" title="Investimento do produto ÷ tudo o que ele vendeu no mês (orgânico + ADS, sem cancelados)">TACOS</th></tr></thead><tbody>
@@ -669,14 +726,15 @@ Router.register('agente-ml', (params, el) => {
   // Resultado do que foi aplicado: 7 dias antes × 7 dias depois, por campanha
   function renderResultados(id) {
     const aplicadas = state.logs.filter(l => String(l.conta_id) === String(id) && l.tipo === 'alerta' && l.resultado === 'executado' && l.dados?.acao && l.dados.acao !== 'abc_queda');
-    const medidas = aplicadas.filter(l => ['melhorou', 'piorou', 'neutro'].includes(l.dados?.medicao?.veredito));
+    const medidas = aplicadas.filter(l => ['melhorou', 'piorou', 'neutro', 'inconclusivo'].includes(l.dados?.medicao?.veredito));
     const aguardando = aplicadas.filter(l => !l.dados?.medicao).length;
     const detectadas = aplicadas.filter(l => l.dados?.aplicado_por === 'detectado').length;
     const n = v => medidas.filter(l => l.dados.medicao.veredito === v).length;
-    const taxa = medidas.length ? Math.round(n('melhorou') / medidas.length * 100) : null;
+    const avaliaveis = medidas.filter(l=>l.dados.medicao.veredito!=='inconclusivo').length;
+    const taxa = avaliaveis ? Math.round(n('melhorou') / avaliaveis * 100) : null;
     const porTipo = {};
-    medidas.forEach(l => { const t = l.dados.acao; porTipo[t] = porTipo[t] || { ok: 0, tot: 0 }; porTipo[t].tot++; if (l.dados.medicao.veredito === 'melhorou') porTipo[t].ok++; });
-    const VER = { melhorou: ['Melhorou', 'var(--green)'], piorou: ['Piorou', 'var(--red)'], neutro: ['Sem mudança clara', 'var(--text-muted)'] };
+    medidas.filter(l=>l.dados.medicao.veredito!=='inconclusivo').forEach(l => { const t = l.dados.acao; porTipo[t] = porTipo[t] || { ok: 0, tot: 0 }; porTipo[t].tot++; if (l.dados.medicao.veredito === 'melhorou') porTipo[t].ok++; });
+    const VER = { inconclusivo:['Inconclusivo','var(--text-muted)'], melhorou: ['Melhorou', 'var(--green)'], piorou: ['Piorou', 'var(--red)'], neutro: ['Sem mudança clara', 'var(--text-muted)'] };
     const dm = s => s ? s.split('-').reverse().slice(0, 2).join('/') : '';
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
@@ -684,18 +742,19 @@ Router.register('agente-ml', (params, el) => {
         <div class="aml-sub">cada sugestão aplicada é medida na campanha: 7 dias antes × 7 dias depois</div>
       </div>
       <div class="aml-res-kpis">
-        <div><div class="aml-rot">Taxa de acerto</div><div class="aml-val" style="color:${taxa == null ? 'inherit' : taxa >= 70 ? 'var(--green)' : taxa >= 50 ? 'var(--yellow)' : 'var(--red)'}">${taxa == null ? '—' : taxa + '%'}</div><div class="aml-sub">${medidas.length ? `${n('melhorou')} de ${medidas.length} medidas melhoraram` : 'nada medido ainda'}</div></div>
+        <div><div class="aml-rot">Comparações favoráveis</div><div class="aml-val" style="color:${taxa == null ? 'inherit' : taxa >= 70 ? 'var(--green)' : taxa >= 50 ? 'var(--yellow)' : 'var(--red)'}">${taxa == null ? '—' : taxa + '%'}</div><div class="aml-sub">${medidas.length ? `${n('melhorou')} de ${avaliaveis} comparações avaliáveis; ${n('inconclusivo')} inconclusivas` : 'nada medido ainda'}</div></div>
         <div><div class="aml-rot">Pioraram</div><div class="aml-val">${n('piorou')}</div><div class="aml-sub">${n('neutro')} sem mudança clara</div></div>
-        <div><div class="aml-rot">Aguardando 7 dias</div><div class="aml-val">${aguardando}</div><div class="aml-sub">aplicadas, ainda sem medição</div></div>
+        <div><div class="aml-rot">Aguardando medição</div><div class="aml-val">${aguardando}</div><div class="aml-sub">aplicadas, ainda sem medição</div></div>
         <div><div class="aml-rot">Detectadas sozinho</div><div class="aml-val">${detectadas}</div><div class="aml-sub">de ${aplicadas.length} aplicadas (sem clicar Feito)</div></div>
       </div>
       ${Object.keys(porTipo).length ? `<div class="aml-filtros" style="margin-top:12px;">${Object.entries(porTipo).sort((a, b) => b[1].tot - a[1].tot).map(([t, v]) => `<span class="aml-fchip" style="cursor:default">${h(TIPOS_ROT[t] || t)}: <b>${Math.round(v.ok / v.tot * 100)}%</b> <span class="aml-sub">(${v.ok}/${v.tot})</span></span>`).join('')}</div>` : ''}
+      ${aplicadas.some(l=>l.dados.experimento) ? `<details style="margin-top:12px;"><summary>Contexto dos testes</summary>${aplicadas.filter(l=>l.dados.experimento).map(l=>`<div class="aml-hist">${h(l.dados.campanha || l.titulo)} · ${h((l.dados.eventos_contexto || []).join('; ') || 'Sem evento registrado')} <button class="aml-lk" onclick="window._amlContexto('${l.id}')">Registrar contexto</button></div>`).join('')}</details>` : ''}
       ${medidas.length ? `<div class="aml-lista" style="margin-top:10px;">${medidas.slice(0, 8).map(l => { const d = l.dados, v = VER[d.medicao.veredito]; return `<div class="aml-res" style="--c:${v[1]}">
           <span class="aml-tipo">${h(TIPOS_ROT[d.acao] || d.acao)}</span>
           <div style="min-width:0"><div class="aml-li-ass">${h(d.produto || d.campanha || '—')}</div><div class="aml-sub">${h(d.medicao.resumo || '')}</div></div>
           <span class="aml-sub">aplicada ${dm(d.medicao.aplicado_dia)}${d.aplicado_por === 'detectado' ? ' · detectada' : d.aplicado_por === 'agente' ? ' · pelo agente' : ''}</span>
           <span class="aml-ver">${v[0]}</span>
-        </div>`; }).join('')}</div>` : `<div class="aml-sub" style="margin-top:10px;">Ainda não há resultados: cada sugestão aplicada é medida 7 dias depois.${aguardando ? ` ${aguardando} aguardando.` : ''}</div>`}
+        </div>`; }).join('')}</div>` : `<div class="aml-sub" style="margin-top:10px;">Ainda não há resultados: cada sugestão aplicada é medida em 7 dias; testes de escala aguardam 21 dias, incluindo maturação da atribuição.${aguardando ? ` ${aguardando} aguardando.` : ''}</div>`}
     </div>`;
   }
   const TIPOS_ROT = { retirar_produto: 'Tirar produto', pausar: 'Pausar campanha', mover_produto: 'Mover produto', roas_target: 'Ajustar ROAS', acos_target: 'Meta de ACOS', orcamento: 'Orçamento', adicionar_produto: 'Colocar no ADS', informativa: 'Melhorar anúncio' };
@@ -746,6 +805,7 @@ Router.register('agente-ml', (params, el) => {
       </div>
       ${state.editando ? renderConfig(cfg) : ''}
       ${renderResumo(id, m, cfg)}
+      ${renderCrescimento(id)}
       ${renderSugestoes(id)}
       ${renderResultados(id)}
       ${renderCampanhas(id)}
@@ -788,7 +848,7 @@ Router.register('agente-ml', (params, el) => {
 
   el.innerHTML = `<div class="page aml-ml">
     <div class="aml-copiloto"><span class="aml-chip" title="Analisa e sugere; você aplica no painel do ML">Copiloto</span></div>
-    <div class="ajuda">Analisa os anúncios patrocinados (Product Ads) de cada conta com as mesmas regras do agente da Shopee e sugere o que ajustar. O Mercado Livre não libera alteração de campanhas por integração — então você aplica no painel do ML; o agente confere sozinho o que mudou e, 7 dias depois, mede se deu resultado. Quando o ML liberar, ele passa a executar sozinho.</div>
+    <div class="ajuda">Analisa os anúncios patrocinados (Product Ads) de cada conta com as mesmas regras do agente da Shopee e sugere o que ajustar. O Mercado Livre não libera alteração de campanhas por integração — então você aplica no painel do ML; o agente confere o que mudou e acompanha o resultado. O piloto mantém revisão pelo gestor, com comparação em 7 dias e mais 14 dias de maturação.</div>
     <div id="aml-root"></div>
     <div id="aml-desempenho"></div>
   </div>

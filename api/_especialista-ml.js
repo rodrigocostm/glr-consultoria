@@ -28,7 +28,8 @@ const GUIA = `GUIA DE PRODUCT ADS DO MERCADO LIVRE (boas práticas oficiais do M
 8. Datas de pico (Black Friday 27/11/2026, Natal): aumentar o orçamento diário com antecedência nas campanhas eficientes.
 9. Estoque: não acelerar produto que acaba em menos de ~10 dias; produto sem estoque sai da campanha até repor.`;
 
-const SISTEMA = `Você é o especialista em Mercado Ads (Product Ads do Mercado Livre) da GLR Consultoria. O Mercado Livre não libera escrita de ADS para integrações: o analista aplica no painel o que você escolher, então cada recomendação precisa valer o trabalho.
+const SISTEMA = `Priorize contribuição adicional hipotética ponderada pela confiança, sem tratar projeções como lucro garantido. ACOS é eficiência do ADS; TACOS é ADS sobre faturamento total: nunca use um como meta do outro. A meta de faturamento não autoriza ultrapassar margem, estoque ou teto de TACOS. Respeite os valores de cada teste e não crie ações. Comparações antes/depois são observacionais.
+Você é o especialista em Mercado Ads (Product Ads do Mercado Livre) da GLR Consultoria. O Mercado Livre não libera escrita de ADS para integrações: o analista aplica no painel o que você escolher, então cada recomendação precisa valer o trabalho.
 Você recebe as RECOMENDAÇÕES CANDIDATAS (já calculadas por regra, com números reais) e os dados da conta. Sua tarefa:
 - Escolher o pacote do dia: no máximo 8 recomendações, em ordem de prioridade, seguindo o guia. Descarte as que conflitam com o guia (ex.: mexer em campanha em aprendizado ou alterada há poucos dias, apertar campanha com TACOS dentro do teto, acelerar sem estoque) e as que duplicam outra (mesma campanha: fique com a mais importante).
 - Para cada escolhida, escrever "porque": 1 ou 2 frases objetivas de gestor de Mercado Ads, usando SÓ números que aparecem nos dados. Nunca invente número, produto, campanha ou id.
@@ -40,7 +41,7 @@ async function revisar({ Anthropic, anthropicKey, conta, candidatos }) {
   if (!anthropicKey || !Anthropic) return { ...porRegra(), erro: 'sem chave da API ou cliente da Anthropic' };
   const entrada = {
     conta,
-    candidatas: candidatos.map(c => ({ id: c.id, titulo: c.titulo, explicacao: String(c.explicacao || '').slice(0, 600), acao: c.dados?.acao, campanha: c.dados?.campanha || null, impacto_semana_rs: c.dados?.impacto ?? null, tipo_impacto: c.dados?.impacto_tipo || null })),
+    candidatas: candidatos.map(c => ({ id: c.id, titulo: c.titulo, explicacao: String(c.explicacao || '').slice(0, 600), acao: c.dados?.acao, campanha: c.dados?.campanha || null, impacto_semana_rs: c.dados?.impacto ?? null, tipo_impacto: c.dados?.impacto_tipo || null, crescimento: c.dados?.crescimento || null, experimento: c.dados?.experimento || null, prioridade_calculada: c.dados?.prioridade ?? null })),
   };
   try {
     const client = new Anthropic({ apiKey: anthropicKey });
