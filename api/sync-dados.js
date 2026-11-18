@@ -475,6 +475,8 @@ function taxasDoEscrow(oi) {
     imposto: n(oi.seller_transaction_fee) + n(oi.buyer_tax_amount) + n(oi.seller_coin_cash_back),
     frete: Math.max(0, n(oi.actual_shipping_fee) - n(oi.buyer_paid_shipping_fee) - n(oi.shopee_shipping_rebate)) + n(oi.shipping_seller_protection_fee_amount),
     voucher: n(oi.voucher_from_shopee), rebate: n(oi.seller_product_rebate?.amount),
+    // para a composição do lucro igual ao Seller Centre: cupom pago pelo vendedor, afiliado e frete
+    cupomVendedor: n(oi.voucher_from_seller), afiliado: n(oi.order_ams_commission_fee), fretePagoComprador: n(oi.buyer_paid_shipping_fee), freteReal: n(oi.actual_shipping_fee), freteSubsidio: n(oi.shopee_shipping_rebate),
     taxaCartao: n(oi.credit_card_promotion), moedas: n(oi.coins) + n(oi.shopee_coins_cash_back),
     detalhes,
   };

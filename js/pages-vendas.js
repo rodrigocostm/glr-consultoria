@@ -2022,6 +2022,20 @@ Router.register('vendas', async (params, el) => {
     </div>`;
   }
 
+  // Comissão da GLR deste pedido pelo contrato do cliente (por venda/unidade, por faixa de ticket; fixo não cobra por pedido)
+  function comissaoGLRDoPedido(p) {
+    const mkt = p.plataforma === 'Mercado Livre' ? 'ml' : p.plataforma === 'Shopee' ? 'shopee' : String(p.plataforma || '').toLowerCase().split(' ')[0];
+    const conta = p.shopId || p.meliUserId || p.contaId;
+    const cid = GLR.ctx?.clienteDaConta?.(mkt, conta);
+    const cli = cid && (GLR.clientes || []).find(c => String(c.id) === String(cid));
+    if (!cli) return null;
+    if (!GLR.contaGeraComissao(conta)) return { valor: 0, rotulo: 'Comissão GLR (conta sem comissão)' };
+    const m = GLR.comissao.modelo(cli);
+    if (m.modelo === 'fixo') return { valor: 0, rotulo: 'Comissão GLR (contrato fixo: não cobra por pedido)' };
+    const v = GLR.comissao.dePedido(cli, parseFloat(p.valor) || 0, p.qtd);
+    return { valor: v, rotulo: m.modelo === 'venda' ? `Comissão GLR (${R$(m.valor)} × ${parseInt(p.qtd) || 1} un.)` : 'Comissão GLR (faixa de ticket)' };
+  }
+
   function renderDetalhe(p, l) {
     const tx = p.taxas||{};
     const hasEscrow = p.taxas != null;
@@ -2052,18 +2066,38 @@ Router.register('vendas', async (params, el) => {
         l.extra>0  ? { label:'Linhas Extras',      v: -l.extra,         cor:'var(--purple)', sinal:'-' } : null,
         { label:'✅ Lucro do Pedido',                  v: l.lucro,          cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
       ].filter(Boolean);
+    } else if (hasEscrow && p.plataforma === 'Shopee') {
+      // Shopee: mesma ordem do Seller Centre / Gestor Seller, fechando no valor a receber (escrow_amount)
+      const n = v => parseFloat(v) || 0, d = tx.detalhes || {};
+      const cupom = n(tx.cupomVendedor ?? d.voucher_from_seller);
+      const afiliado = n(tx.afiliado ?? d.order_ams_commission_fee);
+      const fretePago = n(tx.fretePagoComprador ?? p.freteComprador);
+      const freteVendedor = Math.max(0, n(tx.frete));
+      const ajuste = l.liquido != null ? (l.receita - cupom - afiliado - l.comissao - l.taxaServico - freteVendedor) - l.liquido : 0;
+      linhasBreakdown = [
+        { label:'Valor dos produtos',                 v: l.receita,          cor:'#60a5fa', sinal:'+' },
+        fretePago>0 ? { label:'Frete pago pelo comprador',   v: fretePago,      cor:'var(--green)', sinal:'+' } : null,
+        fretePago>0 || freteVendedor>0 ? { label:'Frete descontado pela Shopee', v: -(fretePago + freteVendedor), cor:'var(--orange)', sinal:'-' } : null,
+        cupom>0     ? { label:'Cupom do vendedor',           v: -cupom,         cor:'var(--red)', sinal:'-' } : null,
+        afiliado>0  ? { label:'Comissão de afiliado',        v: -afiliado,      cor:'var(--red)', sinal:'-' } : null,
+        { label:'Comissão Shopee',                    v: -l.comissao,        cor:'var(--red)', sinal:'-' },
+        { label:'Taxa de serviço',                    v: -l.taxaServico,     cor:'var(--red)', sinal:'-' },
+        Math.abs(ajuste)>0.01 ? { label: ajuste>0 ? 'Outros descontos da Shopee' : 'Outros créditos da Shopee', v: -ajuste, cor: ajuste>0?'var(--red)':'var(--green)', sinal: ajuste>0?'-':'+' } : null,
+        l.liquido!=null ? { label:`Líquido Shopee${tx.estimado ? ' (estimado — pedido em andamento)' : ''}`, v: l.liquido, cor:'var(--purple)', sinal:'=', bold:true } : null,
+        l.impVal>0 ? { label: impDeEscrowDetalhe ? 'Imposto (API)' : `Imposto (${l.impPct}%)`, v: -l.impVal, cor:'var(--yellow)', sinal:'-' } : { label:'Imposto (sem alíquota cadastrada)', v: 0, cor:'var(--text-muted)', sinal:'-' },
+        { label: l.custo>0 ? 'Custo do produto' : 'Custo do produto (não cadastrado)', v: -l.custo, cor:'var(--red)', sinal:'-' },
+        l.outros>0 ? { label:'Outros custos',     v: -l.outros,          cor:'var(--orange)', sinal:'-' } : null,
+        l.extra>0  ? { label:'Custos extras (linhas)', v: -l.extra,      cor:'var(--purple)', sinal:'-' } : null,
+        { label:'Lucro do pedido',                    v: l.lucro,            cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
+      ].filter(Boolean);
     } else if (hasEscrow) {
-      // Shopee e Magalu: breakdown completo via API (escrow na Shopee, direto no
-      // pedido na Magalu) — rótulos dinâmicos por plataforma, esse bloco não é
-      // exclusivo da Shopee (a Magalu também popula p.taxas com esse formato).
+      // Magalu: breakdown via API direto no pedido
       const nomePlat = p.plataforma || 'Marketplace';
       linhasBreakdown = [
         { label:'Valor dos Produtos',           v: l.receita,            cor:'#60a5fa', sinal:'+' },
-        (p.freteComprador||0)>0 ? { label:'Frete pago pelo comprador (não soma)', v: p.freteComprador, cor:'var(--text-muted)', sinal:'·' } : null,
         l.comissao>0   ? { label:`Comissão ${nomePlat}`,        v: -l.comissao,          cor:'var(--red)', sinal:'-' } : null,
         l.taxaServico>0? { label:'Taxa de Serviço',             v: -l.taxaServico,       cor:'var(--red)', sinal:'-' } : null,
         tx.frete>0     ? { label:'Frete (descontado)',           v: -Math.abs(tx.frete),  cor:'var(--orange)', sinal:'-' } : null,
-        tx.voucher>0   ? { label:'Voucher/Desconto (reembolso)', v: tx.voucher,           cor:'var(--green)', sinal:'+' } : null,
         impDeEscrowDetalhe ? { label:'Imposto (API)',            v: -tx.imposto,          cor:'var(--yellow)', sinal:'-' } : null,
         l.liquido!=null? { label:`Líquido ${nomePlat} (API)`,     v: l.liquido,            cor:'var(--purple)', sinal:'=', bold:true } : null,
         { label:'Custo do Produto',              v: -l.custo,             cor:'var(--red)', sinal:'-' },
@@ -2083,6 +2117,12 @@ Router.register('vendas', async (params, el) => {
       ].filter(Boolean);
     }
 
+    const glr = comissaoGLRDoPedido(p);
+    if (glr) {
+      linhasBreakdown.push({ label: glr.rotulo, v: -glr.valor, cor:'var(--accent)', sinal:'-' });
+      const final = l.lucro - glr.valor;
+      linhasBreakdown.push({ label:'✅ Lucro final (após GLR)', v: final, cor: corMargem(l.receita>0 ? final/l.receita*100 : 0), sinal: final>=0?'+':'-', bold:true });
+    }
     return `
     <div style="display:flex;background:var(--bg-card-hover);border-top:1px solid var(--border);">
       <!-- Info + itens -->
@@ -2118,8 +2158,8 @@ Router.register('vendas', async (params, el) => {
             </span>
           </div>`).join('')}
         <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:12px;color:var(--text-secondary);">Margem s/ receita</span>
-          <span style="font-size:18px;font-weight:700;color:${corMargem(l.margem)};">${pct(l.margem)}</span>
+          <span style="font-size:12px;color:var(--text-secondary);">Margem s/ receita${glr ? ' (após GLR)' : ''}</span>
+          <span style="font-size:18px;font-weight:700;color:${corMargem(glr && l.receita>0 ? (l.lucro-glr.valor)/l.receita*100 : l.margem)};">${pct(glr && l.receita>0 ? (l.lucro-glr.valor)/l.receita*100 : l.margem)}</span>
         </div>
       </div>
     </div>`;
