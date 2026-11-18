@@ -71,13 +71,13 @@ Router.register('gestores', (params, el) => {
     let vinculos = {};
     try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
     const contas = vinculos[String(c.id)] || [];
-    const r = { fat: 0, ads: 0, temAds: false, unid: 0, unidCom: 0, m: [0, 0, 0, 0], contas: contas.length, cobertas: 0 };
+    const r = { fat: 0, ads: 0, temAds: false, unid: 0, unidCom: 0, m: [0, 0, 0, 0], contas: contas.length, cobertas: 0, ids: new Set() };
     for (const ct of contas) {
       const mkt = BaseDados.mktDe(ct.marketplace);
       const id = String(ct.param_to_use?.shopId || ct.param_to_use?.meliUserId || ct.contaId || ct.external_id);
       const info = mkt ? baseG[BaseDados.chave(mkt, id)] : null;
       if (!info || !BaseDados.cobre(info, mesIniG)) continue;
-      r.cobertas++;
+      r.cobertas++; r.ids.add(id);
       const t = BaseDados.somar(info, mesIniG, isoD(ontemG));
       r.fat += t.faturamento; r.unid += t.unidades || t.pedidos;
       if (GLR.contaGeraComissao(ct)) r.unidCom += t.unidades || t.pedidos;
@@ -139,6 +139,16 @@ Router.register('gestores', (params, el) => {
       if (b.temAds) { adsBase = b.ads; adsProj = b.ads / diasDecG * diasMesG; pctADS = b.fat > 0 ? b.ads / b.fat * 100 : 0; pctADSProj = pctADS; }
       vendasProjBase = b.unid / diasDecG * diasMesG;
       vendasComBase = b.unidCom / diasDecG * diasMesG;
+      // loja vinculada que a base ainda não cobre no mês (histórico incompleto, token vencido):
+      // entra pelo valor salvo na Projeção em vez de contar zero
+      for (const p of plats) {
+        if (!p.contaId || b.ids.has(String(p.contaId))) continue;
+        const f = parseFloat(p.fatBase) || 0, a = parseFloat(p.adsBase) || 0;
+        fatMes += f; fatProj += calcP(f); adsProj += calcP(a);
+        vendasProjBase += calcP(p.vendasBase);
+        if (GLR.linhaGeraComissao(c.id, p)) vendasComBase += calcP(p.vendasBase);
+      }
+      if (b.temAds) pctADSProj = fatProj > 0 ? adsProj / fatProj * 100 : 0;
       if (b.m[1] > 0) fatM1 = b.m[1]; if (b.m[2] > 0) fatM2 = b.m[2]; if (b.m[3] > 0) fatM3 = b.m[3];
     }
 
