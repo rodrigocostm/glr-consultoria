@@ -1491,10 +1491,12 @@ async function saudeAPI(apiKey, { forcar = false } = {}) {
     const dias = res.get(k)?.cursor?.dias || {};
     const errados = [...new Set([...Object.keys(porDia), ...Object.keys(dias)])].filter(d => d >= corte && d < hoje && (porDia[d] || 0) !== (dias[d]?.pedidos || 0)).sort();
     if (longo) x.resumoLongoDia = hoje; else x.resumoLongoDia = a.resumoLongoDia || null;
-    if (!errados.length) { x.resumoDiv = []; return; }
+    if (!errados.length) { x.resumoDiv = []; x.resumoDivEm = null; return; }
     refazer[k] = [...new Set([...(refazer[k] || []), ...errados])];
-    const persistiu = (a.resumoDiv || []).filter(d => errados.includes(d));
-    x.resumoDiv = errados;
+    // só "continua diferente" se a sincronização já refez o resumo depois de o agente apontar
+    const refeitoDepois = a.resumoDivEm && res.get(k)?.ultimo_sucesso && Date.parse(res.get(k).ultimo_sucesso) > Date.parse(a.resumoDivEm);
+    const persistiu = refeitoDepois ? (a.resumoDiv || []).filter(d => errados.includes(d)) : [];
+    x.resumoDiv = errados; x.resumoDivEm = refeitoDepois || !a.resumoDivEm ? new Date().toISOString() : a.resumoDivEm;
     const mesAtual = errados.filter(d => d >= hoje.slice(0, 8) + '01');
     const falta = errados.reduce((s2, d) => s2 + Math.max(0, (porDia[d] || 0) - (dias[d]?.pedidos || 0)), 0);
     x.problemas.push(`Resumo diário diferente dos pedidos em ${errados.length} dia(s)${mesAtual.length ? ` (${mesAtual.length} neste mês)` : ''}${falta ? ` — ${falta} pedido(s) não somados nas telas` : ''}. ${persistiu.length ? 'Continua diferente depois de refazer.' : 'Sendo refeito na próxima rodada da sincronização (15 min).'}`);
