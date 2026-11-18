@@ -10,27 +10,27 @@
 // num trecho: class="mkt-sem-icone".
 // ============================================================
 (function () {
-  const SRC = { ml: 'img/mkt/ml.png', shopee: 'img/mkt/shopee.png', amazon: 'img/mkt/amazon.png', tiktok: 'img/mkt/tiktok.png' };
-  const NOME = { ml: 'Mercado Livre', shopee: 'Shopee', amazon: 'Amazon', tiktok: 'TikTok Shop' };
+  const SRC = { ml: 'img/mkt/ml.png', shopee: 'img/mkt/shopee.png', amazon: 'img/mkt/amazon.png', tiktok: 'img/mkt/tiktok.png', magalu: 'img/mkt/magalu.png', shein: 'img/mkt/shein.png' };
+  const NOME = { ml: 'Mercado Livre', shopee: 'Shopee', amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' };
   const FIM = '(?=$|[\\s·:\\-—|,.()0-9/])';
   // nomes escritos por extenso (qualquer caixa) e siglas (só maiúsculas, para não pegar palavras comuns)
-  const RE_NOME = new RegExp(`^(mercado ?livre|shopee|amazon|tiktok(?: shop)?|meli)${FIM}`, 'i');
-  const RE_SIGLA = new RegExp(`^(ML|SH|TT|AMZ)${FIM}`);
+  const RE_NOME = new RegExp(`^(mercado ?livre|shopee|amazon|tiktok(?: shop)?|meli|magalu|magazine luiza|shein)${FIM}`, 'i');
+  const RE_SIGLA = new RegExp(`^(ML|SH|TT|AMZ|MGL|SHN)${FIM}`);
   const mktDe = t => {
     const m = RE_NOME.exec(t) || RE_SIGLA.exec(t); if (!m) return null;
     const k = m[1].toLowerCase().replace(/\s+/g, '');
-    return k === 'mercadolivre' || k === 'meli' || k === 'ml' ? 'ml' : k === 'shopee' || k === 'sh' ? 'shopee' : k === 'amazon' || k === 'amz' ? 'amazon' : 'tiktok';
+    return k === 'mercadolivre' || k === 'meli' || k === 'ml' ? 'ml' : k === 'shopee' || k === 'sh' ? 'shopee' : k === 'amazon' || k === 'amz' ? 'amazon' : k === 'magalu' || k === 'magazineluiza' || k === 'mgl' ? 'magalu' : k === 'shein' || k === 'shn' ? 'shein' : 'tiktok';
   };
   // nome de conta que TERMINA com o marketplace: "Zion - Shopee", "CJ Decor Shopee", "Mega Facil - ML"
-  const RE_FIM_NOME = /(?:^|[\s\-–—·|(])(mercado ?livre|shopee|amazon|tiktok(?: shop)?|meli)\s*\)?\s*$/i;
-  const RE_FIM_SIGLA = /(?:^|[\s\-–—·|(])(ML|SH|TT|AMZ)\s*\)?\s*$/;
+  const RE_FIM_NOME = /(?:^|[\s\-–—·|(])(mercado ?livre|shopee|amazon|tiktok(?: shop)?|meli|magalu|shein)\s*\)?\s*$/i;
+  const RE_FIM_SIGLA = /(?:^|[\s\-–—·|(])(ML|SH|TT|AMZ|MGL|SHN)\s*\)?\s*$/;
   const mktDoFim = t => { const m = RE_FIM_NOME.exec(t) || RE_FIM_SIGLA.exec(t); return m ? mktDe(m[1]) : null; };
   const img = mkt => `<img class="mkt-ic mkt-ic-${mkt}" src="${SRC[mkt]}" alt="" aria-hidden="true" loading="lazy">`;
 
   // ícone para usar direto no HTML; aceita 'ml', 'meli', 'mercadolivre', 'Mercado Livre', 'shopee', 'amazon', 'tiktok', 'tiktok_shop'…
   if (typeof GLR !== 'undefined') GLR.iconeMkt = m => {
     const k = String(m || '').toLowerCase().replace(/[\s_]+/g, '');
-    const mkt = ['ml', 'meli', 'mercadolivre'].includes(k) ? 'ml' : k === 'shopee' ? 'shopee' : k === 'amazon' ? 'amazon' : k.startsWith('tiktok') ? 'tiktok' : null;
+    const mkt = ['ml', 'meli', 'mercadolivre'].includes(k) ? 'ml' : k === 'shopee' ? 'shopee' : k === 'amazon' ? 'amazon' : k.startsWith('tiktok') ? 'tiktok' : k === 'magalu' ? 'magalu' : k === 'shein' ? 'shein' : null;
     return mkt ? img(mkt) : '';
   };
 
@@ -53,7 +53,7 @@
     const prev = el.previousElementSibling;
     if (el.querySelector(':scope > img.mkt-ic') || (prev && prev.classList?.contains('mkt-ic'))) return;
     el.dataset.mktIc = mkt;
-    if (!el.getAttribute('title') && /^(ML|SH|TT|AMZ)$/.test(texto.trim())) el.setAttribute('title', NOME[mkt]);
+    if (!el.getAttribute('title') && /^(ML|SH|TT|AMZ|MGL|SHN)$/.test(texto.trim())) el.setAttribute('title', NOME[mkt]);
     if (corte) {
       const resto = primeiro.splitText(primeiro.nodeValue.length - (texto.length - corte));
       const t = document.createElement('template'); t.innerHTML = img(mkt);
@@ -90,7 +90,9 @@
     if (!document.getElementById('mkt-ic-css')) {
       const s = document.createElement('style'); s.id = 'mkt-ic-css';
       s.textContent = `.mkt-ic{display:inline-block;width:1.15em;height:1.15em;min-width:1.15em;border-radius:50%;object-fit:cover;vertical-align:-0.22em;margin-right:.35em;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06)}
-.mkt-ic-shopee{transform:scale(1.04)}`;
+.mkt-ic-shopee{transform:scale(1.04)}
+.mkt-ic-shein{border-radius:24%;background:transparent;box-shadow:none}
+.mkt-ic-magalu{width:2.7em;min-width:2.7em;height:.75em;border-radius:2px;object-fit:contain;background:transparent;box-shadow:none;vertical-align:-0.05em}`;
       document.head.appendChild(s);
     }
     varrer(document.body);
