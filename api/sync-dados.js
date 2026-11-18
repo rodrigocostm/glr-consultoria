@@ -1359,7 +1359,11 @@ async function executar(apiKey, soConta) {
   const chave = c => `${c.mkt}:${c.id}`;
   // Fila justa: quem foi visitado há mais tempo (ou nunca) vai primeiro; o que
   // não couber nesta rodada fica para a próxima, 15 min depois.
-  contas.sort((a, b) => String(porConta[chave(a)]?.ultima_tentativa || '').localeCompare(String(porConta[chave(b)]?.ultima_tentativa || '')));
+  // Loja com histórico ainda incompleto vai na frente: as do fim da fila só ganham a
+  // atualização rápida (o tempo da rodada acaba) e o histórico delas nunca andava.
+  const limiteHist = agora() - DIAS_HISTORICO * DIA;
+  const pendente = c => { const h = porConta[chave(c)]?.cursor?.historico_ate; return !h || h > limiteHist ? 0 : 1; };
+  contas.sort((a, b) => pendente(a) - pendente(b) || String(porConta[chave(a)]?.ultima_tentativa || '').localeCompare(String(porConta[chave(b)]?.ultima_tentativa || '')));
   const resultados = [];
   let i = 0;
   const trabalhador = async () => {
