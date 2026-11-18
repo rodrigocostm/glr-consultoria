@@ -35,6 +35,7 @@ Router.register('decisoes', (params, el) => {
     'reputacao': { t: 'Reputação', c: 'var(--red)' },
     'saldo': { t: 'Saldo de ADS', c: 'var(--red)' },
     'conexao': { t: 'Conexão', c: 'var(--red)' },
+    'saude-api': { t: 'Pedidos em dúvida', c: 'var(--red)' },
     'ads-shopee': { t: 'ADS Shopee', c: '#eb6834' },
     'ads-ml': { t: 'ADS ML', c: '#d9a400' },
     'estoque': { t: 'Estoque', c: '#1f9d74' },
@@ -65,13 +66,14 @@ Router.register('decisoes', (params, el) => {
     st.carregando = true; render();
     try {
       const desde = new Date(Date.now() - 10 * 864e5).toISOString();
-      const [logs, planos, reps, promos, conex, sinais] = await Promise.all([
+      const [logs, planos, reps, promos, conex, sinais, saude] = await Promise.all([
         _sb.from('glr_agente_log').select('id,conta_id,cliente_nome,titulo,explicacao,dados,criado_em').eq('tipo', 'alerta').eq('resultado', 'so_alerta').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(3000),
         _sb.from('glr_sync_estado').select('conta_id,cursor').eq('marketplace', 'sistema').eq('recurso', 'plano'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,rec:cursor->reclamacoes,al:cursor->alertas').eq('recurso', 'reputacao'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,res:cursor->resumo,dest:cursor->destaques').eq('recurso', 'promocoes'),
         _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('conta_id', 'conexoes').eq('recurso', 'todas').maybeSingle(),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,em:cursor->em,al:cursor->alertas').eq('recurso', 'sinais'),
+        _sb.from('glr_sync_estado').select('contas:cursor->contas').eq('marketplace', 'sistema').eq('conta_id', 'saude_api').eq('recurso', 'todas').maybeSingle(),
       ]);
       for (const r of [logs, planos, reps, promos]) if (r.error) throw r.error;
       const estoqueAds = new Set(); // produto que o agente de ADS já avisou (estoque_minimo): não repete
@@ -220,6 +222,14 @@ Router.register('decisoes', (params, el) => {
         if (locais[id]) continue;
         itens.push({ id, tipo: 'conexao', mkt: c.mkt, conta: String(c.id), titulo: `${c.status === 'ads' ? 'Liberar permissão de Ads' : 'Reconectar'} — ${c.nome} (${NOME_MKT[c.mkt] || c.mkt})`,
           porque: c.acao || '', urgente: c.status === 'erro', tela: 'conexoes', quando: c.desde || null });
+      }
+      // Agente Saúde da API: histórico travado ou base diferente do marketplace (conexão com erro já aparece acima)
+      for (const c of Object.values(saude?.data?.contas || {})) {
+        if (c.status !== 'travado' && c.status !== 'divergente') continue;
+        const id = `sa:${c.mkt}:${c.id}:${c.status}:${c.desde || ''}`;
+        if (locais[id]) continue;
+        itens.push({ id, tipo: 'saude-api', mkt: c.mkt, conta: String(c.id), titulo: `${c.status === 'travado' ? 'Histórico do mês travado' : 'Pedidos diferentes do marketplace'} — ${c.nome} (${NOME_MKT[c.mkt] || c.mkt})`,
+          porque: `${(c.problemas || []).join(' ')} Enquanto isso, vendas e projeção deste cliente podem estar incompletas.`, urgente: true, tela: 'saude-api', quando: c.desde || null });
       }
       // conta que não está mais em nenhum cliente (cliente excluído / conta desvinculada) sai da fila
       const vinc = lerJSON('glr_mc_vinculos', {}), contasVinc = new Set(Object.values(vinc).flatMap(a => (a || []).flatMap(c => [c.external_id, c.param_to_use?.shopId, c.param_to_use?.meliUserId].filter(Boolean).map(String))));

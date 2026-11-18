@@ -23,7 +23,7 @@
     { id: 'financeiro', titulo: 'Financeiro', paginas: ['financeiro', 'dre', 'conciliacao'] },
     { id: 'comercial', titulo: 'Comercial', paginas: ['leads', 'blog'] },
     { id: 'ia', titulo: 'Agentes de IA', paginas: ['adviser', 'chat', 'escritorio', 'segundo-cerebro'] },
-    { id: 'sistema', titulo: 'Sistema', paginas: ['integracoes', 'conexoes', 'diagnostico'] },
+    { id: 'sistema', titulo: 'Sistema', paginas: ['integracoes', 'conexoes', 'saude-api', 'diagnostico'] },
   ];
   const K_ABERTOS = 'glr_nav_abertos_v2'; // v2: grupos novos (o estado antigo tinha outros ids)
   const lerAbertos = () => { try { const v = JSON.parse(localStorage.getItem(K_ABERTOS) || 'null'); return Array.isArray(v) ? v : ['hoje']; } catch (e) { return ['hoje']; } };

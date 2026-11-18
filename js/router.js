@@ -85,6 +85,7 @@ const Router = {
       'precos-ml': 'Monitor de preços ML',
       'precos-shopee': 'Monitor de preços Shopee',
       'conexoes': 'Saúde das conexões',
+      'saude-api': 'Saúde da API',
       'datas-especiais': 'Datas especiais',
       'data-combinada': 'Data combinada',
       'meta-diaria': 'Meta diária',

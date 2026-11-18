@@ -523,10 +523,10 @@ async function enriquecerTaxasML(apiKey, contaId, t, prazo) {
 // ── Resumo diário por loja (fica no próprio glr_sync_estado, recurso
 //    "resumo"): o Dashboard lê isso em vez de buscar pedido a pedido. ──
 const DIAS_RESUMO = 100;
-async function atualizarResumo(mkt, conta, resumoAtual, t) {
+async function atualizarResumo(mkt, conta, resumoAtual, t, extras = []) {
   const dias = { ...(resumoAtual?.cursor?.dias || {}) };
   const hoje = dataBR(t), ontem = dataBR(t - DIA);
-  const tocados = new Set([...(TOCADOS.get(`${mkt}:${conta}`) || []), hoje, ontem]);
+  const tocados = new Set([...(TOCADOS.get(`${mkt}:${conta}`) || []), hoje, ontem, ...extras]); // extras: dias que o Agente Saúde da API viu divergir
   const corte = dataBR(t - DIAS_RESUMO * DIA);
   for (const dia of [...tocados].filter(d => d >= corte).sort().slice(-(DIAS_RESUMO + 2))) {
     const de = new Date(`${dia}T00:00:00-03:00`).toISOString();
@@ -1319,7 +1319,7 @@ async function sincronizarConta(apiKey, mkt, shopId, estadoAtual, prazo, nome) {
       } catch (e) { await salvarEstado(mkt, shopId, 'atendimento', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
     }
   }
-  try { await atualizarResumo(mkt, shopId, estadoAtual?.resumo, t); }
+  try { await atualizarResumo(mkt, shopId, estadoAtual?.resumo, t, estadoAtual?.refazer || []); }
   catch (e) { await salvarEstado(mkt, shopId, 'resumo', { ultimo_erro: String(e.message || e).slice(0, 300) }).catch(() => {}); }
   return { mkt, conta: shopId, pedidos: gravados };
 }
@@ -1356,6 +1356,9 @@ async function executar(apiKey, soConta) {
     if (e.recurso === 'ads') porConta[k].ads = e;
     if (e.recurso === 'resumo') porConta[k].resumo = e;
   }
+  // dias que o Agente Saúde da API marcou para refazer o resumo (resumo ≠ pedidos)
+  const saudeRef = (await sbSelect('glr_sync_estado', 'marketplace=eq.sistema&conta_id=eq.saude_api&recurso=eq.todas&select=refazer:cursor->refazer').catch(() => []))[0]?.refazer || {};
+  for (const [k, dias] of Object.entries(saudeRef)) { porConta[k] = porConta[k] || {}; porConta[k].refazer = Array.isArray(dias) ? dias : []; }
   const chave = c => `${c.mkt}:${c.id}`;
   // Fila justa: quem foi visitado há mais tempo (ou nunca) vai primeiro; o que
   // não couber nesta rodada fica para a próxima, 15 min depois.
@@ -1377,6 +1380,132 @@ async function executar(apiKey, soConta) {
   return { contas: contas.length, processadas: resultados.length, resultados };
 }
 
+
+// ── Agente Saúde da API ──────────────────────────────────────────────────────
+// Confere se os pedidos da base batem com o marketplace — para nenhuma tela
+// (Projeção, Gestores, Vendas, comissão) trabalhar com número incompleto sem saber.
+// De hora em hora (agente-cron ?rodada=saude-api → aqui, modo 'saude'):
+//  • toda loja: último sucesso/erro, conexão na Tiops, histórico do mês completo
+//    (e se está andando), resumo diário em dia;
+//  • 1x por dia por loja (Shopee e ML, depois das 04h): os pedidos de ontem e
+//    anteontem na API × na base. Pedido que falta é buscado e gravado na hora
+//    (corrige sozinho); dia com resumo diferente dos pedidos é refeito na próxima
+//    rodada da sincronização (campo refazer, lido em executar()).
+// Estado em glr_sync_estado (sistema / saude_api / todas); tela Saúde da API e
+// Caixa de decisões leem dali; o celular avisa quando uma loja trava ou diverge.
+const SAUDE_ORC_MS = 230000;
+const inicioDiaTs = dia => Math.floor(new Date(`${dia}T00:00:00-03:00`).getTime() / SEG);
+const dataCurtaBR = ts => { const d = dataBR(ts); return `${d.slice(8, 10)}/${d.slice(5, 7)}`; };
+async function pedidosDoDia(mkt, conta, dia) {
+  const de = new Date(`${dia}T00:00:00-03:00`).toISOString(), ate = new Date((inicioDiaTs(dia) + DIA) * SEG).toISOString();
+  const rows = [];
+  for (let off = 0; off < 20000; off += 1000) {
+    const pg = await sbSelect('glr_pedidos', `marketplace=eq.${mkt}&conta_id=eq.${conta}&criado_em=gte.${encodeURIComponent(de)}&criado_em=lt.${encodeURIComponent(ate)}&select=pedido_id,situacao&limit=1000&offset=${off}`);
+    rows.push(...pg); if (pg.length < 1000) break;
+  }
+  return rows;
+}
+async function conferirDia(apiKey, mkt, id, dia, prazo) {
+  const antes = await pedidosDoDia(mkt, id, dia);
+  const ids = new Set(antes.map(r => String(r.pedido_id)));
+  let api = null, corrigidos = 0, pendentes = 0;
+  if (mkt === 'shopee') {
+    const de = inicioDiaTs(dia);
+    const sns = await listarSns(apiKey, id, 'create_time', de, de + DIA - 1);
+    api = sns.length;
+    const faltam = sns.filter(sn => !ids.has(String(sn)));
+    if (faltam.length) { const r = await gravarPedidos(apiKey, id, faltam, prazo); corrigidos = r.n; pendentes = faltam.length - r.n; } // o que sobra é pedido não pago (não entra na base)
+  } else if (mkt === 'ml') {
+    const r = await comRetry(() => mcpCall(apiKey, 'list_orders_detail', { meliUserId: id, date_from: dia, date_to: dia, limit: 50, offset: 0 }));
+    api = parseInt((r.data || r).paging?.total) || 0;
+    if (api > antes.length) { await gravarPedidosML(apiKey, id, dia, dia, prazo); }
+  } else return null;
+  const depois = (corrigidos || mkt === 'ml') ? await pedidosDoDia(mkt, id, dia) : antes;
+  if (mkt === 'ml') { corrigidos = Math.max(0, depois.length - antes.length); pendentes = Math.max(0, api - depois.length); }
+  return { dia, api, base: depois.length, validos: depois.filter(r => r.situacao === 'valido').length, corrigidos, pendentes };
+}
+async function saudeAPI(apiKey, { forcar = false } = {}) {
+  const prazo = Date.now() + SAUDE_ORC_MS, t = agora(), hoje = dataBR(t), agoraMs = Date.now(), H = 3600e3;
+  const horaBRT = new Date((t - 3 * 3600) * SEG).getUTCHours();
+  const iniMesTs = inicioDiaTs(hoje.slice(0, 8) + '01');
+  const diasConf = [dataBR(t - DIA), dataBR(t - 2 * DIA)];
+  const contas = await contasParaSincronizar(apiKey);
+  const est = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultimo_erro,ultima_tentativa,cursor&recurso=in.(pedidos,resumo)&marketplace=neq.sistema&limit=5000');
+  const ped = new Map(), res = new Map();
+  for (const e of est) (e.recurso === 'pedidos' ? ped : res).set(`${e.marketplace}:${e.conta_id}`, e);
+  const lerSis = async c => (await sbSelect('glr_sync_estado', `marketplace=eq.sistema&conta_id=eq.${c}&recurso=eq.todas&select=cursor`).catch(() => []))[0]?.cursor || {};
+  const conex = (await lerSis('conexoes')).contas || {};
+  const anterior = await lerSis('saude_api');
+  const ant = anterior.contas || {};
+  const novo = {}, refazer = {};
+  for (const c of contas) {
+    const k = `${c.mkt}:${c.id}`, p = ped.get(k), r = res.get(k), a = ant[k] || {}, cx = conex[k];
+    const probs = [];
+    const sucMs = p?.ultimo_sucesso ? Date.parse(p.ultimo_sucesso) : 0;
+    const hist = p?.cursor?.historico_ate || null;
+    let status = 'ok';
+    if (cx && cx.status === 'erro') { status = 'erro'; probs.push(cx.acao || 'Conexão com problema na Tiops.'); }
+    else if (!cx && Object.keys(conex).length) { status = 'erro'; probs.push('Conta vinculada a um cliente, mas não aparece mais conectada na Tiops. Reconecte ou desvincule.'); }
+    else if (p?.ultimo_erro && (!sucMs || agoraMs - sucMs > 2 * H)) { status = 'erro'; probs.push(`Erro ao buscar pedidos: ${String(p.ultimo_erro).slice(0, 140)}`); }
+    else if (!p || !sucMs) { status = 'sem_sync'; probs.push('Ainda não sincronizou nenhuma vez.'); }
+    else if (agoraMs - sucMs > 2 * H) { status = 'atrasada'; probs.push(`Sem atualizar pedidos há ${Math.round((agoraMs - sucMs) / H)} h.`); }
+    // histórico do mês: sem ele a Projeção e os Gestores usam número parcial
+    let incompletoDesde = null;
+    if (status !== 'erro' && status !== 'sem_sync' && (!hist || hist > iniMesTs)) {
+      incompletoDesde = a.incompletoDesde || new Date().toISOString();
+      const andou = a.hist && hist && hist < a.hist;
+      const travado = !andou && agoraMs - Date.parse(incompletoDesde) > 3 * H;
+      status = travado ? 'travado' : 'recuperando';
+      probs.push(hist ? `Histórico do mês só a partir de ${dataCurtaBR(hist)} — ${travado ? 'parado há 3 h+, a sincronização não está avançando' : 'a sincronização está buscando o que falta'}.` : 'Histórico do mês ainda não carregado.');
+    }
+    if (status === 'ok' && (!r?.ultimo_sucesso || agoraMs - Date.parse(r.ultimo_sucesso) > 2 * H)) { status = 'atrasada'; probs.push('Resumo diário (usado em Vendas e Projeção) sem atualizar há 2 h+.'); }
+    novo[k] = { mkt: c.mkt, id: c.id, nome: c.nome || cx?.nome || c.id, status, problemas: probs, hist, incompletoDesde,
+      ultimo_dado: p?.ultimo_sucesso || null, conferido: a.conferido || null, desde: status === 'ok' ? null : (a.status === status && a.desde ? a.desde : new Date().toISOString()) };
+  }
+  // Conferência dos pedidos (ontem e anteontem) — 1x por dia por loja Shopee/ML, quem nunca/mais antigo primeiro
+  const fila = Object.values(novo).filter(x => (x.mkt === 'shopee' || x.mkt === 'ml') && x.status !== 'erro' && x.status !== 'sem_sync' && (forcar || horaBRT >= 4) && (forcar || x.conferido?.dia !== hoje))
+    .sort((a, b) => String(a.conferido?.em || '').localeCompare(String(b.conferido?.em || '')));
+  let iFila = 0, conferidas = 0, corrigidosTot = 0;
+  const trabalhador = async () => {
+    while (iFila < fila.length && Date.now() < prazo - 20000) {
+      const x = fila[iFila++];
+      const prazoConta = Math.min(prazo - 10000, Date.now() + 45000);
+      try {
+        const dias = [];
+        for (const dia of diasConf) { if (x.hist && x.hist > inicioDiaTs(dia)) continue; const d = await conferirDia(apiKey, x.mkt, x.id, dia, prazoConta); if (d) dias.push(d); }
+        const resumoDias = res.get(`${x.mkt}:${x.id}`)?.cursor?.dias || {};
+        for (const d of dias) {
+          d.resumo = resumoDias[d.dia]?.pedidos ?? null;
+          if (d.resumo !== d.validos) (refazer[`${x.mkt}:${x.id}`] = refazer[`${x.mkt}:${x.id}`] || []).push(d.dia);
+        }
+        x.conferido = { dia: hoje, em: new Date().toISOString(), dias };
+        conferidas++; corrigidosTot += dias.reduce((s, d) => s + d.corrigidos, 0);
+        const div = dias.filter(d => x.mkt === 'ml' ? d.pendentes > 0 : false);
+        if (dias.some(d => d.corrigidos)) { x.problemas.push(`Faltavam ${dias.reduce((s, d) => s + d.corrigidos, 0)} pedido(s) de ${dias.filter(d => d.corrigidos).map(d => d.dia.slice(8) + '/' + d.dia.slice(5, 7)).join(' e ')} — buscados e gravados agora.`); if (x.status === 'ok') x.status = 'corrigido'; }
+        if (div.length) { x.problemas.push(`O Mercado Livre mostra ${div.map(d => `${d.api} pedidos em ${d.dia.slice(8)}/${d.dia.slice(5, 7)} e a base ${d.base}`).join('; ')} — mesmo depois de buscar de novo.`); if (x.status === 'ok' || x.status === 'corrigido') { x.status = 'divergente'; x.desde = x.desde || new Date().toISOString(); } }
+      } catch (e) { x.conferido = { dia: hoje, em: new Date().toISOString(), erro: String(e.message || e).slice(0, 200) }; }
+    }
+  };
+  await Promise.all([1, 2, 3, 4].map(trabalhador));
+  // quem não foi conferido hoje mantém o resultado anterior (divergência já vista continua aparecendo)
+  for (const x of Object.values(novo)) {
+    if (x.conferido?.dia === hoje || !ant[`${x.mkt}:${x.id}`]) continue;
+    const a = ant[`${x.mkt}:${x.id}`];
+    if (a.status === 'divergente' && x.status === 'ok') { x.status = 'divergente'; x.problemas = a.problemas || []; x.desde = a.desde; }
+  }
+  const ruim = s => ['erro', 'travado', 'divergente'].includes(s);
+  const caiu = Object.values(novo).filter(x => ruim(x.status) && !ruim(ant[`${x.mkt}:${x.id}`]?.status));
+  const cont = s => Object.values(novo).filter(x => x.status === s).length;
+  const resumo = { contas: contas.length, ok: cont('ok'), corrigido: cont('corrigido'), recuperando: cont('recuperando'), travado: cont('travado'), divergente: cont('divergente'), erro: cont('erro'), atrasada: cont('atrasada'), sem_sync: cont('sem_sync'), conferidas, corrigidos: corrigidosTot, faltam_conferir: fila.length - conferidas };
+  await sbUpsert('glr_sync_estado', [{ marketplace: 'sistema', conta_id: 'saude_api', recurso: 'todas', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), cursor: { em: Date.now(), resumo, contas: novo, refazer } }], 'marketplace,conta_id,recurso');
+  if (caiu.length) {
+    const NM = { shopee: 'Shopee', ml: 'Mercado Livre', amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' };
+    await require('./_alerta').avisar(sbSelect, caiu.length === 1 ? `🩺 Pedidos em dúvida — ${caiu[0].nome} (${NM[caiu[0].mkt]})` : `🩺 ${caiu.length} lojas com pedidos em dúvida`,
+      caiu.slice(0, 4).map(x => `${x.nome} (${NM[x.mkt]}): ${x.problemas[0] || x.status}`).join('\n') + (caiu.length > 4 ? `\n+${caiu.length - 4} — veja em Saúde da API` : ''), 'saude-api').catch(() => {});
+  }
+  return resumo;
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.MCP_API_KEY;
@@ -1388,6 +1517,12 @@ module.exports = async function handler(req, res) {
   if (!token || !esperado || token !== esperado) return res.status(401).json({ error: 'não autorizado' });
 
   const { modo = 'incremental', conta = null } = req.body || {};
+  if (modo === 'saude') {
+    const forcar = !!(req.body || {}).forcar;
+    if ((req.body || {}).esperar) return res.status(200).json({ ok: true, modo, ...(await saudeAPI(apiKey, { forcar })) });
+    waitUntil(saudeAPI(apiKey, { forcar }).then(r => console.log('[saude-api]', JSON.stringify(r))).catch(e => console.error('[saude-api] falhou', e)));
+    return res.status(202).json({ ok: true, modo });
+  }
   // Agenda do Agente (07h completa; 12h, 16h, 20h acompanhamento): na primeira
   // meia hora de cada horário, dispara a rodada — sem depender da cron da Vercel.
   const { hora, minuto } = agoraBRT();
@@ -1397,6 +1532,8 @@ module.exports = async function handler(req, res) {
   if (hora >= 6 && minuto < 30 && !conta) waitUntil(dispararAgente(req, 'saldo'));
   // Saúde das conexões: de hora em hora, o dia todo (avisa quando uma conta cai ou volta)
   if (minuto < 30 && !conta) waitUntil(dispararAgente(req, 'conexoes'));
+  // Agente Saúde da API: confere os pedidos da base × marketplace, de hora em hora
+  if (minuto >= 15 && minuto < 30 && !conta) waitUntil(dispararAgente(req, 'saude-api'));
   // limpeza da Caixa de decisões (vencidas/substituídas), de hora em hora
   if (minuto >= 30 && !conta) waitUntil(dispararAgente(req, 'limpeza'));
   // conversão no ML (catálogo/Buy Box): 5h e 6h, cada passada pega as contas ainda não analisadas hoje

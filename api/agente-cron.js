@@ -613,6 +613,21 @@ module.exports = async function handler(req, res) {
       return res.status(202).json({ ok: true, rodada: 'conexoes', slot });
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
+  // ?rodada=saude-api — Agente Saúde da API (api/sync-dados.js saudeAPI): pedidos da base × marketplace,
+  // de hora em hora; &agora=1 espera o resultado (botão "Conferir agora"); &forcar=1 reconfere quem já foi conferido hoje
+  if (req.query?.rodada === 'saude-api') {
+    try {
+      const { dia, hora } = agoraBRT(), slot = `${dia}-${String(hora).padStart(2, '0')}h-saude-api`;
+      const agora = req.query?.agora === '1';
+      if (!agora && !(await reservarRodada(slot))) return res.status(200).json({ ok: true, skip: `rodada ${slot} já executada` });
+      const token = (await sbSelect('glr_config_privada', 'chave=eq.sync_token&select=valor').catch(() => []))[0]?.valor;
+      if (!token) return res.status(500).json({ error: 'token da sincronização não encontrado' });
+      const r = await fetch(`${require('./_auth').internalOrigin()}/api/sync-dados`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-glr-sync-token': token },
+        body: JSON.stringify({ modo: 'saude', esperar: agora, forcar: req.query?.forcar === '1' }), signal: AbortSignal.timeout(agora ? 280000 : 20000) });
+      const j = await r.json().catch(() => ({}));
+      return res.status(r.ok ? 200 : 500).json({ ok: r.ok, rodada: 'saude-api', ...j });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
   // ?rodada=conversao — Agente de Conversão no ML (api/_conversao.js): catálogo/Buy Box e elegíveis,
   // contas ainda não analisadas hoje (de madrugada, em várias passadas); &conta=X analisa só ela na hora
   if (req.query?.rodada === 'conversao') {
