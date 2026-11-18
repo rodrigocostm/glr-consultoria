@@ -34,6 +34,48 @@
     return mkt ? img(mkt) : '';
   };
 
+  // Nome da loja sem o marketplace escrito ("D&L Moveis", "Kaio"): reconhece pelas etiquetas/apelidos
+  // das contas conectadas. Nome que existe em mais de um marketplace só ganha ícone na tela que é de
+  // um marketplace só (ADS Shopee, ADS ML, monitores…), onde também vale o nome do cliente.
+  const PAGINA_MKT = { agente: 'shopee', 'precos-shopee': 'shopee', 'agente-ml': 'ml', 'precos-ml': 'ml', 'conversao-ml': 'ml', 'anuncios-amazon': 'amazon' };
+  const MKT_CONTA = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : m === 'amazon' ? 'amazon' : m.startsWith('tiktok') ? 'tiktok' : m === 'magalu' ? 'magalu' : m === 'shein' ? 'shein' : null; };
+  let rotulos = null, rotulosEm = 0;
+  const norm = t => String(t || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  function lerRotulos() {
+    if (rotulos && Date.now() - rotulosEm < 60000) return rotulos;
+    const ler = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
+    const mapa = new Map(), clientes = new Map();
+    const add = (nome, mkt) => { const k = norm(nome); if (!k || k.length > 50 || !mkt) return; if (!mapa.has(k)) mapa.set(k, new Set()); mapa.get(k).add(mkt); };
+    const contas = ler('glr_mc_contas'), vinc = ler('glr_mc_vinculos') || {}, nicks = ler('glr_mc_nicknames') || {};
+    const genrc = n => /^(mercado ?livre|meli|shopee|amazon|magalu|tiktok( shop)?|shein)\s*[\d-]*$/i.test(String(n || '').trim());
+    for (const c of (Array.isArray(contas) ? contas : [])) {
+      const mkt = MKT_CONTA(c.marketplace);
+      for (const t of (c.tags || [])) if (t && t.name) add(t.name, mkt);
+      if (c.nickname && !genrc(c.nickname)) add(c.nickname, mkt);
+      const id = String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id || '');
+      if (nicks[id] && !genrc(nicks[id])) add(nicks[id], mkt);
+    }
+    for (const [cid, lista] of Object.entries(vinc)) {
+      const cli = (typeof GLR !== 'undefined' ? GLR.clientes || [] : []).find(c => String(c.id) === String(cid));
+      for (const c of (Array.isArray(lista) ? lista : [])) {
+        const mkt = MKT_CONTA(c.marketplace);
+        if (cli) { const k = norm(cli.nome); if (!clientes.has(k)) clientes.set(k, new Set()); clientes.get(k).add(mkt); }
+      }
+    }
+    rotulos = { mapa, clientes }; rotulosEm = Date.now();
+    return rotulos;
+  }
+  function mktPorNome(texto) {
+    const k = norm(texto); if (!k || k.length > 50) return null;
+    const { mapa, clientes } = lerRotulos();
+    const pag = PAGINA_MKT[(location.hash.replace('#', '') || '').split('?')[0]];
+    const m = mapa.get(k);
+    if (!pag && clientes.has(k)) return null; // nome de cliente fora das telas de um marketplace só: não é conta
+    if (m && m.size === 1) { const [u] = m; return !pag || u === pag ? u : null; }
+    if (pag && ((m && m.has(pag)) || clientes.get(k)?.has(pag))) return pag;
+    return null;
+  }
+
   const PULA = 'select,option,textarea,input,script,style,svg,[contenteditable="true"],.mkt-sem-icone,title,head';
   function decorar(el) {
     if (!el || el.nodeType !== 1 || el.dataset?.mktIc) return;
@@ -46,6 +88,7 @@
       const i = texto.indexOf(' · ');
       if (i > 0 && i < 50) { mkt = mktDe(texto.slice(i + 3)); corte = i + 3; }
       if (!mkt && texto.length <= 60 && el.childElementCount === 0) { mkt = mktDoFim(texto); corte = 0; }
+      if (!mkt && el.childElementCount === 0 && primeiro === el.lastChild) { mkt = mktPorNome(texto); corte = 0; }
       if (!mkt) return;
     }
     if (el.childElementCount > 4 || (el.textContent || '').length > 100) return; // etiqueta, não parágrafo
