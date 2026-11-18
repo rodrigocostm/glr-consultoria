@@ -418,7 +418,7 @@ Router.register('vendometro', (params, el) => {
   // listas de cliente e conta (só clientes com conta vinculada)
   // reescrever as opções fecha a lista aberta (o Vendômetro redesenha várias vezes enquanto as contas chegam):
   // só troca quando as opções mudaram e nunca com a lista em uso
-  const porOpcoes = (sel, html) => { if (!sel || document.activeElement === sel || sel.dataset.html === html) return; sel.innerHTML = html; sel.dataset.html = html; };
+  const porOpcoes = (sel, html) => { if (!sel || document.activeElement === sel || sel._vmHtml === html) return; sel.innerHTML = html; sel._vmHtml = html; };
   function montarSeletores() {
     const contas = [...contasCarteira().entries()];
     const clientes = new Map(); for (const [, ct] of contas) clientes.set(String(ct.cli.id), ct.cli.nome);
