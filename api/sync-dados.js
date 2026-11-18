@@ -1525,7 +1525,7 @@ async function saudeAPI(apiKey, { forcar = false } = {}) {
         conferidas++; corrigidosTot += dias.reduce((s, d) => s + d.corrigidos, 0);
         const div = dias.filter(d => x.mkt === 'ml' ? d.pendentes > 0 : false);
         if (dias.some(d => d.corrigidos)) { x.problemas.push(`Faltavam ${dias.reduce((s, d) => s + d.corrigidos, 0)} pedido(s) de ${dias.filter(d => d.corrigidos).map(d => d.dia.slice(8) + '/' + d.dia.slice(5, 7)).join(' e ')} — buscados e gravados agora.`); if (x.status === 'ok') x.status = 'corrigido'; }
-        if (div.length) { x.problemas.push(`O Mercado Livre mostra ${div.map(d => `${d.api} pedidos em ${d.dia.slice(8)}/${d.dia.slice(5, 7)} e a base ${d.base}`).join('; ')} — mesmo depois de buscar de novo.`); if (x.status === 'ok' || x.status === 'corrigido') { x.status = 'divergente'; x.desde = x.desde || new Date().toISOString(); } }
+        if (div.length) { x.problemas.push(`O Mercado Livre mostra ${div.map(d => `${d.api} pedidos em ${d.dia.slice(8)}/${d.dia.slice(5, 7)} e a base ${d.base}`).join('; ')} — mesmo depois de buscar de novo.`); if (x.status === 'ok' || x.status === 'corrigido') { x.status = 'divergente'; x.desde = x.desde || new Date().toISOString(); } x.divConf = x.problemas.slice(-1); }
       } catch (e) { x.conferido = { dia: hoje, em: new Date().toISOString(), erro: String(e.message || e).slice(0, 200) }; }
     }
   };
@@ -1534,7 +1534,8 @@ async function saudeAPI(apiKey, { forcar = false } = {}) {
   for (const x of Object.values(novo)) {
     if (x.conferido?.dia === hoje || !ant[`${x.mkt}:${x.id}`]) continue;
     const a = ant[`${x.mkt}:${x.id}`];
-    if (a.status === 'divergente' && x.status === 'ok') { x.status = 'divergente'; x.problemas = a.problemas || []; x.desde = a.desde; }
+    // só a divergência da conferência API × base (1x por dia) é mantida; a do resumo é refeita a cada rodada
+    if (a.divConf && a.status === 'divergente' && x.status === 'ok') { x.status = 'divergente'; x.problemas = [...x.problemas, ...a.divConf]; x.desde = a.desde; x.divConf = a.divConf; }
   }
   const ruim = s => ['erro', 'travado', 'divergente'].includes(s);
   const caiu = Object.values(novo).filter(x => ruim(x.status) && !ruim(ant[`${x.mkt}:${x.id}`]?.status));
