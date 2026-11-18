@@ -468,7 +468,8 @@ async function gerarPlanos(h, filtroCliente, metaNova) {
   const { sbSelect, sbUpsert, lerStorage, anthropicKey, Anthropic } = h;
   const [clientes, vinc, metas, metasPed, metasTac, gestores, nicks, estados, configs, pendentes, medidos, resumosOutros] = await Promise.all([
     lerStorage('glr_clientes').then(x => x || []), lerStorage('glr_mc_vinculos').then(x => x || {}), lerStorage('glr_metas').then(x => x || {}), lerStorage('glr_metas_pedidos').then(x => x || {}), lerStorage('glr_metas_tacos').then(x => x || {}), lerStorage('glr_gestores').then(x => x || []), lerStorage('glr_mc_nicknames').then(x => x || {}),
-    sbSelect('glr_sync_estado', 'recurso=in.(resumo,sinais,promocoes,reputacao,qualidade,funil,oportunidades)&marketplace=in.(ml,shopee)&select=marketplace,conta_id,recurso,cursor').catch(() => []),
+    // em 2 partes: juntas passam de 1000 linhas e o Supabase corta o excesso (lojas sumiam do plano)
+    Promise.all(['resumo,sinais,promocoes', 'reputacao,qualidade,funil,oportunidades'].map(rs => sbSelect('glr_sync_estado', `recurso=in.(${rs})&marketplace=in.(ml,shopee)&select=marketplace,conta_id,recurso,cursor`).catch(() => []))).then(p => p.flat()),
     sbSelect('glr_agente_config', 'select=conta_id,marketplace,meta_acos,cliente_nome').catch(() => []),
     sbSelect('glr_agente_log', `tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 10 * 864e5).toISOString())}&select=conta_id,titulo,dados,criado_em&limit=3000`).catch(() => []),
     sbSelect('glr_agente_log', `tipo=in.(decisao,alerta)&resultado=eq.executado&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 46 * 864e5).toISOString())}&select=conta_id,titulo,dados,criado_em&order=criado_em.desc&limit=6000`).catch(() => []),

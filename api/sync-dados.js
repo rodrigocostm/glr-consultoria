@@ -1328,7 +1328,9 @@ async function executar(apiKey, soConta) {
   const prazo = Date.now() + ORCAMENTO_MS;
   let contas = await contasParaSincronizar(apiKey);
   if (soConta) contas = contas.filter(c => c.id === String(soConta));
-  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor&recurso=not.in.(oportunidades,precos,sinais,promocoes,reputacao,qualidade,promos_ml,atendimento)');
+  const estados = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,cursor&recurso=in.(pedidos,ads,resumo)&limit=5000');
+  // só os 3 recursos usados abaixo: a tabela tem >1000 linhas e o Supabase corta em 1000 —
+  // a loja que ficava de fora perdia o cursor e recomeçava o histórico a cada rodada
   const qualEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.qualidade').catch(() => []);
   const repEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,em:cursor->>em&recurso=eq.reputacao').catch(() => []);
   const promoEst = await sbSelect('glr_sync_estado', 'select=marketplace,conta_id,dia:cursor->>dia&recurso=eq.promocoes').catch(() => []);
