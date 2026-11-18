@@ -47,7 +47,7 @@ function experimento(d, contexto, config, mensal = {}) {
   if (escala && config.piloto && ['orcamento', 'roas_target'].includes(d.acao)) {
     const p = passo(contexto, config);
     if (!p || !(+d.de > 0)) return { bloqueado: true, motivo: 'Sem dados para dimensionar o teste' };
-    novo.para = arred(d.acao === 'orcamento' ? Math.min(+d.para, +d.de * (1 + p)) : Math.max(+d.para, +d.de * (1 - p), 100 / contexto.limite_acos));
+    novo.para = d.acao === 'orcamento' ? Math.floor(Math.min(+d.para, +d.de * (1 + p))*100+1e-8)/100 : Math.ceil(Math.max(+d.para, +d.de * (1 - p), 100 / contexto.limite_acos)*100-1e-8)/100;
     if ((d.acao === 'orcamento' && novo.para <= +d.de) || (d.acao === 'roas_target' && novo.para >= +d.de)) return { bloqueado: true, motivo: 'Meta de ROAS já no limite da margem' };
   }
   if (escala && ['orcamento','roas_target'].includes(d.acao) && Math.abs(+d.para - +d.de) > 0 && d.impacto != null) novo.impacto = Math.max(0,+d.impacto) * Math.min(1, Math.abs(novo.para-d.de)/Math.abs(d.para-d.de));
@@ -73,7 +73,7 @@ function medir(antes, depois, exp, eventos = [], sobreposta = false) {
   const a=calc(antes), b=calc(depois);
   const confundida = sobreposta || eventos.length > 0;
   const veredito = !a || !b || a.contribuicao_estimada == null || !exp.teto_tacos || (a && a.faturamento <= 0) || confundida ? 'inconclusivo'
-    : b.faturamento === 0 ? 'piorou' : b.contribuicao_estimada > a.contribuicao_estimada && b.faturamento >= a.faturamento && b.tacos <= exp.teto_tacos ? 'melhorou'
+    : b.faturamento === 0 || (exp.margem_reserva != null && b.contribuicao_estimada / b.faturamento * 100 < exp.margem_reserva) ? 'piorou' : b.contribuicao_estimada > a.contribuicao_estimada && b.faturamento >= a.faturamento && b.tacos <= exp.teto_tacos ? 'melhorou'
     : b.contribuicao_estimada < a.contribuicao_estimada || b.tacos > exp.teto_tacos ? 'piorou' : 'neutro';
   return { antes:a, depois:b, veredito, eventos, sobreposta, observacional:true,
     resumo: !a || !b ? 'Sem cobertura para medir o período completo' : `Faturamento total ${arred(a.faturamento)} → ${arred(b.faturamento)}; contribuição estimada ${a.contribuicao_estimada ?? 'sem margem'} → ${b.contribuicao_estimada ?? 'sem margem'}. Estimativa com margem inicial constante e vendas orgânicas + ADS da campanha. Comparação observacional, sem prova de causalidade.${confundida ? ' Há eventos externos ou ajustes sobrepostos.' : ''}` };

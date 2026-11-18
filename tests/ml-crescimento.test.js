@@ -91,3 +91,9 @@ test('campanha elegível gera orçamento limitado em sugestão; teste aberto imp
   else {assert.equal(testes.length,1);assert.equal(testes[0].resultado,'so_alerta');assert.equal(testes[0].dados.para,115);}
  }
 });
+test('arredondamento não cruza piso de ROAS e medição respeita reserva após ADS',()=>{
+ const c={...ctx(),limite_acos:17};
+ const d=motor.experimento({...proposta,acao:'roas_target',de:6,para:3},c,config(),mensal).dados;
+ assert.equal(d.para,5.89);assert.ok(100/d.para<=17);
+ const r=motor.medir({total:1000,ads:70},{total:1100,ads:80},{margem_antes_ads:15,teto_tacos:8,margem_reserva:10});assert.equal(r.veredito,'piorou');
+});
