@@ -1537,11 +1537,33 @@ async function saudeAPI(apiKey, { forcar = false } = {}) {
     // só a divergência da conferência API × base (1x por dia) é mantida; a do resumo é refeita a cada rodada
     if (a.divConf && a.status === 'divergente' && x.status === 'ok') { x.status = 'divergente'; x.problemas = [...x.problemas, ...a.divConf]; x.desde = a.desde; x.divConf = a.divConf; }
   }
+  // Plano do Gerente (texto, faturamento, projeção) é feito 1x por dia: loja corrigida hoje deixa o plano
+  // do cliente com número antigo. Marca o cliente e, quando o resumo já bate, pede um plano novo.
+  const planoPend = { ...(anterior.planoPend || {}) };
+  for (const x of Object.values(novo)) {
+    const k = `${x.mkt}:${x.id}`;
+    if ((x.resumoDiv || []).length || (x.conferido?.dia === hoje && (x.conferido.dias || []).some(d => d.corrigidos))) planoPend[k] = planoPend[k] || new Date().toISOString();
+  }
+  const prontos = Object.keys(planoPend).filter(k => novo[k] && !(novo[k].resumoDiv || []).length && !(refazer[k] || []).length);
+  if (prontos.length) {
+    const vinc = (await sbSelect('glr_storage', 'chave=eq.glr_mc_vinculos&select=dados').catch(() => []))[0]?.dados || {};
+    const cliDe = {};
+    for (const [cid, lista] of Object.entries(vinc)) for (const c of (Array.isArray(lista) ? lista : [])) cliDe[`${MKT(c.marketplace)}:${c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.param_to_use?.magalu_account_id || c.param_to_use?.shein_supplier_id || c.external_id}`] = cid;
+    const clientes = [...new Set(prontos.map(k => cliDe[k]).filter(Boolean))];
+    const origin = require('./_auth').internalOrigin();
+    const headers = process.env.CRON_SECRET ? { Authorization: `Bearer ${process.env.CRON_SECRET}` } : {};
+    for (const cid of clientes) {
+      if (Date.now() > prazo) break;
+      try { const r = await fetch(`${origin}/api/agente-cron?rodada=gerente&cliente_id=${encodeURIComponent(cid)}`, { headers, signal: AbortSignal.timeout(60000) }); if (!r.ok) continue; } catch (e) { continue; }
+      for (const k of prontos) if (cliDe[k] === cid) delete planoPend[k];
+    }
+    for (const k of prontos) if (!cliDe[k]) delete planoPend[k]; // loja sem cliente: não há plano
+  }
   const ruim = s => ['erro', 'travado', 'divergente'].includes(s);
   const caiu = Object.values(novo).filter(x => ruim(x.status) && !ruim(ant[`${x.mkt}:${x.id}`]?.status));
   const cont = s => Object.values(novo).filter(x => x.status === s).length;
   const resumo = { contas: contas.length, ok: cont('ok'), corrigido: cont('corrigido'), recuperando: cont('recuperando'), travado: cont('travado'), divergente: cont('divergente'), erro: cont('erro'), atrasada: cont('atrasada'), sem_sync: cont('sem_sync'), conferidas, corrigidos: corrigidosTot, faltam_conferir: fila.length - conferidas };
-  await sbUpsert('glr_sync_estado', [{ marketplace: 'sistema', conta_id: 'saude_api', recurso: 'todas', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), cursor: { em: Date.now(), resumo, contas: novo, refazer } }], 'marketplace,conta_id,recurso');
+  await sbUpsert('glr_sync_estado', [{ marketplace: 'sistema', conta_id: 'saude_api', recurso: 'todas', ultima_tentativa: new Date().toISOString(), ultimo_sucesso: new Date().toISOString(), cursor: { em: Date.now(), resumo, contas: novo, refazer, planoPend } }], 'marketplace,conta_id,recurso');
   if (caiu.length) {
     const NM = { shopee: 'Shopee', ml: 'Mercado Livre', amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' };
     await require('./_alerta').avisar(sbSelect, caiu.length === 1 ? `🩺 Pedidos em dúvida — ${caiu[0].nome} (${NM[caiu[0].mkt]})` : `🩺 ${caiu.length} lojas com pedidos em dúvida`,
