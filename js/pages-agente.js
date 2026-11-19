@@ -97,6 +97,12 @@
         // Só contas da Shopee — o Mercado Livre tem aba própria (pages-agente-ml.js)
         state.contas = (cfgResp.data || []).filter(c => !c.marketplace || String(c.marketplace).toLowerCase() === 'shopee');
         state.logs = logsResp.data || [];
+        // alertas pendentes de TODAS as lojas (os 250 mais recentes só cobriam as últimas horas)
+        try {
+          const desdeAl = new Date(Date.now() - 10 * 864e5).toISOString();
+          const { data: pend } = await _sb.from('glr_agente_log').select('*').eq('tipo', 'alerta').eq('resultado', 'so_alerta').gte('criado_em', desdeAl).order('criado_em', { ascending: false }).limit(1000);
+          mesclarLogs(pend || []);
+        } catch (e) {}
         state.relatorios = relResp.data || [];
         // Cliente em foco (seletor da barra de cima) → abre direto a conta Shopee dele
         if (state.contaAbertaId == null && GLR.ctx?.cliente()) {
@@ -108,6 +114,7 @@
         if (state.contaAbertaId == null && state.contas.length <= 1) {
           state.contaAbertaId = state.contas[0]?.conta_id ?? (state.contasShopee.length ? '__novo__' : null);
         }
+        if (state.contaAbertaId && state.contaAbertaId !== '__novo__') carregarLogsConta(state.contaAbertaId);
       } catch (e) {
         console.warn('[Agente] erro ao carregar:', e.message);
       } finally {
@@ -607,7 +614,8 @@
         } catch (e) { /* um alerta falhando não derruba os outros */ }
       }
       const { data } = await _sb.from('glr_agente_log').select('*').order('criado_em', { ascending: false }).limit(250);
-      if (data) state.logs = data;
+      if (data) mesclarLogs(data);
+      if (state.contaAbertaId && state.contaAbertaId !== '__novo__') await carregarLogsConta(state.contaAbertaId, true);
     }
 
     function renderCurvaABC(contaId) {
@@ -1584,6 +1592,27 @@
     }
 
     function logsDaConta(contaId) { return state.logs.filter(l => l.conta_id === contaId); }
+    // junta registros novos aos que já estão na tela (sem repetir) — mais novos primeiro
+    function mesclarLogs(lista) {
+      const porId = new Map(state.logs.map(l => [String(l.id), l]));
+      for (const l of lista || []) porId.set(String(l.id), l);
+      state.logs = [...porId.values()].sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
+    }
+    // Histórico completo da loja aberta (40 dias cobre o mês atual e os filtros de 7/15/30 dias).
+    // Antes vinham só os 250 registros mais recentes de TODAS as lojas — sobravam 2 ou 3 de cada uma.
+    var _logsConta = {};
+    async function carregarLogsConta(contaId, forcar = false) {
+      if (!contaId || contaId === '__novo__') return;
+      if (!forcar && _logsConta[contaId] && Date.now() - _logsConta[contaId] < 60000) return;
+      _logsConta[contaId] = Date.now();
+      try {
+        const desde = new Date(Date.now() - 40 * 864e5).toISOString();
+        const { data, error } = await _sb.from('glr_agente_log').select('*').eq('conta_id', contaId).gte('criado_em', desde).order('criado_em', { ascending: false }).limit(1000);
+        if (error) throw error;
+        mesclarLogs(data || []);
+        if (state.contaAbertaId === contaId) render();
+      } catch (e) { console.warn('[Agente] histórico da conta:', e.message); delete _logsConta[contaId]; }
+    }
     const maisRecente = (a, b) => new Date(b.criado_em) - new Date(a.criado_em);
 
     function motivoCurto(txt, n) {
@@ -2784,7 +2813,7 @@
     window._agAbrirConta = (id) => {
       if (id && id !== '__novo__') GLR.ctx?.definirPorConta('shopee', id);
       state.contaAbertaId = id; state.chatMessages = []; render();
-      if (id && id !== '__novo__') { buscarNegocio(id); buscarDadosAoVivo(id); abcCarregarDoCache(id); render(); }
+      if (id && id !== '__novo__') { carregarLogsConta(id); buscarNegocio(id); buscarDadosAoVivo(id); abcCarregarDoCache(id); render(); }
     };
     window._agTrocarConta = (id) => {
       state.comboAberto = false; state.comboBusca = '';
