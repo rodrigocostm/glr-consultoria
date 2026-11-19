@@ -64,7 +64,10 @@ function receitaProjecao({clientes=[],projecoes=[],vinculos={},excecoes={},base=
   faltantes.push(c.nome);
  }
  const soma=k=>detalhes.length?detalhes.reduce((s,d)=>s+d[k],0):null;
- const dias=detalhes.length?Math.min(...detalhes.map(d=>d.dias)):null;
- return {fonte:'Projeção mensal (acumulado ÷ dias encerrados × dias do mês) · comissão GLR',mes,base:soma('receitaBase'),projetada:soma('receitaProjetada'),gmvBase:soma('gmvBase'),gmvProjetado:soma('gmvProjetado'),dias,instavel:dias!=null&&dias<3,parcial:faltantes.length>0,faltantes,detalhes};
+ // dias da base automática (vale para quase todos); cliente com dado mais antigo (projeção salva) não puxa o total
+ const diasBase=detalhes.filter(d=>d.fonte==='base').map(d=>d.dias);
+ const dias=diasBase.length?Math.max(...diasBase):(detalhes.length?Math.min(...detalhes.map(d=>d.dias)):null);
+ const defasados=dias==null?[]:detalhes.filter(d=>d.dias<dias).map(d=>({cliente:d.cliente,dataBase:d.dataBase,dias:d.dias}));
+ return {fonte:'Projeção mensal (acumulado ÷ dias encerrados × dias do mês) · comissão GLR',mes,base:soma('receitaBase'),projetada:soma('receitaProjetada'),gmvBase:soma('gmvBase'),gmvProjetado:soma('gmvProjetado'),dias,instavel:dias!=null&&dias<3,parcial:faltantes.length>0,faltantes,defasados,detalhes};
 }
 module.exports={receitaProjecao};
