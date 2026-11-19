@@ -2032,8 +2032,9 @@ Router.register('vendas', async (params, el) => {
     if (!GLR.contaGeraComissao(conta)) return { valor: 0, rotulo: 'Comissão GLR (conta sem comissão)' };
     const m = GLR.comissao.modelo(cli);
     if (m.modelo === 'fixo') return { valor: 0, rotulo: 'Comissão GLR (contrato fixo: não cobra por pedido)' };
-    const v = GLR.comissao.dePedido(cli, parseFloat(p.valor) || 0, p.qtd);
-    return { valor: v, rotulo: m.modelo === 'venda' ? `Comissão GLR (${R$(m.valor)} × ${parseInt(p.qtd) || 1} un.)` : 'Comissão GLR (faixa de ticket)' };
+    const porPed = GLR.contaPorPedido(conta), n = porPed ? 1 : (parseInt(p.qtd) || 1);
+    const v = GLR.comissao.dePedido(cli, parseFloat(p.valor) || 0, n);
+    return { valor: v, rotulo: m.modelo === 'venda' || m.modelo === 'misto' ? `Comissão GLR (${R$(m.valor)} × ${n} ${porPed ? 'pedido' : 'un.'}${m.modelo === 'misto' ? ' + fixo mensal' : ''})` : 'Comissão GLR (faixa de ticket)' };
   }
 
   function renderDetalhe(p, l) {

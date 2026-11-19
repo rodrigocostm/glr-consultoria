@@ -47,7 +47,7 @@ Router.register('rentabilidade', (params, el) => {
         r.cobertas++;
         const t = BaseDados.somar(info, de, ate);
         r.fat += t.faturamento; r.ped += t.pedidos;
-        if (GLR.contaGeraComissao(ct)) { r.fatCom += t.faturamento; r.unidCom += t.unidades || t.pedidos; }
+        if (GLR.contaGeraComissao(ct)) { r.fatCom += t.faturamento; r.unidCom += GLR.vendasComissao(ct, t.unidades, t.pedidos); }
       }
       if (!r.cobertas || r.fat <= 0) continue;
       const com = GLR.comissao.temComissao(c) ? GLR.comissao.estimar(c, r.unidCom * escala, r.fatCom * escala) : 0;

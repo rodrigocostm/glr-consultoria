@@ -80,7 +80,7 @@ Router.register('performance', (params, el) => {
 
     // Receita GLR
     const vendasProj = plats.reduce((s,p) => s + calcP(p.vendasBase), 0);
-    const vendasCom  = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcP(p.vendasBase) : 0), 0);
+    const vendasCom  = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcP(GLR.contaPorPedido(p.contaId) && p.pedidosBase != null ? p.pedidosBase : p.vendasBase) : 0), 0);
     const fatCom     = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcP(p.fatBase) : 0), 0);
     const receitaGLR = GLR.comissao.estimar(c, vendasCom, fatCom); // modelo de comissão do cliente
 
@@ -537,7 +537,7 @@ const _projecaoDetalhe = (params, el) => {
     const ini = db.slice(0, 8) + '01';
     if (!BaseDados.cobre(info, ini)) return null;
     const t = BaseDados.somar(info, ini, db);
-    return { fat: t.faturamento, vendas: t.unidades || t.pedidos, ads: BaseDados.cobreAds(info, ini) ? t.ads : null };
+    return { fat: t.faturamento, vendas: t.unidades || t.pedidos, pedidos: t.pedidos || 0, ads: BaseDados.cobreAds(info, ini) ? t.ads : null };
   }
   // Cria as linhas das contas vinculadas que ainda não existem e preenche os
   // meses fechados (M1/M2) que estiverem vazios a partir da base.
@@ -1049,7 +1049,7 @@ const _projecaoDetalhe = (params, el) => {
         fat = bd.fat; vendas = bd.vendas; ads = bd.ads != null ? bd.ads : (parseFloat(p.adsBase) || 0);
         // grava o valor da base na linha (Gestores, Carteira e relatório leem daqui)
         const f = fat.toFixed(2), v = String(vendas), a = bd.ads != null ? bd.ads.toFixed(2) : p.adsBase;
-        if (p.fatBase !== f || p.vendasBase !== v || p.adsBase !== a) { p.fatBase = f; p.vendasBase = v; p.adsBase = a; mudou = true; }
+        if (p.fatBase !== f || p.vendasBase !== v || p.adsBase !== a || p.pedidosBase !== String(bd.pedidos)) { p.fatBase = f; p.vendasBase = v; p.adsBase = a; p.pedidosBase = String(bd.pedidos); mudou = true; }
       } else {
         const cd = cacheParaPlat(cache, contasCliente, p._platNome || p.nome, p.contaId);
         fat = parseFloat(p.fatBase) || (cd ? cd.fat : 0);
@@ -1057,8 +1057,10 @@ const _projecaoDetalhe = (params, el) => {
         ads = parseFloat(p.adsBase) || (p._adsAuto != null ? p._adsAuto : 0);
       }
       const proj = calcProjecao(fat, dd, dm), adsProj = calcProjecao(ads, dd, dm), vendasProj = calcProjecao(vendas, dd, dm);
+      // comissão: conta marcada "por pedido" conta pedidos, não unidades
+      const vendasComProj = GLR.contaPorPedido(p.contaId) && p.pedidosBase != null ? calcProjecao(parseFloat(p.pedidosBase) || 0, dd, dm) : vendasProj;
       const m1 = parseFloat(p.maio) || 0, m2 = parseFloat(p.abril) || 0, m3 = parseFloat(p.marco) || 0;
-      return { p, i, base: !!bd, fat, ads, vendas, proj, adsProj, vendasProj, m1, m2, m3, evo: calcEvolucao(proj, m1), tacos: proj > 0 && adsProj > 0 ? adsProj / proj * 100 : null };
+      return { p, i, base: !!bd, fat, ads, vendas, proj, adsProj, vendasProj, vendasComProj, m1, m2, m3, evo: calcEvolucao(proj, m1), tacos: proj > 0 && adsProj > 0 ? adsProj / proj * 100 : null };
     });
     if (mudou) salvar();
     const soma = k => linhas.reduce((s, l) => s + (l[k] || 0), 0);
@@ -1072,7 +1074,7 @@ const _projecaoDetalhe = (params, el) => {
     let clientes = []; try { clientes = JSON.parse(localStorage.getItem('glr_clientes') || '[]'); } catch (e) {}
     const cli = clientes.find(c => c.id === cid);
     const valorVenda = parseFloat(cli?.valorPorVenda) || 0;
-    tot.vendasCom = linhas.reduce((s, l) => s + (GLR.linhaGeraComissao(cid, l.p) ? l.vendasProj || 0 : 0), 0);
+    tot.vendasCom = linhas.reduce((s, l) => s + (GLR.linhaGeraComissao(cid, l.p) ? l.vendasComProj ?? l.vendasProj ?? 0 : 0), 0);
     tot.fatCom = linhas.reduce((s, l) => s + (GLR.linhaGeraComissao(cid, l.p) ? l.proj || 0 : 0), 0);
     tot.receitaGLR = cli ? GLR.comissao.estimar(cli, tot.vendasCom, tot.fatCom) : 0; // modelo de comissão do cliente; só linhas/contas que contam comissão
     let metas = {}; try { metas = JSON.parse(localStorage.getItem('glr_metas') || '{}'); } catch (e) {}
@@ -1983,7 +1985,7 @@ Router.register('relatorios', (params, el) => {
     const fatProj    = plats.reduce((s,p) => s + calcProj(p.fatBase), 0);
     const adsProj    = plats.reduce((s,p) => s + calcProj(p.adsBase), 0);
     const vendasProj = plats.reduce((s,p) => s + calcProj(p.vendasBase), 0);
-    const vendasCom  = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcProj(p.vendasBase) : 0), 0);
+    const vendasCom  = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcProj(GLR.contaPorPedido(p.contaId) && p.pedidosBase != null ? p.pedidosBase : p.vendasBase) : 0), 0);
     const fatCom     = plats.reduce((s,p) => s + (GLR.linhaGeraComissao(c.id, p) ? calcProj(p.fatBase) : 0), 0);
     const receitaGLR = GLR.comissao.estimar(c, vendasCom, fatCom); // modelo de comissão do cliente
     const pctADS     = fatProj > 0 ? (adsProj / fatProj) * 100 : 0;

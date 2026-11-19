@@ -193,7 +193,8 @@ async function _dashBuscarVendasPorDia() {
           porCanal[canal].faturamento += v.faturamento || 0;
           if (ctxCom.com) {
             const x = balde(c, dataStr, canal); x.n += v.pedidos; baldes[c.id].n += v.pedidos;
-            if (GLR.comissao.modelo(c).modelo === 'venda') x.var += (v.unidades || v.pedidos) * GLR.comissao.modelo(c).valor;
+            const mdl = GLR.comissao.modelo(c);
+            if (mdl.modelo === 'venda' || mdl.modelo === 'misto') x.var += GLR.vendasComissao(conta, v.unidades, v.pedidos) * mdl.valor;
           }
         }
         // Comissão por faixa de ticket precisa do valor de cada pedido (o resumo é por dia)
@@ -304,16 +305,17 @@ async function _dashBuscarVendasPorDia() {
   // Fecha a comissão de cada cliente: fixo mensal rateado pelos pedidos; os demais, pedido a pedido
   for (const B of Object.values(baldes)) {
     const m = GLR.comissao.modelo(B.cli);
-    const totalFixo = m.modelo === 'fixo' ? GLR.comissao.fixoDoMes(m, B.n) : 0;
+    const temFixo = m.modelo === 'fixo' || m.modelo === 'misto';
+    const totalFixo = temFixo ? GLR.comissao.fixoDoMes(m, B.n) : 0;
     const entradas = Object.entries(B.b);
-    if (m.modelo === 'fixo' && !B.n) entradas.push([`01/${pad(mesN)}|${Object.keys(porCanal)[0] || 'Outro'}`, { n: 0, var: 0 }]);
+    if (temFixo && !B.n) entradas.push([`01/${pad(mesN)}|${Object.keys(porCanal)[0] || 'Outro'}`, { n: 0, var: 0 }]);
     for (const [k, x] of entradas) {
       const [dataStr, canal] = k.split('|');
-      const v = m.modelo === 'fixo' ? (B.n ? totalFixo * x.n / B.n : totalFixo) : x.var;
+      const vFixo = temFixo ? (B.n ? totalFixo * x.n / B.n : totalFixo) : 0, vVar = m.modelo === 'fixo' ? 0 : x.var, v = vFixo + vVar;
       if (!porDia[dataStr]) porDia[dataStr] = { pedidos: 0, comissao: 0, faturamento: 0 };
       porDia[dataStr].comissao += v;
-      const campo = m.modelo === 'fixo' ? 'fixoMensalRateado' : 'comissaoVariavel';
-      porDia[dataStr][campo] = (porDia[dataStr][campo] || 0) + v;
+      if (vFixo) porDia[dataStr].fixoMensalRateado = (porDia[dataStr].fixoMensalRateado || 0) + vFixo;
+      if (vVar || !temFixo) porDia[dataStr].comissaoVariavel = (porDia[dataStr].comissaoVariavel || 0) + vVar;
       if (!porCanal[canal]) porCanal[canal] = { pedidos: 0, comissao: 0, faturamento: 0 };
       porCanal[canal].comissao += v;
     }

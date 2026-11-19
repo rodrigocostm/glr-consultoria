@@ -27,6 +27,7 @@ const DIAS_IMPLANTACAO = 60, CUSTO_MIN = 80;
 function temComissao(c) { // espelha GLR.comissao.temComissao (js/data.js)
   const m = c?.comissao || {};
   if (m.modelo === 'fixo') return (+m.fixo || 0) > 0 || (+m.excedente || 0) > 0;
+  if (m.modelo === 'misto') return (+m.fixo || 0) > 0 || (+m.valor || 0) > 0;
   if (m.modelo === 'ticket') return (m.faixas || []).some(f => (+f.valor || 0) > 0);
   return (parseFloat(m.modelo === 'venda' && m.valor != null ? m.valor : c?.valorPorVenda) || 0) > 0;
 }

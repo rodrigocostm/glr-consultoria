@@ -21,17 +21,20 @@ function receitaProjecao({clientes=[],projecoes=[],vinculos={},excecoes={},base=
  // data-base pela base: ontem no mês corrente (dia 1 ainda não tem dia fechado), o último dia num mês passado
  const dataBaseAuto=ontem<mes+'-01'?null:ontem>fimMes?fimMes:ontem;
  const detalhes=[],faltantes=[];
- const somar=(dias,de,ate)=>{let fat=0,vendas=0;for(const[d,v]of Object.entries(dias||{}))if(d>=de&&d<=ate){fat+=n(v.faturamento);vendas+=n(v.unidades||v.pedidos);}return{fat,vendas}};
+ // porPedido: conta marcada "por pedido" (glr_comissao_contas = 'pedido') conta pedidos, não unidades
+ const somar=(dias,de,ate,porPedido)=>{let fat=0,vendas=0;for(const[d,v]of Object.entries(dias||{}))if(d>=de&&d<=ate){fat+=n(v.faturamento);vendas+=porPedido?n(v.pedidos):n(v.unidades||v.pedidos);}return{fat,vendas}};
  for(const c of clientes){
   const vinculadas=vinculos[String(c.id)]||[];
-  const gera=ct=>![ct?.external_id,ct?.param_to_use?.shopId,ct?.param_to_use?.meliUserId,ct?.param_to_use?.magalu_account_id,ct?.id].some(id=>id!=null&&excecoes[String(id)]===false);
+  const idsCt=ct=>[ct?.external_id,ct?.param_to_use?.shopId,ct?.param_to_use?.meliUserId,ct?.param_to_use?.magalu_account_id,ct?.id];
+  const gera=ct=>!idsCt(ct).some(id=>id!=null&&excecoes[String(id)]===false);
+  const porPedido=ct=>idsCt(ct).some(id=>id!=null&&excecoes[String(id)]==='pedido');
   // 1) base automática das contas comissão
   if(dataBaseAuto){
    const dd=+dataBaseAuto.slice(8,10);
    let fat=0,vendas=0,cobertas=0;
    for(const ct of vinculadas.filter(gera)){
     const k=`${mkt(ct.marketplace)}:${contaDe(ct)}`,resumo=cobre(k,mes+'-01');if(!resumo)continue;cobertas++;
-    const m=somar(resumo.cursor?.dias,mes+'-01',dataBaseAuto);fat+=m.fat;vendas+=m.vendas;
+    const m=somar(resumo.cursor?.dias,mes+'-01',dataBaseAuto,porPedido(ct));fat+=m.fat;vendas+=m.vendas;
    }
    if(cobertas){
     const fatP=fat/dd*diasNoMes,vendasP=vendas/dd*diasNoMes;
@@ -57,7 +60,7 @@ function receitaProjecao({clientes=[],projecoes=[],vinculos={},excecoes={},base=
   }
   // contrato fixo é devido mesmo sem vendas na base: entra pelo valor do contrato (nunca "sem dados")
   const mo=comissao.modelo(c);
-  if(mo.modelo==='fixo'&&mo.fixo>0){
+  if((mo.modelo==='fixo'||mo.modelo==='misto')&&mo.fixo>0){
    detalhes.push({clienteId:String(c.id),cliente:c.nome,fonte:'contrato fixo (sem vendas na base)',dataBase:dataBaseAuto,dias:dataBaseAuto?+dataBaseAuto.slice(8,10):diasNoMes,receitaBase:mo.fixo,receitaProjetada:mo.fixo,gmvBase:0,gmvProjetado:0});
    continue;
   }

@@ -31,6 +31,7 @@ async function lerReceita(h, mes) {
 // fixo: valor mensal (com valor por pedido acima da franquia só se o contrato tiver); venda/ticket: comissão variável
 function contratoDe(c) {
   const m = comissao.modelo(c || {});
+  if (m.modelo === 'misto') return { tipo: 'fixo mensal + comissão por venda', variavel: true, descricao: comissao.descricao(c, true) };
   if (m.modelo === 'fixo') return { tipo: m.excedente > 0 && m.franquia > 0 ? 'fixo + valor por pedido acima da franquia' : 'fixo', variavel: m.excedente > 0 && m.franquia > 0, descricao: comissao.descricao(c, true) };
   return { tipo: m.modelo === 'ticket' ? 'comissão por pedido (faixa de ticket)' : 'comissão por venda', variavel: true, descricao: comissao.descricao(c, true) };
 }

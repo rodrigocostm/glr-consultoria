@@ -119,7 +119,7 @@ Router.register('dre', (params, el) => {
       }
       custoProd += parseFloat((custos[p.id] || {}).custo) || 0;
       qtdTotal  += parseInt(p.qtd) || 1;
-      if (GLR.contaGeraComissao(p.contaId)) { qtdComissao += parseInt(p.qtd) || 1; pedCom.push({ valor: parseFloat(p.valor) || 0, qtd: parseInt(p.qtd) || 1 }); }
+      if (GLR.contaGeraComissao(p.contaId)) { const qc = GLR.contaPorPedido(p.contaId) ? 1 : (parseInt(p.qtd) || 1); qtdComissao += qc; pedCom.push({ valor: parseFloat(p.valor) || 0, qtd: qc }); }
     }
 
     // ADS por plataforma
@@ -134,7 +134,7 @@ Router.register('dre', (params, el) => {
     // Comissão GLR
     const cliente       = clientes.find(c => c.id === parseInt(clienteId));
     // Comissão pelo modelo do cliente, só contas que contam comissão; fixo dividido pelos pedidos do cliente no mês
-    const todosCom = pedidos.filter(p => contasCliente.includes(p.contaId) && !isReembolsado(p.status) && GLR.contaGeraComissao(p.contaId)).map(p => ({ valor: parseFloat(p.valor) || 0, qtd: parseInt(p.qtd) || 1 }));
+    const todosCom = pedidos.filter(p => contasCliente.includes(p.contaId) && !isReembolsado(p.status) && GLR.contaGeraComissao(p.contaId)).map(p => ({ valor: parseFloat(p.valor) || 0, qtd: GLR.contaPorPedido(p.contaId) ? 1 : (parseInt(p.qtd) || 1) }));
     const comissaoGLR   = GLR.comissao.daParte(cliente, pedCom, todosCom);
 
     return {
@@ -226,7 +226,8 @@ Router.register('dre', (params, el) => {
     const out = [];
     for (const c of contasDoCliente(clienteId)) {
       const d = baseDRE?.porConta?.[String(c.external_id)]; if (!d || !GLR.contaGeraComissao(c)) continue;
-      for (const p of d.pedidos) if (p.situacao === 'valido') out.push({ valor: parseFloat(p.valor_bruto) || 0, qtd: (p.itens || []).reduce((s, i) => s + (parseInt(i.qtd) || 1), 0) || 1 });
+      const porPed = GLR.contaPorPedido(c);
+      for (const p of d.pedidos) if (p.situacao === 'valido') out.push({ valor: parseFloat(p.valor_bruto) || 0, qtd: porPed ? 1 : ((p.itens || []).reduce((s, i) => s + (parseInt(i.qtd) || 1), 0) || 1) });
     }
     return out;
   }
@@ -255,7 +256,7 @@ Router.register('dre', (params, el) => {
         imposto += impAPI > 0 ? impAPI : valor * (parseFloat(cst.imposto) || parseFloat(aliquotas[c.external_id] || 0)) / 100;
         custoProd += parseFloat(cst.custo) || 0;
         const q = (p.itens || []).reduce((s, i) => s + (parseInt(i.qtd) || 1), 0) || 1;
-        qtd += q; if (GLR.contaGeraComissao(c)) { qtdCom += q; pedCom.push({ valor, qtd: q }); }
+        qtd += q; if (GLR.contaGeraComissao(c)) { const qc = GLR.contaPorPedido(c) ? 1 : q; qtdCom += qc; pedCom.push({ valor, qtd: qc }); }
       }
     }
     if (!fat && !ads) return null;

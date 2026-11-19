@@ -80,7 +80,7 @@ Router.register('gestores', (params, el) => {
       r.cobertas++; r.ids.add(id);
       const t = BaseDados.somar(info, mesIniG, isoD(ontemG));
       r.fat += t.faturamento; r.unid += t.unidades || t.pedidos;
-      if (GLR.contaGeraComissao(ct)) r.unidCom += t.unidades || t.pedidos;
+      if (GLR.contaGeraComissao(ct)) r.unidCom += GLR.vendasComissao(ct, t.unidades, t.pedidos);
       if (BaseDados.cobreAds(info, mesIniG)) { r.ads += t.ads; r.temAds = true; }
       for (const off of [1, 2, 3]) { const mf = mesFechado(off); if (BaseDados.cobre(info, mf.de)) r.m[off] += BaseDados.somar(info, mf.de, mf.ate).faturamento; }
     }
@@ -146,7 +146,7 @@ Router.register('gestores', (params, el) => {
         const f = parseFloat(p.fatBase) || 0, a = parseFloat(p.adsBase) || 0;
         fatMes += f; fatProj += calcP(f); adsProj += calcP(a);
         vendasProjBase += calcP(p.vendasBase);
-        if (GLR.linhaGeraComissao(c.id, p)) vendasComBase += calcP(p.vendasBase);
+        if (GLR.linhaGeraComissao(c.id, p)) vendasComBase += calcP(GLR.contaPorPedido(p.contaId) && p.pedidosBase != null ? p.pedidosBase : p.vendasBase);
       }
       if (b.temAds) pctADSProj = fatProj > 0 ? adsProj / fatProj * 100 : 0;
       if (b.m[1] > 0) fatM1 = b.m[1]; if (b.m[2] > 0) fatM2 = b.m[2]; if (b.m[3] > 0) fatM3 = b.m[3];
@@ -164,7 +164,7 @@ Router.register('gestores', (params, el) => {
     const faltaMeta = metaFinal>0 ? metaFinal-fatRef : null;
     const compM1    = fatM1>0 ? ((fatRef-fatM1)/fatM1)*100 : null;
     const vendasProj = vendasProjBase != null ? vendasProjBase : plats.reduce((s,p)=>s+calcP(p.vendasBase),0);
-    const vendasCom = vendasComBase != null ? vendasComBase : plats.reduce((s,p)=>s+(GLR.linhaGeraComissao(c.id, p) ? calcP(p.vendasBase) : 0),0);
+    const vendasCom = vendasComBase != null ? vendasComBase : plats.reduce((s,p)=>s+(GLR.linhaGeraComissao(c.id, p) ? calcP(GLR.contaPorPedido(p.contaId) && p.pedidosBase != null ? p.pedidosBase : p.vendasBase) : 0),0);
     const recGLR    = GLR.comissao.estimar(c, vendasCom, vendasProj > 0 ? fatProj * vendasCom / vendasProj : 0); // modelo de comissão do cliente; só contas que contam comissão
 
     return { fatBase, metaFinal, adsBase, pctADS, fatProj, adsProj, pctADSProj,
