@@ -1857,7 +1857,7 @@ Router.register('vendas', async (params, el) => {
       ${t.liq!=null?`<div class="kpi-card"><div class="kpi-label">Líquido Marketplace</div><div class="kpi-value" style="color:var(--purple);">${R$(t.liq)}</div><div class="kpi-sub">${t.fat>0?pct(t.liq/t.fat*100):''} do fat.</div></div>`:''}
       <div class="kpi-card"><div class="kpi-label">Custo Produto</div><div class="kpi-value" style="color:var(--red);">${R$(t.custo)}</div></div>
       <div class="kpi-card"><div class="kpi-label">Outros Custos</div><div class="kpi-value" style="color:var(--orange);">${R$(t.out)}</div></div>
-      <div class="kpi-card"><div class="kpi-label">✅ Lucro Bruto</div><div class="kpi-value" style="color:${corMargem(t.margem)};">${R$(t.lucro)}</div><div class="kpi-sub">Margem: ${pct(t.margem)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">${lista.some(p=>p.taxasPendente) ? "Resultado parcial — taxas pendentes" : lista.some(p=>p.taxas?.estimado) ? "Lucro estimado" : "✅ Lucro Bruto"}</div><div class="kpi-value" style="color:${corMargem(t.margem)};">${R$(t.lucro)}</div><div class="kpi-sub">Margem: ${pct(t.margem)}</div></div>
     `;
   }
 
@@ -1961,7 +1961,7 @@ Router.register('vendas', async (params, el) => {
 
     const liqCell = l.liquido != null
       ? `<div style="text-align:right;font-size:13px;font-weight:700;color:var(--purple);">${R$(l.liquido)}<br><span style="font-size:9px;color:var(--text-muted);font-weight:400;" title="${p.taxas?.estimado ? 'Valor que a Shopee informa que vai pagar; confirmado quando o pedido for concluído' : ''}">${p.taxas?.estimado ? 'estimado' : 'após taxas'}</span></div>`
-      : p.taxasPendente ? `<div style="text-align:right;font-size:11px;color:var(--yellow);" title="A Shopee ainda não informou as taxas deste pedido — a sincronização busca nos próximos minutos">aguardando<br>taxa</div>`
+      : p.taxasPendente ? `<div style="text-align:right;font-size:11px;color:var(--yellow);" title="O marketplace ainda não informou as taxas deste pedido — a sincronização busca nos próximos minutos">aguardando<br>taxa</div>`
       : `<div style="text-align:right;font-size:12px;color:var(--text-secondary);">—</div>`;
 
     return `
@@ -2097,6 +2097,7 @@ Router.register('vendas', async (params, el) => {
       linhasBreakdown = [
         { label:'Valor dos Produtos',           v: l.receita,            cor:'#60a5fa', sinal:'+' },
         l.comissao>0   ? { label:`Comissão ${nomePlat}`,        v: -l.comissao,          cor:'var(--red)', sinal:'-' } : null,
+        tx.afiliado ? { label:'Comissão de afiliado', v:-tx.afiliado, cor:'var(--red)', sinal:'-' } : null,
         l.taxaServico>0? { label:'Taxa de Serviço',             v: -l.taxaServico,       cor:'var(--red)', sinal:'-' } : null,
         tx.frete>0     ? { label:'Frete (descontado)',           v: -Math.abs(tx.frete),  cor:'var(--orange)', sinal:'-' } : null,
         impDeEscrowDetalhe ? { label:'Imposto (API)',            v: -tx.imposto,          cor:'var(--yellow)', sinal:'-' } : null,
@@ -2105,16 +2106,17 @@ Router.register('vendas', async (params, el) => {
         !impDeEscrowDetalhe && l.impVal>0 ? { label:`Imposto (${l.impPct}%)`, v: -l.impVal, cor:'var(--yellow)', sinal:'-' } : null,
         l.outros>0 ? { label:'Outros Custos',    v: -l.outros,            cor:'var(--orange)', sinal:'-' } : null,
         l.extra>0  ? { label:'Linhas Extras',   v: -l.extra,             cor:'var(--purple)', sinal:'-' } : null,
-        { label:'✅ Lucro Bruto',                   v: l.lucro,              cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
+        { label:p.taxasPendente ? 'Resultado parcial — taxas pendentes' : tx.estimado ? 'Lucro estimado — taxas médias' : '✅ Lucro Bruto',                   v: l.lucro,              cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
       ].filter(Boolean);
     } else {
       linhasBreakdown = [
+        ...(p.taxasPendente ? [{ label:'Taxas TikTok e afiliado: aguardando acerto', v:0, cor:'var(--yellow)', sinal:'' }] : []),
         { label:'Total do Pedido',               v: l.receita,            cor:'#60a5fa', sinal:'+' },
         { label:'Custo do Produto',              v: -l.custo,             cor:'var(--red)', sinal:'-' },
         l.impVal>0 ? { label:`Imposto (${l.impPct}%)`, v: -l.impVal,     cor:'var(--yellow)', sinal:'-' } : null,
         l.outros>0 ? { label:'Outros Custos',    v: -l.outros,            cor:'var(--orange)', sinal:'-' } : null,
         l.extra>0  ? { label:'Linhas Extras',   v: -l.extra,             cor:'var(--purple)', sinal:'-' } : null,
-        { label:'✅ Lucro Bruto',                   v: l.lucro,              cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
+        { label:p.taxasPendente ? 'Resultado parcial — taxas pendentes' : tx.estimado ? 'Lucro estimado — taxas médias' : '✅ Lucro Bruto',                   v: l.lucro,              cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
       ].filter(Boolean);
     }
 
@@ -2187,14 +2189,14 @@ Router.register('vendas', async (params, el) => {
     if (mkt !== 'shopee' && mkt !== 'ml') {
       // Amazon/TikTok/Magalu/Shein: produto pelo nome (mesma chave da busca antiga da
       // Amazon/Magalu — preserva custos salvos). Taxas: Shein traz o líquido real;
-      // Magalu traz a comissão (líquido = valor − comissão); Amazon/TikTok ainda sem taxas.
+      // Magalu traz a comissão (líquido = valor − comissão); Amazon/TikTok usam o acerto financeiro quando disponível.
       const tarifa = parseFloat(r.taxas?.tarifa_venda ?? r.taxas?.comissao) || 0;
-      const taxas = liq != null ? { liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0 }
-        : tarifa > 0 ? { liquido: valor - tarifa, comissao: tarifa, taxaServico: 0, imposto: 0, frete: 0, voucher: 0 } : null;
+      const taxas = liq != null ? { liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0, afiliado: parseFloat(r.taxas?.comissao_afiliado) || 0, estimado: !!r.taxas?.estimado }
+        : tarifa > 0 ? { liquido: valor - tarifa, comissao: tarifa, taxaServico: 0, imposto: 0, frete: 0, voucher: 0, estimado: !!r.taxas?.estimado } : null;
       const itens = brutos.map(i => ({ nome: i.nome || '—', qtd: parseInt(i.qtd) || 1, preco: parseFloat(i.preco) || 0, imagem: i.imagem || '', sku: i.sku || '' }));
       return { id: r.pedido_id, plataforma: { amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt] || mkt, contaId, data: diaBR(ts), dataTs: ts,
         produto: itens.length > 1 ? `${itens[0].nome} (+${itens.length - 1})` : (itens[0]?.nome || r.pedido_id), imagem: itens[0]?.imagem || '',
-        qtd: itens.reduce((t, i) => t + i.qtd, 0) || 1, valor, status, itens, taxas, _base: true };
+        qtd: itens.reduce((t, i) => t + i.qtd, 0) || 1, valor, status, itens, taxas, taxasPendente:mkt==='tiktok' && liq==null && !tarifa, _base: true };
     }
     if (mkt === 'shopee') {
       // Shopee: chave de produto = nome (igual à busca antiga — preserva custos já salvos)
@@ -3129,3 +3131,4 @@ Router.register('vendas', async (params, el) => {
   [['meu-dashboard', 'dashboard'], ['meus-pedidos', 'pedidos'], ['minha-curva-abc', 'semanal'], ['minhas-oportunidades', 'oportunidades']]
     .forEach(([rota, aba]) => Router.register(rota, (p, el) => rotaVendas({ ...(p || {}), aba }, el)));
 })();
+

@@ -12,6 +12,7 @@
 // (sem o frete do comprador); cancelado = status com "CANCEL". Pedido não
 // pago (UNPAID) não entra — Vendas também não conta.
 // ============================================================
+const { normalizarAcertoTikTok } = require('./_tiktok-taxas');
 const { waitUntil } = require('@vercel/functions');
 const { AGENDA_AGENTE, agoraBRT } = require('./_agenda-agente');
 const consumo = require('./_consumo');
@@ -887,17 +888,15 @@ async function gravarPedidosShein(apiKey, supId, deUnix, ateUnix, porAtualizacao
 // ── Taxas reais do TikTok: acerto (settlement) por pedido entregue/concluído ──
 //    líquido = settlement_amount; comissão = platform_commission; demais = fee − comissão.
 async function enriquecerTaxasTikTok(apiKey, openId, t, prazo) {
-  const pend = await sbSelect('glr_pedidos', `marketplace=eq.tiktok&conta_id=eq.${openId}&situacao=eq.valido&liquido=is.null&status_original=in.(COMPLETED,DELIVERED)&criado_em=gte.${desdeTaxas(t)}&order=criado_em.asc&limit=60&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto`);
+  const pend = await sbSelect('glr_pedidos', `marketplace=eq.tiktok&conta_id=eq.${openId}&situacao=eq.valido&or=(liquido.is.null,taxas->>versao_tiktok.is.null)&status_original=in.(COMPLETED,DELIVERED)&criado_em=gte.${desdeTaxas(t)}&order=criado_em.asc&limit=60&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto`);
   const linhas = [];
   for (const p of pend) {
     if (Date.now() > prazo) break;
     try {
       const r = await mcpCall(apiKey, 'tiktok_finance_order_transactions', { open_id: openId, order_id: p.pedido_id });
-      const tx = r.statement_transactions || r.data?.statement_transactions || [];
-      if (!tx.length) continue; // ainda não acertado
-      const soma = k => tx.reduce((s, x) => s + (parseFloat(x[k]) || 0), 0);
-      const comissao = -soma('platform_commission_amount'), taxas = -soma('fee_amount');
-      linhas.push({ ...p, liquido: r2(soma('settlement_amount')), taxas: { comissao: r2(comissao), taxa_servico: r2(taxas - comissao), frete_vendedor: r2(-soma('shipping_fee_amount') - soma('customer_shipping_fee_amount')) } });
+      const acerto = normalizarAcertoTikTok(r);
+      if (!acerto) continue;
+      linhas.push({ ...p, ...acerto });
     } catch (e) { /* tenta na próxima rodada */ }
   }
   if (linhas.length) { await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id'); linhas.forEach(l => tocar('tiktok', openId, l.criado_em)); }
@@ -1663,3 +1662,4 @@ module.exports = async function handler(req, res) {
   return res.status(202).json({ ok: true, modo });
 };
 module.exports._teste = { mapearPedidoML, marcarDevolucoesML, gravarPedidosML };
+
