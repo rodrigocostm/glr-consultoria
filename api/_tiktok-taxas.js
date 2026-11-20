@@ -13,6 +13,14 @@ function normalizarAcertoTikTok(resposta) {
   // fee_amount já inclui as comissões: separar sem somar duas vezes.
   const temTotal=tx.every(x=>x.fee_amount!=null || x.fee_and_tax_amount!=null);
   const total=temTotal ? -tx.reduce((s,x)=>s+n(x.fee_amount ?? x.fee_and_tax_amount),0) : null;
-  return {liquido:r(soma('settlement_amount')),taxas:{versao_tiktok:2,comissao:r(comissao),comissao_afiliado:r(afiliado),taxa_servico:total==null?null:r(total-comissao-afiliado),frete_vendedor:r(-soma('shipping_fee_amount')-soma('customer_shipping_fee_amount'))}};
+  const componentes={};
+  for (const x of tx) {
+    const fee=x.fee_tax_breakdown?.fee || x.fee_breakdown;
+    const tax=x.fee_tax_breakdown?.tax;
+    const campos=fee ? {...fee,...(tax || {})} : Object.fromEntries(Object.entries(x).filter(([k])=> /commission|service_fee|transaction_fee|fee_per_item|referral_fee/.test(k) && !['fee_amount','fee_and_tax_amount'].includes(k)));
+    for (const [k,v] of Object.entries(campos)) if (!['fee_amount','fee_and_tax_amount','total_amount'].includes(k) && v != null && typeof v!=='object' && Number.isFinite(+v) && +v!==0) componentes[k]=r((componentes[k] || 0)-n(v));
+  }
+  const discriminado=Object.values(componentes).reduce((s,v)=>s+v,0);
+  return {liquido:r(soma('settlement_amount')),taxas:{versao_tiktok:3,componentes,fee_total:total==null?null:r(total),nao_discriminado:total==null?null:r(total-discriminado),comissao:r(comissao),comissao_afiliado:r(afiliado),taxa_servico:total==null?null:r(total-comissao-afiliado),frete_vendedor:r(-soma('shipping_fee_amount')-soma('customer_shipping_fee_amount'))}};
 }
 module.exports={normalizarAcertoTikTok};

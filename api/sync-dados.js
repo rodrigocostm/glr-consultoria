@@ -888,7 +888,7 @@ async function gravarPedidosShein(apiKey, supId, deUnix, ateUnix, porAtualizacao
 // ── Taxas reais do TikTok: acerto (settlement) por pedido entregue/concluído ──
 //    líquido = settlement_amount; comissão = platform_commission; demais = fee − comissão.
 async function enriquecerTaxasTikTok(apiKey, openId, t, prazo) {
-  const pend = await sbSelect('glr_pedidos', `marketplace=eq.tiktok&conta_id=eq.${openId}&situacao=eq.valido&or=(liquido.is.null,taxas->>versao_tiktok.is.null)&status_original=in.(COMPLETED,DELIVERED)&criado_em=gte.${desdeTaxas(t)}&order=criado_em.asc&limit=60&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto`);
+  const pend = await sbSelect('glr_pedidos', `marketplace=eq.tiktok&conta_id=eq.${openId}&situacao=eq.valido&or=(liquido.is.null,taxas->>versao_tiktok.is.null,taxas->>versao_tiktok.eq.2)&status_original=in.(COMPLETED,DELIVERED)&criado_em=gte.${desdeTaxas(t)}&order=criado_em.asc&limit=60&select=marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto`);
   const linhas = [];
   for (const p of pend) {
     if (Date.now() > prazo) break;
@@ -900,7 +900,7 @@ async function enriquecerTaxasTikTok(apiKey, openId, t, prazo) {
     } catch (e) { /* tenta na próxima rodada */ }
   }
   if (linhas.length) { await sbUpsert('glr_pedidos', linhas, 'marketplace,conta_id,pedido_id'); linhas.forEach(l => tocar('tiktok', openId, l.criado_em)); }
-  await estimarTaxas('tiktok', openId, t);
+  // TikTok: não transformar média de repasses (com ajustes/reembolsos) em comissão do pedido.
   return linhas.length;
 }
 
@@ -1662,4 +1662,5 @@ module.exports = async function handler(req, res) {
   return res.status(202).json({ ok: true, modo });
 };
 module.exports._teste = { mapearPedidoML, marcarDevolucoesML, gravarPedidosML };
+
 

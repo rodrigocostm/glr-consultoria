@@ -2091,6 +2091,21 @@ Router.register('vendas', async (params, el) => {
         l.extra>0  ? { label:'Custos extras (linhas)', v: -l.extra,      cor:'var(--purple)', sinal:'-' } : null,
         { label:'Lucro do pedido',                    v: l.lucro,            cor:corMargem(l.margem), sinal: l.lucro>=0?'+':'-', bold:true },
       ].filter(Boolean);
+    } else if (hasEscrow && p.plataforma==='TikTok Shop' && tx.componentes) {
+      const nomes={platform_commission_amount:'Comissão TikTok',affiliate_commission_amount:'Comissão de afiliado',affiliate_partner_commission_amount:'Comissão de parceiro afiliado',affiliate_ads_commission_amount:'Comissão de afiliado via anúncios',fee_per_item_sold_amount:'Taxa fixa por item vendido',transaction_fee_amount:'Taxa de transação',sfp_service_fee_amount:'Programa de frete grátis',referral_fee_amount:'Taxa de indicação',cofunded_creator_bonus_amount:'Bônus de criador cofinanciado'};
+      const partes=Object.entries(tx.componentes).filter(([,v])=>+v!==0).map(([k,v])=>({label:nomes[k] || 'Rubrica TikTok: '+String(k).replace(/[<>&"']/g,''),v:-v,cor:v>0?'var(--red)':'var(--green)',sinal:v>0?'-':'+'}));
+      const soma=Object.values(tx.componentes).reduce((s,v)=>s+(+v || 0),0)+(+tx.naoDiscriminado || 0)+(+tx.freteVendedor || 0);
+      const ajuste=l.liquido!=null ? l.receita-soma-l.liquido : 0;
+      linhasBreakdown=[{label:'Valor dos Produtos',v:l.receita,cor:'#60a5fa',sinal:'+'},...partes,
+        tx.naoDiscriminado ? {label:'Saldo de taxas não discriminado pela API',v:-tx.naoDiscriminado,cor:'var(--yellow)',sinal:tx.naoDiscriminado>0?'-':'+'}:null,
+        tx.freteVendedor ? {label:'Frete líquido do vendedor (API)',v:-tx.freteVendedor,cor:'var(--orange)',sinal:tx.freteVendedor>0?'-':'+'}:null,
+        Math.abs(ajuste)>.02 ? {label:'Outros ajustes entre produtos e repasse (API)',v:-ajuste,cor:'var(--yellow)',sinal:ajuste>0?'-':'+'}:null,
+        {label:'Líquido TikTok confirmado (API)',v:l.liquido,cor:'var(--purple)',sinal:'=',bold:true},
+        {label:'Custo do Produto',v:-l.custo,cor:'var(--red)',sinal:'-'},
+        l.impVal ? {label:'Imposto',v:-l.impVal,cor:'var(--yellow)',sinal:'-'}:null,
+        l.outros ? {label:'Outros custos',v:-l.outros,cor:'var(--orange)',sinal:'-'}:null,
+        l.extra ? {label:'Custos extras',v:-l.extra,cor:'var(--purple)',sinal:'-'}:null,
+        {label:'Lucro após repasse',v:l.lucro,cor:corMargem(l.margem),sinal:l.lucro>=0?'+':'-',bold:true}].filter(Boolean);
     } else if (hasEscrow) {
       // Magalu: breakdown via API direto no pedido
       const nomePlat = p.plataforma || 'Marketplace';
@@ -2151,7 +2166,7 @@ Router.register('vendas', async (params, el) => {
       <!-- Breakdown financeiro -->
       <div style="width:300px;flex-shrink:0;padding:16px 20px;">
         <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:none;margin-bottom:10px;">
-          Composição do Lucro ${hasEscrow ? '<span style="color:var(--purple);font-size:9px;background:rgba(167,139,250,0.15);padding:1px 6px;border-radius:8px;margin-left:4px;">dados da API</span>' : ''}
+          Composição do Lucro ${hasEscrow && !tx.estimado ? '<span style="color:var(--purple);font-size:9px;background:rgba(167,139,250,0.15);padding:1px 6px;border-radius:8px;margin-left:4px;">dados da API</span>' : ''}
         </div>
         ${linhasBreakdown.map(r=>`
           <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
@@ -2190,13 +2205,14 @@ Router.register('vendas', async (params, el) => {
       // Amazon/TikTok/Magalu/Shein: produto pelo nome (mesma chave da busca antiga da
       // Amazon/Magalu — preserva custos salvos). Taxas: Shein traz o líquido real;
       // Magalu traz a comissão (líquido = valor − comissão); Amazon/TikTok usam o acerto financeiro quando disponível.
-      const tarifa = parseFloat(r.taxas?.tarifa_venda ?? r.taxas?.comissao) || 0;
-      const taxas = liq != null ? { liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0, afiliado: parseFloat(r.taxas?.comissao_afiliado) || 0, estimado: !!r.taxas?.estimado }
+      const ttEstimado = mkt === 'tiktok' && !!r.taxas?.estimado;
+      const tarifa = ttEstimado ? 0 : parseFloat(r.taxas?.tarifa_venda ?? r.taxas?.comissao) || 0;
+      const taxas = !ttEstimado && liq != null ? { componentes:r.taxas?.componentes, naoDiscriminado:r.taxas?.nao_discriminado, freteVendedor:r.taxas?.frete_vendedor, liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0, afiliado: parseFloat(r.taxas?.comissao_afiliado) || 0, estimado: !!r.taxas?.estimado }
         : tarifa > 0 ? { liquido: valor - tarifa, comissao: tarifa, taxaServico: 0, imposto: 0, frete: 0, voucher: 0, estimado: !!r.taxas?.estimado } : null;
       const itens = brutos.map(i => ({ nome: i.nome || '—', qtd: parseInt(i.qtd) || 1, preco: parseFloat(i.preco) || 0, imagem: i.imagem || '', sku: i.sku || '' }));
       return { id: r.pedido_id, plataforma: { amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt] || mkt, contaId, data: diaBR(ts), dataTs: ts,
         produto: itens.length > 1 ? `${itens[0].nome} (+${itens.length - 1})` : (itens[0]?.nome || r.pedido_id), imagem: itens[0]?.imagem || '',
-        qtd: itens.reduce((t, i) => t + i.qtd, 0) || 1, valor, status, itens, taxas, taxasPendente:mkt==='tiktok' && liq==null && !tarifa, _base: true };
+        qtd: itens.reduce((t, i) => t + i.qtd, 0) || 1, valor, status, itens, taxas, taxasPendente:mkt==='tiktok' && (ttEstimado || liq==null) && !tarifa, _base: true };
     }
     if (mkt === 'shopee') {
       // Shopee: chave de produto = nome (igual à busca antiga — preserva custos já salvos)
@@ -3131,4 +3147,5 @@ Router.register('vendas', async (params, el) => {
   [['meu-dashboard', 'dashboard'], ['meus-pedidos', 'pedidos'], ['minha-curva-abc', 'semanal'], ['minhas-oportunidades', 'oportunidades']]
     .forEach(([rota, aba]) => Router.register(rota, (p, el) => rotaVendas({ ...(p || {}), aba }, el)));
 })();
+
 
