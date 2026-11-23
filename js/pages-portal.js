@@ -49,12 +49,13 @@ function _portalCustos() {
 function _portalCatalogoCusto() {
   try { return JSON.parse(localStorage.getItem('glr_vendas_custo_catalogo')||'{}'); } catch(e) { return {}; }
 }
-// Chaves no catálogo: a de pages-vendas.js (ML: item_id; Shopee: nome) e, na Shopee, o id do anúncio
-const _portalProdutoKeys = p => [p.itens?.[0]?.itemId || p.produto, p.itens?.[0]?.shopeeItemId].filter(Boolean).map(String);
-function _portalCustoCatalogo(p) {
-  const cat = _portalCatalogoCusto();
-  for (const k of _portalProdutoKeys(p)) { const v = parseFloat(cat[k]) || 0; if (v > 0) return v; }
-  return 0;
+// Custo dos produtos do pedido = custo unitário (lançado no pedido ou do catálogo) × quantidade, item a item
+function _portalCustoProdutos(p, custoManual) {
+  const itens = (p.itens && p.itens.length ? p.itens : [{ nome: p.produto, qtd: p.qtd }])
+    .map(i => ({ item_id: i.itemId || i.shopeeItemId || '', nome: i.nome, qtd: i.qtd }));
+  if (window.BaseDados?.custoProdutosPedido)
+    return BaseDados.custoProdutosPedido(p.plataforma === 'Mercado Livre' ? 'ml' : 'outro', itens, custoManual, _portalCatalogoCusto(), p.id);
+  return (parseFloat(custoManual) || 0) * (parseInt(p.qtd) || 1);
 }
 
 function _portalAliquotas() {
@@ -1224,9 +1225,8 @@ function _portalCalcLucro(p, custos) {
   const tx      = p.taxas || {};
   const liquido = tx.liquido != null ? parseFloat(tx.liquido) : null;
   const c       = custos[p.id] || {};
-  // Custo: 1) lançado no pedido, 2) catálogo por produto — mesma regra do admin
-  const custo   = (parseFloat(c.custo) || 0)
-               || _portalCustoCatalogo(p);
+  // Custo: unitário (lançado no pedido ou do catálogo) × quantidade — mesma regra do admin
+  const custo   = _portalCustoProdutos(p, c.custo);
   const outros  = parseFloat(c.outros) || 0;
 
   const aliquotas = _portalAliquotas();

@@ -94,6 +94,29 @@ const BaseDados = (() => {
     return [...new Set(ks.filter(Boolean))];
   }
 
+  // Custo dos produtos de UM pedido = custo unitário × quantidade, item a item.
+  // O custo do catálogo (página Produtos/Vendas) é por unidade, e o lançado no pedido
+  // pela página Vendas (custo por produto / "Aplicar a todos") também grava o valor
+  // de uma unidade — por isso os dois são multiplicados pela quantidade.
+  //   itens: [{ item_id, nome, qtd }]   custoManual: glr_vendas_custos[pedido].custo
+  function custoProdutosPedido(mkt, itensBrutos, custoManual, catalogo, pedidoId) {
+    const itens = Array.isArray(itensBrutos) ? itensBrutos : [];
+    const qtdDe = i => parseInt(i?.qtd) || 1;
+    const qtdTotal = itens.reduce((s, i) => s + qtdDe(i), 0) || 1;
+    const manual = parseFloat(custoManual) || 0;
+    if (manual > 0) return manual * qtdTotal;
+    const cat = catalogo || {};
+    const unit = keys => { for (const k of keys) { const v = parseFloat(cat[k]) || 0; if (v > 0) return v; } return 0; };
+    let total = 0;
+    for (const it of itens) {
+      const keys = (mkt === 'ml' ? [it.item_id, it.nome] : [it.nome, it.item_id]).filter(Boolean).map(String);
+      total += unit(keys) * qtdDe(it);
+    }
+    if (total > 0) return total;
+    // Pedido sem itens, ou custo gravado só na chave do pedido inteiro ("Nome (+1)")
+    return unit([chavesProduto(mkt, itens, pedidoId)].filter(Boolean)) * qtdTotal;
+  }
+
   function invalidar() { cache = null; }
 
   function iniciarTempoReal() {
@@ -108,7 +131,7 @@ const BaseDados = (() => {
       .subscribe();
   }
 
-  return { carregar, cobre, cobreAds, somar, invalidar, iniciarTempoReal, mktDe, chave, chaveProduto, chavesProduto };
+  return { carregar, cobre, cobreAds, somar, invalidar, iniciarTempoReal, mktDe, chave, chaveProduto, chavesProduto, custoProdutosPedido };
 })();
 window.BaseDados = BaseDados;
 BaseDados.iniciarTempoReal();

@@ -73,13 +73,12 @@ Router.register('financeiro', async (params, el) => {
   // Catálogo de custo por produto (lançado na página Vendas) — vale para todos os pedidos
   // do mesmo produto. Sem ele, só os pedidos com custo lançado um a um entravam no cálculo.
   const catalogoCusto = JSON.parse(localStorage.getItem('glr_vendas_custo_catalogo')||'{}');
-  // Chave do produto no catálogo (mesma regra da página Vendas) — itens no formato da base: {item_id, nome}
-  const chavesProd = (mkt, itens, id) => window.BaseDados?.chavesProduto ? BaseDados.chavesProduto(mkt, itens, id) : [];
-  // Primeira chave com custo > 0 no catálogo
-  const custoDoCatalogo = (cat, keys) => { for (const k of (keys || [])) { const v = parseFloat(cat[k]) || 0; if (v > 0) return v; } return 0; };
-  // Custo: 1) lançado no pedido, 2) catálogo por produto — mesma regra da página Vendas
-  const custoPedido = p => (parseFloat(custosVendas[p.id]?.custo) || 0)
-                        || custoDoCatalogo(catalogoCusto, p.produtoKeys);
+  // Itens do pedido no formato da base ({item_id, nome, qtd}) — guardados em cada pedido para o custo
+  const itensDeCusto = itens => (Array.isArray(itens) ? itens : []).map(i => ({ item_id: i.item_id != null ? String(i.item_id) : '', nome: i.nome || '', qtd: parseInt(i.qtd) || 1 }));
+  // Custo dos produtos = custo unitário (lançado no pedido ou do catálogo) × quantidade, item a item
+  const custoPedido = p => window.BaseDados?.custoProdutosPedido
+    ? BaseDados.custoProdutosPedido(p.plataforma === 'Mercado Livre' ? 'ml' : 'outro', p.itensCusto, custosVendas[p.id]?.custo, catalogoCusto, p.id)
+    : (parseFloat(custosVendas[p.id]?.custo) || 0);
   const linhasExt    = JSON.parse(localStorage.getItem('glr_vendas_linhas')||'[]');
   const aliquotas    = JSON.parse(localStorage.getItem('glr_aliquotas')||'{}');
 
@@ -120,7 +119,7 @@ Router.register('financeiro', async (params, el) => {
   }
   const salvarManual = () => localStorage.setItem(STORAGE_MANUAL, JSON.stringify(manualAll));
 
-  const CACHE_VER = 26; // bump quando a estrutura de taxas muda — invalida caches antigos
+  const CACHE_VER = 27; // bump quando a estrutura de taxas muda — invalida caches antigos
   function salvarCache() {
     try {
       const cache = { ver: CACHE_VER, mesKey: mesSel, pedidos, adsAPI, adsDetalhados, afiliados, payout, at: Date.now() };
@@ -683,18 +682,18 @@ Router.register('financeiro', async (params, el) => {
       // Amazon/TikTok ainda não acertados: valor − taxa estimada pela média da conta
       const tarifa = parseFloat(r.taxas?.tarifa_venda ?? r.taxas?.comissao) || 0;
       const liq = r.liquido != null ? parseFloat(r.liquido) : (tarifa > 0 ? valor - tarifa : valor);
-      return { id: r.pedido_id, produtoKeys: chavesProd(mkt, r.itens, r.pedido_id), plataforma: { amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt] || mkt, contaId, dataTs: Date.parse(r.criado_em), valor, status,
+      return { id: r.pedido_id, itensCusto: itensDeCusto(r.itens), plataforma: { amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt] || mkt, contaId, dataTs: Date.parse(r.criado_em), valor, status,
         taxas: { liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0 }, _base: true, _semTaxa: r.liquido == null && r.situacao === 'valido' && mkt !== 'magalu' }; // estimada ainda conta como sem taxa real
     }
     if (mkt === 'shopee') {
       // Igual à busca antiga: sem escrow (pedido ainda não concluído) → líquido = valor, sem taxas
       const tx = r.liquido != null && r.taxas ? { ...r.taxas, liquido: parseFloat(r.liquido) } : { liquido: valor, comissao: 0, taxaServico: 0, imposto: 0, frete: 0, voucher: 0 };
-      return { id: r.pedido_id, produtoKeys: chavesProd(mkt, r.itens, r.pedido_id), plataforma: 'Shopee', contaId, dataTs: Date.parse(r.criado_em), valor, freteComprador: parseFloat(r.frete) || 0, status, taxas: tx, _base: true, _semTaxa: r.liquido == null && status === 'COMPLETED' };
+      return { id: r.pedido_id, itensCusto: itensDeCusto(r.itens), plataforma: 'Shopee', contaId, dataTs: Date.parse(r.criado_em), valor, freteComprador: parseFloat(r.frete) || 0, status, taxas: tx, _base: true, _semTaxa: r.liquido == null && status === 'COMPLETED' };
     }
     const tarifa = parseFloat(r.taxas?.tarifa_venda) || 0;
     const liq = r.liquido != null ? parseFloat(r.liquido) : null;
     // Igual à busca antiga: sem recebimento ainda → líquido estimado = valor − tarifa, frete 0
-    return { id: r.pedido_id, produtoKeys: chavesProd(mkt, r.itens, r.pedido_id), plataforma: 'Mercado Livre', contaId, dataTs: Date.parse(r.criado_em), valor, status, paymentId: r.taxas?.payment_id || null,
+    return { id: r.pedido_id, itensCusto: itensDeCusto(r.itens), plataforma: 'Mercado Livre', contaId, dataTs: Date.parse(r.criado_em), valor, status, paymentId: r.taxas?.payment_id || null,
       taxas: { liquido: liq != null ? liq : valor - tarifa, comissao: tarifa, taxaServico: 0, imposto: 0, frete: liq != null ? (parseFloat(r.frete) || 0) : 0, voucher: 0 },
       _base: true, _semTaxa: liq == null && r.situacao === 'valido' };
   }
@@ -872,7 +871,7 @@ Router.register('financeiro', async (params, el) => {
               const comissaoTotal = itens.reduce((s,i)=>s+i.saleFee, 0);
               return {
                 id: String(o.id),
-                produtoKeys: chavesProd('ml', (o.order_items||o.items||[]).map(i=>({ item_id: i.item?.id, nome: i.item?.title })), o.id),
+                itensCusto: itensDeCusto((o.order_items||o.items||[]).map(i=>({ item_id: i.item?.id, nome: i.item?.title, qtd: i.quantity }))),
                 plataforma: 'Mercado Livre',
                 contaId: conta.external_id,
                 dataTs: new Date(o.date_created||0).getTime(),
@@ -999,7 +998,7 @@ Router.register('financeiro', async (params, el) => {
 
                   uniq.push({
                     id:             ord.order_sn,
-                    produtoKeys:    chavesProd('shopee', itemList.map(it => ({ item_id: it.item_id, nome: it.item_name })), ord.order_sn),
+                    itensCusto:     itensDeCusto(itemList.map(it => ({ item_id: it.item_id, nome: it.item_name, qtd: it.model_quantity_purchased || it.quantity }))),
                     plataforma:     'Shopee',
                     contaId:        conta.external_id,
                     dataTs:         (ord.create_time||0)*1000,
