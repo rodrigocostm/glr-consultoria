@@ -358,7 +358,7 @@
 <script src="js/data.js?v=8-com1"></script>
 <script src="js/mkt-icones.js?v=5"></script>
 <script src="js/supabase-init.js?v=brand-20261115"></script>
-<script src="js/push-notifications.js?v=20261122-auth"></script>
+<script src="js/push-notifications.js?v=20261122-central2"></script>
 <script src="js/base-dados.js?v=4"></script>
 <script>
   // ── Tema claro/escuro ────────────────────────────────────────
@@ -462,13 +462,13 @@
     const ativo = typeof PushNotif !== 'undefined' && PushNotif.ativo();
     btn.style.color = ativo ? 'var(--green)' : '';
     btn.style.borderColor = ativo ? 'var(--green)' : '';
-    btn.title = ativo ? 'Notificações de vendas ativas (clique pra desativar)' : 'Ativar notificações de vendas (push)';
+    btn.title = ativo ? 'Configurar notificações (ativas)' : 'Configurar notificações';
   }
   async function _handlePushToggle() {
     if (typeof PushNotif === 'undefined') return;
     const btn = document.getElementById('push-toggle');
     if (btn) btn.disabled = true;
-    await PushNotif.toggle();
+    await PushNotif.abrir();
     if (btn) btn.disabled = false;
     _atualizarIconePush();
   }
@@ -664,6 +664,7 @@
 </body>
 </html>
 <!-- Updated Tue Jun 16 22:32:52 -03 2026 -->
+
 
 
 

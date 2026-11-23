@@ -6,9 +6,10 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (!['GET','POST'].includes(req.method)) return res.status(405).json({ error: 'Method not allowed' });
 
   const user = await require('./_auth').requireStaff(req,res); if (!user) return;
+  if(req.method==='GET') return res.json({publicKey:process.env.VAPID_PUBLIC_KEY || null,pronto:!!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY)});
   const sub = req.body || {};
   const endpoint = sub.endpoint;
   const p256dh = sub.keys?.p256dh;
@@ -34,4 +35,5 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: e.message });
   }
 };
+
 

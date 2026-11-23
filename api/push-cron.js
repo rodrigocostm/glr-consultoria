@@ -1,193 +1,55 @@
-// Cron: verifica vendas novas (ML + Shopee) em todas as contas conectadas
-// e dispara notificação push pros dispositivos inscritos.
-// Agendado via vercel.json (crons).
-
-const webpush = require('web-push');
-
-const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-async function sbGet(chave) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?chave=eq.${encodeURIComponent(chave)}&select=dados`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-  });
-  if (!r.ok) return null;
-  const rows = await r.json();
-  return rows[0]?.dados ?? null;
-}
-
-async function sbSet(chave, dados) {
-  await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?on_conflict=chave`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`,
-      Prefer: 'resolution=merge-duplicates,return=minimal',
-    },
-    body: JSON.stringify({ chave, dados, atualizado_em: new Date().toISOString() }),
-  });
-}
-
-async function mcpCall(apiKey, action, params) {
-  const r = await fetch('https://mcp.tiops.com.br', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
-    body: JSON.stringify({ action, params: params || {} }),
-  });
-  return r.json();
-}
-
-const R$ = v => 'R$ ' + (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-
-module.exports = async function handler(req, res) {
-  // Exige o segredo; a presença de cabeçalhos da Vercel não autentica.
-  const isVercelCron = require('./_auth').cronAuthorized(req);
-  if (!isVercelCron) return res.status(401).json({ error: 'unauthorized' });
-
-  // VAPID só é necessário pra ENVIAR a notificação — sem ele, a varredura de vendas
-  // e a base de dedup (glr_push_vendas_vistas) continuam sendo construídas normalmente,
-  // só o aviso por push que não sai. Antes, sem VAPID configurada, a função inteira
-  // parava aqui — a base de "vendas já vistas" nunca era criada, então no dia em que
-  // a chave fosse configurada, TODAS as vendas de todos os dias anteriores apareceriam
-  // de uma vez como "novas" e disparariam uma enxurrada de notificação.
-  const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY;
-  const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
-  const pushDisponivel = !!(VAPID_PUBLIC && VAPID_PRIVATE);
-  if (pushDisponivel) webpush.setVapidDetails('mailto:contatoconsultoriaglr@gmail.com', VAPID_PUBLIC, VAPID_PRIVATE);
-
-  try {
-    const apiKey = await sbGet('glr_mc_apikey');
-    if (!apiKey) return res.status(200).json({ ok: true, skip: 'sem API key configurada em Integrações' });
-
-    const contasResp = await mcpCall(apiKey, 'list_accounts', {});
-    const contas = contasResp.data?.accounts || contasResp.data || [];
-
-    const aliquotas = (await sbGet('glr_aliquotas')) || {};
-    const vistos = (await sbGet('glr_push_vendas_vistas')) || {};
-
-    const pad = n => String(n).padStart(2, '0');
-    const hoje = new Date();
-    const dataHoje = `${hoje.getFullYear()}-${pad(hoje.getMonth()+1)}-${pad(hoje.getDate())}`;
-    const tsInicioHoje = Math.floor(new Date(`${dataHoje}T00:00:00`).getTime()/1000);
-    const tsAgora = Math.floor(Date.now()/1000);
-
-    const novasVendas = [];
-
-    // Antes rodava uma conta de cada vez — com ~75 contas e o VAPID não travando
-    // mais a função logo de cara (fix acima), isso passaria dos 60s do Hobby e
-    // estouraria 504, do mesmo jeito que aconteceu no preco-cron. Paraleliza 8 por vez.
-    async function processarConta(conta) {
-      const mkt = (conta.marketplace||'').toLowerCase();
-      const extId = conta.external_id;
-      const jaTinhaHistorico = Array.isArray(vistos[extId]) && vistos[extId].length > 0;
-      const vistosConta = new Set(vistos[extId] || []);
-      const label = conta.nickname || extId;
-
-      try {
-        if (['meli','ml','mercadolivre'].includes(mkt)) {
-          const meliId = conta.param_to_use?.meliUserId || extId;
-          const r = await mcpCall(apiKey, 'list_orders_detail', { meliUserId: meliId, date_from: dataHoje, date_to: dataHoje, limit: 50, offset: 0 });
-          const orders = r.data?.results || [];
-          for (const o of orders) {
-            const id = String(o.id);
-            if (vistosConta.has(id)) continue;
-            vistosConta.add(id);
-            if (!jaTinhaHistorico) continue; // primeira vez vendo esta conta: só cria a base, não notifica o histórico do dia
-            if (['cancelled','invalid'].includes((o.status||'').toLowerCase())) continue;
-            const total = parseFloat(o.total_amount) || 0;
-            const comissao = (o.order_items||[]).reduce((s,i)=>s+(parseFloat(i.sale_fee)||0), 0);
-            const aliq = parseFloat(aliquotas[extId]||0);
-            const imposto = total * aliq / 100;
-            const lucro = total - comissao - imposto;
-            const margem = total>0 ? (lucro/total)*100 : 0;
-            novasVendas.push({ marketplace: 'Mercado Livre', conta: label, total, margem, lucro });
-          }
-        } else if (mkt === 'shopee') {
-          const shopId = conta.param_to_use?.shopId || extId;
-          const rl = await mcpCall(apiKey, 'shopee_list_orders', { shopId, time_range_field: 'create_time', time_from: tsInicioHoje, time_to: tsAgora, page_size: 100, order_status: 'COMPLETED' });
-          const lista = rl.data?.response?.order_list || [];
-          const novos = lista.filter(o => !vistosConta.has(o.order_sn));
-          for (const o of lista) vistosConta.add(o.order_sn);
-
-          if (novos.length && jaTinhaHistorico) {
-            const sns = novos.map(o=>o.order_sn).slice(0, 50);
-            const rd = await mcpCall(apiKey, 'shopee_get_order_detail', { shopId, order_sn_list: sns });
-            const orderList = rd.data?.response?.order_list || rd.data?.order_list || [];
-            for (const ord of orderList) {
-              const items = ord.item_list || ord.items || [];
-              const total = items.reduce((s,it) => {
-                const p = parseFloat(it.model_discounted_price)||parseFloat(it.item_price)||0;
-                const q = parseInt(it.model_quantity_purchased)||parseInt(it.quantity)||1;
-                return s + p*q;
-              }, 0) || parseFloat(ord.total_amount)||0;
-              const aliq = parseFloat(aliquotas[extId]||0);
-              const imposto = total * aliq / 100;
-              // Estimativa: comissão+taxa de serviço Shopee típica (~14%) — sem chamada extra de escrow
-              // por venda, pra manter o cron rápido. Não é o cálculo exato usado no Financeiro.
-              const comissaoEstimada = total * 0.14;
-              const lucro = total - comissaoEstimada - imposto;
-              const margem = total>0 ? (lucro/total)*100 : 0;
-              novasVendas.push({ marketplace: 'Shopee', conta: label, total, margem, lucro });
-            }
-          }
-        }
-      } catch(e) {
-        console.warn('[push-cron] erro conta', label, e.message);
-      }
-
-      // Mantém só os últimos 500 ids por conta, pra não crescer sem limite
-      vistos[extId] = [...vistosConta].slice(-500);
-    }
-
-    async function mapLimit(items, limit, fn) {
-      const fila = [...items];
-      async function trabalhador() {
-        while (fila.length) {
-          const item = fila.shift();
-          await fn(item);
-        }
-      }
-      await Promise.all(Array.from({ length: Math.min(limit, items.length) }, trabalhador));
-    }
-    await mapLimit(contas, 8, processarConta);
-
-    await sbSet('glr_push_vendas_vistas', vistos);
-
-    if (!novasVendas.length) return res.status(200).json({ ok: true, novasVendas: 0 });
-    if (!pushDisponivel) return res.status(200).json({ ok: true, novasVendas: novasVendas.length, aviso: 'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY não configuradas — nenhuma notificação foi enviada.' });
-
-    const subsResp = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?select=*`, {
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-    });
-    const subs = await subsResp.json();
-
-    let enviados = 0;
-    for (const venda of novasVendas) {
-      const payload = JSON.stringify({
-        title: `🟢 Nova venda realizada! (${venda.marketplace})`,
-        body: `${venda.conta}\nTotal: ${R$(venda.total)}\nMargem: ${venda.margem.toFixed(2)}%*\nLucro: ${R$(venda.lucro)}*\n*estimativa sem custo de produto`,
-        url: '/index.html',
-        tag: 'venda',
-      });
-      for (const s of subs) {
-        try {
-          await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload);
-          enviados++;
-        } catch(e) {
-          if (e.statusCode === 410 || e.statusCode === 404) {
-            await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(s.endpoint)}`, {
-              method: 'DELETE', headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-            }).catch(()=>{});
-          } else {
-            console.warn('[push-cron] erro ao enviar push:', e.message);
-          }
-        }
-      }
-    }
-
-    return res.status(200).json({ ok: true, novasVendas: novasVendas.length, dispositivos: subs.length, enviados });
-  } catch(e) {
-    return res.status(500).json({ error: e.message });
+// Fonte única: pedidos pagos sincronizados e alertas já calculados pelos agentes.
+// Não consulta marketplaces nem estima lucro. Resumos por dispositivo e categoria.
+const {db,config,vapid,usuarioAtivo}=require('./_push-db');
+const core=require('./_push-core');
+module.exports=async(req,res)=>{
+ if(!require('./_auth').cronAuthorized(req))return res.status(401).json({error:'unauthorized'});
+ try{
+  const webpush=vapid();
+  const agora=new Date(),desde=new Date(agora-48*3600e3).toISOString();
+  const [subs,staff,pedidos,logs]=await Promise.all([
+   db('push_subscriptions?select=*'),db('glr_staff?ativo=eq.true&select=user_id'),
+   db('glr_pedidos?situacao=eq.valido&criado_em=gte.'+desde+'&select=marketplace,conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto&order=criado_em.desc&limit=5000'),
+   db('glr_agente_log?tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.'+desde+'&select=id,conta_id,titulo,explicacao,dados,criado_em&order=criado_em.desc&limit=2000')]);
+  if(pedidos.length===5000||logs.length===2000)throw Error('Janela excedeu limite de leitura; envio interrompido para evitar resumo incompleto');
+  const ativos=new Set(staff.map(s=>String(s.user_id)));
+  const eventos=[...pedidos.filter(core.vendaValida).map(core.eventoPedido),...logs.map(core.eventoAgente)];
+  // Situação diária da meta por cliente, somente contas com resumos atualizados.
+  const dia=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(agora);
+  const [metas,vinc,clientes,resumos,historicos,portais]=await Promise.all([config('glr_metas'),config('glr_mc_vinculos'),config('glr_clientes'),db('glr_sync_estado?recurso=eq.resumo&select=conta_id,marketplace,cursor,ultimo_sucesso'),db('glr_sync_estado?recurso=eq.pedidos&select=conta_id,marketplace,cursor'),config('glr_portal_configs')]);
+  const nomes={};for(const c of clientes||[])nomes[c.id]=c.nome;
+  for(const [cli,meta] of Object.entries(metas||{})){
+   if(!(meta>0))continue;
+   const contas=[...new Set((vinc?.[cli]||[]).map(c=>String(c.external_id)))];
+   const base=resumos.filter(r=>contas.includes(String(r.conta_id)));
+   if(!contas.length||contas.some(id=>!base.some(r=>String(r.conta_id)===id&&Date.parse(r.ultimo_sucesso)>agora-24*3600e3 && historicos.some(h=>h.marketplace===r.marketplace && String(h.conta_id)===String(r.conta_id) && h.cursor?.historico_ate && h.cursor.historico_ate<=Date.parse(dia.slice(0,8)+'01T00:00:00-03:00')/1000))))continue;
+   let faturamento=0;for(const r of base)for(const [d,v]of Object.entries(r.cursor?.dias||{}))if(d>=dia.slice(0,8)+'01'&&d<dia)faturamento+=+v.faturamento||0;
+   const dias=+dia.slice(8)-1,mesDias=new Date(+dia.slice(0,4),+dia.slice(5,7),0).getDate();if(dias<1)continue;
+   const proj=faturamento/dias*mesDias;
+   eventos.push({chave:'meta:'+cli+':'+dia,categoria:'metas',contas,em:agora.toISOString(),titulo:nomes[cli]||'Cliente',texto:`Projeção ${core.dinheiro(proj)} · meta ${core.dinheiro(meta)} (${Math.round(proj/meta*100)}%). Até ontem, sem garantia de fechamento.`});
   }
+  let enviados=0,falhas=0;const autorizados=new Map();
+  for(const s of subs){
+   if(!ativos.has(String(s.user_id)))continue;
+   if(!autorizados.has(s.user_id))autorizados.set(s.user_id,await usuarioAtivo(s.user_id,Array.isArray(portais)?portais:[]));
+   if(!autorizados.get(s.user_id))continue;
+   const p=core.preferencias(s.preferencias);if(core.silencioso(p,agora))continue;
+   const candidatos=eventos.filter(e=>Date.parse(e.em)>=Date.parse(s.criado_em)&&core.permite(p,e));
+   for(const categoria of core.CATEGORIAS){
+    const grupo=candidatos.filter(e=>e.categoria===categoria);if(!grupo.length)continue;
+    // Inserção atômica: apenas eventos ainda não enviados entram no resumo.
+    const claims=await db('push_deliveries?on_conflict=endpoint,evento',{method:'POST',headers:{Prefer:'resolution=ignore-duplicates,return=representation'},body:JSON.stringify(grupo.map(e=>({endpoint:s.endpoint,evento:e.chave})))});
+    if(!claims?.length)continue;
+    const novos=new Set(claims.map(c=>c.evento)),lista=grupo.filter(e=>novos.has(e.chave));
+    const titulo={vendas:'Novas vendas',saldo:'Saldo de Ads',metas:'Metas dos clientes',agentes:'Alertas dos agentes'}[categoria];
+    const valor=lista.reduce((n,e)=>n+(e.valor||0),0);
+    const texto=categoria==='vendas'?`${lista.length} pedido(s) pago(s) · ${core.dinheiro(valor)}\n${[...new Set(lista.map(e=>e.plataforma))].join(', ')}. Sem estimativa de lucro.`:lista.slice(0,2).map(e=>e.titulo+': '+e.texto).join('\n')+(lista.length>2?`\nMais ${lista.length-2} alertas no sistema.`:'');
+    try{await webpush.sendNotification({endpoint:s.endpoint,keys:{p256dh:s.p256dh,auth:s.auth}},JSON.stringify({title:'GLR · '+titulo,body:texto,url:'/index.html#'+(categoria==='vendas'?'vendas':'agente'),tag:'glr-'+categoria}),{TTL:3600});enviados++;}
+    catch(e){falhas++;if([404,410].includes(e.statusCode)){await db('push_subscriptions?endpoint=eq.'+encodeURIComponent(s.endpoint),{method:'DELETE'});break;}else for(const c of claims)await db('push_deliveries?endpoint=eq.'+encodeURIComponent(s.endpoint)+'&evento=eq.'+encodeURIComponent(c.evento),{method:'DELETE'});}
+   }
+  }
+  // Retenção limitada; eventos de vendas consultados têm no máximo 48 h.
+  await db('push_deliveries?criado_em=lt.'+new Date(agora-7*86400e3).toISOString(),{method:'DELETE'});
+  return res.json({ok:true,dispositivos:subs.length,enviados,falhas});
+ }catch(e){console.error('[push-cron]',e.message);return res.status(503).json({error:'Não foi possível enviar notificações',detalhe:e.message});}
 };
-

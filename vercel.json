@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/push-cron",
-      "schedule": "0 13 * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/agente-cron",
@@ -44,6 +44,9 @@
       "maxDuration": 300
     },
     "api/portal-chat.js": {
+      "maxDuration": 300
+    },
+    "api/push-cron.js": {
       "maxDuration": 300
     }
   },
