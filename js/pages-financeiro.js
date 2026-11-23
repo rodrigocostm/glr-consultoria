@@ -394,7 +394,19 @@ Router.register('financeiro', async (params, el) => {
     };
     const totAds   = nomes.reduce((s,n)=>s+adsEfetivo(n),0);
     console.log('[Render] totAds=', totAds, 'adsAPI=', adsAPI, 'manual=', m.ads);
-    const lucroDepoisAds = totLucroBruto - totArmaz - totAds;
+    // Comissão GLR: mesmo modelo do cliente que o DRE usa (GLR.comissao.daParte) — por venda, por
+    // pedido, faixa de ticket, fixo ou misto; só contas que contam comissão; cancelados/devolvidos fora.
+    // É custo do cliente (o Gestor Seller mostra como "custo extra" por pedido) — sai do lucro depois de ADS.
+    const clienteFoco = !window._portalConfig ? (GLR.clientes || []).find(c => c.nome === empresaSel) : null;
+    const comPlat = {};
+    let totComGLR = 0;
+    if (clienteFoco && GLR.comissao?.daParte) {
+      const pedCom = p => ({ valor: parseFloat(p.valor) || 0, qtd: GLR.contaPorPedido(p.contaId) ? 1 : ((p.itensCusto || []).reduce((s, i) => s + (parseInt(i.qtd) || 1), 0) || 1) });
+      const validosCom = pedidosFiltrados().filter(p => !isReembolsado(p) && GLR.contaGeraComissao(p.contaId));
+      const todosCom = validosCom.map(pedCom);
+      for (const n of nomes) { comPlat[n] = GLR.comissao.daParte(clienteFoco, validosCom.filter(p => p.plataforma === n).map(pedCom), todosCom); totComGLR += comPlat[n]; }
+    }
+    const lucroDepoisAds = totLucroBruto - totArmaz - totAds - totComGLR;
     const pctDepoisAds   = totFat>0 ? (lucroDepoisAds/totFat)*100 : 0;
 
     const totReceitas  = (m.receitas||[]).reduce((s,r)=>s+(parseFloat(r.valor)||0),0);
@@ -686,12 +698,18 @@ Router.register('financeiro', async (params, el) => {
     );
 
     // ── 6. Lucro depois de ADS ──
+    // ── 5e. Comissão GLR ──
+    const sComGLR = clienteFoco ? secao('comglr', 'Comissão GLR', { num: -totComGLR, txt: R$s(-totComGLR) },
+      `<div class="fin-grupo">${nomes.filter(n => (comPlat[n] || 0) > 0).map(n => `<div class="fin-row"><span>${n}:</span><strong style="color:var(--red);">- ${R$(comPlat[n])}</strong></div>`).join('')
+        || '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:10px;">Sem comissão neste período (cliente sem modelo de comissão ou contas que não contam)</div>'}
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Modelo do cliente: ${GLR.comissao.descricao ? GLR.comissao.descricao(clienteFoco) : ''}. Cancelados e devolvidos não contam.</div></div>`, true) : '';
+
     const sDepois = `
     <div class="fin-card fin-resumo" style="background:linear-gradient(135deg, ${lucroDepoisAds>=0?'rgba(16,185,129,0.08)':'rgba(239,68,68,0.08)'} 0%, transparent 100%);border-color:${lucroDepoisAds>=0?'rgba(16,185,129,0.3)':'rgba(239,68,68,0.3)'};border-width:2px;">
       <div class="fin-head" style="cursor:default;flex-direction:column;align-items:flex-start;gap:8px;">
         <div style="display:flex;align-items:center;gap:12px;width:100%;">
           <span class="fin-ico" style="background:${lucroDepoisAds>=0?'var(--green)':'var(--red)'};">${lucroDepoisAds>=0?'+':'−'}</span>
-          <span class="fin-titulo" style="font-size:17px;">Lucro Bruto depois de ADS</span>
+          <span class="fin-titulo" style="font-size:17px;">Lucro Bruto depois de ADS${totComGLR > 0 ? ' e comissão GLR' : ''}</span>
         </div>
         <span class="fin-valor" style="color:${lucroDepoisAds>=0?'var(--green)':'var(--red)'};;font-size:22px;align-self:flex-end;">${R$(lucroDepoisAds)} <span style="font-size:13px;">(${pctDepoisAds.toFixed(2).replace('.',',')}%)</span></span>
       </div>
@@ -700,11 +718,13 @@ Router.register('financeiro', async (params, el) => {
           // Por plataforma: lucro bruto − armazenamento FULL/FBA − ADS da própria plataforma
           const armazN = parseFloat(m.armazenamento[n]) || 0;
           const adsN   = adsEfetivo(n);
-          const finalN = lucroPlat[n] - armazN - adsN;
+          const comN   = comPlat[n] || 0;
+          const finalN = lucroPlat[n] - armazN - adsN - comN;
           const pctN   = plats[n].fat > 0 ? (finalN / plats[n].fat) * 100 : 0;
           const rows = [linha(n, lucroPlat[n])];
           if (armazN > 0) rows.push(sublinha('Armazenamento FULL/FBA', armazN));
           if (adsN > 0)   rows.push(sublinha('ADS', adsN));
+          if (comN > 0)   rows.push(sublinha('Comissão GLR', comN));
           rows.push(`<div class="fin-sub fin-final"><span>Lucro depois de ADS:</span><em style="color:${finalN>=0?'var(--green)':'var(--red)'};">${R$(finalN)} (${pctN.toFixed(2).replace('.',',')}%)</em></div>`);
           return `<div class="fin-grupo">${rows.join('')}</div>`;
         }).join('')}
@@ -741,7 +761,7 @@ Router.register('financeiro', async (params, el) => {
       </div>
     </div>`;
 
-    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sPedidosCancelados + sPedidosDevolvidos + sLucro + sArmaz + sAds + sAdsDetalhados + sAfiliados + sPayout + sDepois + sReceita + sDespesas + sFinal;
+    cont.innerHTML = sFat + sLiq + sDetalheTaxas + sPedidosCancelados + sPedidosDevolvidos + sLucro + sArmaz + sAds + sAdsDetalhados + sAfiliados + sPayout + sComGLR + sDepois + sReceita + sDespesas + sFinal;
 
     cont.querySelectorAll('.fin-inp').forEach(inp=>{
       inp.addEventListener('change', ()=>{
