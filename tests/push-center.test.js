@@ -41,3 +41,15 @@ test('resumo da meia-noite é enviado mesmo no silêncio noturno',async()=>{
  };m.listar=m.db;delete require.cache[require.resolve('../api/push-cron')];const h=require('../api/push-cron');
  try{const r={status(c){this.code=c;return this;},json(b){this.body=b;}};await h({},r);assert.equal(r.body.enviados,1);assert.equal(envios,1);}finally{global.Date=RealDate;auth.cronAuthorized=old;}
 });
+
+test('central registra aviso sem dispositivo push nem chaves de envio',async()=>{
+ const auth=require('../api/_auth'),old=auth.cronAuthorized;auth.cronAuthorized=()=>true;const m=require('../api/_push-db');const agora=new Date(),salvos=[];
+ m.usuarioPerfil=async()=>({tipo:'portal',contas:['a'],metasPermitidas:true});m.config=async k=>['glr_clientes','glr_gestores'].includes(k)?[]:{};
+ m.vapid=()=>{throw Error('push não configurado')};
+ m.db=async(path,opt)=>{
+  if(path==='glr_notification_readers?select=user_id,criado_em')return [{user_id:'u',criado_em:new Date(agora-60000).toISOString()}];
+  if(path.startsWith('glr_pedidos'))return [{marketplace:'ml',conta_id:'a',pedido_id:'1',situacao:'valido',status_original:'paid',criado_em:agora.toISOString(),valor_bruto:100}];
+  if(path.startsWith('glr_notifications?'))salvos.push(...JSON.parse(opt.body));return [];
+ };m.listar=m.db;delete require.cache[require.resolve('../api/_notification-center')];delete require.cache[require.resolve('../api/push-cron')];const h=require('../api/push-cron');
+ try{const r={status(c){this.code=c;return this;},json(b){this.body=b;}};await h({},r);assert.equal(r.body.enviados,0);assert.equal(salvos.length,1);assert.equal(salvos[0].user_id,'u');assert.equal(salvos[0].perfil,'portal');}finally{auth.cronAuthorized=old;}
+});

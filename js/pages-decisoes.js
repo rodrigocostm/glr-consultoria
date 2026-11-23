@@ -402,6 +402,7 @@ Router.register('decisoes', (params, el) => {
   // ── Teclado: J/K navegam, Enter abre, F feito, A aprova, X descarta, Espaço detalhes ──
   if (window._dcTeclas) document.removeEventListener('keydown', window._dcTeclas);
   window._dcTeclas = e => {
+    if(document.getElementById('dc-root')?.hidden)return;
     if (window._dcSt !== st || !document.getElementById('dc-root')) return;
     if (e.metaKey || e.ctrlKey || e.altKey || /input|select|textarea/i.test(e.target.tagName)) return;
     const rows = [...document.querySelectorAll('.dc-row')]; if (!rows.length) return;
@@ -417,7 +418,7 @@ Router.register('decisoes', (params, el) => {
   };
   document.addEventListener('keydown', window._dcTeclas);
 
-  el.innerHTML = `<div class="page"><div id="dc-root"></div></div>
+  el.innerHTML = `<div class="page"><nav aria-label="Setores da caixa de decisões" style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap"><button class="btn btn-secondary" id="dc-tab-decisions" onclick="window._dcTab('decisoes')">Decisões para aprovar</button><button class="btn btn-secondary" id="dc-tab-notifications" onclick="window._dcTab('notificacoes')">Notificações <span id="dc-notification-count" hidden></span></button></nav><div id="dc-root"></div><div id="dc-notifications" hidden></div></div>
   <style>
     .dc-cab{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
     .dc-resumo{margin:0;font-size:14px;color:var(--text-secondary)} .dc-resumo b{color:var(--text-primary);font-variant-numeric:tabular-nums}
@@ -479,5 +480,10 @@ Router.register('decisoes', (params, el) => {
     @media (max-width:760px){.dc-faixas{grid-template-columns:1fr 1fr}.dc-row{grid-template-columns:18px minmax(0,1fr)}.dc-imp{grid-column:2;text-align:left;flex-direction:row;gap:4px;align-items:baseline}.dc-bt{grid-column:2;justify-content:flex-start}.dc-tit{white-space:normal}}
     @media (prefers-reduced-motion:reduce){.dc-row,.dc-faixa,.dc-porque,.dc-aviso{transition:none}.dc-carregando span{animation:none}}
   </style>`;
+  let desmontar=null;
+  window._dcTab=tab=>{const notificacoes=tab==='notificacoes';document.getElementById('dc-root').hidden=notificacoes;document.getElementById('dc-notifications').hidden=!notificacoes;document.getElementById('dc-tab-decisions').setAttribute('aria-pressed',String(!notificacoes));document.getElementById('dc-tab-notifications').setAttribute('aria-pressed',String(notificacoes));if(notificacoes){if(desmontar)desmontar();desmontar=NotificationCenter.mount(document.getElementById('dc-notifications'));}else if(desmontar){desmontar();desmontar=null;}};
+  window._dcTab(params.aba==='notificacoes'?'notificacoes':'decisoes');
+  NotificationCenter.refreshBadge();
   carregar();
 });
+

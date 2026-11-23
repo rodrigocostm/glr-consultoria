@@ -42,7 +42,7 @@ const Router = {
     }
 
     // Cliente do portal só abre as telas liberadas para ele (as da equipe ficam de fora)
-    if (window._portalConfig && Array.isArray(window.PORTAL_ROTAS) && !window.PORTAL_ROTAS.includes(path)) {
+    if (window._portalConfig && Array.isArray(window.PORTAL_ROTAS) && !window.PORTAL_ROTAS.includes(path) && path!=='notificacoes') {
       window.location.hash = window.PORTAL_ROTAS[0];
       return;
     }
@@ -59,7 +59,7 @@ const Router = {
       'segundo-cerebro': 'Segundo Cérebro da operação',
       adviser: 'Adviser · Estratégia GLR',
       dashboard: 'Dashboard Executivo',
-      decisoes: 'Caixa de decisões',
+      decisoes: 'Caixa de decisões',notificacoes:'Notificações',
       chat: 'Chat com os agentes',
       clientes: 'Gestão de Clientes',
       'cliente-perfil': 'Perfil do Cliente',
@@ -131,3 +131,4 @@ const Router = {
     }
   }
 };
+

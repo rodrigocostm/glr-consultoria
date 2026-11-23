@@ -1,17 +1,18 @@
 // Fonte única: pedidos pagos sincronizados e alertas já calculados pelos agentes.
 // Não consulta marketplaces nem estima lucro. Resumos por dispositivo e categoria.
 const {db,listar,config,vapid,usuarioPerfil}=require('./_push-db');
+const inbox=require('./_notification-center');
 const novosAvisos=require('./_push-events');
 const core=require('./_push-core');const audience=require('./_push-audience');
 module.exports=async(req,res)=>{
  if(!require('./_auth').cronAuthorized(req))return res.status(401).json({error:'unauthorized'});
  try{
-  const webpush=vapid();
+  let webpush=null;try{webpush=vapid();}catch(e){console.warn('[push-cron] histórico ativo sem envio push:',e.message);}
   const agora=new Date(),desde=new Date(agora-48*3600e3).toISOString();
-  const [subs,staff,pedidos,logs,ads]=await Promise.all([
+  const [subs,staff,pedidos,logs,ads,leitores]=await Promise.all([
    db('push_subscriptions?select=*'),db('glr_staff?ativo=eq.true&select=user_id'),
    listar('glr_pedidos?situacao=eq.valido&criado_em=gte.'+desde+'&select=marketplace,conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto&order=criado_em.desc,marketplace,conta_id,pedido_id'),
-   listar('glr_agente_log?tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.'+desde+'&select=id,conta_id,titulo,explicacao,dados,criado_em&order=criado_em.desc,id'),listar('glr_ads_diario?data=gte.'+new Date(agora-9*86400e3).toISOString().slice(0,10)+'&select=marketplace,conta_id,data,gasto&order=data,marketplace,conta_id')]);
+   listar('glr_agente_log?tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.'+desde+'&select=id,conta_id,titulo,explicacao,dados,criado_em&order=criado_em.desc,id'),listar('glr_ads_diario?data=gte.'+new Date(agora-9*86400e3).toISOString().slice(0,10)+'&select=marketplace,conta_id,data,gasto&order=data,marketplace,conta_id'),db('glr_notification_readers?select=user_id,criado_em')]);
   const ativos=new Set(staff.map(s=>String(s.user_id)));
   const eventos=[...pedidos.filter(core.vendaValida).map(core.eventoPedido),...logs.map(core.eventoAgente)];
   // Situação diária da meta por cliente, somente contas com resumos atualizados.
@@ -35,7 +36,8 @@ module.exports=async(req,res)=>{
   const monitor=novosAvisos.gerarEventos({agora,clientes,gestores:gestores||[],vinc,metas,pedidos,ads,resumos,historicos,sinais,curva,estado});
   if(monitor.alterados.length)await db('push_event_state?on_conflict=chave',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:JSON.stringify(monitor.alterados)});
   let enviados=0,falhas=0;const autorizados=new Map();
-  for(const s of subs){
+  const destinos=[...subs,...leitores.filter(l=>!subs.some(s=>s.user_id===l.user_id)).map(l=>({...l,preferencias:{},endpoint:null}))];
+  for(const s of destinos){
    if(!autorizados.has(s.user_id))autorizados.set(s.user_id,await usuarioPerfil(s.user_id,Array.isArray(portais)?portais:[],ativos));
    const perfil=autorizados.get(s.user_id);if(!perfil)continue;
    const p=audience.preferencias(s.preferencias,perfil.tipo);const silencio=core.silencioso(p,agora);
@@ -46,6 +48,15 @@ module.exports=async(req,res)=>{
    const especificos=audience.oscilacoes(ads,contas,agora);
    const resumoDia=novosAvisos.resumoAnterior({agora,pedidos,ads,contas});
    const listaPerfil=perfil.tipo==='consultoria'?[...eventos.filter(e=>e.categoria==='saldo'),...especificos,...(resumo&&contas.size?[resumo]:[]),...monitor.eventos,...(resumoDia?[resumoDia]:[])]:[...eventos.filter(e=>['vendas','saldo'].includes(e.categoria)||(e.categoria==='metas'&&e.chave.startsWith('meta:'))),...monitor.eventos.filter(e=>e.categoria!=='gestores'),...(resumoDia?[resumoDia]:[])];
+   // Histórico é completo para o perfil; filtros e silêncio do push não ocultam avisos da central.
+   const todas=audience.carteira(vinc,clientes);
+   if(perfil.tipo==='portal')for(const [k,c]of todas)if(!perfil.contas.includes(c.id))todas.delete(k);
+   const coberturaInbox=[...todas.values()].every(c=>historicos.some(h=>h.marketplace===c.mkt&&String(h.conta_id)===c.id&&h.cursor?.historico_ate&&h.cursor.historico_ate<=Date.parse(dia+'T00:00:00-03:00')/1000-86400));
+   const resumoInbox=audience.resumoVendometro(pedidos,ads,todas,agora,coberturaInbox),diaInbox=novosAvisos.resumoAnterior({agora,pedidos,ads,contas:todas});
+   const listaInbox=perfil.tipo==='consultoria'?[...eventos.filter(e=>e.categoria==='saldo'),...audience.oscilacoes(ads,todas,agora),...(resumoInbox&&todas.size?[resumoInbox]:[]),...monitor.eventos,...(diaInbox?[diaInbox]:[])]:[...eventos.filter(e=>['vendas','saldo'].includes(e.categoria)||(e.categoria==='metas'&&e.chave.startsWith('meta:'))),...monitor.eventos.filter(e=>e.categoria!=='gestores'),...(diaInbox?[diaInbox]:[])];
+   const inicioHistorico=leitores.find(l=>l.user_id===s.user_id)?.criado_em || s.criado_em;
+   await inbox.registrar(s.user_id,perfil,listaInbox,inicioHistorico);
+   if(!s.endpoint||!webpush)continue;
    const candidatos=listaPerfil.filter(e=>(!silencio||e.categoria==='resumo_diario')&&Date.parse(e.em)>=Date.parse(s.criado_em)&&audience.autorizado(perfil,p,e));
    for(const categoria of ['vendas','saldo','metas','vendometro','oscilacao','resumo_diario','gestores','projecao','curva_a']){
     const grupo=candidatos.filter(e=>e.categoria===categoria);if(!grupo.length)continue;
@@ -56,7 +67,7 @@ module.exports=async(req,res)=>{
     const titulo={vendas:'Novas vendas',saldo:'Saldo de Ads',metas:'Metas dos clientes',agentes:'Alertas dos agentes',vendometro:'Resultado do Vendômetro',oscilacao:'Oscilação de gasto em Ads',resumo_diario:'Resumo do dia anterior',gestores:'Meta diária do gestor',projecao:'Cliente com projeção em queda',curva_a:'Produto curva A sem estoque'}[categoria];
     const valor=lista.reduce((n,e)=>n+(e.valor||0),0);
     const texto=categoria==='vendas'?`${lista.length} pedido(s) pago(s) · ${core.dinheiro(valor)}\n${[...new Set(lista.map(e=>e.plataforma))].join(', ')}. Sem estimativa de lucro.`:lista.slice(0,2).map(e=>e.titulo+': '+e.texto).join('\n')+(lista.length>2?`\nMais ${lista.length-2} alertas no sistema.`:'');
-    try{await webpush.sendNotification({endpoint:s.endpoint,keys:{p256dh:s.p256dh,auth:s.auth}},JSON.stringify({title:'GLR · '+titulo,body:texto,url:perfil.tipo==='portal'?'/index.html#portal':lista[0].url || '/index.html#'+(categoria==='vendas'?'vendas':'agente'),tag:'glr-'+categoria}),{TTL:3600});enviados++;}
+    try{await webpush.sendNotification({endpoint:s.endpoint,keys:{p256dh:s.p256dh,auth:s.auth}},JSON.stringify({title:'GLR · '+titulo,body:texto,url:perfil.tipo==='portal'?'/index.html#notificacoes':'/index.html#decisoes?aba=notificacoes',tag:'glr-'+categoria}),{TTL:3600});enviados++;}
     catch(e){falhas++;if([404,410].includes(e.statusCode)){await db('push_subscriptions?endpoint=eq.'+encodeURIComponent(s.endpoint),{method:'DELETE'});break;}else for(const c of claims)await db('push_deliveries?endpoint=eq.'+encodeURIComponent(s.endpoint)+'&evento=eq.'+encodeURIComponent(c.evento),{method:'DELETE'});}
    }
   }
@@ -65,5 +76,6 @@ module.exports=async(req,res)=>{
   return res.json({ok:true,dispositivos:subs.length,enviados,falhas});
  }catch(e){console.error('[push-cron]',e.message);return res.status(503).json({error:'Não foi possível enviar notificações',detalhe:e.message});}
 };
+
 
 
