@@ -74,6 +74,16 @@ const BaseDados = (() => {
     return t;
   }
 
+  // Chave do produto no catálogo de custo (glr_vendas_custo_catalogo) para um pedido
+  // da base — mesma regra de pedidoDaBaseVendas (pages-vendas.js), que é onde o
+  // custo é lançado: ML usa o item_id; demais usam o nome do produto.
+  function chaveProduto(mkt, itensBrutos, pedidoId) {
+    const itens = Array.isArray(itensBrutos) ? itensBrutos : [];
+    if (mkt === 'ml') return String(itens[0]?.item_id || itens[0]?.nome || '—');
+    const nomes = itens.map(i => i.nome || '—');
+    return nomes.length > 1 ? `${nomes[0]} (+${nomes.length - 1})` : (nomes[0] || String(pedidoId || ''));
+  }
+
   function invalidar() { cache = null; }
 
   function iniciarTempoReal() {
@@ -88,7 +98,7 @@ const BaseDados = (() => {
       .subscribe();
   }
 
-  return { carregar, cobre, cobreAds, somar, invalidar, iniciarTempoReal, mktDe, chave };
+  return { carregar, cobre, cobreAds, somar, invalidar, iniciarTempoReal, mktDe, chave, chaveProduto };
 })();
 window.BaseDados = BaseDados;
 BaseDados.iniciarTempoReal();

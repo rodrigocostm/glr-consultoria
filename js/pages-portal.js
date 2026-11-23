@@ -45,6 +45,13 @@ function _portalCustos() {
   try { return JSON.parse(localStorage.getItem('glr_vendas_custos')||'{}'); } catch(e) { return {}; }
 }
 
+// Catálogo de custo por produto (lançado na página Vendas) — vale para todos os pedidos do mesmo produto
+function _portalCatalogoCusto() {
+  try { return JSON.parse(localStorage.getItem('glr_vendas_custo_catalogo')||'{}'); } catch(e) { return {}; }
+}
+// Mesma chave de pages-vendas.js (ML: item_id; Shopee: nome do produto)
+const _portalProdutoKey = p => p.itens?.[0]?.itemId || p.produto || '';
+
 function _portalAliquotas() {
   try { return JSON.parse(localStorage.getItem('glr_aliquotas')||'{}'); } catch(e) { return {}; }
 }
@@ -1212,7 +1219,9 @@ function _portalCalcLucro(p, custos) {
   const tx      = p.taxas || {};
   const liquido = tx.liquido != null ? parseFloat(tx.liquido) : null;
   const c       = custos[p.id] || {};
-  const custo   = parseFloat(c.custo)  || 0;
+  // Custo: 1) lançado no pedido, 2) catálogo por produto — mesma regra do admin
+  const custo   = (parseFloat(c.custo) || 0)
+               || (parseFloat(_portalCatalogoCusto()[_portalProdutoKey(p)]) || 0);
   const outros  = parseFloat(c.outros) || 0;
 
   const aliquotas = _portalAliquotas();
