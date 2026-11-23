@@ -67,13 +67,15 @@ Router.register('financeiro', async (params, el) => {
   // o "Ajuste não identificado" falso de ~R$ 116 mil). Campo fora das listas aparece como
   // "não classificado" e o efeito dele fica no ajuste — o Agente Saúde das Taxas avisa.
   //   sinal: o valor que representa desconto no repasse (+1 = valor positivo é desconto)
-  const SHOPEE_DET_DEDUCAO = { order_ams_commission_fee: +1, ads_escrow_top_up_fee_or_technical_support_fee: +1, seller_return_refund: -1 };
+  // A recarga de ADS (ads_escrow_top_up_fee_or_technical_support_fee) sai do repasse, mas o gasto de ADS já entra
+  // inteiro em "Investimento em ADS": volta para o líquido (calcularTudo) e aparece só como informativo.
+  const SHOPEE_DET_DEDUCAO = { order_ams_commission_fee: +1, seller_return_refund: -1 };
   const SHOPEE_DET_CREDITO = { payment_promotion: +1 };
-  const SHOPEE_DET_INFO = new Set(['seller_discount', 'pix_discount', 'buyer_transaction_fee', 'drc_adjustable_refund', 'final_product_protection',
+  const SHOPEE_DET_INFO = new Set(['ads_escrow_top_up_fee_or_technical_support_fee', 'seller_discount', 'pix_discount', 'buyer_transaction_fee', 'drc_adjustable_refund', 'final_product_protection',
     'prorated_shopee_voucher_offset_return_items', 'voucher_from_external_party']);
   Object.assign(SHOPEE_FEE_LABELS, {
     order_ams_commission_fee: 'Comissão de afiliados (AMS)',
-    ads_escrow_top_up_fee_or_technical_support_fee: 'Recarga de ADS paga com o repasse',
+    ads_escrow_top_up_fee_or_technical_support_fee: 'Recarga de ADS paga com o repasse (já contada em Investimento em ADS)',
     seller_return_refund: 'Reembolso parcial ao comprador',
     payment_promotion: 'Promoção de pagamento (abate a taxa de cartão)',
     pix_discount: 'Desconto PIX dado ao comprador',
@@ -131,6 +133,7 @@ Router.register('financeiro', async (params, el) => {
   let adsDetalhados = {};  // dados detalhados de ADS: cliques, impressões, ROI, etc
   let afiliados = {};  // dados de afiliados: comissão, etc
   let payout = {};  // dados de payout/carteira
+  let carteira = {}; // cobranças da carteira Shopee fora dos pedidos, por conta: { contaId: { total, porTipo } }
 
   let manualAll = JSON.parse(localStorage.getItem(STORAGE_MANUAL)||'{}');
   function manual() {
@@ -151,10 +154,10 @@ Router.register('financeiro', async (params, el) => {
   }
   const salvarManual = () => localStorage.setItem(STORAGE_MANUAL, JSON.stringify(manualAll));
 
-  const CACHE_VER = 27; // bump quando a estrutura de taxas muda — invalida caches antigos
+  const CACHE_VER = 28; // bump quando a estrutura de taxas muda — invalida caches antigos
   function salvarCache() {
     try {
-      const cache = { ver: CACHE_VER, mesKey: mesSel, pedidos, adsAPI, adsDetalhados, afiliados, payout, at: Date.now() };
+      const cache = { ver: CACHE_VER, mesKey: mesSel, pedidos, adsAPI, adsDetalhados, afiliados, payout, carteira, at: Date.now() };
       localStorage.setItem(STORAGE_CACHE, JSON.stringify(cache));
       console.log('[Cache] Salvou', pedidos.length, 'pedidos +', Object.keys(adsAPI).length, 'plataformas de ADS + afiliados + payout');
     } catch(e){}
@@ -168,6 +171,7 @@ Router.register('financeiro', async (params, el) => {
         adsDetalhados = c.adsDetalhados||{};
         afiliados = c.afiliados||{};
         payout = c.payout||{};
+        carteira = c.carteira||{};
         console.log('[Cache] Carregou', pedidos.length, 'pedidos + dados complementares');
         return c.at;
       }
@@ -225,11 +229,20 @@ Router.register('financeiro', async (params, el) => {
   function calcularTudo() {
     const lista = pedidosFiltrados();
     console.log('[Calc] Total pedidos:', pedidos.length, 'Filtrados:', lista.length, 'Conta:', contaSel);
+    const BD = window.BaseDados || {};
+    const recargaDe = tx => BD.recargaAdsDoRepasse ? BD.recargaAdsDoRepasse(tx) : 0;
+    // Taxa média real por conta (pedidos que já têm a taxa do marketplace) — aplicada aos que ainda não têm
+    const taxaMedia = BD.taxaMediaPorConta ? BD.taxaMediaPorConta(lista
+      .filter(p => !isReembolsado(p) && !p._liqEstimar && p.taxas?.liquido != null)
+      .map(p => ({ conta: p.contaId, valor: p.valor, liquido: parseFloat(p.taxas.liquido) + recargaDe(p.taxas) }))) : {};
     const plats = {};
     for (const p of lista) {
       const nome = p.plataforma;
       if (!plats[nome]) plats[nome] = {
         fat:0, liquido:0,
+        recargaAds:0,   // recarga de ADS tirada do repasse (somada de volta: já está em Investimento em ADS)
+        taxaEstimada:0, nEstimados:0, // pedidos ainda sem taxa real: taxa média da conta
+        carteira:0, carteiraTipos:{}, // cobranças da carteira fora dos pedidos (devolução depois do repasse etc.)
         frete:0,        // frete descontado do vendedor
         comissao:0,     // comissão % (sale_fee / commission_fee)
         taxaServico:0,  // taxa de serviço / taxa fixa
@@ -250,7 +263,10 @@ Router.register('financeiro', async (params, el) => {
       const a  = plats[nome];
       const tx = p.taxas||{};
       const valor = parseFloat(p.valor)||0;
-      const liq   = tx.liquido!=null ? parseFloat(tx.liquido) : valor;
+      const recarga = recargaDe(tx);
+      let liq       = (tx.liquido!=null ? parseFloat(tx.liquido) : valor) + recarga;
+      let taxaEst   = 0;
+      if (p._liqEstimar && taxaMedia[p.contaId] != null) { taxaEst = valor * taxaMedia[p.contaId]; liq = valor - taxaEst; }
       const custo = custoPedido(p);
       const extra = custoExtrasPedido(p);
 
@@ -271,6 +287,8 @@ Router.register('financeiro', async (params, el) => {
       a.n++;
       a.fat         += valor;
       a.liquido     += liq;
+      a.recargaAds  += recarga;
+      if (taxaEst) { a.taxaEstimada += taxaEst; a.nEstimados++; }
       a.frete       += parseFloat(tx.frete)||0;
       a.comissao    += parseFloat(tx.comissao)||0;
       a.taxaServico += parseFloat(tx.taxaServico)||0;
@@ -295,6 +313,19 @@ Router.register('financeiro', async (params, el) => {
       const a = plats[nome];
       const conhecidas = a.frete + a.comissao + a.taxaServico + a.taxaCartao;
       a.outras = Math.max(0, (a.fat - a.liquido) - conhecidas);
+    }
+    // Cobranças da carteira Shopee fora dos pedidos, só das contas em foco (mesmo filtro dos pedidos)
+    const idsFoco = contaSel !== 'todas' ? new Set([String(contaSel)])
+      : (!window._portalConfig && empresaSel !== 'todas') ? idsDaEmpresa() : null;
+    for (const [contaId, c] of Object.entries(carteira || {})) {
+      if (idsFoco && !idsFoco.has(String(contaId))) continue;
+      if (!(c?.total > 0) || !plats['Shopee']) continue;
+      const a = plats['Shopee'];
+      a.carteira += c.total;
+      for (const [tipo, x] of Object.entries(c.porTipo || {})) {
+        const t = a.carteiraTipos[tipo] = a.carteiraTipos[tipo] || { valor: 0, n: 0, rotulo: x.rotulo };
+        t.valor += x.valor; t.n += x.n;
+      }
     }
 
     // DEBUG: mostra totais
@@ -348,7 +379,7 @@ Router.register('financeiro', async (params, el) => {
     const lucroPlat = {};
     for (const n of nomes) {
       const a = plats[n];
-      lucroPlat[n] = a.liquido - a.custoProd - a.custoProdDevolv - a.custoExtra - a.custoExtraDevolv - a.imposto;
+      lucroPlat[n] = a.liquido - a.custoProd - a.custoProdDevolv - a.custoExtra - a.custoExtraDevolv - a.imposto - a.carteira;
     }
     const totLucroBruto = nomes.reduce((s,n)=>s+lucroPlat[n],0);
     const pctLucroBruto = totFat>0 ? (totLucroBruto/totFat)*100 : 0;
@@ -416,7 +447,8 @@ Router.register('financeiro', async (params, el) => {
           // Ajuste residual: só o que nenhum campo classificado explica (campo novo, por exemplo).
           // "Moedas Shopee" (coins) NÃO entra aqui — testado com pedido real e confirmado que
           // não afeta escrow_amount; incluir na conta criava um resíduo artificial (bug corrigido).
-          const residualSh = totalTaxasSh - a.comissao - a.taxaServico - a.frete - a.taxaCartao - gDet.somaDed + gDet.somaCred;
+          if (a.taxaEstimada > 0.01) rows.push(sublinha(`Taxas estimadas — ${a.nEstimados} pedido${a.nEstimados>1?'s':''} ainda sem taxa real (média da conta)`, a.taxaEstimada));
+          const residualSh = totalTaxasSh - a.comissao - a.taxaServico - a.frete - a.taxaCartao - gDet.somaDed + gDet.somaCred - a.taxaEstimada;
           if (Math.abs(residualSh) > 1) rows.push(sublinha('Ajuste não identificado pela API', Math.abs(residualSh), residualSh >= 0 ? '−' : '+'));
 
           // Voucher, Rebate e Moedas são informativos: a Shopee absorve esses valores e eles
@@ -549,6 +581,7 @@ Router.register('financeiro', async (params, el) => {
         if (a.custoExtra>0)                         rows.push(sublinha('Custos extras / variáveis', a.custoExtra));
         if (a.custoProdDevolv>0)                    rows.push(sublinha('Custo produtos devolvidos', a.custoProdDevolv));
         if (a.imposto>0)                            rows.push(sublinha('Impostos', a.imposto));
+        for (const x of Object.values(a.carteiraTipos || {})) if (x.valor > 0.01) rows.push(sublinha(`${x.rotulo} (carteira, ${x.n})`, x.valor));
         rows.push(subfinal(lucroPlat[n]));
         return `<div class="fin-grupo">${rows.join('')}</div>`;
       }).join('')
@@ -736,12 +769,12 @@ Router.register('financeiro', async (params, el) => {
       const tarifa = parseFloat(r.taxas?.tarifa_venda ?? r.taxas?.comissao) || 0;
       const liq = r.liquido != null ? parseFloat(r.liquido) : (tarifa > 0 ? valor - tarifa : valor);
       return { id: r.pedido_id, itensCusto: itensDeCusto(r.itens), plataforma: { amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt] || mkt, contaId, dataTs: Date.parse(r.criado_em), valor, status,
-        taxas: { liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0 }, _base: true, _semTaxa: r.liquido == null && r.situacao === 'valido' && mkt !== 'magalu' }; // estimada ainda conta como sem taxa real
+        taxas: { liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0 }, _base: true, _semTaxa: r.liquido == null && r.situacao === 'valido' && mkt !== 'magalu', _liqEstimar: r.liquido == null && !(tarifa > 0) }; // estimada ainda conta como sem taxa real
     }
     if (mkt === 'shopee') {
       // Igual à busca antiga: sem escrow (pedido ainda não concluído) → líquido = valor, sem taxas
       const tx = r.liquido != null && r.taxas ? { ...r.taxas, liquido: parseFloat(r.liquido) } : { liquido: valor, comissao: 0, taxaServico: 0, imposto: 0, frete: 0, voucher: 0 };
-      return { id: r.pedido_id, itensCusto: itensDeCusto(r.itens), plataforma: 'Shopee', contaId, dataTs: Date.parse(r.criado_em), valor, freteComprador: parseFloat(r.frete) || 0, status, taxas: tx, _base: true, _semTaxa: r.liquido == null && status === 'COMPLETED' };
+      return { id: r.pedido_id, itensCusto: itensDeCusto(r.itens), plataforma: 'Shopee', contaId, dataTs: Date.parse(r.criado_em), valor, freteComprador: parseFloat(r.frete) || 0, status, taxas: tx, _base: true, _semTaxa: r.liquido == null && status === 'COMPLETED', _liqEstimar: r.liquido == null };
     }
     const tarifa = parseFloat(r.taxas?.tarifa_venda) || 0;
     const liq = r.liquido != null ? parseFloat(r.liquido) : null;
@@ -1204,6 +1237,7 @@ Router.register('financeiro', async (params, el) => {
               } else {
                 // Sem escrow: usa valor como líquido estimado, sem taxas (dados incompletos)
                 o.taxas = { liquido: o.valor, comissao:0, taxaServico:0, imposto:0, frete:0, voucher:0 };
+                o._liqEstimar = true; // taxa média da conta no cálculo (calcularTudo)
               }
               pedidos.push(o);
             }
@@ -1346,6 +1380,33 @@ Router.register('financeiro', async (params, el) => {
           }
         } catch(ePay) {
           console.warn('[Payout] Erro em', conta.nickname, ePay.message);
+        }
+      }
+
+      // ── Carteira Shopee: cobranças que saem depois do repasse do pedido (devolução aprovada
+      // depois do repasse, multa, ajuste). Não aparecem no pedido — sem isto o lucro ficava maior.
+      if (statusEl) statusEl.textContent = 'Conferindo cobranças da carteira Shopee...';
+      for (const conta of contasSelecionadas.filter(c => c.marketplace === 'shopee')) {
+        const shopId = String(conta.param_to_use?.shopId || conta.external_id);
+        try {
+          const lista = [];
+          for (let page = 1; page <= 40; page++) {
+            const r = await MarketplaceAPI.call('shopee_get_wallet_transactions', { shopId, create_time_from: Math.floor(tsFrom / 1000), create_time_to: Math.floor(tsTo / 1000), page_no: page, page_size: 50 });
+            const resp = r?.data?.response || r?.response || {};
+            if (!Array.isArray(resp.transaction_list)) break;
+            lista.push(...resp.transaction_list);
+            if (!resp.more) break;
+          }
+          // pedido que a base já trata como devolvido não conta de novo (o custo dele já está em Devoluções)
+          const sns = [...new Set(lista.filter(t => t.order_sn && (parseFloat(t.amount) || 0) < 0).map(t => String(t.order_sn)))];
+          const devolvidos = new Set(pedidos.filter(p => isDevolvido(p)).map(p => String(p.id)));
+          for (let i = 0; i < sns.length && typeof _sb !== 'undefined'; i += 100) {
+            const { data } = await _sb.from('glr_pedidos').select('pedido_id').eq('marketplace', 'shopee').eq('situacao', 'devolvido').in('pedido_id', sns.slice(i, i + 100));
+            for (const x of (data || [])) devolvidos.add(String(x.pedido_id));
+          }
+          if (window.BaseDados?.cobrancasCarteiraShopee) carteira[conta.external_id] = BaseDados.cobrancasCarteiraShopee(lista, devolvidos);
+        } catch (eCart) {
+          console.warn('[Carteira] Erro em', conta.nickname || shopId, eCart.message);
         }
       }
 

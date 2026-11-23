@@ -1223,7 +1223,8 @@ let _portalVendasExpandido = null;
 function _portalCalcLucro(p, custos) {
   const receita = parseFloat(p.valor) || 0;
   const tx      = p.taxas || {};
-  const liquido = tx.liquido != null ? parseFloat(tx.liquido) : null;
+  // Recarga de ADS tirada do repasse volta para o líquido: o gasto de ADS já entra inteiro no ADS
+  const liquido = tx.liquido != null ? parseFloat(tx.liquido) + (window.BaseDados?.recargaAdsDoRepasse ? BaseDados.recargaAdsDoRepasse(tx) : 0) : null;
   const c       = custos[p.id] || {};
   // Custo: unitário (lançado no pedido ou do catálogo) × quantidade — mesma regra do admin
   const custo   = _portalCustoProdutos(p, c.custo);

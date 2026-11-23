@@ -91,11 +91,20 @@ Router.register('dre', (params, el) => {
     if (!filtrados.length) return null;
 
     const fat = filtrados.reduce((s, p) => s + (parseFloat(p.valor) || 0), 0);
+    // Mesma regra do Financeiro: recarga de ADS volta para o líquido (já está no ADS) e pedido
+    // ainda sem taxa real usa a taxa média da conta (não o valor cheio)
+    const recargaDe = tx => BaseDados.recargaAdsDoRepasse(tx);
+    const taxaMedia = BaseDados.taxaMediaPorConta(filtrados.filter(p => !p._liqEstimar && p.taxas?.liquido != null)
+      .map(p => ({ conta: p.contaId, valor: p.valor, liquido: parseFloat(p.taxas.liquido) + recargaDe(p.taxas) })));
     const liq = filtrados.reduce((s, p) => {
-      const tx = p.taxas || {};
-      return s + (tx.liquido != null ? parseFloat(tx.liquido) : parseFloat(p.valor) || 0);
+      const tx = p.taxas || {}, valor = parseFloat(p.valor) || 0;
+      if (p._liqEstimar && taxaMedia[p.contaId] != null) return s + valor * (1 - taxaMedia[p.contaId]);
+      return s + (tx.liquido != null ? parseFloat(tx.liquido) : valor) + recargaDe(tx);
     }, 0);
-    const comissaoFrete = Math.max(0, fat - liq);
+    // Cobranças da carteira Shopee fora dos pedidos (devolução depois do repasse etc.) entram nas taxas
+    const carteiraCli = (platFiltro === null || platFiltro === 'Shopee')
+      ? Object.entries(cache.carteira || {}).filter(([id]) => contasCliente.includes(id)).reduce((s, [, c]) => s + (parseFloat(c?.total) || 0), 0) : 0;
+    const comissaoFrete = Math.max(0, fat - liq) + carteiraCli;
 
     // Imposto por pedido
     let aliquotas = {};
@@ -250,16 +259,25 @@ Router.register('dre', (params, el) => {
     const catalogo = lerCatalogoCusto();
     let fat = 0, liq = 0, imposto = 0, custoProd = 0, qtd = 0, qtdCom = 0, ads = 0, semTaxa = 0;
     const pedCom = [];
+    const finCache = lerCacheFinanceiro(mes, ano);
+    let carteiraTot = 0;
     for (const c of contas) {
       const d = baseDRE.porConta[String(c.external_id)];
       ads += d.ads;
+      // Cobranças da carteira Shopee fora dos pedidos (lidas pelo Financeiro do mesmo mês)
+      carteiraTot += parseFloat(finCache?.carteira?.[String(c.external_id)]?.total) || 0;
+      // Taxa média real da conta para os pedidos que ainda não têm a taxa do marketplace
+      const taxaMedia = BaseDados.taxaMediaPorConta(d.pedidos.filter(p => p.situacao === 'valido' && p.liquido != null)
+        .map(p => ({ conta: 'c', valor: p.valor_bruto, liquido: parseFloat(p.liquido) + BaseDados.recargaAdsDoRepasse(p.taxas) }))).c;
       for (const p of d.pedidos) {
         if (p.situacao !== 'valido') continue; // cancelado/devolvido fora (mesma regra de antes)
         const valor = parseFloat(p.valor_bruto) || 0;
         fat += valor;
-        // Mesma regra do Financeiro: sem taxa real ainda → Shopee líquido = valor; ML = valor − tarifa
-        if (p.liquido != null) liq += parseFloat(p.liquido);
-        else { liq += valor - (parseFloat(p.taxas?.tarifa_venda) || 0); semTaxa++; } // ML/Magalu: tarifa do pedido; Amazon/TikTok: estimada pela média da conta
+        // Mesma regra do Financeiro: recarga de ADS volta (já está no ADS); sem taxa real →
+        // tarifa do pedido (ML/Magalu) ou, se não houver, a taxa média da conta
+        const tarifa = parseFloat(p.taxas?.tarifa_venda) || 0;
+        if (p.liquido != null) liq += parseFloat(p.liquido) + BaseDados.recargaAdsDoRepasse(p.taxas);
+        else { liq += !(tarifa > 0) && taxaMedia != null ? valor * (1 - taxaMedia) : valor - tarifa; semTaxa++; }
         const impAPI = d.mkt === 'shopee' && p.liquido != null ? parseFloat(p.taxas?.imposto) || 0 : 0;
         const cst = custos[p.pedido_id] || {};
         imposto += impAPI > 0 ? impAPI : valor * (parseFloat(cst.imposto) || parseFloat(aliquotas[c.external_id] || 0)) / 100;
@@ -271,7 +289,7 @@ Router.register('dre', (params, el) => {
     if (!fat && !ads) return null;
     const cliente = clientes.find(c => c.id === parseInt(clienteId));
     return {
-      faturamento: fat, comissaoFrete: Math.max(0, fat - liq), imposto, ads,
+      faturamento: fat, comissaoFrete: Math.max(0, fat - liq) + carteiraTot, imposto, ads,
       produtos: custoProd, produtosVendidos: qtd,
       comissaoGLR: GLR.comissao.daParte(cliente, pedCom, todosComDoMes(clienteId)), // modelo do cliente; só contas que contam comissão
       juros: 0, custoFixo: 0,
