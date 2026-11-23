@@ -36,7 +36,7 @@ module.exports=async(req,res)=>{
    const coberto=[...contas.values()].every(c=>historicos.some(h=>h.marketplace===c.mkt&&String(h.conta_id)===c.id&&h.cursor?.historico_ate&&h.cursor.historico_ate<=Date.parse(dia+'T00:00:00-03:00')/1000-86400));
    const resumo=audience.resumoVendometro(pedidos,ads,contas,agora,coberto);
    const especificos=audience.oscilacoes(ads,contas,agora);
-   const listaPerfil=perfil.tipo==='consultoria'?[...eventos.filter(e=>e.categoria==='saldo'),...especificos,...(resumo&&contas.size?[resumo]:[])]:[...eventos.filter(e=>['vendas','saldo','metas'].includes(e.categoria))];
+   const listaPerfil=perfil.tipo==='consultoria'?[...eventos.filter(e=>e.categoria==='saldo'),...especificos,...(resumo&&contas.size?[resumo]:[])]:[...eventos.filter(e=>['vendas','saldo'].includes(e.categoria)||(e.categoria==='metas'&&e.chave.startsWith('meta:')))];
    const candidatos=listaPerfil.filter(e=>Date.parse(e.em)>=Date.parse(s.criado_em)&&audience.autorizado(perfil,p,e));
    for(const categoria of ['vendas','saldo','metas','vendometro','oscilacao']){
     const grupo=candidatos.filter(e=>e.categoria===categoria);if(!grupo.length)continue;
