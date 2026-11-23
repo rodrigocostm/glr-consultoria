@@ -20,6 +20,11 @@ const PushNotif = {
     return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
   },
 
+  async _headers() {
+    const {data}=await _sb.auth.getSession();
+    if (!data?.session?.access_token) throw new Error('Entre novamente na sua conta para ativar notificações.');
+    return {'Content-Type':'application/json',Authorization:'Bearer '+data.session.access_token};
+  },
   async ativar() {
     if (!this.suportado()) {
       alert('Seu navegador não suporta notificações push. Tente pelo Chrome ou Safari (iOS 16.4+, precisa "Adicionar à Tela de Início" antes de ativar).');
@@ -45,10 +50,10 @@ const PushNotif = {
 
       const r = await fetch('/api/push-subscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await this._headers(),
         body: JSON.stringify(sub),
       });
-      if (!r.ok) throw new Error('Falha ao registrar no servidor');
+      if (!r.ok) { const erro=await r.json().catch(()=>({})); throw new Error(erro.error || 'Falha ao registrar no servidor ('+r.status+')'); }
 
       localStorage.setItem('glr_push_ativo', '1');
       return true;
@@ -65,7 +70,7 @@ const PushNotif = {
       const sub = await reg?.pushManager.getSubscription();
       if (sub) {
         await fetch('/api/push-unsubscribe', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: await this._headers(),
           body: JSON.stringify({ endpoint: sub.endpoint }),
         }).catch(()=>{});
         await sub.unsubscribe();
@@ -79,3 +84,4 @@ const PushNotif = {
     return await this.ativar();
   },
 };
+

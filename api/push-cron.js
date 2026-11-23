@@ -5,7 +5,7 @@
 const webpush = require('web-push');
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyb2RxbGVqcXlhb29tdXRyaWl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjU5NjUsImV4cCI6MjA5NjQ0MTk2NX0.JaKQHoGH8S3ZdLQInLErpC21SZ0j4FmIGtvWKcBes-A';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function sbGet(chave) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?chave=eq.${encodeURIComponent(chave)}&select=dados`, {
@@ -190,3 +190,4 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: e.message });
   }
 };
+
