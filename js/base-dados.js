@@ -117,6 +117,56 @@ const BaseDados = (() => {
     return unit([chavesProduto(mkt, itens, pedidoId)].filter(Boolean)) * qtdTotal;
   }
 
+  // Recarga de ADS que a Shopee tira do repasse do pedido (escrow) para o saldo de ADS.
+  // Não é taxa: o gasto de ADS já entra inteiro em "Investimento em ADS" — descontar
+  // também do líquido contava o mesmo dinheiro duas vezes (comparado com o Gestor Seller,
+  // Zion nov/2026: R$ 4.097,84). As telas somam isto de volta ao líquido.
+  function recargaAdsDoRepasse(taxas) {
+    return parseFloat(taxas?.detalhes?.ads_escrow_top_up_fee_or_technical_support_fee) || 0;
+  }
+
+  // Taxa média real de cada conta (1 − Σlíquido/Σvalor) a partir dos pedidos que já têm a
+  // taxa do marketplace. Usada no lugar de "líquido = valor cheio" dos pedidos que ainda
+  // não têm (lucro aparecia inflado). Precisa de pelo menos 10 pedidos com taxa real.
+  //   lista: [{ conta, valor, liquido }] (só pedidos com taxa real)
+  function taxaMediaPorConta(lista) {
+    const soma = {};
+    for (const x of lista || []) {
+      const v = parseFloat(x.valor) || 0, l = parseFloat(x.liquido);
+      if (v <= 0 || !Number.isFinite(l)) continue;
+      const s = soma[x.conta] = soma[x.conta] || { v: 0, l: 0, n: 0 };
+      s.v += v; s.l += l; s.n++;
+    }
+    const out = {};
+    for (const [c, s] of Object.entries(soma)) if (s.n >= 10 && s.v > 0) out[c] = Math.min(0.9, Math.max(0, 1 - s.l / s.v));
+    return out;
+  }
+
+  // Carteira Shopee (shopee_get_wallet_transactions) → cobranças que saem DEPOIS do repasse
+  // do pedido e não aparecem nele (ex.: devolução aprovada depois do repasse, multa, ajuste).
+  // Fora: saque/PIX, renda de pedido e recarga de ADS (SPM_DEDUCT, já contada em ADS).
+  // Mesma regra do agente (api/_saude-taxas.js somarCarteiraShopee).
+  const CARTEIRA_NAO_CUSTO = /^(PIX_TRANSFER|WITHDRAWAL|ESCROW_VERIFIED_ADD|ESCROW_ADD|TRANSFER_TO_BANK|AUTO_WITHDRAWAL|SPM_DEDUCT)/;
+  const CARTEIRA_ROTULOS = {
+    ADJUSTMENT_FOR_RR_AFTER_ESCROW_VERIFIED: 'Devolução descontada depois do repasse',
+  };
+  //   devolvidos: Set de order_sn que a base já trata como devolvidos (não contar de novo)
+  function cobrancasCarteiraShopee(lista, devolvidos) {
+    const porTipo = {};
+    let total = 0;
+    for (const t of lista || []) {
+      const v = parseFloat(t.amount) || 0;
+      if (v >= 0 || (t.status && t.status !== 'COMPLETED')) continue;
+      const tipo = String(t.transaction_type || 'SEM_TIPO');
+      if (CARTEIRA_NAO_CUSTO.test(tipo)) continue;
+      if (t.order_sn && devolvidos?.has(String(t.order_sn))) continue;
+      const x = porTipo[tipo] = porTipo[tipo] || { valor: 0, n: 0, rotulo: CARTEIRA_ROTULOS[tipo] || t.description || tipo };
+      x.valor = Math.round((x.valor - v) * 100) / 100; x.n++;
+      total -= v;
+    }
+    return { total: Math.round(total * 100) / 100, porTipo };
+  }
+
   function invalidar() { cache = null; }
 
   function iniciarTempoReal() {
@@ -131,7 +181,7 @@ const BaseDados = (() => {
       .subscribe();
   }
 
-  return { carregar, cobre, cobreAds, somar, invalidar, iniciarTempoReal, mktDe, chave, chaveProduto, chavesProduto, custoProdutosPedido };
+  return { carregar, cobre, cobreAds, somar, invalidar, iniciarTempoReal, mktDe, chave, chaveProduto, chavesProduto, custoProdutosPedido, recargaAdsDoRepasse, taxaMediaPorConta, cobrancasCarteiraShopee };
 })();
 window.BaseDados = BaseDados;
 BaseDados.iniciarTempoReal();

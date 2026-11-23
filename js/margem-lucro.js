@@ -29,7 +29,8 @@ window.GLR_Margem = {
     const receita = parseFloat(p.valor) || 0;
     const tx = p.taxas || {};
 
-    let liquido = tx.liquido != null ? parseFloat(tx.liquido) : null;
+    // Recarga de ADS tirada do repasse volta para o líquido: o gasto de ADS já entra inteiro no ADS
+    let liquido = tx.liquido != null ? parseFloat(tx.liquido) + (window.BaseDados?.recargaAdsDoRepasse ? BaseDados.recargaAdsDoRepasse(tx) : 0) : null;
     if (liquido == null && p.plataforma === 'Magalu' && (tx.comissao || tx.frete)) {
       liquido = receita - (parseFloat(tx.comissao) || 0) - (parseFloat(tx.frete) || 0);
     }
