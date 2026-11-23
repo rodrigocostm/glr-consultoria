@@ -61,6 +61,38 @@ Router.register('financeiro', async (params, el) => {
       .map(p => SHOPEE_FEE_LABELS[p] || p.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase()))
       .join(' — ');
   }
+  // Como cada campo extra do escrow mexe no repasse. Conferido com os 903 pedidos de
+  // nov/2026 da Zion: valor − comissão − serviço − frete − cartão − DEDUÇÕES + CRÉDITOS
+  // = escrow_amount em todos eles. Os INFORMATIVOS não mudam o repasse (somar eles gerava
+  // o "Ajuste não identificado" falso de ~R$ 116 mil). Campo fora das listas aparece como
+  // "não classificado" e o efeito dele fica no ajuste — o Agente Saúde das Taxas avisa.
+  //   sinal: o valor que representa desconto no repasse (+1 = valor positivo é desconto)
+  const SHOPEE_DET_DEDUCAO = { order_ams_commission_fee: +1, ads_escrow_top_up_fee_or_technical_support_fee: +1, seller_return_refund: -1 };
+  const SHOPEE_DET_CREDITO = { payment_promotion: +1 };
+  const SHOPEE_DET_INFO = new Set(['seller_discount', 'pix_discount', 'buyer_transaction_fee', 'drc_adjustable_refund', 'final_product_protection',
+    'prorated_shopee_voucher_offset_return_items', 'voucher_from_external_party']);
+  Object.assign(SHOPEE_FEE_LABELS, {
+    order_ams_commission_fee: 'Comissão de afiliados (AMS)',
+    ads_escrow_top_up_fee_or_technical_support_fee: 'Recarga de ADS paga com o repasse',
+    seller_return_refund: 'Reembolso parcial ao comprador',
+    payment_promotion: 'Promoção de pagamento (abate a taxa de cartão)',
+    pix_discount: 'Desconto PIX dado ao comprador',
+    buyer_transaction_fee: 'Taxa de transação paga pelo comprador',
+  });
+  // { deducoes:[[rótulo, valor]], creditos:[...], info:[...], outros:[[rótulo, valorComSinal]], somaDed, somaCred }
+  function _gruposDetalheShopee(det) {
+    const g = { deducoes: [], creditos: [], info: [], outros: [], somaDed: 0, somaCred: 0 };
+    for (const [k, v] of Object.entries(det || {})) {
+      if (Math.abs(v) <= 0.01) continue;
+      if (SHOPEE_DET_DEDUCAO[k]) { const x = v * SHOPEE_DET_DEDUCAO[k]; g.deducoes.push([_shopeeFeeLabel(k), x]); g.somaDed += x; }
+      else if (SHOPEE_DET_CREDITO[k]) { const x = v * SHOPEE_DET_CREDITO[k]; g.creditos.push([_shopeeFeeLabel(k), x]); g.somaCred += x; }
+      else if (SHOPEE_DET_INFO.has(k)) g.info.push([_shopeeFeeLabel(k), Math.abs(v)]);
+      else g.outros.push([_shopeeFeeLabel(k), v]);
+    }
+    const ord = arr => arr.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    ord(g.deducoes); ord(g.creditos); ord(g.info); ord(g.outros);
+    return g;
+  }
   // Campos não-monetários que devem ser ignorados na varredura genérica
   const SHOPEE_FEE_SKIP = new Set([
     'order_chargeable_weight','final_height','final_width','final_length',
@@ -375,28 +407,27 @@ Router.register('financeiro', async (params, el) => {
           if (a.frete > 0.01)       rows.push(sublinha('Frete descontado (vendedor)', a.frete));
           if (a.taxaCartao > 0.01)  rows.push(sublinha('Taxa de cartão de crédito', a.taxaCartao));
 
-          // Detalhamento campo-a-campo de TODAS as demais taxas/créditos do escrow — nenhuma fica sem nome
-          const detEntries = Object.entries(a.detalhesOutros||{}).filter(([,v]) => Math.abs(v) > 0.01);
-          detEntries.sort((x,y) => Math.abs(y[1]) - Math.abs(x[1]));
-          for (const [k, v] of detEntries) {
-            rows.push(sublinha(_shopeeFeeLabel(k), Math.abs(v), v >= 0 ? '+' : '−'));
-          }
+          // Demais campos do escrow, cada um com o efeito real no repasse (_gruposDetalheShopee)
+          const gDet = _gruposDetalheShopee(a.detalhesOutros);
+          for (const [lbl, v] of gDet.deducoes) rows.push(sublinha(lbl, v, '−'));
+          for (const [lbl, v] of gDet.creditos) rows.push(sublinha(lbl, v, '+'));
+          for (const [lbl, v] of gDet.outros)   rows.push(sublinha(`${lbl} (não classificado)`, Math.abs(v), v >= 0 ? '+' : '−'));
 
-          // Ajuste residual: só aparece se sobrar algo não identificado pelos campos acima.
+          // Ajuste residual: só o que nenhum campo classificado explica (campo novo, por exemplo).
           // "Moedas Shopee" (coins) NÃO entra aqui — testado com pedido real e confirmado que
           // não afeta escrow_amount; incluir na conta criava um resíduo artificial (bug corrigido).
-          const somaDetalhes = detEntries.reduce((s,[,v]) => s + v, 0);
-          const residualSh = totalTaxasSh - a.comissao - a.taxaServico - a.frete - a.taxaCartao - somaDetalhes;
+          const residualSh = totalTaxasSh - a.comissao - a.taxaServico - a.frete - a.taxaCartao - gDet.somaDed + gDet.somaCred;
           if (Math.abs(residualSh) > 1) rows.push(sublinha('Ajuste não identificado pela API', Math.abs(residualSh), residualSh >= 0 ? '−' : '+'));
 
           // Voucher, Rebate e Moedas são informativos: a Shopee absorve esses valores e eles
           // NÃO reduzem seu repasse (confirmado com pedido real via API). Mostrados separados,
           // fora da soma de deduções, só para transparência.
-          if (a.voucher > 0.01 || a.rebate > 0.01 || a.taxaMoedas > 0.01) {
+          if (a.voucher > 0.01 || a.rebate > 0.01 || a.taxaMoedas > 0.01 || gDet.info.length) {
             rows.push(`<div class="fin-sub" style="opacity:.65;font-style:italic;"><span>ℹ️ Informativo (não afeta seu repasse):</span><em></em></div>`);
             if (a.voucher > 0.01)    rows.push(sublinha('Voucher Shopee (custeado pela Shopee)', a.voucher, '+'));
             if (a.rebate > 0.01)     rows.push(sublinha('Rebate de comissão (já embutido nas taxas acima)', a.rebate, '+'));
             if (a.taxaMoedas > 0.01) rows.push(sublinha('Moedas Shopee (cobertas pela Shopee)', a.taxaMoedas, '+'));
+            for (const [lbl, v] of gDet.info) rows.push(`<div class="fin-sub" style="opacity:.65;"><span>${lbl}:</span><em>${R$(v)}</em></div>`);
           }
           if (totalTaxasSh < 1) rows.push(sublinha('Taxas disponíveis após entrega dos pedidos', 0));
         } else {
@@ -439,9 +470,8 @@ Router.register('financeiro', async (params, el) => {
                 ${a.taxaServico > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">Taxa de Serviço:</span><strong style="color:var(--red);">- ${R$(a.taxaServico)}</strong></div>` : ''}
                 ${a.frete > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">Frete Descontado:</span><strong style="color:var(--red);">- ${R$(a.frete)}</strong></div>` : ''}
                 ${a.taxaCartao > 0.01 ? `<div class="fin-row"><span style="padding-left:12px;">Taxa Cartão de Crédito:</span><strong style="color:var(--red);">- ${R$(a.taxaCartao)}</strong></div>` : ''}
-                ${Object.entries(a.detalhesOutros||{}).filter(([,v])=>Math.abs(v)>0.01).sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).map(([k,v]) =>
-                  `<div class="fin-row"><span style="padding-left:12px;">${_shopeeFeeLabel(k)}:</span><strong style="color:${v>=0?'var(--green)':'var(--red)'};">${v>=0?'+':'-'} ${R$(Math.abs(v))}</strong></div>`
-                ).join('')}
+                ${(() => { const g = _gruposDetalheShopee(a.detalhesOutros); const r = (lbl, v, s) => `<div class="fin-row"><span style="padding-left:12px;">${lbl}:</span><strong style="color:${s==='+'?'var(--green)':'var(--red)'};">${s} ${R$(Math.abs(v))}</strong></div>`;
+                  return g.deducoes.map(([l,v]) => r(l, v, '-')).join('') + g.creditos.map(([l,v]) => r(l, v, '+')).join('') + g.outros.map(([l,v]) => r(`${l} (não classificado)`, v, v>=0?'+':'-')).join(''); })()}
               </div>
               ${(a.voucher > 0.01 || a.rebate > 0.01 || a.taxaMoedas > 0.01) ? `
               <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(99,102,241,0.2);opacity:.65;">
@@ -577,9 +607,18 @@ Router.register('financeiro', async (params, el) => {
     );
 
     // ── 5c. Afiliados (comissão) ──
+    // Comissão de afiliados que a Shopee já tirou do repasse (campo order_ams_commission_fee do escrow).
+    // Só informativa aqui: já está descontada no Líquido Marketplace, não sai de novo do lucro.
+    const amsPorPlat = nomes.map(n => [n, parseFloat(plats[n].detalhesOutros?.order_ams_commission_fee) || 0]).filter(([, v]) => v > 0.01);
+    const totAms = amsPorPlat.reduce((s, [, v]) => s + v, 0);
     const sAfiliados = secao('afil','Comissão de Afiliados',
-      {num:afiliados.totalComissao||0, txt:R$(afiliados.totalComissao||0)},
-      afiliados.totalComissao > 0
+      {num:-(totAms || afiliados.totalComissao || 0), txt:R$s(-(totAms || afiliados.totalComissao || 0))},
+      totAms > 0
+        ? `<div class="fin-grupo">
+            ${amsPorPlat.map(([n, v]) => `<div class="fin-row"><span>${n}:</span><strong style="color:var(--red);">- ${R$(v)}</strong></div>`).join('')}
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Já descontada do repasse pelo marketplace (está dentro do Líquido Marketplace) — não sai de novo do lucro.</div>
+          </div>`
+        : afiliados.totalComissao > 0
         ? `
           <div class="fin-grupo">
             <div class="fin-row"><span>Total Comissão:</span><strong style="color:var(--green);">${R$(afiliados.totalComissao)}</strong></div>
