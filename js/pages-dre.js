@@ -118,9 +118,8 @@ Router.register('dre', (params, el) => {
         const aliq = parseFloat(c.imposto) || parseFloat(aliquotas[p.contaId] || 0);
         imposto += (parseFloat(p.valor) || 0) * aliq / 100;
       }
-      // produtoKeys vem gravado pelo Financeiro no cache (glr_fin_cache)
-      custoProd += (parseFloat((custos[p.id] || {}).custo) || 0)
-                || custoDoCatalogo(catalogo, p.produtoKeys);
+      // Custo unitário × quantidade, item a item — itensCusto vem gravado pelo Financeiro no cache (glr_fin_cache)
+      custoProd += BaseDados.custoProdutosPedido(p.plataforma === 'Mercado Livre' ? 'ml' : 'outro', p.itensCusto, (custos[p.id] || {}).custo, catalogo, p.id);
       qtdTotal  += parseInt(p.qtd) || 1;
       if (GLR.contaGeraComissao(p.contaId)) { const qc = GLR.contaPorPedido(p.contaId) ? 1 : (parseInt(p.qtd) || 1); qtdComissao += qc; pedCom.push({ valor: parseFloat(p.valor) || 0, qtd: qc }); }
     }
@@ -240,11 +239,6 @@ Router.register('dre', (params, el) => {
   function lerCatalogoCusto() {
     try { return JSON.parse(localStorage.getItem('glr_vendas_custo_catalogo') || '{}'); } catch(e) { return {}; }
   }
-  // Primeira chave com custo > 0 no catálogo (ML: item_id; Shopee: nome e id do anúncio)
-  function custoDoCatalogo(cat, keys) {
-    for (const k of (keys || [])) { const v = parseFloat(cat[k]) || 0; if (v > 0) return v; }
-    return 0;
-  }
 
   function getBaseData(clienteId, platName, mes, ano) {
     if (!baseDRE || baseDRE.chave !== `${clienteId}_${mes}_${ano}`) return null;
@@ -269,8 +263,7 @@ Router.register('dre', (params, el) => {
         const impAPI = d.mkt === 'shopee' && p.liquido != null ? parseFloat(p.taxas?.imposto) || 0 : 0;
         const cst = custos[p.pedido_id] || {};
         imposto += impAPI > 0 ? impAPI : valor * (parseFloat(cst.imposto) || parseFloat(aliquotas[c.external_id] || 0)) / 100;
-        custoProd += (parseFloat(cst.custo) || 0)
-                  || custoDoCatalogo(catalogo, BaseDados.chavesProduto(d.mkt, p.itens, p.pedido_id));
+        custoProd += BaseDados.custoProdutosPedido(d.mkt, p.itens, cst.custo, catalogo, p.pedido_id); // custo unitário × quantidade, item a item
         const q = (p.itens || []).reduce((s, i) => s + (parseInt(i.qtd) || 1), 0) || 1;
         qtd += q; if (GLR.contaGeraComissao(c)) { const qc = GLR.contaPorPedido(c) ? 1 : q; qtdCom += qc; pedCom.push({ valor, qtd: qc }); }
       }

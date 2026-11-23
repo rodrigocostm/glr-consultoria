@@ -37,7 +37,12 @@ window.GLR_Margem = {
     const c = custos[p.id] || {};
     const custoPedido = parseFloat(c.custo) || 0;
     const custoCatalogo = parseFloat(catalogoCusto[produtoKey]) || 0;
-    const custo = custoPedido || custoCatalogo;
+    // Custo unitário × quantidade, item a item (BaseDados.custoProdutosPedido)
+    const itensCusto = (p.itens && p.itens.length ? p.itens : [{ nome: p.produto, qtd: p.qtd }])
+      .map(i => ({ item_id: i.itemId || i.shopeeItemId || '', nome: i.nome, qtd: i.qtd }));
+    const custo = window.BaseDados?.custoProdutosPedido
+      ? BaseDados.custoProdutosPedido(p.plataforma === 'Mercado Livre' ? 'ml' : 'outro', itensCusto, custoPedido, catalogoCusto, p.id)
+      : (custoPedido || custoCatalogo) * (parseInt(p.qtd) || 1);
     const outros = parseFloat(c.outros) || 0;
 
     const impAPIRaw = tx.imposto != null ? parseFloat(tx.imposto) : null;
