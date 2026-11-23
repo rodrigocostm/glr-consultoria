@@ -621,6 +621,20 @@ Router.register('financeiro', async (params, el) => {
         </div>
         <span class="fin-valor" style="color:${lucroDepoisAds>=0?'var(--green)':'var(--red)'};;font-size:22px;align-self:flex-end;">${R$(lucroDepoisAds)} <span style="font-size:13px;">(${pctDepoisAds.toFixed(2).replace('.',',')}%)</span></span>
       </div>
+      <div class="fin-body" style="display:block;">
+        ${nomes.map(n => {
+          // Por plataforma: lucro bruto − armazenamento FULL/FBA − ADS da própria plataforma
+          const armazN = parseFloat(m.armazenamento[n]) || 0;
+          const adsN   = adsEfetivo(n);
+          const finalN = lucroPlat[n] - armazN - adsN;
+          const pctN   = plats[n].fat > 0 ? (finalN / plats[n].fat) * 100 : 0;
+          const rows = [linha(n, lucroPlat[n])];
+          if (armazN > 0) rows.push(sublinha('Armazenamento FULL/FBA', armazN));
+          if (adsN > 0)   rows.push(sublinha('ADS', adsN));
+          rows.push(`<div class="fin-sub fin-final"><span>Lucro depois de ADS:</span><em style="color:${finalN>=0?'var(--green)':'var(--red)'};">${R$(finalN)} (${pctN.toFixed(2).replace('.',',')}%)</em></div>`);
+          return `<div class="fin-grupo">${rows.join('')}</div>`;
+        }).join('')}
+      </div>
     </div>`;
 
     // ── 7. Receita extra / Despesas ──
