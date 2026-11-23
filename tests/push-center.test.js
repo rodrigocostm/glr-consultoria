@@ -26,3 +26,18 @@ test('rotina agrupa vendas, ignora histórico anterior à inscrição e deduplic
  const r=()=>({status(c){this.code=c;return this;},json(b){this.body=b;}});const a=r();await handler({},a);assert.equal(a.body.enviados,1);const b=r();await handler({},b);assert.equal(b.body.enviados,0);assert.equal(enviados,1);auth.cronAuthorized=old;
 });
 
+
+test('resumo da meia-noite é enviado mesmo no silêncio noturno',async()=>{
+ const RealDate=Date,agora=new RealDate('2026-11-23T03:00:00Z');global.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[+agora]));}static now(){return +agora;}};
+ const auth=require('../api/_auth'),old=auth.cronAuthorized;auth.cronAuthorized=()=>true;const m=require('../api/_push-db');let envios=0;
+ m.usuarioPerfil=async()=>({tipo:'consultoria',contas:null});m.config=async k=>k==='glr_clientes'?[{id:1,nome:'Cliente'}]:k==='glr_gestores'?[]:k==='glr_mc_vinculos'?{1:[{marketplace:'ml',external_id:'a'}]}:{};
+ m.vapid=()=>({sendNotification:async(_,payload)=>{const p=JSON.parse(payload);assert.match(p.title,/Resumo do dia anterior/);assert.match(p.body,/200,00/);envios++;}});
+ m.db=async(path,opt)=>{
+  if(path==='push_subscriptions?select=*')return [{endpoint:'e',user_id:'u',criado_em:'2026-11-21T12:00:00Z',preferencias:{silencio:true}}];
+  if(path.startsWith('glr_staff'))return [{user_id:'u'}];
+  if(path.startsWith('glr_pedidos'))return [{marketplace:'ml',conta_id:'a',pedido_id:'1',situacao:'valido',status_original:'paid',criado_em:'2026-11-22T16:00:00Z',valor_bruto:200}];
+  if(path.startsWith('push_deliveries')&&opt?.method==='POST')return JSON.parse(opt.body);
+  return [];
+ };m.listar=m.db;delete require.cache[require.resolve('../api/push-cron')];const h=require('../api/push-cron');
+ try{const r={status(c){this.code=c;return this;},json(b){this.body=b;}};await h({},r);assert.equal(r.body.enviados,1);assert.equal(envios,1);}finally{global.Date=RealDate;auth.cronAuthorized=old;}
+});

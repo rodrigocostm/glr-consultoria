@@ -97,11 +97,11 @@ const PushNotif = {
     let perfil;
     try{const r=await fetch('/api/push-subscribe',{headers:await this._headers()});perfil=await r.json();if(!r.ok)throw Error(perfil.error || 'Não foi possível verificar seu perfil');}catch(e){alert(e.message);return;}
     const portal=perfil.perfil==='portal';
-    const opcoes=portal?[['vendas','Vendas das minhas contas'],['saldo','Saldo de Ads das minhas contas'],['metas','Minhas metas']]:[['vendometro','Resumo geral do Vendômetro · 9h, 13h, 18h e 22h'],['saldo','Saldo de Ads baixo ou zerado · identifica a conta'],['oscilacao','Oscilação de Ads · identifica a conta (50% e R$ 100)']];
+    const opcoes=portal?[['vendas','Vendas das minhas contas'],['saldo','Saldo de Ads das minhas contas'],['metas','Minhas metas'],['resumo_diario','Resumo do dia anterior · 0h'],['projecao','Minha projeção entrou em queda'],['curva_a','Produto curva A sem estoque']]:[['vendometro','Resumo geral do Vendômetro · 9h, 13h, 18h e 22h'],['saldo','Saldo de Ads baixo ou zerado · identifica a conta'],['oscilacao','Oscilação de Ads · identifica a conta (50% e R$ 100)'],['resumo_diario','Resumo do dia anterior · 0h'],['gestores','Gestor bateu a meta diária'],['projecao','Cliente entrou com projeção em queda'],['curva_a','Produto curva A sem estoque']];
     document.getElementById('glr-push-panel')?.remove();
     const d=document.createElement('dialog');d.id='glr-push-panel';
     d.style.cssText='width:min(480px,92vw);max-height:85vh;overflow:auto;padding:24px;border-radius:18px;border:1px solid var(--border);background:var(--bg-card,#fff);color:var(--text-primary,#111)';
-    d.innerHTML=`<h2 style="margin-top:0">Notificações · ${portal?'Portal do cliente':'Consultoria GLR'}</h2><p>${portal?'Avisos somente das contas autorizadas do seu portal.':'Resultado geral da carteira no Vendômetro. Avisos por conta apenas para saldo e oscilação grande de Ads.'} Checagem a cada 5 minutos, conforme a atualização da base.</p>
+    d.innerHTML=`<h2 style="margin-top:0">Notificações · ${portal?'Portal do cliente':'Consultoria GLR'}</h2><p>${portal?'Avisos somente das contas autorizadas do seu portal.':'Resultado geral da carteira no Vendômetro. Resumos gerais e exceções por cliente para Ads, queda de projeção e ruptura de curva A.'} Checagem a cada 5 minutos, conforme a atualização da base.</p>
     ${opcoes.map(([k,t])=>`<label style="display:block;margin:12px 0"><input type="checkbox" data-push="${k}" checked> ${t}</label>`).join('')}
     <label style="display:block;margin-top:16px">Contas <select id="push-contas" multiple size="5" style="display:block;width:100%;margin-top:8px"></select></label><small>Sem seleção = ${portal?'todas as suas contas autorizadas':'toda a carteira vinculada da consultoria'}. Toque nas contas para filtrar.</small>
     <label style="display:block;margin:16px 0"><input type="checkbox" data-push="silencio" checked> Horário de silêncio (Brasília)</label><label>Das <input id="push-inicio" type="number" min="0" max="23" value="23" style="width:60px"> às <input id="push-fim" type="number" min="0" max="23" value="7" style="width:60px"> horas</label>
@@ -115,7 +115,7 @@ const PushNotif = {
       const ids=new Set();for(const c of contas || []){const id=String(c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.param_to_use?.amazon_account_id || c.external_id);if(!id||ids.has(id)||(portal&&!(perfil.contasPermitidas||[]).map(String).includes(id)))continue;ids.add(id);const o=document.createElement('option');o.value=id;o.textContent=(c.nickname || c.shop_name || id)+' · '+(c.marketplace||'');select.append(o);}
       const sub=await this._sub();
       if(sub){const r=await fetch('/api/push-preferences?endpoint='+encodeURIComponent(sub.endpoint),{headers:await this._headers()});const data=await r.json();if(!r.ok && r.status!==404)throw Error(data.error || 'Falha ao carregar preferências');if(r.ok){const p=data.preferencias;for(const el of d.querySelectorAll('[data-push]'))el.checked=p[el.dataset.push]!==false;for(const o of select.options)o.selected=p.contas.includes(o.value);d.querySelector('#push-inicio').value=p.inicio;d.querySelector('#push-fim').value=p.fim;}}
-      pronto=true;statusMsg('Escolha os alertas e salve. O teste ignora o horário de silêncio.');
+      pronto=true;statusMsg('Escolha os alertas e salve. O resumo de 0h e o teste ignoram o horário de silêncio. Os demais avisos respeitam o silêncio.');
     } catch(e){statusMsg('Não foi possível carregar as preferências. Feche e tente novamente.');}
     d.querySelector('#push-save').onclick=async()=>{
       if(!pronto)return;
@@ -131,6 +131,7 @@ const PushNotif = {
     return await this.ativar();
   },
 };
+
 
 
 

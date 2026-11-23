@@ -1,6 +1,7 @@
 // Fonte única: pedidos pagos sincronizados e alertas já calculados pelos agentes.
 // Não consulta marketplaces nem estima lucro. Resumos por dispositivo e categoria.
 const {db,listar,config,vapid,usuarioPerfil}=require('./_push-db');
+const novosAvisos=require('./_push-events');
 const core=require('./_push-core');const audience=require('./_push-audience');
 module.exports=async(req,res)=>{
  if(!require('./_auth').cronAuthorized(req))return res.status(401).json({error:'unauthorized'});
@@ -27,24 +28,32 @@ module.exports=async(req,res)=>{
    const proj=faturamento/dias*mesDias;
    eventos.push({chave:'meta:'+cli+':'+dia,categoria:'metas',contas,em:agora.toISOString(),titulo:nomes[cli]||'Cliente',texto:`Projeção ${core.dinheiro(proj)} · meta ${core.dinheiro(meta)} (${Math.round(proj/meta*100)}%). Até ontem, sem garantia de fechamento.`});
   }
+  const [gestores,sinais,rowsEstado]=await Promise.all([config('glr_gestores'),listar('glr_sync_estado?recurso=eq.sinais&select=marketplace,conta_id,cursor&order=marketplace,conta_id'),listar('push_event_state?select=chave,dados&order=chave')]);
+  const estado=Object.fromEntries(rowsEstado.map(r=>[r.chave,r.dados]));
+  let curva=estado.cache_curva?.itens;
+  if(!curva || estado.cache_curva?.dia!==dia || +agora-(estado.cache_curva?.em||0)>2*3600e3){curva=await listar('rpc/glr_push_curva_a?order=marketplace,conta_id,item_id');await db('push_event_state?on_conflict=chave',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:JSON.stringify({chave:'cache_curva',dados:{em:+agora,dia,itens:curva},atualizado_em:agora.toISOString()})});}
+  const monitor=novosAvisos.gerarEventos({agora,clientes,gestores:gestores||[],vinc,metas,pedidos,ads,resumos,historicos,sinais,curva,estado});
+  if(monitor.alterados.length)await db('push_event_state?on_conflict=chave',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:JSON.stringify(monitor.alterados)});
   let enviados=0,falhas=0;const autorizados=new Map();
   for(const s of subs){
    if(!autorizados.has(s.user_id))autorizados.set(s.user_id,await usuarioPerfil(s.user_id,Array.isArray(portais)?portais:[],ativos));
    const perfil=autorizados.get(s.user_id);if(!perfil)continue;
-   const p=audience.preferencias(s.preferencias,perfil.tipo);if(core.silencioso(p,agora))continue;
+   const p=audience.preferencias(s.preferencias,perfil.tipo);const silencio=core.silencioso(p,agora);
    const contas=audience.carteira(vinc,clientes,p.contas);
+   if(perfil.tipo==='portal')for(const [k,c]of contas)if(!perfil.contas.includes(c.id))contas.delete(k);
    const coberto=[...contas.values()].every(c=>historicos.some(h=>h.marketplace===c.mkt&&String(h.conta_id)===c.id&&h.cursor?.historico_ate&&h.cursor.historico_ate<=Date.parse(dia+'T00:00:00-03:00')/1000-86400));
    const resumo=audience.resumoVendometro(pedidos,ads,contas,agora,coberto);
    const especificos=audience.oscilacoes(ads,contas,agora);
-   const listaPerfil=perfil.tipo==='consultoria'?[...eventos.filter(e=>e.categoria==='saldo'),...especificos,...(resumo&&contas.size?[resumo]:[])]:[...eventos.filter(e=>['vendas','saldo'].includes(e.categoria)||(e.categoria==='metas'&&e.chave.startsWith('meta:')))];
-   const candidatos=listaPerfil.filter(e=>Date.parse(e.em)>=Date.parse(s.criado_em)&&audience.autorizado(perfil,p,e));
-   for(const categoria of ['vendas','saldo','metas','vendometro','oscilacao']){
+   const resumoDia=novosAvisos.resumoAnterior({agora,pedidos,ads,contas});
+   const listaPerfil=perfil.tipo==='consultoria'?[...eventos.filter(e=>e.categoria==='saldo'),...especificos,...(resumo&&contas.size?[resumo]:[]),...monitor.eventos,...(resumoDia?[resumoDia]:[])]:[...eventos.filter(e=>['vendas','saldo'].includes(e.categoria)||(e.categoria==='metas'&&e.chave.startsWith('meta:'))),...monitor.eventos.filter(e=>e.categoria!=='gestores'),...(resumoDia?[resumoDia]:[])];
+   const candidatos=listaPerfil.filter(e=>(!silencio||e.categoria==='resumo_diario')&&Date.parse(e.em)>=Date.parse(s.criado_em)&&audience.autorizado(perfil,p,e));
+   for(const categoria of ['vendas','saldo','metas','vendometro','oscilacao','resumo_diario','gestores','projecao','curva_a']){
     const grupo=candidatos.filter(e=>e.categoria===categoria);if(!grupo.length)continue;
     // Inserção atômica: apenas eventos ainda não enviados entram no resumo.
     const claims=await db('push_deliveries?on_conflict=endpoint,evento',{method:'POST',headers:{Prefer:'resolution=ignore-duplicates,return=representation'},body:JSON.stringify(grupo.map(e=>({endpoint:s.endpoint,evento:e.chave})))});
     if(!claims?.length)continue;
     const novos=new Set(claims.map(c=>c.evento)),lista=grupo.filter(e=>novos.has(e.chave));
-    const titulo={vendas:'Novas vendas',saldo:'Saldo de Ads',metas:'Metas dos clientes',agentes:'Alertas dos agentes',vendometro:'Resultado do Vendômetro',oscilacao:'Oscilação de gasto em Ads'}[categoria];
+    const titulo={vendas:'Novas vendas',saldo:'Saldo de Ads',metas:'Metas dos clientes',agentes:'Alertas dos agentes',vendometro:'Resultado do Vendômetro',oscilacao:'Oscilação de gasto em Ads',resumo_diario:'Resumo do dia anterior',gestores:'Meta diária do gestor',projecao:'Cliente com projeção em queda',curva_a:'Produto curva A sem estoque'}[categoria];
     const valor=lista.reduce((n,e)=>n+(e.valor||0),0);
     const texto=categoria==='vendas'?`${lista.length} pedido(s) pago(s) · ${core.dinheiro(valor)}\n${[...new Set(lista.map(e=>e.plataforma))].join(', ')}. Sem estimativa de lucro.`:lista.slice(0,2).map(e=>e.titulo+': '+e.texto).join('\n')+(lista.length>2?`\nMais ${lista.length-2} alertas no sistema.`:'');
     try{await webpush.sendNotification({endpoint:s.endpoint,keys:{p256dh:s.p256dh,auth:s.auth}},JSON.stringify({title:'GLR · '+titulo,body:texto,url:perfil.tipo==='portal'?'/index.html#portal':lista[0].url || '/index.html#'+(categoria==='vendas'?'vendas':'agente'),tag:'glr-'+categoria}),{TTL:3600});enviados++;}
@@ -52,8 +61,9 @@ module.exports=async(req,res)=>{
    }
   }
   // Retenção limitada; eventos de vendas consultados têm no máximo 48 h.
-  await db('push_deliveries?criado_em=lt.'+new Date(agora-7*86400e3).toISOString(),{method:'DELETE'});
+  await db('push_deliveries?criado_em=lt.'+new Date(agora-7*86400e3).toISOString()+'&and=(evento.not.like.projecao:*,evento.not.like.curvaA:*)',{method:'DELETE'});
   return res.json({ok:true,dispositivos:subs.length,enviados,falhas});
  }catch(e){console.error('[push-cron]',e.message);return res.status(503).json({error:'Não foi possível enviar notificações',detalhe:e.message});}
 };
+
 
