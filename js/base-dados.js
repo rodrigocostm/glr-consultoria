@@ -149,6 +149,8 @@ const BaseDados = (() => {
   const CARTEIRA_NAO_CUSTO = /^(PIX_TRANSFER|WITHDRAWAL|ESCROW_VERIFIED_ADD|ESCROW_ADD|TRANSFER_TO_BANK|AUTO_WITHDRAWAL|SPM_DEDUCT)/;
   const CARTEIRA_ROTULOS = {
     ADJUSTMENT_FOR_RR_AFTER_ESCROW_VERIFIED: 'Devolução descontada depois do repasse',
+    ESCROW_VERIFIED_MINUS: 'Ajuste negativo na renda de pedido',
+    ADJUSTMENT_CENTER_DEDUCT: 'Débito de ajuste da Shopee (ex.: DIFAL de ICMS)',
   };
   //   devolvidos: Set de order_sn que a base já trata como devolvidos (não contar de novo)
   function cobrancasCarteiraShopee(lista, devolvidos) {
