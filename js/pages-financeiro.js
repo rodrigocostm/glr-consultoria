@@ -74,10 +74,12 @@ Router.register('financeiro', async (params, el) => {
   // do mesmo produto. Sem ele, só os pedidos com custo lançado um a um entravam no cálculo.
   const catalogoCusto = JSON.parse(localStorage.getItem('glr_vendas_custo_catalogo')||'{}');
   // Chave do produto no catálogo (mesma regra da página Vendas) — itens no formato da base: {item_id, nome}
-  const chaveProd = (mkt, itens, id) => window.BaseDados?.chaveProduto ? BaseDados.chaveProduto(mkt, itens, id) : '';
+  const chavesProd = (mkt, itens, id) => window.BaseDados?.chavesProduto ? BaseDados.chavesProduto(mkt, itens, id) : [];
+  // Primeira chave com custo > 0 no catálogo
+  const custoDoCatalogo = (cat, keys) => { for (const k of (keys || [])) { const v = parseFloat(cat[k]) || 0; if (v > 0) return v; } return 0; };
   // Custo: 1) lançado no pedido, 2) catálogo por produto — mesma regra da página Vendas
   const custoPedido = p => (parseFloat(custosVendas[p.id]?.custo) || 0)
-                        || (p.produtoKey ? parseFloat(catalogoCusto[p.produtoKey]) || 0 : 0);
+                        || custoDoCatalogo(catalogoCusto, p.produtoKeys);
   const linhasExt    = JSON.parse(localStorage.getItem('glr_vendas_linhas')||'[]');
   const aliquotas    = JSON.parse(localStorage.getItem('glr_aliquotas')||'{}');
 
@@ -143,8 +145,23 @@ Router.register('financeiro', async (params, el) => {
   }
 
   // ── Cálculos ──────────────────────────────────────────────
+  // Contas da empresa/cliente selecionado. A busca só troca os pedidos das contas que
+  // rebusca e mantém os outros na memória/cache — sem este filtro, pedidos de outro
+  // cliente aberto antes entravam na soma (ex.: ML de outra empresa no Financeiro da Zion).
+  function idsDaEmpresa() {
+    if (contas.length) return new Set(contas.filter(c => nomeEmpresaDaConta(c) === empresaSel).map(c => String(c.external_id)));
+    // Contas ainda não carregadas (render do cache): usa os vínculos do cliente com esse nome
+    try {
+      const cli = JSON.parse(localStorage.getItem('glr_clientes')||'[]').find(c => c.nome === empresaSel);
+      const vinc = cli ? (JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}')[String(cli.id)] || []) : [];
+      return new Set(vinc.map(v => String(v.external_id)));
+    } catch(e) { return new Set(); }
+  }
   function pedidosFiltrados() {
-    return pedidos.filter(p => contaSel==='todas' || p.contaId===contaSel);
+    if (contaSel !== 'todas') return pedidos.filter(p => p.contaId === contaSel);
+    if (window._portalConfig || empresaSel === 'todas') return pedidos;
+    const ids = idsDaEmpresa();
+    return pedidos.filter(p => ids.has(String(p.contaId)));
   }
 
   function isCancelado(p) {
@@ -666,18 +683,18 @@ Router.register('financeiro', async (params, el) => {
       // Amazon/TikTok ainda não acertados: valor − taxa estimada pela média da conta
       const tarifa = parseFloat(r.taxas?.tarifa_venda ?? r.taxas?.comissao) || 0;
       const liq = r.liquido != null ? parseFloat(r.liquido) : (tarifa > 0 ? valor - tarifa : valor);
-      return { id: r.pedido_id, produtoKey: chaveProd(mkt, r.itens, r.pedido_id), plataforma: { amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt] || mkt, contaId, dataTs: Date.parse(r.criado_em), valor, status,
+      return { id: r.pedido_id, produtoKeys: chavesProd(mkt, r.itens, r.pedido_id), plataforma: { amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt] || mkt, contaId, dataTs: Date.parse(r.criado_em), valor, status,
         taxas: { liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0 }, _base: true, _semTaxa: r.liquido == null && r.situacao === 'valido' && mkt !== 'magalu' }; // estimada ainda conta como sem taxa real
     }
     if (mkt === 'shopee') {
       // Igual à busca antiga: sem escrow (pedido ainda não concluído) → líquido = valor, sem taxas
       const tx = r.liquido != null && r.taxas ? { ...r.taxas, liquido: parseFloat(r.liquido) } : { liquido: valor, comissao: 0, taxaServico: 0, imposto: 0, frete: 0, voucher: 0 };
-      return { id: r.pedido_id, produtoKey: chaveProd(mkt, r.itens, r.pedido_id), plataforma: 'Shopee', contaId, dataTs: Date.parse(r.criado_em), valor, freteComprador: parseFloat(r.frete) || 0, status, taxas: tx, _base: true, _semTaxa: r.liquido == null && status === 'COMPLETED' };
+      return { id: r.pedido_id, produtoKeys: chavesProd(mkt, r.itens, r.pedido_id), plataforma: 'Shopee', contaId, dataTs: Date.parse(r.criado_em), valor, freteComprador: parseFloat(r.frete) || 0, status, taxas: tx, _base: true, _semTaxa: r.liquido == null && status === 'COMPLETED' };
     }
     const tarifa = parseFloat(r.taxas?.tarifa_venda) || 0;
     const liq = r.liquido != null ? parseFloat(r.liquido) : null;
     // Igual à busca antiga: sem recebimento ainda → líquido estimado = valor − tarifa, frete 0
-    return { id: r.pedido_id, produtoKey: chaveProd(mkt, r.itens, r.pedido_id), plataforma: 'Mercado Livre', contaId, dataTs: Date.parse(r.criado_em), valor, status, paymentId: r.taxas?.payment_id || null,
+    return { id: r.pedido_id, produtoKeys: chavesProd(mkt, r.itens, r.pedido_id), plataforma: 'Mercado Livre', contaId, dataTs: Date.parse(r.criado_em), valor, status, paymentId: r.taxas?.payment_id || null,
       taxas: { liquido: liq != null ? liq : valor - tarifa, comissao: tarifa, taxaServico: 0, imposto: 0, frete: liq != null ? (parseFloat(r.frete) || 0) : 0, voucher: 0 },
       _base: true, _semTaxa: liq == null && r.situacao === 'valido' };
   }
@@ -855,7 +872,7 @@ Router.register('financeiro', async (params, el) => {
               const comissaoTotal = itens.reduce((s,i)=>s+i.saleFee, 0);
               return {
                 id: String(o.id),
-                produtoKey: chaveProd('ml', (o.order_items||o.items||[]).map(i=>({ item_id: i.item?.id, nome: i.item?.title })), o.id),
+                produtoKeys: chavesProd('ml', (o.order_items||o.items||[]).map(i=>({ item_id: i.item?.id, nome: i.item?.title })), o.id),
                 plataforma: 'Mercado Livre',
                 contaId: conta.external_id,
                 dataTs: new Date(o.date_created||0).getTime(),
@@ -982,7 +999,7 @@ Router.register('financeiro', async (params, el) => {
 
                   uniq.push({
                     id:             ord.order_sn,
-                    produtoKey:     chaveProd('shopee', itemList.map(it => ({ nome: it.item_name })), ord.order_sn),
+                    produtoKeys:    chavesProd('shopee', itemList.map(it => ({ item_id: it.item_id, nome: it.item_name })), ord.order_sn),
                     plataforma:     'Shopee',
                     contaId:        conta.external_id,
                     dataTs:         (ord.create_time||0)*1000,
@@ -1289,9 +1306,10 @@ Router.register('financeiro', async (params, el) => {
         const erroHtml = errosConta.length
           ? ` <span style="font-size:10px;background:rgba(239,68,68,0.15);color:var(--red);padding:2px 8px;border-radius:8px;">⚠️ ${errosConta.join(' · ')}</span>`
           : ` <span style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--green);padding:2px 8px;border-radius:8px;">✓ salvo</span>`;
-        const semTaxa = pedidos.filter(p => p._semTaxa).length;
+        const visiveis = pedidosFiltrados(); // só os do cliente/conta selecionado
+        const semTaxa = visiveis.filter(p => p._semTaxa).length;
         const fonteBase = viaBase.contas.length ? `${viaBase.contas.length} conta${viaBase.contas.length !== 1 ? 's' : ''} da base automática${semTaxa ? ` (${semTaxa} pedido${semTaxa !== 1 ? 's' : ''} ainda sem taxa real — o servidor está buscando)` : ''}` : '';
-        statusEl.innerHTML = `${pedidos.length} pedidos · ${[fonteBase, ...log].filter(Boolean).join(' | ')} · ${primeiroDia} a ${dataTo}${erroHtml}`;
+        statusEl.innerHTML = `${visiveis.length} pedidos · ${[fonteBase, ...log].filter(Boolean).join(' | ')} · ${primeiroDia} a ${dataTo}${erroHtml}`;
       }
       renderConteudo();
       console.log('[FLUXO] ✓ Concluído!');

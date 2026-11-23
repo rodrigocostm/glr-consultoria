@@ -84,6 +84,16 @@ const BaseDados = (() => {
     return nomes.length > 1 ? `${nomes[0]} (+${nomes.length - 1})` : (nomes[0] || String(pedidoId || ''));
   }
 
+  // Todas as chaves a tentar no catálogo, em ordem: a da página Vendas e, na Shopee,
+  // também o id do anúncio (a página Produtos grava id E nome) — cobre anúncio
+  // renomeado e pedido com vários itens ("Nome (+1)").
+  function chavesProduto(mkt, itensBrutos, pedidoId) {
+    const itens = Array.isArray(itensBrutos) ? itensBrutos : [];
+    const ks = [chaveProduto(mkt, itens, pedidoId)];
+    if (mkt !== 'ml' && itens[0]?.item_id) ks.push(String(itens[0].item_id));
+    return [...new Set(ks.filter(Boolean))];
+  }
+
   function invalidar() { cache = null; }
 
   function iniciarTempoReal() {
@@ -98,7 +108,7 @@ const BaseDados = (() => {
       .subscribe();
   }
 
-  return { carregar, cobre, cobreAds, somar, invalidar, iniciarTempoReal, mktDe, chave, chaveProduto };
+  return { carregar, cobre, cobreAds, somar, invalidar, iniciarTempoReal, mktDe, chave, chaveProduto, chavesProduto };
 })();
 window.BaseDados = BaseDados;
 BaseDados.iniciarTempoReal();

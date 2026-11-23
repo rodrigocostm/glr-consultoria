@@ -49,8 +49,13 @@ function _portalCustos() {
 function _portalCatalogoCusto() {
   try { return JSON.parse(localStorage.getItem('glr_vendas_custo_catalogo')||'{}'); } catch(e) { return {}; }
 }
-// Mesma chave de pages-vendas.js (ML: item_id; Shopee: nome do produto)
-const _portalProdutoKey = p => p.itens?.[0]?.itemId || p.produto || '';
+// Chaves no catálogo: a de pages-vendas.js (ML: item_id; Shopee: nome) e, na Shopee, o id do anúncio
+const _portalProdutoKeys = p => [p.itens?.[0]?.itemId || p.produto, p.itens?.[0]?.shopeeItemId].filter(Boolean).map(String);
+function _portalCustoCatalogo(p) {
+  const cat = _portalCatalogoCusto();
+  for (const k of _portalProdutoKeys(p)) { const v = parseFloat(cat[k]) || 0; if (v > 0) return v; }
+  return 0;
+}
 
 function _portalAliquotas() {
   try { return JSON.parse(localStorage.getItem('glr_aliquotas')||'{}'); } catch(e) { return {}; }
@@ -544,7 +549,7 @@ async function _portalBuscarVendas(dataFrom, dataTo, incremental = false) {
             // em contas com volume alto (confirmado com pedido real).
             if (ord.create_time && (ord.create_time < tsFrom || ord.create_time > tsTo)) continue;
             const itens = (ord.item_list||[]).map(it => ({
-              nome: it.item_name||'—', qtd: it.model_quantity_purchased||1,
+              nome: it.item_name||'—', qtd: it.model_quantity_purchased||1, shopeeItemId: it.item_id,
               preco: parseFloat(it.model_discounted_price)||0, imagem: it.image_info?.image_url||'',
             }));
             detMap[ord.order_sn] = { itens, imagem: itens[0]?.imagem||'', produto: itens.length>1?`${itens[0].nome} (+${itens.length-1})`:(itens[0]?.nome||'—') };
@@ -1221,7 +1226,7 @@ function _portalCalcLucro(p, custos) {
   const c       = custos[p.id] || {};
   // Custo: 1) lançado no pedido, 2) catálogo por produto — mesma regra do admin
   const custo   = (parseFloat(c.custo) || 0)
-               || (parseFloat(_portalCatalogoCusto()[_portalProdutoKey(p)]) || 0);
+               || _portalCustoCatalogo(p);
   const outros  = parseFloat(c.outros) || 0;
 
   const aliquotas = _portalAliquotas();
