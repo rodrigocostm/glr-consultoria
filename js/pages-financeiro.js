@@ -319,9 +319,11 @@ Router.register('financeiro', async (params, el) => {
       : (!window._portalConfig && empresaSel !== 'todas') ? idsDaEmpresa() : null;
     for (const [contaId, c] of Object.entries(carteira || {})) {
       if (idsFoco && !idsFoco.has(String(contaId))) continue;
-      if (c?.erro && plats['Shopee']) plats['Shopee'].carteiraErro = c.erro;
-      if (!(c?.total > 0) || !plats['Shopee']) continue;
-      const a = plats['Shopee'];
+      // c.plat: Shopee (carteira) ou TikTok Shop (extratos); valor > 0 = custo, < 0 = crédito
+      const pl = c?.plat || 'Shopee';
+      if (c?.erro && plats[pl]) plats[pl].carteiraErro = c.erro;
+      if (!c?.total || !plats[pl]) continue;
+      const a = plats[pl];
       a.carteira += c.total;
       for (const [tipo, x] of Object.entries(c.porTipo || {})) {
         const t = a.carteiraTipos[tipo] = a.carteiraTipos[tipo] || { valor: 0, n: 0, rotulo: x.rotulo };
@@ -594,8 +596,8 @@ Router.register('financeiro', async (params, el) => {
         if (a.custoExtra>0)                         rows.push(sublinha('Custos extras / variáveis', a.custoExtra));
         if (a.custoProdDevolv>0)                    rows.push(sublinha('Custo produtos devolvidos', a.custoProdDevolv));
         if (a.imposto>0)                            rows.push(sublinha('Impostos', a.imposto));
-        for (const x of Object.values(a.carteiraTipos || {})) if (x.valor > 0.01) rows.push(sublinha(`${x.rotulo} (carteira, ${x.n})`, x.valor));
-        if (a.carteiraErro) rows.push(`<div class="fin-sub" style="color:var(--orange);"><span>⚠️ Carteira Shopee não lida — cobranças fora dos pedidos podem faltar:</span><em>${a.carteiraErro}</em></div>`);
+        for (const x of Object.values(a.carteiraTipos || {})) if (Math.abs(x.valor) > 0.01) rows.push(sublinha(`${x.rotulo} (${n === 'Shopee' ? 'carteira' : 'extrato'}, ${x.n})`, Math.abs(x.valor), x.valor < 0 ? '+' : '−'));
+        if (a.carteiraErro) rows.push(`<div class="fin-sub" style="color:var(--orange);"><span>⚠️ ${n === 'Shopee' ? 'Carteira Shopee não lida' : 'Extrato do ' + n + ' não lido'} — cobranças fora dos pedidos podem faltar:</span><em>${a.carteiraErro}</em></div>`);
         rows.push(subfinal(lucroPlat[n]));
         return `<div class="fin-grupo">${rows.join('')}</div>`;
       }).join('')
@@ -1440,6 +1442,54 @@ Router.register('financeiro', async (params, el) => {
         } catch (eCart) {
           console.warn('[Carteira] Erro em', conta.nickname || shopId, eCart.message);
           carteira[conta.external_id] = { total: 0, porTipo: {}, erro: String(eCart.message || eCart).slice(0, 160) };
+        }
+      }
+
+      // ── TikTok: extratos de pagamento do mês (tiktok_finance_statements). Conferido ao vivo (Zion, nov/2026):
+      //  • ajuste fora de pedido (ex.: LOGISTICS_REIMBURSEMENT, reembolso do TikTok por pacote extraviado) → crédito;
+      //  • pedido extraviado que a base trata como cancelado → custo do produto (o produto se perdeu);
+      //  • extrato sem venda nem ajuste (só frete cobrado) → "Outros custos de liquidação".
+      // Fretes de extratos com venda já estão nas taxas de cada pedido — não entram de novo.
+      // Mesmo formato da carteira Shopee: valor > 0 = custo, < 0 = crédito.
+      for (const conta of contasSelecionadas.filter(c => window.BaseDados?.mktDe?.(c.marketplace) === 'tiktok')) {
+        const openId = String(conta.param_to_use?.open_id || conta.external_id);
+        try {
+          const nn = v => parseFloat(v) || 0;
+          const porTipo = {};
+          let total = 0;
+          const add = (tipo, rotulo, valor) => { const x = porTipo[tipo] = porTipo[tipo] || { valor: 0, n: 0, rotulo }; x.valor = Math.round((x.valor + valor) * 100) / 100; x.n++; total += valor; };
+          const sts = [];
+          let token = '';
+          for (let pg = 0; pg < 10; pg++) {
+            const r = await MarketplaceAPI.call('tiktok_finance_statements', { open_id: openId, statement_time_ge: Math.floor(tsFrom / 1000), statement_time_lt: Math.floor(tsTo / 1000) + 1, page_size: 100, ...(token ? { page_token: token } : {}) });
+            const d = r?.data || r || {};
+            if (!Array.isArray(d.statements)) { if (d.error) throw new Error(`${d.error}: ${d.message || ''}`); break; }
+            sts.push(...d.statements);
+            token = d.next_page_token || '';
+            if (!token) break;
+          }
+          for (const s of sts) {
+            if (nn(s.revenue_amount) === 0 && nn(s.adjustment_amount) === 0 && nn(s.settlement_amount) !== 0) add('LIQUIDACAO', 'Outros custos de liquidação', -nn(s.settlement_amount));
+            if (nn(s.adjustment_amount) === 0) continue;
+            const rt = await MarketplaceAPI.call('tiktok_finance_statement_transactions', { open_id: openId, statement_id: String(s.id), page_size: 100 });
+            for (const t of ((rt?.data || rt || {}).statement_transactions || [])) {
+              if (t.type === 'ORDER' || !nn(t.settlement_amount)) continue;
+              const tipo = String(t.type || 'AJUSTE');
+              add(tipo, tipo === 'LOGISTICS_REIMBURSEMENT' ? 'Reembolso do TikTok por pedido extraviado' : `Ajuste do TikTok (${tipo})`, -nn(t.settlement_amount));
+              if (tipo === 'LOGISTICS_REIMBURSEMENT' && t.adjustment_order_id && typeof _sb !== 'undefined') {
+                const { data } = await _sb.from('glr_pedidos').select('pedido_id,situacao,itens').eq('marketplace', 'tiktok').eq('pedido_id', String(t.adjustment_order_id));
+                const ped = (data || [])[0];
+                if (ped && ped.situacao !== 'valido' && window.BaseDados?.custoProdutosPedido) {
+                  const cst = BaseDados.custoProdutosPedido('outro', itensDeCusto(ped.itens), custosVendas[ped.pedido_id]?.custo, catalogoCusto, ped.pedido_id);
+                  if (cst > 0) add('EXTRAVIADO', 'Custo de produto extraviado', cst);
+                }
+              }
+            }
+          }
+          carteira[conta.external_id] = { plat: 'TikTok Shop', total: Math.round(total * 100) / 100, porTipo };
+        } catch (eTT) {
+          console.warn('[Extrato TikTok] Erro em', conta.nickname || openId, eTT.message);
+          carteira[conta.external_id] = { plat: 'TikTok Shop', total: 0, porTipo: {}, erro: String(eTT.message || eTT).slice(0, 160) };
         }
       }
 

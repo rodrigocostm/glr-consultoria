@@ -102,8 +102,8 @@ Router.register('dre', (params, el) => {
       return s + (tx.liquido != null ? parseFloat(tx.liquido) : valor) + recargaDe(tx);
     }, 0);
     // Cobranças da carteira Shopee fora dos pedidos (devolução depois do repasse etc.) entram nas taxas
-    const carteiraCli = (platFiltro === null || platFiltro === 'Shopee')
-      ? Object.entries(cache.carteira || {}).filter(([id]) => contasCliente.includes(id)).reduce((s, [, c]) => s + (parseFloat(c?.total) || 0), 0) : 0;
+    const carteiraCli = true
+      ? Object.entries(cache.carteira || {}).filter(([id, c]) => contasCliente.includes(id) && (platFiltro === null || platFiltro === (c?.plat || 'Shopee'))).reduce((s, [, c]) => s + (parseFloat(c?.total) || 0), 0) : 0;
     const comissaoFrete = Math.max(0, fat - liq) + carteiraCli;
 
     // Imposto por pedido
