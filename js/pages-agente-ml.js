@@ -613,16 +613,17 @@ Router.register('agente-ml', (params, el) => {
           <div class="aml-p-ic" title="Passo ${n}">${ICONE[d.acao] || svg('<circle cx="12" cy="12" r="8"/>')}</div>
           <div class="aml-p-corpo">
             <div class="aml-p-acao"><span class="aml-p-tag">${t.rot}</span>${acaoTxt(d)}</div>
-            <div class="aml-p-pq">${pqTxt(d)}</div>
+            <details class="aml-como"><summary>Ver detalhes</summary>
+            <div class="aml-p-pq" style="margin-top:10px">${pqTxt(d)}</div>
             ${d.experimento ? `<div class="aml-esp"><b>Teste controlado:</b> ${h(d.experimento.hipotese)}<br>${h(d.experimento.criterio_recuo)}<br>Confiança: ${h(d.crescimento?.confianca || 'baixa')} · Hipótese de contribuição semanal: ${d.crescimento?.contribuicao_hipotese != null ? R$(d.crescimento.contribuicao_hipotese) : 'sem margem para estimar'}. Medição após até 21 dias; sem garantia de causalidade.</div>` : ''}
             ${esp ? `<div class="aml-esp"><b>Especialista:</b> ${h(esp)}</div>` : ''}
-            <details class="aml-como"><summary>${passos ? 'Como fazer no painel do ML' : 'O que revisar'}</summary>
+              ${impHtml(d)}
+              <div class="aml-detalhes-titulo">${passos ? 'Como fazer no painel do ML' : 'O que revisar'}</div>
               ${passos ? `<ol>${passos.map(x => `<li>${x}</li>`).join('')}</ol>` : `<div class="aml-sub">${h(semInstrucao(l.explicacao))}</div>`}
               ${passos ? `<div class="aml-sub aml-expl">${h(semInstrucao(l.explicacao))}</div>` : ''}
             </details>
           </div>
           <div class="aml-p-lado">
-            ${impHtml(d)}
             <div class="aml-li-bt">
               <button class="aml-lk" ${state.processando ? 'disabled' : ''} title="${revisar ? 'Já revisei' : 'Já apliquei no painel do ML (opcional: o agente confere sozinho amanhã)'}" onclick="window._amlMarcar('${l.id}','executado')">${revisar ? 'Revisado' : 'Marcar como feito'}</button>
               <button class="aml-lk aml-lk-cinza" ${state.processando ? 'disabled' : ''} onclick="window._amlMarcar('${l.id}','descartado')">Descartar</button>
@@ -651,9 +652,8 @@ Router.register('agente-ml', (params, el) => {
         <div style="font-weight:600;font-size:16px;">Recomendações para suas campanhas</div>
         <div class="aml-sub">${fazerNoMl} para aplicar no painel do ML · ${todas.length - fazerNoMl} para revisar</div>
       </div>
-      <div class="ajuda">Um bloco por campanha, na ordem do que mais custa dinheiro: abra a campanha em Publicidade → Product Ads e faça todos os passos dela. <b>Não precisa marcar Feito</b> — na análise da manhã seguinte o agente lê as campanhas e marca sozinho o que mudou (o ML não deixa a integração alterar, mas deixa ler).</div>
-      ${quadroEspecialista(id)}
-      ${quadroNova}
+      <div class="ajuda">Veja a ação por campanha. Abra “Ver detalhes” para consultar o motivo, os dados e como aplicar.</div>
+      ${quadroEspecialista(id) || quadroNova ? `<details class="aml-como aml-contexto"><summary>Ver estratégia e organização das campanhas</summary>${quadroEspecialista(id)}${quadroNova}</details>` : ''}
       ${todas.length ? `<div class="aml-filtros">${chips.map(([k, t, n]) => `<button class="aml-fchip ${filtro === k ? 'on' : ''}" style="--c:${TIPOS[k]?.cor || 'var(--text-muted)'}" onclick="window._amlFiltroSug('${k}')">${t} <b>${n}</b></button>`).join('')}</div>` : ''}
       ${lista.length ? pacote : '<div class="aml-sub">Nada pendente agora.</div>'}
     </div>`;
@@ -976,6 +976,13 @@ Router.register('agente-ml', (params, el) => {
     .aml-lk:disabled{opacity:.5;cursor:default;}
     .aml-lk-cinza{color:var(--text-muted);font-weight:500;} .aml-lk-cinza:hover:not(:disabled){color:var(--red);}
     .aml-ml .aml-li-bt{gap:14px;}
+    .aml-ml .aml-p-acao{overflow-wrap:anywhere;}
+    .aml-detalhes-titulo{font-weight:600;margin-top:12px;}
+    .aml-ml .aml-como[open]{line-height:1.6;}
+    .aml-ml .aml-como .aml-p-imp{text-align:left;margin-top:10px;}
+    .aml-contexto{margin:12px 0;}
+    .aml-ml .aml-li-bt{flex-wrap:wrap;}
+    @media (max-width:900px){.aml-ml .aml-p{grid-template-columns:32px minmax(0,1fr)}.aml-ml .aml-p-lado{grid-column:2;min-width:0;align-items:flex-start}.aml-ml .aml-grupo-top>.btn{white-space:normal;}}
     .aml-ml .aml-fchip{border-radius:16px;border-color:var(--border);color:var(--text-primary);padding:5px 12px;}
     .aml-ml .aml-fchip.on{background:var(--ml-azul-bg);border-color:var(--ml-azul);color:var(--ml-azul);}
     /* leitura do especialista como o aviso informativo azul do ML */
