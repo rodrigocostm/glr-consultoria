@@ -319,6 +319,7 @@ Router.register('financeiro', async (params, el) => {
       : (!window._portalConfig && empresaSel !== 'todas') ? idsDaEmpresa() : null;
     for (const [contaId, c] of Object.entries(carteira || {})) {
       if (idsFoco && !idsFoco.has(String(contaId))) continue;
+      if (c?.erro && plats['Shopee']) plats['Shopee'].carteiraErro = c.erro;
       if (!(c?.total > 0) || !plats['Shopee']) continue;
       const a = plats['Shopee'];
       a.carteira += c.total;
@@ -582,6 +583,7 @@ Router.register('financeiro', async (params, el) => {
         if (a.custoProdDevolv>0)                    rows.push(sublinha('Custo produtos devolvidos', a.custoProdDevolv));
         if (a.imposto>0)                            rows.push(sublinha('Impostos', a.imposto));
         for (const x of Object.values(a.carteiraTipos || {})) if (x.valor > 0.01) rows.push(sublinha(`${x.rotulo} (carteira, ${x.n})`, x.valor));
+        if (a.carteiraErro) rows.push(`<div class="fin-sub" style="color:var(--orange);"><span>⚠️ Carteira Shopee não lida — cobranças fora dos pedidos podem faltar:</span><em>${a.carteiraErro}</em></div>`);
         rows.push(subfinal(lucroPlat[n]));
         return `<div class="fin-grupo">${rows.join('')}</div>`;
       }).join('')
@@ -1390,12 +1392,22 @@ Router.register('financeiro', async (params, el) => {
         const shopId = String(conta.param_to_use?.shopId || conta.external_id);
         try {
           const lista = [];
-          for (let page = 1; page <= 40; page++) {
-            const r = await MarketplaceAPI.call('shopee_get_wallet_transactions', { shopId, create_time_from: Math.floor(tsFrom / 1000), create_time_to: Math.floor(tsTo / 1000), page_no: page, page_size: 50 });
-            const resp = r?.data?.response || r?.response || {};
-            if (!Array.isArray(resp.transaction_list)) break;
-            lista.push(...resp.transaction_list);
-            if (!resp.more) break;
+          // A Shopee recusa período grande ("wallet.time_invalid: time period too large") — busca o mês
+          // em janelas de 7 dias. Erro em qualquer janela vira erro (não "R$ 0,00 de cobranças").
+          const JANELA = 7 * 86400, de = Math.floor(tsFrom / 1000), ate = Math.floor(tsTo / 1000);
+          for (let ini = de; ini <= ate; ini += JANELA) {
+            const fimJ = Math.min(ate, ini + JANELA - 1);
+            for (let page = 1; page <= 40; page++) {
+              const r = await MarketplaceAPI.call('shopee_get_wallet_transactions', { shopId, create_time_from: ini, create_time_to: fimJ, page_no: page, page_size: 50 });
+              const d = r?.data || r || {};
+              const resp = d.response || {};
+              if (!Array.isArray(resp.transaction_list)) {
+                if (d.error) throw new Error(`${d.error}: ${d.message || ''}`);
+                break;
+              }
+              lista.push(...resp.transaction_list);
+              if (!resp.more) break;
+            }
           }
           // pedido que a base já trata como devolvido não conta de novo (o custo dele já está em Devoluções)
           const sns = [...new Set(lista.filter(t => t.order_sn && (parseFloat(t.amount) || 0) < 0).map(t => String(t.order_sn)))];
@@ -1407,6 +1419,7 @@ Router.register('financeiro', async (params, el) => {
           if (window.BaseDados?.cobrancasCarteiraShopee) carteira[conta.external_id] = BaseDados.cobrancasCarteiraShopee(lista, devolvidos);
         } catch (eCart) {
           console.warn('[Carteira] Erro em', conta.nickname || shopId, eCart.message);
+          carteira[conta.external_id] = { total: 0, porTipo: {}, erro: String(eCart.message || eCart).slice(0, 160) };
         }
       }
 
