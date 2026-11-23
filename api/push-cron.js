@@ -1,17 +1,16 @@
 // Fonte única: pedidos pagos sincronizados e alertas já calculados pelos agentes.
 // Não consulta marketplaces nem estima lucro. Resumos por dispositivo e categoria.
-const {db,config,vapid,usuarioAtivo}=require('./_push-db');
-const core=require('./_push-core');
+const {db,listar,config,vapid,usuarioPerfil}=require('./_push-db');
+const core=require('./_push-core');const audience=require('./_push-audience');
 module.exports=async(req,res)=>{
  if(!require('./_auth').cronAuthorized(req))return res.status(401).json({error:'unauthorized'});
  try{
   const webpush=vapid();
   const agora=new Date(),desde=new Date(agora-48*3600e3).toISOString();
-  const [subs,staff,pedidos,logs]=await Promise.all([
+  const [subs,staff,pedidos,logs,ads]=await Promise.all([
    db('push_subscriptions?select=*'),db('glr_staff?ativo=eq.true&select=user_id'),
-   db('glr_pedidos?situacao=eq.valido&criado_em=gte.'+desde+'&select=marketplace,conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto&order=criado_em.desc&limit=5000'),
-   db('glr_agente_log?tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.'+desde+'&select=id,conta_id,titulo,explicacao,dados,criado_em&order=criado_em.desc&limit=2000')]);
-  if(pedidos.length===5000||logs.length===2000)throw Error('Janela excedeu limite de leitura; envio interrompido para evitar resumo incompleto');
+   listar('glr_pedidos?situacao=eq.valido&criado_em=gte.'+desde+'&select=marketplace,conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto&order=criado_em.desc,marketplace,conta_id,pedido_id'),
+   listar('glr_agente_log?tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.'+desde+'&select=id,conta_id,titulo,explicacao,dados,criado_em&order=criado_em.desc,id'),listar('glr_ads_diario?data=gte.'+new Date(agora-9*86400e3).toISOString().slice(0,10)+'&select=marketplace,conta_id,data,gasto&order=data,marketplace,conta_id')]);
   const ativos=new Set(staff.map(s=>String(s.user_id)));
   const eventos=[...pedidos.filter(core.vendaValida).map(core.eventoPedido),...logs.map(core.eventoAgente)];
   // Situação diária da meta por cliente, somente contas com resumos atualizados.
@@ -30,21 +29,25 @@ module.exports=async(req,res)=>{
   }
   let enviados=0,falhas=0;const autorizados=new Map();
   for(const s of subs){
-   if(!ativos.has(String(s.user_id)))continue;
-   if(!autorizados.has(s.user_id))autorizados.set(s.user_id,await usuarioAtivo(s.user_id,Array.isArray(portais)?portais:[]));
-   if(!autorizados.get(s.user_id))continue;
-   const p=core.preferencias(s.preferencias);if(core.silencioso(p,agora))continue;
-   const candidatos=eventos.filter(e=>Date.parse(e.em)>=Date.parse(s.criado_em)&&core.permite(p,e));
-   for(const categoria of core.CATEGORIAS){
+   if(!autorizados.has(s.user_id))autorizados.set(s.user_id,await usuarioPerfil(s.user_id,Array.isArray(portais)?portais:[],ativos));
+   const perfil=autorizados.get(s.user_id);if(!perfil)continue;
+   const p=audience.preferencias(s.preferencias,perfil.tipo);if(core.silencioso(p,agora))continue;
+   const contas=audience.carteira(vinc,clientes,p.contas);
+   const coberto=[...contas.values()].every(c=>historicos.some(h=>h.marketplace===c.mkt&&String(h.conta_id)===c.id&&h.cursor?.historico_ate&&h.cursor.historico_ate<=Date.parse(dia+'T00:00:00-03:00')/1000-86400));
+   const resumo=audience.resumoVendometro(pedidos,ads,contas,agora,coberto);
+   const especificos=audience.oscilacoes(ads,contas,agora);
+   const listaPerfil=perfil.tipo==='consultoria'?[...eventos.filter(e=>e.categoria==='saldo'),...especificos,...(resumo&&contas.size?[resumo]:[])]:[...eventos.filter(e=>['vendas','saldo','metas'].includes(e.categoria))];
+   const candidatos=listaPerfil.filter(e=>Date.parse(e.em)>=Date.parse(s.criado_em)&&audience.autorizado(perfil,p,e));
+   for(const categoria of ['vendas','saldo','metas','vendometro','oscilacao']){
     const grupo=candidatos.filter(e=>e.categoria===categoria);if(!grupo.length)continue;
     // Inserção atômica: apenas eventos ainda não enviados entram no resumo.
     const claims=await db('push_deliveries?on_conflict=endpoint,evento',{method:'POST',headers:{Prefer:'resolution=ignore-duplicates,return=representation'},body:JSON.stringify(grupo.map(e=>({endpoint:s.endpoint,evento:e.chave})))});
     if(!claims?.length)continue;
     const novos=new Set(claims.map(c=>c.evento)),lista=grupo.filter(e=>novos.has(e.chave));
-    const titulo={vendas:'Novas vendas',saldo:'Saldo de Ads',metas:'Metas dos clientes',agentes:'Alertas dos agentes'}[categoria];
+    const titulo={vendas:'Novas vendas',saldo:'Saldo de Ads',metas:'Metas dos clientes',agentes:'Alertas dos agentes',vendometro:'Resultado do Vendômetro',oscilacao:'Oscilação de gasto em Ads'}[categoria];
     const valor=lista.reduce((n,e)=>n+(e.valor||0),0);
     const texto=categoria==='vendas'?`${lista.length} pedido(s) pago(s) · ${core.dinheiro(valor)}\n${[...new Set(lista.map(e=>e.plataforma))].join(', ')}. Sem estimativa de lucro.`:lista.slice(0,2).map(e=>e.titulo+': '+e.texto).join('\n')+(lista.length>2?`\nMais ${lista.length-2} alertas no sistema.`:'');
-    try{await webpush.sendNotification({endpoint:s.endpoint,keys:{p256dh:s.p256dh,auth:s.auth}},JSON.stringify({title:'GLR · '+titulo,body:texto,url:'/index.html#'+(categoria==='vendas'?'vendas':'agente'),tag:'glr-'+categoria}),{TTL:3600});enviados++;}
+    try{await webpush.sendNotification({endpoint:s.endpoint,keys:{p256dh:s.p256dh,auth:s.auth}},JSON.stringify({title:'GLR · '+titulo,body:texto,url:perfil.tipo==='portal'?'/index.html#portal':lista[0].url || '/index.html#'+(categoria==='vendas'?'vendas':'agente'),tag:'glr-'+categoria}),{TTL:3600});enviados++;}
     catch(e){falhas++;if([404,410].includes(e.statusCode)){await db('push_subscriptions?endpoint=eq.'+encodeURIComponent(s.endpoint),{method:'DELETE'});break;}else for(const c of claims)await db('push_deliveries?endpoint=eq.'+encodeURIComponent(s.endpoint)+'&evento=eq.'+encodeURIComponent(c.evento),{method:'DELETE'});}
    }
   }
@@ -53,3 +56,4 @@ module.exports=async(req,res)=>{
   return res.json({ok:true,dispositivos:subs.length,enviados,falhas});
  }catch(e){console.error('[push-cron]',e.message);return res.status(503).json({error:'Não foi possível enviar notificações',detalhe:e.message});}
 };
+

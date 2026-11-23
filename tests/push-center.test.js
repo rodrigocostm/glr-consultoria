@@ -8,18 +8,21 @@ test('saldo, metas e agente têm categoria e identificador de deduplicação',()
 test('rotina agrupa vendas, ignora histórico anterior à inscrição e deduplica',async()=>{
  const dbModule=require('../api/_push-db');const auth=require('../api/_auth');const old=auth.cronAuthorized;auth.cronAuthorized=()=>true;
  let enviados=0;const claims=new Set(),agora=new Date(),inscrito=new Date(agora-10000).toISOString();
- dbModule.usuarioAtivo=async()=>true;
+ dbModule.usuarioPerfil=async()=>({tipo:'portal',contas:['a']});
  dbModule.vapid=()=>({sendNotification:async(_,payload)=>{enviados++;const d=JSON.parse(payload);assert.match(d.body,/2 pedido/);assert.ok(!d.body.includes('Margem:'));}});
  dbModule.config=async k=>k==='glr_clientes'?[]:{};
  const p=(id,em)=>({marketplace:'shopee',conta_id:'a',pedido_id:id,criado_em:em,situacao:'valido',status_original:'READY_TO_SHIP',valor_bruto:100});
  dbModule.db=async(path,opt)=>{
  if(path==='push_subscriptions?select=*')return [{endpoint:'e',user_id:'u',criado_em:inscrito,preferencias:{silencio:false}}];
  if(path.startsWith('glr_staff'))return [{user_id:'u'}];
+ if(path.startsWith('glr_ads_diario'))return [];
  if(path.startsWith('glr_pedidos'))return [p('1',agora.toISOString()),p('2',agora.toISOString()),p('old',new Date(agora-20000).toISOString())];
  if(path.startsWith('glr_agente_log')||path.startsWith('glr_sync_estado'))return [];
  if(path.startsWith('push_deliveries')&&opt?.method==='POST'){const rows=JSON.parse(opt.body).filter(x=>!claims.has(x.evento));rows.forEach(x=>claims.add(x.evento));return rows;}
  return [];
  };
+ dbModule.listar=dbModule.db;
  delete require.cache[require.resolve('../api/push-cron')];const handler=require('../api/push-cron');
  const r=()=>({status(c){this.code=c;return this;},json(b){this.body=b;}});const a=r();await handler({},a);assert.equal(a.body.enviados,1);const b=r();await handler({},b);assert.equal(b.body.enviados,0);assert.equal(enviados,1);auth.cronAuthorized=old;
 });
+
