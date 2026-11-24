@@ -50,7 +50,7 @@ async function carregar({inicio,fim,conta,gestor,cache,versaoBase}={}){
  const selecionadas=listaContas.filter(c=>(!conta||c.key===conta)&&(!gestor||c.gestor_id===gestor));
  const selecionados=new Set(selecionadas.map(c=>c.key));
  const filtro=conta?`&marketplace=eq.${encodeURIComponent(conta.split(':')[0])}&conta_id=eq.${encodeURIComponent(conta.slice(conta.indexOf(':')+1))}`:'';
- const pedidos=selecionadas.length?await listar('glr_pedidos?situacao=eq.valido&criado_em=gte.'+encodeURIComponent(inicio+'T00:00:00-03:00')+'&criado_em=lte.'+encodeURIComponent(fim+'T23:59:59.999-03:00')+filtro+'&select=marketplace,conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto,liquido,frete,taxas,itens&order=criado_em.desc,marketplace,conta_id,pedido_id'):[];
+ const pedidos=selecionadas.length?await listar('glr_pedidos?situacao=eq.valido&criado_em=gte.'+encodeURIComponent(inicio+'T00:00:00-03:00')+'&criado_em=lte.'+encodeURIComponent(fim+'T23:59:59.999-03:00')+filtro+'&select=marketplace,conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto,liquido,frete,taxas,itens&order=criado_em.desc,marketplace,conta_id,pedido_id',150000):[];
  const rows=pedidos.filter(p=>selecionados.has(`${p.marketplace}:${p.conta_id}`)).map(p=>calcularPedido(p,{catalogo,custos,aliquotas,linhas})).filter(Boolean);
  const porConta=new Map(listaContas.map(c=>[c.key,c]));
  for(const p of rows)Object.assign(p,{conta:porConta.get(`${p.marketplace}:${p.conta_id}`)?.nome,gestor:porConta.get(`${p.marketplace}:${p.conta_id}`)?.gestor});
