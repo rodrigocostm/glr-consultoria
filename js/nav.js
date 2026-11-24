@@ -20,7 +20,7 @@
     { id: 'saude', titulo: 'Saúde das contas', paginas: ['estoque-margem', 'atendimento', 'qualidade-anuncios', 'rastreamento'] },
     { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'gestores', 'onboarding', 'retencao', 'rentabilidade', 'portal-admin'] },
     { id: 'relatorios', titulo: 'Relatórios', paginas: ['relatorios', 'relatorio-semanal', 'timeline'] },
-    { id: 'financeiro', titulo: 'Financeiro', paginas: ['financeiro', 'dre', 'conciliacao'] },
+    { id: 'financeiro', titulo: 'Financeiro', paginas: ['financeiro', 'vendas-prejuizo', 'dre', 'conciliacao'] },
     { id: 'comercial', titulo: 'Comercial', paginas: ['leads', 'blog'] },
     { id: 'ia', titulo: 'Agentes de IA', paginas: ['adviser', 'chat', 'escritorio', 'segundo-cerebro'] },
     { id: 'sistema', titulo: 'Sistema', paginas: ['integracoes', 'conexoes', 'saude-api', 'diagnostico'] },

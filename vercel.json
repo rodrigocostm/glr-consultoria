@@ -51,6 +51,9 @@
     },
     "api/push-cron.js": {
       "maxDuration": 300
+    },
+    "api/vendas-prejuizo.js": {
+      "maxDuration": 120
     }
   },
   "headers": [

@@ -79,6 +79,7 @@ const Router = {
       'funil': 'Funil de vendas',
       'escritorio': 'Escritório dos agentes',
       'estoque-margem': 'Estoque e margem',
+      'vendas-prejuizo': 'Vendas com prejuízo',
       'atendimento': 'Reputação e atendimento',
       'qualidade-anuncios': 'Qualidade dos anúncios',
       'plano-acao': 'Plano de ação',

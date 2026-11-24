@@ -1,6 +1,6 @@
 // Histórico pessoal de avisos. Ler/tratar nunca executa ações comerciais.
 const NotificationCenter=(()=>{
- const nomes={vendas:'Vendas',saldo:'Saldo de Ads',metas:'Metas',vendometro:'Vendômetro',oscilacao:'Oscilação de Ads',resumo_diario:'Resumo diário',gestores:'Meta de gestor',projecao:'Projeção em queda',curva_a:'Curva A sem estoque'};
+ const nomes={vendas:'Vendas',saldo:'Saldo de Ads',metas:'Metas',vendometro:'Vendômetro',oscilacao:'Oscilação de Ads',resumo_diario:'Resumo diário',gestores:'Meta de gestor',projecao:'Projeção em queda',curva_a:'Curva A sem estoque',prejuizo:'Vendas com prejuízo'};
  const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  async function api(path='',body){const {data}=await _sb.auth.getSession();if(!data?.session?.access_token)throw Error('Entre novamente na sua conta.');const r=await fetch('/api/notifications'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+data.session.access_token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok)throw Error(d.error||'Falha ao acessar notificações');return d;}
  function badge(n){for(const id of ['glr-notification-count','dc-notification-count']){const el=document.getElementById(id);if(el){el.textContent=n>99?'99+':String(n||0);el.hidden=!n;}}}
@@ -15,8 +15,8 @@ const NotificationCenter=(()=>{
    ${st.mais?`<button class="btn btn-secondary" data-act="more" ${st.loading?'disabled':''}>Carregar mais</button>`:''}</section>`;}
   async function load(more=false){if(st.loading)return;const atual=++seq;st.loading=true;st.erro=null;if(!more){st.offset=0;st.rows=[];}render();try{const d=await api('?filter='+st.filter+'&category='+st.category+'&offset='+st.offset);if(atual!==seq||!ativo||!el.isConnected)return;st.rows=more?[...st.rows,...d.rows]:d.rows;st.totais=d.totais;st.mais=d.mais;badge(d.totais?.nao_lidas||0);}catch(e){st.erro=e.message;}finally{st.loading=false;render();}}
   el.onclick=async ev=>{const b=ev.target.closest('button');if(!b||st.busy)return;if(b.dataset.filter){st.filter=b.dataset.filter;return load();}const act=b.dataset.act;if(act==='refresh')return load();if(act==='more'){st.offset+=50;return load(true);}if(!act)return;const row=st.rows.find(r=>r.id===b.dataset.id);st.busy=true;render();try{await api('',{action:act==='open'?'read':act,...(row?{id:row.id}:{})});if(act==='open'&&row&&/^[a-z0-9-]+$/.test(row.destino)){
-    if(!window._portalConfig&&row.contas?.length===1){const id=String(row.contas[0]);for(const m of ['ml','shopee','amazon','tiktok','magalu','shein']){if(GLR.ctx?.clienteDaConta?.(m,id)){GLR.ctx.definirPorConta?.(m,id);break;}}}
-    badge(Math.max(0,(st.totais.nao_lidas||0)-(row.lida_em?0:1)));Router.navigate(row.destino);return;}
+    let contaPrejuizo='';if(!window._portalConfig&&row.contas?.length===1){const id=String(row.contas[0]);for(const m of ['ml','shopee','amazon','tiktok','magalu','shein']){if(GLR.ctx?.clienteDaConta?.(m,id)){GLR.ctx.definirPorConta?.(m,id);if(row.destino==='vendas-prejuizo')contaPrejuizo=m+':'+id;break;}}}
+    badge(Math.max(0,(st.totais.nao_lidas||0)-(row.lida_em?0:1)));Router.navigate(row.destino,contaPrejuizo?{conta:contaPrejuizo}:{});return;}
    st.busy=false;await load();}catch(e){st.erro=e.message;}finally{st.busy=false;render();}};
   el.onchange=e=>{if(e.target.matches('[data-category]')){st.category=e.target.value;load();}};
   load();const timer=setInterval(()=>{if(!el.isConnected){clearInterval(timer);return;}if(!document.hidden&&!st.busy)load();},60000);

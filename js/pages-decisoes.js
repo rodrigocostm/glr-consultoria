@@ -40,6 +40,7 @@ Router.register('decisoes', (params, el) => {
     'ads-ml': { t: 'ADS ML', c: '#d9a400' },
     'estoque': { t: 'Estoque', c: '#1f9d74' },
     'margem': { t: 'Margem', c: '#b45309' },
+    'prejuizo': { t: 'Vendas com prejuízo', c: 'var(--red)' },
     'conversao': { t: 'Catálogo ML', c: '#d9a400' },
     'faturamento': { t: 'Faturamento', c: 'var(--accent)' },
     'promocoes': { t: 'Promoções', c: 'var(--purple)' },
@@ -62,11 +63,15 @@ Router.register('decisoes', (params, el) => {
     return '';
   }
 
+  async function buscarPrejuizos() {
+    try { const {data}=await _sb.auth.getSession();const r=await fetch('/api/vendas-prejuizo?resumo=1',{headers:{Authorization:'Bearer '+(data?.session?.access_token||'')}});const d=await r.json();if(!r.ok)throw Error(d.error||'Falha na apuração');return d; }
+    catch(e){return {erro:e.message,grupos:[]};}
+  }
   async function carregar() {
     st.carregando = true; render();
     try {
       const desde = new Date(Date.now() - 10 * 864e5).toISOString();
-      const [logs, planos, reps, promos, conex, sinais, saude] = await Promise.all([
+      const [logs, planos, reps, promos, conex, sinais, saude, perdas] = await Promise.all([
         _sb.from('glr_agente_log').select('id,conta_id,cliente_nome,titulo,explicacao,dados,criado_em').eq('tipo', 'alerta').eq('resultado', 'so_alerta').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(3000),
         _sb.from('glr_sync_estado').select('conta_id,cursor').eq('marketplace', 'sistema').eq('recurso', 'plano'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,rec:cursor->reclamacoes,al:cursor->alertas').eq('recurso', 'reputacao'),
@@ -74,6 +79,7 @@ Router.register('decisoes', (params, el) => {
         _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('conta_id', 'conexoes').eq('recurso', 'todas').maybeSingle(),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,em:cursor->em,al:cursor->alertas').eq('recurso', 'sinais'),
         _sb.from('glr_sync_estado').select('contas:cursor->contas').eq('marketplace', 'sistema').eq('conta_id', 'saude_api').eq('recurso', 'todas').maybeSingle(),
+        buscarPrejuizos(),
       ]);
       for (const r of [logs, planos, reps, promos]) if (r.error) throw r.error;
       const estoqueAds = new Set(); // produto que o agente de ADS já avisou (estoque_minimo): não repete
@@ -172,6 +178,11 @@ Router.register('decisoes', (params, el) => {
             porque: 'Métrica fora da meta gera ponto de penalidade e pode limitar a loja (menos exposição, sem campanhas).', urgente: false });
         }
       }
+      st.prejuizoErro=perdas.erro||null;
+      for(const g of perdas.grupos||[]){
+        const id=`perda:${g.chave}:${g.ultimo}`;if(locais[id])continue;
+        itens.push({id,tipo:'prejuizo',mkt:g.marketplace,conta:String(g.conta_id),titulo:`Venda com prejuízo — ${g.produto}`,acao:`${g.pedidos} pedido(s) · perda ${g.estimado?'estimada ':''}${R2(g.perda)} em 30 dias`,porque:'Resultado dos pedidos com custo completo e repasse disponível, antes do ADS. Revise preço, custos e taxas. Pedidos com vários produtos são tratados como conjunto.',impacto:g.perda/30*7,impactoTipo:'perda',urgente:false,exec:false,tela:'vendas-prejuizo',quando:g.ultimo});
+      }
       // Agentes de Estoque e de Margem (mural 'sinais', a cada 3 h): ruptura em até 15 dias e produto vendendo no prejuízo
       const dias1 = v => String(Math.round(v * 10) / 10).replace('.', ',');
       for (const r of sinais?.data || []) {
@@ -180,6 +191,7 @@ Router.register('decisoes', (params, el) => {
           const base = { mkt: r.marketplace, conta: String(r.conta_id), exec: false, tela: 'estoque-margem', quando: new Date(r.em).toISOString() };
           if (a.t === 'ruptura') continue; // agrupado por loja logo abaixo
           if (a.t === 'prejuizo') {
+            if(!perdas.erro)continue; // apuração por pedido substitui o alerta pela margem média
             const id = `marg:${r.conta_id}:${a.id}`; if (locais[id]) continue;
             itens.push({ ...base, id, tipo: 'margem', titulo: `Vendendo no prejuízo — ${a.n}`,
               acao: `margem ${String(a.m).replace('.', ',')}% antes do ADS · preço ${R2(a.p)}`,
@@ -290,6 +302,7 @@ Router.register('decisoes', (params, el) => {
     st.foco = Math.min(st.foco, Math.max(0, mostrando.length - 1));
     const foco = GLR.ctx?.cliente();
     root.innerHTML = `
+      ${st.prejuizoErro ? `<p role="alert" style="color:var(--yellow)">Vendas com prejuízo não puderam ser apuradas. Abra a aba para tentar novamente; as demais decisões continuam disponíveis.</p>` : ''}
       <div class="dc-cab">
         <p class="dc-resumo"><b>${B.length}</b> decisões${foco ? ' deste cliente' : ''}${emJogo > 0 ? ` · <b>${R$(emJogo)}</b>/semana em jogo` : ''}</p>
         <div class="dc-cab-dir">
@@ -363,7 +376,7 @@ Router.register('decisoes', (params, el) => {
   window._dcAbrirTxt = id => { st.abertos.has(id) ? st.abertos.delete(id) : st.abertos.add(id); const r = document.querySelector(`.dc-row[data-id="${CSS.escape(id)}"]`); if (r) r.classList.toggle('aberto', st.abertos.has(id)); else render(); };
   window._dcMarcarSel = (id, on) => { on ? st.sel.add(id) : st.sel.delete(id); render(); };
   window._dcSelTodas = on => { visiveis().filter(it => it.exec).forEach(it => on ? st.sel.add(it.id) : st.sel.delete(it.id)); render(); };
-  window._dcIr = id => { const it = achar(id); if (!it) return; if (it.clienteId) GLR.ctx?.definir(it.clienteId, true); Router.navigate(it.tela); };
+  window._dcIr = id => { const it = achar(id); if (!it) return; if (it.clienteId) GLR.ctx?.definir(it.clienteId, true); Router.navigate(it.tela,it.tipo==='prejuizo'?{conta:it.mkt+':'+it.conta}:{}); };
   window._dcAprovar = async id => {
     const it = achar(id); if (!it?.exec) return;
     st.proc[id] = 'Executando…'; render();
