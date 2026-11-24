@@ -87,6 +87,7 @@ const Router = {
       'conexoes': 'Saúde das conexões',
       'saude-api': 'Saúde da API',
       'agente-fotos': 'Agente de Fotos',
+      'anuncios-novos': 'Anúncios novos',
       'datas-especiais': 'Datas especiais',
       'data-combinada': 'Data combinada',
       'meta-diaria': 'Meta diária',

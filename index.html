@@ -130,6 +130,10 @@
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
         Gerador de Fotos
       </button>
+      <button class="nav-item" data-page="anuncios-novos" onclick="Router.navigate('anuncios-novos')">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 8v8M8 12h8"/></svg>
+        Anúncios novos
+      </button>
       <button class="nav-item" data-page="agente-fotos" onclick="Router.navigate('agente-fotos')">
         <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3.5"/><path d="M17 3l1 2M20 7l-2 1"/></svg>
         Agente de Fotos
@@ -505,8 +509,8 @@
   }
   atualizarBadges();
 </script>
-<script src="js/router.js?v=20261123-inbox"></script>
-<script src="js/nav.js?v=menu-9"></script>
+<script src="js/router.js?v=20261124-novos"></script>
+<script src="js/nav.js?v=menu-10"></script>
 <script src="js/ui.js?v=7"></script>
 <script src="js/dash-clientes.js?v=tend-proj-2"></script>
 <script src="js/pages-dashboard.js?v=comissao-composicao-2"></script>
@@ -576,6 +580,7 @@
 <script src="js/pages-relatorios.js?v=4"></script>
 <script src="js/pages-fotos.js?v=4"></script>
 <script src="js/pages-agente-fotos.js?v=1"></script>
+<script src="js/pages-anuncios-novos.js?v=1"></script>
 <script>
   // ---- App Init ----
   document.addEventListener('DOMContentLoaded', () => {
