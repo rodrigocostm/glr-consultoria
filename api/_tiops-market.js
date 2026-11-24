@@ -62,9 +62,9 @@ async function lerAnuncio(key,link,contas){
  if(!id&&!ehUrl)throw Error('Cole o link de um anúncio do Mercado Livre ou o código (ex.: MLB1234567890).');
  const params=id?{item_id:id,timeout_s:45}:{url:String(link).trim().slice(0,800),timeout_s:45};
  let r;
- for(let t=0;t<2;t++){try{r=(await comConta(key,'get_item_other_seller',params,contas,55000)).r;break;}catch(e){if(t||!/intermit|504|indispon|timeout|aborted/i.test(String(e.message)))throw Error(/intermit|504|indispon|timeout|aborted/i.test(String(e.message))?'O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos.':e.message);}}
+ for(let t=0;t<2;t++){try{r=(await comConta(key,'get_item_other_seller',params,contas,55000)).r;break;}catch(e){if(t||!/intermit|504|indispon|timeout|aborted/i.test(String(e.message)))throw Error(/intermit|504|indispon|timeout|aborted/i.test(String(e.message))?`O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos. (${String(e.message).slice(0,140)})`:e.message);}}
  const d=r.data||r;
- if(d.disponibilidade==='intermitente'||!d.titulo)throw Error('O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos.');
+ if(d.disponibilidade==='intermitente'||!d.titulo)throw Error(`O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos. (${String(d.erro||d.error||d.message||JSON.stringify(d)).slice(0,160)})`);
  const ficha=d.ficha_tecnica&&typeof d.ficha_tecnica==='object'?d.ficha_tecnica:{};
  const preco=num(d.preco),orig=num(d.preco_original);
  return {id:id||idDoLink(d.url),link:d.url||link,titulo:corta(d.titulo,200),preco,preco_original:orig,desconto:orig&&preco&&orig>preco?Math.round((1-preco/orig)*100):null,
