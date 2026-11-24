@@ -3,7 +3,7 @@ async function call(key,action,params={},ms=25000) {
  if(!key)throw Error('Chave do Tiops não configurada no servidor.');
  const r=await fetch('https://mcp.tiops.com.br',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key},body:JSON.stringify({action,params}),signal:AbortSignal.timeout(ms)});
  const j=await r.json().catch(()=>null);
- if(!r.ok||!j||j.error||j.status&&j.status!==200)throw Error(String(j?.error||j?.message||`Tiops indisponível (HTTP ${r.status}).`).slice(0,500));
+ if(!r.ok||!j||j.error||j.status&&j.status!==200)throw Error(String(j?.error||j?.message||j?.data?.erro||j?.data?.error||j?.data?.message||`Tiops indisponível (HTTP ${r.status}).`).slice(0,500));
  return j;
 }
 function validate(action,params){
@@ -62,7 +62,7 @@ async function lerAnuncio(key,link,contas){
  if(!id&&!ehUrl)throw Error('Cole o link de um anúncio do Mercado Livre ou o código (ex.: MLB1234567890).');
  const params=id?{item_id:id,timeout_s:45}:{url:String(link).trim().slice(0,800),timeout_s:45};
  let r;
- for(let t=0;t<2;t++){try{r=(await comConta(key,'get_item_other_seller',params,contas,55000)).r;break;}catch(e){if(t||!/intermit|504|indispon|timeout|aborted/i.test(String(e.message)))throw Error(/intermit|504|indispon|timeout|aborted/i.test(String(e.message))?`O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos. (${String(e.message).slice(0,140)})`:e.message);}}
+ for(let t=0;t<2;t++){try{r=(await comConta(key,'get_item_other_seller',params,contas,55000)).r;break;}catch(e){const pausa=String(e.message).match(/coletor pausado[^;]*;?\s*tente de novo em (\d+)\s*s/i);if(pausa)throw Error(`O Mercado Livre pausou a leitura de anúncios de outros vendedores por alguns minutos. Tente de novo em ~${Math.max(1,Math.ceil(+pausa[1]/60))} min.`);if(t||!/intermit|504|indispon|timeout|aborted/i.test(String(e.message)))throw Error(/intermit|504|indispon|timeout|aborted/i.test(String(e.message))?`O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos. (${String(e.message).slice(0,140)})`:e.message);}}
  const d=r.data||r;
  if(d.disponibilidade==='intermitente'||!d.titulo)throw Error(`O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos. (${String(d.erro||d.error||d.message||JSON.stringify(d)).slice(0,160)})`);
  const ficha=d.ficha_tecnica&&typeof d.ficha_tecnica==='object'?d.ficha_tecnica:{};
