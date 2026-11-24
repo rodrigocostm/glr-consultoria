@@ -135,7 +135,7 @@ Router.register('anuncios-novos', (params, el) => {
         ${x.foto ? `<img src="${h(x.foto)}" alt="" loading="lazy">` : '<span class="an-ph"></span>'}
         <div class="an-corpo">
           <div class="an-tit">${h(x.titulo)}</div>
-          <div class="an-loja">${GLR.iconeMkt ? GLR.iconeMkt(x.mkt) : ''}<span class="mkt-sem-icone">${h(x.conta.cliente ? `${x.conta.cliente} · ` : '')}${h(x.conta.nome)}</span></div>
+          <div class="an-loja">${GLR.iconeMkt ? GLR.iconeMkt(x.mkt) : ''}<span class="mkt-sem-icone">${h(x.conta.cliente && !String(x.conta.nome).toLowerCase().startsWith(String(x.conta.cliente).toLowerCase()) ? `${x.conta.cliente} · ` : '')}${h(x.conta.nome)}</span></div>
           <div class="an-meta"><b>${R$(x.preco)}</b><span class="an-st ${s[1]}">${h(s[0])}</span>${(x.extra || []).map(e => `<span class="an-tag">${h(e)}</span>`).join('')}</div>
           <div class="an-num"><span>Estoque <b>${x.estoque == null ? '—' : n0(x.estoque)}</b></span>${x.mkt === 'ml' ? `<span>Vendidos <b class="${x.vendidos > 0 ? 'pos' : ''}">${n0(x.vendidos)}</b></span>` : ''}<span>${new Date(x.criado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></div>
         </div></a>`; };
@@ -178,7 +178,7 @@ Router.register('anuncios-novos', (params, el) => {
       .an-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px}
       .an-card{display:flex;gap:12px;padding:10px;border:1px solid var(--border);border-radius:12px;background:var(--bg-card);color:var(--text-primary);text-decoration:none;transition:border-color .15s}
       .an-card:hover{border-color:var(--accent)} .an-card:focus-visible{outline:2px solid var(--accent)}
-      .an-card img,.an-ph{width:76px;height:76px;flex:none;border-radius:8px;object-fit:contain;background:#fff;border:1px solid var(--border)}
+      .an-card > img,.an-ph{width:76px;height:76px;flex:none;border-radius:8px;object-fit:contain;background:#fff;border:1px solid var(--border)}
       .an-corpo{min-width:0;display:flex;flex-direction:column;gap:4px}
       .an-tit{font-size:13px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
       .an-loja{font-size:11.5px;color:var(--text-muted);display:flex;align-items:center;gap:4px;overflow:hidden;white-space:nowrap} .an-loja span{overflow:hidden;text-overflow:ellipsis}
