@@ -35,11 +35,11 @@ const guide='\nPESQUISA DE MERCADO TIOPS: use recursos_tiops e consultar_mercado
 // O Tiops usa uma conta do ML para ler a API; se o token de uma conta falha
 // ("Falha ao renovar token Meli"), tenta a próxima da carteira.
 const ehErroConta=e=>/token|meli|autoriz|unauthor|invalid_grant|forbidden/i.test(String(e?.message||e));
-async function comConta(key,action,params,contas){
+async function comConta(key,action,params,contas,ms){
  const lista=[...new Set((contas||[]).map(String).filter(x=>/^\d{3,15}$/.test(x)))].slice(0,6);
  let ultimo;
  for(const c of lista.length?lista:[undefined]){
-  try{return {r:await call(key,action,c?{...params,meliUserId:c}:params),conta:c||null};}
+  try{return {r:await call(key,action,c?{...params,meliUserId:c}:params,ms),conta:c||null};}
   catch(e){ultimo=e;if(!ehErroConta(e))throw e;}
  }
  throw Error(ehErroConta(ultimo)?'O Mercado Livre recusou o acesso das contas conectadas (token vencido). Reconecte uma conta do ML no Tiops ou tente com outro cliente.':String(ultimo?.message||ultimo));
@@ -57,12 +57,12 @@ function idDoLink(t){
 }
 const num=v=>{const n=typeof v==='number'?v:parseFloat(String(v??'').replace(/\./g,'').replace(',','.'));return Number.isFinite(n)?n:null;};
 function vendidosNum(t){const s=String(t||'').toLowerCase().replace(/\s/g,'');const m=s.match(/([\d.,]+)(mil)?/);if(!m)return null;let n=parseFloat(m[1].replace(/\./g,'').replace(',','.'));if(m[2])n*=1000;return Number.isFinite(n)?Math.round(n):null;}
-async function lerAnuncio(key,link){
+async function lerAnuncio(key,link,contas){
  const id=idDoLink(link);const ehUrl=/^https?:\/\/[^/]*mercadol(ivre|ibre)\.com/i.test(String(link||'').trim());
  if(!id&&!ehUrl)throw Error('Cole o link de um anúncio do Mercado Livre ou o código (ex.: MLB1234567890).');
  const params=id?{item_id:id,timeout_s:45}:{url:String(link).trim().slice(0,800),timeout_s:45};
  let r;
- for(let t=0;t<2;t++){try{r=await call(key,'get_item_other_seller',params,55000);break;}catch(e){if(t||!/intermit|504|indispon|timeout|aborted/i.test(String(e.message)))throw Error(/intermit|504|indispon|timeout|aborted/i.test(String(e.message))?'O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos.':e.message);}}
+ for(let t=0;t<2;t++){try{r=(await comConta(key,'get_item_other_seller',params,contas,55000)).r;break;}catch(e){if(t||!/intermit|504|indispon|timeout|aborted/i.test(String(e.message)))throw Error(/intermit|504|indispon|timeout|aborted/i.test(String(e.message))?'O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos.':e.message);}}
  const d=r.data||r;
  if(d.disponibilidade==='intermitente'||!d.titulo)throw Error('O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos.');
  const ficha=d.ficha_tecnica&&typeof d.ficha_tecnica==='object'?d.ficha_tecnica:{};
@@ -81,7 +81,7 @@ async function pesquisar(key,tipo,dados={},contas=[]){
  if(tipo==='link'||tipo==='comparar'){
   const links=[...new Set((Array.isArray(dados.links)?dados.links:[dados.link]).map(x=>String(x||'').trim()).filter(Boolean))].slice(0,4);
   if(!links.length)throw Error('Digite o link de um anúncio do Mercado Livre.');
-  const lidos=await Promise.allSettled(links.map(l=>lerAnuncio(key,l)));
+  const lidos=await Promise.allSettled(links.map(l=>lerAnuncio(key,l,contas)));
   const anuncios=lidos.map((x,i)=>x.status==='fulfilled'?x.value:{link:links[i],erro:String(x.reason?.message||x.reason).slice(0,300)});
   if(!anuncios.some(a=>!a.erro))throw Error(anuncios[0].erro);
   return {em,anuncios};
