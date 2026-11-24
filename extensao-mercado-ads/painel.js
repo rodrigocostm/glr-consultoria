@@ -459,7 +459,7 @@
       : f && f.status === 'concluido' ? `<div class="auto ok">${f.passos.length - (f.pulados || []).length} passo(s) aplicados e conferidos ✓${(f.pulados || []).length ? `<br>${f.pulados.length} pulado(s), sem mexer: ${esc(f.pulados.join(' · '))}` : ''} <button data-auto-fechar="1">Ok</button></div>`
       : nAuto && !st.erro ? `<div class="auto"><button class="pri" data-auto-iniciar="1">Aplicar ${Math.min(nAuto, MAX_AUTO)} passo(s) sozinho</button><span>ROAS, orçamento, pausar e mover anúncio · ritmo humano · para no primeiro imprevisto${lista.length > nAuto ? ' · colocar produto e campanha nova ficam à mão' : ''}</span></div>` : '';
     raiz.innerHTML = `<style>
-      .auto{margin:0 0 4px;padding:8px 10px;border-radius:10px;background:#f4f2ff;font-size:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:#2b2f3c} .auto span{color:#5b6070}
+      .semlogin{margin:8px 10px 0;padding:8px 10px;border-radius:10px;background:#fdecea;color:#8a1f12;font-size:12px} .auto{margin:0 0 4px;padding:8px 10px;border-radius:10px;background:#f4f2ff;font-size:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:#2b2f3c} .auto span{color:#5b6070}
       .auto.on{background:#fff7e6} .auto.erro{background:#fdecea;color:#8a1f12} .auto.ok{background:#eefaf2;color:#1b6b3a}
       :host{all:initial}
       .p{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:360px;max-height:70vh;display:flex;flex-direction:column;background:#fff;color:#1f2330;border:1px solid #e1e3ea;border-radius:14px;box-shadow:0 12px 32px rgba(20,24,40,.18);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -497,6 +497,7 @@
     <div class="p ${st.aberto ? '' : 'min'} ${st.expert && st.aba === 'analise' && st.aberto ? 'exp' : ''}">
       <div class="cab" data-alternar="1"><b>GLR Copiloto ADS</b><span class="q">${atencao() + (st.erro ? 0 : lista.length)}</span></div>
       ${st.aberto ? `<div class="abas"><button class="${st.aba === 'analise' ? 'on' : ''}" data-aba="analise">Análise${atencao() ? ` <i>${atencao()}</i>` : ''}</button><button class="${st.aba === 'glr' ? 'on' : ''}" data-aba="glr">Pacote GLR${!st.erro && lista.length ? ` <i>${lista.length}</i>` : ''}</button></div>
+        ${st.erro === 'SEM_LOGIN' ? '<div class="semlogin">Sem o login da GLR: os passos do agente, os selos nas campanhas e o destaque de onde clicar <b>não aparecem</b>. Clique no ícone da extensão na barra do Chrome e entre com o seu e-mail da GLR.</div>' : ''}
         <div class="lista">${st.aba === 'analise' ? corpoAnalise() : (st.msg.guia ? `<div class="auto ok">${esc(st.msg.guia.texto)}</div>` : '') + barra + corpo}</div><div class="rod">${st.aba === 'analise' ? 'Lê só a tela do Mercado Ads, no seu navegador. Sugestões: quem decide e salva no ML é você.' : 'Mostra na tela onde clicar e o valor; quem faz e salva é você. Depois de salvar, a extensão confere e marca Feito.'} · v${chrome.runtime.getManifest?.().version || ''}</div>` : ''}
     </div>`;
   }
