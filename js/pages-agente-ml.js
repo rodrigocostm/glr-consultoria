@@ -591,15 +591,18 @@ Router.register('agente-ml', (params, el) => {
       return '';
     };
     const idsHtml = ids => `<span class="aml-ids">${ids.map(x => `<a href="https://produto.mercadolivre.com.br/${h(String(x).replace(/^MLB/, 'MLB-'))}" target="_blank" rel="noopener">${h(x)}</a>`).join(' ')}</span><button class="aml-cop" onclick="navigator.clipboard.writeText('${ids.map(h).join(', ')}').then(()=>{this.textContent='Copiado'})">Copiar códigos</button>`;
+    // valor no formato da tela do ML (vírgula) + botão que copia (o analista cola no campo do ML)
+    const numML = v => String(Math.round((+v || 0) * 100) / 100).replace('.', ',');
+    const copiarBt = (v, rot) => v == null || v === '' ? '' : ` <button type="button" class="aml-cp" onclick="event.stopPropagation();navigator.clipboard.writeText('${String(v).replace(/'/g, '')}').then(()=>{this.textContent='Copiado ✓';setTimeout(()=>{this.textContent='Copiar ${h(String(rot || v)).replace(/'/g, '')}'},1500)})">Copiar ${h(String(rot || v))}</button>`;
     const passosPainel = d => {
       const ids = d.item_ids || [], abrir = n => `Em <b>Publicidade → Product Ads</b>, abra a campanha ${nomeC(n)}`;
       switch (d.acao) {
-        case 'retirar_produto': return [abrir(d.campanha), `Na lista de anúncios, pause: ${idsHtml(ids)}`];
+        case 'roas_target': return [abrir(d.campanha), 'No cartão <b>ROAS objetivo</b>, clique no lápis ✎', `Marque <b>Definir outro</b> e troque <b>${numML(d.de)}</b> por <b>${numML(d.para)}</b>${copiarBt(numML(d.para))}`, 'Clique em <b>Salvar</b>'];
+        case 'orcamento': return [abrir(d.campanha), 'No cartão <b>Orçamento diário</b>, clique no lápis ✎', `Marque <b>Orçamento fixo</b> e troque <b>${R$(d.de)}</b> por <b>${R$(d.para)}</b>${copiarBt(numML(d.para))}`, 'Clique em <b>Salvar</b>'];
+        case 'retirar_produto': return [abrir(d.campanha), `Na tabela de anúncios, procure ${idsHtml(ids)}`, 'Na linha dele, clique no <b>⋮</b> → <b>Pausar</b> (não exclua: o histórico fica)'];
         case 'mover_produto': return [`Em <b>Publicidade → Product Ads → Anúncios patrocinados</b>, procure: ${idsHtml(ids)}`, d.destino && !destinoFraco(d) ? `Marque a linha → <b>Mais ações → Mover para uma campanha</b> → escolha ${nomeC(d.destino)} → <b>Mover anúncios patrocinados</b>` : 'Marque a linha → <b>Mais ações → Criar campanha</b> (quadro acima — uma só para todos os produtos)', 'Não precisa pausar: o anúncio sai da campanha atual e já entra ativo na outra'];
-        case 'roas_target': return [abrir(d.campanha), `Clique em <b>Editar</b> e mude o ROAS objetivo para <b>${roasX(d.para)}</b>`];
         case 'acos_target': return [abrir(d.campanha), `Clique em <b>Editar</b> e mude a meta de ACOS para <b>${pct(d.para)}</b>`];
-        case 'orcamento': return [abrir(d.campanha), `Clique em <b>Editar</b> e mude o orçamento diário para <b>${R$(d.para)}</b>`];
-        case 'pausar': return [abrir(d.campanha), 'Clique em <b>Pausar campanha</b>'];
+        case 'pausar': return [abrir(d.campanha), 'Desligue a chave <b>Estado</b> no topo da campanha'];
         case 'adicionar_produto': return [abrir(d.destino || d.campanha), `<b>Adicionar anúncios</b> → ${idsHtml(ids)}`, 'Confira o estoque antes'];
       }
       return null;
@@ -613,14 +616,13 @@ Router.register('agente-ml', (params, el) => {
           <div class="aml-p-ic" title="Passo ${n}">${ICONE[d.acao] || svg('<circle cx="12" cy="12" r="8"/>')}</div>
           <div class="aml-p-corpo">
             <div class="aml-p-acao"><span class="aml-p-tag">${t.rot}</span>${acaoTxt(d)}</div>
-            <details class="aml-como"><summary>Ver detalhes</summary>
+            ${passos ? `<div class="aml-como aml-fazer"><div class="aml-detalhes-titulo">O que fazer no painel do ML</div><ol>${passos.map(x => `<li>${x}</li>`).join('')}</ol><div class="aml-sub aml-dep">Depois: clique em <b>Marcar como feito</b> e não mexa mais nesta campanha até <b>${(() => { const dt = new Date(Date.now() + 7 * 864e5); return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}`; })()}</b> — o Mercado Ads leva ~7 dias para mostrar o efeito.</div></div>` : ''}
+            <details class="aml-como"><summary>Ver detalhes (por quê e números)</summary>
             <div class="aml-p-pq" style="margin-top:10px">${pqTxt(d)}</div>
             ${d.experimento ? `<div class="aml-esp"><b>Teste controlado:</b> ${h(d.experimento.hipotese)}<br>${h(d.experimento.criterio_recuo)}<br>Confiança: ${h(d.crescimento?.confianca || 'baixa')} · Hipótese de contribuição semanal: ${d.crescimento?.contribuicao_hipotese != null ? R$(d.crescimento.contribuicao_hipotese) : 'sem margem para estimar'}. Medição após até 21 dias; sem garantia de causalidade.</div>` : ''}
             ${esp ? `<div class="aml-esp"><b>Especialista:</b> ${h(esp)}</div>` : ''}
               ${impHtml(d)}
-              <div class="aml-detalhes-titulo">${passos ? 'Como fazer no painel do ML' : 'O que revisar'}</div>
-              ${passos ? `<ol>${passos.map(x => `<li>${x}</li>`).join('')}</ol>` : `<div class="aml-sub">${h(semInstrucao(l.explicacao))}</div>`}
-              ${passos ? `<div class="aml-sub aml-expl">${h(semInstrucao(l.explicacao))}</div>` : ''}
+              ${passos ? `<div class="aml-sub aml-expl">${h(semInstrucao(l.explicacao))}</div>` : `<div class="aml-detalhes-titulo">O que revisar</div><div class="aml-sub">${h(semInstrucao(l.explicacao))}</div>`}
             </details>
           </div>
           <div class="aml-p-lado">
@@ -885,6 +887,7 @@ Router.register('agente-ml', (params, el) => {
     .aml-p-pq{font-size:13px;line-height:1.5;color:var(--text-secondary);} .aml-p-pq b{color:var(--text-primary);}
     .aml-como{font-size:12.5px;margin-top:2px;} .aml-como summary{cursor:pointer;color:var(--accent);font-weight:600;font-size:12.5px;width:max-content;}
     .aml-como ol{margin:8px 0 6px;padding-left:20px;display:flex;flex-direction:column;gap:6px;color:var(--text-primary);line-height:1.5;}
+    .aml-cp{font-size:11px;padding:1px 8px;margin-left:4px;border:1px solid var(--border);border-radius:99px;background:var(--bg-card);color:var(--accent);cursor:pointer;} .aml-dep{background:var(--bg-subtle);border-radius:8px;padding:6px 9px;margin:2px 0 6px;}
     .aml-ids{display:inline-flex;flex-wrap:wrap;gap:4px;margin:0 6px;} .aml-ids a{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var(--bg-subtle);border-radius:5px;padding:1px 6px;color:var(--text-primary);text-decoration:none;} .aml-ids a:hover{text-decoration:underline;}
     .aml-cop{border:1px solid var(--border);background:var(--bg-card);border-radius:6px;font-size:11.5px;padding:2px 8px;cursor:pointer;color:var(--text-secondary);}
     .aml-expl{margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);}
@@ -977,7 +980,7 @@ Router.register('agente-ml', (params, el) => {
     .aml-lk-cinza{color:var(--text-muted);font-weight:500;} .aml-lk-cinza:hover:not(:disabled){color:var(--red);}
     .aml-ml .aml-li-bt{gap:14px;}
     .aml-ml .aml-p-acao{overflow-wrap:anywhere;}
-    .aml-detalhes-titulo{font-weight:600;margin-top:12px;}
+    .aml-detalhes-titulo{font-weight:600;margin-top:12px;} .aml-fazer .aml-detalhes-titulo{margin-top:6px;}
     .aml-ml .aml-como[open]{line-height:1.6;}
     .aml-ml .aml-como .aml-p-imp{text-align:left;margin-top:10px;}
     .aml-contexto{margin:12px 0;}

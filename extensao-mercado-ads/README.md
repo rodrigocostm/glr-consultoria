@@ -1,6 +1,13 @@
 # GLR Copiloto ADS (extensão do Chrome)
 
-Copiloto do Mercado Ads. Abre um painel ao lado da tela de **Product Ads** com duas abas:
+Copiloto do Mercado Ads. Abre um painel ao lado da tela de **Product Ads** com duas abas.
+
+> **v1.2 — só mostra.** A política do Mercado Livre não permite automação no ADS: a extensão
+> **não clica, não digita e não salva nada** na tela do ML. O modo automático ("aplicar sozinho")
+> e os botões *Preencher ROAS/orçamento*, *Mostrar o anúncio* e *Preparar a mudança* saíram.
+> Cada ajuste vem com o **passo a passo exato** (onde clicar, de quanto para quanto, Salvar),
+> um botão **Copiar** para o valor e a data para **reavaliar** (~7 dias). Quando o agente GLR tem
+> passo para a campanha aberta, a aba Análise manda seguir o **Pacote GLR** (uma instrução só).
 
 - **Análise — funciona sem login e sem o sistema da GLR.** Lê só as tabelas que o próprio
   Mercado Ads mostra na sua sessão (nada sai do navegador, não usa MCP nem API):
@@ -8,12 +15,12 @@ Copiloto do Mercado Ads. Abre um painel ao lado da tela de **Product Ads** com d
     *Aguardar* (aprendendo) ou *Sem dados* — com o motivo, a ação sugerida (ROAS objetivo ou
     orçamento) e o gargalo (orçamento × lance). O selo aparece também na linha da tabela do ML.
   - **Dentro da campanha:** veredito por anúncio — *Escalar*, *Manter*, *Avaliar*, *Mover*,
-    *Retirar* ou *Sem dados* — com CTR, conversão e CPC; **Preencher ROAS/orçamento** e
-    **Mostrar o anúncio** preparam a mudança na tela (quem salva é você).
+    *Retirar* ou *Sem dados* — com CTR, conversão e CPC;
+    o passo a passo diz exatamente onde clicar (quem faz e salva é você).
   - **Modo Expert:** tabela ordenável por veredito, ACOS, ROAS, investimento, receita, uso do orçamento…
   - **Meta de ACOS da conta** (campo no painel): sem ela, vale a de cada campanha (100 ÷ ROAS objetivo).
 - **Pacote GLR — opcional, para clientes da GLR.** Com o login da GLR (ícone da extensão), mostra o
-  pacote do dia do agente, preenche os campos e pode aplicar passos no ritmo de uma pessoa.
+  pacote do dia do agente com o passo a passo de cada ajuste e o botão Feito.
 
 ## Instalar
 1. Abra `chrome://extensions` e ligue o **Modo do desenvolvedor**.

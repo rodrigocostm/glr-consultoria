@@ -2,14 +2,18 @@
 // GLR Copiloto Mercado Ads — painel dentro do Mercado Ads
 // ------------------------------------------------------------
 // Mostra no canto da tela o pacote do dia da GLR para a campanha aberta (ou
-// para as campanhas da lista) e ajuda a aplicar: abre a edição, PREENCHE o
-// valor e DESTACA onde clicar. Nunca clica em Salvar — quem confirma no ML é
-// sempre o analista (modo copiloto). "Feito" marca o passo no sistema da GLR.
+// para as campanhas da lista) com o PASSO A PASSO exato de cada ajuste.
+// v1.2 — SÓ MOSTRA: a política do Mercado Livre não permite automação no ADS,
+// então a extensão não clica, não digita e não salva nada na tela do ML (o modo
+// automático e os botões "Preencher" saíram). O analista faz cada passo; o botão
+// "Copiar" só põe o valor na área de transferência. "Feito" marca no sistema da GLR.
 // Tela mapeada em 30/10/2026 (Central de vendedores → Publicidade → Product Ads).
 // ============================================================
 (function () {
   if (window.__glrCopiloto) return;
   window.__glrCopiloto = true;
+  // v1.2: nada de clique, digitação ou salvar na tela do Mercado Livre — só leitura e passo a passo
+  const SO_MOSTRAR = true;
 
   const enviar = m => new Promise(r => { try { chrome.runtime.sendMessage(m, x => r(x || { ok: false, erro: chrome.runtime.lastError?.message })); } catch (e) { r({ ok: false, erro: String(e) }); } });
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -23,7 +27,7 @@
   const campanhasDaLista = () => [...new Set([...document.querySelectorAll('a[href*="/campaigns/"]')].map(a => (a.getAttribute('href').match(/\/campaigns\/(\d+)\/dashboard/) || [])[1]).filter(Boolean))];
   const textoIgual = (sel, txt, raiz = document) => fundo(raiz, sel).find(e => e.textContent.trim() === txt);
   // input controlado pelo React do ML: muda o valor pelo setter nativo e avisa a página
-  function digitar(el, valor) {
+  function digitar(el, valor) { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, String(valor));
     el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -70,13 +74,13 @@
   }
 
   // ── Ajudantes por tipo de passo (preenche e destaca; não salva) ──
-  async function abrirGaveta(titulo) {
+  async function abrirGaveta(titulo) { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     if (gaveta()) return gaveta();
     const b = lapisDoCartao(titulo); if (!b) return null;
     b.click();
     return aguardar(() => { const g = gaveta(); return g && fundo1(g, 'input') ? g : null; });
   }
-  async function preencherRoas(valor) {
+  async function preencherRoas(valor) { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     const g = await abrirGaveta('ROAS Objetivo'); if (!g) return 'Não achei o botão de editar o ROAS objetivo nesta tela.';
     const fixo = fundo1(g, 'input[type="radio"][value="fixed"]'); if (fixo && !fixo.checked) { fixo.click(); await espera(500); }
     const o = await aguardar(() => { const x = campoDefinirOutro(g); return x.radio ? x : null; }, 3000);
@@ -87,7 +91,7 @@
     destacar(textoIgual('button', 'Salvar', g), 'Confira e clique em Salvar');
     return null;
   }
-  async function preencherOrcamento(valor) {
+  async function preencherOrcamento(valor) { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     const g = await abrirGaveta('Orçamento diário'); if (!g) return 'Não achei o botão de editar o orçamento nesta tela.';
     let campo = fundo1(g, 'input[aria-label="Orçamento diário"]');
     if (!campo) { textoIgual('button', 'Orçamento diário', g)?.click(); campo = await aguardar(() => fundo1(g, 'input[aria-label="Orçamento diário"]'), 3000); }
@@ -107,19 +111,19 @@
   }
   const codigoDaLinha = tr => ((tr?.innerText || '').match(/#\s?((?:MLB)?\d{6,})/) || [])[1] || null;
   const linhaPorCodigo = cod => cod ? fundo(document, 'table tbody tr').find(tr => codigoDaLinha(tr) === cod) : null;
-  function buscarNaTabela(q) {
+  function buscarNaTabela(q) { if (SO_MOSTRAR) return false;
     const busca = fundo1(document, 'input[placeholder^="Procurar por #"]'); if (!busca) return false;
     digitar(busca, q); busca.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })); return true;
   }
   // devolve o código que a linha mostra (#MLB… / família), para achar a mesma linha depois de pausar
-  async function acharLinha(itemId, produto) {
+  async function acharLinha(itemId, produto) { if (SO_MOSTRAR) return false;
     let linha = await aguardar(() => linhaDoAnuncio(itemId, produto), 4000);
     // a busca do ML acha pelo código da variação e mostra a linha do produto/catálogo
     if (!linha && buscarNaTabela(String(itemId))) { await espera(3000); const rs = fundo(document, 'table tbody tr').filter(tr => tr.innerText.trim()); linha = linhaDoAnuncio(itemId, produto) || (rs.length === 1 ? rs[0] : null); }
     if (!linha && produto && buscarNaTabela(String(produto).slice(0, 30))) { linha = await aguardar(() => linhaDoAnuncio(itemId, produto), 5000); }
     return linha ? codigoDaLinha(linha) || linha : null;
   }
-  async function mostrarAnuncio(itemId, produto) {
+  async function mostrarAnuncio(itemId, produto) { if (SO_MOSTRAR) return false;
     const k = await acharLinha(itemId, produto);
     const linha = typeof k === 'string' ? linhaPorCodigo(k) : k;
     if (!linha) return `Não achei o anúncio ${itemId}${produto ? ` ("${String(produto).slice(0, 40)}")` : ''} nesta campanha (pode já ter sido pausado ou removido).`;
@@ -127,7 +131,7 @@
     destacar(linha.querySelector('button[aria-label="Acciones del anuncio"]'), 'Clique aqui → Pausar');
     return null;
   }
-  async function mostrarAdicionar(ids) {
+  async function mostrarAdicionar(ids) { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     try { await navigator.clipboard.writeText(ids.join(', ')); } catch (e) {}
     const b = textoIgual('button', 'Adicionar anúncios') || textoIgual('a', 'Adicionar') || textoIgual('button', 'Adicionar');
     return destacar(b, 'Clique aqui e cole os códigos') ? null : 'Não achei o botão "Adicionar anúncios" nesta tela.';
@@ -143,7 +147,7 @@
   const modalMover = () => [...document.querySelectorAll('.ml-ads-tab-move-ads-modal')].find(visivel) || null;
   const fecharModalMover = () => { const b = modalMover() && [...modalMover().querySelectorAll('button')].find(x => x.textContent.trim() === 'Cancelar'); if (b) b.click(); };
   // auto = clica em "Mover anúncios patrocinados" e confere; manual = deixa tudo escolhido e destaca o botão
-  async function moverUm(itemId, d, auto) {
+  async function moverUm(itemId, d, auto) { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     const destino = String(d.destino_id || ''), pausa = auto ? humano : () => espera(400);
     const k = await acharLinha(itemId, d.produto);
     const linhaDe = () => typeof k === 'string' ? linhaPorCodigo(k) : k;
@@ -180,7 +184,7 @@
     buscarNaTabela(''); // limpa a busca para o próximo passo
     return ok ? null : `Movi, mas a tabela ainda não mostra o anúncio em ${d.destino || 'na campanha de destino'} — confira.`;
   }
-  function mostrarEstado() {
+  function mostrarEstado() { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     const t = textoIgual('span,div,p', 'Estado:');
     const sw = t ? t.parentElement.querySelector('input[type="checkbox"],button[role="switch"],[class*="switch"]') : null;
     return destacar(sw || t, 'Desligue aqui para pausar a campanha') ? null : 'Não achei o controle de estado da campanha.';
@@ -193,7 +197,7 @@
   const podeAuto = d => !!d && AUTO.has(d.acao) && (d.acao !== 'mover_produto' || /^\d+$/.test(String(d.destino_id || '')));
   const MAX_AUTO = 8, FILA = 'glr_fila_auto';
   const humano = (a = 4000, b = 9000) => espera(a + Math.random() * (b - a));
-  async function digitarDevagar(el, valor) {
+  async function digitarDevagar(el, valor) { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     el.focus(); digitar(el, ''); await espera(300);
     let atual = '';
     for (const ch of String(valor)) { atual += ch; digitar(el, atual); await espera(90 + Math.random() * 140); }
@@ -205,7 +209,7 @@
     const m = t.match(/\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?/);
     return m ? parseFloat(m[0].replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')) : null;
   }
-  async function salvarGaveta() {
+  async function salvarGaveta() { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     const g = gaveta(), b = g && textoIgual('button', 'Salvar', g); if (!b) return 'Não achei o botão Salvar.';
     await humano(1500, 3500); b.click();
     if (!(await aguardar(() => !gaveta(), 8000))) return 'Cliquei em Salvar, mas a edição não fechou — o ML pode ter mostrado um aviso. Confira a tela.';
@@ -221,7 +225,7 @@
   }
   const cancelarEdicao = () => { const g = gaveta(); const b = g && textoIgual('button', 'Cancelar', g); if (b) b.click(); };
   const porqueSemEdicao = titulo => `Não achei a edição do ${titulo} (lápis ${lapisDoCartao(titulo) ? 'encontrado' : 'não encontrado'}; janela de edição ${gaveta() ? 'aberta' : 'não abriu'}).`;
-  async function autoRoas(valor) {
+  async function autoRoas(valor) { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     const g = await abrirGaveta('ROAS Objetivo'); if (!g) return porqueSemEdicao('ROAS Objetivo');
     await humano(1200, 2500);
     const fixo = fundo1(g, 'input[type="radio"][value="fixed"]'); if (fixo && !fixo.checked) { fixo.click(); await humano(800, 1600); }
@@ -233,7 +237,7 @@
     const lido = valorDoCartao('ROAS Objetivo');
     return lido != null && Math.abs(lido - valor) < 0.06 ? null : `Salvei, mas o cartão mostra ${lido ?? '?'}x em vez de ${xv(valor)} — confira.`;
   }
-  async function autoOrcamento(valor) {
+  async function autoOrcamento(valor) { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     const g = await abrirGaveta('Orçamento diário'); if (!g) return porqueSemEdicao('Orçamento diário');
     await humano(1200, 2500);
     if (!fundo1(g, 'input[aria-label="Orçamento diário"]')) { textoIgual('button', 'Orçamento diário', g)?.click(); await humano(800, 1500); }
@@ -244,7 +248,7 @@
     const lido = valorDoCartao('Orçamento diário');
     return lido != null && Math.abs(lido - valor) < 0.6 ? null : `Salvei, mas o cartão mostra R$ ${lido ?? '?'} em vez de ${R$(valor)} — confira.`;
   }
-  async function autoPausarAnuncio(itemId, produto) {
+  async function autoPausarAnuncio(itemId, produto) { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     const k = await acharLinha(itemId, produto);
     const linhaDe = () => typeof k === 'string' ? linhaPorCodigo(k) : k;
     if (!linhaDe()) return `Não achei o anúncio ${itemId}${produto ? ` ("${String(produto).slice(0, 40)}")` : ''} nesta campanha.`;
@@ -263,7 +267,7 @@
   }
   const lerFila = async () => (await chrome.storage.local.get(FILA))[FILA] || null;
   const gravarFila = f => chrome.storage.local.set({ [FILA]: f });
-  async function iniciarAuto() {
+  async function iniciarAuto() { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     const adv = new URLSearchParams(location.search).get('advertiser_id') || '';
     const chaveRisco = `glr_risco_${adv || 'sem_anunciante'}`;
     if (!(await chrome.storage.local.get(chaveRisco))[chaveRisco]) {
@@ -278,7 +282,7 @@
     rodar();
   }
   let rodando = false;
-  async function rodar() {
+  async function rodar() { if (SO_MOSTRAR) return 'A extensão só mostra o passo a passo (política do Mercado Livre).';
     if (rodando) return; rodando = true;
     try {
       let f = await lerFila();
@@ -328,6 +332,26 @@
   const PQ = d => d.acao === 'roas_target' || d.acao === 'orcamento' ? `${d.acos_30d != null ? `ACOS ${pct(d.acos_30d)} · TACOS da campanha ${pct(d.tacos_campanha)} (30 dias, como no ML)` : `ACOS da campanha ${pct(d.acos)}${d.janela_dias ? ` em ${d.janela_dias} dias` : ''}`}${d.share ? ` · perde ${Math.round((d.acao === 'orcamento' ? d.share.orcamento : d.share.classificacao) * 100)}% das impressões por ${d.acao === 'orcamento' ? 'orçamento' : 'classificação'}` : ''}`
     : d.acao === 'retirar_produto' ? `gastou ${R$(d.gasto)}${d.janela_dias ? ` em ${d.janela_dias} dias` : ''} ${d.unidades ? `e vendeu ${d.unidades} un.` : 'sem venda pelo ADS'}`
     : d.acao === 'mover_produto' ? `ACOS ${pct(d.acos)} · gastou ${R$(d.gasto)}` : '';
+  // ── Passo a passo exato (só mostra; quem faz no ML é o analista) ──
+  const num = v => String(Math.round((+v || 0) * 100) / 100).replace('.', ',');
+  const copiar = (v, rot) => v == null || v === '' ? '' : `<button class="cp" data-copiar="${esc(v)}" title="Copia para colar no Mercado Ads">Copiar ${esc(rot || v)}</button>`;
+  const reavaliar = () => { const d = new Date(Date.now() + 7 * 864e5); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`; };
+  const codigos = d => (d.item_ids || []).map(String);
+  function passosML(d) {
+    const abrir = n => `Abra a campanha <b>${esc(n || 'indicada')}</b>${n ? '' : ''}`;
+    const ids = codigos(d), idsTxt = ids.map(i => `<b>${esc(i)}</b>`).join(', ');
+    switch (d.acao) {
+      case 'roas_target': return [abrir(d.campanha), 'No cartão <b>ROAS objetivo</b>, clique no lápis ✎', `Marque <b>Definir outro</b> e troque <b>${num(d.de)}</b> por <b>${num(d.para)}</b> ${copiar(num(d.para))}`, 'Clique em <b>Salvar</b>'];
+      case 'orcamento': return [abrir(d.campanha), 'No cartão <b>Orçamento diário</b>, clique no lápis ✎', `Marque <b>Orçamento fixo</b> e troque <b>${num(d.de)}</b> por <b>${num(d.para)}</b> ${copiar(num(d.para))}`, 'Clique em <b>Salvar</b>'];
+      case 'retirar_produto': return [abrir(d.campanha), `Na tabela de anúncios, procure ${idsTxt || 'o anúncio'} ${copiar(ids[0])}`, 'Na linha dele, clique no <b>⋮</b> → <b>Pausar</b> (não exclua: o histórico fica)'];
+      case 'mover_produto': return ['Vá em <b>Product Ads → Anúncios patrocinados</b>', `Procure ${idsTxt || 'o anúncio'} ${copiar(ids[0])} e marque a caixa da linha`, d.destino_id ? `Clique em <b>Mais ações → Mover para uma campanha</b> → escolha <b>${esc(d.destino || '')}</b> → <b>Mover anúncios patrocinados</b> (não precisa pausar antes)` : 'Clique em <b>Mais ações → Criar campanha</b> e crie a campanha conservadora indicada'];
+      case 'adicionar_produto': return [abrir(d.destino || d.campanha), 'Clique em <b>Adicionar anúncios</b>', `Cole ${ids.length > 1 ? 'os códigos' : 'o código'} ${idsTxt} ${copiar(ids.join(' '), ids.length > 1 ? 'códigos' : ids[0])} e confirme`, 'Confira o estoque antes'];
+      case 'pausar': return [abrir(d.campanha), 'Desligue a chave <b>Estado</b> no topo da campanha'];
+      case 'informativa': return ['Não mexa no ROAS nem no orçamento desta campanha', 'Revise os anúncios dela: fotos, título, ficha técnica, frete e preço (buy box)'];
+    }
+    return null;
+  }
+  const listaPassos = (passos, final = true) => !passos ? '' : `<ol class="ps">${passos.map(x => `<li>${x}</li>`).join('')}</ol>${final ? `<div class="dep">Depois: clique em <b>Feito</b> aqui e não mexa mais nesta campanha até <b>${reavaliar()}</b> — o Mercado Ads leva ~7 dias para mostrar o efeito.</div>` : ''}`;
   const impacto = d => !d.impacto ? '' : `<span class="imp ${d.impacto_tipo === 'economia' ? 'eco' : ''}">${d.impacto_tipo === 'economia' ? '−' : '+'}${R$(d.impacto)}/sem</span>`;
 
   // o que o botão de ajuda faz em cada passo, na campanha aberta
@@ -390,7 +414,7 @@
     const topo = `<div class="passo camp"><div class="topo">${chipV(vc.v)}<div class="acao"><b>Esta campanha</b> · ROAS obj. ${xv(a.cab.roasObj)} · ${a.cab.orc ? R$(a.cab.orc) + '/dia' : '—'}${a.cab.diag ? ` · ${esc(a.cab.diag.toLowerCase())}` : ''}</div></div>
       <div class="pq">${esc(vc.motivo)}</div><div class="como">${esc(vc.acao)}</div>${extrasIA(vc)}
       <div class="pq">Soma dos anúncios: invest. ${R$(a.tot.invest)} · receita ${R$(a.tot.receita)} · ACOS ${pct(acosT)} · ${n0(a.tot.vendas)} vendas · CTR ${a.tot.imp ? pct(a.tot.cli / a.tot.imp * 100) : '—'}</div>
-      ${vc.novoRoas || vc.novoOrc ? `<div class="bts">${vc.novoRoas ? `<button class="pri" data-pre-roas="${vc.novoRoas}">Preencher ROAS ${xv(vc.novoRoas)}</button>` : ''}${vc.novoOrc ? `<button class="pri" data-pre-orc="${vc.novoOrc}">Preencher orçamento ${R$(vc.novoOrc)}</button>` : ''}</div>${st.msg.camp ? `<div class="msg ${st.msg.camp.erro ? 'erro' : ''}">${esc(st.msg.camp.texto)}</div>` : ''}` : ''}</div>
+      ${pacoteAqui() ? `<div class="dica">O agente GLR tem <b>${pacoteAqui()}</b> passo(s) para esta campanha: siga a aba <b>Pacote GLR</b> (usa a meta e o TACOS do cliente). Esta análise é só a leitura da tela.</div>` : vc.novoRoas ? `<div class="como">${listaPassos(passosML({ acao: 'roas_target', campanha: 'aberta', de: a.cab.roasObj, para: vc.novoRoas }))}</div>` : vc.novoOrc ? `<div class="como">${listaPassos(passosML({ acao: 'orcamento', campanha: 'aberta', de: a.cab.orc, para: vc.novoOrc }))}</div>` : ''}</div>
       <div class="pq0">${a.itens.length} anúncio(s)${a.fonte === 'api' ? ` · 30 dias até ${a.ate.split('-').reverse().slice(0, 2).join('/')}` : ` desta página · últimos ${a.dias} dias`} · ${a.meta ? `meta de ACOS ${pct(a.meta)}` : 'sem meta'}</div>`;
     if (st.expert) {
       return `${cfg}${topo}<div class="tw"><table><thead><tr><th>Anúncio</th><th>Veredito</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPC</th><th>Invest.</th><th>Receita</th><th>ACOS</th></tr></thead><tbody>${a.itens.map(x => `<tr title="${esc(x.motivo + ' ' + x.acao)}"><td>${esc((x.nome || '').slice(0, 30))}<br><small>${esc(x.id || '')}</small></td><td>${chipV(x.v)}</td><td>${n0(x.imp.v)}</td><td>${n0(x.cli.v)}</td><td>${x.ctr != null ? pct(x.ctr) : '—'}</td><td>${x.conv != null ? pct(x.conv) : '—'}</td><td>${x.cpc.v != null ? R$(x.cpc.v) : '—'}</td><td>${R$(x.invest.v)}</td><td>${R$(x.receita.v)}</td><td>${pct(x.acos.v)}</td></tr>`).join('')}</tbody></table></div>`;
@@ -399,10 +423,11 @@
       <div class="topo">${chipV(x.v)}<div class="acao">${esc((x.nome || '').slice(0, 70))} <small>${esc(x.id || '')}</small></div></div>
       <div class="pq">${esc(x.motivo)}</div>${x.v !== 'manter' ? `<div class="como">${esc(x.acao)}</div>` : ''}${(x.prob || []).length ? `<div class="prob">${x.prob.map(p => `<span>${esc(p)}</span>`).join('')}</div>` : ''}
       <div class="pq">${n0(x.imp.v)} impr. · ${n0(x.cli.v)} cliques · CTR ${x.ctr != null ? pct(x.ctr) : '—'} · conv. ${x.conv != null ? pct(x.conv) : '—'} · invest. ${R$(x.invest.v)}${dl(x.invest.d)} · ACOS ${pct(x.acos.v)}</div>
-      ${x.id && ['retirar', 'mover'].includes(x.v) ? `<div class="bts"><button data-mostrar="${esc(x.id)}" data-nome="${esc((x.nome || '').slice(0, 60))}">Mostrar o anúncio</button></div>` : ''}
+      ${x.id && ['retirar', 'mover'].includes(x.v) && !pacoteAqui() ? `<div class="como">${listaPassos(passosML(x.v === 'retirar' ? { acao: 'retirar_produto', campanha: 'aberta', item_ids: [x.id] } : { acao: 'mover_produto', item_ids: [x.id] }), false)}</div>` : ''}
       ${st.msg['ad:' + x.id] ? `<div class="msg ${st.msg['ad:' + x.id].erro ? 'erro' : ''}">${esc(st.msg['ad:' + x.id].texto)}</div>` : ''}
     </div>`).join('')}`;
   }
+  const pacoteAqui = () => { const aqui = campanhaAberta(); return aqui && !st.erro ? st.itens.filter(l => String(l.dados?.campaign_id) === aqui || String(l.dados?.destino_id) === aqui).length : 0; };
   const atencao = () => (st.an?.itens || []).filter(x => ['corrigir', 'conter', 'retirar', 'mover', 'avaliar'].includes(x.v)).length;
 
   function render() {
@@ -414,22 +439,21 @@
       : st.carregando ? '<div class="vazio">Buscando o pacote do dia…</div>'
       : !lista.length ? `<div class="vazio">Nada pendente ${aqui ? 'para esta campanha' : 'para as campanhas desta tela'}. ✓</div>`
       : lista.map((l, i) => {
-          const d = l.dados || {}, mover = d.acao === 'mover_produto', aj = aqui || mover ? ajudaDe(l, aqui) : null, m = st.msg[l.id];
+          const d = l.dados || {}, mover = d.acao === 'mover_produto', m = st.msg[l.id];
           return `<div class="passo">
             <div class="topo"><span class="n">${i + 1}</span><div class="acao">${(ACAO[d.acao] || (() => esc(l.titulo)))(d)}</div>${impacto(d)}</div>
             ${PQ(d) ? `<div class="pq">${PQ(d)}</div>` : ''}
-            ${aqui || mover ? `<div class="como">${comoFazer(d, aqui)}</div>` : ''}
+            <div class="como">${listaPassos(passosML(d))}</div>
             ${!aqui ? `<div class="pq">Campanha: <b>${esc(d.campanha || '—')}</b></div>` : ''}
             ${m ? `<div class="msg ${m.erro ? 'erro' : ''}">${esc(m.texto)}</div>` : ''}
             <div class="bts">
               ${!aqui && !mover && d.campaign_id ? `<button class="pri" data-abrir="${esc(d.campaign_id)}">Abrir a campanha</button>` : ''}
-              ${aj ? `<button class="pri" data-ajuda="${esc(l.id)}">${esc(aj.rot)}</button>` : ''}
               <button data-feito="${esc(l.id)}">Feito</button>
               <button class="x" data-desc="${esc(l.id)}" title="Descartar">✕</button>
             </div>
           </div>`;
         }).join('');
-    const f = st.auto, nAuto = lista.filter(l => podeAuto(l.dados)).length;
+    const f = null, nAuto = 0; // v1.2: sem modo automático (política do Mercado Livre)
     const barra = f && f.status === 'rodando' ? `<div class="auto on">Aplicando sozinho, no ritmo de uma pessoa: passo <b>${Math.min(f.i + 1, f.passos.length)} de ${f.passos.length}</b>. Não feche esta aba. <button class="x" data-auto-parar="1">Parar</button></div>`
       : f && f.status === 'parado' ? `<div class="auto erro">Parou: ${esc(f.erro || '')} (${f.i} de ${f.passos.length} aplicados) <button data-auto-fechar="1">Ok</button></div>`
       : f && f.status === 'concluido' ? `<div class="auto ok">${f.passos.length - (f.pulados || []).length} passo(s) aplicados e conferidos ✓${(f.pulados || []).length ? `<br>${f.pulados.length} pulado(s), sem mexer: ${esc(f.pulados.join(' · '))}` : ''} <button data-auto-fechar="1">Ok</button></div>`
@@ -450,6 +474,8 @@
       .pq{color:#5b6070;font-size:12px;margin:3px 0 0 28px} .como{font-size:12px;margin:5px 0 0 28px;color:#2b2f3c}
       .msg{font-size:12px;margin:6px 0 0 28px;color:#1b6b3a} .msg.erro,.vazio.erro{color:#c0392b}
       .bts{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 0 28px}
+      .ps{margin:2px 0 0;padding-left:18px} .ps li{margin:3px 0} .dep{font-size:11.5px;color:#5b6070;background:#f6f7fa;border-radius:8px;padding:5px 8px;margin-top:5px}
+      button.cp{font-size:11px;padding:1px 7px;margin-left:3px;border-color:#cfc9ff;color:#3b32c4}
       button{font:inherit;font-size:12px;border:1px solid #d6d9e2;background:#fff;border-radius:8px;padding:5px 10px;cursor:pointer;color:#1f2330}
       button.pri{background:#5b4ff0;border-color:#5b4ff0;color:#fff;font-weight:600} button.x{color:#8a8fa0}
       button:focus-visible{outline:2px solid #5b4ff0;outline-offset:2px}
@@ -471,24 +497,22 @@
     <div class="p ${st.aberto ? '' : 'min'} ${st.expert && st.aba === 'analise' && st.aberto ? 'exp' : ''}">
       <div class="cab" data-alternar="1"><b>GLR Copiloto ADS</b><span class="q">${atencao() + (st.erro ? 0 : lista.length)}</span></div>
       ${st.aberto ? `<div class="abas"><button class="${st.aba === 'analise' ? 'on' : ''}" data-aba="analise">Análise${atencao() ? ` <i>${atencao()}</i>` : ''}</button><button class="${st.aba === 'glr' ? 'on' : ''}" data-aba="glr">Pacote GLR${!st.erro && lista.length ? ` <i>${lista.length}</i>` : ''}</button></div>
-        <div class="lista">${st.aba === 'analise' ? corpoAnalise() : barra + corpo}</div><div class="rod">${st.aba === 'analise' ? 'Lê só a tela do Mercado Ads, no seu navegador. Sugestões: quem decide e salva no ML é você.' : 'A extensão preenche e destaca; quem salva no ML é você.'} · v${chrome.runtime.getManifest?.().version || ''}</div>` : ''}
+        <div class="lista">${st.aba === 'analise' ? corpoAnalise() : barra + corpo}</div><div class="rod">${st.aba === 'analise' ? 'Lê só a tela do Mercado Ads, no seu navegador. Sugestões: quem decide e salva no ML é você.' : 'Só mostra o passo a passo: quem faz e salva no ML é você (política do Mercado Livre).'} · v${chrome.runtime.getManifest?.().version || ''}</div>` : ''}
     </div>`;
   }
 
   raiz.addEventListener('click', async e => {
-    const b = e.target.closest('[data-alternar],[data-abrir],[data-ajuda],[data-feito],[data-desc],[data-auto-iniciar],[data-auto-parar],[data-auto-fechar],[data-aba],[data-expert],[data-ord],[data-pre-roas],[data-pre-orc],[data-mostrar]'); if (!b) return;
+    const b = e.target.closest('[data-alternar],[data-abrir],[data-feito],[data-desc],[data-aba],[data-expert],[data-ord],[data-copiar]'); if (!b) return;
+    if (b.dataset.copiar != null) { try { await navigator.clipboard.writeText(b.dataset.copiar); const t = b.textContent; b.textContent = 'Copiado ✓'; setTimeout(() => { b.textContent = t; }, 1500); } catch (err) { b.textContent = 'Não copiou'; } return; }
     if (b.dataset.alternar) { st.aberto = !st.aberto; return render(); }
     if (b.dataset.aba) { st.aba = b.dataset.aba; chrome.storage.local.set({ glr_aba: st.aba }); return render(); }
     if (b.dataset.expert) { st.expert = !st.expert; chrome.storage.local.set({ glr_expert: st.expert }); return render(); }
     if (b.dataset.ord) { const k = b.dataset.ord; st.ordem = st.ordem === `${k}:d` ? `${k}:a` : st.ordem === `${k}:a` ? 'prior' : `${k}:d`; return render(); }
-    if (b.dataset.preRoas || b.dataset.preOrc) { limparDestaques(); b.disabled = true; const erro = await (b.dataset.preRoas ? preencherRoas(+b.dataset.preRoas) : preencherOrcamento(+b.dataset.preOrc)).catch(err => String(err.message || err)); st.msg.camp = erro ? { texto: erro, erro: true } : { texto: 'Pronto: confira o valor destacado em roxo e clique em Salvar no ML.' }; return render(); }
-    if (b.dataset.mostrar) { limparDestaques(); const ok = await mostrarAnuncio(b.dataset.mostrar, b.dataset.nome).catch(() => false); st.msg['ad:' + b.dataset.mostrar] = ok ? { texto: 'Anúncio destacado: use o ⋮ da linha → Pausar (ou Mover em Anúncios patrocinados).' } : { texto: 'Não achei o anúncio nesta página da tabela.', erro: true }; return render(); }
-    if (b.dataset.autoIniciar) { b.disabled = true; return iniciarAuto(); }
-    if (b.dataset.autoParar) return pararAuto();
-    if (b.dataset.autoFechar) { await chrome.storage.local.remove(FILA); st.auto = null; st.chave = ''; return carregar(); }
+    if (false && (b.dataset.preRoas || b.dataset.preOrc)) { limparDestaques(); b.disabled = true; const erro = await (b.dataset.preRoas ? preencherRoas(+b.dataset.preRoas) : preencherOrcamento(+b.dataset.preOrc)).catch(err => String(err.message || err)); st.msg.camp = erro ? { texto: erro, erro: true } : { texto: 'Pronto: confira o valor destacado em roxo e clique em Salvar no ML.' }; return render(); }
+    if (false && b.dataset.mostrar) { limparDestaques(); const ok = await mostrarAnuncio(b.dataset.mostrar, b.dataset.nome).catch(() => false); st.msg['ad:' + b.dataset.mostrar] = ok ? { texto: 'Anúncio destacado: use o ⋮ da linha → Pausar (ou Mover em Anúncios patrocinados).' } : { texto: 'Não achei o anúncio nesta página da tabela.', erro: true }; return render(); }
     if (b.dataset.abrir) { location.href = urlCampanha(b.dataset.abrir, new URLSearchParams(location.search).get('advertiser_id')); return; }
     const l = st.itens.find(x => String(x.id) === String(b.dataset.ajuda || b.dataset.feito || b.dataset.desc)); if (!l) return;
-    if (b.dataset.ajuda) {
+    if (false && b.dataset.ajuda) {
       limparDestaques();
       const aj = ajudaDe(l, campanhaAberta()); if (!aj) return;
       b.disabled = true;
@@ -565,7 +589,8 @@
 
   render();
   // fila do modo automático continua sozinha depois de abrir a próxima campanha
-  lerFila().then(f => { st.auto = f; render(); if (f?.status === 'rodando') setTimeout(rodar, 3000); });
+  // v1.2: o modo automático saiu — uma fila antiga que tenha ficado salva é apagada sem rodar
+  chrome.storage.local.remove(FILA).catch(() => {});
   // o painel do ML é uma página de uma tela só: acompanha a troca de campanha pela URL e a lista que carrega
   let ultimaUrl = '';
   setInterval(() => { if (location.href !== ultimaUrl) { ultimaUrl = location.href; st.chave = ''; st.anAssin = ''; st.msg = {}; limparDestaques(); } analisarTela(); carregar(); }, 1500);

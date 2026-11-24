@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "GLR Copiloto ADS",
-  "version": "1.1.0",
-  "description": "Copiloto do Mercado Ads: lê a tela de Product Ads e dá veredito por campanha e por anúncio (escalar, conter, retirar…) com a ação sugerida. Funciona sem login; com o login da GLR mostra também o pacote do dia.",
+  "version": "1.2.0",
+  "description": "Copiloto do Mercado Ads (só mostra): lê a tela de Product Ads e dá o veredito por campanha e por anúncio com o passo a passo exato do que fazer. Não clica, não digita e não salva nada no Mercado Livre. Com o login da GLR, mostra o pacote do dia do agente.",
   "permissions": [
     "storage"
   ],
