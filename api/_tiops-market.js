@@ -1,7 +1,7 @@
 const catalog=require('../data/tiops-market.json');
-async function call(key,action,params={}) {
+async function call(key,action,params={},ms=25000) {
  if(!key)throw Error('Chave do Tiops não configurada no servidor.');
- const r=await fetch('https://mcp.tiops.com.br',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key},body:JSON.stringify({action,params}),signal:AbortSignal.timeout(25000)});
+ const r=await fetch('https://mcp.tiops.com.br',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key},body:JSON.stringify({action,params}),signal:AbortSignal.timeout(ms)});
  const j=await r.json().catch(()=>null);
  if(!r.ok||!j||j.error||j.status&&j.status!==200)throw Error(String(j?.error||j?.message||`Tiops indisponível (HTTP ${r.status}).`).slice(0,500));
  return j;
@@ -45,8 +45,47 @@ async function comConta(key,action,params,contas){
  throw Error(ehErroConta(ultimo)?'O Mercado Livre recusou o acesso das contas conectadas (token vencido). Reconecte uma conta do ML no Tiops ou tente com outro cliente.':String(ultimo?.message||ultimo));
 }
 const corta=(t,n)=>String(t||'').slice(0,n);
+// ── Concorrência por link: lê o anúncio de qualquer vendedor (get_item_other_seller) ──
+// Aceita link do ML (anúncio, /up/ com item_id no filtro, /p/ com wid) ou o código MLB…
+function idDoLink(t){
+ t=String(t||'').trim();if(!t)return null;
+ const forte=t.match(/item_id(?:%3A|:)(MLB\d{6,})/i)||t.match(/[?&]wid=(MLB\d{6,})/i);
+ if(!forte&&/\/(p|up)\/MLBU?\d+/i.test(t))return null; // link de catálogo/produto: vai pelo link inteiro
+ const m=t.match(/item_id(?:%3A|:)(MLB\d{6,})/i)||t.match(/[?&]wid=(MLB\d{6,})/i)||t.match(/\b(MLB)-?(\d{6,})\b/i);
+ if(!m)return null;
+ return m[2]?`MLB${m[2]}`:m[1].toUpperCase();
+}
+const num=v=>{const n=typeof v==='number'?v:parseFloat(String(v??'').replace(/\./g,'').replace(',','.'));return Number.isFinite(n)?n:null;};
+function vendidosNum(t){const s=String(t||'').toLowerCase().replace(/\s/g,'');const m=s.match(/([\d.,]+)(mil)?/);if(!m)return null;let n=parseFloat(m[1].replace(/\./g,'').replace(',','.'));if(m[2])n*=1000;return Number.isFinite(n)?Math.round(n):null;}
+async function lerAnuncio(key,link){
+ const id=idDoLink(link);const ehUrl=/^https?:\/\/[^/]*mercadol(ivre|ibre)\.com/i.test(String(link||'').trim());
+ if(!id&&!ehUrl)throw Error('Cole o link de um anúncio do Mercado Livre ou o código (ex.: MLB1234567890).');
+ const params=id?{item_id:id,timeout_s:45}:{url:String(link).trim().slice(0,800),timeout_s:45};
+ let r;
+ for(let t=0;t<2;t++){try{r=await call(key,'get_item_other_seller',params,55000);break;}catch(e){if(t||!/intermit|504|indispon|timeout|aborted/i.test(String(e.message)))throw Error(/intermit|504|indispon|timeout|aborted/i.test(String(e.message))?'O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos.':e.message);}}
+ const d=r.data||r;
+ if(d.disponibilidade==='intermitente'||!d.titulo)throw Error('O Mercado Livre não respondeu a leitura deste anúncio agora. Tente de novo em alguns minutos.');
+ const ficha=d.ficha_tecnica&&typeof d.ficha_tecnica==='object'?d.ficha_tecnica:{};
+ const preco=num(d.preco),orig=num(d.preco_original);
+ return {id:id||idDoLink(d.url),link:d.url||link,titulo:corta(d.titulo,200),preco,preco_original:orig,desconto:orig&&preco&&orig>preco?Math.round((1-preco/orig)*100):null,
+  vendedor:corta(d.vendedor||d.vendedor_apelido,80),vendedor_id:d.vendedor_id?String(d.vendedor_id):null,vendedor_url:d.vendedor_url||null,loja_oficial:!!d.vendedor_tem_loja,
+  reputacao:d.reputacao?{nivel:d.reputacao.nivel||null,medalha:d.reputacao.power_seller_status||null,vendas_totais:num(d.reputacao.vendas_totais)}:null,
+  nota:num(d.nota),avaliacoes:num(d.avaliacoes),condicao:d.condicao||null,vendidos_txt:d.vendidos||null,vendidos:vendidosNum(d.vendidos),
+  fotos:(Array.isArray(d.imagens)?d.imagens:[]).slice(0,12),n_fotos:Array.isArray(d.imagens)?d.imagens.length:0,
+  ficha:Object.fromEntries(Object.entries(ficha).slice(0,40).map(([k,v])=>[corta(k,60),corta(v,120)])),n_atributos:Object.keys(ficha).length,
+  descricao:corta(d.descricao,600),tam_descricao:String(d.descricao||'').length};
+}
+
 async function pesquisar(key,tipo,dados={},contas=[]){
  const em=new Date().toISOString();
+ if(tipo==='link'||tipo==='comparar'){
+  const links=[...new Set((Array.isArray(dados.links)?dados.links:[dados.link]).map(x=>String(x||'').trim()).filter(Boolean))].slice(0,4);
+  if(!links.length)throw Error('Digite o link de um anúncio do Mercado Livre.');
+  const lidos=await Promise.allSettled(links.map(l=>lerAnuncio(key,l)));
+  const anuncios=lidos.map((x,i)=>x.status==='fulfilled'?x.value:{link:links[i],erro:String(x.reason?.message||x.reason).slice(0,300)});
+  if(!anuncios.some(a=>!a.erro))throw Error(anuncios[0].erro);
+  return {em,anuncios};
+ }
  if(tipo==='categorias'){
   const termo=corta(dados.termo,120).trim();if(termo.length<2)throw Error('Digite o produto ou a categoria.');
   const {r}=await comConta(key,'search_categories',{q:termo},contas);const d=r.data||r;

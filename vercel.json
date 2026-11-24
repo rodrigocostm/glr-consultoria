@@ -19,6 +19,9 @@
     "api/anuncio-seo.js": {
       "maxDuration": 120
     },
+    "api/tiops-market.js": {
+      "maxDuration": 120
+    },
     "api/agente-cron.js": {
       "maxDuration": 300
     },
