@@ -504,7 +504,12 @@ Router.register('agente-ml', (params, el) => {
   // Estratégia da conta escrita pelo especialista em Mercado Ads na última análise
   function quadroEspecialista(id) {
     const l = state.logs.find(x => String(x.conta_id) === String(id) && x.dados?.especialista);
-    if (!l || (!l.dados.estrategia && !(l.dados.esperar || []).length)) return '';
+    if (l && l.dados.erro && l.dados.fonte === 'regra') {
+      const semCredito = /credit balance|billing/i.test(l.dados.erro);
+      return `<div class="aml-espq" style="border-color:var(--red);background:color-mix(in srgb,var(--red) 7%,var(--bg-card))"><div class="aml-espq-t">Especialista Mercado Ads sem IA na última análise</div>
+        <div class="aml-espq-x">${semCredito ? 'A conta da API da Anthropic está <b>sem crédito</b>: as sugestões abaixo saíram só das regras, sem o plano por campanha. Recarregue em console.anthropic.com → Plans &amp; Billing e clique em Analisar agora.' : `A IA não respondeu (${h(String(l.dados.erro).slice(0, 160))}): as sugestões abaixo saíram só das regras.`}</div></div>`;
+    }
+    if (!l || (!l.dados.estrategia && !(l.dados.esperar || []).length && !(l.dados.planos || []).length)) return '';
     const quando = new Date(l.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const planos = l.dados.planos || [], br = iso => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '';
     const parados = planos.filter(p => p.situacao === 'nao_mexer');
