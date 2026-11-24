@@ -152,6 +152,8 @@
   // selo colado na linha da tabela do ML (refeito a cada leitura)
   function selo(tr, v, titulo) {
     if (!tr) return;
+    // linha com passo do agente GLR: só ele fala (evita 'Escalar' e 'Pausar' juntos na mesma linha)
+    if (tr.querySelector('.glr-acao')) { tr.querySelector('.glr-selo')?.remove(); return; }
     let s = tr.querySelector('.glr-selo');
     const [rot, cor, fundo] = VER[v] || VER.manter;
     if (!s) { s = document.createElement('span'); s.className = 'glr-selo'; const alvo = tr.querySelector('a[href*="/campaigns/"]') || tr.children[1]; if (!alvo) return; alvo.insertAdjacentElement('afterend', s); }

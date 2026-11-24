@@ -615,10 +615,13 @@
     : d.acao === 'adicionar_produto' ? `Adicionar ${(d.item_ids || []).length || ''} anúncio(s)`
     : d.acao === 'informativa' ? 'Melhorar os anúncios' : '';
   const corAcao = d => ['retirar_produto', 'pausar'].includes(d.acao) || (d.acao === 'roas_target' && +d.para > +d.de) || (d.acao === 'orcamento' && +d.para < +d.de) ? ['#b42318', '#fdecea'] : ['#0f7a43', '#e7f7ee'];
+  const motivoDe = l => { const t = String(l.titulo || '').toLowerCase();
+    return /sem estoque|estoque/.test(t) ? 'sem estoque' : /conservadora/.test(t) ? 'ACOS alto: separar' : /sem retorno|sem venda|gasta/.test(t) ? 'gasta sem vender' : /catálogo|buy box/.test(t) ? 'sem buy box' : ''; };
   function seloGLR(tr, textos, cor, titulo) {
     if (!tr) return;
     let s = tr.querySelector('.glr-acao');
     const txt = 'GLR: ' + textos.join(' · ');
+    tr.querySelector('.glr-selo')?.remove(); // só a instrução do agente nesta linha
     if (!s) { s = document.createElement('span'); s.className = 'glr-acao'; const alvo = tr.querySelector('.glr-selo') || tr.querySelector('a[href*="/campaigns/"]') || tr.children[1] || tr.children[0]; if (!alvo) return; alvo.insertAdjacentElement('afterend', s); }
     if (s.textContent !== txt) s.textContent = txt;
     s.title = titulo || '';
@@ -670,7 +673,7 @@
       if (d.acao === 'retirar_produto' || d.acao === 'mover_produto') {
         for (const id of d.item_ids || []) {
           const tr = linhaDoAnuncio(id, d.produto); if (!tr) continue;
-          seloGLR(tr, [curto(d)], corAcao(d), d.acao === 'retirar_produto' ? 'Clique no ⋮ desta linha → Pausar' : 'Em Anúncios patrocinados: marque a linha → Mais ações → Mover para uma campanha');
+          seloGLR(tr, [curto(d) + (motivoDe(l) ? ` — ${motivoDe(l)}` : '')], corAcao(d), d.acao === 'retirar_produto' ? 'Clique no ⋮ desta linha → Pausar' : 'Em Anúncios patrocinados: marque a linha → Mais ações → Mover para uma campanha');
           if (d.acao === 'retirar_produto') {
             const menu = [...tr.querySelectorAll('button')].find(b => /mais|op[cç][oõ]es|a[cç][oõ]es|menu/i.test(b.getAttribute('aria-label') || '') || b.textContent.trim() === '⋮');
             contornar(menu || tr, 'Clique aqui → Pausar');
