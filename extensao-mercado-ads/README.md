@@ -8,6 +8,15 @@ Copiloto do Mercado Ads. Abre um painel ao lado da tela de **Product Ads** com d
 > Cada ajuste vem com o **passo a passo exato** (onde clicar, de quanto para quanto, Salvar),
 > um botão **Copiar** para o valor e a data para **reavaliar** (~7 dias). Quando o agente GLR tem
 > passo para a campanha aberta, a aba Análise manda seguir o **Pacote GLR** (uma instrução só).
+>
+> **v1.3 — guia na tela.** Sem clicar em nada, a extensão marca a própria tela do Mercado Ads:
+> 1. **Selo em cada linha** (campanha ou anúncio) com o passo do agente GLR e o valor — ex.:
+>    *GLR: ROAS 15 → 17,6* (vermelho = conter/pausar; verde = acelerar).
+> 2. **Onde clicar:** contorno roxo no lápis do cartão a editar (ROAS Objetivo / Orçamento diário),
+>    no ⋮ do anúncio a pausar ou no Estado da campanha; quando a edição abre, um **balão** ao lado
+>    do campo diz o valor (*Troque para 17,6*) e o botão Salvar fica contornado.
+> 3. **Conferência:** depois que você salva, se o cartão mostrar o valor sugerido (ou o anúncio
+>    aparecer pausado), a extensão marca o passo como **Feito** no sistema da GLR sozinha.
 
 - **Análise — funciona sem login e sem o sistema da GLR.** Lê só as tabelas que o próprio
   Mercado Ads mostra na sua sessão (nada sai do navegador, não usa MCP nem API):

@@ -497,7 +497,7 @@
     <div class="p ${st.aberto ? '' : 'min'} ${st.expert && st.aba === 'analise' && st.aberto ? 'exp' : ''}">
       <div class="cab" data-alternar="1"><b>GLR Copiloto ADS</b><span class="q">${atencao() + (st.erro ? 0 : lista.length)}</span></div>
       ${st.aberto ? `<div class="abas"><button class="${st.aba === 'analise' ? 'on' : ''}" data-aba="analise">Análise${atencao() ? ` <i>${atencao()}</i>` : ''}</button><button class="${st.aba === 'glr' ? 'on' : ''}" data-aba="glr">Pacote GLR${!st.erro && lista.length ? ` <i>${lista.length}</i>` : ''}</button></div>
-        <div class="lista">${st.aba === 'analise' ? corpoAnalise() : barra + corpo}</div><div class="rod">${st.aba === 'analise' ? 'Lê só a tela do Mercado Ads, no seu navegador. Sugestões: quem decide e salva no ML é você.' : 'Só mostra o passo a passo: quem faz e salva no ML é você (política do Mercado Livre).'} · v${chrome.runtime.getManifest?.().version || ''}</div>` : ''}
+        <div class="lista">${st.aba === 'analise' ? corpoAnalise() : (st.msg.guia ? `<div class="auto ok">${esc(st.msg.guia.texto)}</div>` : '') + barra + corpo}</div><div class="rod">${st.aba === 'analise' ? 'Lê só a tela do Mercado Ads, no seu navegador. Sugestões: quem decide e salva no ML é você.' : 'Mostra na tela onde clicar e o valor; quem faz e salva é você. Depois de salvar, a extensão confere e marca Feito.'} · v${chrome.runtime.getManifest?.().version || ''}</div>` : ''}
     </div>`;
   }
 
@@ -587,12 +587,112 @@
     render();
   }
 
+  // ── Guia na tela do Mercado Ads (v1.3): só olha e marca visualmente — não clica, não digita ──
+  //  1) selo com a ação e o valor em cada linha (campanha / anúncio) que tem passo do agente GLR
+  //  2) contorno no lápis do cartão a editar e balão "troque para X" ao lado do campo quando a edição abre
+  //  3) conferência: depois que o analista salva, se a tela mostrar o valor sugerido, marca "Feito" sozinho
+  const curto = d => d.acao === 'roas_target' ? `ROAS ${num(d.de)} → ${num(d.para)}`
+    : d.acao === 'orcamento' ? `Orçamento ${R$(d.de)} → ${R$(d.para)}`
+    : d.acao === 'pausar' ? 'Pausar a campanha'
+    : d.acao === 'retirar_produto' ? 'Pausar este anúncio'
+    : d.acao === 'mover_produto' ? `Mover para ${d.destino || 'campanha nova'}`
+    : d.acao === 'adicionar_produto' ? `Adicionar ${(d.item_ids || []).length || ''} anúncio(s)`
+    : d.acao === 'informativa' ? 'Melhorar os anúncios' : '';
+  const corAcao = d => ['retirar_produto', 'pausar'].includes(d.acao) || (d.acao === 'roas_target' && +d.para > +d.de) || (d.acao === 'orcamento' && +d.para < +d.de) ? ['#b42318', '#fdecea'] : ['#0f7a43', '#e7f7ee'];
+  function seloGLR(tr, textos, cor, titulo) {
+    if (!tr) return;
+    let s = tr.querySelector('.glr-acao');
+    const txt = 'GLR: ' + textos.join(' · ');
+    if (!s) { s = document.createElement('span'); s.className = 'glr-acao'; const alvo = tr.querySelector('.glr-selo') || tr.querySelector('a[href*="/campaigns/"]') || tr.children[1] || tr.children[0]; if (!alvo) return; alvo.insertAdjacentElement('afterend', s); }
+    if (s.textContent !== txt) s.textContent = txt;
+    s.title = titulo || '';
+    s.setAttribute('style', `display:inline-block;margin:2px 6px;padding:2px 8px;border-radius:6px;font:700 11.5px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;color:${cor[0]};background:${cor[1]};border:1px solid ${cor[0]}33;vertical-align:middle;white-space:nowrap`);
+  }
+  let marcados = [];
+  function contornar(el, rotulo) {
+    if (!el) return;
+    el.style.setProperty('outline', '3px solid #7c3aed', 'important'); el.style.setProperty('outline-offset', '3px', 'important');
+    if (rotulo) el.setAttribute('title', rotulo);
+    marcados.push(el);
+  }
+  const limparContornos = () => { marcados.forEach(el => { el.style.removeProperty('outline'); el.style.removeProperty('outline-offset'); }); marcados = []; };
+  let balao = null;
+  function mostrarBalao(alvo, html) {
+    if (!alvo) { if (balao) balao.style.display = 'none'; return; }
+    if (!balao) { balao = document.createElement('div'); balao.id = 'glr-balao'; document.documentElement.appendChild(balao); }
+    const r = alvo.getBoundingClientRect();
+    if (balao.innerHTML !== html) balao.innerHTML = html;
+    balao.setAttribute('style', `position:fixed;z-index:2147483645;left:${Math.max(8, Math.min(window.innerWidth - 250, r.right + 10))}px;top:${Math.max(8, r.top - 6)}px;max-width:240px;background:#5b4ff0;color:#fff;font:600 12.5px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;padding:7px 10px;border-radius:9px;box-shadow:0 6px 18px rgba(30,20,90,.3);pointer-events:none`);
+  }
+  const perto = (a, b) => a != null && b != null && Math.abs(a - b) <= Math.max(0.051, Math.abs(b) * 0.01);
+  const conferidos = new Set();
+  async function conferir(l, motivo) {
+    if (conferidos.has(l.id)) return; conferidos.add(l.id);
+    const r = await enviar({ tipo: 'marcar', id: l.id, resultado: 'executado', dados: { ...(l.dados || {}), conferido_na_tela: motivo }, por: 'extensão (conferido na tela do ML)' });
+    if (r?.ok) { st.itens = st.itens.filter(x => x.id !== l.id); st.msg.guia = { texto: `✓ ${curto(l.dados || {})} — conferido na tela e marcado como feito.` }; render(); }
+    else conferidos.delete(l.id);
+  }
+  function guia() {
+    limparContornos();
+    if (st.erro || !st.itens.length) { mostrarBalao(null); return; }
+    const aqui = campanhaAberta();
+    // 1) selos — lista de campanhas
+    if (!aqui) {
+      const porCamp = new Map();
+      for (const l of st.itens) { const d = l.dados || {}; const id = String(d.acao === 'adicionar_produto' ? (d.destino_id || d.campaign_id) : (d.campaign_id || '')); if (!id) continue; if (!porCamp.has(id)) porCamp.set(id, []); porCamp.get(id).push(d); }
+      for (const [id, ds] of porCamp) {
+        const a = document.querySelector(`a[href*="/campaigns/${id}/"]`), tr = a && a.closest('tr');
+        if (tr) seloGLR(tr, ds.map(curto).filter(Boolean), corAcao(ds[0]), 'Passo do agente GLR — abra a campanha para ver onde clicar');
+      }
+      mostrarBalao(null); return;
+    }
+    // dentro da campanha: passos desta campanha
+    const daqui = st.itens.filter(l => String(l.dados?.campaign_id) === aqui || String(l.dados?.destino_id) === aqui);
+    let alvoBalao = null, htmlBalao = '';
+    for (const l of daqui) {
+      const d = l.dados || {};
+      if (d.acao === 'retirar_produto' || d.acao === 'mover_produto') {
+        for (const id of d.item_ids || []) {
+          const tr = linhaDoAnuncio(id, d.produto); if (!tr) continue;
+          seloGLR(tr, [curto(d)], corAcao(d), d.acao === 'retirar_produto' ? 'Clique no ⋮ desta linha → Pausar' : 'Em Anúncios patrocinados: marque a linha → Mais ações → Mover para uma campanha');
+          if (d.acao === 'retirar_produto') {
+            const menu = [...tr.querySelectorAll('button')].find(b => /mais|op[cç][oõ]es|a[cç][oõ]es|menu/i.test(b.getAttribute('aria-label') || '') || b.textContent.trim() === '⋮');
+            contornar(menu || tr, 'Clique aqui → Pausar');
+            if (/pausad/i.test(tr.innerText)) conferir(l, 'anúncio aparece pausado');
+          }
+        }
+        continue;
+      }
+      if (d.acao === 'roas_target' || d.acao === 'orcamento') {
+        const titulo = d.acao === 'roas_target' ? 'ROAS Objetivo' : 'Orçamento diário';
+        const g = gaveta();
+        if (!g) { const atual = valorDoCartao(titulo); if (perto(atual, +d.para)) { conferir(l, `${titulo} na tela: ${num(atual)}`); continue; } }
+        if (g) {
+          const campo = fundo(g, 'input').find(i => visivel(i) && (i.type === 'number' || i.type === 'text' || i.inputMode === 'decimal'));
+          if (campo) { contornar(campo); alvoBalao = campo; htmlBalao = `Troque para <b style="font-size:15px">${num(d.para)}</b><br>${d.acao === 'roas_target' ? 'em <b>Definir outro</b>' : 'em <b>Orçamento fixo</b>'} e clique em <b>Salvar</b>`; }
+          const salvar = [...fundo(g, 'button')].find(b => b.textContent.trim() === 'Salvar' && visivel(b)); contornar(salvar, 'Depois de trocar o valor, clique em Salvar');
+        } else {
+          const lapis = lapisDoCartao(titulo);
+          if (lapis) { contornar(lapis, `Clique aqui: troque ${num(d.de)} por ${num(d.para)}`); if (!alvoBalao) { alvoBalao = lapis; htmlBalao = `Clique no lápis e troque<br><b>${num(d.de)}</b> por <b style="font-size:15px">${num(d.para)}</b>`; } }
+        }
+        continue;
+      }
+      if (d.acao === 'pausar') {
+        const t = textoIgual('span,div,p', 'Estado:');
+        const sw = t ? t.parentElement.querySelector('input[type="checkbox"],button[role="switch"],[class*="switch"]') : null;
+        contornar(sw || t, 'Desligue aqui para pausar a campanha');
+        if (!alvoBalao && (sw || t)) { alvoBalao = sw || t; htmlBalao = 'Desligue o <b>Estado</b> para pausar a campanha'; }
+      }
+    }
+    mostrarBalao(alvoBalao, htmlBalao);
+  }
+
   render();
   // fila do modo automático continua sozinha depois de abrir a próxima campanha
   // v1.2: o modo automático saiu — uma fila antiga que tenha ficado salva é apagada sem rodar
   chrome.storage.local.remove(FILA).catch(() => {});
   // o painel do ML é uma página de uma tela só: acompanha a troca de campanha pela URL e a lista que carrega
   let ultimaUrl = '';
-  setInterval(() => { if (location.href !== ultimaUrl) { ultimaUrl = location.href; st.chave = ''; st.anAssin = ''; st.msg = {}; limparDestaques(); } analisarTela(); carregar(); }, 1500);
+  setInterval(() => { if (location.href !== ultimaUrl) { ultimaUrl = location.href; st.chave = ''; st.anAssin = ''; st.msg = {}; limparDestaques(); } analisarTela(); carregar(); try { guia(); } catch (e) {} }, 1500);
   chrome.storage.onChanged.addListener(m => { if (m.sessao) { st.chave = ''; st.erro = null; carregar(); } });
 })();
