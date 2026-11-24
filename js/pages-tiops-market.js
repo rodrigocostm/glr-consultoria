@@ -159,7 +159,7 @@ Router.register('mercado-tiops', async(params,el)=>{
   </tbody></table></div>
   <p class="mk-sub" style="margin:10px 8px 0">"Vendidos" é o texto que o Mercado Livre mostra na página (arredondado). Visitas e vendas por período são dados privados de cada vendedor.</p></div>`;}
  function desenharLRes(){const box=el.querySelector('#mk-lres');
-  if(lk.busy){const n=lk.links.filter(x=>x.trim()).length;box.innerHTML=`<div class="card mk-espera" role="status"><b>Lendo ${n>1?`${n} anúncios`:'o anúncio'} no Mercado Livre…</b><span class="mk-sub">Leva de 15 a 40 segundos.</span><div class="mk-barra"><i></i></div></div>`;return;}
+  if(lk.busy){const n=lk.links.filter(x=>x.trim()).length;box.innerHTML=`<div class="card mk-espera" role="status"><b>Lendo ${n>1?`${n} anúncios`:'o anúncio'} no Mercado Livre…</b><span class="mk-sub">${n>1?`Um anúncio por vez — cerca de ${n*20} a ${n*35} segundos.`:'Leva de 15 a 40 segundos.'}</span><div class="mk-barra"><i></i></div></div>`;return;}
   if(lk.erro){box.innerHTML=`<div class="card" style="padding:16px"><div class="mk-erro" style="padding:0">${h(lk.erro)}</div></div>`;return;}
   if(!lk.res){box.innerHTML='';return;}
   const as=lk.res.anuncios;

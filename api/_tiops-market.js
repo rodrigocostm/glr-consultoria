@@ -81,8 +81,14 @@ async function pesquisar(key,tipo,dados={},contas=[]){
  if(tipo==='link'||tipo==='comparar'){
   const links=[...new Set((Array.isArray(dados.links)?dados.links:[dados.link]).map(x=>String(x||'').trim()).filter(Boolean))].slice(0,4);
   if(!links.length)throw Error('Digite o link de um anúncio do Mercado Livre.');
-  const lidos=await Promise.allSettled(links.map(l=>lerAnuncio(key,l,contas)));
-  const anuncios=lidos.map((x,i)=>x.status==='fulfilled'?x.value:{link:links[i],erro:String(x.reason?.message||x.reason).slice(0,300)});
+  // um por vez: ler vários anúncios de outros vendedores ao mesmo tempo faz o ML pausar a leitura
+  const anuncios=[];let pausa=null;
+  for(const [i,l] of links.entries()){
+   if(pausa){anuncios.push({link:l,erro:pausa});continue;}
+   if(i)await new Promise(r=>setTimeout(r,1200));
+   try{anuncios.push(await lerAnuncio(key,l,contas));}
+   catch(e){const m=String(e.message||e).slice(0,300);if(/pausou a leitura/i.test(m))pausa=m;anuncios.push({link:l,erro:m});}
+  }
   if(!anuncios.some(a=>!a.erro))throw Error(anuncios[0].erro);
   return {em,anuncios};
  }

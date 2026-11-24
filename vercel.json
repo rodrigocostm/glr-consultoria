@@ -20,7 +20,7 @@
       "maxDuration": 120
     },
     "api/tiops-market.js": {
-      "maxDuration": 120
+      "maxDuration": 180
     },
     "api/agente-cron.js": {
       "maxDuration": 300
