@@ -49,7 +49,7 @@ Router.register('mercado-tiops', async(params,el)=>{
   .mk-modos{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border);border-radius:12px;background:var(--bg-card);align-self:flex-start}
   .mk-modos button{border:0;background:transparent;color:var(--text-secondary);border-radius:9px;padding:8px 16px;font:600 13px/1 inherit;font-family:inherit;cursor:pointer}
   .mk-modos button.on{background:var(--accent);color:#fff} .mk-modos button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .mk-pane{display:flex;flex-direction:column;gap:16px}
+  .mk-pane{display:flex;flex-direction:column;gap:16px} .mk-pane[hidden]{display:none}
   .mk-busca{padding:18px} .mk-busca label{font-size:12.5px;font-weight:600;color:var(--text-secondary)}
   .mk-links{display:flex;flex-direction:column;gap:8px;margin-top:6px}
   .mk-lin{display:flex;gap:8px;align-items:center} .mk-lin input{flex:1;font-size:14.5px}
