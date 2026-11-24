@@ -434,7 +434,7 @@
     const aqui = campanhaAberta();
     const lista = st.itens;
     const corpo = st.erro === 'SEM_LOGIN'
-      ? '<div class="vazio">O pacote do dia é para clientes da GLR: entre com o login da GLR no ícone da extensão. A aba <b>Análise</b> funciona sem login.</div>'
+      ? `<form class="login" data-login="1"><b>Entrar com o login da GLR</b><label>E-mail<input type="email" id="glr-email" autocomplete="username" required></label><label>Senha<input type="password" id="glr-senha" autocomplete="current-password" required></label><button class="pri" type="submit">Entrar</button>${st.msg.login ? `<div class="msg ${st.msg.login.erro ? 'erro' : ''}">${esc(st.msg.login.texto)}</div>` : ''}<small>Mesmo e-mail e senha do sistema da GLR (consultoriaglr.com.br).</small></form>`
       : st.erro ? `<div class="vazio erro">${esc(st.erro)}</div>`
       : st.carregando ? '<div class="vazio">Buscando o pacote do dia…</div>'
       : !lista.length ? `<div class="vazio">Nada pendente ${aqui ? 'para esta campanha' : 'para as campanhas desta tela'}. ✓</div>`
@@ -458,8 +458,10 @@
       : f && f.status === 'parado' ? `<div class="auto erro">Parou: ${esc(f.erro || '')} (${f.i} de ${f.passos.length} aplicados) <button data-auto-fechar="1">Ok</button></div>`
       : f && f.status === 'concluido' ? `<div class="auto ok">${f.passos.length - (f.pulados || []).length} passo(s) aplicados e conferidos ✓${(f.pulados || []).length ? `<br>${f.pulados.length} pulado(s), sem mexer: ${esc(f.pulados.join(' · '))}` : ''} <button data-auto-fechar="1">Ok</button></div>`
       : nAuto && !st.erro ? `<div class="auto"><button class="pri" data-auto-iniciar="1">Aplicar ${Math.min(nAuto, MAX_AUTO)} passo(s) sozinho</button><span>ROAS, orçamento, pausar e mover anúncio · ritmo humano · para no primeiro imprevisto${lista.length > nAuto ? ' · colocar produto e campanha nova ficam à mão' : ''}</span></div>` : '';
+    // o painel se redesenha sozinho: guarda o que está sendo digitado no login (e onde estava o cursor)
+    const digitado = { e: raiz.getElementById?.('glr-email')?.value, s: raiz.getElementById?.('glr-senha')?.value, foco: raiz.activeElement?.id };
     raiz.innerHTML = `<style>
-      .semlogin{margin:8px 10px 0;padding:8px 10px;border-radius:10px;background:#fdecea;color:#8a1f12;font-size:12px} .auto{margin:0 0 4px;padding:8px 10px;border-radius:10px;background:#f4f2ff;font-size:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:#2b2f3c} .auto span{color:#5b6070}
+      .login{display:flex;flex-direction:column;gap:6px;padding:6px 2px} .login label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:#5b6070} .login input{font:inherit;border:1px solid #d6d9e2;border-radius:8px;padding:7px 9px} .login input:focus{outline:2px solid #5b4ff0;border-color:#5b4ff0} .login button{margin-top:4px} .semlogin button{margin-left:6px} .semlogin{margin:8px 10px 0;padding:8px 10px;border-radius:10px;background:#fdecea;color:#8a1f12;font-size:12px} .auto{margin:0 0 4px;padding:8px 10px;border-radius:10px;background:#f4f2ff;font-size:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:#2b2f3c} .auto span{color:#5b6070}
       .auto.on{background:#fff7e6} .auto.erro{background:#fdecea;color:#8a1f12} .auto.ok{background:#eefaf2;color:#1b6b3a}
       :host{all:initial}
       .p{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:360px;max-height:70vh;display:flex;flex-direction:column;background:#fff;color:#1f2330;border:1px solid #e1e3ea;border-radius:14px;box-shadow:0 12px 32px rgba(20,24,40,.18);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -497,9 +499,12 @@
     <div class="p ${st.aberto ? '' : 'min'} ${st.expert && st.aba === 'analise' && st.aberto ? 'exp' : ''}">
       <div class="cab" data-alternar="1"><b>GLR Copiloto ADS</b><span class="q">${atencao() + (st.erro ? 0 : lista.length)}</span></div>
       ${st.aberto ? `<div class="abas"><button class="${st.aba === 'analise' ? 'on' : ''}" data-aba="analise">Análise${atencao() ? ` <i>${atencao()}</i>` : ''}</button><button class="${st.aba === 'glr' ? 'on' : ''}" data-aba="glr">Pacote GLR${!st.erro && lista.length ? ` <i>${lista.length}</i>` : ''}</button></div>
-        ${st.erro === 'SEM_LOGIN' ? '<div class="semlogin">Sem o login da GLR: os passos do agente, os selos nas campanhas e o destaque de onde clicar <b>não aparecem</b>. Clique no ícone da extensão na barra do Chrome e entre com o seu e-mail da GLR.</div>' : ''}
+        ${st.erro === 'SEM_LOGIN' && st.aba === 'analise' ? '<div class="semlogin">Sem o login da GLR: os passos do agente, os selos nas campanhas e o destaque de onde clicar <b>não aparecem</b>. <button class="pri" data-aba="glr">Entrar</button></div>' : ''}
         <div class="lista">${st.aba === 'analise' ? corpoAnalise() : (st.msg.guia ? `<div class="auto ok">${esc(st.msg.guia.texto)}</div>` : '') + barra + corpo}</div><div class="rod">${st.aba === 'analise' ? 'Lê só a tela do Mercado Ads, no seu navegador. Sugestões: quem decide e salva no ML é você.' : 'Mostra na tela onde clicar e o valor; quem faz e salva é você. Depois de salvar, a extensão confere e marca Feito.'} · v${chrome.runtime.getManifest?.().version || ''}</div>` : ''}
     </div>`;
+    const ie = raiz.getElementById('glr-email'), is = raiz.getElementById('glr-senha');
+    if (ie && digitado.e) ie.value = digitado.e; if (is && digitado.s) is.value = digitado.s;
+    if (digitado.foco) raiz.getElementById(digitado.foco)?.focus();
   }
 
   raiz.addEventListener('click', async e => {
@@ -528,6 +533,16 @@
     render();
   });
 
+  raiz.addEventListener('submit', async e => {
+    const f = e.target.closest('[data-login]'); if (!f) return;
+    e.preventDefault();
+    const email = raiz.getElementById('glr-email')?.value.trim(), senha = raiz.getElementById('glr-senha')?.value || '';
+    if (!email || !senha) return;
+    f.querySelector('button').disabled = true; st.msg.login = { texto: 'Entrando…' }; render();
+    const r = await enviar({ tipo: 'entrar', email, senha });
+    if (r?.ok) { st.msg.login = null; st.erro = null; st.chave = ''; carregar(); }
+    else { st.msg.login = { texto: r?.erro || 'Não consegui entrar.', erro: true }; render(); }
+  });
   raiz.addEventListener('change', e => {
     if (e.target.id !== 'glr-meta') return;
     const v = parseFloat(String(e.target.value).replace(',', '.'));
