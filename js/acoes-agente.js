@@ -51,7 +51,7 @@ window.GLRAcoes = (function () {
       } else if (d.roas_sugerido != null) {
         await MarketplaceAPI.call('shopee_ads_roi_target', { shopId: l.conta_id, campaign_id: Number(d.campaign_id), roas_target: d.roas_sugerido });
       } else {
-        await MarketplaceAPI.call('shopee_ads_edit_campaign', {
+        await MarketplaceAPI.call('shopee_ads_edit_campaign', { /* Tiops valida também no nível de cima (24/11/2026) */ edit_action: 'change_budget', budget: d.budget_sugerido, reference_id: `glr-aprovado-${Date.now()}-${d.campaign_id}`,
           shopId: l.conta_id,
           campaign_id: Number(d.campaign_id), // conector valida no nível de cima também
           params: { campaign_id: Number(d.campaign_id), budget: d.budget_sugerido, edit_action: 'change_budget', reference_id: `glr-aprovado-${Date.now()}-${d.campaign_id}` },

@@ -1184,7 +1184,7 @@ async function processarConta(cfg, mcApiKey, anthropicKey, ontem, inicioJanela, 
       // Sem isso a Shopee rejeita com "Invalid param type" / "EditAction is
       // required" — essa função vinha falhando silenciosamente (cai no catch,
       // loga 'erro') toda vez que a Regra 3/4 tentava ajustar orçamento.
-      await mcpCall(mcApiKey, 'shopee_ads_edit_campaign', {
+      await mcpCall(mcApiKey, 'shopee_ads_edit_campaign', { /* Tiops valida também no nível de cima (24/11/2026) */ edit_action: 'change_budget', budget: novoBudget, reference_id: `glr-agente-${Date.now()}-${campaignId}`,
         shopId,
         campaign_id: Number(campaignId), // conector valida no nível de cima também (14/10/2026)
         params: {
@@ -2060,7 +2060,7 @@ async function processarAcompanhamento(cfg, mcApiKey) {
             alertas.push(nome);
           } else if (novo > budget) {
             try {
-              await mcpCall(mcApiKey, 'shopee_ads_edit_campaign', { shopId, campaign_id: Number(id), params: { campaign_id: Number(id), budget: novo, edit_action: 'change_budget', reference_id: `glr-agente-${Date.now()}-${id}` } });
+              await mcpCall(mcApiKey, 'shopee_ads_edit_campaign', { /* Tiops valida também no nível de cima (24/11/2026) */ edit_action: 'change_budget', budget: novo, reference_id: `glr-agente-${Date.now()}-${id}`, shopId, campaign_id: Number(id), params: { campaign_id: Number(id), budget: novo, edit_action: 'change_budget', reference_id: `glr-agente-${Date.now()}-${id}` } });
               await logar('decisao', `Orçamento ajustado — ${nome}`, explicacao, { campaign_id: Number(id), budget_de: budget, budget_para: novo, gasto_hoje: h.gasto, acos_hoje: acosHoje, rodada: `${hora}h` }, 'executado');
               decisoes.push(nome);
             } catch (e) {

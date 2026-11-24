@@ -1147,7 +1147,7 @@
           // campaign_id também no nível de cima: o conector passou a validar ali
           // ("campaign_id obrigatorio", 14/10/2026) — dentro de params continua
           // sendo o que vai pra Shopee.
-          await MarketplaceAPI.call('shopee_ads_edit_campaign', {
+          await MarketplaceAPI.call('shopee_ads_edit_campaign', { /* Tiops valida também no nível de cima (24/11/2026) */ edit_action: 'change_budget', budget: valor, reference_id: `glr-manual-${Date.now()}-${campaignId}`,
             shopId: contaId,
             campaign_id: Number(campaignId),
             params: {
