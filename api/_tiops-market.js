@@ -92,6 +92,24 @@ async function pesquisar(key,tipo,dados={},contas=[]){
   if(!anuncios.some(a=>!a.erro))throw Error(anuncios[0].erro);
   return {em,anuncios};
  }
+ // líderes da categoria do anúncio (pelo título): os mais vendidos com nome, foto e preço do catálogo
+ if(tipo==='lideres'){
+  const titulo=corta(dados.titulo,160).trim();if(titulo.length<3)throw Error('Digite o produto ou a categoria.');
+  const {r:rc}=await comConta(key,'search_categories',{q:titulo},contas);const dc=rc.data||rc;
+  const cats=(dc.items||dc||[]).slice(0,3).map(x=>({id:x.category_id,nome:x.category_name,dominio:x.domain_name})).filter(c=>/^MLB\d+$/.test(c.id||''));
+  if(!cats.length)return {em,categoria:null,itens:[]};
+  const cat=cats[0];
+  const {r,conta}=await comConta(key,'ml_highlights',{category:cat.id},contas);const d=r.data||r;
+  const itens=(d.content||[]).slice(0,20);
+  const det=await Promise.all(itens.map(async x=>{
+   if(x.type!=='PRODUCT')return null;
+   try{const {r:pr}=await comConta(key,'raw_read',{path:`/products/${x.id}`},conta?[conta]:contas);const p=pr.data||pr;
+    const bw=p.buy_box_winner||null;
+    return {nome:p.name,foto:p.pictures?.[0]?.url||'',marca:(p.attributes||[]).find(a=>a.id==='BRAND')?.value_name||'',preco:bw?.price??null,vendedor_id:bw?.seller_id?String(bw.seller_id):null,frete_gratis:bw?.shipping?.free_shipping??null,full:bw?.shipping?.logistic_type==='fulfillment'};}catch(e){return null;}
+  }));
+  const link=x=>x.type==='PRODUCT'?`https://www.mercadolivre.com.br/p/${x.id}`:x.type==='USER_PRODUCT'?`https://www.mercadolivre.com.br/up/${x.id}`:`https://produto.mercadolivre.com.br/${x.id.replace(/^MLB/,'MLB-')}`;
+  return {em,categoria:cat,outras:cats.slice(1),itens:itens.map((x,i)=>({pos:x.position,id:x.id,tipo:x.type,link:link(x),...(det[i]||{})}))};
+ }
  if(tipo==='categorias'){
   const termo=corta(dados.termo,120).trim();if(termo.length<2)throw Error('Digite o produto ou a categoria.');
   const {r}=await comConta(key,'search_categories',{q:termo},contas);const d=r.data||r;

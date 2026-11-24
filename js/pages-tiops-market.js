@@ -27,6 +27,7 @@ Router.register('mercado-tiops', async(params,el)=>{
      <button class="btn btn-primary" id="mk-analisar">Analisar</button></div>
    </form>
    <div id="mk-lres"></div>
+   <div id="mk-lider"></div>
   </section>
   <section id="mk-pane-cat" class="mk-pane" hidden>
    <form class="mk-busca card" id="mk-form" autocomplete="off">
@@ -167,9 +168,31 @@ Router.register('mercado-tiops', async(params,el)=>{
   box.querySelectorAll('.mk-ad').forEach(ad=>ad.querySelectorAll('[data-foto]').forEach(b=>b.onclick=()=>{ad.querySelector('.mk-foto').src=b.dataset.foto;ad.querySelectorAll('[data-foto]').forEach(x=>x.classList.toggle('on',x===b));}));}
  el.querySelector('#mk-lform').onsubmit=async e=>{e.preventDefault();if(lk.busy)return;
   const links=lk.links.map(x=>x.trim()).filter(Boolean);if(!links.length){el.querySelector('#mk-l0')?.focus();return;}
-  lk.busy=true;lk.erro='';lk.res=null;desenharLinks();desenharLRes();
+  lk.busy=true;lk.erro='';lk.res=null;lk.lideres=null;desenharLinks();desenharLRes();desenharLideres();
   try{const r=await pesquisa(links.length>1?'comparar':'link',{links});if(!vivo())return;lk.res=r;}
-  catch(err){lk.erro=err.message;}finally{lk.busy=false;if(vivo()){desenharLinks();desenharLRes();}}};
+  catch(err){lk.erro=err.message;}finally{lk.busy=false;if(vivo()){desenharLinks();desenharLRes();}}
+  const ref=lk.res?.anuncios?.find(a=>!a.erro);
+  if(ref&&vivo()){lk.lideres={busy:true};desenharLideres();
+   try{const r=await pesquisa('lideres',{titulo:ref.titulo});if(!vivo())return;lk.lideres=r;}catch(err){lk.lideres={erro:err.message};}
+   if(vivo())desenharLideres();}};
+ function desenharLideres(){const box=el.querySelector('#mk-lider');if(!box)return;const L=lk.lideres,ref=lk.res?.anuncios?.find(a=>!a.erro);
+  if(!L){box.innerHTML='';return;}
+  if(L.busy){box.innerHTML=`<div class="card mk-espera" role="status"><b>Buscando a concorrência na categoria…</b><div class="mk-barra"><i></i></div></div>`;return;}
+  if(L.erro){box.innerHTML=`<div class="card" style="padding:16px"><b>Concorrência na categoria</b><div class="mk-erro" style="padding:6px 0 0">${h(L.erro)}</div></div>`;return;}
+  if(!L.categoria||!L.itens?.length){box.innerHTML=`<div class="card" style="padding:16px"><b>Concorrência na categoria</b><p class="mk-sub">O Mercado Livre não retornou os mais vendidos desta categoria.</p></div>`;return;}
+  const precos=L.itens.map(x=>x.preco).filter(v=>v!=null).sort((a,b)=>a-b);
+  const med=precos.length?precos[Math.floor(precos.length/2)]:null;
+  const posRef=ref&&L.itens.find(x=>x.id===ref.id||(ref.link||'').includes(x.id));
+  const dif=ref?.preco!=null&&med?Math.round((ref.preco/med-1)*100):null;
+  const resumo=med?`<div class="mk-chk" style="margin:0 0 14px">
+    <div><b>${R$(med)}</b>preço mediano dos líderes</div>
+    <div><b>${R$(precos[0])} – ${R$(precos[precos.length-1])}</b>faixa de preço (${precos.length} com preço)</div>
+    ${ref?.preco!=null?`<div class="${dif>15?'ruim':dif<-15?'':'ok'}"><b>${dif>0?'+':''}${dif}%</b>anúncio analisado vs. mediana</div>`:''}
+    <div class="${posRef?'ok':''}"><b>${posRef?`${posRef.pos}º`:'fora do top 20'}</b>posição do anúncio analisado</div></div>`:'';
+  box.innerHTML=`<div class="card" style="padding:18px"><div class="mk-cab" style="margin-bottom:12px"><div><span class="mk-eyebrow">Concorrência</span><h2 style="font-size:16px">Mais vendidos em ${h(L.categoria.nome)}</h2><p>Os 20 anúncios que mais vendem na categoria do anúncio analisado, pelo ranking do Mercado Livre.</p></div></div>
+   ${resumo}
+   <div class="mk-grade">${L.itens.map(x=>`<a class="mk-item" href="${h(x.link)}" target="_blank" rel="noopener"${posRef&&x.id===posRef.id?' style="border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)"':''}><span class="mk-pos">${x.pos}º</span>${x.foto?`<img src="${h(x.foto)}" alt="" loading="lazy">`:`<span class="mk-ph">${x.tipo==='PRODUCT'?'catálogo':'anúncio'}</span>`}<b>${h(x.nome||(x.tipo==='PRODUCT'?'Produto de catálogo':'Anúncio de vendedor'))}</b>${x.preco!=null?`<span style="font-weight:700;font-variant-numeric:tabular-nums">${R$(x.preco)}${ref?.preco!=null?` <small style="color:${x.preco<ref.preco?'var(--red)':'var(--green)'}">${x.preco<ref.preco?'mais barato':'mais caro'}</small>`:''}</span>`:''}<small>${h(x.marca?x.marca+' · ':'')}${x.full?'Full · ':''}abrir no ML ↗</small></a>`).join('')}</div>
+   <p class="mk-sub">Preço = vencedor do catálogo quando o ML informa. Anúncios fora de catálogo não mostram nome nem preço pela API — cole o link deles acima para analisar.</p></div>`;}
  desenharLinks();
  async function pesquisa(tipo,dados){const r=await glrApiFetch('/api/tiops-market',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acao:'pesquisa',tipo,dados,contas:contasML()})});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||'Falha na consulta.');return j;}
  const vivo=()=>Router.currentPage==='mercado-tiops'&&!!el.querySelector('#mk-form');
