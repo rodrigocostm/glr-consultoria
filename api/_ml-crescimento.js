@@ -13,12 +13,13 @@ function configurar(raw = {}, cfg = {}) {
 function classificar(f, aviso, config) {
   const aa = aviso?.aa != null && Number.isFinite(+aviso.aa) ? +aviso.aa : null;
   const estoques = aviso && (aviso.estoque != null || aviso.dias != null || aviso.ne != null);
-  const bloqueios = [];
+  // bloqueios: impedem escalar. avisos: deixam escalar, mas com passo menor (confiança no máximo média)
+  const bloqueios = [], avisos = [];
   if (!config.meta_acos) bloqueios.push('Definir meta de ACOS');
   if (!config.teto_tacos) bloqueios.push('Definir teto de TACOS separado');
-  if (aa == null) bloqueios.push('Margem antes do ADS indisponível');
-  if (config.margem_reserva == null) bloqueios.push('Definir margem mínima após ADS');
   if (!estoques) bloqueios.push('Estoque sem informação');
+  if (aa == null) avisos.push('Margem antes do ADS indisponível (cadastre o custo em Produtos)');
+  if (config.margem_reserva == null) avisos.push('Margem mínima após ADS não definida');
   const margemLim = aa == null || config.margem_reserva == null ? null : aa - config.margem_reserva;
   const limite = Math.min(config.meta_acos || Infinity, margemLim ?? Infinity);
   const acos = f.vendasAj > 0 ? f.gasto / f.vendasAj * 100 : null;
@@ -31,9 +32,9 @@ function classificar(f, aviso, config) {
   const limiteFinal = Math.min(limite, limiteGrupo || Infinity);
   if (grupo === 'escalar' && acos > limiteFinal) grupo = 'conter';
   const evidencia = f.cliques >= 200 && f.unidades >= 10 ? 'alta' : f.cliques >= 30 && f.unidades >= 3 ? 'media' : 'baixa';
-  const confianca = bloqueios.length ? 'baixa' : evidencia;
+  const confianca = bloqueios.length ? 'baixa' : avisos.length && evidencia === 'alta' ? 'media' : evidencia;
   return { grupo, limite_acos: Number.isFinite(limiteFinal) ? Math.max(0, arred(limiteFinal)) : null, margem_antes_ads: aa,
-    confianca, bloqueios, motivo: grupo === 'escalar' ? 'Venda comprovada, margem e estoque disponíveis' : grupo === 'destravar' ? 'Resolver oferta, Buy Box, estoque ou reputação' : grupo === 'conter' ? 'Proteger a contribuição antes de ampliar exposição' : 'Reunir histórico e dados antes de escalar' };
+    confianca, bloqueios, avisos, motivo: grupo === 'escalar' ? 'Venda comprovada, margem e estoque disponíveis' : grupo === 'destravar' ? 'Resolver oferta, Buy Box, estoque ou reputação' : grupo === 'conter' ? 'Proteger a contribuição antes de ampliar exposição' : 'Reunir histórico e dados antes de escalar' };
 }
 function passo(contexto, config) {
   if (!contexto || contexto.grupo !== 'escalar' || contexto.confianca === 'baixa') return 0;
@@ -41,7 +42,7 @@ function passo(contexto, config) {
 }
 function experimento(d, contexto, config, mensal = {}) {
   const escala = (d.acao === 'orcamento' && +d.para > +d.de) || (d.acao === 'roas_target' && +d.para < +d.de) || d.acao === 'adicionar_produto';
-  const pronto = !!(contexto && contexto.grupo === 'escalar' && config.meta_faturamento && config.margem_reserva != null && config.teto_tacos && mensal.tacos != null && mensal.tacos < config.teto_tacos && mensal.cobertura && !mensal.bloqueado);
+  const pronto = !!(contexto && contexto.grupo === 'escalar' && config.teto_tacos && mensal.tacos != null && mensal.tacos < config.teto_tacos && mensal.cobertura && !mensal.bloqueado);
   if (escala && !pronto) return { bloqueado: true, motivo: contexto?.bloqueios?.join('; ') || 'Sem folga de TACOS, estoque ou amostra suficiente' };
   const novo = { ...d };
   if (escala && config.piloto && ['orcamento', 'roas_target'].includes(d.acao)) {

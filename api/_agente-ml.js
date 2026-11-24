@@ -29,7 +29,7 @@
 // Arquivo com "_" na frente: não vira rota na Vercel; usado por agente-cron.js.
 // ============================================================
 
-const MAX_SUGESTOES = 15;
+const MAX_SUGESTOES = 40; // o planejador limita a 3 ações por campanha
 const motorEscala = require('./_ml-crescimento');
 const curvaABC = require('./_curva-abc');
 const medicaoAds = require('./_medicao-ads');
@@ -264,7 +264,6 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
       if (dados && !dados.crescimento) {
         const proposta = motorEscala.experimento(dados, contextoCrescimento(dados), crescimento, resumoCrescimento);
         if (proposta.bloqueado) return false;
-        if (proposta.escala && !crescimento.piloto) return false;
         dados = proposta.dados;
       }
       if (dados?.experimento && campanhasEmTeste.has(String(dados.campaign_id))) return false;
@@ -552,7 +551,7 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           pausaValida.add(f.chave);
           const ok = await sugerir(chave, `Sugestão: tirar produto sem estoque da campanha — ${f.nome.slice(0, 50)}`,
             `O agente de Estoque avisou que "${f.nome.slice(0, 70)}" está sem estoque, mas o anúncio segue na campanha "${x.nome}" e gastou ${R$(f.gasto)} em ${diasProd} dias. Tirar da campanha até repor — clique pago em anúncio sem estoque não vira venda.`,
-            { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), unidades: f.unidades, janela_dias: diasProd, acao: 'retirar_produto', impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia', colaboracao: { de: 'estoque' } });
+            { campaign_id: x.id, campanha: x.nome, familia: f.chave, produto: f.nome.slice(0, 90), item_ids: f.ativos, gasto: r1(f.gasto), unidades: f.unidades, janela_dias: diasProd, acao: 'retirar_produto', voltar_quando: 'repor o estoque — reative o anúncio nesta mesma campanha', participacao_campanha_pct: x.vendasAj > 0 ? Math.round(f.vendasAj / x.vendasAj * 100) : 0, impacto: f.gasto / diasProd * 7, impacto_tipo: 'economia', colaboracao: { de: 'estoque' } });
           if (ok || ocupadas.has(chave)) tirar(x, f); if (ok) { colaboracoes.push({ de: 'estoque', texto: `sugeri tirar "${f.nome.slice(0, 50)}" de "${x.nome}": está sem estoque` }); }
           continue;
         }
@@ -818,34 +817,6 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
       return { conta_id: contaId, marketplace: 'ml', momento: { aceleradas: mom.aceleradas.length, recuperadas: mom.recuperadas.length, seguradas: mom.seguradas.length } };
     }
 
-    // ── Especialista em Mercado Ads: revisa as candidatas das regras e monta o pacote do dia ──
-    coletando = false;
-    if (opc.simular && !candidatos.length) return { conta_id: contaId, marketplace: 'ml', simulacao: true, candidatos: [], revisao: null, colaboracoes: colaboracoes.map(c => c.texto) };
-    let revisao = null;
-    if (candidatos.length) {
-      const conta = {
-        cliente: cfg.cliente_nome || null, hoje: hojeIso, janela_campanhas_dias: dias, janela_produtos_dias: diasProd,
-        meta_acos_conta: meta, teto_tacos_cliente: crescimento.teto_tacos, meta_faturamento_conta: crescimento.meta_faturamento, projecao_mensal: resumoCrescimento.projecao, piloto_escala: crescimento.piloto, tacos_mes: tacosMes == null ? null : r1(tacosMes), taxa_cancelamento_pct: r1(taxaCancel * 100),
-        campanhas: C.map(x => ({ id: x.id, nome: x.nome, estrategia: x.c.strategy || null, roas_objetivo: x.roasAlvo ? r1(x.roasAlvo) : null, orcamento_dia: x.budget, gasto_janela: r1(x.gasto), acos_sem_cancelados: x.acos == null || x.acos === Infinity ? null : r1(x.acos), unidades_ads: x.unidades,
-          acos_30d_painel: x.acos30 != null ? r1(x.acos30) : null, tacos_campanha_30d: x.tacos30 != null ? r1(x.tacos30) : null, idade_dias: Number.isFinite(x.idadeDias) ? Math.floor(x.idadeDias) : null, alterada_ha_dias: Number.isFinite(x.mudouHa) ? Math.floor(x.mudouHa) : null, em_aprendizado: x.aprendendo, alterada_recente: x.recente,
-          impressoes: x.share ? { ganha_pct: Math.round(x.share.ganha * 100), topo_pct: Math.round(x.share.topo * 100), perdida_orcamento_pct: Math.round(x.share.orcamento * 100), perdida_classificacao_pct: Math.round(x.share.classificacao * 100), acos_referencia_categoria: x.share.benchmark } : null })),
-      };
-      revisao = await especialista.revisar({ Anthropic: h.Anthropic, anthropicKey: h.anthropicKey, conta, candidatos });
-      // simulação (?simular=1): mostra o pacote que o especialista montaria, sem criar nada na Caixa
-      if (opc.simular) return { conta_id: contaId, marketplace: 'ml', simulacao: true, candidatos: candidatos.map(c => ({ id: c.id, titulo: c.titulo, explicacao: String(c.explicacao).slice(0, 400) })), revisao };
-      const porId = new Map(candidatos.map(c => [c.id, c])), usadas = new Set();
-      for (const e of revisao.escolhidas) {
-        const c = porId.get(e.id); if (!c) continue;
-        if (await sugerir(c.chave, c.titulo, `${c.explicacao}${e.porque ? ` Leitura do especialista: ${e.porque}` : ''}`, { ...c.dados, especialista: { prioridade: e.prioridade, fonte: revisao.fonte } })) usadas.add(c.dados?.campanha);
-      }
-      // a revisão de 3 dias só conta o que entrou no pacote
-      mom.aceleradas = mom.aceleradas.filter(n => usadas.has(n)); mom.recuperadas = mom.recuperadas.filter(n => usadas.has(n));
-      const descartadas = candidatos.filter(c => !revisao.escolhidas.some(e => e.id === c.id));
-      await logar('sistema', `Especialista Mercado Ads — pacote do dia com ${revisao.escolhidas.length} de ${candidatos.length} recomendação(ões)`,
-        [revisao.estrategia, ...revisao.esperar.map(x => `Esperar: ${x}`), descartadas.length ? `Ficaram de fora hoje: ${descartadas.slice(0, 6).map(c => c.titulo.replace(/^Sugestão:\s*/, '')).join('; ')}${descartadas.length > 6 ? ` e mais ${descartadas.length - 6}` : ''}.` : ''].filter(Boolean).join('\n') || 'Pacote montado pela ordem das regras (especialista indisponível).',
-        { especialista: true, fonte: revisao.fonte, erro: revisao.erro || null, estrategia: revisao.estrategia, esperar: revisao.esperar, escolhidas: revisao.escolhidas, descartadas: descartadas.map(c => ({ id: c.id, titulo: c.titulo })).slice(0, 30) }, 'executado');
-    }
-
     // ── 3) CURVA ABC semana a semana (mesma regra da aba Vendas) ──
     //  • curva A em queda/parou → alerta com a situação no ADS (o analista decide junto);
     //  • B/C subindo fora de campanha → colocar numa campanha dentro da meta;
@@ -896,6 +867,104 @@ async function processarContaML(cfg, mcApiKey, h, opc = {}) {
           { acao: 'adicionar_produto', item_ids: [v.item_id], produto: String(v.nome).slice(0, 90), unidades_loja_30d: v.unidades, receita_loja_30d: r1(v.receita), destino_id: destino.id, destino: destino.nome, campaign_id: destino.id, campanha: destino.nome, impacto: v.receita / 30 * 7, impacto_tipo: 'ganho' });
         if (ok) colocados++;
       }
+    }
+
+    // ── Especialista em Mercado Ads: revisa as candidatas das regras e monta o pacote do dia ──
+    coletando = false;
+    if (opc.simular && !candidatos.length && !C.length) return { conta_id: contaId, marketplace: 'ml', simulacao: true, candidatos: [], revisao: null, colaboracoes: colaboracoes.map(c => c.texto) };
+    let revisao = null;
+    // Planejador (docs/especificacao-agente-ads-ml.md): um plano coerente por campanha, a partir do dossiê da conta
+    let planoIA = null;
+    if (C.length) {
+      const fin = v => v == null || v === Infinity ? null : r1(v);
+      const familiaCresc = (x, f) => familiasCrescimento.find(z => String(z.familia) === String(f.chave) && String(z.campanha_id) === String(x.id));
+      const comProdutos = new Set([...C].sort((a, b) => b.gasto - a.gasto).slice(0, 25).map(x => x.id));
+      const dossie = {
+        cliente: cfg.cliente_nome || null, hoje: hojeIso, janela_campanhas_dias: dias, janela_produtos_dias: diasProd,
+        meta_acos_conta: meta, teto_tacos_cliente: crescimento.teto_tacos, tacos_mes: tacosMes == null ? null : r1(tacosMes), folga_tacos: tacosOk,
+        meta_faturamento_conta: crescimento.meta_faturamento, projecao_mensal: resumoCrescimento.projecao == null ? null : Math.round(resumoCrescimento.projecao), taxa_cancelamento_pct: r1(taxaCancel * 100),
+        campanhas: C.map(x => ({ id: x.id, nome: x.nome, estrategia: x.c.strategy || null, roas_objetivo: x.roasAlvo ? r1(x.roasAlvo) : null, orcamento_dia: x.budget, gasto_dia: r1(x.gastoDia), gasto_janela: r1(x.gasto), vendas_ads_janela: r1(x.vendasAj), acos: fin(x.acos),
+          acos_30d_painel: x.acos30 != null ? r1(x.acos30) : null, tacos_campanha_30d: x.tacos30 != null ? r1(x.tacos30) : null, idade_dias: Number.isFinite(x.idadeDias) ? Math.floor(x.idadeDias) : null, alterada_ha_dias: Number.isFinite(x.mudouHa) ? Math.floor(x.mudouHa) : null,
+          impressoes: x.share ? { ganha_pct: Math.round(x.share.ganha * 100), perdida_orcamento_pct: Math.round(x.share.orcamento * 100), perdida_classificacao_pct: Math.round(x.share.classificacao * 100), acos_referencia_categoria: x.share.benchmark } : null,
+          produtos: !comProdutos.has(x.id) ? undefined : [...x.familias].sort((a, b) => (b.gasto + b.vendasAj) - (a.gasto + a.vendasAj)).slice(0, 12).map(f => {
+            const av = avisoDe(f.itens), fc = familiaCresc(x, f);
+            return { familia: f.chave, nome: String(f.nome).slice(0, 70), item_ids: f.ativos.slice(0, 6).map(String), gasto: r1(f.gasto), vendas_ads: r1(f.vendasAj), acos: fin(f.acos), cliques: f.cliques, unidades: f.unidades, organico_un: f.organico,
+              participacao_pct: x.vendasAj > 0 ? Math.round(f.vendasAj / x.vendasAj * 100) : 0, sem_buybox: f.semBuybox || undefined, estoque: av?.ne || null, estoque_dias: av?.dias != null ? Math.round(av.dias) : null, margem_antes_ads_pct: av?.aa ?? null, grupo: fc?.grupo || null, limite_acos: fc?.limite_acos ?? null };
+          }) })),
+        fora_de_campanha: [...vendasLoja.values()].filter(v => !anunciados.has(v.item_id) && v.unidades >= 3).sort((a, b) => b.receita - a.receita).slice(0, 12)
+          .map(v => ({ item_id: String(v.item_id), nome: String(v.nome).slice(0, 70), unidades_30d: v.unidades, receita_30d: r1(v.receita), estoque: avisoDe([v.item_id])?.ne || null })),
+        historico: logs.filter(l => l.resultado === 'executado' && l.dados?.acao && l.dados.acao !== 'abc_queda').slice(0, 25).map(l => ({ acao: l.dados.acao, campanha: l.dados.campanha || null, produto: l.dados.produto || null, de: l.dados.de ?? null, para: l.dados.para ?? null, aplicado_dia: l.dados.aplicado_dia || String(l.dados.aplicado_em || l.criado_em).slice(0, 10), resultado: l.dados.medicao ? `${l.dados.medicao.veredito || ''} ${l.dados.medicao.resumo || ''}`.trim() : 'aguardando medição' })),
+        descartadas_recentes: logs.filter(l => l.resultado === 'descartado').slice(0, 10).map(l => String(l.titulo || '').replace(/^Sugestão:\s*/, '').slice(0, 90)),
+      };
+      const travas = Object.fromEntries(C.map(x => [String(x.id), { aprendendo: x.aprendendo, recente: x.recente, acos_dobro: !!(meta && x.acos != null && x.acos > meta * 2) }]));
+      travas._criouSemana = logs.some(l => String(l.dados?.chave || '').startsWith('cc:') && Date.now() - Date.parse(l.criado_em) < 7 * 864e5);
+      planoIA = await especialista.planejar({ Anthropic: h.Anthropic, anthropicKey: h.anthropicKey, hoje: hojeIso, dossie, candidatos, travas });
+      if (opc.simular && planoIA && !planoIA.erro) return { conta_id: contaId, marketplace: 'ml', simulacao: true, candidatos: candidatos.map(c => ({ id: c.id, titulo: c.titulo })), plano: planoIA };
+    }
+    if (planoIA && !planoIA.erro) {
+      const br = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+      const fimTxt = a => [a.esperado && `Esperado: ${a.esperado.replace(/\.$/, '')}.`, `Reavaliar em ${br(a.reavaliar_em)}${a.desfazer_se ? ` — desfazer se ${a.desfazer_se.replace(/\.$/, '')}` : ''}.`, a.voltar_quando && `Voltar quando: ${a.voltar_quando.replace(/\.$/, '')}.`].filter(Boolean).join(' ');
+      const extras = (a, p, ordem) => ({ motivo: a.motivo, esperado: a.esperado, reavaliar_em: a.reavaliar_em, desfazer_se: a.desfazer_se, voltar_quando: a.voltar_quando, confianca: a.confianca, plano_id: `${hojeIso}:${p ? p.campaign_id : 'conta'}`, ordem, especialista: { prioridade: ordem, fonte: 'planejador' } });
+      const nomeItem = id => { for (const x of C) for (const f of x.familias) if (f.itens.some(i => String(i) === String(id))) return String(f.nome); const v = vendasLoja.get(id) || vendasLoja.get(Number(id)); return v ? String(v.nome) : String(id); };
+      let escritas = 0;
+      async function escrever(a, p, ordem) {
+        const ex = extras(a, p, ordem);
+        if (a.tipo === 'candidata') {
+          const c = a.c;
+          const ok = await sugerir(c.chave, c.titulo, `${a.motivo.replace(/\.$/, '')}. ${fimTxt(a)} Números: ${c.explicacao}`, { ...c.dados, ...ex, voltar_quando: a.voltar_quando || c.dados?.voltar_quando || null });
+          if (ok) escritas++; return;
+        }
+        if (a.tipo === 'mover_produto') {
+          const o = xPorId.get(a.origem_id), d = xPorId.get(a.destino_id); if (!o || !d) return;
+          const fam = o.familias.find(f => f.itens.some(i => a.item_ids.includes(String(i))));
+          const nome = fam ? String(fam.nome) : nomeItem(a.item_ids[0]);
+          const ok = await sugerir(fam ? `p:${fam.chave}` : `mv:${a.item_ids.join(',')}`, `Mover produto de campanha — ${nome.slice(0, 55)}`,
+            `${a.motivo.replace(/\.$/, '')}. Tirar de "${o.nome}" e colocar em "${d.nome}" (ROAS objetivo ${roasTxt(d.roasAlvo)}). ${fimTxt(a)}`,
+            { acao: 'mover_produto', campaign_id: o.id, campanha: o.nome, destino_id: d.id, destino: d.nome, item_ids: a.item_ids, produto: nome.slice(0, 90), familia: fam?.chave || null, de: o.roasAlvo, para: d.roasAlvo, impacto: fam ? fam.vendasAj / diasProd * 7 : 0, impacto_tipo: 'ganho', crescimento: { plano: true }, ...ex });
+          if (ok) escritas++; return;
+        }
+        if (a.tipo === 'criar_campanha') {
+          const nomes = a.item_ids.map(nomeItem);
+          const origens = a.origens.map(id => xPorId.get(id)).filter(Boolean).map(x => ({ id: x.id, nome: x.nome }));
+          const ok = await sugerir(`cc:${[...a.item_ids].sort().join(',').slice(0, 150)}`, `Criar campanha nova — ${a.nome}`,
+            `${a.motivo.replace(/\.$/, '')}. Criar a campanha "${a.nome}" (${a.estrategia === 'PROFITABILITY' ? 'rentabilidade' : a.estrategia === 'INCREASE' ? 'crescimento' : 'visibilidade'}, ROAS objetivo ${roasTxt(a.roas_objetivo)}, orçamento ${R$(a.orcamento_dia)}/dia) com ${a.item_ids.length} produtos: ${nomes.slice(0, 5).map(n => `'${n.slice(0, 40)}'`).join(', ')}${nomes.length > 5 ? ` e mais ${nomes.length - 5}` : ''}${origens.length ? ` — tirando de ${origens.map(o => `"${o.nome}"`).join(', ')}` : ''}. ${fimTxt(a)}`,
+            { acao: 'criar_campanha', nome_sugerido: a.nome, estrategia: a.estrategia, roas_objetivo: a.roas_objetivo, orcamento_dia: a.orcamento_dia, para: a.roas_objetivo, item_ids: a.item_ids, produtos: nomes.map(n => n.slice(0, 80)), origens, campaign_id: origens[0]?.id ?? null, campanha: origens[0]?.nome ?? null, impacto: 0, impacto_tipo: 'ganho', crescimento: { plano: true }, ...ex });
+          if (ok) escritas++;
+        }
+      }
+      for (const p of planoIA.planos) for (const [i, a] of p.acoes.entries()) await escrever(a, p, i + 1);
+      for (const [i, a] of planoIA.fora.entries()) await escrever(a, null, i + 1);
+      const usadasCamp = new Set(planoIA.planos.filter(p => p.acoes.length).map(p => p.campanha));
+      mom.aceleradas = mom.aceleradas.filter(n => usadasCamp.has(n)); mom.recuperadas = mom.recuperadas.filter(n => usadasCamp.has(n));
+      const nMexer = planoIA.planos.filter(p => p.situacao === 'mexer').length;
+      await logar('sistema', `Plano do especialista Mercado Ads — ${nMexer} campanha(s) com ação, ${planoIA.planos.length - nMexer} sem mexer`,
+        [planoIA.estrategia, ...planoIA.esperar.map(x => `Esperar: ${x}`), ...planoIA.planos.filter(p => p.situacao === 'nao_mexer' && p.resumo).slice(0, 8).map(p => `${p.campanha}: não mexer até ${br(p.reavaliar_em)} — ${p.resumo}`)].filter(Boolean).join('\n'),
+        { especialista: true, planejador: true, fonte: 'planejador', estrategia: planoIA.estrategia, esperar: planoIA.esperar, escritas, descartes: planoIA.descartes.slice(0, 20),
+          planos: planoIA.planos.map(p => ({ campaign_id: p.campaign_id, campanha: p.campanha, situacao: p.situacao, resumo: p.resumo, reavaliar_em: p.reavaliar_em, acoes: p.acoes.map(a => a.tipo === 'candidata' ? (a.c.titulo || '').replace(/^Sugestão:\s*/, '') : a.tipo === 'criar_campanha' ? `Criar campanha ${a.nome}` : 'Mover produto') })),
+          escolhidas: [] }, 'executado');
+    } else if (candidatos.length) {
+      if (planoIA?.erro) console.warn('[ML planejador]', contaId, planoIA.erro);
+      const conta = {
+        cliente: cfg.cliente_nome || null, hoje: hojeIso, janela_campanhas_dias: dias, janela_produtos_dias: diasProd,
+        meta_acos_conta: meta, teto_tacos_cliente: crescimento.teto_tacos, meta_faturamento_conta: crescimento.meta_faturamento, projecao_mensal: resumoCrescimento.projecao, piloto_escala: crescimento.piloto, tacos_mes: tacosMes == null ? null : r1(tacosMes), taxa_cancelamento_pct: r1(taxaCancel * 100),
+        campanhas: C.map(x => ({ id: x.id, nome: x.nome, estrategia: x.c.strategy || null, roas_objetivo: x.roasAlvo ? r1(x.roasAlvo) : null, orcamento_dia: x.budget, gasto_janela: r1(x.gasto), acos_sem_cancelados: x.acos == null || x.acos === Infinity ? null : r1(x.acos), unidades_ads: x.unidades,
+          acos_30d_painel: x.acos30 != null ? r1(x.acos30) : null, tacos_campanha_30d: x.tacos30 != null ? r1(x.tacos30) : null, idade_dias: Number.isFinite(x.idadeDias) ? Math.floor(x.idadeDias) : null, alterada_ha_dias: Number.isFinite(x.mudouHa) ? Math.floor(x.mudouHa) : null, em_aprendizado: x.aprendendo, alterada_recente: x.recente,
+          impressoes: x.share ? { ganha_pct: Math.round(x.share.ganha * 100), topo_pct: Math.round(x.share.topo * 100), perdida_orcamento_pct: Math.round(x.share.orcamento * 100), perdida_classificacao_pct: Math.round(x.share.classificacao * 100), acos_referencia_categoria: x.share.benchmark } : null })),
+      };
+      revisao = await especialista.revisar({ Anthropic: h.Anthropic, anthropicKey: h.anthropicKey, conta, candidatos });
+      // simulação (?simular=1): mostra o pacote que o especialista montaria, sem criar nada na Caixa
+      if (opc.simular) return { conta_id: contaId, marketplace: 'ml', simulacao: true, candidatos: candidatos.map(c => ({ id: c.id, titulo: c.titulo, explicacao: String(c.explicacao).slice(0, 400) })), revisao };
+      const porId = new Map(candidatos.map(c => [c.id, c])), usadas = new Set();
+      for (const e of revisao.escolhidas) {
+        const c = porId.get(e.id); if (!c) continue;
+        if (await sugerir(c.chave, c.titulo, `${c.explicacao}${e.porque ? ` Leitura do especialista: ${e.porque}` : ''}`, { ...c.dados, especialista: { prioridade: e.prioridade, fonte: revisao.fonte } })) usadas.add(c.dados?.campanha);
+      }
+      // a revisão de 3 dias só conta o que entrou no pacote
+      mom.aceleradas = mom.aceleradas.filter(n => usadas.has(n)); mom.recuperadas = mom.recuperadas.filter(n => usadas.has(n));
+      const descartadas = candidatos.filter(c => !revisao.escolhidas.some(e => e.id === c.id));
+      await logar('sistema', `Especialista Mercado Ads — pacote do dia com ${revisao.escolhidas.length} de ${candidatos.length} recomendação(ões)`,
+        [revisao.estrategia, ...revisao.esperar.map(x => `Esperar: ${x}`), descartadas.length ? `Ficaram de fora hoje: ${descartadas.slice(0, 6).map(c => c.titulo.replace(/^Sugestão:\s*/, '')).join('; ')}${descartadas.length > 6 ? ` e mais ${descartadas.length - 6}` : ''}.` : ''].filter(Boolean).join('\n') || 'Pacote montado pela ordem das regras (especialista indisponível).',
+        { especialista: true, fonte: revisao.fonte, erro: revisao.erro || null, estrategia: revisao.estrategia, esperar: revisao.esperar, escolhidas: revisao.escolhidas, descartadas: descartadas.map(c => ({ id: c.id, titulo: c.titulo })).slice(0, 30) }, 'executado');
     }
 
     if (momentoHoje) await registrarMomento();

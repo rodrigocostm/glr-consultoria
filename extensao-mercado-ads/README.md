@@ -9,6 +9,12 @@ Copiloto do Mercado Ads. Abre um painel ao lado da tela de **Product Ads** com d
 > um botão **Copiar** para o valor e a data para **reavaliar** (~7 dias). Quando o agente GLR tem
 > passo para a campanha aberta, a aba Análise manda seguir o **Pacote GLR** (uma instrução só).
 >
+> **v1.4 — uma voz só (plano do especialista).** Os passos vêm do plano do especialista GLR
+> (docs/especificacao-agente-ads-ml.md): cada passo mostra o motivo, o efeito esperado, até quando
+> não mexer e quando desfazer/voltar. Campanha analisada sem ação ganha o selo cinza
+> "GLR: não mexer até dd/mm". Novo passo "Criar campanha" (nome, estratégia, ROAS e orçamento para
+> copiar). A leitura própria da extensão só aparece onde o agente não tem plano.
+
 > **v1.3 — guia na tela.** Sem clicar em nada, a extensão marca a própria tela do Mercado Ads:
 > 1. **Selo em cada linha** (campanha ou anúncio) com o passo do agente GLR e o valor — ex.:
 >    *GLR: ROAS 15 → 17,6* (vermelho = conter/pausar; verde = acelerar).

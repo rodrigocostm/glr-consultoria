@@ -470,7 +470,7 @@ Router.register('agente-ml', (params, el) => {
       <div class="aml-campos">
         ${campo('aml-teto-tacos','Teto de TACOS',plano.teto_tacos ?? tetoCliente(c.conta_id),'ADS ÷ faturamento total da conta. Não é a meta de ACOS.','%')}
         ${campo('aml-meta-fat','Meta mensal desta conta',plano.meta_faturamento,'Informe a parcela da meta do cliente correspondente a esta conta.','R$')}
-        ${campo('aml-margem-reserva','Margem mínima após ADS',plano.margem_reserva,'Reserva usada com a margem antes do ADS calculada pelos custos. Sem custos, não sugere escala.','%')}
+        ${campo('aml-margem-reserva','Margem mínima após ADS',plano.margem_reserva,'Reserva usada com a margem antes do ADS calculada pelos custos. Sem custos, a escala sai com passo menor.','%')}
         ${campo('aml-passo','Variação máxima por teste',plano.passo_max ?? 15,'O teste usa amostra e confiança; este é o teto, de 5 a 25%.','%')}
         ${['escalar','destravar','desenvolver','conter'].map(g=>campo('aml-limite-'+g,'Limite de ACOS · '+g,plano.limites_grupo?.[g],'Opcional. A margem do produto sempre limita o grupo.','%')).join('')}
       </div>
@@ -493,6 +493,7 @@ Router.register('agente-ml', (params, el) => {
     retirar_produto: { rot: 'Tirar produto', cor: 'var(--red)', ordem: 1 },
     pausar: { rot: 'Pausar campanha', cor: 'var(--red)', ordem: 2 },
     mover_produto: { rot: 'Mover produto', cor: 'var(--yellow)', ordem: 3 },
+    criar_campanha: { rot: 'Criar campanha', cor: 'var(--green)', ordem: 3 },
     roas_target: { rot: 'Ajustar ROAS', cor: 'var(--accent)', ordem: 4 },
     acos_target: { rot: 'Meta de ACOS', cor: 'var(--accent)', ordem: 4 },
     orcamento: { rot: 'Orçamento', cor: 'var(--accent)', ordem: 5 },
@@ -505,9 +506,13 @@ Router.register('agente-ml', (params, el) => {
     const l = state.logs.find(x => String(x.conta_id) === String(id) && x.dados?.especialista);
     if (!l || (!l.dados.estrategia && !(l.dados.esperar || []).length)) return '';
     const quando = new Date(l.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    return `<div class="aml-espq"><div class="aml-espq-t">Leitura do especialista Mercado Ads <span class="aml-sub">${quando} · ${(l.dados.escolhidas || []).length} recomendação(ões) no pacote</span></div>
+    const planos = l.dados.planos || [], br = iso => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '';
+    const parados = planos.filter(p => p.situacao === 'nao_mexer');
+    const sub = l.dados.planejador ? `${planos.length - parados.length} campanha(s) com ação · ${parados.length} sem mexer` : `${(l.dados.escolhidas || []).length} recomendação(ões) no pacote`;
+    return `<div class="aml-espq"><div class="aml-espq-t">${l.dados.planejador ? 'Plano do especialista Mercado Ads' : 'Leitura do especialista Mercado Ads'} <span class="aml-sub">${quando} · ${sub}</span></div>
       ${l.dados.estrategia ? `<div class="aml-espq-x">${h(l.dados.estrategia)}</div>` : ''}
-      ${(l.dados.esperar || []).length ? `<div class="aml-espq-e"><b>Esperar:</b> ${l.dados.esperar.map(h).join(' · ')}</div>` : ''}</div>`;
+      ${(l.dados.esperar || []).length ? `<div class="aml-espq-e"><b>Esperar:</b> ${l.dados.esperar.map(h).join(' · ')}</div>` : ''}
+      ${parados.length ? `<details class="aml-espq-e"><summary><b>Não mexer agora</b> (${parados.length} campanha(s) analisada(s))</summary><ul class="aml-espq-l">${parados.map(p => `<li><b>${h(p.campanha)}</b> — até ${br(p.reavaliar_em)}${p.resumo ? `: ${h(p.resumo)}` : ''}</li>`).join('')}</ul></details>` : ''}</div>`;
   }
   function renderSugestoes(id) {
     const meta = parseFloat(cfgDe(id)?.meta_acos) || null;
@@ -516,7 +521,8 @@ Router.register('agente-ml', (params, el) => {
     // conservadora (ROAS objetivo maior = lance menor só para ele). Destino com ROAS
     // quase igual (menos de 20% maior) não muda nada → orienta criar campanha nova.
     const roasNovo = d => Math.max(roasMeta || 0, (+d.de || 0) * 1.25) || null;
-    const destinoFraco = d => d.destino && d.de && d.para && +d.para < +d.de * 1.2;
+    // (só vale para mover para campanha MAIS conservadora — mover campeão para campanha com verba é outra coisa)
+    const destinoFraco = d => d.impacto_tipo === 'economia' && d.destino && d.de && d.para && +d.para < +d.de * 1.2;
     // Produtos que vão para campanha nova: agrupa por ROAS → UMA campanha com todos
     const novaCamp = {};
     for (const l of pendentes(id)) {
@@ -575,6 +581,7 @@ Router.register('agente-ml', (params, el) => {
       adicionar_produto: `Colocar ${nomeP(d)} na campanha ${nomeC(d.destino || d.campanha)}`,
       abc_queda: `Revisar ${nomeP(d)} — curva A ${d.tendencia === 'parou' ? 'parou de vender' : 'em queda'}`,
       informativa: 'Melhorar os anúncios desta campanha',
+      criar_campanha: `Criar a campanha <b>${h(d.nome_sugerido || 'nova')}</b> com ${(d.item_ids || []).length} produtos`,
     })[d.acao] || h(d.produto || d.campanha || 'Revisar');
     const g0 = d => d.janela_dias ? ` em ${d.janela_dias} dias` : '';
     const pqTxt = d => {
@@ -604,6 +611,11 @@ Router.register('agente-ml', (params, el) => {
         case 'acos_target': return [abrir(d.campanha), `Clique em <b>Editar</b> e mude a meta de ACOS para <b>${pct(d.para)}</b>`];
         case 'pausar': return [abrir(d.campanha), 'Desligue a chave <b>Estado</b> no topo da campanha'];
         case 'adicionar_produto': return [abrir(d.destino || d.campanha), `<b>Adicionar anúncios</b> → ${idsHtml(ids)}`, 'Confira o estoque antes'];
+        case 'criar_campanha': return [`Em <b>Publicidade → Product Ads</b>, clique em <b>Criar campanha</b>`,
+          `Nome: <b>${h(d.nome_sugerido || '')}</b>${copiarBt(d.nome_sugerido, 'nome')} · estratégia <b>${d.estrategia === 'INCREASE' ? 'Crescimento' : d.estrategia === 'VISIBILITY' ? 'Visibilidade' : 'Rentabilidade'}</b>`,
+          `ROAS objetivo <b>${numML(d.roas_objetivo)}</b>${copiarBt(numML(d.roas_objetivo))} · orçamento diário <b>${R$(d.orcamento_dia)}</b>${copiarBt(numML(d.orcamento_dia))}`,
+          `Adicione os anúncios: ${idsHtml(ids)}`,
+          (d.origens || []).length ? `Se algum já estiver em outra campanha (${d.origens.map(o => nomeC(o.nome)).join(', ')}), use <b>Anúncios patrocinados → Mais ações → Mover para uma campanha</b> → a nova` : 'Confira o estoque antes'];
       }
       return null;
     };
@@ -616,7 +628,8 @@ Router.register('agente-ml', (params, el) => {
           <div class="aml-p-ic" title="Passo ${n}">${ICONE[d.acao] || svg('<circle cx="12" cy="12" r="8"/>')}</div>
           <div class="aml-p-corpo">
             <div class="aml-p-acao"><span class="aml-p-tag">${t.rot}</span>${acaoTxt(d)}</div>
-            ${passos ? `<div class="aml-como aml-fazer"><div class="aml-detalhes-titulo">O que fazer no painel do ML</div><ol>${passos.map(x => `<li>${x}</li>`).join('')}</ol><div class="aml-sub aml-dep">Depois: clique em <b>Marcar como feito</b> e não mexa mais nesta campanha até <b>${(() => { const dt = new Date(Date.now() + 7 * 864e5); return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}`; })()}</b> — o Mercado Ads leva ~7 dias para mostrar o efeito.</div></div>` : ''}
+            ${d.motivo ? `<div class="aml-p-mot">${h(d.motivo)}${d.esperado ? ` <span class="aml-sub">Esperado: ${h(d.esperado)}</span>` : ''}</div>` : ''}
+            ${passos ? `<div class="aml-como aml-fazer"><div class="aml-detalhes-titulo">O que fazer no painel do ML</div><ol>${passos.map(x => `<li>${x}</li>`).join('')}</ol><div class="aml-sub aml-dep">Depois: clique em <b>Marcar como feito</b> e não mexa mais nesta campanha até <b>${d.reavaliar_em ? `${d.reavaliar_em.slice(8, 10)}/${d.reavaliar_em.slice(5, 7)}` : (() => { const dt = new Date(Date.now() + 7 * 864e5); return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}`; })()}</b> — o Mercado Ads leva ~7 dias para mostrar o efeito.${d.desfazer_se ? ` Desfaça se ${h(d.desfazer_se.replace(/\.$/, ''))}.` : ''}${d.voltar_quando ? ` <b>Voltar quando:</b> ${h(d.voltar_quando)}.` : ''}</div></div>` : ''}
             <details class="aml-como"><summary>Ver detalhes (por quê e números)</summary>
             <div class="aml-p-pq" style="margin-top:10px">${pqTxt(d)}</div>
             ${d.experimento ? `<div class="aml-esp"><b>Teste controlado:</b> ${h(d.experimento.hipotese)}<br>${h(d.experimento.criterio_recuo)}<br>Confiança: ${h(d.crescimento?.confianca || 'baixa')} · Hipótese de contribuição semanal: ${d.crescimento?.contribuicao_hipotese != null ? R$(d.crescimento.contribuicao_hipotese) : 'sem margem para estimar'}. Medição após até 21 dias; sem garantia de causalidade.</div>` : ''}
@@ -858,7 +871,7 @@ Router.register('agente-ml', (params, el) => {
     .aml-sub{font-size:12.5px;color:var(--text-muted);line-height:1.5;}
     .aml-esp{font-size:12px;color:var(--text-secondary);margin-top:4px;line-height:1.45;padding-left:8px;border-left:2px solid var(--purple);}
     .aml-espq{margin:10px 0 12px;padding:11px 14px;border-radius:10px;background:color-mix(in srgb,var(--purple) 8%,var(--bg-card));border:1px solid color-mix(in srgb,var(--purple) 25%,transparent);}
-    .aml-espq-t{font-weight:650;font-size:13px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px;} .aml-espq-x{font-size:13px;line-height:1.55;color:var(--text-primary);} .aml-espq-e{font-size:12.5px;color:var(--text-secondary);margin-top:6px;}
+    .aml-espq-t{font-weight:650;font-size:13px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px;} .aml-espq-x{font-size:13px;line-height:1.55;color:var(--text-primary);} .aml-espq-e{font-size:12.5px;color:var(--text-secondary);margin-top:6px;} .aml-espq-l{margin:6px 0 0 18px;padding:0;line-height:1.55;} .aml-p-mot{font-size:13px;line-height:1.5;margin:4px 0 2px;color:var(--text-primary);}
     .aml-chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(99,102,241,.12);color:var(--accent);vertical-align:middle;}
     .aml-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
     .aml-card{padding:16px 18px;cursor:pointer;border-left:4px solid var(--c,var(--text-muted));}

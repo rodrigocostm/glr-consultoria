@@ -23,17 +23,20 @@ test('quatro grupos: escala, oferta travada, amostra baixa e contenção',()=>{
   assert.equal(motor.classificar({...familia,gasto:600},aviso,config()).grupo,'conter');
   assert.equal(motor.classificar(familia,{...aviso,ne:'zerado'},config()).grupo,'conter');
 });
-test('custos, estoque, teto e reserva ausentes impedem escala',()=>{
-  for(const av of [null,{aa:35},{ne:'ok'}]) assert.notEqual(motor.classificar(familia,av,config()).grupo,'escalar');
-  for(const c of [config({teto_tacos:null}),config({margem_reserva:null})]) assert.notEqual(motor.classificar(familia,aviso,c).grupo,'escalar');
+test('estoque e teto ausentes impedem escala; custo e reserva ausentes só reduzem a confiança',()=>{
+  for(const av of [null,{aa:35}]) assert.notEqual(motor.classificar(familia,av,config()).grupo,'escalar');
+  assert.notEqual(motor.classificar(familia,aviso,config({teto_tacos:null})).grupo,'escalar');
+  for(const [av,c] of [[{ne:'ok'},config()],[aviso,config({margem_reserva:null})]]) {
+    const r=motor.classificar(familia,av,c); assert.equal(r.grupo,'escalar'); assert.equal(r.confianca,'media'); assert.ok(r.avisos.length);
+  }
 });
 test('reserva de margem e teto do grupo limitam ACOS do produto',()=>{
  assert.equal(motor.classificar(familia,{...aviso,aa:25},config()).limite_acos,15);
  assert.equal(motor.classificar(familia,aviso,config({limites_grupo:{escalar:8}})).grupo,'conter');
 });
-test('sem cobertura, TACOS ou meta financeira nenhuma proposta de escala',()=>{
+test('sem cobertura ou com TACOS no teto nenhuma proposta de escala; meta de faturamento não é obrigatória',()=>{
  for(const m of [{...mensal,tacos:null},{...mensal,cobertura:false},{...mensal,tacos:8}]) assert.equal(motor.experimento(proposta,ctx(),config(),m).bloqueado,true);
- assert.equal(motor.experimento(proposta,ctx(),config({meta_faturamento:null}),mensal).bloqueado,true);
+ assert.notEqual(motor.experimento(proposta,ctx(),config({meta_faturamento:null}),mensal).bloqueado,true);
 });
 test('passos adaptativos respeitam confiança, teto configurado e proposta original',()=>{
  assert.equal(motor.experimento(proposta,ctx(),config(),mensal).dados.para,115);

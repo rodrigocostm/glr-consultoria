@@ -324,18 +324,19 @@
     roas_target: d => `${+d.para > +d.de ? 'Subir' : 'Baixar'} o ROAS objetivo de ${xv(d.de)} para <b>${xv(d.para)}</b>`,
     orcamento: d => `${+d.para > +d.de ? 'Aumentar' : 'Reduzir'} o orçamento diário para <b>${R$(d.para)}</b>`,
     retirar_produto: d => `Pausar o anúncio <b>${esc(String(d.produto || '').slice(0, 60))}</b>`,
+    criar_campanha: d => `Criar a campanha <b>${esc(d.nome_sugerido || 'nova')}</b> com ${(d.item_ids || []).length} produtos`,
     mover_produto: d => `Mover <b>${esc(String(d.produto || '').slice(0, 60))}</b> para <b>${esc(d.destino || 'campanha nova')}</b>`,
     adicionar_produto: d => `Colocar <b>${esc(String(d.produto || '').slice(0, 60))}</b> nesta campanha`,
     pausar: () => 'Pausar esta campanha',
     informativa: () => 'Melhorar os anúncios desta campanha',
   };
-  const PQ = d => d.acao === 'roas_target' || d.acao === 'orcamento' ? `${d.acos_30d != null ? `ACOS ${pct(d.acos_30d)} · TACOS da campanha ${pct(d.tacos_campanha)} (30 dias, como no ML)` : `ACOS da campanha ${pct(d.acos)}${d.janela_dias ? ` em ${d.janela_dias} dias` : ''}`}${d.share ? ` · perde ${Math.round((d.acao === 'orcamento' ? d.share.orcamento : d.share.classificacao) * 100)}% das impressões por ${d.acao === 'orcamento' ? 'orçamento' : 'classificação'}` : ''}`
+  const PQ = d => d.motivo ? `${esc(d.motivo)}${d.esperado ? ` <i>Esperado: ${esc(d.esperado)}</i>` : ''}` : d.acao === 'roas_target' || d.acao === 'orcamento' ? `${d.acos_30d != null ? `ACOS ${pct(d.acos_30d)} · TACOS da campanha ${pct(d.tacos_campanha)} (30 dias, como no ML)` : `ACOS da campanha ${pct(d.acos)}${d.janela_dias ? ` em ${d.janela_dias} dias` : ''}`}${d.share ? ` · perde ${Math.round((d.acao === 'orcamento' ? d.share.orcamento : d.share.classificacao) * 100)}% das impressões por ${d.acao === 'orcamento' ? 'orçamento' : 'classificação'}` : ''}`
     : d.acao === 'retirar_produto' ? `gastou ${R$(d.gasto)}${d.janela_dias ? ` em ${d.janela_dias} dias` : ''} ${d.unidades ? `e vendeu ${d.unidades} un.` : 'sem venda pelo ADS'}`
     : d.acao === 'mover_produto' ? `ACOS ${pct(d.acos)} · gastou ${R$(d.gasto)}` : '';
   // ── Passo a passo exato (só mostra; quem faz no ML é o analista) ──
   const num = v => String(Math.round((+v || 0) * 100) / 100).replace('.', ',');
   const copiar = (v, rot) => v == null || v === '' ? '' : `<button class="cp" data-copiar="${esc(v)}" title="Copia para colar no Mercado Ads">Copiar ${esc(rot || v)}</button>`;
-  const reavaliar = () => { const d = new Date(Date.now() + 7 * 864e5); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`; };
+  const reavaliar = x => { if (x?.reavaliar_em) return `${x.reavaliar_em.slice(8, 10)}/${x.reavaliar_em.slice(5, 7)}`; const d = new Date(Date.now() + 7 * 864e5); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`; };
   const codigos = d => (d.item_ids || []).map(String);
   function passosML(d) {
     const abrir = n => `Abra a campanha <b>${esc(n || 'indicada')}</b>${n ? '' : ''}`;
@@ -347,11 +348,12 @@
       case 'mover_produto': return ['Vá em <b>Product Ads → Anúncios patrocinados</b>', `Procure ${idsTxt || 'o anúncio'} ${copiar(ids[0])} e marque a caixa da linha`, d.destino_id ? `Clique em <b>Mais ações → Mover para uma campanha</b> → escolha <b>${esc(d.destino || '')}</b> → <b>Mover anúncios patrocinados</b> (não precisa pausar antes)` : 'Clique em <b>Mais ações → Criar campanha</b> e crie a campanha conservadora indicada'];
       case 'adicionar_produto': return [abrir(d.destino || d.campanha), 'Clique em <b>Adicionar anúncios</b>', `Cole ${ids.length > 1 ? 'os códigos' : 'o código'} ${idsTxt} ${copiar(ids.join(' '), ids.length > 1 ? 'códigos' : ids[0])} e confirme`, 'Confira o estoque antes'];
       case 'pausar': return [abrir(d.campanha), 'Desligue a chave <b>Estado</b> no topo da campanha'];
+      case 'criar_campanha': return ['Em <b>Product Ads</b>, clique em <b>Criar campanha</b>', `Nome <b>${esc(d.nome_sugerido || '')}</b> ${copiar(d.nome_sugerido, 'nome')} · estratégia <b>${d.estrategia === 'INCREASE' ? 'Crescimento' : d.estrategia === 'VISIBILITY' ? 'Visibilidade' : 'Rentabilidade'}</b>`, `ROAS objetivo <b>${num(d.roas_objetivo)}</b> ${copiar(num(d.roas_objetivo))} · orçamento diário <b>${num(d.orcamento_dia)}</b> ${copiar(num(d.orcamento_dia))}`, `Adicione os anúncios ${idsTxt} ${copiar(ids.join(' '), 'códigos')}`, (d.origens || []).length ? `Os que já estão em outra campanha: <b>Anúncios patrocinados → Mais ações → Mover para uma campanha</b> → a nova` : 'Confira o estoque antes'];
       case 'informativa': return ['Não mexa no ROAS nem no orçamento desta campanha', 'Revise os anúncios dela: fotos, título, ficha técnica, frete e preço (buy box)'];
     }
     return null;
   }
-  const listaPassos = (passos, final = true) => !passos ? '' : `<ol class="ps">${passos.map(x => `<li>${x}</li>`).join('')}</ol>${final ? `<div class="dep">Depois: clique em <b>Feito</b> aqui e não mexa mais nesta campanha até <b>${reavaliar()}</b> — o Mercado Ads leva ~7 dias para mostrar o efeito.</div>` : ''}`;
+  const listaPassos = (passos, final = true, d = null) => !passos ? '' : `<ol class="ps">${passos.map(x => `<li>${x}</li>`).join('')}</ol>${final ? `<div class="dep">Depois: clique em <b>Feito</b> aqui e não mexa mais nesta campanha até <b>${reavaliar(d)}</b> — o Mercado Ads leva ~7 dias para mostrar o efeito.${d?.desfazer_se ? ` Desfaça se ${esc(d.desfazer_se.replace(/\.$/, ''))}.` : ''}${d?.voltar_quando ? ` <b>Voltar quando:</b> ${esc(d.voltar_quando)}.` : ''}</div>` : ''}`;
   const impacto = d => !d.impacto ? '' : `<span class="imp ${d.impacto_tipo === 'economia' ? 'eco' : ''}">${d.impacto_tipo === 'economia' ? '−' : '+'}${R$(d.impacto)}/sem</span>`;
 
   // o que o botão de ajuda faz em cada passo, na campanha aberta
@@ -437,13 +439,13 @@
       ? `<form class="login" data-login="1"><b>Entrar com o login da GLR</b><label>E-mail<input type="email" id="glr-email" autocomplete="username" required></label><label>Senha<input type="password" id="glr-senha" autocomplete="current-password" required></label><button class="pri" type="submit">Entrar</button>${st.msg.login ? `<div class="msg ${st.msg.login.erro ? 'erro' : ''}">${esc(st.msg.login.texto)}</div>` : ''}<small>Mesmo e-mail e senha do sistema da GLR (consultoriaglr.com.br).</small></form>`
       : st.erro ? `<div class="vazio erro">${esc(st.erro)}</div>`
       : st.carregando ? '<div class="vazio">Buscando o pacote do dia…</div>'
-      : !lista.length ? `<div class="vazio">Nada pendente ${aqui ? 'para esta campanha' : 'para as campanhas desta tela'}. ✓</div>`
+      : !lista.length ? (aqui && st.planos?.[aqui]?.situacao === 'nao_mexer' ? `<div class="vazio"><b>Não mexer até ${reavaliar(st.planos[aqui])}.</b>${st.planos[aqui].resumo ? ` ${esc(st.planos[aqui].resumo)}` : ''}<br><small>Plano do especialista GLR.</small></div>` : `<div class="vazio">Nada pendente ${aqui ? 'para esta campanha' : 'para as campanhas desta tela'}. ✓</div>`)
       : lista.map((l, i) => {
           const d = l.dados || {}, mover = d.acao === 'mover_produto', m = st.msg[l.id];
           return `<div class="passo">
             <div class="topo"><span class="n">${i + 1}</span><div class="acao">${(ACAO[d.acao] || (() => esc(l.titulo)))(d)}</div>${impacto(d)}</div>
             ${PQ(d) ? `<div class="pq">${PQ(d)}</div>` : ''}
-            <div class="como">${listaPassos(passosML(d))}</div>
+            <div class="como">${listaPassos(passosML(d), true, d)}</div>
             ${!aqui ? `<div class="pq">Campanha: <b>${esc(d.campanha || '—')}</b></div>` : ''}
             ${m ? `<div class="msg ${m.erro ? 'erro' : ''}">${esc(m.texto)}</div>` : ''}
             <div class="bts">
@@ -599,7 +601,7 @@
     const r = await enviar({ tipo: 'listar', campanhas });
     st.carregando = false;
     if (!r?.ok) { st.erro = r?.erro || 'Não consegui buscar o pacote do dia.'; st.erroEm = Date.now(); st.itens = []; }
-    else { st.erro = null; st.itens = (r.itens || []).filter(l => l.dados?.acao !== 'abc_queda'); }
+    else { st.erro = null; st.itens = (r.itens || []).filter(l => l.dados?.acao !== 'abc_queda'); st.planos = r.planos || {}; }
     render();
   }
 
@@ -613,9 +615,10 @@
     : d.acao === 'retirar_produto' ? 'Pausar este anúncio'
     : d.acao === 'mover_produto' ? `Mover para ${d.destino || 'campanha nova'}`
     : d.acao === 'adicionar_produto' ? `Adicionar ${(d.item_ids || []).length || ''} anúncio(s)`
+    : d.acao === 'criar_campanha' ? `Criar campanha ${d.nome_sugerido || 'nova'}`
     : d.acao === 'informativa' ? 'Melhorar os anúncios' : '';
   const corAcao = d => ['retirar_produto', 'pausar'].includes(d.acao) || (d.acao === 'roas_target' && +d.para > +d.de) || (d.acao === 'orcamento' && +d.para < +d.de) ? ['#b42318', '#fdecea'] : ['#0f7a43', '#e7f7ee'];
-  const motivoDe = l => { const t = String(l.titulo || '').toLowerCase();
+  const motivoDe = l => { if (l.dados?.voltar_quando && /estoque/i.test(l.dados.voltar_quando)) return 'sem estoque: volta quando repor'; const t = String(l.titulo || '').toLowerCase();
     return /sem estoque|estoque/.test(t) ? 'sem estoque' : /conservadora/.test(t) ? 'ACOS alto: separar' : /sem retorno|sem venda|gasta/.test(t) ? 'gasta sem vender' : /catálogo|buy box/.test(t) ? 'sem buy box' : ''; };
   function seloGLR(tr, textos, cor, titulo) {
     if (!tr) return;
@@ -653,7 +656,7 @@
   }
   function guia() {
     limparContornos();
-    if (st.erro || !st.itens.length) { mostrarBalao(null); return; }
+    if (st.erro || (!st.itens.length && !Object.keys(st.planos || {}).length)) { mostrarBalao(null); return; }
     const aqui = campanhaAberta();
     // 1) selos — lista de campanhas
     if (!aqui) {
@@ -662,6 +665,11 @@
       for (const [id, ds] of porCamp) {
         const a = document.querySelector(`a[href*="/campaigns/${id}/"]`), tr = a && a.closest('tr');
         if (tr) seloGLR(tr, ds.map(curto).filter(Boolean), corAcao(ds[0]), 'Passo do agente GLR — abra a campanha para ver onde clicar');
+      }
+      for (const [id, p] of Object.entries(st.planos || {})) {
+        if (p.situacao !== 'nao_mexer' || porCamp.has(String(id))) continue;
+        const a = document.querySelector(`a[href*="/campaigns/${id}/"]`), tr = a && a.closest('tr');
+        if (tr) seloGLR(tr, [`não mexer até ${reavaliar(p)}`], ['#475467', '#f2f4f7'], p.resumo || 'Plano do especialista GLR: esperar o efeito antes de mexer');
       }
       mostrarBalao(null); return;
     }

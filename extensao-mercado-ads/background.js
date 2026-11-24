@@ -49,6 +49,21 @@ async function listar(campanhas) {
   return rest(`glr_agente_log?${qs}`, { method: 'GET', headers: { Prefer: '' } });
 }
 
+// Plano do especialista (o que NÃO mexer e até quando), por campanha — última análise de cada conta
+async function planos(campanhas) {
+  const ids = new Set((campanhas || []).map(String));
+  if (!ids.size) return {};
+  const desde = new Date(Date.now() - 3 * 864e5).toISOString();
+  const qs = `tipo=eq.sistema&dados->>planejador=eq.true&criado_em=gte.${encodeURIComponent(desde)}&select=conta_id,planos:dados->planos,criado_em&order=criado_em.desc&limit=120`;
+  const linhas = await rest(`glr_agente_log?${qs}`, { method: 'GET', headers: { Prefer: '' } }).catch(() => []);
+  const out = {}, contas = new Set();
+  for (const l of linhas || []) {
+    if (contas.has(l.conta_id)) continue; contas.add(l.conta_id); // só a análise mais recente de cada conta
+    for (const p of l.planos || []) if (ids.has(String(p.campaign_id)) && !out[p.campaign_id]) out[p.campaign_id] = { situacao: p.situacao, resumo: p.resumo || null, reavaliar_em: p.reavaliar_em || null, em: l.criado_em };
+  }
+  return out;
+}
+
 async function marcar(id, resultado, dados, por) {
   const extra = resultado === 'executado' ? { dados: { ...(dados || {}), aplicado_em: new Date().toISOString(), aplicado_por: por || 'extensao' } } : {};
   await rest(`glr_agente_log?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ resultado, ...extra }) });
@@ -61,7 +76,7 @@ chrome.runtime.onMessage.addListener((msg, _de, responder) => {
       if (msg.tipo === 'entrar') return responder({ ok: true, email: (await entrar(msg.email, msg.senha)).email });
       if (msg.tipo === 'sair') { await chrome.storage.local.remove('sessao'); return responder({ ok: true }); }
       if (msg.tipo === 'estado') { const s = await sessao(); return responder({ ok: true, email: s?.email || null }); }
-      if (msg.tipo === 'listar') return responder({ ok: true, itens: await listar(msg.campanhas) });
+      if (msg.tipo === 'listar') { const [itens, pl] = await Promise.all([listar(msg.campanhas), planos(msg.campanhas)]); return responder({ ok: true, itens, planos: pl }); }
       if (msg.tipo === 'marcar') return responder({ ok: await marcar(msg.id, msg.resultado, msg.dados, msg.por) });
       responder({ ok: false, erro: 'mensagem desconhecida' });
     } catch (e) { responder({ ok: false, erro: e.message === 'SEM_LOGIN' ? 'SEM_LOGIN' : (e.message || String(e)) }); }
