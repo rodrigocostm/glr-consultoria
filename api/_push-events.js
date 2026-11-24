@@ -3,7 +3,7 @@ const dataBR=d=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',ye
 function datas(agora){const dia=dataBR(agora),ini=Date.parse(dia+'T00:00:00-03:00'),ontem=dataBR(new Date(ini-864e5)),mes=dia.slice(0,8)+'01',ant=new Date(Date.UTC(+dia.slice(0,4),+dia.slice(5,7)-2,1)).toISOString().slice(0,10),dm=new Date(Date.UTC(+dia.slice(0,4),+dia.slice(5,7),0)).getUTCDate();return {dia,ini,ontem,mes,ant,dm};}
 // Guarda episódio e o instante de entrada. Permanecer em queda/sem estoque não repete aviso.
 function transicao(chave,ativo,evento,estado,agora,alterados){const anterior=estado[chave]||{},entra=ativo&&!anterior.ativo;const novo={...anterior,ativo};if(entra){novo.seq=(anterior.seq||0)+1;novo.evento={...evento,chave:`${chave}:${novo.seq}`,em:agora.toISOString()};}if(anterior.ativo!==ativo||entra){estado[chave]=novo;alterados.push({chave,dados:novo,atualizado_em:agora.toISOString()});}return ativo?novo.evento:null;}
-function gerarEventos({agora,clientes=[],gestores=[],vinc={},metas={},pedidos=[],ads=[],resumos=[],historicos=[],sinais=[],curva=[],estado={}}){
+function gerarEventos({agora,clientes=[],gestores=[],vinc={},metas={},pedidos=[],ads=[],resumos=[],historicos=[],sinais=[],curva=[],prejuizos=null,estado={}}){
  const D=datas(agora),eventos=[],alterados=[],contas=carteira(vinc,clientes),mapaGestor=new Map(),locais=new Map();
  for(const c of clientes){const cs=carteira({[c.id]:vinc[c.id]||[]},[c]);for(const k of cs.keys())locais.set(k,c.nome);const ids=[...new Set([...cs.values()].map(x=>x.id))];if(!ids.length)continue;
  const meta=+(metas[c.id]||c.metaMensal)||0;
@@ -18,6 +18,14 @@ function gerarEventos({agora,clientes=[],gestores=[],vinc={},metas={},pedidos=[]
  for(const [id,g]of mapaGestor){for(const p of pedidos)if(p.situacao==='valido'&&g.chaves.has(`${p.marketplace}:${p.conta_id}`)&&Date.parse(p.criado_em)>=D.ini&&Date.parse(p.criado_em)<=+agora)g.fat+=+p.valor_bruto||0;if(g.fat<g.meta||g.meta<=0)continue;const gestor=gestores.find(x=>String(x.id)===id);eventos.push({chave:`gestor:${id}:${D.dia}`,categoria:'gestores',contas:[...g.contas],em:agora.toISOString(),titulo:gestor?.nome||'Gestor '+id,texto:`Meta diária batida: ${dinheiro(g.fat)} de ${dinheiro(g.meta)} (${(g.fat/g.meta*100).toFixed(1)}%). Carteira com metas cadastradas.`,url:'/index.html#meta-diaria'});}
  for(const p of curva){const k=`${p.marketplace}:${p.conta_id}`;if(!contas.has(k)||!historicos.some(h=>`${h.marketplace}:${h.conta_id}`===k&&h.cursor?.historico_ate&&h.cursor.historico_ate<=D.ini/1000-28*86400))continue;const s=sinais.find(s=>`${s.marketplace}:${s.conta_id}`===k);if(!s?.cursor?.em||+agora-Number(s.cursor.em)>8*3600e3)continue;const item=s.cursor.itens?.[p.item_id];if(item?.e==null||!Number.isFinite(+item.e))continue;
  const zerado=+item.e<=0;const e=transicao(`curvaA:${k}:${p.item_id}`,zerado,{categoria:'curva_a',contas:[String(p.conta_id)],titulo:`Curva A sem estoque · ${locais.get(k)||contas.get(k).nome}`,texto:`${p.nome || item.n || p.item_id} · estoque ${item.e}. Curva A por faturamento dos últimos 28 dias fechados. Verifique reposição e anúncios.`,url:'/index.html#estoque-margem'},estado,agora,alterados);if(e)eventos.push(e);
+ }
+ // Um aviso por episódio e produto/conjunto, sem repetir a cada checagem.
+ if(prejuizos!==null){
+  const atuais=new Set();
+  for(const g of prejuizos){const k=`${g.marketplace}:${g.conta_id}`;if(!contas.has(k))continue;const chave='prejuizo:'+g.chave;atuais.add(chave);
+   const e=transicao(chave,true,{categoria:'prejuizo',contas:[String(g.conta_id)],titulo:`Venda com prejuízo · ${locais.get(k)||contas.get(k).nome}`,texto:`${g.produto} · ${g.pedidos} pedido(s), perda ${g.estimado?'estimada ':''}de ${dinheiro(g.perda)} nos últimos 30 dias, antes do ADS. Revise preço, custos e taxas.`,url:'/index.html#vendas-prejuizo'},estado,agora,alterados);if(e)eventos.push(e);
+  }
+  for(const chave of Object.keys(estado))if(chave.startsWith('prejuizo:')&&!atuais.has(chave)&&estado[chave].ativo)transicao(chave,false,{},estado,agora,alterados);
  }
  return {eventos,alterados};
 }
