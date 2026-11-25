@@ -1,0 +1,15 @@
+const {test}=require('node:test');
+const a=require('node:assert/strict');
+const {normalize,history}=require('../api/_playbook-history');
+const sh={key:'shopee:1',marketplace:'shopee',cliente_id:'c',gestor_id:'g'};
+const ml={...sh,key:'ml:2',marketplace:'mercado-livre'};
+const row={id:'a',conta_id:'1',tipo:'decisao',resultado:'executado',origem:'cron',criado_em:'2026-11-20T12:00:00Z',dados:{campaign_id:7,budget_de:20,budget_para:30}};
+test('Shopee execution uses source identity and deduplicates without copying records',()=>{const rs=normalize([row,row],[sh]);a.equal(rs.length,1);a.equal(rs[0].executor,'ia');a.equal(rs[0].fonte_id,'a');a.equal(rs[0].antes,20);a.equal(rs[0].autor_id,null);});
+test('pending recommendation cannot receive an execution or measurement',()=>{const [r]=normalize([{...row,resultado:'so_alerta',dados:{...row.dados,medicao:{veredito:'melhorou'}}}],[sh]);a.equal(r.status,'sugerida');a.equal(r.executor,'nao_confirmado');a.equal(r.executado_em,null);a.equal(r.medicao,null);});
+test('ML detection does not invent executor or execution timestamp',()=>{const [r]=normalize([{...row,conta_id:'2',tipo:'alerta',dados:{marketplace:'ml',acao:'orcamento',aplicado_por:'detectado',aplicado_em:'2026-11-21T12:00:00Z'}}],[ml]);a.equal(r.executor,'nao_confirmado');a.equal(r.executado_em,null);a.ok(r.detectado_em);});
+test('human execution does not imply current account manager executed',()=>{const [r]=normalize([{...row,origem:'analista'}],[sh]);a.equal(r.executor,'humano');a.equal(r.autor_id,null);a.equal(r.gestor_id,'g');});
+test('ambiguous account ids, wrong platforms and system messages stay out',()=>{a.equal(normalize([row],[sh,{...ml,key:'ml:1'}]).length,0);a.equal(normalize([{...row,dados:{...row.dados,marketplace:'ml'}}],[sh]).length,0);a.equal(normalize([{...row,tipo:'sistema'}],[sh]).length,0);});
+test('explicit ML agent execution remains attributed to agent',()=>{const [r]=normalize([{...row,conta_id:'2',tipo:'alerta',dados:{marketplace:'ml',acao:'orcamento',aplicado_por:'agente'}}],[ml]);a.equal(r.executor,'ia');});
+test('history query is read-only and fails visibly without hiding manual records',async()=>{let query;const r=await history({contas:[sh]},async p=>{query=p;return [row];});a.equal(r.acoes_ads.length,1);a.match(query,/criado_em=gte/);const failed=await history({contas:[]},async()=>{throw Error('offline');});a.equal(failed.historico_ads.disponivel,false);a.ok(failed.historico_ads.aviso);});
+test('ML extension confirmation distinguishes manual from historical automatic execution',()=>{for(const [source,expected] of [['extensao','humano'],['extensao_auto','ia']]){const [r]=normalize([{...row,conta_id:'2',tipo:'alerta',dados:{marketplace:'ml',acao:'roas_target',aplicado_por:source,aplicado_em:row.criado_em}}],[ml]);a.equal(r.executor,expected);a.equal(r.sugestor,'ia');a.equal(r.executado_em,row.criado_em);}});
+test('history excludes routine system logs before pagination',async()=>{await history({contas:[]},async path=>{a.match(path,/tipo=in\.\(decisao,alerta\)/);return [];});});
