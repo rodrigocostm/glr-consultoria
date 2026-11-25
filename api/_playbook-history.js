@@ -15,8 +15,8 @@ function normalize(logs, accounts) {
     const account = candidates[0], executed = log.resultado === 'executado';
     let executor = 'nao_confirmado';
     if (executed && d.aplicado_por !== 'detectado') {
-      if (d.aplicado_por === 'agente') executor = 'ia';
-      else if (log.origem === 'analista') executor = 'humano';
+      if (['agente','extensao_auto'].includes(d.aplicado_por)) executor = 'ia';
+      else if (log.origem === 'analista' || d.aplicado_por === 'extensao') executor = 'humano';
       else if (account.marketplace === 'shopee' && log.origem === 'cron' && log.tipo === 'decisao') executor = 'ia';
     }
     seen.add(String(log.id));
@@ -25,7 +25,7 @@ function normalize(logs, accounts) {
       cliente_id: account.cliente_id, gestor_id: account.gestor_id, conta: account.key,
       marketplace: account.marketplace, titulo: log.titulo || action, descricao: log.explicacao || '',
       acao: action, status: executed ? 'executada' : log.resultado === 'so_alerta' ? 'sugerida' : log.resultado,
-      executor, autor_id: null, sugestor: 'nao_confirmado',
+      executor, autor_id: null, sugestor: log.origem === 'cron' && log.tipo === 'alerta' ? 'ia' : 'nao_confirmado',
       criado_em: log.criado_em, executado_em: executed && d.aplicado_por !== 'detectado' ? (d.aplicado_em || log.criado_em) : null,
       detectado_em: d.aplicado_por === 'detectado' ? d.aplicado_em || null : null,
       antes: d.de ?? d.budget_de ?? d.roas_de ?? null, depois: d.para ?? d.budget_para ?? d.roas_para ?? null,
@@ -37,7 +37,7 @@ function normalize(logs, accounts) {
 async function history(ctx, read) {
   const since = new Date(Date.now() - 90 * 864e5).toISOString();
   try {
-    const rows = await read('glr_agente_log?select=id,conta_id,tipo,titulo,explicacao,dados,resultado,origem,criado_em&criado_em=gte.' + encodeURIComponent(since) + '&order=criado_em.desc,id', 30000);
+    const rows = await read('glr_agente_log?tipo=in.(decisao,alerta)&select=id,conta_id,tipo,titulo,explicacao,dados,resultado,origem,criado_em&criado_em=gte.' + encodeURIComponent(since) + '&order=criado_em.desc,id', 30000);
     return { acoes_ads: normalize(rows, ctx.contas), historico_ads: { disponivel: true, dias: 90 } };
   } catch (_) {
     return { acoes_ads: [], historico_ads: { disponivel: false, dias: 90, aviso: 'Histórico de Ads indisponível. Os registros do Playbook continuam disponíveis; tente atualizar.' } };
