@@ -29,3 +29,10 @@ Desenvolvimento de Produtos em guia separada: catálogo atual e descoberta seman
 Reutilizar rotas existentes: onboarding, conexoes, produtos, projecao, decisoes, plano-acao, vendas-prejuizo, rentabilidade, dre, mercado-tiops, expansao, segundo-cerebro, adviser, relatorios, relatorio-semanal, portal-admin, gestores, clientes. Presença no menu não comprova funcionamento.
 Novos módulos propostos: planejamento estratégico, registro/validação de intervenções, desenvolvimento de produtos. Melhorar saúde da conta e supervisão existentes.
 Próxima etapa: inspecionar modelos e RLS do Supabase, rotas JS, integrações e testes; definir persistência aditiva, isolamento por cliente e gestor, deduplicação de tarefas e migração reversível. Nenhuma alteração destrutiva ou publicação nesta fase.
+
+
+## Continuidade — 24/11/2026
+- Caixa de decisões: revisão semanal de metas e lembretes 3/7/15 dias após marcar planejamento feito.
+- Supabase: public.glr_playbook_review_history, RLS equipe ativa, atualização pelo criador, sem DELETE para authenticated. Integração no frontend com importação local ignoreDuplicates.
+- Core: managerIndex ponderado, cobertura obrigatória para nota definitiva, reviewStatus.
+- Pendências críticas: validar deploy e sessão real; testar RLS com gestor diferente e portal; resolver concorrência de reviews JSON e atribuição de autoria na migração; paginar histórico; conectar indicadores reais; implementar avaliação com evidências e cobranças IA; completar playbooks por canal. Não considerar planejamento concluído como prova de intervenção efetiva. Não alterar campanhas automaticamente.
