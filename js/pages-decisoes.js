@@ -263,6 +263,17 @@ Router.register('decisoes', (params, el) => {
         if (locais[id]) continue;
         itens.push({id, tipo:'playbook', clienteFixo:String(cliente.id), titulo:'Revisar execução da meta semanal', porque:'Meta consolidada cadastrada: '+R2(meta)+'. Conferir projeção, margem e ações do gestor; não alterar campanhas automaticamente.', tela:'gestores', quando:semanaPlaybook.toISOString()});
       }
+      // Revisões manuais após conclusão da ação de planejamento; armazenamento local provisório.
+      const revisoesPB = lerJSON('glr_playbook_revisoes_v1', {}) || {};
+      for (const [origem, registro] of Object.entries(revisoesPB)) {
+        if (!registro || !Number.isFinite(registro.em) || !GLR.clientes.some(c=>String(c.id)===registro.cliente)) continue;
+        for (const dia of [3,7,15]) {
+          const prazo = registro.em + dia * 864e5;
+          const id = origem + ':revisao:' + dia;
+          if (Date.now() < prazo || locais[id] || registro.encerradas?.[dia]) continue;
+          itens.push({id,tipo:'playbook',clienteFixo:registro.cliente,titulo:'Avaliar intervenção — '+dia+' dias',porque:'Comparar faturamento, margem e TACOS antes e depois; registrar fatores externos. Sem evidência suficiente, considerar inconclusivo.',tela:'playbook-glr',prazo:new Date(prazo).toISOString(),urgente:true,pbOrigem:origem,pbDia:dia});
+        }
+      }
       itens.forEach(nomear);
       itens.sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0) || (a.urgente && b.urgente ? new Date(a.prazo) - new Date(b.prazo) : 0)
         || (b.impacto || 0) - (a.impacto || 0) || String(b.quando || '').localeCompare(String(a.quando || '')));
@@ -416,7 +427,19 @@ Router.register('decisoes', (params, el) => {
     try {
       if (it.log) await GLRAcoes.marcar(it.log, resultado);
       else if (it.planoId) { const s = lerJSON('glr_plano_status', {}); s[it.planoId] = { st: resultado === 'executado' ? 'feito' : 'descartada', em: Date.now() }; localStorage.setItem('glr_plano_status', JSON.stringify(s)); }
-      else resolverLocal(id);
+      else {
+        if (it.tipo==='playbook') {
+          const registros=lerJSON('glr_playbook_revisoes_v1',{})||{};
+          if (it.pbOrigem && registros[it.pbOrigem]) {
+            const reg=registros[it.pbOrigem];
+            reg.encerradas={...(reg.encerradas||{}),[it.pbDia]:{em:Date.now(),status:resultado}};
+          } else if (resultado==='executado' && id.startsWith('playbook:meta:')) {
+            registros[id]={cliente:String(it.clienteId),em:Date.now(),encerradas:{}};
+          }
+          localStorage.setItem('glr_playbook_revisoes_v1',JSON.stringify(registros));
+        }
+        resolverLocal(id);
+      }
       delete st.proc[id]; await sair(id); tirar(id);
       aviso(resultado === 'executado' ? 'Marcada como feita' : 'Descartada');
     } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
