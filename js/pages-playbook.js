@@ -2,7 +2,7 @@ Router.register('playbook-glr',(params,el)=>{
  if(window._portalConfig){el.textContent='Acesso restrito à equipe';return;}
  const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const canais={shopee:'TACOS, GMV Max, conversão e exclusivos','mercado-livre':'TACOS, Product Ads, catálogo, Buy Box, reputação e logística','tiktok-shop':'Afiliados, vídeos, lives, comissão e aquisição total',amazon:'Sponsored Products, Buy Box, SEO, FBA e tarifas',magalu:'Catálogo, preço, logística, conversão e Ads disponível'};
- let data=null,tab='checklist',erro='',loading=false;const st={cliente:'',gestor:'',conta:''};window._pbAtual=el;
+ let data=null,tab='checklist',erro='',loading=false;const st={cliente:String(GLR.ctx?.cliente?.()||''),gestor:'',conta:''};window._pbAtual=el;
  const ativo=()=>el.isConnected&&window._pbAtual===el;
  async function api(body){const {data:d}=await _sb.auth.getSession();const r=await fetch('/api/playbook',{method:body?'POST':'GET',headers:{Authorization:'Bearer '+d?.session?.access_token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const j=await r.json();if(!r.ok)throw Error(j.error||'Falha no playbook');return j;}
  const money=v=>v==null?'Não disponível':Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
@@ -64,5 +64,6 @@ Router.register('playbook-glr',(params,el)=>{
  el.onclick=e=>{const b=e.target.closest('button');if(b?.dataset.tab){tab=b.dataset.tab;render();}if(b?.hasAttribute('data-refresh'))load();};el.onchange=e=>{const k=e.target.dataset.filter;if(k){st[k]=e.target.value;if(k!=='conta')st.conta='';render();}};
  render();load();
 });
+
 
 
