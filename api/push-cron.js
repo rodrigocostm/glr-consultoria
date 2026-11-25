@@ -14,6 +14,7 @@ module.exports=async(req,res)=>{
    listar('glr_pedidos?situacao=eq.valido&criado_em=gte.'+desde+'&select=marketplace,conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto&order=criado_em.desc,marketplace,conta_id,pedido_id'),
    listar('glr_agente_log?tipo=eq.alerta&resultado=eq.so_alerta&criado_em=gte.'+desde+'&select=id,conta_id,titulo,explicacao,dados,criado_em&order=criado_em.desc,id'),listar('glr_ads_diario?data=gte.'+new Date(agora-9*86400e3).toISOString().slice(0,10)+'&select=marketplace,conta_id,data,gasto&order=data,marketplace,conta_id'),db('glr_notification_readers?select=user_id,criado_em')]);
   const ativos=new Set(staff.map(s=>String(s.user_id)));
+  let avisosPlaybook=[];try{const pb=require('./_playbook');avisosPlaybook=pb.eventos(await pb.registros(),agora);}catch(e){console.warn('[playbook]',e.message);}
   const eventos=[...pedidos.filter(core.vendaValida).map(core.eventoPedido),...logs.map(core.eventoAgente)];
   // Situação diária da meta por cliente, somente contas com resumos atualizados.
   const dia=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(agora);
@@ -48,24 +49,24 @@ module.exports=async(req,res)=>{
    const resumo=audience.resumoVendometro(pedidos,ads,contas,agora,coberto);
    const especificos=audience.oscilacoes(ads,contas,agora);
    const resumoDia=novosAvisos.resumoAnterior({agora,pedidos,ads,contas});
-   const listaPerfil=perfil.tipo==='consultoria'?[...eventos.filter(e=>e.categoria==='saldo'),...especificos,...(resumo&&contas.size?[resumo]:[]),...monitor.eventos,...(resumoDia?[resumoDia]:[])]:[...eventos.filter(e=>['vendas','saldo'].includes(e.categoria)||(e.categoria==='metas'&&e.chave.startsWith('meta:'))),...monitor.eventos.filter(e=>e.categoria!=='gestores'),...(resumoDia?[resumoDia]:[])];
+   const listaPerfil=perfil.tipo==='consultoria'?[...avisosPlaybook,...eventos.filter(e=>e.categoria==='saldo'),...especificos,...(resumo&&contas.size?[resumo]:[]),...monitor.eventos,...(resumoDia?[resumoDia]:[])]:[...eventos.filter(e=>['vendas','saldo'].includes(e.categoria)||(e.categoria==='metas'&&e.chave.startsWith('meta:'))),...monitor.eventos.filter(e=>e.categoria!=='gestores'),...(resumoDia?[resumoDia]:[])];
    // Histórico é completo para o perfil; filtros e silêncio do push não ocultam avisos da central.
    const todas=audience.carteira(vinc,clientes);
    if(perfil.tipo==='portal')for(const [k,c]of todas)if(!perfil.contas.includes(c.id))todas.delete(k);
    const coberturaInbox=[...todas.values()].every(c=>historicos.some(h=>h.marketplace===c.mkt&&String(h.conta_id)===c.id&&h.cursor?.historico_ate&&h.cursor.historico_ate<=Date.parse(dia+'T00:00:00-03:00')/1000-86400));
    const resumoInbox=audience.resumoVendometro(pedidos,ads,todas,agora,coberturaInbox),diaInbox=novosAvisos.resumoAnterior({agora,pedidos,ads,contas:todas});
-   const listaInbox=perfil.tipo==='consultoria'?[...eventos.filter(e=>e.categoria==='saldo'),...audience.oscilacoes(ads,todas,agora),...(resumoInbox&&todas.size?[resumoInbox]:[]),...monitor.eventos,...(diaInbox?[diaInbox]:[])]:[...eventos.filter(e=>['vendas','saldo'].includes(e.categoria)||(e.categoria==='metas'&&e.chave.startsWith('meta:'))),...monitor.eventos.filter(e=>e.categoria!=='gestores'),...(diaInbox?[diaInbox]:[])];
+   const listaInbox=perfil.tipo==='consultoria'?[...avisosPlaybook,...eventos.filter(e=>e.categoria==='saldo'),...audience.oscilacoes(ads,todas,agora),...(resumoInbox&&todas.size?[resumoInbox]:[]),...monitor.eventos,...(diaInbox?[diaInbox]:[])]:[...eventos.filter(e=>['vendas','saldo'].includes(e.categoria)||(e.categoria==='metas'&&e.chave.startsWith('meta:'))),...monitor.eventos.filter(e=>e.categoria!=='gestores'),...(diaInbox?[diaInbox]:[])];
    const inicioHistorico=leitores.find(l=>l.user_id===s.user_id)?.criado_em || s.criado_em;
    await inbox.registrar(s.user_id,perfil,listaInbox,inicioHistorico);
    if(!s.endpoint||!webpush)continue;
    const candidatos=listaPerfil.filter(e=>(!silencio||e.categoria==='resumo_diario')&&Date.parse(e.em)>=Date.parse(s.criado_em)&&audience.autorizado(perfil,p,e));
-   for(const categoria of ['vendas','saldo','metas','vendometro','oscilacao','resumo_diario','gestores','projecao','curva_a','prejuizo']){
+   for(const categoria of ['vendas','saldo','metas','vendometro','oscilacao','resumo_diario','gestores','projecao','curva_a','prejuizo','playbook']){
     const grupo=candidatos.filter(e=>e.categoria===categoria);if(!grupo.length)continue;
     // Inserção atômica: apenas eventos ainda não enviados entram no resumo.
     const claims=await db('push_deliveries?on_conflict=endpoint,evento',{method:'POST',headers:{Prefer:'resolution=ignore-duplicates,return=representation'},body:JSON.stringify(grupo.map(e=>({endpoint:s.endpoint,evento:e.chave})))});
     if(!claims?.length)continue;
     const novos=new Set(claims.map(c=>c.evento)),lista=grupo.filter(e=>novos.has(e.chave));
-    const titulo={vendas:'Novas vendas',saldo:'Saldo de Ads',metas:'Metas dos clientes',agentes:'Alertas dos agentes',vendometro:'Resultado do Vendômetro',oscilacao:'Oscilação de gasto em Ads',resumo_diario:'Resumo do dia anterior',gestores:'Meta diária do gestor',projecao:'Cliente com projeção em queda',curva_a:'Produto curva A sem estoque',prejuizo:'Vendas com prejuízo'}[categoria];
+    const titulo={playbook:'Revisões do playbook',vendas:'Novas vendas',saldo:'Saldo de Ads',metas:'Metas dos clientes',agentes:'Alertas dos agentes',vendometro:'Resultado do Vendômetro',oscilacao:'Oscilação de gasto em Ads',resumo_diario:'Resumo do dia anterior',gestores:'Meta diária do gestor',projecao:'Cliente com projeção em queda',curva_a:'Produto curva A sem estoque',prejuizo:'Vendas com prejuízo'}[categoria];
     const valor=lista.reduce((n,e)=>n+(e.valor||0),0);
     const texto=categoria==='vendas'?`${lista.length} pedido(s) pago(s) · ${core.dinheiro(valor)}\n${[...new Set(lista.map(e=>e.plataforma))].join(', ')}. Sem estimativa de lucro.`:lista.slice(0,2).map(e=>e.titulo+': '+e.texto).join('\n')+(lista.length>2?`\nMais ${lista.length-2} alertas no sistema.`:'');
     try{await webpush.sendNotification({endpoint:s.endpoint,keys:{p256dh:s.p256dh,auth:s.auth}},JSON.stringify({title:'GLR · '+titulo,body:texto,url:perfil.tipo==='portal'?'/index.html#notificacoes':'/index.html#decisoes?aba=notificacoes',tag:'glr-'+categoria}),{TTL:3600});enviados++;}
@@ -77,6 +78,7 @@ module.exports=async(req,res)=>{
   return res.json({ok:true,dispositivos:subs.length,enviados,falhas});
  }catch(e){console.error('[push-cron]',e.message);return res.status(503).json({error:'Não foi possível enviar notificações',detalhe:e.message});}
 };
+
 
 
 

@@ -85,6 +85,8 @@ Router.register('decisoes', (params, el) => {
       for (const r of [logs, planos, reps, promos]) if (r.error) throw r.error;
       const estoqueAds = new Set(); // produto que o agente de ADS já avisou (estoque_minimo): não repete
       const itens = [], locais = resolvidasLocais(), planoSt = lerJSON('glr_plano_status', {});
+      try { const {data}=await _sb.auth.getSession();const resp=await fetch('/api/playbook',{headers:{Authorization:'Bearer '+data?.session?.access_token}});if(!resp.ok)throw Error('Playbook indisponível');const pb=await resp.json();for(const p of pb.pendencias||[])itens.push({id:'pb-validacao:'+p.origem+':'+p.dia,tipo:'playbook',clienteFixo:p.cliente_id,titulo:'Avaliar intervenção — '+p.dia+' dias: '+p.titulo,porque:p.daysLate+' dia(s) de atraso. Registrar indicadores comparáveis e evidências no Playbook; marcar como feita exige uma avaliação.',tela:'playbook-glr',urgente:true,exec:false,exigeEvidencia:true,prazo:new Date(p.due).toISOString()}); }catch(e){console.warn('[decisoes/playbook]',e.message);}
+
       for (const l of logs.data || []) {
         const d = l.dados || {};
         if (d.acao === 'abc_queda') continue; // informativo: já aparece no Raio-X do Plano de ação
@@ -470,7 +472,7 @@ Router.register('decisoes', (params, el) => {
     } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
     delete st.proc[id]; render();
   }
-  window._dcFeito = id => resolver(id, 'executado');
+  window._dcFeito = id => achar(id)?.exigeEvidencia ? window._dcIr(id) : resolver(id, 'executado');
   window._dcDescartar = id => resolver(id, 'descartado');
 
   // ── Teclado: J/K navegam, Enter abre, F feito, A aprova, X descarta, Espaço detalhes ──
@@ -560,4 +562,5 @@ Router.register('decisoes', (params, el) => {
   NotificationCenter.refreshBadge();
   carregar();
 });
+
 

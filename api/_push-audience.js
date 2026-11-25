@@ -6,8 +6,8 @@ function perfilUsuario(u,portais,staff){
  if(encontrados.length){if(encontrados.some(p=>String(p.ativo)==='false'))return null;const p=encontrados[0];return {tipo:'portal',contas:(p.contaIds||[]).map(String),metasPermitidas:p.projecao===true};}
  return staff.has(String(u.id))?{tipo:'consultoria',contas:null}:null;
 }
-function preferencias(p,tipo){const base=core.preferencias(p);return {...base,vendometro:p?.vendometro!==false,oscilacao:p?.oscilacao!==false,resumo_diario:p?.resumo_diario!==false,gestores:p?.gestores!==false,projecao:p?.projecao!==false,curva_a:p?.curva_a!==false,prejuizo:p?.prejuizo!==false,...(tipo==='consultoria'?{vendas:false,metas:false,agentes:false}:{vendometro:false,agentes:false,gestores:false})};}
-function autorizado(perfil,p,e){if(!perfil)return false;if(perfil.tipo==='portal'&&['metas','projecao'].includes(e.categoria)&&!perfil.metasPermitidas)return false;if(!(perfil.tipo==='consultoria'?['vendometro','saldo','oscilacao','resumo_diario','gestores','projecao','curva_a','prejuizo']:['vendas','saldo','metas','resumo_diario','projecao','curva_a']).includes(e.categoria))return false;if(perfil.tipo==='portal'&&(!e.contas?.length||!e.contas.every(id=>perfil.contas.includes(String(id)))))return false;return !!p[e.categoria]&&(!p.contas.length||e.contas.every(id=>p.contas.includes(String(id))));}
+function preferencias(p,tipo){const base=core.preferencias(p);return {...base,vendometro:p?.vendometro!==false,oscilacao:p?.oscilacao!==false,resumo_diario:p?.resumo_diario!==false,gestores:p?.gestores!==false,projecao:p?.projecao!==false,playbook:p?.playbook!==false,curva_a:p?.curva_a!==false,prejuizo:p?.prejuizo!==false,...(tipo==='consultoria'?{vendas:false,metas:false,agentes:false}:{vendometro:false,agentes:false,gestores:false})};}
+function autorizado(perfil,p,e){if(!perfil)return false;if(perfil.tipo==='portal'&&['metas','projecao'].includes(e.categoria)&&!perfil.metasPermitidas)return false;if(!(perfil.tipo==='consultoria'?['vendometro','saldo','oscilacao','resumo_diario','gestores','projecao','curva_a','prejuizo','playbook']:['vendas','saldo','metas','resumo_diario','projecao','curva_a']).includes(e.categoria))return false;if(perfil.tipo==='portal'&&(!e.contas?.length||!e.contas.every(id=>perfil.contas.includes(String(id)))))return false;return !!p[e.categoria]&&(!p.contas.length||e.contas.every(id=>p.contas.includes(String(id))));}
 function carteira(vinc,clientes,selecionadas=[]){const ativos=new Set((clientes||[]).map(c=>String(c.id)));const mapa=new Map();for(const [cli,lista]of Object.entries(vinc||{})){if(!ativos.has(cli))continue;for(const c of lista||[]){const id=String(c.param_to_use?.shopId||c.param_to_use?.meliUserId||c.contaId||c.external_id);if(selecionadas.length&&!selecionadas.includes(id))continue;mapa.set(mkt(c.marketplace)+':'+id,{id,mkt:mkt(c.marketplace),nome:c.tags?.[0]?.name||c.nickname||id});}}return mapa;}
 function resumoVendometro(pedidos,ads,contas,agora,cobertura=false){
  const dia=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(agora);
@@ -25,4 +25,5 @@ function oscilacoes(ads,contas,agora){
  }return out;
 }
 module.exports={perfilUsuario,preferencias,autorizado,carteira,resumoVendometro,oscilacoes};
+
 

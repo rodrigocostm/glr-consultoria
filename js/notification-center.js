@@ -1,6 +1,6 @@
 // Histórico pessoal de avisos. Ler/tratar nunca executa ações comerciais.
 const NotificationCenter=(()=>{
- const nomes={vendas:'Vendas',saldo:'Saldo de Ads',metas:'Metas',vendometro:'Vendômetro',oscilacao:'Oscilação de Ads',resumo_diario:'Resumo diário',gestores:'Meta de gestor',projecao:'Projeção em queda',curva_a:'Curva A sem estoque',prejuizo:'Vendas com prejuízo'};
+ const nomes={playbook:'Revisão do playbook',vendas:'Vendas',saldo:'Saldo de Ads',metas:'Metas',vendometro:'Vendômetro',oscilacao:'Oscilação de Ads',resumo_diario:'Resumo diário',gestores:'Meta de gestor',projecao:'Projeção em queda',curva_a:'Curva A sem estoque',prejuizo:'Vendas com prejuízo'};
  const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  async function api(path='',body){const {data}=await _sb.auth.getSession();if(!data?.session?.access_token)throw Error('Entre novamente na sua conta.');const r=await fetch('/api/notifications'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+data.session.access_token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok)throw Error(d.error||'Falha ao acessar notificações');return d;}
  function badge(n){for(const id of ['glr-notification-count','dc-notification-count']){const el=document.getElementById(id);if(el){el.textContent=n>99?'99+':String(n||0);el.hidden=!n;}}}
@@ -27,3 +27,4 @@ const NotificationCenter=(()=>{
 Router.register('notificacoes',(params,el)=>{if(!window._portalConfig)return Router.navigate('decisoes?aba=notificacoes');el.innerHTML='<div class="page"><div id="notifications-page"></div></div>';NotificationCenter.mount(el.querySelector('#notifications-page'));});
 setTimeout(()=>NotificationCenter.refreshBadge(),4000);
 setInterval(()=>NotificationCenter.refreshBadge(),120000);
+
