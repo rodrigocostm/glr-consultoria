@@ -265,6 +265,19 @@ Router.register('decisoes', (params, el) => {
       }
       // Revisões manuais após conclusão da ação de planejamento; armazenamento local provisório.
       const revisoesPB = lerJSON('glr_playbook_revisoes_v1', {}) || {};
+      try {
+        const tabela=_sb.from('glr_playbook_review_history');
+        for(const [id,reg] of Object.entries(revisoesPB)){
+          if(!reg || !Number.isFinite(reg.em) || !reg.cliente)continue;
+          const {error}=await tabela.upsert({id,client_id:reg.cliente,executed_at:new Date(reg.em).toISOString(),reviews:reg.encerradas||{}},{onConflict:'id',ignoreDuplicates:true});
+          if(error)throw error;
+        }
+        const {data,error}=await _sb.from('glr_playbook_review_history').select('id,client_id,executed_at,reviews').order('id').limit(1000);
+        if(error)throw error;
+        for(const row of data||[])revisoesPB[row.id]={cliente:row.client_id,em:Date.parse(row.executed_at),encerradas:row.reviews||{}};
+        for(let i=itens.length-1;i>=0;i--)if(itens[i].tipo==='playbook'&&revisoesPB[itens[i].id])itens.splice(i,1);
+        st.pbErro=null;
+      }catch(e){st.pbErro='Histórico central indisponível; registros locais preservados.';}
       for (const [origem, registro] of Object.entries(revisoesPB)) {
         if (!registro || !Number.isFinite(registro.em) || !GLR.clientes.some(c=>String(c.id)===registro.cliente)) continue;
         for (const dia of [3,7,15]) {
@@ -326,6 +339,7 @@ Router.register('decisoes', (params, el) => {
     st.foco = Math.min(st.foco, Math.max(0, mostrando.length - 1));
     const foco = GLR.ctx?.cliente();
     root.innerHTML = `
+      ${st.pbErro ? `<p role="alert">${h(st.pbErro)}</p>` : ''}
       ${st.prejuizoErro ? `<p role="alert" style="color:var(--yellow)">Vendas com prejuízo não puderam ser apuradas. Abra a aba para tentar novamente; as demais decisões continuam disponíveis.</p>` : ''}
       <div class="dc-cab">
         <p class="dc-resumo"><b>${B.length}</b> decisões${foco ? ' deste cliente' : ''}${emJogo > 0 ? ` · <b>${R$(emJogo)}</b>/semana em jogo` : ''}</p>
@@ -430,6 +444,16 @@ Router.register('decisoes', (params, el) => {
       else {
         if (it.tipo==='playbook') {
           const registros=lerJSON('glr_playbook_revisoes_v1',{})||{};
+          if(it.pbOrigem){
+            const {data,error}=await _sb.from('glr_playbook_review_history').select('reviews').eq('id',it.pbOrigem).single();
+            if(error)throw error;
+            const reviews={...(data.reviews||{}),[it.pbDia]:{em:Date.now(),status:resultado}};
+            const saved=await _sb.from('glr_playbook_review_history').update({reviews}).eq('id',it.pbOrigem).select('id').single();
+            if(saved.error)throw saved.error;
+          }else if(resultado==='executado'&&id.startsWith('playbook:meta:')){
+            const saved=await _sb.from('glr_playbook_review_history').upsert({id,client_id:String(it.clienteId),executed_at:new Date().toISOString()},{onConflict:'id',ignoreDuplicates:true});
+            if(saved.error)throw saved.error;
+          }
           if (it.pbOrigem && registros[it.pbOrigem]) {
             const reg=registros[it.pbOrigem];
             reg.encerradas={...(reg.encerradas||{}),[it.pbDia]:{em:Date.now(),status:resultado}};
