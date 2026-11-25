@@ -30,6 +30,7 @@ Router.register('decisoes', (params, el) => {
   const corta = (t, n) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
   const dataCurta = iso => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
   const TIPOS = {
+    'playbook': { t: 'Playbook GLR', c: 'var(--accent)' },
     'retencao': { t: 'Retenção', c: 'var(--red)' },
     'onboarding': { t: 'Implantação', c: 'var(--accent)' },
     'reputacao': { t: 'Reputação', c: 'var(--red)' },
@@ -250,6 +251,18 @@ Router.register('decisoes', (params, el) => {
         if (it.clienteFixo) { it.clienteId = it.clienteFixo; it.loja = `${(GLR.clientes || []).find(c => String(c.id) === it.clienteFixo)?.nome || it.nomeCliente || 'Cliente'} · Carteira`; return; }
         it.loja = GLR.nomeConta(it.mkt, it.conta); it.clienteId = GLR.ctx?.clienteDaConta(it.mkt, it.conta) || '';
       };
+      // Playbook: revisão de planejamento, sem executar campanhas nem alterar metas.
+      const metasPlaybook = lerJSON('glr_metas', {}) || {};
+      const hojePlaybook = new Date();
+      const semanaPlaybook = new Date(hojePlaybook.getFullYear(), hojePlaybook.getMonth(), hojePlaybook.getDate() - ((hojePlaybook.getDay()+6)%7));
+      const cicloPlaybook = [semanaPlaybook.getFullYear(),semanaPlaybook.getMonth()+1,semanaPlaybook.getDate()].join('-');
+      for (const cliente of (GLR.clientes || [])) {
+        const meta = Number(metasPlaybook[cliente.id]);
+        if (!Number.isFinite(meta) || meta <= 0 || !(cliente.gestorId || cliente.gestor)) continue;
+        const id = 'playbook:meta:' + cliente.id + ':' + cicloPlaybook;
+        if (locais[id]) continue;
+        itens.push({id, tipo:'playbook', clienteFixo:String(cliente.id), titulo:'Revisar execução da meta semanal', porque:'Meta consolidada cadastrada: '+R2(meta)+'. Conferir projeção, margem e ações do gestor; não alterar campanhas automaticamente.', tela:'gestores', quando:semanaPlaybook.toISOString()});
+      }
       itens.forEach(nomear);
       itens.sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0) || (a.urgente && b.urgente ? new Date(a.prazo) - new Date(b.prazo) : 0)
         || (b.impacto || 0) - (a.impacto || 0) || String(b.quando || '').localeCompare(String(a.quando || '')));
