@@ -41,9 +41,14 @@ window.GLR_Margem = {
     // Custo unitário × quantidade, item a item (BaseDados.custoProdutosPedido)
     const itensCusto = (p.itens && p.itens.length ? p.itens : [{ nome: p.produto, qtd: p.qtd }])
       .map(i => ({ item_id: i.itemId || i.shopeeItemId || '', nome: i.nome, qtd: i.qtd }));
-    const custo = window.BaseDados?.custoProdutosPedido
+    const custoLegado = window.BaseDados?.custoProdutosPedido
       ? BaseDados.custoProdutosPedido(p.plataforma === 'Mercado Livre' ? 'ml' : 'outro', itensCusto, custoPedido, catalogoCusto, p.id)
       : (custoPedido || custoCatalogo) * (parseInt(p.qtd) || 1);
+    const mkt = ({'Mercado Livre':'ml','Shopee':'shopee','Amazon':'amazon','TikTok Shop':'tiktok','Magalu':'magalu','Shein':'shein'})[p.plataforma] || p.plataforma;
+    const clienteId = contexto?.clienteId || (typeof GLR !== 'undefined' ? GLR.ctx?.clienteDaConta?.(mkt,String(p.contaId)) : null);
+    const resolvido = window.GLRProductCost?.resolve({itens:(p.itens?.length?p.itens:[{nome:p.produto,qtd:p.qtd}]).map(i=>({...i,item_id:i.itemId||i.shopeeItemId})),catalogo:catalogoCusto,produtos:contexto?.produtos||[],clienteId,mkt,contaId:p.contaId,manual:custoPedido});
+    const custo = resolvido?.total>0 ? resolvido.total : custoLegado;
+    const custoCompleto = resolvido ? resolvido.completo || (resolvido.total===0 && custoLegado>0) : custo>0;
     const outros = parseFloat(c.outros) || 0;
 
     const impAPIRaw = tx.imposto != null ? parseFloat(tx.imposto) : null;
@@ -65,11 +70,11 @@ window.GLR_Margem = {
     const liquidoExibido = liquido != null ? (isML ? liquido - freteML : liquido) : null;
 
     return {
-      receita, liquido: liquidoExibido, liquidoBruto: liquido, custo, custoOrigem: custoPedido ? 'pedido' : (custoCatalogo ? 'catalogo' : 'nenhum'),
+      receita, liquido: liquidoExibido, liquidoBruto: liquido, custo, custoOrigem: custoPedido ? 'pedido' : (custo>0 ? 'cadastro' : 'nenhum'),
       impVal, impPct, outros, extra, lucro, margem,
       comissao: tx.comissao || 0, taxaServico: tx.taxaServico || 0,
       frete: tx.frete || 0, voucher: tx.voucher || 0,
-      temCusto: custo > 0,
+      temCusto: custo > 0, custoCompleto,
     };
   },
 
@@ -87,3 +92,4 @@ window.GLR_Margem = {
     return { receita, lucro, custo, impVal, extra, outros, margem: receita > 0 ? (lucro / receita) * 100 : 0, pedidosSemCusto: comSemCusto, totalPedidos: pedidos.length };
   },
 };
+

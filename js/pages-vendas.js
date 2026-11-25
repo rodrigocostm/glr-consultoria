@@ -18,7 +18,8 @@ Router.register('vendas', async (params, el) => {
   let catalogoCusto= JSON.parse(localStorage.getItem(STORAGE_CATALOGO)||'{}'); // custo unitário fixo por produto — não precisa reaplicar a cada pedido novo
   const produtoKey = p => p.itens?.[0]?.itemId || p.produto || '';
   let linhasExt  = JSON.parse(localStorage.getItem(STORAGE_LINHAS)||'[]');
-  const aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas')||'{}'); // { [extId]: pct }
+  let produtosCusto = JSON.parse(localStorage.getItem('glr_produtos')||'[]');
+  let aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas')||'{}'); // { [extId]: pct }
   let pedidos   = [];  // { id, plataforma, data, dataTs, produto, imagem, qtd, valor, status, itens[], taxas{} }
   let contas    = [];  // todas as contas da API
   let filtroPeriodo = 'custom'; // padrão: só ontem
@@ -197,7 +198,7 @@ Router.register('vendas', async (params, el) => {
   // Engine do Analista GLR, num lugar só (evita as 3 implementações
   // divergentes que existiam antes).
   function calcLucro(p) {
-    return window.GLR_Margem.calcularLucroPedido(p, { custos, catalogoCusto, linhasExt, aliquotas });
+    return window.GLR_Margem.calcularLucroPedido(p, { custos, catalogoCusto, linhasExt, aliquotas, produtos:produtosCusto });
   }
 
   function calcTotais(lista) {
@@ -1863,6 +1864,10 @@ Router.register('vendas', async (params, el) => {
 
   // ── Render lista ─────────────────────────────────────────────
   function renderLista() {
+    custos=JSON.parse(localStorage.getItem(STORAGE_CUSTOS)||'{}');
+    catalogoCusto=JSON.parse(localStorage.getItem(STORAGE_CATALOGO)||'{}');
+    aliquotas=JSON.parse(localStorage.getItem('glr_aliquotas')||'{}');
+    produtosCusto=JSON.parse(localStorage.getItem('glr_produtos')||'[]');
     if (abaAtiva === 'dashboard') renderDashboard();
     else if (abaAtiva === 'semanal') renderComparativoSemanal();
     else if (abaAtiva === 'oportunidades') renderOportunidadesAuto();
@@ -1940,15 +1945,16 @@ Router.register('vendas', async (params, el) => {
       : `<div style="width:44px;height:44px;background:var(--border);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;">${p.plataforma==='Shopee'?'🟠':p.plataforma==='Amazon'?'⚫':p.plataforma==='TikTok Shop'?'🎵':p.plataforma==='Magalu'?'🔵':p.plataforma==='Shein'?'⬛':'🟡'}</div>`;
 
     const isCancelled = ['cancelled','in_cancel','cancelled_unpaid'].includes((p.status||'').toLowerCase());
+    const resultadoPendente = !isCancelled && (!l.custoCompleto || p.taxasPendente);
     const taxasAuto = p.taxas != null; // tem dados automáticos da API
     const impVeioDeAPI = taxasAuto && (p.taxas?.imposto != null) && parseFloat(p.taxas?.imposto) > 0;
 
     // Imposto: badge diferente se veio da API real ou da alíquota da conta
     const aliqConta = parseFloat(aliquotas[p.contaId] || 0);
-    const impCell = taxasAuto
+    const impCell = (impVeioDeAPI || l.impPct>0 || Object.prototype.hasOwnProperty.call(aliquotas,p.contaId) || c.imposto!=null)
       ? `<div style="text-align:right;">
            <span style="font-size:12px;color:var(--yellow);font-weight:600;">${R$(l.impVal)}</span><br>
-           <span style="font-size:9px;color:var(--text-muted);">${impVeioDeAPI ? 'escrow' : (l.impPct ? l.impPct+'% conta' : 'escrow')}</span>
+           <span style="font-size:9px;color:var(--text-muted);">${impVeioDeAPI ? 'retido no repasse' : l.impPct+'% '+(c.imposto!=null?'pedido':'conta')}</span>
          </div>`
       : `<div style="text-align:right;" onclick="event.stopPropagation()">
            <div style="display:flex;align-items:center;justify-content:flex-end;gap:2px;">
@@ -1993,27 +1999,27 @@ Router.register('vendas', async (params, el) => {
         <!-- Líquido MP -->
         ${liqCell}
 
-        <!-- Custo Produto (manual) -->
+        <!-- Custo efetivo usado na composição do pedido -->
         <div style="text-align:right;" onclick="event.stopPropagation()">
-          <input type="number" min="0" step="0.01" placeholder="0,00" value="${c.custo||''}" data-id="${p.id}" data-campo="custo" class="inp-custo"
-            style="width:80px;background:var(--bg-input);border:1px solid var(--border);border-radius:5px;padding:4px 6px;color:var(--text-primary);font-size:12px;text-align:right;">
+          ${l.custoCompleto ? `<strong>${R$(l.custo)}</strong><details><summary style="font-size:10px;color:var(--text-muted)">Editar</summary>` : '<span style="font-size:10px;color:var(--yellow)">Custo pendente</span>'}
+          <input aria-label="Custo unitário do pedido" type="number" min="0" step="0.01" placeholder="Custo unit." value="${c.custo||''}" data-id="${p.id}" data-campo="custo" class="inp-custo" style="width:80px;">
+          ${l.custoCompleto ? '</details>' : ''}
         </div>
 
         <!-- Imposto -->
         ${impCell}
 
-        <!-- Outros (manual) -->
-        <div style="text-align:right;" onclick="event.stopPropagation()">
-          <input type="number" min="0" step="0.01" placeholder="0,00" value="${c.outros||''}" data-id="${p.id}" data-campo="outros" class="inp-custo"
-            style="width:80px;background:var(--bg-input);border:1px solid var(--border);border-radius:5px;padding:4px 6px;color:var(--text-primary);font-size:12px;text-align:right;">
-        </div>
+        <!-- Custo extra opcional -->
+        <div style="text-align:right;" onclick="event.stopPropagation()"><details><summary style="font-size:11px;color:var(--text-muted)">${c.outros>0?R$(c.outros):'+ Extra'}</summary>
+          <input aria-label="Custo extra opcional" type="number" min="0" step="0.01" placeholder="0,00" value="${c.outros||''}" data-id="${p.id}" data-campo="outros" class="inp-custo" style="width:80px;">
+        </details></div>
 
         <!-- Lucro -->
-        <div style="text-align:right;font-size:13px;font-weight:700;color:${corMargem(l.margem)};">${R$(l.lucro)}</div>
+        <div style="text-align:right;font-size:13px;font-weight:700;color:${corMargem(l.margem)};">${resultadoPendente ? '<span style="font-size:10px;color:var(--text-muted)">'+(!l.custoCompleto?'Custo pendente':'Taxas pendentes')+'</span>' : R$(l.lucro)}</div>
 
         <!-- Margem -->
         <div style="text-align:right;">
-          <span style="background:color-mix(in srgb,${corMargem(l.margem)} 13%,transparent);color:${corMargem(l.margem)};padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;">${pct(l.margem)}</span>
+          <span style="background:color-mix(in srgb,${corMargem(l.margem)} 13%,transparent);color:${corMargem(l.margem)};padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;">${resultadoPendente?'—':pct(l.margem)}</span>
           <button class="btn-exp" data-id="${p.id}" style="display:none;"></button>
         </div>
       </div>
@@ -2209,7 +2215,7 @@ Router.register('vendas', async (params, el) => {
       const tarifa = ttEstimado ? 0 : parseFloat(r.taxas?.tarifa_venda ?? r.taxas?.comissao) || 0;
       const taxas = !ttEstimado && liq != null ? { componentes:r.taxas?.componentes, naoDiscriminado:r.taxas?.nao_discriminado, freteVendedor:r.taxas?.frete_vendedor, liquido: liq, comissao: tarifa, taxaServico: parseFloat(r.taxas?.taxa_servico) || 0, imposto: 0, frete: 0, voucher: 0, afiliado: parseFloat(r.taxas?.comissao_afiliado) || 0, estimado: !!r.taxas?.estimado }
         : tarifa > 0 ? { liquido: valor - tarifa, comissao: tarifa, taxaServico: 0, imposto: 0, frete: 0, voucher: 0, estimado: !!r.taxas?.estimado } : null;
-      const itens = brutos.map(i => ({ nome: i.nome || '—', qtd: parseInt(i.qtd) || 1, preco: parseFloat(i.preco) || 0, imagem: i.imagem || '', sku: i.sku || '' }));
+      const itens = brutos.map(i => ({ nome: i.nome || '—', qtd: parseInt(i.qtd) || 1, preco: parseFloat(i.preco) || 0, imagem: i.imagem || '', itemId:i.item_id||'', sku: i.sku || '' }));
       return { id: r.pedido_id, plataforma: { amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' }[mkt] || mkt, contaId, data: diaBR(ts), dataTs: ts,
         produto: itens.length > 1 ? `${itens[0].nome} (+${itens.length - 1})` : (itens[0]?.nome || r.pedido_id), imagem: itens[0]?.imagem || '',
         qtd: itens.reduce((t, i) => t + i.qtd, 0) || 1, valor, status, itens, taxas, taxasPendente:mkt==='tiktok' && (ttEstimado || liq==null) && !tarifa, _base: true };
@@ -3147,5 +3153,6 @@ Router.register('vendas', async (params, el) => {
   [['meu-dashboard', 'dashboard'], ['meus-pedidos', 'pedidos'], ['minha-curva-abc', 'semanal'], ['minhas-oportunidades', 'oportunidades']]
     .forEach(([rota, aba]) => Router.register(rota, (p, el) => rotaVendas({ ...(p || {}), aba }, el)));
 })();
+
 
 
