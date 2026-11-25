@@ -13,7 +13,21 @@
     if(!comparable||confounded||!before||!after||![before.profit,after.profit].every(Number.isFinite))return 'inconclusiva';
     return after.profit>before.profit?'positiva':after.profit<before.profit?'negativa':'inconclusiva';
   }
-  const api=Object.freeze({channels,scenarios,tacos,adsCapacity,assess});
+  const weights=Object.freeze({profitability:35,planning:30,decisions:20,ads:10,discipline:5});
+  function managerIndex(metrics){
+    let total=0,coverage=0;
+    for(const [key,w] of Object.entries(weights)){
+      const v=metrics?.[key];
+      if(typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=100){total+=v*w;coverage+=w;}
+    }
+    return {score:coverage===100?Math.round(total/100*10)/10:null,coverage,partial:coverage?Math.round(total/coverage*10)/10:null};
+  }
+  function reviewStatus(executedAt,days,now=Date.now()){
+    if(![3,7,15].includes(days)||!Number.isFinite(executedAt)||!Number.isFinite(now))return null;
+    const due=executedAt+days*864e5;
+    return {due,overdue:now>=due,daysLate:Math.max(0,Math.floor((now-due)/864e5))};
+  }
+  const api=Object.freeze({channels,scenarios,tacos,adsCapacity,assess,weights,managerIndex,reviewStatus});
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   else root.GLRPlaybook=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
