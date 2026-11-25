@@ -284,7 +284,8 @@ Router.register('decisoes', (params, el) => {
           const prazo = registro.em + dia * 864e5;
           const id = origem + ':revisao:' + dia;
           if (Date.now() < prazo || locais[id] || registro.encerradas?.[dia]) continue;
-          itens.push({id,tipo:'playbook',clienteFixo:registro.cliente,titulo:'Avaliar intervenção — '+dia+' dias',porque:'Comparar faturamento, margem e TACOS antes e depois; registrar fatores externos. Sem evidência suficiente, considerar inconclusivo.',tela:'playbook-glr',prazo:new Date(prazo).toISOString(),urgente:true,pbOrigem:origem,pbDia:dia});
+          const atraso = Math.max(0,Math.floor((Date.now()-prazo)/864e5));
+          itens.push({id,tipo:'playbook',clienteFixo:registro.cliente,titulo:(atraso>=3?'Escalonar revisão atrasada — ':atraso>=1?'Cobrar revisão atrasada — ':'Avaliar intervenção — ')+dia+' dias',porque:(atraso?'Atraso de '+atraso+' dia(s). '+(atraso>=3?'Encaminhar à liderança. ':'Cobrar o gestor responsável. '):'')+'Comparar faturamento, margem e TACOS antes e depois; registrar fatores externos. Sem evidência suficiente, considerar inconclusivo.',tela:'playbook-glr',prazo:new Date(prazo).toISOString(),urgente:true,pbOrigem:origem,pbDia:dia});
         }
       }
       itens.forEach(nomear);
