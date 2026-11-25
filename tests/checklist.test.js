@@ -1,0 +1,7 @@
+const {test}=require('node:test'),a=require('node:assert/strict'),c=require('../js/playbook-checklist-core');
+const ctx={contas:[{key:'ml:1',cliente_id:'c',gestor_id:'g',marketplace:'mercado-livre'}]},b={conta:'ml:1',cliente_id:'c',ciclo:'2026-11',item:'acessos',status:'feito',evidencia:'Conexão verificada'};
+test('seis etapas com tarefas distintas por plataforma',()=>{for(const canal of ['shopee','mercado-livre','tiktok-shop','amazon','magalu']){const e=c.template(canal);a.equal(e.length,6);const ids=e.flatMap(x=>x.itens.map(x=>x.id));a.equal(new Set(ids).size,ids.length);a.ok(ids.some(id=>id.startsWith('canal_')));}});
+test('conclusão exige evidência e não aplicação exige justificativa',()=>{a.throws(()=>c.validar({...b,evidencia:''},ctx));a.throws(()=>c.validar({...b,status:'nao_aplica',evidencia:''},ctx));a.equal(c.validar(b,ctx).gestor_id,'g');});
+test('custos pendentes não impedem registrar outra tarefa',()=>a.equal(c.validar({...b,item:'campanhas'},ctx).status,'feito'));
+test('conta de outro cliente, item de outro canal e ciclos inválidos rejeitados',()=>{for(const patch of [{cliente_id:'outro'},{item:'canal_gmv'},{ciclo:'2026-13'},{status:'aprovado'}])a.throws(()=>c.validar({...b,...patch},ctx));});
+test('progresso usa último registro e não conta não aplicação como concluída',()=>{const etapas=c.template('mercado-livre'),s=c.resumo(etapas,[{item:'acessos',status:'andamento'},{item:'acessos',status:'feito'},{item:'custos',status:'nao_aplica'}]);a.equal(s.feitos,0);a.equal(s.dispensados,1);a.equal(s.pendentes,s.total-1);});
