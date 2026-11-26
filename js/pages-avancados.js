@@ -653,7 +653,7 @@ const _projecaoDetalhe = (params, el) => {
     let vinculos = {};
     try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
     const contasVinc = vinculos[String(cidAtivo)] || [];
-    if (!contasVinc.length) { if (!silencioso) alert('Nenhuma conta vinculada. Use Vincular conta primeiro.'); return; }
+    if (!contasVinc.length) { if (!silencioso) GLR.avisar('Nenhuma conta vinculada. Use Vincular conta primeiro.', 'info'); return; }
 
     // Meses fechados (Maio/Abril/Março) não mudam mais depois de fechados — guarda o
     // que já foi buscado antes por conta, pra não buscar de novo toda atualização.
@@ -933,7 +933,7 @@ const _projecaoDetalhe = (params, el) => {
       salvar(); // persiste dataBase/dias/ads buscados — importante pro refresh automático das 5h
       renderTabela();
     } catch(e) {
-      if (!silencioso) alert('Erro ao buscar dados: '+e.message);
+      if (!silencioso) GLR.avisar('Erro ao buscar dados: '+e.message, 'erro');
       else console.warn('[Projeção] Erro na busca automática:', e.message);
     } finally {
       if (btn) { btn.disabled=false; btn.textContent='Buscar dados'; }
@@ -1314,8 +1314,8 @@ const _projecaoDetalhe = (params, el) => {
   }
 
   // ---- Handlers ----
-  window.limparDadosManuais = () => {
-    if (!confirm('Limpar todos os dados inseridos manualmente (faturamento base, ADS, vendas e histórico)? Os dados da API continuam visíveis automaticamente.')) return;
+  window.limparDadosManuais = async () => {
+    if (!(await GLR.confirmar('Limpar todos os dados inseridos manualmente (faturamento base, ADS, vendas e histórico)? Os dados da API continuam visíveis automaticamente.', { perigo: true }))) return;
     // Mantém a ligação de cada linha com a conta (contaId/marketplace) — só zera os valores
     projecaoAtiva.plataformas = projecaoAtiva.plataformas.map(p => ({
       ...p,
@@ -1335,9 +1335,9 @@ const _projecaoDetalhe = (params, el) => {
     atualizarGrafico();
   };
 
-  window.removePlat = (i) => {
+  window.removePlat = async (i) => {
     const pl = projecaoAtiva.plataformas[i];
-    if (!pl || !confirm(`Remover a fonte "${pl.nome}" desta projeção?`)) return;
+    if (!pl || !(await GLR.confirmar(`Remover a fonte "${pl.nome}" desta projeção?`, { perigo: true }))) return;
     projecaoAtiva.plataformas.splice(i, 1);
     salvar();
     renderTabela();
@@ -1561,7 +1561,7 @@ const _projecaoDetalhe = (params, el) => {
   window.abrirVinculoProjecao = async () => {
     const cidAtivo = parseInt(document.getElementById('sel-cliente')?.value) || clienteIdAtivo;
     const cliente  = GLR.clientes.find(c => c.id === cidAtivo);
-    if (!cidAtivo) { alert('Selecione um cliente primeiro.'); return; }
+    if (!cidAtivo) { GLR.avisar('Selecione um cliente primeiro.', 'info'); return; }
 
     // Mostrar loading enquanto busca contas da API
     const overlay = document.createElement('div');
@@ -1701,8 +1701,8 @@ const _projecaoDetalhe = (params, el) => {
     overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); renderTabela(); } });
   };
 
-  window.novaProjecao = () => {
-    const nome = prompt('Nome do cliente para a nova projeção:');
+  window.novaProjecao = async () => {
+    const nome = (await GLR.perguntar('Nome do cliente para a nova projeção:'));
     if (!nome) return;
     const chave = 'proj_' + Date.now();
     const nova = {

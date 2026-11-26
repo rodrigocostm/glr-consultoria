@@ -193,7 +193,7 @@ Router.register('expansao', (params, el) => {
       if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
       const a = j.analisados?.[0]; if (a?.erro) throw new Error(a.erro);
       delete st.ops[cid]; await carregar(); st.aberto = String(cid); carregarOps(cid);
-    } catch (e) { alert('Não consegui analisar: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui analisar: ' + (e.message || e), 'erro'); }
     st.analisando = null; render();
   };
   window._exPreparar = async (cid, kEnc) => {
@@ -207,7 +207,7 @@ Router.register('expansao', (params, el) => {
       delete st.proc[k]; st.preparando = null;
       Router.navigate(['ml', 'shopee', 'tiktok'].includes(o.alvo) ? 'criar-anuncio' : `anuncios-${o.alvo}`); // criador novo (etapas, várias contas)
       return;
-    } catch (e) { alert('Não consegui preparar o anúncio: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui preparar o anúncio: ' + (e.message || e), 'erro'); }
     delete st.proc[k]; st.preparando = null; render();
   };
 

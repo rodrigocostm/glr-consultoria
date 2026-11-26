@@ -1830,7 +1830,7 @@ function _adsEhML() {
 }
 
 window._adsPausar = async function(campaignId) {
-  if (!confirm('Pausar esta campanha?')) return;
+  if (!(await GLR.confirmar('Pausar esta campanha?', { perigo: true }))) return;
   try {
     // Antes chamava sempre a ação da Shopee, mesmo com conta ML selecionada —
     // a campanha nunca era pausada de verdade, só falhava/ignorava em silêncio.
@@ -1840,10 +1840,10 @@ window._adsPausar = async function(campaignId) {
     } else {
       await MarketplaceAPI.call('shopee_ads_pause_campaign', { campaign_id: campaignId });
     }
-    alert('✅ Campanha pausada com sucesso!');
+    GLR.avisar('✅ Campanha pausada com sucesso!', 'sucesso');
     buscarDados(true);
   } catch(e) {
-    alert('❌ Erro ao pausar: ' + e.message);
+    GLR.avisar('❌ Erro ao pausar: ' + e.message, 'erro');
   }
 };
 
@@ -1953,7 +1953,7 @@ window._adsAutoAnalisar = function() {
 // ações específicas por campanha. Cada sugestão vai pra fila de aprovação
 // (glr_ads_sugestoes) — um analista humano aprova ou rejeita, nunca executa sozinha.
 window._adsGerarSugestoes = async function() {
-  if (!dadosADS || !contaAtual) { alert('Carregue os dados da conta primeiro.'); return; }
+  if (!dadosADS || !contaAtual) { GLR.avisar('Carregue os dados da conta primeiro.', 'info'); return; }
   const btn = document.getElementById('ads-btn-sugestoes');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando...'; }
 
@@ -2021,7 +2021,7 @@ REGRAS:
     const sugestoes = JSON.parse(texto);
 
     if (!Array.isArray(sugestoes) || !sugestoes.length) {
-      alert('A IA não encontrou nenhuma otimização relevante pra sugerir agora — conta parece saudável.');
+      GLR.avisar('A IA não encontrou nenhuma otimização relevante pra sugerir agora — conta parece saudável.', 'info');
       return;
     }
 
@@ -2043,14 +2043,14 @@ REGRAS:
     const { error } = await _sb.from('glr_ads_sugestoes').insert(linhas);
     if (error) throw error;
 
-    alert(`${linhas.length} sugestão(ões) gerada(s) e adicionada(s) à fila. Veja em "Sugestões de ADS" no menu.`);
+    GLR.avisar(`${linhas.length} sugestão(ões) gerada(s) e adicionada(s) à fila. Veja em "Sugestões de ADS" no menu.`, 'sucesso');
     // Atualiza os selos de sugestão direto na tabela de campanhas, sem precisar recarregar tudo
     if (dadosADS) {
       dadosADS.sugestoesPorCampanha = await buscarSugestoesPendentes();
       renderConteudo();
     }
   } catch (e) {
-    alert('Erro ao gerar sugestões: ' + e.message);
+    GLR.avisar('Erro ao gerar sugestões: ' + e.message, 'erro');
     console.warn('[ADS Sugestões]', e);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Gerar Sugestões'; }

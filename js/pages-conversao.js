@@ -100,18 +100,18 @@ Router.register('conversao-ml', (params, el) => {
   window._cvPreco = async k => {
     const x = achar(k); if (!x) return;
     const aviso = x.margem_nova == null ? '\n\nAtenção: o produto não tem custo cadastrado — confira a margem antes.' : `\n\nMargem: ${pct(x.margem)} → ${pct(x.margem_nova)} (mínima ${pct(x.margem_minima)}).`;
-    if (!confirm(`Mudar o preço no Mercado Livre?\n\n${x.titulo}\n${R$(x.preco)} → ${R$(x.preco_ganhar)}${aviso}`)) return;
+    if (!(await GLR.confirmar(`Mudar o preço no Mercado Livre?\n\n${x.titulo}\n${R$(x.preco)} → ${R$(x.preco_ganhar)}${aviso}`))) return;
     st.proc[k] = 'Aplicando…'; render();
     try { await executar(k, { marketplace: 'ml', acao: 'buybox_preco', chave: `bb:${x.item_id}`, conta: x.conta, item_id: x.item_id, preco_atual: x.preco, preco_sugerido: x.preco_ganhar, tem_variacao: x.tem_variacao, margem_atual: x.margem, margem_nova: x.margem_nova, produto: x.titulo }, `Ganhar o catálogo — ${x.titulo}`); }
-    catch (e) { alert('O ML não aceitou: ' + (e.message || e)); }
+    catch (e) { GLR.avisar('O ML não aceitou: ' + (e.message || e), 'erro'); }
     delete st.proc[k]; render();
   };
   window._cvOptin = async k => {
     const x = achar(k); if (!x) return;
-    if (!confirm(`Publicar no catálogo do Mercado Livre?\n\n${x.titulo}\nProduto de catálogo ${x.catalog_product_id}, mesmo preço (${R$(x.preco)}).`)) return;
+    if (!(await GLR.confirmar(`Publicar no catálogo do Mercado Livre?\n\n${x.titulo}\nProduto de catálogo ${x.catalog_product_id}, mesmo preço (${R$(x.preco)}).`))) return;
     st.proc[k] = 'Publicando…'; render();
     try { await executar(k, { marketplace: 'ml', acao: 'catalogo_optin', chave: `cat:${x.item_id}`, conta: x.conta, item_id: x.item_id, catalog_product_id: x.catalog_product_id, produto: x.titulo }, `Entrar no catálogo — ${x.titulo}`); }
-    catch (e) { alert('O ML não aceitou: ' + (e.message || e)); }
+    catch (e) { GLR.avisar('O ML não aceitou: ' + (e.message || e), 'erro'); }
     delete st.proc[k]; render();
   };
   window._cvAba = k => { st.aba = k; render(); };
@@ -119,7 +119,7 @@ Router.register('conversao-ml', (params, el) => {
     const foco = GLR.ctx?.cliente(); if (!foco || st.analisando) return;
     let vinc = {}; try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
     const contas = (vinc[String(foco)] || []).filter(c => /meli|mercado|^ml$/i.test(c.marketplace || '')).map(c => String(c.param_to_use?.meliUserId || c.external_id));
-    if (!contas.length) return alert('Este cliente não tem conta do Mercado Livre vinculada.');
+    if (!contas.length) return GLR.avisar('Este cliente não tem conta do Mercado Livre vinculada.', 'info');
     st.analisando = true; render();
     try {
       for (const c of contas) {
@@ -128,7 +128,7 @@ Router.register('conversao-ml', (params, el) => {
         if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
       }
       await carregar();
-    } catch (e) { alert('Não consegui analisar: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui analisar: ' + (e.message || e), 'erro'); }
     st.analisando = false; render();
   };
 

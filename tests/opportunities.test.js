@@ -28,8 +28,8 @@ test('plan UI filters accounts, keeps assigned actions open and persists task/ou
  const p={em:Date.now(),cliente:{id:1,nome:'Cliente',gestor:'Maria',gestorId:1},semaforo:'amarelo',metricas:{tacos:8,projecao:3000},acoes:actions,oportunidades:actions,resultados:{medidas:0}};
  const ctx={console,Date,Map,Set,JSON,Number,String,Math,Array,parseFloat,parseInt,setTimeout,
   localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},
-  document:{getElementById:id=>id==='pl-root'?root:null},prompt:()=>answers.shift(),
-  GLR:{clientes:[{id:1,nome:'Cliente',gestorId:1}],gestores:[{id:1,nome:'Maria'}],tarefas:[],nextId:()=>1},
+  document:{getElementById:id=>id==='pl-root'?root:null},
+  GLR:{perguntar:async()=>answers.shift(),clientes:[{id:1,nome:'Cliente',gestorId:1}],gestores:[{id:1,nome:'Maria'}],tarefas:[],nextId:()=>1},
   Router:{register:(k,fn)=>handler=fn,navigate:()=>{}},
   _sb:{from:()=>({select(){return this},eq(){return this},then(resolve){resolve({data:[{cursor:p}]})}}),auth:{getUser:async()=>({data:{user:{email:'test@example.test'}}})}}
  };
@@ -41,10 +41,10 @@ test('plan UI filters accounts, keeps assigned actions open and persists task/ou
  assert.match(root.innerHTML,/Oportunidades para vender com lucro/);
  assert.match(root.innerHTML,/Repor móvel/);
  ctx._plOpConta('B');assert.doesNotMatch(root.innerHTML,/Repor móvel/);assert.match(root.innerHTML,/Rever &lt;script&gt;bad&lt;\/script&gt;/);
- answers.push('Ana');ctx._plOpAcao(1,'responsavel');assert.doesNotMatch(root.innerHTML,/Virar tarefa/);
+ answers.push('Ana');await ctx._plOpAcao(1,'responsavel');assert.doesNotMatch(root.innerHTML,/Virar tarefa/);
  ctx._plOpTog('b');assert.match(root.innerHTML,/Ana/);
- ctx._plOpAcao(1,'feito');assert.match(root.innerHTML,/Feita/);
- answers.push('7 dias: conversão 2% para 3%');ctx._plOpAcao(1,'resultado');assert.match(root.innerHTML,/conversão 2% para 3%/);
- ctx._plOpAcao(1,'reabrir');ctx._plOpAcao(1,'feito');
+ await ctx._plOpAcao(1,'feito');assert.match(root.innerHTML,/Feita/);
+ answers.push('7 dias: conversão 2% para 3%');await ctx._plOpAcao(1,'resultado');assert.match(root.innerHTML,/conversão 2% para 3%/);
+ await ctx._plOpAcao(1,'reabrir');await ctx._plOpAcao(1,'feito');
  const saved=JSON.parse(storage.get('glr_plano_status'));assert.equal(saved.b.st,'feito');assert.equal(saved.b.baseline.tacos,8);assert.equal(saved.b.responsavel,'Ana');
 });

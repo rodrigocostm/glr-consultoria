@@ -191,7 +191,7 @@ function setupClienteHandlers() {
     const c = clienteId ? GLR.clientes.find(cl => cl.id === clienteId) : null;
 
     if (!GLR.gestores.length) {
-      alert('Cadastre pelo menos um gestor antes de adicionar clientes.');
+      GLR.avisar('Cadastre pelo menos um gestor antes de adicionar clientes.', 'info');
       Router.navigate('gestores');
       return;
     }
@@ -294,12 +294,12 @@ function setupClienteHandlers() {
     try { _localSetItem(overlay._draftKey, JSON.stringify(Object.fromEntries(fields.map(id => [id, overlay.querySelector('#'+id).value])))); }
     catch { /* The open form is kept; saving explicitly reports storage failures. */ }
   });
-  _sb.auth.getSession().then(({data}) => {
+  _sb.auth.getSession().then(async ({data}) => {
     if (!data?.session?.user?.id || !overlay.isConnected) return;
     overlay._draftKey = 'glr_acao_rascunho_'+data.session.user.id+'_'+(acaoId ?? 'nova');
     try {
       const draft = JSON.parse(localStorage.getItem(overlay._draftKey) || 'null');
-      if (draft && !touched && confirm('Há um rascunho não enviado neste navegador. Restaurar o texto?')) for (const id of fields) if (draft[id] != null) overlay.querySelector('#'+id).value = draft[id];
+      if (draft && !touched && (await GLR.confirmar('Há um rascunho não enviado neste navegador. Restaurar o texto?'))) for (const id of fields) if (draft[id] != null) overlay.querySelector('#'+id).value = draft[id];
     } catch {}
   }).catch(()=>{});
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
@@ -309,8 +309,8 @@ function setupClienteHandlers() {
   window.salvarCliente = (id) => {
     const nome = document.getElementById('c-nome').value.trim();
     const gestorId = parseInt(document.getElementById('c-gestor').value);
-    if (!nome) { alert('Informe o nome da empresa.'); return; }
-    if (!gestorId) { alert('Selecione o gestor responsável.'); return; }
+    if (!nome) { GLR.avisar('Informe o nome da empresa.', 'info'); return; }
+    if (!gestorId) { GLR.avisar('Selecione o gestor responsável.', 'info'); return; }
 
     const existente = id ? GLR.clientes.find(c => c.id === id) : null;
 
@@ -344,9 +344,9 @@ function setupClienteHandlers() {
     Router.navigate('clientes');
   };
 
-  window.removerCliente = (id) => {
+  window.removerCliente = async (id) => {
     const c = GLR.clientes.find(cl => cl.id === id);
-    if (!confirm(`Remover o cliente "${c?.nome}"? Esta ação não pode ser desfeita.`)) return;
+    if (!(await GLR.confirmar(`Remover o cliente "${c?.nome}"? Esta ação não pode ser desfeita.`, { perigo: true }))) return;
     GLR.clientes = GLR.clientes.filter(cl => cl.id !== id);
     salvarClientes();
     document.querySelector('.modal-overlay')?.remove();
@@ -792,8 +792,8 @@ function openModalNovaAcao(clienteId, acaoId) {
     </div>
     <div style="display:flex;gap:10px;justify-content:${acaoExistente ? 'space-between' : 'flex-end'};">
       ${acaoExistente ? `<button class="btn btn-ghost" style="color:var(--red);" onclick="(async function(){
-        if(!confirm('Excluir esta ação?'))return;
-        try { await glrSalvarAcoes([], [${acaoExistente.id}]); } catch(e) { alert(e.message); return; }
+        if(!(await GLR.confirmar('Excluir esta ação?', { perigo: true })))return;
+        try { await glrSalvarAcoes([], [${acaoExistente.id}]); } catch(e) { GLR.avisar(e.message, 'erro'); return; }
         document.querySelector('.modal-overlay').remove();
         Router.resolve();
       })()">Excluir</button>` : ''}
@@ -812,11 +812,11 @@ function openModalNovaAcao(clienteId, acaoId) {
             responsavel: document.getElementById('a-resp').value,
             status: document.getElementById('a-status').value,
           };
-          if(!dados.descricao){alert('Informe a descrição.');return;}
+          if(!dados.descricao){GLR.avisar('Informe a descrição.', 'info');return;}
           const item = {id: ${registroId}, ...dados};
           this.disabled=true;
           try { await glrSalvarAcoes([item]); }
-          catch(e) { this.disabled=false; alert(e.message); return; }
+          catch(e) { this.disabled=false; GLR.avisar(e.message, 'erro'); return; }
           try { const key=this.closest('.modal-overlay')._draftKey; if(key) localStorage.removeItem(key); } catch {}
           this.closest('.modal-overlay').remove();
           Router.resolve();
@@ -834,12 +834,12 @@ function openModalNovaAcao(clienteId, acaoId) {
     try { _localSetItem(overlay._draftKey, JSON.stringify(Object.fromEntries(fields.map(id => [id, overlay.querySelector('#'+id).value])))); }
     catch { /* The open form is kept; saving explicitly reports storage failures. */ }
   });
-  _sb.auth.getSession().then(({data}) => {
+  _sb.auth.getSession().then(async ({data}) => {
     if (!data?.session?.user?.id || !overlay.isConnected) return;
     overlay._draftKey = 'glr_acao_rascunho_'+data.session.user.id+'_'+(acaoId ?? 'nova');
     try {
       const draft = JSON.parse(localStorage.getItem(overlay._draftKey) || 'null');
-      if (draft && !touched && confirm('Há um rascunho não enviado neste navegador. Restaurar o texto?')) for (const id of fields) if (draft[id] != null) overlay.querySelector('#'+id).value = draft[id];
+      if (draft && !touched && (await GLR.confirmar('Há um rascunho não enviado neste navegador. Restaurar o texto?'))) for (const id of fields) if (draft[id] != null) overlay.querySelector('#'+id).value = draft[id];
     } catch {}
   }).catch(()=>{});
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });

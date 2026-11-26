@@ -86,14 +86,14 @@ Router.register('blog', (params, el) => {
     const v = k => document.getElementById(k)?.value || '';
     st.proc[id] = 'Salvando…'; render();
     try { const j = await api({ acao: 'salvar', id, titulo: v('bl-tit'), resumo: v('bl-res'), tags: v('bl-tags'), editoria: v('bl-editoria'), corpo: v('bl-corpo') }); troca(j.post); st.editando = null; }
-    catch (e) { alert('Não consegui salvar: ' + e.message); }
+    catch (e) { GLR.avisar('Não consegui salvar: ' + e.message, 'erro'); }
     delete st.proc[id]; render();
   };
   const TXT = { publicar: ['Publicar no site? O post fica visível para todos em consultoriaglr.com.br/blog.', 'Publicando…'], descartar: ['Descartar este rascunho?', 'Descartando…'], despublicar: [null, 'Atualizando…'], foto: [null, 'Gerando a foto… (até 30 s)'] };
   window._blAcao = async (id, acao) => {
-    if (TXT[acao][0] && !confirm(TXT[acao][0])) return;
+    if (TXT[acao][0] && !(await GLR.confirmar(TXT[acao][0]))) return;
     st.proc[id] = TXT[acao][1]; render();
-    try { const j = await api({ acao, id }); troca(j.post); } catch (e) { alert('Não consegui: ' + e.message); }
+    try { const j = await api({ acao, id }); troca(j.post); } catch (e) { GLR.avisar('Não consegui: ' + e.message, 'erro'); }
     delete st.proc[id]; render();
   };
   // publicadas sem foto: o servidor faz 2 por vez; repete até zerar

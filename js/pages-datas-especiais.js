@@ -187,7 +187,7 @@ function paginaDatasEspeciais(params, el) {
     if (!st.sinais[id]) await carregarSinais(id);
     const p = pesos(), txt = mensagem(s, planoDe(s, p), riscoEstoque(id, p));
     try { await navigator.clipboard.writeText(txt); st.copiado = id; render(); setTimeout(() => { if (st.copiado === id) { st.copiado = null; render(); } }, 2500); }
-    catch (e) { prompt('Copie a mensagem:', txt); }
+    catch (e) { (await GLR.perguntar('Copie a mensagem:', { valor: txt })); }
   };
 
   el.innerHTML = `<div class="page">

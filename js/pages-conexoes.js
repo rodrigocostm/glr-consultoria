@@ -46,7 +46,7 @@ Router.register('conexoes', (params, el) => {
       const r = await window.glrApiFetch('/api/agente-cron?rodada=conexoes&agora=1');
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-    } catch (e) { alert('Não consegui verificar agora: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui verificar agora: ' + (e.message || e), 'erro'); }
     st.verificando = false;
     await carregar();
   }

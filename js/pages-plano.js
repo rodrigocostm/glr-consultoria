@@ -375,7 +375,7 @@ Router.register('plano-acao', (params, el) => {
     salvarStatus(id, { ...old, st: 'feito', em: Date.now(), baseline: { tacos: p?.metricas?.tacos ?? null, projecao: p?.metricas?.projecao ?? null, planoEm: p?.em ?? null } }); render();
   };
   window._plOpConta = conta => { st.contaOportunidade = conta; render(); };
-  window._plOpAcao = (idx, action) => {
+  window._plOpAcao = async (idx, action) => {
     const p = planoAtual(), a = p && oportunidadesDe(p)[idx]; if (!a) return;
     if (action === 'ir' && a.tela) return window._plIr(a.tela);
     if (action === 'tarefa') return window._plTarefa(p.cliente.id, a.id);
@@ -383,16 +383,16 @@ Router.register('plano-acao', (params, el) => {
     if (action === 'descartar') return window._plDescartar(a.id);
     if (action === 'reabrir') return window._plReabrir(a.id);
     if (action === 'responsavel') {
-      const value = prompt('Responsável por esta oportunidade:', status()[a.id]?.responsavel || a.responsavel);
+      const value = (await GLR.perguntar('Responsável por esta oportunidade:', { valor: status()[a.id]?.responsavel || a.responsavel }));
       if (value?.trim()) { salvarStatus(a.id, { ...(status()[a.id] || {}), responsavel: value.trim().slice(0,120) }); render(); }
     }
     if (action === 'resultado') {
-      const value = prompt('Resultado observado (informe período, vendas, Ads ou margem; não atribua causalidade sem evidência):', status()[a.id]?.resultado || '');
+      const value = (await GLR.perguntar('Resultado observado (informe período, vendas, Ads ou margem; não atribua causalidade sem evidência):', { valor: status()[a.id]?.resultado || '' }));
       if (value?.trim()) { salvarStatus(a.id, { ...(status()[a.id] || {}), resultado: value.trim().slice(0,2000), resultadoEm: Date.now() }); render(); }
     }
   };
   window._plReabrir = id => { const { st: anterior, em, ...dados } = status()[id] || {}; salvarStatus(id, Object.keys(dados).length ? dados : null); render(); };
-  window._plDescartar = id => { const motivo = prompt('Por que descartar esta ação? (opcional)'); if (motivo === null) return; salvarStatus(id, { ...(status()[id] || {}), st: 'descartado', em: Date.now(), motivo: motivo.slice(0, 140) }); render(); };
+  window._plDescartar = async id => { const motivo = (await GLR.perguntar('Por que descartar esta ação? (opcional)')); if (motivo === null) return; salvarStatus(id, { ...(status()[id] || {}), st: 'descartado', em: Date.now(), motivo: motivo.slice(0, 140) }); render(); };
   window._plTarefa = (cid, id) => {
     const p = st.planos.find(x => String(x.cliente.id) === String(cid)), a = p && oportunidadesDe(p).find(x => x.id === id); if (!a) return;
     if (status()[id]?.tarefaId && GLR.tarefas.some(t => t.id === status()[id].tarefaId)) return;
@@ -406,7 +406,7 @@ Router.register('plano-acao', (params, el) => {
     salvarStatus(id, { ...(status()[id] || {}), st: 'tarefa', em: Date.now(), tarefaId: tarefa.id });
     render();
   };
-  window._plCopiar = () => { const t = document.getElementById('pl-pauta')?.value || ''; navigator.clipboard?.writeText(t).then(() => { st.copiado = true; render(); }, () => alert('Não consegui copiar — selecione o texto e copie.')); };
+  window._plCopiar = () => { const t = document.getElementById('pl-pauta')?.value || ''; navigator.clipboard?.writeText(t).then(() => { st.copiado = true; render(); }, () => GLR.avisar('Não consegui copiar — selecione o texto e copie.', 'erro')); };
   window._plAba = k => { st.aba = k; st.copiado = false; try { localStorage.setItem('glr_plano_aba2', k); } catch (e) {} render(); };
   window._plAcaoTog = id => { st.acaoAberta = st.acaoAberta === id ? null : id; render(); };
   window._plMetaEd = cid => { st.metaEd = cid ? String(cid) : null; render(); if (cid) document.getElementById('pl-meta-fat')?.focus(); };
@@ -423,7 +423,7 @@ Router.register('plano-acao', (params, el) => {
   };
   window._plSalvarMeta = async cid => {
     const fat = numBR(document.getElementById('pl-meta-fat')?.value), ped = numBR(document.getElementById('pl-meta-ped')?.value), tac = numBR(document.getElementById('pl-meta-tac')?.value);
-    if (tac != null && (tac <= 0 || tac > 60)) { alert('O teto de ADS é um percentual do faturamento — use um valor entre 0,5 e 60 (ex.: 8 para 8%).'); return; }
+    if (tac != null && (tac <= 0 || tac > 60)) { GLR.avisar('O teto de ADS é um percentual do faturamento — use um valor entre 0,5 e 60 (ex.: 8 para 8%).', 'info'); return; }
     const mf = lerJSON('glr_metas', {}), mp = lerJSON('glr_metas_pedidos', {}), mt = lerJSON('glr_metas_tacos', {});
     if (fat > 0) mf[cid] = fat; else delete mf[cid];
     if (ped > 0) mp[cid] = Math.round(ped); else delete mp[cid];
@@ -436,7 +436,7 @@ Router.register('plano-acao', (params, el) => {
       const r = await window.glrApiFetch(`/api/agente-cron?rodada=gerente&cliente_id=${encodeURIComponent(cid)}${q}`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-    } catch (e) { alert('Meta salva, mas não consegui recalcular o caminho agora: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Meta salva, mas não consegui recalcular o caminho agora: ' + (e.message || e), 'erro'); }
     st.gerando = false; await carregar();
   };
   window._plGerar = async cid => {
@@ -445,7 +445,7 @@ Router.register('plano-acao', (params, el) => {
       const r = await window.glrApiFetch(`/api/agente-cron?rodada=gerente&cliente_id=${encodeURIComponent(cid)}`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-    } catch (e) { alert('Não consegui gerar o plano agora: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui gerar o plano agora: ' + (e.message || e), 'erro'); }
     st.gerando = false; await carregar();
   };
 

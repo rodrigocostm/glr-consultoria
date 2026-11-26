@@ -23,28 +23,28 @@ Router.register('meu-estoque', (params, el) => {
     const p = st.lista[i]; if (!p) return;
     const n = parseInt(String(inp.value).replace(/\D/g, ''), 10);
     if (!(n >= 0)) { inp.classList.add('erro'); return; }
-    if (!confirm(`Gravar estoque ${n} em ${p.anuncios.filter(a => !a.full).length} anúncio(s) de "${String(p.nome).slice(0, 60)}"?`)) { inp.value = p.estoque ?? ''; return; }
+    if (!(await GLR.confirmar(`Gravar estoque ${n} em ${p.anuncios.filter(a => !a.full).length} anúncio(s) de "${String(p.nome).slice(0, 60)}"?`))) { inp.value = p.estoque ?? ''; return; }
     st.ocupado[p.chave] = true; render();
     try {
       const r = await call('glr_estoque_salvar', { chave: p.chave, nome: p.nome, sku: p.sku, estoque: n, anuncios: p.anuncios });
       p.estoque = n; p.salvo = true; p.diverge = false;
       p.anuncios.forEach(a => { if (!a.full) a.estoque = n; });
       const erros = (r.gravados || []).filter(x => x.erro);
-      if (erros.length) alert(`Gravado, mas ${erros.length} anúncio(s) recusaram:\n${erros.slice(0, 4).map(x => `${x.a}: ${x.erro}`).join('\n')}`);
-    } catch (e) { alert('Não consegui gravar: ' + (e.message || e)); }
+      if (erros.length) GLR.avisar(`Gravado, mas ${erros.length} anúncio(s) recusaram:\n${erros.slice(0, 4).map(x => `${x.a}: ${x.erro}`).join('\n')}`, 'erro');
+    } catch (e) { GLR.avisar('Não consegui gravar: ' + (e.message || e), 'erro'); }
     delete st.ocupado[p.chave]; render();
   }
   async function alternarEspelho() {
     const ligar = !st.ativo;
-    if (ligar && !confirm('Ativar o estoque único?\n\n• Cada produto passa a ter UM estoque, o MENOR entre as lojas, gravado em todos os anúncios dele.\n• A cada venda, o sistema desconta e atualiza as outras lojas (a cada 15 min).\n• Anúncios Full ficam de fora.')) return;
-    if (!ligar && !confirm('Desativar o espelho? As lojas voltam a ter estoques independentes.')) return;
+    if (ligar && !(await GLR.confirmar('Ativar o estoque único?\n\n• Cada produto passa a ter UM estoque, o MENOR entre as lojas, gravado em todos os anúncios dele.\n• A cada venda, o sistema desconta e atualiza as outras lojas (a cada 15 min).\n• Anúncios Full ficam de fora.'))) return;
+    if (!ligar && !(await GLR.confirmar('Desativar o espelho? As lojas voltam a ter estoques independentes.', { perigo: true }))) return;
     st.ativando = true; render();
     try {
       const r = await call('glr_estoque_ativar', { ativo: ligar, produtos: ligar ? st.produtos.map(p => ({ chave: p.chave, nome: p.nome, sku: p.sku, anuncios: p.anuncios })) : [] });
       st.ativo = r.ativo;
-      if (ligar) alert(`Estoque único ativado. ${r.ajustados} anúncio(s) ajustados para o menor estoque${r.erros ? `, ${r.erros} com erro` : ''}.`);
+      if (ligar) GLR.avisar(`Estoque único ativado. ${r.ajustados} anúncio(s) ajustados para o menor estoque${r.erros ? `, ${r.erros} com erro` : ''}.`, r.erros ? 'erro' : 'sucesso');
       await carregar();
-    } catch (e) { alert('Não consegui: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui: ' + (e.message || e), 'erro'); }
     st.ativando = false; render();
   }
 

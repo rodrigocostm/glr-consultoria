@@ -2881,7 +2881,7 @@
     window._agExcluirConta = async (contaId) => {
       const cfg = configDaConta(contaId);
       if (!cfg) return;
-      if (!confirm(`Excluir "${nomeExibicao(cfg)}" do agente de ADS?\n\nO agente para de revisar e agir nesta conta, e as regras (guardrails) dela são apagadas. A loja e as campanhas na Shopee não mudam, e o histórico fica guardado.\n\nVocê pode adicionar a conta de novo depois.`)) return;
+      if (!(await GLR.confirmar(`Excluir "${nomeExibicao(cfg)}" do agente de ADS?\n\nO agente para de revisar e agir nesta conta, e as regras (guardrails) dela são apagadas. A loja e as campanhas na Shopee não mudam, e o histórico fica guardado.\n\nVocê pode adicionar a conta de novo depois.`, { perigo: true }))) return;
       try {
         const { data: apagadas, error } = await _sb.from('glr_agente_config').delete().eq('conta_id', cfg.conta_id).select('conta_id');
         if (error) throw error;
@@ -2898,7 +2898,7 @@
         } catch (e) { console.warn('[Agente] log da exclusão:', e.message); }
         if (state.contaAbertaId === cfg.conta_id) { state.contaAbertaId = null; GLR.ctx?.definir('', true); }
       } catch (e) {
-        alert('Não consegui excluir a conta do agente: ' + (e.message || e));
+        GLR.avisar('Não consegui excluir a conta do agente: ' + (e.message || e), 'erro');
       } finally {
         render();
       }

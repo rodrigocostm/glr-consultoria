@@ -103,7 +103,7 @@ Router.register('onboarding', (params, el) => {
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
       await carregar();
-    } catch (e) { alert('Não consegui verificar: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui verificar: ' + (e.message || e), 'erro'); }
     st.verificando = false; render();
   };
 

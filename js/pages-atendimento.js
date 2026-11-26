@@ -130,9 +130,9 @@ Router.register('atendimento', (params, el) => {
   window._atResponder = async id => {
     const p = (st.dados?.perguntas || []).find(x => x.id === id); if (!p) return;
     const txt = (document.getElementById(`at-r-${id}`)?.value || '').trim();
-    if (txt.length < 3) { alert('Escreva a resposta antes de enviar.'); return; }
-    if (/https?:\/\/|www\.|@[a-z0-9-]+\.|\(\d{2}\)\s?\d|whats/i.test(txt) && !confirm('A resposta parece ter link, e-mail ou telefone — o Mercado Livre não permite. Enviar mesmo assim?')) return;
-    if (!confirm(`Enviar esta resposta no Mercado Livre?\n\nPergunta: ${p.texto}\n\nResposta: ${txt}`)) return;
+    if (txt.length < 3) { GLR.avisar('Escreva a resposta antes de enviar.', 'info'); return; }
+    if (/https?:\/\/|www\.|@[a-z0-9-]+\.|\(\d{2}\)\s?\d|whats/i.test(txt) && !(await GLR.confirmar('A resposta parece ter link, e-mail ou telefone — o Mercado Livre não permite. Enviar mesmo assim?'))) return;
+    if (!(await GLR.confirmar(`Enviar esta resposta no Mercado Livre?\n\nPergunta: ${p.texto}\n\nResposta: ${txt}`))) return;
     st.enviando[id] = true; delete st.enviado['e' + id]; render();
     try {
       const r = await MarketplaceAPI.call('ml_answer_question', { meliUserId: st.dados.conta, question_id: String(id), text: txt });

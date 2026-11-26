@@ -263,8 +263,8 @@ Router.register('chat', (params, el) => {
   window._chAgente = ag => { if (st.enviando || ag === st.agente) return; st.agente = ag; gravarLS('glr_chat_agente', ag); window._chNova(); };
   window._chLista = () => { st.listaAberta = !st.listaAberta; render(); };
   window._chApagar = async id => {
-    if (!confirm('Apagar esta conversa?')) return;
-    try { await api({ acao: 'apagar', conversa_id: id }); } catch (e) { alert('Não consegui apagar: ' + (e.message || e)); return; }
+    if (!(await GLR.confirmar('Apagar esta conversa?', { perigo: true }))) return;
+    try { await api({ acao: 'apagar', conversa_id: id }); } catch (e) { GLR.avisar('Não consegui apagar: ' + (e.message || e), 'erro'); return; }
     st.conversas = st.conversas.filter(c => c.id !== id);
     if (st.id === id) window._chNova(); else render();
   };

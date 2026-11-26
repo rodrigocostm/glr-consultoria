@@ -1548,7 +1548,7 @@ Router.register('financeiro', async (params, el) => {
   window.finAddLinha = tipo => {
     const nome  = document.getElementById('fin-nome-'+tipo)?.value?.trim();
     const valor = parseFloat(document.getElementById('fin-valor-'+tipo)?.value);
-    if (!nome || isNaN(valor)) { alert('Preencha descrição e valor.'); return; }
+    if (!nome || isNaN(valor)) { GLR.avisar('Preencha descrição e valor.', 'info'); return; }
     manual()[tipo].push({nome, valor});
     salvarManual(); renderConteudo();
   };

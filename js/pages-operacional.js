@@ -213,8 +213,8 @@ Router.register('tarefas', (params, el) => {
   window._tarefaToggleConcluida = (id, marcado) => {
     window._tarefaSetCampo(id, 'status', marcado ? 'concluida' : 'pendente');
   };
-  window._tarefaExcluir = (id) => {
-    if (!confirm('Excluir esta tarefa?')) return;
+  window._tarefaExcluir = async (id) => {
+    if (!(await GLR.confirmar('Excluir esta tarefa?', { perigo: true }))) return;
     GLR.tarefas = GLR.tarefas.filter(x => x.id !== id);
     salvarTarefas();
     renderTudo();

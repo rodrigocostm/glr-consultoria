@@ -248,7 +248,7 @@ Router.register('produtos', (params, el) => {
       const iSku = cab.findIndex(c => c.startsWith('sku')), iNome = cab.findIndex(c => c === 'nome' || c === 'titulo' || c === 'título');
       const iCusto = cab.findIndex(c => ['custo', 'custo unitario', 'custo unitário', 'preço de custo', 'preco de custo'].includes(c));
       const iExtra = cab.findIndex(c => c.startsWith('custo_extra') || c.startsWith('custo extra'));
-      if (iSku < 0 || iCusto < 0) { alert('A planilha precisa das colunas "sku" e "custo" (opcionais: "nome", "custo_extra"). Separador ; ou ,'); return; }
+      if (iSku < 0 || iCusto < 0) { GLR.avisar('A planilha precisa das colunas "sku" e "custo" (opcionais: "nome", "custo_extra"). Separador ; ou ,', 'info'); return; }
       const virtuais = new Map(montarLinhas().filter(r => r.virtual && r.sku).map(r => [normSku(r.sku), r]));
       const lista = todos(); let criados = 0, atualizados = 0;
       for (const l of linhas.slice(1)) {
@@ -267,7 +267,7 @@ Router.register('produtos', (params, el) => {
         sincronizarCatalogo(p, ant);
       }
       salvarTodos(lista);
-      alert(`Planilha importada: ${atualizados} produto(s) atualizado(s), ${criados} criado(s).`);
+      GLR.avisar(`Planilha importada: ${atualizados} produto(s) atualizado(s), ${criados} criado(s).`, 'sucesso');
       render();
     };
     leitor.readAsText(arquivo, 'utf-8');
@@ -338,7 +338,7 @@ Router.register('produtos', (params, el) => {
   window._prNcm = async (idx, inp) => {
     const r = st.rows[idx]; if (!r) return;
     const n = String(inp.value || '').replace(/\D/g, '');
-    if (n && n.length !== 8) { inp.classList.add('erro'); alert('O NCM tem 8 dígitos (ex.: 9403.60.00 → 94036000).'); return; }
+    if (n && n.length !== 8) { inp.classList.add('erro'); GLR.avisar('O NCM tem 8 dígitos (ex.: 9403.60.00 → 94036000).', 'info'); return; }
     inp.classList.remove('erro', 'ok');
     if (!portal) {
       const c = lerJSON('glr_ncm_catalogo', {});
@@ -352,7 +352,7 @@ Router.register('produtos', (params, el) => {
         for (const { a, itens } of porConta.values()) await MarketplaceAPI.call('glr_portal_salvar_ncm', { [a.mkt === 'ml' ? 'meliUserId' : 'shopId']: a.conta, itens });
         st.ncmPortal = st.ncmPortal || {};
         for (const a of r.anuncios || []) { if (n) st.ncmPortal[String(a.id)] = n; else delete st.ncmPortal[String(a.id)]; }
-      } catch (e) { inp.classList.add('erro'); alert('Não consegui salvar o NCM: ' + e.message); inp.disabled = false; return; }
+      } catch (e) { inp.classList.add('erro'); GLR.avisar('Não consegui salvar o NCM: ' + e.message, 'erro'); inp.disabled = false; return; }
       inp.disabled = false;
     }
     inp.value = n; inp.classList.add('ok'); inp.classList.toggle('vazio', !n);
@@ -458,7 +458,7 @@ Router.register('produtos', (params, el) => {
       const chips = document.getElementById('pr-chips'); if (chips) chips.innerHTML = renderChips();
     } catch (e) {
       inp.value = dec(r.custo + r.custoExtra); inp.classList.add('erro');
-      alert('Não consegui salvar o custo: ' + e.message);
+      GLR.avisar('Não consegui salvar o custo: ' + e.message, 'erro');
     } finally { inp.disabled = false; }
   }
   window._prNovo = () => { st.modal = { tipo: 'editar', novo: true, prod: { id: novoId(), clienteId: st.cliente, sku: '', nome: '', imagem: '', custo: 0, custoExtra: 0, anuncios: [], criadoEm: new Date().toISOString() } }; render(); };
@@ -471,11 +471,11 @@ Router.register('produtos', (params, el) => {
   window._prSalvarEdicao = () => {
     const p = st.modal.prod, v = id => document.getElementById(id)?.value?.trim() || '';
     p.sku = v('pr-sku'); p.nome = v('pr-nome'); p.custo = num(v('pr-custo')); p.custoExtra = num(v('pr-extra')); p.imagem = v('pr-img');
-    if (!p.nome && !p.sku) { alert('Preencha ao menos o SKU ou o título.'); return; }
-    if (p.sku && doCliente().some(x => x.id !== p.id && normSku(x.sku) === normSku(p.sku))) { alert('Já existe um produto com esse SKU neste cliente.'); return; }
+    if (!p.nome && !p.sku) { GLR.avisar('Preencha ao menos o SKU ou o título.', 'info'); return; }
+    if (p.sku && doCliente().some(x => x.id !== p.id && normSku(x.sku) === normSku(p.sku))) { GLR.avisar('Já existe um produto com esse SKU neste cliente.', 'info'); return; }
     salvarProduto(p, st.modal.anterior || null); st.modal = null; render();
   };
-  window._prExcluir = i => { const p = st.rows[i] && prodPorId(st.rows[i].id); if (p && confirm(`Excluir o produto "${p.nome}"? Os anúncios voltam a aparecer como anúncios sem produto.`)) { excluirProduto(p); render(); } };
+  window._prExcluir = async i => { const p = st.rows[i] && prodPorId(st.rows[i].id); if (p && (await GLR.confirmar(`Excluir o produto "${p.nome}"? Os anúncios voltam a aparecer como anúncios sem produto.`, { perigo: true }))) { excluirProduto(p); render(); } };
   window._prAssociar = id => {
     const r = linha(id); if (!r) return;
     const { p, ant } = produtoDaLinha(r);

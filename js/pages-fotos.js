@@ -125,7 +125,7 @@ Router.register('fotos', (params, el) => {
       if (!resp.ok) throw new Error(json.error || 'Erro ao sugerir com IA.');
       if (json.titulo) estado.nome = json.titulo;
     } catch (e) {
-      alert('Erro ao sugerir com IA: ' + (e.message || e));
+      GLR.avisar('Erro ao sugerir com IA: ' + (e.message || e), 'erro');
     } finally {
       estado.sugerindo = false;
       render();
@@ -133,7 +133,7 @@ Router.register('fotos', (params, el) => {
   }
 
   async function gerarAmbientada() {
-    if (!estado.refBase64) { alert('Envie a foto de referência primeiro.'); return; }
+    if (!estado.refBase64) { GLR.avisar('Envie a foto de referência primeiro.', 'info'); return; }
     estado.nome = document.getElementById('foto-nome')?.value || estado.nome;
     estado.detalhes = document.getElementById('foto-detalhes')?.value || estado.detalhes;
     estado.gerandoAmbientada = true;
@@ -148,9 +148,9 @@ Router.register('fotos', (params, el) => {
       const json = await resp.json();
       if (!resp.ok) throw new Error(json.error || 'Erro ao gerar foto.');
       estado.ambientada = json.images?.[0] || null;
-      if (!estado.ambientada) alert('A IA não devolveu nenhuma imagem.');
+      if (!estado.ambientada) GLR.avisar('A IA não devolveu nenhuma imagem.', 'info');
     } catch (e) {
-      alert('Erro ao gerar foto ambientada: ' + (e.message || e));
+      GLR.avisar('Erro ao gerar foto ambientada: ' + (e.message || e), 'erro');
     } finally {
       estado.gerandoAmbientada = false;
       render();
@@ -175,9 +175,9 @@ Router.register('fotos', (params, el) => {
       if (!resp.ok) throw new Error(json.error || 'Erro ao gerar detalhes.');
       estado.detalhes_imgs = json.images || [];
       estado.errosDetalhes = json.erros || [];
-      if (!estado.detalhes_imgs.length) alert('A IA não devolveu nenhuma foto de detalhe.');
+      if (!estado.detalhes_imgs.length) GLR.avisar('A IA não devolveu nenhuma foto de detalhe.', 'info');
     } catch (e) {
-      alert('Erro ao gerar fotos de detalhe: ' + (e.message || e));
+      GLR.avisar('Erro ao gerar fotos de detalhe: ' + (e.message || e), 'erro');
     } finally {
       estado.gerandoDetalhes = false;
       render();
@@ -203,8 +203,8 @@ Router.register('fotos', (params, el) => {
 
   async function gerarPorTipo() {
     const promptFinal = document.getElementById('tipo-prompt')?.value.trim();
-    if (!promptFinal) { alert('Monte (ou escreva) o prompt antes de gerar.'); return; }
-    if (!estado.refBase64) { alert('Envie a foto de referência primeiro.'); return; }
+    if (!promptFinal) { GLR.avisar('Monte (ou escreva) o prompt antes de gerar.', 'info'); return; }
+    if (!estado.refBase64) { GLR.avisar('Envie a foto de referência primeiro.', 'info'); return; }
     tipoState.prompt = promptFinal;
     tipoState.gerando = true;
     tipoState.resultado = null;
@@ -218,9 +218,9 @@ Router.register('fotos', (params, el) => {
       const json = await resp.json();
       if (!resp.ok) throw new Error(json.error || 'Erro ao gerar foto.');
       tipoState.resultado = json.images?.[0] || null;
-      if (!tipoState.resultado) alert('A IA não devolveu nenhuma imagem.');
+      if (!tipoState.resultado) GLR.avisar('A IA não devolveu nenhuma imagem.', 'info');
     } catch (e) {
-      alert('Erro ao gerar foto: ' + (e.message || e));
+      GLR.avisar('Erro ao gerar foto: ' + (e.message || e), 'erro');
     } finally {
       tipoState.gerando = false;
       renderPainel();
@@ -242,7 +242,7 @@ Router.register('fotos', (params, el) => {
         status: 'concluida',
       });
       localStorage.setItem('glr_acoes', JSON.stringify(GLR.acoes));
-      alert('✅ Registrado no relatório do dia.');
+      GLR.avisar('✅ Registrado no relatório do dia.', 'sucesso');
     } catch (e) {}
   }
 

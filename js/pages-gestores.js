@@ -542,7 +542,7 @@ Router.register('gestores', (params, el) => {
 
   window.salvarGestor = idx => {
     const nome = document.getElementById('g-nome').value.trim();
-    if (!nome) { alert('Informe o nome do gestor.'); return; }
+    if (!nome) { GLR.avisar('Informe o nome do gestor.', 'info'); return; }
     const gestor = {
       id:       idx!==null ? GLR.gestores[idx].id : GLR.nextId(GLR.gestores),
       nome,
@@ -560,11 +560,11 @@ Router.register('gestores', (params, el) => {
   };
 
   window.editarGestor  = idx => abrirModalGestor(idx);
-  window.removerGestor = idx => {
+  window.removerGestor = async idx => {
     const g   = GLR.gestores[idx];
     const cli = clientesDoGestor(g).length;
     const msg = cli>0 ? `"${g.nome}" possui ${cli} cliente(s). Remover mesmo assim?` : `Remover "${g.nome}"?`;
-    if (!confirm(msg)) return;
+    if (!(await GLR.confirmar(msg, { perigo: true, ok: 'Remover' }))) return;
     GLR.gestores.splice(idx,1);
     salvarGestores();
     Router.navigate('gestores');

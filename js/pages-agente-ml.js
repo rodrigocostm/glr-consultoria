@@ -193,7 +193,7 @@ Router.register('agente-ml', (params, el) => {
       const r = await window.glrApiFetch(`/api/agente-cron?conta_id=${encodeURIComponent(id)}`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-    } catch (e) { alert('Não consegui analisar agora: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui analisar agora: ' + (e.message || e), 'erro'); }
     state.analisando = false;
     state.campanhas[id] = null;
     await carregar();
@@ -203,26 +203,26 @@ Router.register('agente-ml', (params, el) => {
     const l = state.logs.find(x => String(x.id) === String(logId)); if (!l) return;
     state.processando = logId; render();
     try {
-      const eventos = resultado === 'executado' && l.dados?.experimento ? prompt('Houve promoção, reposição, mudança de preço ou data especial? Separe por vírgulas. Deixe vazio se não houve.') : '';
+      const eventos = resultado === 'executado' && l.dados?.experimento ? (await GLR.perguntar('Houve promoção, reposição, mudança de preço ou data especial? Separe por vírgulas. Deixe vazio se não houve.')) : '';
       if (eventos === null) { state.processando=null; render(); return; }
       const dados = { ...(l.dados || {}), ...(l.dados?.experimento && resultado === 'executado' ? {eventos_contexto:String(eventos || '').split(',').map(x=>x.trim()).filter(Boolean).slice(0,10)} : {}), [resultado === 'executado' ? 'aplicado_em' : 'descartado_em']: new Date().toISOString() };
       const { error } = await _sb.from('glr_agente_log').update({ resultado, dados }).eq('id', l.id);
       if (error) throw error;
       l.resultado = resultado; l.dados = dados;
-    } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui salvar: ' + (e.message || e), 'erro'); }
     state.processando = null; render();
   }
 
   async function registrarContexto(logId) {
     const l=state.logs.find(x=>String(x.id)===String(logId)); if (!l?.dados?.experimento) return;
-    const texto=prompt('Promoção, reposição, preço ou outro evento no período do teste (separe por vírgulas):',(l.dados.eventos_contexto || []).join(', '));
+    const texto=(await GLR.perguntar('Promoção, reposição, preço ou outro evento no período do teste (separe por vírgulas):', { valor: (l.dados.eventos_contexto || []).join(', ') }));
     if (texto===null) return;
     const eventos=texto.split(',').map(x=>x.trim().slice(0,200)).filter(Boolean).slice(0,10);
     const dados={...l.dados,eventos_contexto:eventos};
     // Recalcular na próxima análise; não reaproveitar um veredito sem o novo contexto.
     delete dados.medicao;
     const {error}=await _sb.from('glr_agente_log').update({dados}).eq('id',l.id);
-    if(error) {alert('Não consegui registrar o contexto: '+error.message);return;}
+    if(error) {GLR.avisar('Não consegui registrar o contexto: '+error.message, 'erro');return;}
     l.dados=dados;render();
   }
   window._amlContexto=registrarContexto;
@@ -234,7 +234,7 @@ Router.register('agente-ml', (params, el) => {
   async function salvarConfig() {
     const v = id => document.getElementById(id)?.value?.trim();
     const contaId = state.aberta === '__novo__' ? v('aml-conta') : state.aberta;
-    if (!contaId) { alert('Escolha a conta do Mercado Livre.'); return; }
+    if (!contaId) { GLR.avisar('Escolha a conta do Mercado Livre.', 'info'); return; }
     const num = id => { const x = parseFloat(String(v(id) || '').replace(',', '.')); return isNaN(x) ? null : x; };
     const row = {
       conta_id: String(contaId), marketplace: 'ml', cliente_nome: nomeDe(contaId),
@@ -245,11 +245,11 @@ Router.register('agente-ml', (params, el) => {
       alerta_variacao_pct: 30, janela_decisao_dias: 1, notas: v('aml-notas') || '',
       atualizado_em: new Date().toISOString(),
     };
-    if (!(row.meta_acos > 0 && row.meta_acos < 100)) { alert('Defina a meta de ACOS entre 0 e 100%.'); return; }
-    if (state.planosErro) { alert('Não foi possível ler o plano de escala. Recarregue antes de salvar.'); return; }
+    if (!(row.meta_acos > 0 && row.meta_acos < 100)) { GLR.avisar('Defina a meta de ACOS entre 0 e 100%.', 'info'); return; }
+    if (state.planosErro) { GLR.avisar('Não foi possível ler o plano de escala. Recarregue antes de salvar.', 'erro'); return; }
     const plano = { versao:1, piloto:!!document.getElementById('aml-piloto')?.checked, teto_tacos:num('aml-teto-tacos'), meta_faturamento:num('aml-meta-fat'), margem_reserva:num('aml-margem-reserva'), passo_max:num('aml-passo'), limites_grupo:Object.fromEntries(['escalar','destravar','desenvolver','conter'].map(g=>[g,num('aml-limite-'+g)])) };
-    if ([plano.teto_tacos,...Object.values(plano.limites_grupo)].some(v=>v!=null && !(v>0 && v<100)) || (plano.margem_reserva!=null && !(plano.margem_reserva>=0 && plano.margem_reserva<100)) || (plano.meta_faturamento!=null && plano.meta_faturamento<0) || (plano.passo_max!=null && !(plano.passo_max>=5 && plano.passo_max<=25))) { alert('Confira os percentuais e a meta. O limite por teste deve ficar entre 5 e 25%.'); return; }
-    if (plano.piloto && (!plano.teto_tacos || plano.margem_reserva==null || !plano.meta_faturamento)) { alert('Para ativar o piloto, informe meta de faturamento desta conta, teto de TACOS e margem mínima após ADS.'); return; }
+    if ([plano.teto_tacos,...Object.values(plano.limites_grupo)].some(v=>v!=null && !(v>0 && v<100)) || (plano.margem_reserva!=null && !(plano.margem_reserva>=0 && plano.margem_reserva<100)) || (plano.meta_faturamento!=null && plano.meta_faturamento<0) || (plano.passo_max!=null && !(plano.passo_max>=5 && plano.passo_max<=25))) { GLR.avisar('Confira os percentuais e a meta. O limite por teste deve ficar entre 5 e 25%.', 'info'); return; }
+    if (plano.piloto && (!plano.teto_tacos || plano.margem_reserva==null || !plano.meta_faturamento)) { GLR.avisar('Para ativar o piloto, informe meta de faturamento desta conta, teto de TACOS e margem mínima após ADS.', 'info'); return; }
     state.salvando = true; render();
     try {
       const { error } = await _sb.from('glr_agente_config').upsert(row, { onConflict: 'conta_id' });
@@ -258,7 +258,7 @@ Router.register('agente-ml', (params, el) => {
       if (salvoPlano.error) throw new Error('A configuração de ACOS foi salva, mas o plano de escala não: '+salvoPlano.error.message);
       state.aberta = String(contaId); state.editando = false;
       try { localStorage.setItem('glr_aml_conta', state.aberta); } catch (e) {}
-    } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui salvar: ' + (e.message || e), 'erro'); }
     state.salvando = false;
     await carregar();
   }
@@ -274,14 +274,14 @@ Router.register('agente-ml', (params, el) => {
         regra_pausa_dias: 7, dias_maturacao_campanha: 7, orcamento_min: null, orcamento_max: null,
         alerta_variacao_pct: 30, janela_decisao_dias: 1, notas: '', atualizado_em: new Date().toISOString() });
     }
-    if (semMeta.length) { alert(`Defina a meta de ACOS de: ${semMeta.join(', ')} — ou desmarque essas contas.`); return; }
-    if (!rows.length) { alert('Marque pelo menos uma conta.'); return; }
+    if (semMeta.length) { GLR.avisar(`Defina a meta de ACOS de: ${semMeta.join(', ')} — ou desmarque essas contas.`, 'info'); return; }
+    if (!rows.length) { GLR.avisar('Marque pelo menos uma conta.', 'info'); return; }
     state.salvando = true; render();
     try {
       const { error } = await _sb.from('glr_agente_config').upsert(rows, { onConflict: 'conta_id' });
       if (error) throw error;
       state.aberta = null;
-    } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui salvar: ' + (e.message || e), 'erro'); }
     state.salvando = false;
     await carregar();
   }
@@ -289,7 +289,7 @@ Router.register('agente-ml', (params, el) => {
   async function alternarAtivo(ligado) {
     const cfg = cfgDe(state.aberta); if (!cfg) return;
     const { error } = await _sb.from('glr_agente_config').update({ ativo: ligado, atualizado_em: new Date().toISOString() }).eq('conta_id', cfg.conta_id);
-    if (error) { alert('Não consegui salvar: ' + error.message); return; }
+    if (error) { GLR.avisar('Não consegui salvar: ' + error.message, 'erro'); return; }
     cfg.ativo = ligado; render();
   }
 
