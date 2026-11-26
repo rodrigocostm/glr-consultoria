@@ -77,9 +77,18 @@ async function lerNcm() {
   const d = r.ok ? (await r.json())[0]?.dados : null;
   return d && typeof d === 'object' && !Array.isArray(d) ? d : {};
 }
-async function salvarNcm(itens) { // itens: [{id, ncm}] já conferidos como da conta do cliente
+function ncmDe(cat, conta, id) {
+  const c = cat && typeof cat === 'object' ? cat : {};
+  return c[`${conta}:${id}`] || c[String(id)] || '';
+}
+async function salvarNcm(itens) { // itens: [{conta, id, ncm}] já conferidos como da conta
   const cat = await lerNcm();
-  for (const { id, ncm } of itens) { const n = so(ncm); if (n.length === 8) cat[String(id)] = n; else if (!n) delete cat[String(id)]; }
+  for (const { conta, id, ncm } of itens) {
+    const k = `${conta}:${id}`;
+    const n = so(ncm);
+    if (n.length === 8) cat[k] = n;
+    else if (!n) delete cat[k];
+  }
   const w = await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?on_conflict=chave`, { method: 'POST', headers: { ...svc(), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ chave: 'glr_ncm_catalogo', dados: cat, atualizado_em: new Date().toISOString() }) });
   if (!w.ok) throw new Error('Não consegui salvar o NCM');
   return { ok: true };
@@ -132,7 +141,7 @@ async function pedidosAEnviar(tiops, cli, contas) {
   // empresa de cada loja e nota já emitida para o pedido
   for (const p of todos) {
     if (p.erro) continue;
-    p.semNcm = p.itens.filter(it => !ncm[it.id]).length;
+    p.semNcm = p.itens.filter(it => !ncmDe(ncm, p.conta, it.id)).length;
     p.empresaId = empresaDaLoja(st, p.mkt, p.conta);
     if (chave && p.empresaId) {
       try {
@@ -159,7 +168,7 @@ async function montarPedido(tiops, { mkt, conta, pedido, orderIds, empresaId, am
   const base = { empresaId, referenciaExterna: refExterna(mkt, pedido), ambiente: ambiente === 'producao' ? 'producao' : 'homologacao', finalidade: 'venda',
     canal: mkt === 'ml' ? 'mercadolivre' : 'shopee', loja: { marketplace: mkt === 'ml' ? 'mercadolivre' : 'shopee', idExterno: String(conta), pedido: String(pedido) } };
   const faltaNcm = [];
-  const item = (id, nome, sku, qtd, unit) => { const n = ncm[String(id)]; if (!n) faltaNcm.push(nome || id); return { codigo: String(sku || id).slice(0, 60), descricao: String(nome || id).slice(0, 120), ncm: n || '', quantidade: qtd, valorUnitario: r2(unit) }; };
+  const item = (id, nome, sku, qtd, unit) => { const n = ncmDe(ncm, conta, id); if (!n) faltaNcm.push(nome || id); return { codigo: String(sku || id).slice(0, 60), descricao: String(nome || id).slice(0, 120), ncm: n || '', quantidade: qtd, valorUnitario: r2(unit) }; };
   if (mkt === 'ml') {
     const ids = orderIds?.length ? orderIds : [pedido];
     const ords = [];
@@ -214,4 +223,4 @@ async function danfe(cli, id, formato) {
   return { ok: true, url: j.url || j.link || j.href };
 }
 
-module.exports = { salvarChave, removerChave, status, pedidosAEnviar, previaOuEmitir, consultarNota, danfe, salvarNcm, lerNcm };
+module.exports = { salvarChave, removerChave, status, pedidosAEnviar, previaOuEmitir, consultarNota, danfe, salvarNcm, lerNcm, ncmDe };

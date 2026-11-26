@@ -25,7 +25,7 @@ async function sb(path, init = {}) {
 const lerStorage = async chave => (await sb(`glr_storage?chave=eq.${chave}&select=dados`))?.[0]?.dados || null;
 const sbUpsert = (table, row, conflito) => sb(`${table}?on_conflict=${conflito}`, { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(row) });
 
-const { esc } = blog;
+const { esc, httpsDe } = blog;
 const dataBR = iso => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Sao_Paulo' }).replace('.', '') : '';
 const minutos = p => Math.max(1, Math.round(String(p.corpo || '').split(/\s+/).length / 200));
 const ed = p => blog.editoriaDe(p);
@@ -33,7 +33,8 @@ const ed = p => blog.editoriaDe(p);
 // a capa de cor da editoria com o assunto em letra grande (nunca foto de outro veículo)
 const capa = (p, tam) => {
   const e = ed(p);
-  if (p.foto?.url) return `<div class="capa capa-${tam} com-foto" style="--c:${e.cor}" aria-hidden="true"><img src="${esc(p.foto.url)}" alt="" width="1200" height="675" ${tam === 'x' || tam === 'g' ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async"><span class="capa-ed">${esc(e.nome)}</span></div>`;
+  const foto = httpsDe(p.foto?.url);
+  if (foto) return `<div class="capa capa-${tam} com-foto" style="--c:${e.cor}" aria-hidden="true"><img src="${esc(foto)}" alt="" width="1200" height="675" ${tam === 'x' || tam === 'g' ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async"><span class="capa-ed">${esc(e.nome)}</span></div>`;
   const k = (p.tags?.[0] || e.nome).toLowerCase(); return `<div class="capa capa-${tam}${k.length > 11 ? ' longo' : ''}" style="--c:${e.cor}" aria-hidden="true"><span class="capa-ed">${esc(e.nome)}</span><span class="capa-k">${esc(k)}</span></div>`;
 };
 // dentro de um card (que já é link) a editoria vai como texto: link dentro de link quebra o card
@@ -150,16 +151,16 @@ function htmlEditoria(e, pub) {
 <div class="corpo-home"><section>${lista.length ? lista.map(itemLista).join('') : '<div class="vazio"><b>Nada por aqui ainda</b>As notícias desta editoria aparecem assim que forem publicadas.</div>'}</section>${boxLado(pub)}</div></div>` });
 }
 function htmlPost(p, pub) {
-  const url = `${SITE}/blog/${p.slug}`, e = ed(p);
+  const url = `${SITE}/blog/${p.slug}`, e = ed(p), fonte = httpsDe(p.fonte?.url), foto = httpsDe(p.foto?.url);
   const relac = pub.filter(x => x.id !== p.id).sort((a, b) => (ed(b).id === e.id) - (ed(a).id === e.id)).slice(0, 3);
   const txt = encodeURIComponent(`${p.titulo} — ${url}`);
-  return pagina({ titulo: `${p.titulo} | GLR Notícias`, descricao: p.resumo || p.titulo, url, editoriaAtual: e.id, imagem: p.foto?.url || null,
-    jsonld: { '@context': 'https://schema.org', '@type': 'NewsArticle', headline: p.titulo, description: p.resumo, ...(p.foto?.url ? { image: [p.foto.url] } : {}), articleSection: e.nome, datePublished: p.publicado_em, dateModified: p.atualizado_em || p.publicado_em, mainEntityOfPage: url, author: { '@type': 'Organization', name: 'Equipe GLR Consultoria' }, publisher: { '@type': 'Organization', name: 'GLR Consultoria', logo: { '@type': 'ImageObject', url: `${SITE}/img/brand/glr-consultoria.png` } }, isBasedOn: p.fonte?.url },
+    return pagina({ titulo: `${p.titulo} | GLR Notícias`, descricao: p.resumo || p.titulo, url, editoriaAtual: e.id, imagem: foto || null,
+    jsonld: { '@context': 'https://schema.org', '@type': 'NewsArticle', headline: p.titulo, description: p.resumo, ...(foto ? { image: [foto] } : {}), articleSection: e.nome, datePublished: p.publicado_em, dateModified: p.atualizado_em || p.publicado_em, mainEntityOfPage: url, author: { '@type': 'Organization', name: 'Equipe GLR Consultoria' }, publisher: { '@type': 'Organization', name: 'GLR Consultoria', logo: { '@type': 'ImageObject', url: `${SITE}/img/brand/glr-consultoria.png` } }, ...(fonte ? { isBasedOn: fonte } : {}) },
     corpo: `<article class="post">${etiqueta(p, true)}<h1 class="d">${esc(p.titulo)}</h1><p class="lead">${esc(p.resumo)}</p>
-<div class="assina"><span>Por <b>Equipe GLR</b></span><span>${dataBR(p.publicado_em)}</span><span>${minutos(p)} min de leitura</span><span>Com informações de <a href="${esc(p.fonte?.url)}" target="_blank" rel="noopener nofollow">${esc(p.fonte?.nome)}</a></span></div>
+<div class="assina"><span>Por <b>Equipe GLR</b></span><span>${dataBR(p.publicado_em)}</span><span>${minutos(p)} min de leitura</span><span>Com informações de ${fonte ? `<a href="${esc(fonte)}" target="_blank" rel="noopener nofollow">${esc(p.fonte?.nome)}</a>` : esc(p.fonte?.nome)}</span></div>
 ${capa(p, 'x')}
 <div class="texto" style="margin-top:28px">${blog.mdParaHtml(String(p.corpo || '').replace(/\n+Fonte:.*$/i, ''))}</div>
-<div class="fonte">Fonte original: <a href="${esc(p.fonte?.url)}" target="_blank" rel="noopener nofollow">${esc(p.fonte?.titulo || p.fonte?.nome)}</a> (${esc(p.fonte?.nome)}). Este texto resume e comenta a notícia; os detalhes completos estão na matéria original.</div>
+<div class="fonte">Fonte original: ${fonte ? `<a href="${esc(fonte)}" target="_blank" rel="noopener nofollow">${esc(p.fonte?.titulo || p.fonte?.nome)}</a>` : esc(p.fonte?.titulo || p.fonte?.nome)} (${esc(p.fonte?.nome)}). Este texto resume e comenta a notícia; os detalhes completos estão na matéria original.</div>
 <div class="compart"><span>Compartilhar:</span><a href="https://wa.me/?text=${txt}" target="_blank" rel="noopener">WhatsApp</a><a href="https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}" target="_blank" rel="noopener">LinkedIn</a><button type="button" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(url)}').then(()=>{this.textContent='Link copiado'})">Copiar link</button></div>
 </article>
 <div class="cta-post"><div class="box-cta"><div><b>Quer aplicar isso na sua loja?</b><p>A GLR opera ADS, anúncios, preço e estoque no Mercado Livre, Shopee e Amazon — e você acompanha tudo num portal próprio.</p></div><a class="bt bt-luz" href="${WHATS}" target="_blank" rel="noopener">Falar com um especialista</a></div></div>
