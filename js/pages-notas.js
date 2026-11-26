@@ -91,7 +91,7 @@ Router.register('notas', (params, el) => {
   function render() {
     const root = document.getElementById('nf-root'); if (!root) return;
     if (st.carregando && !st.emissor) { root.innerHTML = '<div class="card nf-vazio">Carregando…</div>'; return; }
-    if (st.erro && !st.emissor) { root.innerHTML = `<div class="card nf-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro && !st.emissor) { root.innerHTML = `<div class="card nf-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     if (!st.emissor?.temChave) { root.innerHTML = renderSemChave(); return; }
     const em = st.emissor, emp = em.empresas || [];
     const empSel = emp.find(e => e.id === st.empresa);

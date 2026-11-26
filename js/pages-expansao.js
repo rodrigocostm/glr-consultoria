@@ -67,7 +67,7 @@ Router.register('expansao', (params, el) => {
     if (window._exSt !== st) return;
     const root = document.getElementById('ex-root'); if (!root) return;
     if (st.carregando && !st.lista.length) { root.innerHTML = '<div class="card ex-vazio">Carregando…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card ex-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card ex-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     const foco = GLR.ctx?.cliente();
     const linhas = st.lista.filter(c => !foco || c.id === String(foco)).map(linhaCliente).filter(c => c.n).sort((a, b) => b.com - a.com || b.receita - a.receita);
     const tot = linhas.reduce((t, c) => ({ com: t.com + c.com, receita: t.receita + c.receita, n: t.n + c.n }), { com: 0, receita: 0, n: 0 });

@@ -69,7 +69,7 @@ Router.register('rentabilidade', (params, el) => {
     if (window._rtbSt !== st) return;
     const root = document.getElementById('rtb-root'); if (!root) return;
     if (st.carregando && !st.base) { root.innerHTML = '<div class="card rtb-vazio">Carregando a base…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card rtb-vazio" style="color:var(--red)">Não consegui carregar a base: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card rtb-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro, oque: 'a base' })}</div>`; return; }
     const todos = linhas(), foco = GLR.ctx?.cliente();
     const totFat = todos.reduce((s, x) => s + x.fat, 0), totCom = todos.reduce((s, x) => s + x.com, 0);
     const media = totFat > 0 ? totCom / totFat * 100 : 0;

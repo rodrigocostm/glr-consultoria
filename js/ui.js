@@ -368,3 +368,59 @@ window.glrMarkdown = (function () {
     return ok;
   };
 })(typeof window !== 'undefined' ? window : globalThis);
+
+// ── Estado único de vazio / carregando / erro ──
+// GLR.estado('erro', { erro, oque: 'os clientes' }) devolve o HTML de um bloco
+// padrão que diz o que aconteceu e o que fazer, com botão de ação. Os botões
+// usam data-* (sem onclick em texto): "Tentar de novo" redesenha a tela atual,
+// e { acao: { rotulo, rota } } leva para outra tela.
+(function (raiz) {
+  const G = raiz.GLR || (typeof GLR !== 'undefined' ? GLR : (raiz.GLR = {}));
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  // mensagem técnica → o que aconteceu e o que fazer, em português
+  G.erroAmigavel = function (erro) {
+    const m = String(erro?.message ?? erro ?? '');
+    const r = (titulo, texto, extra) => ({ titulo, texto, tecnico: m, ...extra });
+    if (/failed to fetch|networkerror|load failed|err_internet|network request failed|offline/i.test(m)) return r('Sem conexão', 'Confira a internet e tente de novo.');
+    if (/_sb is not defined|supabase is not defined|createClient/i.test(m)) return r('O sistema ainda está abrindo', 'Espere alguns segundos e tente de novo. Se continuar, recarregue a página.');
+    if (/jwt|\b401\b|unauthori[sz]ed|sess[aã]o expir|invalid.*token/i.test(m)) return r('Sua sessão expirou', 'Saia da conta e entre de novo.');
+    if (/\b403\b|permission denied|row-level security|rls|forbidden|sem permiss/i.test(m)) return r('Sem acesso a estes dados', 'Peça acesso a um administrador da GLR.');
+    if (/\b429\b|cota|quota|rate.?limit|too many requests/i.test(m)) return r('Limite de consultas atingido', 'A cota diária da Tiops acabou. Os dados voltam sozinhos quando ela renovar, às 21h.');
+    if (/timeout|timed out|aborterror|demorou/i.test(m)) return r('A consulta demorou demais', 'Tente de novo em alguns segundos.');
+    if (/\b50[0-4]\b|internal server|bad gateway|service unavailable/i.test(m)) return r('O servidor está com problema agora', 'Tente de novo em alguns minutos. Se continuar, veja Sistema › Saúde da API.', { acao: { rotulo: 'Ver Saúde da API', rota: 'sistema', aba: 'saude-api' } });
+    return r('Algo deu errado', 'Tente de novo. Se continuar, veja Sistema › Diagnóstico.', { acao: { rotulo: 'Abrir Diagnóstico', rota: 'sistema', aba: 'diagnostico' } });
+  };
+
+  const ICONES = { vazio: '○', erro: '!', carregando: '' };
+  G.estado = function (tipo, o = {}) {
+    tipo = ICONES.hasOwnProperty(tipo) ? tipo : 'vazio';
+    let titulo = o.titulo, texto = o.texto, tecnico = '', acao = o.acao;
+    if (tipo === 'erro') {
+      const a = G.erroAmigavel(o.erro);
+      titulo = titulo || (o.oque ? `Não consegui carregar ${o.oque}` : a.titulo);
+      texto = texto || (o.oque ? `${a.titulo}. ${a.texto}` : a.texto);
+      tecnico = a.tecnico;
+      acao = acao || a.acao;
+    }
+    if (tipo === 'carregando') titulo = titulo || 'Carregando…';
+    const botoes = [];
+    if (tipo === 'erro' && o.tentar !== false) botoes.push(`<button type="button" class="btn btn-primary btn-sm" data-estado-tentar>Tentar de novo</button>`);
+    if (acao && acao.rota) botoes.push(`<button type="button" class="btn btn-secondary btn-sm" data-estado-rota="${esc(acao.rota)}"${acao.aba ? ` data-estado-aba="${esc(acao.aba)}"` : ''}>${esc(acao.rotulo || 'Abrir')}</button>`);
+    const papel = tipo === 'erro' ? 'role="alert"' : tipo === 'carregando' ? 'role="status" aria-busy="true"' : 'role="status"';
+    return `<div class="glr-estado glr-estado-${tipo}${o.compacto ? ' compacto' : ''}" ${papel}>`
+      + (tipo === 'carregando' ? '<span class="glr-estado-giro" aria-hidden="true"></span>' : `<span class="glr-estado-ic" aria-hidden="true">${ICONES[tipo]}</span>`)
+      + `<div class="glr-estado-tit">${esc(titulo || 'Nada por aqui ainda')}</div>`
+      + (texto ? `<div class="glr-estado-txt">${esc(texto)}</div>` : '')
+      + (botoes.length ? `<div class="glr-estado-acoes">${botoes.join('')}</div>` : '')
+      + (tecnico ? `<details class="glr-estado-tec"><summary>Detalhe técnico</summary><code>${esc(tecnico)}</code></details>` : '')
+      + '</div>';
+  };
+
+  if (raiz.document && raiz.document.addEventListener) raiz.document.addEventListener('click', e => {
+    const b = e.target && e.target.closest ? e.target.closest('[data-estado-tentar], [data-estado-rota]') : null;
+    if (!b || typeof Router === 'undefined') return;
+    if (b.hasAttribute('data-estado-tentar')) { b.disabled = true; b.textContent = 'Tentando…'; Router.resolve(); return; }
+    Router.navigate(b.dataset.estadoRota, b.dataset.estadoAba ? { aba: b.dataset.estadoAba } : {});
+  });
+})(typeof window !== 'undefined' ? window : globalThis);

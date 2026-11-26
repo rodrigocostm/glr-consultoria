@@ -80,7 +80,7 @@ Router.register('agente-fotos', (params, el) => {
   function render() {
     const root = el.querySelector('#af-root'); if (!root) return;
     if (st.carregando && !st.lojas.length) { root.innerHTML = '<div class="card af-vazio">Carregando…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card af-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card af-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     if (!st.lojas.length) { root.innerHTML = `<div class="card af-vazio">${GLR.ctx?.cliente?.() ? 'Este cliente não tem loja Shopee ou Mercado Livre vinculada.' : 'Nenhuma loja analisada ainda. A análise roda de madrugada, 1x por semana — ou escolha um cliente na barra de cima e clique em "Analisar agora".'}</div>`; return; }
     const l = st.lojas.find(x => x.k === st.sel) || st.lojas[0], a = l.a, p = a?.padrao;
     root.innerHTML = `

@@ -33,7 +33,7 @@ Router.register('onboarding', (params, el) => {
     if (window._obSt !== st) return;
     const root = document.getElementById('ob-root'); if (!root) return;
     if (st.carregando && !st.clientes.length) { root.innerHTML = '<div class="card ob-vazio">Carregando…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card ob-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card ob-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     if (!st.em) { root.innerHTML = `<div class="card ob-vazio"><b>O agente ainda não verificou os clientes.</b><span>Ele roda todo dia às 7h.</span><button class="btn btn-primary btn-sm" style="margin-top:10px" ${st.verificando ? 'disabled' : ''} onclick="window._obVerificar()">${st.verificando ? 'Verificando…' : 'Verificar agora'}</button></div>`; return; }
     const foco = GLR.ctx?.cliente();
     const base = st.clientes.filter(x => !foco || x.id === String(foco)).map(x => ({ ...x, nome: (GLR.clientes || []).find(c => String(c.id) === x.id)?.nome || x.nome }));
