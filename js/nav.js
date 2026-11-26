@@ -175,7 +175,49 @@
   // contador da Caixa de decisões no menu (a tela avisa quando carrega/resolve)
   window.addEventListener('glr:decisoes', e => { const b = document.getElementById('badge-decisoes'); if (!b) return; const n = e.detail?.n || 0; b.textContent = n > 99 ? '99+' : n; b.style.display = n ? '' : 'none'; });
 
-  window.GLRNav = { abrirPaleta, fecharPaleta, alternar, filtrar, fecharMenuCelular: () => fecharMenuCelular() };
+  // ── Menu em 2 modos ──
+  // Carteira (sem cliente em foco): os grupos de sempre.
+  // Cliente (com foco): no topo, as seções da Casa do cliente; as telas que já
+  // vivem dentro da Casa somem dos grupos, e abrir uma delas pelo endereço antigo
+  // (#agente, #financeiro…) leva para a aba certa do perfil (ver Router.resolve).
+  function casaDe(pagina) {
+    const abas = window.GLR_PERFIL_ABAS || [];
+    for (const a of abas) for (const s of a.subs) if (s.rota === pagina) return { aba: a.id, sub: s.id };
+    return null;
+  }
+  function nomeCliente(id) { const c = ((typeof GLR !== 'undefined' && GLR.clientes) || []).find(x => String(x.id) === String(id)); return c ? c.nome : 'Cliente'; }
+  function atualizarModo() {
+    const sb = document.getElementById('sidebar');
+    if (!sb || !sb.dataset.navMontado || window._portalConfig) return;
+    const foco = (typeof GLR !== 'undefined' && GLR.ctx?.cliente?.()) || '';
+    const abas = window.GLR_PERFIL_ABAS || [];
+    sb.classList.toggle('modo-cliente', !!foco);
+    let box = document.getElementById('nav-cliente');
+    if (!foco || !abas.length) { box?.remove(); }
+    else {
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'nav-cliente'; box.className = 'sidebar-section nav-cliente';
+        sb.querySelector('.nav-grupo')?.before(box);
+      }
+      const p = Router.currentPage === 'cliente-perfil' ? (Router.currentParams || {}) : {};
+      const naCasa = p.id != null && String(p.id) === foco;
+      box.innerHTML = `<div class="nav-cliente-topo"><span class="nav-cliente-nome" title="${esc(nomeCliente(foco))}">${esc(nomeCliente(foco))}</span><button type="button" class="nav-cliente-sair" data-sair>Carteira</button></div>`
+        + abas.map(a => `<button type="button" class="nav-item nav-casa${naCasa && (p.aba || 'visao') === a.id ? ' active' : ''}" data-aba="${a.id}" data-ini="${esc(a.nome.charAt(0))}" title="${esc(a.nome)}">${esc(a.nome)}</button>`).join('');
+      box.querySelector('[data-sair]').onclick = () => { GLR.ctx.definir(''); };
+      box.querySelectorAll('[data-aba]').forEach(b => { b.onclick = () => Router.navigate('cliente-perfil', { id: foco, aba: b.dataset.aba }); });
+    }
+    // esconde dos grupos o que já está dentro da Casa (e o grupo que ficar vazio)
+    sb.querySelectorAll('.nav-grupo').forEach(g => {
+      const itens = [...g.querySelectorAll('.nav-item[data-page]')];
+      let vis = 0;
+      itens.forEach(b => { const dentro = !!foco && !!casaDe(b.dataset.page); b.classList.toggle('na-casa', dentro); if (!dentro) vis++; });
+      g.classList.toggle('so-casa', !vis);
+      const n = g.querySelector('.nav-grupo-n'); if (n) n.textContent = vis;
+    });
+  }
+
+  window.GLRNav = { abrirPaleta, fecharPaleta, alternar, filtrar, fecharMenuCelular: () => fecharMenuCelular(), casaDe, atualizarModo };
 
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') { e.preventDefault(); paleta?.classList.contains('on') ? fecharPaleta() : abrirPaleta(); }
@@ -202,6 +244,8 @@
     sb.addEventListener('click', e => { if (celular() && e.target.closest?.('.nav-item')) setTimeout(() => fecharMenuCelular(), 0); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && sb.classList.contains('open') && !paleta?.classList.contains('on')) fecharMenuCelular(true); });
   }
-  const iniciar = () => { montar(); montarSeletorCliente(); ligarBotaoBusca(); ligarMenuCelular(); };
+  window.addEventListener('glr:cliente', () => atualizarModo());
+  window.addEventListener('hashchange', () => setTimeout(atualizarModo, 0));
+  const iniciar = () => { montar(); montarSeletorCliente(); ligarBotaoBusca(); ligarMenuCelular(); atualizarModo(); if (typeof GLR !== 'undefined' && GLR.quandoClientes) GLR.quandoClientes(atualizarModo); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
 })();

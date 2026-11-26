@@ -1330,3 +1330,15 @@ body.modo-portal #global-search { display: none !important; }
   .perfil-abas { width: 0; min-width: 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
   .perfil-abas .tab-btn { flex: none; }
 }
+
+/* ── Menu em 2 modos: Cliente (com foco) mostra a Casa do cliente no topo ── */
+#sidebar.modo-cliente .nav-item.na-casa, #sidebar.modo-cliente .nav-grupo.so-casa { display: none; }
+.nav-cliente { padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.nav-cliente-topo { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px; }
+.nav-cliente-nome { flex: 1; min-width: 0; font-size: 13px; font-weight: 650; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-cliente-sair { flex: none; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); font: inherit; font-size: 11.5px; padding: 3px 9px; border-radius: 99px; cursor: pointer; }
+.nav-cliente-sair::before { content: '← '; }
+.nav-cliente-sair:hover { color: var(--text-primary); border-color: var(--border-active); }
+.nav-casa { width: 100%; text-align: left; padding-left: 22px; }
+body.sidebar-mini .nav-cliente-topo { display: none; }
+body.sidebar-mini .nav-casa::before { content: attr(data-ini); font-size: 13px; font-weight: 650; }

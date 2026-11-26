@@ -50,6 +50,13 @@ const Router = {
       window.location.hash = window.PORTAL_ROTAS[0];
       return;
     }
+    // Modo Cliente: tela que vive dentro da Casa do cliente abre na aba dela
+    const foco = !window._portalConfig && typeof GLR !== 'undefined' && GLR.ctx?.cliente ? GLR.ctx.cliente() : '';
+    const casa = foco && window.GLRNav?.casaDe ? window.GLRNav.casaDe(path) : null;
+    if (casa) {
+      window.location.replace(`#cliente-perfil?id=${encodeURIComponent(foco)}&aba=${casa.aba}&sub=${casa.sub}`);
+      return;
+    }
     this.currentParams = { ...this.currentParams, ...params };
     this.currentPage = path;
     this.embutida = null;
@@ -134,6 +141,7 @@ const Router = {
         content.classList.remove('pg-entra'); void content.offsetWidth; content.classList.add('pg-entra');
       }
       this.routes[path](this.currentParams, content);
+      try { window.GLRNav?.atualizarModo?.(); } catch (e) {}
     } else {
       content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-title">Página não encontrada</div></div>`;
     }

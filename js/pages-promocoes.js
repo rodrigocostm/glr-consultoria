@@ -770,7 +770,7 @@ async function carregarAgentePromo(forcarConta) {
       if (error) throw error;
       let vinc = {}; try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
       const nomes = new Map();
-      for (const c of (window.GLR?.clientes || [])) for (const ct of (vinc[String(c.id)] || [])) [ct.external_id, ct.param_to_use?.shopId, ct.param_to_use?.meliUserId].filter(Boolean).forEach(i => nomes.set(String(i), `${c.nome} · ${ct.nickname || ct.external_id}`));
+      for (const c of ((typeof GLR !== 'undefined' && GLR.clientes) || [])) for (const ct of (vinc[String(c.id)] || [])) [ct.external_id, ct.param_to_use?.shopId, ct.param_to_use?.meliUserId].filter(Boolean).forEach(i => nomes.set(String(i), `${c.nome} · ${ct.nickname || ct.external_id}`));
       pa.contas = (data || []).map(r => ({ ...r, nome: GLR.nomeConta(r.marketplace, r.conta_id) }))
         .sort((a, b) => (b.resumo?.sugeridas || 0) - (a.resumo?.sugeridas || 0) || a.nome.localeCompare(b.nome));
       if (!pa.contas.some(c => `${c.marketplace}:${c.conta_id}` === pa.conta)) pa.conta = pa.contas[0] ? `${pa.contas[0].marketplace}:${pa.contas[0].conta_id}` : '';
