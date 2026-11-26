@@ -217,6 +217,15 @@ const ADVISER_BASE = ['recursos_tiops', 'consultar_mercado_tiops', 'carteira', '
 const ferramentasDe = ag => ag === 'adviser' ? [...FERRAMENTAS.filter(f => ADVISER_BASE.includes(f.name)), ...adviserChat.FERRAMENTAS] : FERRAMENTAS;
 const execDe = ag => ag === 'adviser' ? { ...Object.fromEntries(ADVISER_BASE.map(k => [k, EXEC[k]])), ...adviserChat.EXEC } : EXEC;
 const ROTULO = { ...adviserChat.ROTULO, carteira: 'carteira', plano_cliente: 'plano do Gerente', vendas: 'vendas', produtos: 'produtos', curva_abc: 'curva ABC', ads: 'ADS', estoque_margem: 'estoque e margem', campanhas_shopee: 'campanhas Shopee', campanhas_ml: 'campanhas ML', decisoes_pendentes: 'Caixa de decisões', historico_agentes: 'histórico dos agentes', propor_acao: 'sugestão criada', anotar_cerebro: 'Segundo Cérebro', consultar_colega: 'colega' };
+function pedidoCurto(texto) {
+  const t = String(texto || '').trim();
+  if (t.length > 400) return false;
+  return !/plano completo|relat[oó]rio|compar|carteira inteira|passo a passo|estrat[eé]g|diagn[oó]stic/i.test(t);
+}
+function ajusteDoPedido(texto, temPersona) {
+  const curto = pedidoCurto(texto);
+  return { max_tokens: temPersona ? 3000 : (curto ? 4000 : 16000), effort: curto ? 'low' : 'medium' };
+}
 function rotaDe(texto) {
   const bruto = String(texto || '');
   const i = bruto.indexOf('{'), j = bruto.lastIndexOf('}');
@@ -501,10 +510,16 @@ module.exports = async function handler(req, res) {
 
       emit('status', { texto: 'Consultando o Segundo Cérebro…' });
       const conhecimento = await require('./_conhecimento').contexto(texto + " " + (persona?.nome || conv.agente || ""));
+      let planoPronto = '';
+      if (foco && ag !== 'adviser') {
+        const plano = await planoDe(foco.id);
+        if (plano) planoPronto = '\n\nPLANO DO CLIENTE EM FOCO (já carregado; chame plano_cliente só para outro cliente):\n' + JSON.stringify({ cliente: foco.nome, semaforo: plano.semaforo, diagnostico: plano.diagnostico, metricas: plano.metricas, caminho_para_meta: plano.caminho, raio_x: plano.raioX, gerado_em: plano.em || null }).slice(0, 7000);
+      }
       const client = new Anthropic();
       S.client = client;
       const rota = await classificar(client, texto);
       const modelo = rota === 'simples' ? MODELO_RAPIDO : MODELO;
+      const ajuste = ajusteDoPedido(texto, !!persona);
       const estavel = (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + tiopsMarket.guide;
       const usadas = [], inicio = Date.now();
       S.inicio = inicio;
@@ -514,10 +529,10 @@ module.exports = async function handler(req, res) {
         emit('status', { texto: rodada === 0 ? 'Pensando…' : 'Montando a resposta…' });
         let turno = '';
         const pedido = {
-          model: modelo, max_tokens: rota === 'simples' ? 4000 : 16000,
-          system: sistemaComCache(estavel, conhecimento), tools: ferramentasComCache(TOOLS), tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+          model: modelo, max_tokens: ajuste.max_tokens,
+          system: sistemaComCache(estavel, planoPronto + conhecimento), tools: ferramentasComCache(TOOLS), tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
         };
-        if (rota !== 'simples') Object.assign(pedido, { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' } });
+        if (rota !== 'simples') Object.assign(pedido, { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: ajuste.effort } });
         resposta = await pedirModelo(client, pedido, sse ? (delta) => { turno += delta; emit('texto', { delta }); } : null, rota !== 'simples');
         if (resposta.stop_reason === 'pause_turn' || resposta.stop_reason === 'tool_use') { if (turno) emit('texto_limpar', {}); }
         if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
@@ -566,4 +581,4 @@ module.exports = async function handler(req, res) {
   }
 };
 // peças reaproveitadas pelo chat do portal do cliente (api/portal-chat.js)
-module.exports.interno = { carregarCarteira, limparCacheCarteira, CACHE_CARTEIRA_MS, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, eventoSSE, agruparFerramentas, executarEmGrupos, FERRAMENTAS_PARALELAS, MODELO_RAPIDO, rotaDe, sistemaComCache, ferramentasComCache, ferramentasDaPersona, acharPersona, consultarColega };
+module.exports.interno = { carregarCarteira, limparCacheCarteira, CACHE_CARTEIRA_MS, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, eventoSSE, agruparFerramentas, executarEmGrupos, FERRAMENTAS_PARALELAS, MODELO_RAPIDO, rotaDe, sistemaComCache, ferramentasComCache, ferramentasDaPersona, acharPersona, consultarColega, ajusteDoPedido, planoDe };
