@@ -240,6 +240,8 @@ Router.register('anuncios-amazon', (params, el) => {
       ${st.erro ? `<div class="az-erro">⚠️ ${h(st.erro)}</div>` : ''}
       <div class="az-abas">${ABAS.map(([k, t]) => `<button class="az-aba ${st.aba === k ? 'on' : ''}" onclick="window._azAba('${k}')">${t}</button>`).join('')}</div>
       ${st.aba === 'promo' ? abaPromo() : st.aba === 'margem' ? abaMargem() : abaBuyBox()}`;
+    // cliente em foco (barra de cima): só as contas Amazon dele; com uma só, o seletor vira o nome da conta
+    GLR.ctx?.ajustarSeletor?.(box.querySelector('.az-sel'), { mkt: 'amazon', disparar: false });
   }
 
   // ── Ações ──

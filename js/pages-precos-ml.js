@@ -304,6 +304,8 @@ function monitorPrecos(mkt) { return (params, el) => {
       </table></div>
       ${pags > 1 ? `<div class="pml-pag"><button ${st.pagina === 0 ? 'disabled' : ''} onclick="window._pmlPagina(-1)">‹</button><span>${st.pagina + 1} de ${pags}</span><button ${st.pagina >= pags - 1 ? 'disabled' : ''} onclick="window._pmlPagina(1)">›</button></div>` : ''}
       </div>`;
+    // cliente em foco (barra de cima): só as contas dele; com uma só, o seletor vira o nome da conta
+    GLR.ctx?.ajustarSeletor?.(root.querySelector('.pml-sel'), { mkt, disparar: false });
   }
 
   // ── Ações ──
