@@ -10,6 +10,8 @@
 // são aplicados por aqui (ML não libera escrita; promoção é sempre manual).
 // Conversas por usuário em glr_sync_estado (marketplace 'sistema', recurso
 // 'chat', conta_id 'chat:<usuário>:<conversa>').
+// Enviar com stream:true (ou Accept: text/event-stream) responde em SSE:
+// status, ferramenta, texto, texto_limpar, fim ou erro. Sem isso, o JSON de sempre.
 // Agente "adviser" (seletor da tela): estratégia da GLR até R$ 200 mil — instruções
 // e ferramentas em api/_adviser-chat.js, mais carteira, plano e vendas daqui.
 // ============================================================
@@ -24,6 +26,11 @@ const tiopsMarket = require('./_tiops-market');
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const MODELO = 'claude-sonnet-5-5';
+const MODELO_RAPIDO = 'claude-haiku-5-5'; // o mesmo Haiku do Gerente, da reputação e do cron
+const ROTEADOR_SISTEMA = `Você classifica UMA mensagem de um analista da GLR (consultoria de Mercado Livre e Shopee) para o chat dos agentes. Responda APENAS um JSON {"rota":"simples"} ou {"rota":"analise"}.
+simples = saudação, agradecimento, confirmação, ou pergunta operacional que uma consulta direta resolve (semáforo, quantas pendências, faturamento de um período, o que um agente fez, estoque de um produto, status de uma campanha).
+analise = plano, diagnóstico, causa de queda ou alta, comparação de vários clientes ou produtos, funil, estratégia, o que fazer para bater a meta, ajuste de várias campanhas, relatório ou qualquer pedido que cruze mais de uma frente.
+Na dúvida, analise.`;
 const ORCAMENTO_MS = 230000; // folga dentro do maxDuration (300s) do vercel.json
 const MAX_RODADAS = 12;
 const LIMITE_RESULTADO = 16000;
@@ -41,7 +48,16 @@ const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ
 const corta = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
 // ── Carteira: clientes com conta vinculada e as lojas de cada um ──
+const CACHE_CARTEIRA_MS = 45000;
+let cacheCarteira = { em: 0, valor: null };
+function limparCacheCarteira() { cacheCarteira = { em: 0, valor: null }; }
 async function carregarCarteira() {
+  if (cacheCarteira.valor && Date.now() - cacheCarteira.em < CACHE_CARTEIRA_MS) return cacheCarteira.valor;
+  const valor = await lerCarteira();
+  cacheCarteira = { em: Date.now(), valor };
+  return valor;
+}
+async function lerCarteira() {
   const [clientes, vinc, gestores, nomes] = await Promise.all([lerStorage('glr_clientes'), lerStorage('glr_mc_vinculos'), lerStorage('glr_gestores'), nomesDasLojas()]);
   const gNome = id => ((Array.isArray(gestores) ? gestores : []).find(g => String(g.id) === String(id)) || {}).nome || '';
   return (Array.isArray(clientes) ? clientes : []).map(c => {
@@ -201,17 +217,48 @@ const EXEC = { recursos_tiops: (S,i) => tiopsMarket.descobrir(S.mcKey,i.termo), 
 const ADVISER_BASE = ['recursos_tiops', 'consultar_mercado_tiops', 'carteira', 'plano_cliente', 'vendas', 'decisoes_pendentes']; // do copiloto que o Adviser também usa
 const ferramentasDe = ag => ag === 'adviser' ? [...FERRAMENTAS.filter(f => ADVISER_BASE.includes(f.name)), ...adviserChat.FERRAMENTAS] : FERRAMENTAS;
 const execDe = ag => ag === 'adviser' ? { ...Object.fromEntries(ADVISER_BASE.map(k => [k, EXEC[k]])), ...adviserChat.EXEC } : EXEC;
-const ROTULO = { ...adviserChat.ROTULO, carteira: 'carteira', plano_cliente: 'plano do Gerente', vendas: 'vendas', produtos: 'produtos', curva_abc: 'curva ABC', ads: 'ADS', estoque_margem: 'estoque e margem', campanhas_shopee: 'campanhas Shopee', campanhas_ml: 'campanhas ML', decisoes_pendentes: 'Caixa de decisões', historico_agentes: 'histórico dos agentes', propor_acao: 'sugestão criada', anotar_cerebro: 'Segundo Cérebro' };
+const ROTULO = { ...adviserChat.ROTULO, carteira: 'carteira', plano_cliente: 'plano do Gerente', vendas: 'vendas', produtos: 'produtos', curva_abc: 'curva ABC', ads: 'ADS', estoque_margem: 'estoque e margem', campanhas_shopee: 'campanhas Shopee', campanhas_ml: 'campanhas ML', decisoes_pendentes: 'Caixa de decisões', historico_agentes: 'histórico dos agentes', propor_acao: 'sugestão criada', anotar_cerebro: 'Segundo Cérebro', consultar_colega: 'colega' };
+function pedidoCurto(texto) {
+  const t = String(texto || '').trim();
+  if (t.length > 400) return false;
+  return !/plano completo|relat[oó]rio|compar|carteira inteira|passo a passo|estrat[eé]g|diagn[oó]stic/i.test(t);
+}
+function ajusteDoPedido(texto, temPersona) {
+  const curto = pedidoCurto(texto);
+  return { max_tokens: temPersona ? 3000 : (curto ? 4000 : 16000), effort: curto ? 'low' : 'medium' };
+}
+function rotaDe(texto) {
+  const bruto = String(texto || '');
+  const i = bruto.indexOf('{'), j = bruto.lastIndexOf('}');
+  if (i < 0 || j <= i) return 'analise';
+  try {
+    const rota = JSON.parse(bruto.slice(i, j + 1)).rota;
+    return rota === 'simples' ? 'simples' : 'analise';
+  } catch (e) { return 'analise'; }
+}
+function sistemaComCache(estavel, variavel) {
+  const blocos = [{ type: 'text', text: String(estavel || ''), cache_control: { type: 'ephemeral' } }];
+  if (variavel) blocos.push({ type: 'text', text: String(variavel) });
+  return blocos;
+}
+function ferramentasComCache(tools) {
+  if (!Array.isArray(tools) || !tools.length) return tools;
+  return tools.map((t, i) => i === tools.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : { ...t });
+}
+async function classificar(client, texto) {
+  try {
+    const r = await client.messages.create({
+      model: MODELO_RAPIDO, max_tokens: 80,
+      system: sistemaComCache(ROTEADOR_SISTEMA),
+      messages: [{ role: 'user', content: String(texto || '').slice(0, 1500) }],
+    });
+    return rotaDe(r.content.filter(b => b.type === 'text').map(b => b.text).join(''));
+  } catch (e) { return 'analise'; }
+}
 function pedidoLongo(texto, escritorio) {
   if (escritorio) return true;
   const t = String(texto || '');
   return t.length > 280 || /plano|analis|compar|carteira|campanh|estrat[eé]g|diagn[oó]stic|relat[oó]rio/i.test(t);
-}
-function textoErro(e) {
-  if (e instanceof Anthropic.RateLimitError) return 'Muitas perguntas ao mesmo tempo — espere alguns segundos e tente de novo.';
-  if (e instanceof Anthropic.APIError && /credit balance is too low/i.test(e.message)) return 'Os créditos da API da Anthropic acabaram — recarregue em console.anthropic.com → Plans & Billing e o chat volta na hora.';
-  if (e instanceof Anthropic.APIError) return `Falha no modelo (${e.status}): ${e.message}`;
-  return e.message || String(e);
 }
 async function gravarJob(conta, cursor) {
   const agora = new Date().toISOString();
@@ -219,6 +266,68 @@ async function gravarJob(conta, cursor) {
 }
 const dm = iso => `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}`;
 const resumo = (n, i) => `${ROTULO[n] || n}${i?.cliente ? ` · ${i.cliente}` : ''}${i?.inicio && i?.fim ? ` · ${dm(i.inicio)} a ${dm(i.fim)}` : ''}${n === 'propor_acao' && i?.titulo ? ` · ${corta(i.titulo, 50)}` : ''}`;
+
+// Leituras no Supabase podem ir juntas. O conector Tiops (MCP_API_KEY) corrompe
+// a resposta se duas chamadas saem ao mesmo tempo — campanhas e mercado ficam
+// sozinhas, sem conviver nem com outra ferramenta. Escrita também fica em fila
+// (o contador de sugestões e a missão do Adviser não são atômicos).
+const FERRAMENTAS_PARALELAS = new Set(['carteira', 'plano_cliente', 'vendas', 'produtos', 'curva_abc', 'ads', 'estoque_margem', 'historico_agentes', 'decisoes_pendentes', 'receita_glr', 'rentabilidade', 'retencao', 'expansao', 'onboarding', 'missoes']);
+function agruparFerramentas(nomes) {
+  const grupos = [];
+  for (const nome of nomes) {
+    const paralelo = FERRAMENTAS_PARALELAS.has(nome);
+    const ultimo = grupos[grupos.length - 1];
+    if (paralelo && ultimo?.paralelo) ultimo.nomes.push(nome);
+    else grupos.push({ paralelo, nomes: [nome] });
+  }
+  return grupos;
+}
+async function executarEmGrupos(nomes, run) {
+  const saida = new Array(nomes.length);
+  let cursor = 0;
+  for (const grupo of agruparFerramentas(nomes)) {
+    const idxs = grupo.nomes.map(() => cursor++);
+    if (grupo.paralelo) await Promise.all(idxs.map(async (idx) => { saida[idx] = await run(nomes[idx], idx); }));
+    else for (const idx of idxs) saida[idx] = await run(nomes[idx], idx);
+  }
+  return saida;
+}
+// Um evento SSE (também usado no teste). Comentário de pulso é ":\n\n".
+function eventoSSE(event, data) {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+function abrirSSE(res) {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  const canal = { aberto: true };
+  const escrever = (bloco) => {
+    if (!canal.aberto) return;
+    try { res.write(bloco); if (typeof res.flush === 'function') res.flush(); }
+    catch (e) { canal.aberto = false; }
+  };
+  return {
+    vivo: () => canal.aberto,
+    send(event, data) { escrever(eventoSSE(event, data)); },
+    ping() { escrever(':\n\n'); },
+    fechar() { if (!canal.aberto) return; canal.aberto = false; try { res.end(); } catch (e) {} },
+  };
+}
+async function pedirModelo(client, params, onText, beta = true) {
+  const api = beta ? client.beta.messages : client.messages;
+  if (!onText) return api.create(params);
+  const stream = api.stream(params);
+  stream.on('text', (delta) => { try { onText(delta); } catch (e) {} });
+  return stream.finalMessage();
+}
+function mapearErro(e) {
+  if (e instanceof Anthropic.RateLimitError) return { status: 429, error: 'Muitas perguntas ao mesmo tempo — espere alguns segundos e tente de novo.' };
+  if (e instanceof Anthropic.APIError && /credit balance is too low/i.test(e.message)) return { status: 402, error: 'Os créditos da API da Anthropic acabaram — recarregue em console.anthropic.com → Plans & Billing e o chat volta na hora.' };
+  if (e instanceof Anthropic.APIError) return { status: 502, error: `Falha no modelo (${e.status}): ${e.message}` };
+  return { status: 500, error: e.message || String(e) };
+}
 
 function sistema(S, foco) {
   return `Você é o copiloto da GLR Consultoria, uma consultoria que opera contas de clientes no Mercado Livre e na Shopee. Conversa com os analistas da GLR, em português do Brasil, direto e prático, como um analista sênior que entende o cenário completo da conta: faturamento, meta, visitas, conversão, preço, margem, estoque, ADS, reputação.
@@ -239,7 +348,8 @@ COMO TRABALHAR:
 - Responda com a conclusão primeiro, depois os números que a sustentam (com os períodos), e termine com "Próximos passos" numerados e concretos. Use tabelas em markdown quando comparar vários itens. Sem enrolação.
 - Quando o analista pedir para preparar, criar ou aplicar ações, use propor_acao (uma por ação) — vão para a Caixa de decisões para aprovação; diga quantas criou. Sem esse pedido, só ofereça criar.
 - Nunca diga que aplicou algo: você só lê e cria sugestões. Promoção e ADS do ML ficam sempre para o analista aprovar/aplicar.
-- Quando o analista pedir para anotar, lembrar ou guardar um aprendizado/regra/combinado, grave no Segundo Cérebro com anotar_cerebro e diga o título da nota.`;
+- Quando o analista pedir para anotar, lembrar ou guardar um aprendizado/regra/combinado, grave no Segundo Cérebro com anotar_cerebro e diga o título da nota.
+- Se a pergunta for da área de um agente do escritório, chame consultar_colega com o id dele (gerente, sync, precos, estoque, margem, promo, rep, qa, oport, shopee, ml, rel) e uma pergunta objetiva. A resposta dele entra aqui e na mesa dele. Não invente o que o colega diria.`;
 }
 
 // ── Agentes do Escritório: o analista fala direto com um agente (tela Escritório).
@@ -247,28 +357,95 @@ COMO TRABALHAR:
 // respondendo como aquele agente, curto como numa conversa de equipe. Uma
 // conversa por agente e por usuário (id "escritorio<agente>"). ──
 const PERSONAS = {
-  gerente: { nome: 'Gerente de Conta', cargo: 'monto o plano do dia de cada cliente às 08:00', foco: 'meta do mês, projeção, caminho até a meta, prioridades do dia e o que cada colega apontou (plano_cliente, carteira, vendas)' },
-  sync: { nome: 'Coletor', cargo: 'sincronizo pedidos, ADS e o resumo das lojas a cada 15 min', foco: 'se os números das lojas estão em dia, pedidos, cancelados, devolvidos e faturamento por período (vendas, ads)' },
-  precos: { nome: 'Vigia de Preços', cargo: 'confiro o preço dos anúncios do Mercado Livre a cada 4 h', foco: 'preço, mudanças de preço, ticket e efeito do preço nas vendas (produtos, vendas)' },
-  estoque: { nome: 'Estoque', cargo: 'calculo em quantos dias cada produto acaba, a cada 3 h', foco: 'estoque, dias de estoque, ruptura, produto parado (estoque_margem)' },
-  margem: { nome: 'Margem', cargo: 'calculo a margem e o ACOS máximo de cada produto, a cada 3 h', foco: 'custo, margem, lucro e o ACOS que a margem aguenta (estoque_margem)' },
-  promo: { nome: 'Promoções', cargo: 'escolho, 1x por dia, as promoções que cabem na margem e no estoque — sempre com aprovação manual', foco: 'promoções que valem a pena pela margem e pelo estoque; nunca aplico promoção sozinho' },
-  rep: { nome: 'Reputação e Atendimento', cargo: 'vigio perguntas, reclamações e a saúde das contas a cada 30 min', foco: 'reputação, reclamações, devoluções, perguntas sem resposta (historico_agentes, plano_cliente)' },
-  qa: { nome: 'Qualidade', cargo: 'reviso nota, conversão e pendências dos anúncios 1x por dia', foco: 'qualidade dos anúncios, conversão, produtos com visita e sem venda (produtos, curva_abc, plano_cliente)' },
-  oport: { nome: 'Caçador de Oportunidades', cargo: 'procuro produtos com espaço para crescer', foco: 'produtos e lojas com potencial de crescer: curva ABC, altas, quedas e funil (curva_abc, produtos, plano_cliente)' },
-  shopee: { nome: 'ADS Shopee', cargo: 'reviso as campanhas da Shopee às 07:00 e ajusto sozinho dentro dos limites', foco: 'campanhas da Shopee, ROAS, orçamento, ACOS e TACOS contra o teto (campanhas_shopee, ads, historico_agentes)' },
-  ml: { nome: 'Copiloto ADS ML', cargo: 'analiso as campanhas do Mercado Livre e monto o pacote do dia (o ML não libera escrita: o analista aplica)', foco: 'Product Ads do Mercado Livre, ROAS/ACOS objetivo, orçamento e o que aplicar no painel (campanhas_ml, ads, historico_agentes)' },
-  rel: { nome: 'Redator', cargo: 'escrevo o relatório diário de cada conta', foco: 'resumo do que aconteceu na conta para mandar ao cliente (historico_agentes, vendas, ads, plano_cliente)' },
+  gerente: { nome: 'Gerente de Conta', cargo: 'monto o plano do dia de cada cliente às 08:00', foco: 'meta do mês, projeção, caminho até a meta, prioridades do dia e o que cada colega apontou (plano_cliente, carteira, vendas)', ferramentas: ['carteira', 'plano_cliente', 'vendas', 'decisoes_pendentes', 'historico_agentes', 'propor_acao', 'anotar_cerebro'] },
+  sync: { nome: 'Coletor', cargo: 'sincronizo pedidos, ADS e o resumo das lojas a cada 15 min', foco: 'se os números das lojas estão em dia, pedidos, cancelados, devolvidos e faturamento por período (vendas, ads)', ferramentas: ['vendas', 'ads', 'carteira', 'historico_agentes', 'anotar_cerebro'] },
+  precos: { nome: 'Vigia de Preços', cargo: 'confiro o preço dos anúncios do Mercado Livre a cada 4 h', foco: 'preço, mudanças de preço, ticket e efeito do preço nas vendas (produtos, vendas)', ferramentas: ['produtos', 'vendas', 'plano_cliente', 'anotar_cerebro'] },
+  estoque: { nome: 'Estoque', cargo: 'calculo em quantos dias cada produto acaba, a cada 3 h', foco: 'estoque, dias de estoque, ruptura, produto parado (estoque_margem)', ferramentas: ['estoque_margem', 'plano_cliente', 'historico_agentes', 'propor_acao', 'anotar_cerebro'] },
+  margem: { nome: 'Margem', cargo: 'calculo a margem e o ACOS máximo de cada produto, a cada 3 h', foco: 'custo, margem, lucro e o ACOS que a margem aguenta (estoque_margem)', ferramentas: ['estoque_margem', 'plano_cliente', 'ads', 'propor_acao', 'anotar_cerebro'] },
+  promo: { nome: 'Promoções', cargo: 'escolho, 1x por dia, as promoções que cabem na margem e no estoque — sempre com aprovação manual', foco: 'promoções que valem a pena pela margem e pelo estoque; nunca aplico promoção sozinho', ferramentas: ['estoque_margem', 'plano_cliente', 'produtos', 'propor_acao', 'anotar_cerebro'] },
+  rep: { nome: 'Reputação e Atendimento', cargo: 'vigio perguntas, reclamações e a saúde das contas a cada 30 min', foco: 'reputação, reclamações, devoluções, perguntas sem resposta (historico_agentes, plano_cliente)', ferramentas: ['historico_agentes', 'plano_cliente', 'vendas', 'decisoes_pendentes', 'anotar_cerebro'] },
+  qa: { nome: 'Qualidade', cargo: 'reviso nota, conversão e pendências dos anúncios 1x por dia', foco: 'qualidade dos anúncios, conversão, produtos com visita e sem venda (produtos, curva_abc, plano_cliente)', ferramentas: ['produtos', 'curva_abc', 'plano_cliente', 'historico_agentes', 'propor_acao', 'anotar_cerebro'] },
+  oport: { nome: 'Caçador de Oportunidades', cargo: 'procuro produtos com espaço para crescer', foco: 'produtos e lojas com potencial de crescer: curva ABC, altas, quedas e funil (curva_abc, produtos, plano_cliente)', ferramentas: ['curva_abc', 'produtos', 'plano_cliente', 'vendas', 'propor_acao', 'anotar_cerebro'] },
+  shopee: { nome: 'ADS Shopee', cargo: 'reviso as campanhas da Shopee às 07:00 e ajusto sozinho dentro dos limites', foco: 'campanhas da Shopee, ROAS, orçamento, ACOS e TACOS contra o teto (campanhas_shopee, ads, historico_agentes)', ferramentas: ['campanhas_shopee', 'ads', 'historico_agentes', 'estoque_margem', 'plano_cliente', 'propor_acao', 'decisoes_pendentes', 'anotar_cerebro'] },
+  ml: { nome: 'Copiloto ADS ML', cargo: 'analiso as campanhas do Mercado Livre e monto o pacote do dia (o ML não libera escrita: o analista aplica)', foco: 'Product Ads do Mercado Livre, ROAS/ACOS objetivo, orçamento e o que aplicar no painel (campanhas_ml, ads, historico_agentes)', ferramentas: ['campanhas_ml', 'ads', 'historico_agentes', 'plano_cliente', 'propor_acao', 'decisoes_pendentes', 'anotar_cerebro'] },
+  rel: { nome: 'Redator', cargo: 'escrevo o relatório diário de cada conta', foco: 'resumo do que aconteceu na conta para mandar ao cliente (historico_agentes, vendas, ads, plano_cliente)', ferramentas: ['historico_agentes', 'vendas', 'ads', 'plano_cliente', 'anotar_cerebro'] },
 };
+function acharPersona(ref) {
+  const r = String(ref || '').trim();
+  if (PERSONAS[r]) return { id: r, ...PERSONAS[r] };
+  const n = norm(r);
+  if (!n) return null;
+  const achou = Object.entries(PERSONAS).find(([, p]) => norm(p.nome) === n) || Object.entries(PERSONAS).find(([, p]) => norm(p.nome).includes(n) || n.includes(norm(p.nome)));
+  return achou ? { id: achou[0], ...achou[1] } : null;
+}
+function ferramentasDaPersona(id) {
+  const p = PERSONAS[id];
+  if (!p) return FERRAMENTAS;
+  const nomes = new Set([...(p.ferramentas || []), 'consultar_colega']);
+  return FERRAMENTAS.filter(f => nomes.has(f.name));
+}
 const personaDe = ag => String(ag || '').startsWith('esc:') ? PERSONAS[ag.slice(4)] || null : null;
+async function responderComo(S, p, pergunta) {
+  const tools = FERRAMENTAS.filter(f => (p.ferramentas || []).includes(f.name));
+  const mensagens = [{ role: 'user', content: pergunta }];
+  const system = `${sistemaPersona(S, S.foco, PERSONAS[p.id])}\n\nVocê foi consultado por ${S.persona || 'o copiloto'}. Responda só o que foi perguntado, com número e período. Não consulte outro colega.`;
+  let resposta = null;
+  for (let rodada = 0; rodada < 3; rodada++) {
+    if (S.inicio && Date.now() - S.inicio > ORCAMENTO_MS) throw new Error('Tempo de consulta esgotado — responda com o que já tem.');
+    resposta = await S.client.beta.messages.create({
+      model: MODELO, max_tokens: 1500, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'low' },
+      system, tools, tool_choice: rodada >= 2 ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+    });
+    if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
+    if (resposta.stop_reason !== 'tool_use') break;
+    mensagens.push({ role: 'assistant', content: resposta.content });
+    const resultados = [];
+    for (const b of resposta.content.filter(x => x.type === 'tool_use')) {
+      try {
+        if (!EXEC[b.name] || b.name === 'consultar_colega') throw new Error('Ferramenta indisponível nesta consulta.');
+        let t = JSON.stringify(await EXEC[b.name](S, b.input || {}));
+        if (t.length > LIMITE_RESULTADO) t = t.slice(0, LIMITE_RESULTADO) + '… [cortado por tamanho]';
+        resultados.push({ type: 'tool_result', tool_use_id: b.id, content: t });
+      } catch (e) {
+        resultados.push({ type: 'tool_result', tool_use_id: b.id, content: `Erro: ${e.message || e}`, is_error: true });
+      }
+    }
+    mensagens.push({ role: 'user', content: resultados });
+  }
+  return resposta.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || 'Sem resposta.';
+}
+FERRAMENTAS.push({ name: 'consultar_colega', description: 'Pede a um colega do Escritório que responda com as ferramentas da área dele. A resposta é publicada na mesa desse colega e volta aqui para você usar. Ids: gerente, sync, precos, estoque, margem, promo, rep, qa, oport, shopee, ml, rel. No máximo 2 por resposta. Não chame a si mesmo.', input_schema: { type: 'object', properties: { colega: { type: 'string', description: 'id do colega' }, pergunta: { type: 'string', description: 'pergunta objetiva, com cliente e período' } }, required: ['colega', 'pergunta'] } });
+EXEC.consultar_colega = consultarColega;
+async function publicarFala(S, p, pergunta, resposta) {
+  if (!S.uid) return;
+  const id = `escritorio${p.id}`;
+  const conv = (await lerConversa(S.uid, id)) || { titulo: `Escritório · ${p.nome}`, criado: new Date().toISOString(), msgs: [], agente: `esc:${p.id}` };
+  const agora = new Date().toISOString();
+  conv.msgs.push({ r: 'user', t: `Consulta de ${S.persona || 'Copiloto'}: ${pergunta}`, em: agora }, { r: 'assistant', t: resposta, em: agora, criadas: 0 });
+  if (conv.msgs.length > 80) conv.msgs = conv.msgs.slice(-80);
+  await salvarConversa(S.uid, id, conv);
+}
+async function consultarColega(S, i) {
+  if ((S.handoffs || 0) >= 2) throw new Error('Limite de 2 consultas a colegas nesta resposta.');
+  const p = acharPersona(i?.colega);
+  if (!p) throw new Error(`Colega não encontrado. Use o id: ${Object.keys(PERSONAS).join(', ')}.`);
+  if (S.personaId === p.id) throw new Error('Você não consulta a si mesmo.');
+  const pergunta = corta(i?.pergunta, 1200);
+  if (!pergunta) throw new Error('Diga a pergunta para o colega.');
+  if (!S.client) throw new Error('Consulta a colega indisponível nesta chamada.');
+  S.handoffs = (S.handoffs || 0) + 1;
+  const resposta = await responderComo(S, p, pergunta);
+  await publicarFala(S, p, pergunta, resposta);
+  return { colega: p.nome, id: p.id, resposta, onde: 'mesa do colega no Escritório' };
+}
 function sistemaPersona(S, foco, p) {
   const colegas = Object.values(PERSONAS).filter(x => x !== p).map(x => x.nome).join(', ');
   return `${sistema(S, foco)}
 
 NESTA CONVERSA VOCÊ É O AGENTE "${p.nome}" do Escritório dos agentes da GLR (${p.cargo}). O analista escreveu direto para você no chat da equipe.
 - Fale em primeira pessoa como ${p.nome}, curto e direto, como numa conversa de equipe: a resposta primeiro, depois os números que a sustentam (com período). Até ~10 linhas; tabela só se comparar vários itens; "Próximos passos" só se pedirem.
-- Seu foco: ${p.foco}. Busque os dados com as ferramentas antes de responder — nunca invente.
-- Se a pergunta for da área de um colega (${colegas}), responda com o que as ferramentas mostram e diga quem cuida disso com @Nome (ex.: "@Estoque acompanha isso"), sem inventar o que o colega diria.
+- Seu foco: ${p.foco}. Você só tem as ferramentas da sua área. Busque os dados com elas antes de responder — nunca invente.
+- Se a pergunta for da área de um colega (${colegas}), chame consultar_colega com o id dele e a pergunta objetiva. A resposta real dele entra nesta conversa e na mesa dele. Não invente o que o colega diria; se a ferramenta falhar, diga isso e aponte @Nome.
 - Quando o analista pedir para fazer algo, crie a sugestão com propor_acao (vai para a Caixa de decisões) e diga que criou; você não aplica nada por esta conversa.
 - Quando o analista pedir para anotar/lembrar/guardar algo, grave com anotar_cerebro e diga o título da nota.`;
 }
@@ -313,7 +490,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // enviar — pergunta longa (e toda fala do Escritório) segue em segundo plano
+    // enviar — SSE no pedido curto; pergunta longa (e o Escritório) segue em segundo plano
     const texto = String(mensagem || '').trim().slice(0, 6000);
     if (!texto) return res.status(400).json({ error: 'Mensagem vazia.' });
     const querFundo = req.body?.fundo !== false && (req.body?.fundo === true || pedidoLongo(texto, String(agente || '').startsWith('esc:')));
@@ -321,74 +498,119 @@ module.exports = async function handler(req, res) {
     const contaJob = `job:${uid}:${id}`;
     const avisar = querFundo ? (c) => gravarJob(contaJob, { ...c, conversa_id: id, em: new Date().toISOString() }).catch(() => {}) : async () => {};
     async function executar() {
+    const querStream = !querFundo && (req.body?.stream === true || String(req.headers?.accept || req.headers?.Accept || '').includes('text/event-stream'));
+    let sse = null, pulso = null;
+    const emit = (event, data) => {
+      if (sse) sse.send(event, data);
+      if (!querFundo) return;
+      if (event === 'status') avisar({ status: 'lendo', texto: data.texto || 'Trabalhando…' });
+      else if (event === 'ferramenta' && data.estado === 'consultando') avisar({ status: 'ferramenta', texto: `Consultando ${data.rotulo}…`, rotulo: data.rotulo });
+    };
+    try {
+      if (querStream) {
+        sse = abrirSSE(res);
+        pulso = setInterval(() => sse.ping(), 15000);
+        emit('status', { texto: 'Abrindo a conversa…' });
+      }
       const novoAg = agente === 'adviser' ? 'adviser' : personaDe(agente) ? String(agente) : 'copiloto';
       const conv = (await lerConversa(uid, id)) || { titulo: corta(texto, 60), criado: new Date().toISOString(), msgs: [], agente: novoAg };
       const persona = personaDe(conv.agente);
-      const ag = conv.agente === 'adviser' ? 'adviser' : 'copiloto', TOOLS = ferramentasDe(ag), RUN = execDe(ag);
-      await avisar({ status: 'lendo', texto: 'Lendo a carteira…' });
-      const S = { carteira: await carregarCarteira(), mcKey, usuario: usuario.email || uid, criadas: 0, sbSelect, sbUpsert, persona: persona?.nome || null };
+      const personaId = persona ? String(conv.agente).slice(4) : null;
+      const ag = conv.agente === 'adviser' ? 'adviser' : 'copiloto', TOOLS = personaId ? ferramentasDaPersona(personaId) : ferramentasDe(ag), RUN = execDe(ag);
+      emit('status', { texto: 'Lendo a carteira…' });
+      const S = { carteira: await carregarCarteira(), mcKey, usuario: usuario.email || uid, criadas: 0, sbSelect, sbUpsert, persona: persona?.nome || null, personaId, uid, handoffs: 0, client: null, foco: null, inicio: 0 };
       const foco = cliente_id ? S.carteira.find(c => c.id === String(cliente_id)) || null : null;
+      S.foco = foco;
       if (foco) { conv.cliente_id = foco.id; conv.cliente_nome = foco.nome; }
+
       const mensagens = conv.msgs.slice(-20).map(m => ({ role: m.r, content: m.t })).filter(m => m.content);
       while (mensagens.length && mensagens[0].role !== 'user') mensagens.shift();
       mensagens.push({ role: 'user', content: texto });
-      await avisar({ status: 'lendo', texto: 'Consultando o Segundo Cérebro…' });
+
+      emit('status', { texto: 'Consultando o Segundo Cérebro…' });
       const conhecimento = await require('./_conhecimento').contexto(texto + " " + (persona?.nome || conv.agente || ""));
+      let planoPronto = '';
+      if (foco && ag !== 'adviser') {
+        const plano = await planoDe(foco.id);
+        if (plano) planoPronto = '\n\nPLANO DO CLIENTE EM FOCO (já carregado; chame plano_cliente só para outro cliente):\n' + JSON.stringify({ cliente: foco.nome, semaforo: plano.semaforo, diagnostico: plano.diagnostico, metricas: plano.metricas, caminho_para_meta: plano.caminho, raio_x: plano.raioX, gerado_em: plano.em || null }).slice(0, 7000);
+      }
       const client = new Anthropic();
+      S.client = client;
+      const rota = await classificar(client, texto);
+      const modelo = rota === 'simples' ? MODELO_RAPIDO : MODELO;
+      const ajuste = ajusteDoPedido(texto, !!persona);
+      const estavel = (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + tiopsMarket.guide;
       const usadas = [], inicio = Date.now();
+      S.inicio = inicio;
       let resposta = null;
       for (let rodada = 0; rodada < MAX_RODADAS + 1; rodada++) {
         const semTempo = Date.now() - inicio > ORCAMENTO_MS || rodada >= MAX_RODADAS;
-        await avisar({ status: 'escrevendo', texto: rodada === 0 ? 'Pensando…' : 'Montando a resposta…' });
-        resposta = await client.beta.messages.create({
-          model: MODELO, max_tokens: 16000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' },
-          system: (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + conhecimento + tiopsMarket.guide, tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
-        });
+        emit('status', { texto: rodada === 0 ? 'Pensando…' : 'Montando a resposta…' });
+        let turno = '';
+        const pedido = {
+          model: modelo, max_tokens: ajuste.max_tokens,
+          system: sistemaComCache(estavel, planoPronto + conhecimento), tools: ferramentasComCache(TOOLS), tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+        };
+        if (rota !== 'simples') Object.assign(pedido, { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: ajuste.effort } });
+        resposta = await pedirModelo(client, pedido, sse ? (delta) => { turno += delta; emit('texto', { delta }); } : null, rota !== 'simples');
+        if (resposta.stop_reason === 'pause_turn' || resposta.stop_reason === 'tool_use') { if (turno) emit('texto_limpar', {}); }
         if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
         if (resposta.stop_reason !== 'tool_use') break;
         mensagens.push({ role: 'assistant', content: resposta.content });
-        const resultados = [];
-        // em sequência: o conector corrompe respostas simultâneas
-        for (const b of resposta.content.filter(x => x.type === 'tool_use')) {
+        const blocos = resposta.content.filter(x => x.type === 'tool_use');
+        const rodar = async (b) => {
           const rotulo = resumo(b.name, b.input);
-          await avisar({ status: 'ferramenta', texto: `Consultando ${rotulo}…`, rotulo });
+          emit('ferramenta', { nome: b.name, rotulo, estado: 'consultando' });
           try {
             if (!RUN[b.name]) throw new Error(`Ferramenta desconhecida: ${b.name}`);
             if (Date.now() - inicio > ORCAMENTO_MS) throw new Error('Tempo de consulta esgotado — responda com o que já tem.');
             let t = JSON.stringify(await RUN[b.name](S, b.input || {}));
             if (t.length > LIMITE_RESULTADO) t = t.slice(0, LIMITE_RESULTADO) + '… [cortado por tamanho — refine a consulta]';
-            resultados.push({ type: 'tool_result', tool_use_id: b.id, content: t });
-            usadas.push({ f: b.name, r: rotulo });
+            emit('ferramenta', { nome: b.name, rotulo, estado: 'pronto' });
+            return { resultado: { type: 'tool_result', tool_use_id: b.id, content: t }, usada: { f: b.name, r: rotulo } };
           } catch (e) {
-            resultados.push({ type: 'tool_result', tool_use_id: b.id, content: `Erro: ${e.message || e}`, is_error: true });
-            usadas.push({ f: b.name, r: rotulo, erro: true });
+            emit('ferramenta', { nome: b.name, rotulo, estado: 'erro' });
+            return { resultado: { type: 'tool_result', tool_use_id: b.id, content: `Erro: ${e.message || e}`, is_error: true }, usada: { f: b.name, r: rotulo, erro: true } };
           }
-        }
-        mensagens.push({ role: 'user', content: resultados });
+        };
+        const feitos = await executarEmGrupos(blocos.map(b => b.name), (_nome, idx) => rodar(blocos[idx]));
+        mensagens.push({ role: 'user', content: feitos.map(f => f.resultado) });
+        usadas.push(...feitos.map(f => f.usada));
       }
       const final = resposta.stop_reason === 'refusal' ? 'Não consegui responder a essa pergunta. Tente reformular.'
         : resposta.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || 'Sem resposta.';
+
       conv.msgs.push({ r: 'user', t: texto, em: new Date(inicio).toISOString() }, { r: 'assistant', t: final, em: new Date().toISOString(), ferramentas: usadas, criadas: S.criadas });
       if (conv.msgs.length > 80) conv.msgs = conv.msgs.slice(-80);
       await salvarConversa(uid, id, conv).catch(() => {});
-      return { conversa_id: id, titulo: conv.titulo, agente: persona ? conv.agente : ag, missoes: S.missoesCriadas || 0, resposta: final, ferramentas: usadas, criadas: S.criadas, cortada: resposta.stop_reason === 'max_tokens', segundos: Math.round((Date.now() - inicio) / 1000) };
+      const payload = { conversa_id: id, titulo: conv.titulo, agente: persona ? conv.agente : ag, modelo, rota, missoes: S.missoesCriadas || 0, resposta: final, ferramentas: usadas, criadas: S.criadas, cortada: resposta.stop_reason === 'max_tokens', segundos: Math.round((Date.now() - inicio) / 1000) };
+      if (sse) sse.send('fim', payload);
+      if (querFundo || sse) return payload;
+      return res.status(200).json(payload);
+    } catch (e) {
+      const m = mapearErro(e);
+      if (querFundo) throw Object.assign(e, { glrMsg: m.error });
+      if (sse) { sse.send('erro', { error: m.error }); return null; }
+      return res.status(m.status).json({ error: m.error });
+    } finally {
+      if (pulso) clearInterval(pulso);
+      if (sse) sse.fechar();
+    }
     }
     if (querFundo) {
       await gravarJob(contaJob, { status: 'na_fila', texto: 'Na fila…', conversa_id: id, em: new Date().toISOString() });
-      // A HTTP volta na hora. waitUntil segura a função na Vercel até o modelo terminar.
-      // Cada etapa grava o cursor em glr_sync_estado (chat_job); o quadro já escuta essa tabela.
       const tarefa = executar()
         .then((payload) => gravarJob(contaJob, { status: 'pronto', texto: 'Pronto', ...payload, em: new Date().toISOString() }))
-        .catch((e) => gravarJob(contaJob, { status: 'erro', texto: 'Falhou', erro: textoErro(e), conversa_id: id, em: new Date().toISOString() }));
+        .catch((e) => gravarJob(contaJob, { status: 'erro', texto: 'Falhou', erro: e.glrMsg || mapearErro(e).error, conversa_id: id, em: new Date().toISOString() }));
       waitUntil(tarefa);
       return res.status(200).json({ fundo: true, job_id: contaJob, conversa_id: id });
     }
-    return res.status(200).json(await executar());
+    await executar();
+    return;
   } catch (e) {
-    const error = textoErro(e);
-    const status = e instanceof Anthropic.RateLimitError ? 429 : e instanceof Anthropic.APIError && /credit balance is too low/i.test(e.message) ? 402 : e instanceof Anthropic.APIError ? 502 : 500;
-    return res.status(status).json({ error });
+    const m = mapearErro(e);
+    return res.status(m.status).json({ error: m.error });
   }
 };
 // peças reaproveitadas pelo chat do portal do cliente (api/portal-chat.js)
-module.exports.interno = { carregarCarteira, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, pedidoLongo };
+module.exports.interno = { carregarCarteira, limparCacheCarteira, CACHE_CARTEIRA_MS, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, eventoSSE, agruparFerramentas, executarEmGrupos, FERRAMENTAS_PARALELAS, MODELO_RAPIDO, rotaDe, sistemaComCache, ferramentasComCache, ferramentasDaPersona, acharPersona, consultarColega, ajusteDoPedido, planoDe, pedidoLongo };

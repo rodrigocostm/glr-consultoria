@@ -14,6 +14,8 @@ module.exports = async function handler(req, res) {
 
   const quem = await require('./_auth').requireEquipeOuPortal(req, res); if (!quem) return;
   if (quem.role === 'portal' && !['tipo', 'ambientada'].includes(String(req.body?.stage || 'ambientada'))) return res.status(403).json({ error: 'Opção não disponível no portal.' });
+  try { await require('./_cota-ia').consumir(quem.user?.id, 'generate-photo'); }
+  catch (e) { return res.status(e.status || 503).json({ error: e.message || 'Cota indisponível.' }); }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -36,15 +38,10 @@ module.exports = async function handler(req, res) {
     let refProduto;
     if (image_base64) {
       refProduto = decodeDataUrl(image_base64, 'image/jpeg');
+      if (Buffer.from(refProduto.data, 'base64').length > 8 * 1024 * 1024) return res.status(413).json({ error: 'Foto grande demais.' });
     } else if (image_url) {
-      const imgRes = await fetch(image_url);
-      if (!imgRes.ok) {
-        return res.status(400).json({ error: `Não consegui baixar a foto de referência (HTTP ${imgRes.status}).` });
-      }
-      const ct = imgRes.headers.get('content-type');
-      const mimeType = ct && ct.startsWith('image/') ? ct : 'image/jpeg';
-      const data = Buffer.from(await imgRes.arrayBuffer()).toString('base64');
-      refProduto = { mimeType, data };
+      try { refProduto = await require('./_imagem-segura').baixarImagem(image_url); }
+      catch (e) { return res.status(400).json({ error: e.message || 'Não consegui baixar a foto de referência.' }); }
     } else {
       return res.status(400).json({ error: 'Envie image_base64 ou image_url.' });
     }
@@ -164,7 +161,7 @@ module.exports = async function handler(req, res) {
       const urls = (Array.isArray(req.body?.estilo_urls) ? req.body.estilo_urls : []).filter(u => /^https:\/\//.test(String(u))).slice(0, 2);
       const refs = [];
       for (const u of urls) {
-        try { const r = await fetch(u, { signal: AbortSignal.timeout(15000) }); if (!r.ok) continue; const ct = r.headers.get('content-type') || 'image/jpeg'; refs.push({ mimeType: ct.startsWith('image/') ? ct.split(';')[0] : 'image/jpeg', data: Buffer.from(await r.arrayBuffer()).toString('base64') }); } catch (e) {}
+        try { refs.push(await require('./_imagem-segura').baixarImagem(u)); } catch (e) {}
       }
       const instr = [
         'Esta será a FOTO PRINCIPAL do anúncio.',

@@ -13,7 +13,26 @@
 // vendas caíram…), o registro guarda essa consulta (dados.colaboracoes). Ela
 // vira um diálogo: quem decide pergunta, quem tem o dado responde com o dado
 // real, e quem decide fecha com a decisão que tomou. Nada além do registrado.
+// A conversa direta com um agente chega por SSE: o texto e a ferramenta em uso
+// aparecem na bolha e na mesa enquanto a resposta ainda está sendo escrita.
 // ============================================================
+// GLR-SSE-INICIO
+function consumirSSE(buffer, onEvent) {
+  const partes = String(buffer || '').replace(/\r\n/g, '\n').split('\n\n');
+  const resto = partes.pop() || '';
+  for (const raw of partes) {
+    if (!raw.trim() || raw.trim().startsWith(':')) continue;
+    let ev = 'message', data = '';
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('event:')) ev = line.slice(6).trim();
+      else if (line.startsWith('data:')) data += line.slice(5).trim();
+    }
+    if (!data) continue;
+    try { onEvent(ev, JSON.parse(data)); } catch (e) { /* ignora evento malformado */ }
+  }
+  return resto;
+}
+// GLR-SSE-FIM
 Router.register('escritorio', (params, el) => {
   if (window._portalConfig) { Router.navigate('meu-dashboard'); return; }
   const h = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -51,7 +70,7 @@ Router.register('escritorio', (params, el) => {
     atualizadoEm: 0, novos: new Set(), vistos: new Set(),
     // conversa direta com um agente (api/chat-central.js, persona do agente)
     direto: [], pend: [], para: (() => { try { return localStorage.getItem('glr_esc_para') || 'gerente'; } catch (e) { return 'gerente'; } })(), rascunho: '', enviando: false,
-    aoVivo: null,
+    aoVivo: null, parcial: '',
   };
 
   async function apiChat(corpo) {
@@ -72,6 +91,46 @@ Router.register('escritorio', (params, el) => {
       await new Promise(r => setTimeout(r, 1500));
     }
     throw new Error('A resposta demorou demais. Ela pode aparecer na conversa em instantes.');
+  }
+  async function enviarFluxo(corpo, onEvent) {
+    const { data } = await _sb.auth.getSession();
+    const r = await fetch('/api/chat-central', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${data?.session?.access_token || ''}` }, body: JSON.stringify(corpo) });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({ error: `Resposta inválida do servidor (HTTP ${r.status}).` }));
+      throw new Error(j.error || `HTTP ${r.status}`);
+    }
+    const ctype = r.headers.get('content-type') || '';
+    if (!ctype.includes('text/event-stream') || !r.body) {
+      const j = await r.json().catch(() => ({ error: 'Resposta inválida do servidor.' }));
+      if (j.error) throw new Error(j.error);
+      return j;
+    }
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', fim = null, erro = null;
+    const receber = (ev, dataEv) => {
+      if (ev === 'erro') erro = dataEv.error || 'Falha ao responder.';
+      else if (ev === 'fim') fim = dataEv;
+      else if (onEvent) onEvent(ev, dataEv);
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf = consumirSSE(buf + dec.decode(value, { stream: true }), receber);
+    }
+    if (buf.trim()) consumirSSE(buf + '\n\n', receber);
+    if (erro) throw new Error(erro);
+    if (!fim) throw new Error('A resposta foi interrompida.');
+    return fim;
+  }
+  let pintarTimer = null;
+  function pintar(ja) {
+    if (!ja) { if (pintarTimer) return; pintarTimer = setTimeout(() => { pintarTimer = null; if (document.getElementById('esc-root')) render(); }, 50); return; }
+    clearTimeout(pintarTimer); pintarTimer = null; render();
+  }
+  function mostrarAoVivo(imediato) {
+    if (state.pend[1]) state.pend[1].texto = state.parcial ? h(state.parcial) : h(state.aoVivo?.texto || 'digitando…');
+    pintar(imediato !== false);
   }
   async function carregarDireto() {
     try { state.direto = (await apiChat({ acao: 'escritorio' })).conversas || []; } catch (e) { /* sem conversa direta: segue só com o registro */ }
@@ -414,7 +473,7 @@ Router.register('escritorio', (params, el) => {
     const scene = window.GLROfficeScene;
     const mapa = scene ? `<div class="office-scroll"><div class="office-world">${scene.floor()}${Object.entries(AG).map(([k,a]) => {
       const [x,y,nome] = scene.positions[k], e = est[k];
-      return `<button type="button" class="office-agent ${e.status} ${state.filtro === k ? 'selected' : ''}" style="left:${x/9.6}%;top:${y/10}%" onclick="window._escMesa('${k}')" aria-label="${h(a.nome)} — ${STATUS[e.status][0]} — abrir mesa" aria-pressed="${state.filtro===k}" title="${h(a.nome)} · ${STATUS[e.status][0]}">${scene.avatar(a.cor,e.status==='trabalhando',['promo','rep','rel'].includes(k))}<span class="office-agent-name"><i></i>${h(nome)}</span><span class="office-agent-label">${e.aoVivo ? h(corta(e.aoVivo, 42)) : e.status==='trabalhando'?'Atividade recente':e.status==='erro'?'Atenção necessária':e.status==='sem_registro'?'Sem registro':'Em pausa'}</span></button>`;
+      return `<button type="button" class="office-agent ${e.status} ${state.filtro === k ? 'selected' : ''}" style="left:${x/9.6}%;top:${y/10}%" onclick="window._escMesa('${k}')" aria-label="${h(a.nome)} — ${STATUS[e.status][0]} — abrir mesa" aria-pressed="${state.filtro===k}" title="${h(a.nome)} · ${e.aoVivo || STATUS[e.status][0]}">${scene.avatar(a.cor,e.status==='trabalhando',['promo','rep','rel'].includes(k))}<span class="office-agent-name"><i></i>${h(nome)}</span><span class="office-agent-label">${e.aoVivo ? h(corta(e.aoVivo, 42)) : e.status==='trabalhando'?'Atividade recente':e.status==='erro'?'Atenção necessária':e.status==='sem_registro'?'Sem registro':'Em pausa'}</span></button>`;
     }).join('')}</div></div>` : `<div class="office-list esc-mesas">${mesas}</div>`;
     const selected = AG[state.filtro] ? state.filtro : null, detail = selected ? est[selected] : null;
     const detalhe = selected ? `<div class="office-detail"><div class="office-detail-top"><h3>${h(AG[selected].nome)}</h3><span class="esc-status" style="--s:${STATUS[detail.status][1]}"><i></i>${STATUS[detail.status][0]}</span></div><p>${h(AG[selected].cargo)}</p><p>${detail.aoVivo ? h(detail.aoVivo) : detail.ult ? h(corta(detail.ult.texto.replace(/<\/(td|th|p|li|div)>/g,' · ').replace(/<[^>]*>/g,' '),230)) : 'Ainda não há trabalho registrado nas últimas 48 horas.'}</p><div class="office-detail-top"><small>${detail.hoje} registros hoje${detail.prox?' · '+h(detail.prox):''}</small><button class="btn btn-primary btn-sm" onclick="window._escAbrirConversa()">Conversar com agente →</button></div></div>` : `<div class="office-detail"><h3>Entre no escritório</h3><p>Selecione um agente na planta para ver seu último trabalho e conversar com ele. As salas são ilustrativas; os indicadores vêm dos registros reais da operação.</p></div>`;
@@ -492,28 +551,37 @@ Router.register('escritorio', (params, el) => {
     const alvo = Object.entries(AG).sort((a, b) => b[1].nome.length - a[1].nome.length).find(([, a]) => texto.toLowerCase().startsWith('@' + a.nome.toLowerCase()));
     if (alvo) { state.para = alvo[0]; texto = texto.slice(alvo[1].nome.length + 1).trim() || texto; }
     const para = state.para, t = Date.now();
-    state.enviando = true; state.rascunho = '';
+    state.enviando = true; state.rascunho = ''; state.parcial = '';
     if (state.filtro !== 'todos' && state.filtro !== para && state.filtro !== 'analista') state.filtro = para; // mostra a conversa que acabou de começar
     state.aoVivo = { agente: para, texto: 'Na fila…' };
     state.pend = [{ de: 'analista', t, texto: `@${AG[para].nome} ${h(texto)}`, para }, { de: para, t: t + 1, texto: 'Na fila…', para, digitando: true }];
     render();
     try {
-      const j = await apiChat({ acao: 'enviar', conversa_id: `escritorio${para}`, mensagem: texto, agente: `esc:${para}`, cliente_id: GLR.ctx?.cliente?.() || null });
-      if (j.fundo) {
+      const j = await enviarFluxo({ acao: 'enviar', stream: true, conversa_id: `escritorio${para}`, mensagem: texto, agente: `esc:${para}`, cliente_id: GLR.ctx?.cliente?.() || null }, (ev, dataEv) => {
+        if (!state.enviando) return;
+        if (ev === 'status') { state.parcial = ''; state.aoVivo = { agente: para, texto: dataEv.texto || 'Pensando…' }; mostrarAoVivo(true); }
+        else if (ev === 'ferramenta') {
+          state.parcial = '';
+          state.aoVivo = { agente: para, texto: dataEv.estado === 'erro' ? `Falhou ao consultar ${dataEv.rotulo}` : `Consultando ${dataEv.rotulo}…` };
+          mostrarAoVivo(true);
+        } else if (ev === 'texto') { state.parcial += dataEv.delta || ''; state.aoVivo = { agente: para, texto: 'Escrevendo a resposta…' }; mostrarAoVivo(false); }
+        else if (ev === 'texto_limpar') { state.parcial = ''; mostrarAoVivo(true); }
+      });
+      if (j && j.fundo) {
         await acompanharJob(j.job_id, (c) => {
           if (!state.enviando) return;
+          state.parcial = '';
           state.aoVivo = { agente: para, texto: c.texto || 'Trabalhando…' };
-          if (state.pend[1]) state.pend[1].texto = h(state.aoVivo.texto);
-          render();
+          mostrarAoVivo(true);
         });
       }
-      state.pend = []; state.aoVivo = null;
+      state.pend = []; state.aoVivo = null; state.parcial = '';
       await carregarDireto();
     } catch (e) {
-      state.aoVivo = null;
+      state.aoVivo = null; state.parcial = '';
       state.pend = [state.pend[0], { de: para, t: t + 1, texto: `Não consegui responder agora: ${h(e.message || e)}`, para, erro: true }];
     }
-    state.enviando = false; render();
+    state.enviando = false; clearTimeout(pintarTimer); pintarTimer = null; render();
   };
 
   el.innerHTML = `<div class="page esc">

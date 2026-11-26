@@ -9,12 +9,31 @@
 // servidor; o cliente em foco vem do seletor do topo.
 // Seletor "Adviser": a mesma conversa com o estrategista da GLR (receita de
 // comissão até R$ 200 mil, contratos, retenção, expansão e missões).
+// O envio pede SSE (stream:true): o texto chega em pedaços e cada ferramenta
+// consultada aparece na hora. listar/abrir/apagar continuam em JSON.
 // ============================================================
+// GLR-SSE-INICIO
+function consumirSSE(buffer, onEvent) {
+  const partes = String(buffer || '').replace(/\r\n/g, '\n').split('\n\n');
+  const resto = partes.pop() || '';
+  for (const raw of partes) {
+    if (!raw.trim() || raw.trim().startsWith(':')) continue;
+    let ev = 'message', data = '';
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('event:')) ev = line.slice(6).trim();
+      else if (line.startsWith('data:')) data += line.slice(5).trim();
+    }
+    if (!data) continue;
+    try { onEvent(ev, JSON.parse(data)); } catch (e) { /* ignora evento malformado */ }
+  }
+  return resto;
+}
+// GLR-SSE-FIM
 Router.register('chat', (params, el) => {
   const h = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const lerLS = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } };
   const gravarLS = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
-  const st = { conversas: [], id: lerLS('glr_chat_atual', null), msgs: [], enviando: false, erro: null, listaAberta: false, carregando: true, inicio: 0, rascunho: '', agente: lerLS('glr_chat_agente', 'copiloto'), statusTxt: '' };
+  const st = { conversas: [], id: lerLS('glr_chat_atual', null), msgs: [], enviando: false, erro: null, listaAberta: false, carregando: true, inicio: 0, rascunho: '', agente: lerLS('glr_chat_agente', 'copiloto'), parcial: '', progresso: [], statusTxt: '' };
   if (window._glrChatAgente) { st.agente = window._glrChatAgente; st.id = null; window._glrChatAgente = null; } // veio do botão "Conversar com o Adviser"
   const ehAdviser = () => st.agente === 'adviser';
   window._chSt = st; // respostas que chegam depois de sair da tela conferem se ainda são a tela atual
@@ -34,12 +53,44 @@ Router.register('chat', (params, el) => {
     while (Date.now() < prazo) {
       const { data } = await _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('recurso', 'chat_job').eq('conta_id', jobId).maybeSingle();
       const c = data?.cursor;
-      if (c?.texto) st.statusTxt = c.texto;
+      if (c?.texto) { st.statusTxt = c.texto; const t = document.getElementById('ch-pensa-t'); if (t) t.textContent = `${c.texto} ${Math.round((Date.now() - st.inicio) / 1000)}s`; }
       if (c?.status === 'pronto') return c;
       if (c?.status === 'erro') throw new Error(c.erro || 'Falha ao responder.');
       await new Promise(r => setTimeout(r, 1500));
     }
     throw new Error('A resposta demorou demais. Abra a conversa de novo em instantes.');
+  }
+  // Envio em SSE. Se o servidor responder JSON (job em segundo plano), usa o corpo inteiro.
+  async function enviarFluxo(corpo, onEvent) {
+    const { data } = await _sb.auth.getSession();
+    const r = await fetch('/api/chat-central', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${data?.session?.access_token || ''}` }, body: JSON.stringify(corpo) });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({ error: `Resposta inválida do servidor (HTTP ${r.status}).` }));
+      throw new Error(j.error || `HTTP ${r.status}`);
+    }
+    const ctype = r.headers.get('content-type') || '';
+    if (!ctype.includes('text/event-stream') || !r.body) {
+      const j = await r.json().catch(() => ({ error: 'Resposta inválida do servidor.' }));
+      if (j.error) throw new Error(j.error);
+      return j;
+    }
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', fim = null, erro = null;
+    const receber = (ev, dataEv) => {
+      if (ev === 'erro') erro = dataEv.error || 'Falha ao responder.';
+      else if (ev === 'fim') fim = dataEv;
+      else if (onEvent) onEvent(ev, dataEv);
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf = consumirSSE(buf + dec.decode(value, { stream: true }), receber);
+    }
+    if (buf.trim()) consumirSSE(buf + '\n\n', receber);
+    if (erro) throw new Error(erro);
+    if (!fim) throw new Error('A resposta foi interrompida.');
+    return fim;
   }
 
   const md = t => window.glrMarkdown(t); // js/ui.js
@@ -99,7 +150,11 @@ Router.register('chat', (params, el) => {
         <div class="ch-sugs">${sug.map(s => `<button onclick="window._chUsar(this.textContent)">${h(s)}</button>`).join('')}</div>
       </div>`;
     }
-    const pensando = st.enviando ? `<div class="ch-m ch-a"><div class="ch-av ${ehAdviser() ? 'adv' : ''}" aria-hidden="true">${ehAdviser() ? 'A' : 'G'}</div><div class="ch-corpo"><div class="ch-pensa" role="status"><i></i><i></i><i></i><span id="ch-pensa-t">${h(st.statusTxt || 'Consultando os agentes…')}</span></div></div></div>` : '';
+    const pensando = st.enviando ? `<div class="ch-m ch-a"><div class="ch-av ${ehAdviser() ? 'adv' : ''}" aria-hidden="true">${ehAdviser() ? 'A' : 'G'}</div><div class="ch-corpo">
+      ${st.progresso.length ? `<div class="ch-ao-vivo">${st.progresso.map(f => `<span class="${f.estado === 'erro' ? 'erro' : ''}">${h(f.rotulo)}</span>`).join('')}</div>` : ''}
+      ${st.parcial ? `<div class="ch-md" id="ch-parcial">${md(st.parcial)}</div>` : ''}
+      <div class="ch-pensa" role="status"><i></i><i></i><i></i><span id="ch-pensa-t">${h(st.statusTxt || 'Consultando os agentes…')}</span></div>
+    </div></div>` : '';
     return st.msgs.map(renderMsg).join('') + pensando + (st.erro ? `<div class="ch-erro">${h(st.erro)} <button class="ch-link" onclick="window._chReenviar()">Tentar de novo</button></div>` : '');
   }
 
@@ -138,9 +193,13 @@ Router.register('chat', (params, el) => {
     const box = document.getElementById('ch-msgs'); if (box) box.scrollTop = box.scrollHeight;
   }
 
-  // a resposta vem inteira (o agente consulta várias fontes antes); enquanto isso, mostra o que está fazendo
+  // o texto e as ferramentas chegam por SSE; as frases só cobrem o instante antes do primeiro evento
   const FRASES = ['Consultando os agentes…', 'Lendo o plano do Gerente…', 'Cruzando vendas, ADS e funil…', 'Conferindo estoque e margem…', 'Montando os próximos passos…'];
-  let timer = null;
+  let timer = null, pintarTimer = null;
+  function pintar(ja) {
+    if (!ja) { if (pintarTimer) return; pintarTimer = setTimeout(() => { pintarTimer = null; if (window._chSt === st) render(); }, 50); return; }
+    clearTimeout(pintarTimer); pintarTimer = null; render();
+  }
   function iniciarEspera() {
     clearInterval(timer); let k = 0;
     timer = setInterval(() => {
@@ -164,11 +223,24 @@ Router.register('chat', (params, el) => {
   async function enviar(texto) {
     texto = String(texto || '').trim();
     if (!texto || st.enviando) return;
-    st.msgs.push({ r: 'user', t: texto }); st.ultima = texto; st.rascunho = ''; st.enviando = true; st.erro = null; st.inicio = Date.now(); st.statusTxt = '';
+    st.msgs.push({ r: 'user', t: texto }); st.ultima = texto; st.rascunho = ''; st.enviando = true; st.erro = null; st.inicio = Date.now();
+    st.parcial = ''; st.progresso = []; st.statusTxt = 'Abrindo a conversa…';
     render(); iniciarEspera();
     try {
-      let j = await api({ acao: 'enviar', conversa_id: st.id, mensagem: texto, cliente_id: ehAdviser() ? null : focoId(), agente: st.agente });
-      if (j.fundo) { st.statusTxt = 'Na fila…'; j = await acompanharJob(j.job_id); }
+      let j = await enviarFluxo({ acao: 'enviar', stream: true, conversa_id: st.id, mensagem: texto, cliente_id: ehAdviser() ? null : focoId(), agente: st.agente }, (ev, dataEv) => {
+        if (window._chSt !== st) return;
+        if (ev === 'status') { st.statusTxt = dataEv.texto || st.statusTxt; pintar(true); }
+        else if (ev === 'ferramenta') {
+          st.statusTxt = dataEv.estado === 'consultando' ? `Consultando ${dataEv.rotulo}…` : (dataEv.estado === 'erro' ? `Falhou: ${dataEv.rotulo}` : st.statusTxt);
+          const aberto = st.progresso.findIndex(f => f.rotulo === dataEv.rotulo && f.estado === 'consultando');
+          if (dataEv.estado === 'consultando') st.progresso.push({ rotulo: dataEv.rotulo, estado: 'consultando' });
+          else if (aberto >= 0) st.progresso[aberto].estado = dataEv.estado;
+          else st.progresso.push({ rotulo: dataEv.rotulo, estado: dataEv.estado });
+          pintar(true);
+        } else if (ev === 'texto') { st.parcial += dataEv.delta || ''; st.statusTxt = 'Escrevendo…'; pintar(false); }
+        else if (ev === 'texto_limpar') { st.parcial = ''; pintar(true); }
+      });
+      if (j.fundo) { st.statusTxt = 'Na fila…'; const t = document.getElementById('ch-pensa-t'); if (t) t.textContent = 'Na fila…'; j = await acompanharJob(j.job_id); }
       if (window._chSt !== st) return;
       const nova = st.id !== j.conversa_id;
       st.id = j.conversa_id; gravarLS('glr_chat_atual', st.id);
@@ -179,7 +251,7 @@ Router.register('chat', (params, el) => {
       if (window._chSt !== st) return;
       st.msgs.pop(); st.rascunho = texto; st.erro = `Não consegui responder: ${e.message || e}`;
     }
-    st.enviando = false; render();
+    st.enviando = false; st.parcial = ''; st.statusTxt = ''; clearTimeout(pintarTimer); pintarTimer = null; render();
   }
 
   window._chEnviar = () => enviar(document.getElementById('ch-in')?.value);
@@ -229,6 +301,7 @@ Router.register('chat', (params, el) => {
     .ch-tab{overflow-x:auto;margin:0 0 12px;border:1px solid var(--border);border-radius:10px} .ch-tab table{border-collapse:collapse;width:100%;font-size:13px} .ch-tab th{text-align:left;font-weight:600;background:var(--bg-subtle);padding:7px 10px;white-space:nowrap} .ch-tab td{padding:7px 10px;border-top:1px solid var(--border);font-variant-numeric:tabular-nums;vertical-align:top}
     .ch-fontes{margin-bottom:6px} .ch-fontes summary{cursor:pointer;font-size:12px;color:var(--text-muted);list-style:none} .ch-fontes summary::before{content:'▸ '} .ch-fontes[open] summary::before{content:'▾ '}
     .ch-fontes div{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px} .ch-fontes span{font-size:11.5px;background:var(--bg-subtle);border-radius:6px;padding:2px 8px;color:var(--text-secondary)} .ch-fontes span.erro{color:var(--red)}
+    .ch-ao-vivo{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px} .ch-ao-vivo span{font-size:11.5px;background:var(--bg-subtle);border-radius:6px;padding:2px 8px;color:var(--text-secondary)} .ch-ao-vivo span.erro{color:var(--red)}
     .ch-criadas{margin-top:6px;font-size:13px;padding:9px 12px;border-radius:10px;background:color-mix(in srgb,var(--green) 12%,transparent);color:var(--text-primary)}
     .ch-acoes-m{margin-top:4px;opacity:0;transition:opacity .15s} .ch-a:hover .ch-acoes-m,.ch-acoes-m:focus-within{opacity:1} @media (hover:none){.ch-acoes-m{opacity:1}}
     .ch-link{all:unset;cursor:pointer;color:var(--accent);font-size:12.5px;font-weight:600} .ch-link:hover{text-decoration:underline}

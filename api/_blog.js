@@ -175,6 +175,13 @@ async function gerarRascunhos({ lerStorage, sbUpsert, anthropicKey }, { qtd = PO
 
 // Markdown simples → HTML (página pública); o texto é escapado antes
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function httpsDe(valor) {
+  try {
+    const u = new URL(String(valor || ''));
+    if (u.protocol !== 'https:' || u.username || u.password) return '';
+    return u.href;
+  } catch { return ''; }
+}
 function mdParaHtml(md) {
   const inline = s => esc(s).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\[([^\]]+)\]\((https?:\/\/[^)\s"]+)\)/g, (m, t, u) => `<a href="${u}" target="_blank" rel="noopener nofollow">${t}</a>`).replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   const out = [], L = String(md || '').replace(/\r/g, '').split('\n');
@@ -213,4 +220,4 @@ function editoriaDe(p) {
   return melhor;
 }
 
-module.exports = { FONTES, EDITORIAS, editoriaDe, gerarRascunhos, escolher, lerEstado, salvarEstado, mdParaHtml, esc, slugDe };
+module.exports = { FONTES, EDITORIAS, editoriaDe, gerarRascunhos, escolher, lerEstado, salvarEstado, mdParaHtml, esc, httpsDe, slugDe };
