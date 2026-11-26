@@ -362,6 +362,7 @@ function monitorPrecos(mkt) { return (params, el) => {
         .sort((a, b) => a.nome.localeCompare(b.nome));
       GLR.quandoClientes(() => { st.contas.forEach(c => { c.nome = GLR.nomeConta(mkt, c.id); }); render(); });
       if (!st.contas.length) { st.erro = `Nenhuma conta ${SH ? 'da Shopee' : 'do Mercado Livre'} conectada.`; render(); return; }
+      { const foco = GLR.ctx?.cliente?.(); if (foco && !st.contas.some(c => GLR.ctx.clienteDaConta(mkt, c.id) === foco)) { st.contas = []; st.erro = `Este cliente não tem conta ${SH ? 'da Shopee' : 'do Mercado Livre'} vinculada. Vincule em Integrações.`; render(); return; } } // não abre a conta de outro cliente
       if (!st.contas.some(c => c.id === st.conta)) st.conta = st.contas[0].id;
       st.conta = GLR.ctx?.focarConta ? GLR.ctx.focarConta(mkt, st.contas.map(c => c.id), st.conta) : st.conta; // cliente em foco (barra de cima)
       carregar();
