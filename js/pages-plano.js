@@ -40,7 +40,7 @@ Router.register('plano-acao', (params, el) => {
       try {
         const { data: { user } } = await _sb.auth.getUser();
         const email = String(user?.email || '').toLowerCase();
-        const g = (window.GLR?.gestores || []).find(x => [x.email, x.loginEmail].some(e => e && String(e).toLowerCase() === email));
+        const g = ((typeof GLR !== 'undefined' && GLR.gestores) || []).find(x => [x.email, x.loginEmail].some(e => e && String(e).toLowerCase() === email));
         st.meuGestor = g ? g.id : null;
       } catch (e) {}
       if (embed) st.aberto = cliEmbed;
@@ -396,8 +396,8 @@ Router.register('plano-acao', (params, el) => {
   window._plTarefa = (cid, id) => {
     const p = st.planos.find(x => String(x.cliente.id) === String(cid)), a = p && oportunidadesDe(p).find(x => x.id === id); if (!a) return;
     if (status()[id]?.tarefaId && GLR.tarefas.some(t => t.id === status()[id].tarefaId)) return;
-    const cli = (window.GLR?.clientes || []).find(c => String(c.id) === String(cid));
-    const resp = status()[id]?.responsavel || (window.GLR?.gestores || []).find(g => g.id === (cli?.gestorId ?? p.cliente.gestorId))?.nome || p.cliente.gestor || '';
+    const cli = ((typeof GLR !== 'undefined' && GLR.clientes) || []).find(c => String(c.id) === String(cid));
+    const resp = status()[id]?.responsavel || ((typeof GLR !== 'undefined' && GLR.gestores) || []).find(g => g.id === (cli?.gestorId ?? p.cliente.gestorId))?.nome || p.cliente.gestor || '';
     const tarefa = { id: GLR.nextId(GLR.tarefas), titulo: a.quem === 'cliente' ? `Pedir ao cliente: ${a.titulo}` : a.titulo, cliente: p.cliente.nome, clienteId: cli ? cli.id : p.cliente.id,
       responsavel: resp, status: 'pendente', prioridade: a.quando === 'hoje' ? 'alta' : 'media', prazo: a.quando === 'hoje' ? hojeISO() : maisDias(7),
       categoria: 'Plano de ação', notas: `${a.porque}${a.impacto ? ` · Impacto: ${a.impacto}` : ''} · ${a.loja || ''} (Gerente de Conta, ${new Date(p.em).toLocaleDateString('pt-BR')})` };

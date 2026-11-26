@@ -783,6 +783,7 @@ Router.register('cliente-perfil', (params, el) => {
   };
 
   setupClienteHandlers();
+  lembrarNoEndereco(); // endereço já leva aba e subtela (recarregar volta ao mesmo lugar)
   renderTab();
 });
 

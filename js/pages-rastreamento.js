@@ -247,7 +247,7 @@ let adsServidor = [];
 const mktDaConta = id => { const c = contasAds.find(x => String(x.external_id) === String(id)); return c ? (c.marketplace === 'shopee' ? 'shopee' : 'ml') : null; };
 function nomeAdsConta(id) {
   const mkt = mktDaConta(id);
-  const n = window.GLR?.nomeConta ? GLR.nomeConta(mkt || 'ml', id) : '';
+  const n = typeof GLR !== 'undefined' && GLR.nomeConta ? GLR.nomeConta(mkt || 'ml', id) : '';
   if (n && !/sem cliente/.test(n)) return n;
   const c = contasAds.find(x => String(x.external_id) === String(id));
   return c && window._trackNomeConta ? window._trackNomeConta(c) : String(id);
