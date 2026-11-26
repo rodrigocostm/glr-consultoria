@@ -138,10 +138,10 @@ Router.register('vendas', async (params, el) => {
     if (!box) {
       box = document.createElement('div');
       box.id = 'diag-api-box';
-      box.style.cssText = 'position:fixed;bottom:12px;right:12px;width:520px;max-height:70vh;overflow-y:auto;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;z-index:99999;font-family:monospace;font-size:11px;color:#e5e7eb;box-shadow:0 10px 40px rgba(0,0,0,.5);';
-      box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      box.style.cssText = 'position:fixed;bottom:12px;right:12px;width:520px;max-height:70vh;overflow-y:auto;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;z-index:99999;font-family:monospace;font-size:var(--fs-1);color:#e5e7eb;box-shadow:0 10px 40px rgba(0,0,0,.5);';
+      box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
         <strong style="color:var(--accent-light);">Diagnóstico API (temporário)</strong>
-        <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button>
+        <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:var(--fs-3);">✕</button>
       </div><div id="diag-api-conteudo"></div>`;
       document.body.appendChild(box);
     }
@@ -151,8 +151,8 @@ Router.register('vendas', async (params, el) => {
     if (window._diagVistos[chave]) return; // já mostrou esse — evita poluir com repetição
     window._diagVistos[chave] = true;
     const bloco = document.createElement('div');
-    bloco.style.cssText = 'margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #2a2a3a;';
-    bloco.innerHTML = `<div style="color:#fbbf24;margin-bottom:4px;">[${grupo}] pedido ${pedidoId}</div><pre style="white-space:pre-wrap;word-break:break-all;margin:0;">${JSON.stringify(obj,null,2).replace(/</g,'&lt;')}</pre>`;
+    bloco.style.cssText = 'margin-bottom:var(--space-3);padding-bottom:var(--space-3);border-bottom:1px solid #2a2a3a;';
+    bloco.innerHTML = `<div style="color:#fbbf24;margin-bottom:var(--space-1);">[${grupo}] pedido ${pedidoId}</div><pre style="white-space:pre-wrap;word-break:break-all;margin:0;">${JSON.stringify(obj,null,2).replace(/</g,'&lt;')}</pre>`;
     cont.appendChild(bloco);
   }
 
@@ -333,7 +333,7 @@ Router.register('vendas', async (params, el) => {
     container.innerHTML = `
       <div style="position:relative;">
         <button type="button" class="form-input dcb-toggle" aria-expanded="${aberto}" title="${esc(qtdSel ? itens.filter(i => selecionados.has(i.valor)).map(i => `${_MKT_DCB[i.mkt]?.sigla ? _MKT_DCB[i.mkt].sigla + ' · ' : ''}${i.label}`).join('\n') : `Todas as ${label.toLowerCase()}s`)}">
-          <span class="dcb-rot">${textoBotao}</span><span style="font-size:10px;opacity:0.6;">▾</span>
+          <span class="dcb-rot">${textoBotao}</span><span style="font-size:var(--fs-1);opacity:0.6;">▾</span>
         </button>
         <div class="dcb-panel" style="display:${aberto ? 'block' : 'none'};">
           ${itens.length > 6 ? `<input type="search" class="dcb-busca" placeholder="Buscar ${label.toLowerCase()}${porPlataforma ? ' ou plataforma' : ''}…" value="${esc(busca)}">` : ''}
@@ -371,18 +371,18 @@ Router.register('vendas', async (params, el) => {
     const st = document.createElement('style'); st.id = 'dcb-estilo';
     st.textContent = `.dcb-toggle{width:220px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:6px;cursor:pointer}
       .dcb-rot{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:5px}
-      .dcb-panel{position:absolute;top:calc(100% + 4px);left:0;z-index:60;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.22);width:340px;max-width:calc(100vw - 32px);padding:8px}
-      .dcb-busca{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:7px;padding:7px 9px;font-size:13px;background:var(--bg-base);color:var(--text-primary);margin-bottom:6px}
+      .dcb-panel{position:absolute;top:calc(100% + 4px);left:0;z-index:60;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.22);width:340px;max-width:calc(100vw - 32px);padding:var(--space-2)}
+      .dcb-busca{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:7px;padding:7px 9px;font-size:var(--fs-3);background:var(--bg-base);color:var(--text-primary);margin-bottom:6px}
       .dcb-lista{max-height:340px;overflow:auto}
-      .dcb-grupo{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11px;font-weight:700;color:var(--text-secondary);padding:8px 6px 4px;position:sticky;top:0;background:var(--bg-card)}
-      .dcb-grupo span{display:flex;align-items:center;gap:5px}.dcb-so{font-size:11px;border:none;background:none;color:var(--accent);cursor:pointer;padding:2px 4px;font-weight:600}
-      .dcb-op{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--text-primary)}.dcb-op:hover{background:var(--bg-card-hover)}
+      .dcb-grupo{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:var(--fs-1);font-weight:700;color:var(--text-secondary);padding:8px 6px 4px;position:sticky;top:0;background:var(--bg-card)}
+      .dcb-grupo span{display:flex;align-items:center;gap:5px}.dcb-so{font-size:var(--fs-1);border:none;background:none;color:var(--accent);cursor:pointer;padding:2px 4px;font-weight:600}
+      .dcb-op{display:flex;align-items:center;gap:var(--space-2);padding:6px 8px;border-radius:6px;cursor:pointer;font-size:var(--fs-3);color:var(--text-primary)}.dcb-op:hover{background:var(--bg-card-hover)}
       .dcb-op input{width:14px;height:14px;accent-color:var(--accent);flex:none}
-      .dcb-txt{display:flex;flex-direction:column;min-width:0}.dcb-nome,.dcb-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dcb-sub{font-size:11px;color:var(--text-muted)}
-      .dcb-selo{flex:none;font-size:9.5px;font-weight:800;letter-spacing:.02em;color:#fff;background:var(--c);border-radius:4px;padding:2px 5px;line-height:1.2}
-      .dcb-vazio{padding:10px;font-size:12px;color:var(--text-muted)}
-      .dcb-rodape{border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;gap:8px;align-items:center;font-size:11px;color:var(--text-muted)}
-      .dcb-rodape span{flex:1}.dcb-rodape button{font-size:11px;padding:5px 9px;background:var(--bg-card-hover);border:none;border-radius:5px;color:var(--text-secondary);cursor:pointer}`;
+      .dcb-txt{display:flex;flex-direction:column;min-width:0}.dcb-nome,.dcb-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dcb-sub{font-size:var(--fs-1);color:var(--text-muted)}
+      .dcb-selo{flex:none;font-size:var(--fs-1);font-weight:800;letter-spacing:.02em;color:#fff;background:var(--c);border-radius:4px;padding:2px 5px;line-height:1.2}
+      .dcb-vazio{padding:10px;font-size:var(--fs-2);color:var(--text-muted)}
+      .dcb-rodape{border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;gap:var(--space-2);align-items:center;font-size:var(--fs-1);color:var(--text-muted)}
+      .dcb-rodape span{flex:1}.dcb-rodape button{font-size:var(--fs-1);padding:5px 9px;background:var(--bg-card-hover);border:none;border-radius:5px;color:var(--text-secondary);cursor:pointer}`;
     document.head.appendChild(st);
   }
 
@@ -403,8 +403,8 @@ Router.register('vendas', async (params, el) => {
       const btn = document.getElementById(`tab-${a}`);
       const sec = document.getElementById(`sec-${a}`);
       if (btn) btn.style.cssText = a===aba
-        ? 'padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:var(--accent);color:var(--text-primary);'
-        : 'padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);';
+        ? 'padding:var(--space-2) var(--space-5);border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:var(--fs-3);background:var(--accent);color:var(--text-primary);'
+        : 'padding:var(--space-2) var(--space-5);border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:var(--fs-3);background:var(--bg-card-hover);color:var(--text-secondary);';
       if (sec) sec.style.display = a===aba ? 'block' : 'none';
     });
     if (aba==='dashboard') renderDashboard();
@@ -1008,7 +1008,7 @@ Router.register('vendas', async (params, el) => {
       ${foco.length ? `<div class="card cs-foco"><div class="cs-foco-t">O que olhar primeiro</div>${foco.map(f => `<div class="cs-foco-i" style="--c:${f.cor}"><b>${h(f.x.nome)}</b>${multiConta ? ` <span class="cs-mut">(${h(nomeConta(f.x.contaId))})</span>` : ''}<div>${h(f.txt)}</div></div>`).join('')}</div>` : ''}
       <div class="cs-ctrl">
         <div class="cs-chips">${filtros.map(([v, r]) => `<button class="cs-chip${semFiltro === v ? ' on' : ''}" onclick="window._csFiltro('${v}')">${r}</button>`).join('')}</div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
           <input id="cs-busca" class="form-input" placeholder="Buscar produto…" value="${h(semBusca)}" style="width:200px;">
           <div class="cs-chips"><button class="cs-chip${semMetrica === 'un' ? ' on' : ''}" onclick="window._csMetrica('un')">Unidades</button><button class="cs-chip${semMetrica === 'rs' ? ' on' : ''}" onclick="window._csMetrica('rs')">Faturamento</button></div>
         </div>
@@ -1022,38 +1022,38 @@ Router.register('vendas', async (params, el) => {
             <tbody>${linhas || `<tr><td colspan="10" style="padding:28px;text-align:center;color:var(--text-muted);">Nada neste filtro. ✅</td></tr>`}</tbody>
           </table>
         </div>
-        ${visiveis.length > mostrar.length ? `<div style="padding:12px;text-align:center;"><button class="cs-chip" onclick="window._csMais()">Mostrar mais (${visiveis.length - mostrar.length})</button></div>` : ''}
+        ${visiveis.length > mostrar.length ? `<div style="padding:var(--space-3);text-align:center;"><button class="cs-chip" onclick="window._csMais()">Mostrar mais (${visiveis.length - mostrar.length})</button></div>` : ''}
       </div>
       <style>
-        .cs-mut{color:var(--text-muted);font-size:11.5px;}
-        .cs-ids{font-size:11px;color:var(--text-muted);font-family:ui-monospace,monospace;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px;} .cs-ids a{color:var(--accent);text-decoration:none;} .cs-ids a:hover{text-decoration:underline;}
-        .cs-topo{margin-bottom:12px;}
-        .cs-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
+        .cs-mut{color:var(--text-muted);font-size:var(--fs-1);}
+        .cs-ids{font-size:var(--fs-1);color:var(--text-muted);font-family:ui-monospace,monospace;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px;} .cs-ids a{color:var(--accent);text-decoration:none;} .cs-ids a:hover{text-decoration:underline;}
+        .cs-topo{margin-bottom:var(--space-3);}
+        .cs-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3);margin-bottom:14px;}
         @media (max-width:900px){.cs-cards{grid-template-columns:repeat(2,1fr);}}
         .cs-card{background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:12px;padding:12px 14px;}
-        .cs-rot{font-size:11px;text-transform:none;letter-spacing:0;color:var(--text-muted);}
-        .cs-val{font-size:22px;font-weight:700;color:var(--text-primary);font-variant-numeric:tabular-nums;}
-        .cs-sub{font-size:12px;color:var(--text-secondary);}
+        .cs-rot{font-size:var(--fs-1);text-transform:none;letter-spacing:0;color:var(--text-muted);}
+        .cs-val{font-size:var(--fs-5);font-weight:700;color:var(--text-primary);font-variant-numeric:tabular-nums;}
+        .cs-sub{font-size:var(--fs-2);color:var(--text-secondary);}
         .cs-foco{padding:14px 18px;margin-bottom:14px;}
-        .cs-foco-t{font-weight:700;font-size:14px;margin-bottom:8px;color:var(--text-primary);}
-        .cs-foco-i{border-left:3px solid var(--c);padding:6px 10px;margin-bottom:6px;font-size:12.5px;color:var(--text-secondary);}
+        .cs-foco-t{font-weight:700;font-size:var(--fs-3);margin-bottom:var(--space-2);color:var(--text-primary);}
+        .cs-foco-i{border-left:3px solid var(--c);padding:6px 10px;margin-bottom:6px;font-size:var(--fs-2);color:var(--text-secondary);}
         .cs-foco-i b{color:var(--text-primary);}
         .cs-ctrl{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
         .cs-chips{display:flex;gap:6px;flex-wrap:wrap;}
-        .cs-chip{border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);border-radius:99px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;}
+        .cs-chip{border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);border-radius:99px;padding:5px 12px;font-size:var(--fs-2);font-weight:600;cursor:pointer;}
         .cs-chip.on{background:var(--accent);border-color:var(--accent);color:#fff;}
-        .cs-tab{width:100%;border-collapse:collapse;font-size:12.5px;}
-        .cs-tab th{padding:9px 10px;text-align:left;font-size:10.5px;text-transform:none;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
+        .cs-tab{width:100%;border-collapse:collapse;font-size:var(--fs-2);}
+        .cs-tab th{padding:9px 10px;text-align:left;font-size:var(--fs-1);text-transform:none;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
         .cs-tab td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-secondary);vertical-align:middle;}
         .cs-num{text-align:right !important;font-variant-numeric:tabular-nums;white-space:nowrap;}
         .cs-ult{background:rgba(99,102,241,.06);color:var(--text-primary) !important;font-weight:700;}
-        .cs-faixa{font-size:10px;font-weight:500;text-transform:none;color:var(--text-muted);}
+        .cs-faixa{font-size:var(--fs-1);font-weight:500;text-transform:none;color:var(--text-muted);}
         .cs-prod{display:flex;gap:10px;align-items:center;min-width:280px;max-width:420px;}
         .cs-prod img,.cs-img{width:34px;height:34px;border-radius:6px;object-fit:cover;flex:none;background:var(--bg-card-hover);}
         .cs-nome{color:var(--text-primary);font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
-        .cs-abc{display:inline-flex;width:24px;height:24px;border-radius:6px;align-items:center;justify-content:center;font-weight:700;font-size:12px;}
+        .cs-abc{display:inline-flex;width:24px;height:24px;border-radius:6px;align-items:center;justify-content:center;font-weight:700;font-size:var(--fs-2);}
         .cs-A{background:rgba(42,120,214,.15);color:var(--accent);} .cs-B{background:rgba(235,104,52,.15);color:#eb6834;} .cs-C{background:rgba(100,116,139,.15);color:var(--text-muted);} .cs-n{color:var(--text-muted);}
-        .cs-tend{display:inline-block;font-size:11.5px;font-weight:700;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);padding:3px 9px;border-radius:99px;white-space:nowrap;}
+        .cs-tend{display:inline-block;font-size:var(--fs-1);font-weight:700;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);padding:3px 9px;border-radius:99px;white-space:nowrap;}
       </style>`;
     const busca = document.getElementById('cs-busca');
     if (busca) busca.addEventListener('input', e => {
@@ -1151,27 +1151,27 @@ Router.register('vendas', async (params, el) => {
           <thead><tr><th>Produto</th><th>Curva / tendência</th><th class="op-n">Vendas 30d</th><th class="op-n">Faturado 30d</th><th class="op-n">Visitas 30d</th><th class="op-n">Conversão</th><th>Sugestão</th></tr></thead>
           <tbody>${itens.length ? itens.slice(0, 120).map(it => `<tr>
             <td style="min-width:260px;white-space:normal;"><a href="${link(it)}" target="_blank" rel="noopener" class="op-nome">${it.plat === 'Shopee' ? '🟠' : '🟡'} ${h(it.nome)}</a><div class="op-sub">${multi ? h(contaNome(it.conta)) + ' · ' : ''}${h(it.item_id)}</div></td>
-            <td>${it.classe ? `<b>${it.classe}</b>` : '<span class="op-sub">—</span>'}${it.tend ? ` <span style="color:${corT(it.tend)};font-weight:700;font-size:11.5px;">${TEND[it.tend]}</span>` : ''}</td>
+            <td>${it.classe ? `<b>${it.classe}</b>` : '<span class="op-sub">—</span>'}${it.tend ? ` <span style="color:${corT(it.tend)};font-weight:700;font-size:var(--fs-1);">${TEND[it.tend]}</span>` : ''}</td>
             <td class="op-n">${it.un} un.</td><td class="op-n">${R$(it.rs)}</td>
             <td class="op-n">${it.visitas != null ? it.visitas.toLocaleString('pt-BR') : '<span class="op-sub">—</span>'}</td>
             <td class="op-n">${it.conv != null ? it.conv.toFixed(1).replace('.', ',') + '%' : '<span class="op-sub">—</span>'}</td>
-            <td style="white-space:normal;font-size:12px;">${acao(it)}</td></tr>`).join('')
+            <td style="white-space:normal;font-size:var(--fs-2);">${acao(it)}</td></tr>`).join('')
             : `<tr><td colspan="7" style="padding:26px;text-align:center;color:var(--text-muted);">${semDado && !opAuto.linhas.some(r => r.cursor?.candidatos) ? 'A primeira leitura sai na próxima sincronização (a partir das 06:00).' : 'Nenhum produto vendendo fora do ADS neste filtro. ✅'}</td></tr>`}</tbody>
         </table></div>
       </div>
       <style>
-        .op-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:12px;}
-        .op-tit{font-size:15px;font-weight:700;color:var(--text-primary);}
-        .op-sub{font-size:12px;color:var(--text-muted);line-height:1.5;}
-        .op-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
+        .op-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:var(--space-3);}
+        .op-tit{font-size:var(--fs-4);font-weight:700;color:var(--text-primary);}
+        .op-sub{font-size:var(--fs-2);color:var(--text-muted);line-height:1.5;}
+        .op-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3);margin-bottom:14px;}
         @media (max-width:900px){.op-cards{grid-template-columns:repeat(2,1fr);}}
         .op-card{background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:12px;padding:12px 14px;}
-        .op-rot{font-size:11px;text-transform:none;letter-spacing:0;color:var(--text-muted);}
-        .op-val{font-size:22px;font-weight:700;color:var(--text-primary);font-variant-numeric:tabular-nums;}
+        .op-rot{font-size:var(--fs-1);text-transform:none;letter-spacing:0;color:var(--text-muted);}
+        .op-val{font-size:var(--fs-5);font-weight:700;color:var(--text-primary);font-variant-numeric:tabular-nums;}
         .op-ag{padding:12px 18px;margin-bottom:14px;} .op-ag summary{cursor:pointer;font-weight:700;color:var(--text-primary);}
-        .op-ag-i{padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-secondary);} .op-ag-i a{color:var(--accent);font-size:12px;}
-        .op-tab{width:100%;border-collapse:collapse;font-size:12.5px;}
-        .op-tab th{padding:9px 10px;text-align:left;font-size:10.5px;text-transform:none;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
+        .op-ag-i{padding:7px 0;border-bottom:1px solid var(--border);font-size:var(--fs-2);color:var(--text-secondary);} .op-ag-i a{color:var(--accent);font-size:var(--fs-2);}
+        .op-tab{width:100%;border-collapse:collapse;font-size:var(--fs-2);}
+        .op-tab th{padding:9px 10px;text-align:left;font-size:var(--fs-1);text-transform:none;color:var(--text-secondary);background:var(--bg-card-hover);white-space:nowrap;}
         .op-tab td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-secondary);vertical-align:middle;}
         .op-n{text-align:right !important;font-variant-numeric:tabular-nums;white-space:nowrap;}
         .op-nome{color:var(--text-primary);font-weight:600;text-decoration:none;}
@@ -1183,7 +1183,7 @@ Router.register('vendas', async (params, el) => {
     if (!sec) return;
     if (!document.getElementById('op-auto')) {
       sec.innerHTML = `<div id="op-auto"></div>
-        <details class="card" style="padding:12px 18px;" id="op-manual-wrap"><summary style="cursor:pointer;font-weight:700;color:var(--text-primary);">Busca detalhada pela API — visitas sem venda e produtos que nunca tiveram ADS</summary><div id="sec-oport-manual" style="margin-top:12px;"></div></details>`;
+        <details class="card" style="padding:12px 18px;" id="op-manual-wrap"><summary style="cursor:pointer;font-weight:700;color:var(--text-primary);">Busca detalhada pela API — visitas sem venda e produtos que nunca tiveram ADS</summary><div id="sec-oport-manual" style="margin-top:var(--space-3);"></div></details>`;
     }
     renderOportunidadesAuto();
     renderOportunidadesManual();
@@ -1197,16 +1197,16 @@ Router.register('vendas', async (params, el) => {
     if (oportunidades === null) {
       sec.innerHTML = `
         <div class="card" style="padding:40px;text-align:center;">
-          <div style="font-size:32px;margin-bottom:12px;">🎯</div>
-          <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Oportunidade de Produtos</div>
-          <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;max-width:480px;margin-left:auto;margin-right:auto;">
+          <div style="font-size:var(--fs-6);margin-bottom:var(--space-3);">🎯</div>
+          <div style="font-size:var(--fs-4);font-weight:700;color:var(--text-primary);margin-bottom:var(--space-2);">Oportunidade de Produtos</div>
+          <div style="font-size:var(--fs-3);color:var(--text-muted);margin-bottom:var(--space-5);max-width:480px;margin-left:auto;margin-right:auto;">
             Encontra anúncios ativos que tiveram visitas mas ainda não venderam —
             produtos com tráfego que não está convertendo, com potencial pra alavancar (preço, imagem, anúncio patrocinado).
             No <strong>Mercado Livre</strong> as visitas são do período filtrado; na <strong>Shopee</strong> a API só retorna
             visitas acumuladas (sem filtro de data), então o número ali é o total desde sempre.
           </div>
           <button id="btn-buscar-oport" class="btn-primary" onclick="buscarOportunidades()" style="padding:10px 20px;">Buscar oportunidades</button>
-          <div id="oport-status" style="font-size:12px;color:var(--text-muted);margin-top:12px;"></div>
+          <div id="oport-status" style="font-size:var(--fs-2);color:var(--text-muted);margin-top:var(--space-3);"></div>
         </div>
         ${renderForaDoAdsHTML()}
       `;
@@ -1219,29 +1219,29 @@ Router.register('vendas', async (params, el) => {
       <tr style="border-bottom:1px solid var(--border);">
         <td style="padding:10px 12px;color:var(--text-primary);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(o.nome||'').replace(/"/g,'&quot;')}">${o.mp==='Shopee'?'🟠':'🟡'} ${o.nome||'—'}</td>
         <td style="padding:10px 12px;color:var(--text-secondary);">${o.conta}</td>
-        <td style="padding:10px 12px;text-align:right;font-weight:700;color:var(--yellow);">${o.visitas.toLocaleString('pt-BR')}${o.mp==='Shopee'?' <span style="font-size:9px;color:var(--text-muted);">(total)</span>':''}</td>
+        <td style="padding:10px 12px;text-align:right;font-weight:700;color:var(--yellow);">${o.visitas.toLocaleString('pt-BR')}${o.mp==='Shopee'?' <span style="font-size:var(--fs-1);color:var(--text-muted);">(total)</span>':''}</td>
         <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${o.preco ? R$(o.preco) : '—'}</td>
         <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${o.estoque || '—'}</td>
-        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:var(--accent);font-size:12px;">Ver anúncio ↗</a>` : ''}</td>
+        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:var(--accent);font-size:var(--fs-2);">Ver anúncio ↗</a>` : ''}</td>
       </tr>`).join('');
 
     sec.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div style="font-size:13px;color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período ${oportAtualizadoEm?`<span style="font-size:11px;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">${fmtAgo(oportAtualizadoEm)}</span>`:''}${falhasOport ? `<div style="font-size:12px;font-weight:600;color:var(--red);margin-top:3px;">⚠️ ${falhasOport} anúncio(s) não responderam à consulta de visitas (limite da API) — clique em Buscar de novo.</div>` : ''}${diagOport ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;">ML: ${diagOport.ativos} anúncios ativos · ${diagOport.vendidos} venderam no período · ${diagOport.checados} sem venda checados · ${diagOport.comVisita} com visita${diagOport.erro ? ` · erro: ${diagOport.erro.replace(/</g,'&lt;')}` : ''}${!diagOport.comVisita && diagOport.exemplo ? ` · resposta da API: <code>${diagOport.exemplo.replace(/</g,'&lt;')}</code>` : ''}</div>` : ''}</div>
-        <button id="btn-buscar-oport" class="btn" onclick="buscarOportunidades()" style="padding:7px 14px;font-size:12px;">Buscar de novo</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-4);">
+        <div style="font-size:var(--fs-3);color:var(--text-secondary);">${oportunidades.length} produto${oportunidades.length!==1?'s':''} com visitas e sem venda no período ${oportAtualizadoEm?`<span style="font-size:var(--fs-1);background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">${fmtAgo(oportAtualizadoEm)}</span>`:''}${falhasOport ? `<div style="font-size:var(--fs-2);font-weight:600;color:var(--red);margin-top:3px;">⚠️ ${falhasOport} anúncio(s) não responderam à consulta de visitas (limite da API) — clique em Buscar de novo.</div>` : ''}${diagOport ? `<div style="font-size:var(--fs-1);color:var(--text-muted);margin-top:3px;">ML: ${diagOport.ativos} anúncios ativos · ${diagOport.vendidos} venderam no período · ${diagOport.checados} sem venda checados · ${diagOport.comVisita} com visita${diagOport.erro ? ` · erro: ${diagOport.erro.replace(/</g,'&lt;')}` : ''}${!diagOport.comVisita && diagOport.exemplo ? ` · resposta da API: <code>${diagOport.exemplo.replace(/</g,'&lt;')}</code>` : ''}</div>` : ''}</div>
+        <button id="btn-buscar-oport" class="btn" onclick="buscarOportunidades()" style="padding:7px 14px;font-size:var(--fs-2);">Buscar de novo</button>
       </div>
       ${oportunidades.length === 0 ? `
-        <div class="card" style="padding:32px;text-align:center;color:var(--text-muted);">Nenhuma oportunidade encontrada — todos os anúncios com visita já converteram, ou nenhum teve visita no período.</div>
+        <div class="card" style="padding:var(--space-8);text-align:center;color:var(--text-muted);">Nenhuma oportunidade encontrada — todos os anúncios com visita já converteram, ou nenhum teve visita no período.</div>
       ` : `
         <div class="card" style="padding:0;overflow:hidden;">
-          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <table style="width:100%;border-collapse:collapse;font-size:var(--fs-3);">
             <thead><tr style="background:var(--bg-card-hover);">
-              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:none;">Produto</th>
-              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:11px;text-transform:none;">Conta</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:none;">Visitas</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:none;">Preço</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:none;">Estoque</th>
-              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:11px;text-transform:none;"></th>
+              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:var(--fs-1);text-transform:none;">Produto</th>
+              <th style="padding:10px 12px;text-align:left;color:var(--text-secondary);font-size:var(--fs-1);text-transform:none;">Conta</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:var(--fs-1);text-transform:none;">Visitas</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:var(--fs-1);text-transform:none;">Preço</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:var(--fs-1);text-transform:none;">Estoque</th>
+              <th style="padding:10px 12px;text-align:right;color:var(--text-secondary);font-size:var(--fs-1);text-transform:none;"></th>
             </tr></thead>
             <tbody>${linhas}</tbody>
           </table>
@@ -1258,14 +1258,14 @@ Router.register('vendas', async (params, el) => {
   function renderForaDoAdsHTML() {
     if (foraDoAds === null) {
       return `
-        <div class="card" style="padding:32px;text-align:center;margin-top:20px;">
-          <div style="font-size:28px;margin-bottom:10px;">🚫</div>
-          <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Produtos Fora do ADS</div>
-          <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;max-width:480px;margin-left:auto;margin-right:auto;">
+        <div class="card" style="padding:var(--space-8);text-align:center;margin-top:var(--space-5);">
+          <div style="font-size:var(--fs-6);margin-bottom:10px;">🚫</div>
+          <div style="font-size:var(--fs-4);font-weight:700;color:var(--text-primary);margin-bottom:var(--space-2);">Produtos Fora do ADS</div>
+          <div style="font-size:var(--fs-3);color:var(--text-muted);margin-bottom:var(--space-4);max-width:480px;margin-left:auto;margin-right:auto;">
             Anúncios ativos que nunca receberam investimento em anúncio patrocinado — candidatos a testar tráfego pago.
           </div>
           <button id="btn-buscar-fora-ads" class="btn-primary" style="padding:10px 20px;">Buscar produtos fora do ADS</button>
-          <div id="fora-ads-status" style="font-size:12px;color:var(--text-muted);margin-top:12px;"></div>
+          <div id="fora-ads-status" style="font-size:var(--fs-2);color:var(--text-muted);margin-top:var(--space-3);"></div>
         </div>`;
     }
 
@@ -1279,38 +1279,38 @@ Router.register('vendas', async (params, el) => {
     };
     const lista = [...foraDoAds].sort((a, b) => potencial(b).n - potencial(a).n || (b.vendas30 || 0) - (a.vendas30 || 0) || (b.vendasTotal || 0) - (a.vendasTotal || 0) || (b.visitas || 0) - (a.visitas || 0));
     const nAlto = lista.filter(o => potencial(o).n === 3).length;
-    const th = (t, dir, tip) => `<th style="padding:10px 12px;text-align:${dir || 'left'};color:var(--text-secondary);font-size:11px;text-transform:none;white-space:nowrap;"${tip ? ` title="${tip}"` : ''}>${t}</th>`;
+    const th = (t, dir, tip) => `<th style="padding:10px 12px;text-align:${dir || 'left'};color:var(--text-secondary);font-size:var(--fs-1);text-transform:none;white-space:nowrap;"${tip ? ` title="${tip}"` : ''}>${t}</th>`;
     const td = (v, forte) => `<td style="padding:10px 12px;text-align:right;color:${forte ? 'var(--text-primary)' : 'var(--text-secondary)'};${forte ? 'font-weight:700;' : ''}font-variant-numeric:tabular-nums;white-space:nowrap;">${v}</td>`;
     const num = v => v == null ? '<span style="color:var(--text-muted);">—</span>' : Number(v).toLocaleString('pt-BR');
     const linhas = lista.map(o => {
       const pt = potencial(o), c = conv(o);
       return `
       <tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:10px 12px;color:var(--text-primary);max-width:340px;" title="${(o.nome||'').replace(/"/g,'&quot;')}"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.mp==='Shopee'?'🟠':'🟡'} ${o.nome||'—'}</div><div style="font-size:11px;color:var(--text-muted);">${o.conta} · ${o.id}</div></td>
-        <td style="padding:10px 12px;"><span style="font-size:11.5px;font-weight:700;color:${pt.cor};white-space:nowrap;">${pt.t}</span></td>
-        <td style="padding:10px 12px;font-size:12px;color:${(o.situacao || 'Sem campanha') === 'Sem campanha' ? 'var(--text-secondary)' : 'var(--yellow)'};">${o.situacao || 'Sem campanha'}</td>
+        <td style="padding:10px 12px;color:var(--text-primary);max-width:340px;" title="${(o.nome||'').replace(/"/g,'&quot;')}"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.mp==='Shopee'?'🟠':'🟡'} ${o.nome||'—'}</div><div style="font-size:var(--fs-1);color:var(--text-muted);">${o.conta} · ${o.id}</div></td>
+        <td style="padding:10px 12px;"><span style="font-size:var(--fs-1);font-weight:700;color:${pt.cor};white-space:nowrap;">${pt.t}</span></td>
+        <td style="padding:10px 12px;font-size:var(--fs-2);color:${(o.situacao || 'Sem campanha') === 'Sem campanha' ? 'var(--text-secondary)' : 'var(--yellow)'};">${o.situacao || 'Sem campanha'}</td>
         ${td(o.mp === 'Shopee' ? '<span style="color:var(--text-muted);" title="A API da Shopee não informa visitas confiáveis por anúncio">—</span>' : num(o.visitas))}
         ${td(num(o.vendasTotal))}
         ${td(num(o.vendas30 ?? null), (o.vendas30 || 0) > 0)}
         ${td(c != null ? c.toFixed(1).replace('.', ',') + '%' : '<span style="color:var(--text-muted);">—</span>')}
         ${td(o.preco ? R$(o.preco) : '—')}
         ${td(o.estoque || '—')}
-        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:var(--accent);font-size:12px;white-space:nowrap;">Ver anúncio ↗</a>` : ''}</td>
+        <td style="padding:10px 12px;text-align:right;">${o.link ? `<a href="${o.link}" target="_blank" style="color:var(--accent);font-size:var(--fs-2);white-space:nowrap;">Ver anúncio ↗</a>` : ''}</td>
       </tr>`;
     }).join('');
 
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 16px;gap:10px;flex-wrap:wrap;">
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary);">${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS${nAlto ? ` · <span style="color:var(--green);">${nAlto} com potencial alto</span>` : ''} ${foraAdsAtualizadoEm?`<span style="font-size:11px;font-weight:400;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">${fmtAgo(foraAdsAtualizadoEm)}</span>`:''}
-          ${falhasForaAds ? `<div style="font-size:12px;font-weight:600;color:var(--red);margin-top:3px;">⚠️ ${falhasForaAds} anúncio(s) não responderam à checagem de ADS (limite da API) — clique em Buscar de novo.</div>` : ''}
-          <div style="font-size:11.5px;font-weight:400;color:var(--text-muted);margin-top:3px;">Visitas e vendas totais = desde a criação do anúncio (ML). Vendas 30 dias = base automática. Potencial alto: 3+ vendas em 30 dias, ou 300+ visitas convertendo 1% ou mais.</div></div>
-        <button id="btn-buscar-fora-ads" class="btn" style="padding:7px 14px;font-size:12px;">Buscar de novo</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:var(--space-6) 0 var(--space-4);gap:10px;flex-wrap:wrap;">
+        <div style="font-size:var(--fs-3);font-weight:700;color:var(--text-primary);">${foraDoAds.length} produto${foraDoAds.length!==1?'s':''} ativo${foraDoAds.length!==1?'s':''} sem nenhuma campanha de ADS${nAlto ? ` · <span style="color:var(--green);">${nAlto} com potencial alto</span>` : ''} ${foraAdsAtualizadoEm?`<span style="font-size:var(--fs-1);font-weight:400;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;margin-left:6px;">${fmtAgo(foraAdsAtualizadoEm)}</span>`:''}
+          ${falhasForaAds ? `<div style="font-size:var(--fs-2);font-weight:600;color:var(--red);margin-top:3px;">⚠️ ${falhasForaAds} anúncio(s) não responderam à checagem de ADS (limite da API) — clique em Buscar de novo.</div>` : ''}
+          <div style="font-size:var(--fs-1);font-weight:400;color:var(--text-muted);margin-top:3px;">Visitas e vendas totais = desde a criação do anúncio (ML). Vendas 30 dias = base automática. Potencial alto: 3+ vendas em 30 dias, ou 300+ visitas convertendo 1% ou mais.</div></div>
+        <button id="btn-buscar-fora-ads" class="btn" style="padding:7px 14px;font-size:var(--fs-2);">Buscar de novo</button>
       </div>
       ${foraDoAds.length === 0 ? `
-        <div class="card" style="padding:32px;text-align:center;color:var(--text-muted);">Todos os anúncios ativos já têm alguma campanha de ADS.</div>
+        <div class="card" style="padding:var(--space-8);text-align:center;color:var(--text-muted);">Todos os anúncios ativos já têm alguma campanha de ADS.</div>
       ` : `
         <div class="card" style="padding:0;overflow:hidden;"><div style="overflow-x:auto;">
-          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <table style="width:100%;border-collapse:collapse;font-size:var(--fs-3);">
             <thead><tr style="background:var(--bg-card-hover);">
               ${th('Produto')}${th('Potencial')}${th('Situação no ADS')}${th('Visitas (total)', 'right')}${th('Vendas (total)', 'right')}${th('Vendas 30 dias', 'right')}${th('Conversão', 'right', 'vendas totais ÷ visitas totais')}${th('Preço', 'right')}${th('Estoque', 'right')}${th('', 'right')}
             </tr></thead>
@@ -1446,8 +1446,8 @@ Router.register('vendas', async (params, el) => {
     sec.innerHTML = `
     <!-- KPI Cards — grid único de 4 colunas: financeiro + ADS + visitas/pedidos, tudo no
     mesmo padrão de card pequeno (antes eram 3 grids separados com blocos grandes) -->
-    <div id="dash-kpi-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
-      ${kpiCard('Faturamento',   R$(t.fat),    `${nVendas} vendas`,  '#60a5fa')}
+    <div id="dash-kpi-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3);margin-bottom:var(--space-3);">
+      ${kpiCard('Faturamento',   R$(t.fat),    `${nVendas} vendas`,  'var(--blue)')}
       ${kpiCard('Líq. Marketplace', R$(t.liq!=null?t.liq:0), t.fat>0?pct(liqPct)+' do fat.':'—', 'var(--purple)')}
       ${kpiCard('✅ Lucro Bruto',    R$(t.lucro),  'Margem: '+pct(t.margem), corMargem(t.margem))}
       ${kpiCard('Margem',         pct(t.margem),'',                   corMargem(t.margem))}
@@ -1458,7 +1458,7 @@ Router.register('vendas', async (params, el) => {
     </div>
 
     <!-- Gráfico -->
-    <div class="card vg-card" style="margin-bottom:20px;">
+    <div class="card vg-card" style="margin-bottom:var(--space-5);">
       <div class="vg-topo">
         <div>
           <div class="vg-titulo">Resumo de Receitas</div>
@@ -1471,53 +1471,53 @@ Router.register('vendas', async (params, el) => {
 
     <!-- ADS, Lucro pós-ADS e Visitas/Pedidos/Faturamento — mesmo grid de 4 colunas e
     mesmo estilo de card pequeno do bloco acima (visualmente é uma continuação dele) -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3);margin-bottom:var(--space-5);">
       <div class="kpi-card">
         <div class="kpi-label">Investimento em ADS</div>
-        <div class="kpi-value" style="color:var(--red);font-size:18px;" id="dashboard-ads">R$ 0,00</div>
+        <div class="kpi-value" style="color:var(--red);font-size:var(--fs-5);" id="dashboard-ads">R$ 0,00</div>
         <div class="kpi-sub" id="dashboard-ads-pct">0% do faturamento</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Lucro Depois ADS</div>
-        <div class="kpi-value" style="color:var(--green);font-size:18px;" id="dashboard-lucro-ads">R$ 0,00</div>
+        <div class="kpi-value" style="color:var(--green);font-size:var(--fs-5);" id="dashboard-lucro-ads">R$ 0,00</div>
         <div class="kpi-sub" id="dashboard-lucro-ads-pct">Margem: 0%</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Visitas Total</div>
-        <div class="kpi-value" style="font-size:18px;" id="card-visitas">—</div>
+        <div class="kpi-value" style="font-size:var(--fs-5);" id="card-visitas">—</div>
         <div class="kpi-sub"><span id="card-visitas-ml">—</span> ML · <span id="card-visitas-shopee">—</span> Shopee</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Pedidos Total</div>
-        <div class="kpi-value" style="color:#3b82f6;font-size:18px;" id="card-vendas">—</div>
+        <div class="kpi-value" style="color:var(--blue-strong);font-size:var(--fs-5);" id="card-vendas">—</div>
         <div class="kpi-sub"><span id="card-vendas-ml">—</span> ML · <span id="card-vendas-shopee">—</span> Shopee</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Faturamento Total</div>
-        <div class="kpi-value" style="color:var(--green);font-size:18px;" id="card-fat">—</div>
+        <div class="kpi-value" style="color:var(--green);font-size:var(--fs-5);" id="card-fat">—</div>
         <div class="kpi-sub"><span id="card-fat-ml">—</span> ML · <span id="card-fat-shopee">—</span> Shopee</div>
       </div>
     </div>
 
     <!-- Tabela: Comparativo por Marketplace -->
-    <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
-      <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
-        <div style="font-size:14px;font-weight:700;color:var(--text-primary);">Comparativo por Marketplace</div>
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:var(--space-5);">
+      <div style="padding:var(--space-4) var(--space-5);border-bottom:1px solid var(--border);">
+        <div style="font-size:var(--fs-3);font-weight:700;color:var(--text-primary);">Comparativo por Marketplace</div>
       </div>
       <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <table style="width:100%;border-collapse:collapse;font-size:var(--fs-2);">
           <thead>
             <tr style="background:var(--bg-card-hover);">
-              <th style="padding:12px 16px;text-align:left;color:var(--text-muted);font-weight:600;">PLATAFORMA</th>
-              <th style="padding:12px 12px;text-align:right;color:var(--text-muted);font-weight:600;">VISITAS</th>
-              <th style="padding:12px 12px;text-align:right;color:var(--text-muted);font-weight:600;">PEDIDOS</th>
-              <th style="padding:12px 12px;text-align:right;color:var(--text-muted);font-weight:600;">FATURAMENTO</th>
-              <th style="padding:12px 12px;text-align:right;color:var(--text-muted);font-weight:600;">TICKET MÉDIO</th>
+              <th style="padding:var(--space-3) var(--space-4);text-align:left;color:var(--text-muted);font-weight:600;">PLATAFORMA</th>
+              <th style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-muted);font-weight:600;">VISITAS</th>
+              <th style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-muted);font-weight:600;">PEDIDOS</th>
+              <th style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-muted);font-weight:600;">FATURAMENTO</th>
+              <th style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-muted);font-weight:600;">TICKET MÉDIO</th>
             </tr>
           </thead>
           <tbody id="marketplace-table-body">
             <tr style="border-bottom:1px solid var(--border);">
-              <td colspan="5" style="padding:20px;text-align:center;color:var(--text-muted);">Carregando...</td>
+              <td colspan="5" style="padding:var(--space-5);text-align:center;color:var(--text-muted);">Carregando...</td>
             </tr>
           </tbody>
         </table>
@@ -1526,12 +1526,12 @@ Router.register('vendas', async (params, el) => {
 
     <!-- Top 15 Produtos -->
     <div class="card" style="padding:0;overflow:hidden;">
-      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-size:14px;font-weight:700;color:var(--text-primary);">Top ${top15.length} Produtos</div>
-        <div style="font-size:11px;color:var(--text-muted);">Comparação de vendas nos últimos dias</div>
+      <div style="padding:var(--space-4) var(--space-5);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:var(--fs-3);font-weight:700;color:var(--text-primary);">Top ${top15.length} Produtos</div>
+        <div style="font-size:var(--fs-1);color:var(--text-muted);">Comparação de vendas nos últimos dias</div>
       </div>
       <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <table style="width:100%;border-collapse:collapse;font-size:var(--fs-2);">
           <thead>
             <tr style="background:var(--bg-card-hover);">
               <th style="padding:10px 16px;text-align:left;color:var(--text-muted);font-weight:600;white-space:nowrap;min-width:280px;">PRODUTO</th>
@@ -1558,39 +1558,39 @@ Router.register('vendas', async (params, el) => {
               const custoMisto = !todosIguais && custosDoGrupo.some(v => v > 0);
               return `<tr style="border-bottom:1px solid var(--border);${i%2!==0?'background:var(--bg-card-hover);':''}">
                 <td style="padding:10px 16px;">
-                  <div style="display:flex;align-items:center;gap:8px;">
+                  <div style="display:flex;align-items:center;gap:var(--space-2);">
                     ${p.imagem ? `<img src="${p.imagem}" style="width:32px;height:32px;border-radius:5px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : `<div style="width:32px;height:32px;background:var(--border);border-radius:5px;flex-shrink:0;"></div>`}
                     <div style="min-width:0;">
-                      <div style="color:var(--text-primary);font-weight:600;font-size:13px;line-height:1.4;word-break:break-word;max-width:320px;">${p.nome}</div>
-                      <div style="display:flex;gap:8px;align-items:center;margin-top:2px;flex-wrap:wrap;">
-                        ${p.sku ? `<span style="background:rgba(99,102,241,0.15);color:var(--accent-light);font-size:9px;padding:1px 6px;border-radius:4px;font-family:monospace;">SKU: ${p.sku}</span>` : ''}
-                        <span style="color:var(--text-muted);font-size:10px;">${p.n} pedido${p.n!==1?'s':''} · ${p.qtd} un.</span>
+                      <div style="color:var(--text-primary);font-weight:600;font-size:var(--fs-3);line-height:1.4;word-break:break-word;max-width:320px;">${p.nome}</div>
+                      <div style="display:flex;gap:var(--space-2);align-items:center;margin-top:2px;flex-wrap:wrap;">
+                        ${p.sku ? `<span style="background:rgba(99,102,241,0.15);color:var(--accent-light);font-size:var(--fs-1);padding:1px 6px;border-radius:4px;font-family:monospace;">SKU: ${p.sku}</span>` : ''}
+                        <span style="color:var(--text-muted);font-size:var(--fs-1);">${p.n} pedido${p.n!==1?'s':''} · ${p.qtd} un.</span>
                       </div>
                     </div>
                   </div>
                 </td>
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${p.qtd}</td>
-                <td style="padding:10px 12px;text-align:right;color:#3b82f6;font-weight:600;">${R$(p.fat)}</td>
+                <td style="padding:10px 12px;text-align:right;color:var(--blue-strong);font-weight:600;">${R$(p.fat)}</td>
                 <td style="padding:10px 12px;text-align:right;">
-                  <span style="background:rgba(99,102,241,0.15);color:var(--accent-light);padding:2px 7px;border-radius:10px;font-size:11px;">${pct(represent)}</span>
+                  <span style="background:rgba(99,102,241,0.15);color:var(--accent-light);padding:2px 7px;border-radius:10px;font-size:var(--fs-1);">${pct(represent)}</span>
                 </td>
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);border-left:1px solid var(--border);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 30).length)()}</td>
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 60).length)()}</td>
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 90).length)()}</td>
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 120).length)()}</td>
-                <td style="padding:8px 12px;text-align:right;border-left:1px solid var(--border);">
+                <td style="padding:var(--space-2) var(--space-3);text-align:right;border-left:1px solid var(--border);">
                   <input type="number" min="0" step="0.01" placeholder="${custoMisto ? 'vários' : '0,00'}"
                     value="${custoAtual}"
                     data-ids="${p.ids.join(',')}"
                     data-key="${encodeURIComponent(p.key)}"
                     class="inp-custo-prod"
-                    style="width:90px;background:var(--bg-input);border:1px solid ${custoMisto?'rgba(96,165,250,0.5)':'rgba(245,158,11,0.4)'};border-radius:6px;padding:5px 8px;color:${custoMisto?'#60a5fa':'var(--yellow)'};font-size:12px;text-align:right;"
+                    style="width:90px;background:var(--bg-input);border:1px solid ${custoMisto?'rgba(96,165,250,0.5)':'rgba(245,158,11,0.4)'};border-radius:6px;padding:5px 8px;color:${custoMisto?'var(--blue)':'var(--yellow)'};font-size:var(--fs-2);text-align:right;"
                     title="${custoMisto ? 'Os pedidos deste produto têm custos diferentes entre si — digite um valor pra sobrescrever todos com o mesmo custo' : 'Custo unitário — aplica a todos os '+p.n+' pedidos deste produto'}">
                 </td>
                 <td style="padding:10px 12px;text-align:right;color:var(--purple);">${p.liq>0?R$(p.liq):'—'}</td>
                 <td style="padding:10px 12px;text-align:right;color:${corMargem(margem)};font-weight:600;">${R$(p.lucro)}</td>
                 <td style="padding:10px 12px;text-align:right;">
-                  <span style="background:color-mix(in srgb,${corMargem(margem)} 13%,transparent);color:${corMargem(margem)};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">${pct(margem)}</span>
+                  <span style="background:color-mix(in srgb,${corMargem(margem)} 13%,transparent);color:${corMargem(margem)};padding:2px 8px;border-radius:10px;font-size:var(--fs-1);font-weight:700;">${pct(margem)}</span>
                 </td>
               </tr>`;
             }).join('')}
@@ -1617,21 +1617,21 @@ Router.register('vendas', async (params, el) => {
         !(parseFloat(catalogoCusto[g.key]) > 0) && g.ids.every(id => !(custos[id]?.custo > 0))
       ).sort((a,b) => b.fat - a.fat);
 
-      if (!semCusto.length) return `<div class="card" style="padding:16px 20px;display:flex;align-items:center;gap:10px;border:1px solid rgba(34,197,94,0.3);background:rgba(34,197,94,0.05);">
-        <span style="font-size:18px;">✅</span>
-        <span style="font-size:13px;color:var(--green);font-weight:600;">Todos os produtos têm custo preenchido!</span>
+      if (!semCusto.length) return `<div class="card" style="padding:var(--space-4) var(--space-5);display:flex;align-items:center;gap:10px;border:1px solid rgba(34,197,94,0.3);background:rgba(34,197,94,0.05);">
+        <span style="font-size:var(--fs-5);">✅</span>
+        <span style="font-size:var(--fs-3);color:var(--green);font-weight:600;">Todos os produtos têm custo preenchido!</span>
       </div>`;
 
       return `<div class="card" style="padding:0;overflow:hidden;">
-        <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--space-2);">
           <div>
-            <span style="font-size:14px;font-weight:700;color:var(--yellow);">⚠️ Produtos sem custo</span>
-            <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${semCusto.length} produto${semCusto.length!==1?'s':''} · ${semCusto.reduce((s,g)=>s+g.ids.length,0)} pedidos sem custo preenchido</span>
+            <span style="font-size:var(--fs-3);font-weight:700;color:var(--yellow);">⚠️ Produtos sem custo</span>
+            <span style="font-size:var(--fs-1);color:var(--text-muted);margin-left:var(--space-2);">${semCusto.length} produto${semCusto.length!==1?'s':''} · ${semCusto.reduce((s,g)=>s+g.ids.length,0)} pedidos sem custo preenchido</span>
           </div>
-          <span style="font-size:11px;color:var(--text-muted);">Digite o custo e pressione Enter para aplicar a todos os pedidos daquele produto</span>
+          <span style="font-size:var(--fs-1);color:var(--text-muted);">Digite o custo e pressione Enter para aplicar a todos os pedidos daquele produto</span>
         </div>
         <div style="overflow-x:auto;">
-          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <table style="width:100%;border-collapse:collapse;font-size:var(--fs-2);">
             <thead>
               <tr style="background:var(--bg-card-hover);">
                 <th style="padding:10px 16px;text-align:left;color:var(--text-muted);font-weight:600;min-width:260px;">PRODUTO</th>
@@ -1645,20 +1645,20 @@ Router.register('vendas', async (params, el) => {
               ${semCusto.map((g,i) => `
               <tr style="border-bottom:1px solid var(--border);${i%2!==0?'background:var(--bg-card-hover);':''}">
                 <td style="padding:10px 16px;">
-                  <div style="display:flex;align-items:center;gap:8px;">
+                  <div style="display:flex;align-items:center;gap:var(--space-2);">
                     ${g.imagem ? `<img src="${g.imagem}" style="width:32px;height:32px;border-radius:5px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : `<div style="width:32px;height:32px;background:var(--border);border-radius:5px;flex-shrink:0;"></div>`}
                     <span style="color:var(--text-primary);font-weight:600;max-width:300px;word-break:break-word;">${g.nome}</span>
                   </div>
                 </td>
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${g.qtd}</td>
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${g.ids.length}</td>
-                <td style="padding:10px 12px;text-align:right;color:#3b82f6;font-weight:600;">${R$(g.fat)}</td>
-                <td style="padding:8px 12px;text-align:right;border-left:1px solid var(--border);">
+                <td style="padding:10px 12px;text-align:right;color:var(--blue-strong);font-weight:600;">${R$(g.fat)}</td>
+                <td style="padding:var(--space-2) var(--space-3);text-align:right;border-left:1px solid var(--border);">
                   <input type="number" min="0" step="0.01" placeholder="0,00"
                     data-ids="${g.ids.join(',')}"
                     data-key="${encodeURIComponent(g.key)}"
                     class="inp-custo-prod inp-sem-custo"
-                    style="width:100px;background:var(--bg-input);border:1px solid rgba(245,158,11,0.5);border-radius:6px;padding:5px 8px;color:var(--yellow);font-size:12px;text-align:right;"
+                    style="width:100px;background:var(--bg-input);border:1px solid rgba(245,158,11,0.5);border-radius:6px;padding:5px 8px;color:var(--yellow);font-size:var(--fs-2);text-align:right;"
                     title="Aplica a ${g.ids.length} pedido${g.ids.length!==1?'s':''} deste produto">
                 </td>
               </tr>`).join('')}
@@ -1741,7 +1741,7 @@ Router.register('vendas', async (params, el) => {
     const corValor = semantico ? cor : 'var(--text-primary)';
     return `<div class="kpi-card">
       <div class="kpi-label">${label}</div>
-      <div class="kpi-value" style="color:${corValor};font-size:18px;">${val}</div>
+      <div class="kpi-value" style="color:${corValor};font-size:var(--fs-5);">${val}</div>
       ${sub?`<div class="kpi-sub">${sub}</div>`:''}
     </div>`;
   }
@@ -1756,7 +1756,7 @@ Router.register('vendas', async (params, el) => {
     const ticketMedio = nVendas > 0 ? t.fat/nVendas : 0;
     const liqPct = t.fat > 0 ? t.liq/t.fat*100 : 0;
     grid.innerHTML = `
-      ${kpiCard('Faturamento',      R$(t.fat),                `${nVendas} vendas`,          '#60a5fa')}
+      ${kpiCard('Faturamento',      R$(t.fat),                `${nVendas} vendas`,          'var(--blue)')}
       ${kpiCard('Líq. Marketplace', R$(t.liq!=null?t.liq:0), t.fat>0?pct(liqPct)+' do fat.':'—', 'var(--purple)')}
       ${kpiCard('✅ Lucro Bruto',      R$(t.lucro),              'Margem: '+pct(t.margem),      corMargem(t.margem))}
       ${kpiCard('Margem',           pct(t.margem),            '',                            corMargem(t.margem))}
@@ -1824,25 +1824,25 @@ Router.register('vendas', async (params, el) => {
 
     tableBody.innerHTML = `
       <tr style="border-bottom:1px solid var(--border);background:rgba(245,158,11,0.05);">
-        <td style="padding:12px 16px;color:var(--text-primary);font-weight:500;">Mercado Livre</td>
-        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${mlVisitas.toLocaleString('pt-BR')}</td>
-        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${mlVendas}</td>
-        <td style="padding:12px 12px;text-align:right;color:#60a5fa;font-weight:600;">${R$(mlFat)}</td>
-        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${R$(mlTicket)}</td>
+        <td style="padding:var(--space-3) var(--space-4);color:var(--text-primary);font-weight:500;">Mercado Livre</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-secondary);">${mlVisitas.toLocaleString('pt-BR')}</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-secondary);">${mlVendas}</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--blue);font-weight:600;">${R$(mlFat)}</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-secondary);">${R$(mlTicket)}</td>
       </tr>
       <tr style="border-bottom:1px solid var(--border);background:rgba(249,115,22,0.05);">
-        <td style="padding:12px 16px;color:var(--text-primary);font-weight:500;">Shopee</td>
-        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${shopeeVisitas.toLocaleString('pt-BR')}</td>
-        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${shopeeVendas}</td>
-        <td style="padding:12px 12px;text-align:right;color:#60a5fa;font-weight:600;">${R$(shopeeFat)}</td>
-        <td style="padding:12px 12px;text-align:right;color:var(--text-secondary);">${R$(shopeeTicket)}</td>
+        <td style="padding:var(--space-3) var(--space-4);color:var(--text-primary);font-weight:500;">Shopee</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-secondary);">${shopeeVisitas.toLocaleString('pt-BR')}</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-secondary);">${shopeeVendas}</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--blue);font-weight:600;">${R$(shopeeFat)}</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-secondary);">${R$(shopeeTicket)}</td>
       </tr>
       <tr style="background:var(--bg-card-hover);">
-        <td style="padding:12px 16px;color:var(--text-primary);font-weight:700;">TOTAL</td>
-        <td style="padding:12px 12px;text-align:right;color:var(--text-primary);font-weight:700;">${totalVisitas.toLocaleString('pt-BR')}</td>
-        <td style="padding:12px 12px;text-align:right;color:var(--text-primary);font-weight:700;">${totalVendas}</td>
-        <td style="padding:12px 12px;text-align:right;color:var(--green);font-weight:700;">${R$(totalFat)}</td>
-        <td style="padding:12px 12px;text-align:right;color:var(--text-primary);font-weight:700;">${R$(totalVendas > 0 ? totalFat / totalVendas : 0)}</td>
+        <td style="padding:var(--space-3) var(--space-4);color:var(--text-primary);font-weight:700;">TOTAL</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-primary);font-weight:700;">${totalVisitas.toLocaleString('pt-BR')}</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-primary);font-weight:700;">${totalVendas}</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--green);font-weight:700;">${R$(totalFat)}</td>
+        <td style="padding:var(--space-3) var(--space-3);text-align:right;color:var(--text-primary);font-weight:700;">${R$(totalVendas > 0 ? totalFat / totalVendas : 0)}</td>
       </tr>
     `;
   }
@@ -1854,7 +1854,7 @@ Router.register('vendas', async (params, el) => {
     const el = document.getElementById('vendas-kpis');
     if (!el) return;
     el.innerHTML = `
-      <div class="kpi-card"><div class="kpi-label">Faturamento Bruto</div><div class="kpi-value" style="color:#60a5fa;">${R$(t.fat)}</div><div class="kpi-sub">${lista.length} pedidos</div></div>
+      <div class="kpi-card"><div class="kpi-label">Faturamento Bruto</div><div class="kpi-value" style="color:var(--blue);">${R$(t.fat)}</div><div class="kpi-sub">${lista.length} pedidos</div></div>
       ${t.liq!=null?`<div class="kpi-card"><div class="kpi-label">Líquido Marketplace</div><div class="kpi-value" style="color:var(--purple);">${R$(t.liq)}</div><div class="kpi-sub">${t.fat>0?pct(t.liq/t.fat*100):''} do fat.</div></div>`:''}
       <div class="kpi-card"><div class="kpi-label">Custo Produto</div><div class="kpi-value" style="color:var(--red);">${R$(t.custo)}</div></div>
       <div class="kpi-card"><div class="kpi-label">Outros Custos</div><div class="kpi-value" style="color:var(--orange);">${R$(t.out)}</div></div>
@@ -1895,16 +1895,16 @@ Router.register('vendas', async (params, el) => {
       const t = calcTotais(peds);
       return `
       <div style="margin-bottom:14px;">
-        <div style="display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--bg-card-hover);border-radius:8px 8px 0 0;border-bottom:1px solid var(--border);">
-          <span style="font-size:13px;font-weight:700;color:var(--text-primary);">${data}</span>
-          <span style="font-size:11px;color:var(--text-muted);">${peds.length} pedidos</span>
-          <span style="margin-left:auto;font-size:12px;color:#60a5fa;font-weight:600;">${R$(t.fat)}</span>
-          ${t.liq!=null?`<span style="font-size:12px;color:var(--purple);">Líq. ${R$(t.liq)}</span>`:''}
-          <span style="font-size:12px;font-weight:700;color:${corMargem(t.margem)};">Lucro ${R$(t.lucro)} · ${pct(t.margem)}</span>
+        <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-4);background:var(--bg-card-hover);border-radius:8px 8px 0 0;border-bottom:1px solid var(--border);">
+          <span style="font-size:var(--fs-3);font-weight:700;color:var(--text-primary);">${data}</span>
+          <span style="font-size:var(--fs-1);color:var(--text-muted);">${peds.length} pedidos</span>
+          <span style="margin-left:auto;font-size:var(--fs-2);color:var(--blue);font-weight:600;">${R$(t.fat)}</span>
+          ${t.liq!=null?`<span style="font-size:var(--fs-2);color:var(--purple);">Líq. ${R$(t.liq)}</span>`:''}
+          <span style="font-size:var(--fs-2);font-weight:700;color:${corMargem(t.margem)};">Lucro ${R$(t.lucro)} · ${pct(t.margem)}</span>
         </div>
         <div style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px 90px 90px 80px;padding:6px 16px;background:var(--bg-card-hover);border-bottom:1px solid var(--border);">
           ${['ITEM','QTD','TOTAL','LÍQ. MP','CUSTO PROD.','IMPOSTO','OUTROS','LUCRO','MARGEM'].map((h,i)=>
-            `<div style="font-size:10px;color:var(--text-muted);font-weight:600;text-align:${i<=1?'left':'right'};white-space:nowrap;">${h}</div>`).join('')}
+            `<div style="font-size:var(--fs-1);color:var(--text-muted);font-weight:600;text-align:${i<=1?'left':'right'};white-space:nowrap;">${h}</div>`).join('')}
         </div>
         ${peds.map(p => renderRow(p)).join('')}
       </div>`;
@@ -1942,7 +1942,7 @@ Router.register('vendas', async (params, el) => {
     const cor = platCor[p.plataforma]||'var(--text-muted)';
     const img = p.imagem
       ? `<img src="${p.imagem}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">`
-      : `<div style="width:44px;height:44px;background:var(--border);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;">${p.plataforma==='Shopee'?'🟠':p.plataforma==='Amazon'?'⚫':p.plataforma==='TikTok Shop'?'🎵':p.plataforma==='Magalu'?'🔵':p.plataforma==='Shein'?'⬛':'🟡'}</div>`;
+      : `<div style="width:44px;height:44px;background:var(--border);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:var(--fs-5);">${p.plataforma==='Shopee'?'🟠':p.plataforma==='Amazon'?'⚫':p.plataforma==='TikTok Shop'?'🎵':p.plataforma==='Magalu'?'🔵':p.plataforma==='Shein'?'⬛':'🟡'}</div>`;
 
     const isCancelled = ['cancelled','in_cancel','cancelled_unpaid'].includes((p.status||'').toLowerCase());
     const resultadoPendente = !isCancelled && (!l.custoCompleto || p.taxasPendente);
@@ -1953,22 +1953,22 @@ Router.register('vendas', async (params, el) => {
     const aliqConta = parseFloat(aliquotas[p.contaId] || 0);
     const impCell = (impVeioDeAPI || l.impPct>0 || Object.prototype.hasOwnProperty.call(aliquotas,p.contaId) || c.imposto!=null)
       ? `<div style="text-align:right;">
-           <span style="font-size:12px;color:var(--yellow);font-weight:600;">${R$(l.impVal)}</span><br>
-           <span style="font-size:9px;color:var(--text-muted);">${impVeioDeAPI ? 'retido no repasse' : l.impPct+'% '+(c.imposto!=null?'pedido':'conta')}</span>
+           <span style="font-size:var(--fs-2);color:var(--yellow);font-weight:600;">${R$(l.impVal)}</span><br>
+           <span style="font-size:var(--fs-1);color:var(--text-muted);">${impVeioDeAPI ? 'retido no repasse' : l.impPct+'% '+(c.imposto!=null?'pedido':'conta')}</span>
          </div>`
       : `<div style="text-align:right;" onclick="event.stopPropagation()">
            <div style="display:flex;align-items:center;justify-content:flex-end;gap:2px;">
              <input type="number" min="0" max="100" step="0.1" placeholder="${aliqConta||'0'}" value="${c.imposto||''}" data-id="${p.id}" data-campo="imposto" class="inp-custo"
-               style="width:50px;background:var(--bg-input);border:1px solid var(--border);border-radius:5px;padding:4px 6px;color:var(--text-primary);font-size:12px;text-align:right;">
-             <span style="color:var(--text-muted);font-size:10px;">%</span>
+               style="width:50px;background:var(--bg-input);border:1px solid var(--border);border-radius:5px;padding:4px 6px;color:var(--text-primary);font-size:var(--fs-2);text-align:right;">
+             <span style="color:var(--text-muted);font-size:var(--fs-1);">%</span>
            </div>
-           ${aliqConta && !c.imposto ? `<div style="font-size:9px;color:var(--yellow);text-align:right;">${aliqConta}% (conta)</div>` : ''}
+           ${aliqConta && !c.imposto ? `<div style="font-size:var(--fs-1);color:var(--yellow);text-align:right;">${aliqConta}% (conta)</div>` : ''}
          </div>`;
 
     const liqCell = l.liquido != null
-      ? `<div style="text-align:right;font-size:13px;font-weight:700;color:var(--purple);">${R$(l.liquido)}<br><span style="font-size:9px;color:var(--text-muted);font-weight:400;" title="${p.taxas?.estimado ? 'Valor que a Shopee informa que vai pagar; confirmado quando o pedido for concluído' : ''}">${p.taxas?.estimado ? 'estimado' : 'após taxas'}</span></div>`
-      : p.taxasPendente ? `<div style="text-align:right;font-size:11px;color:var(--yellow);" title="O marketplace ainda não informou as taxas deste pedido — a sincronização busca nos próximos minutos">aguardando<br>taxa</div>`
-      : `<div style="text-align:right;font-size:12px;color:var(--text-secondary);">—</div>`;
+      ? `<div style="text-align:right;font-size:var(--fs-3);font-weight:700;color:var(--purple);">${R$(l.liquido)}<br><span style="font-size:var(--fs-1);color:var(--text-muted);font-weight:400;" title="${p.taxas?.estimado ? 'Valor que a Shopee informa que vai pagar; confirmado quando o pedido for concluído' : ''}">${p.taxas?.estimado ? 'estimado' : 'após taxas'}</span></div>`
+      : p.taxasPendente ? `<div style="text-align:right;font-size:var(--fs-1);color:var(--yellow);" title="O marketplace ainda não informou as taxas deste pedido — a sincronização busca nos próximos minutos">aguardando<br>taxa</div>`
+      : `<div style="text-align:right;font-size:var(--fs-2);color:var(--text-secondary);">—</div>`;
 
     return `
     <div style="border-bottom:1px solid var(--border);">
@@ -1979,29 +1979,29 @@ Router.register('vendas', async (params, el) => {
         <div style="display:flex;align-items:center;gap:10px;min-width:0;">
           ${img}
           <div style="min-width:0;">
-            <div style="font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;" title="${(p.produto||'').replace(/"/g,'&quot;')}">${p.produto||'—'}</div>
-            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;display:flex;gap:6px;align-items:center;">
+            <div style="font-size:var(--fs-2);font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;" title="${(p.produto||'').replace(/"/g,'&quot;')}">${p.produto||'—'}</div>
+            <div style="font-size:var(--fs-1);color:var(--text-muted);margin-top:2px;display:flex;gap:6px;align-items:center;">
               <span style="color:${cor};font-weight:600;">${p.plataforma}</span>
               <span>${p.id}</span>
-              ${isCancelled ? '<span style="background:rgba(239,68,68,0.15);color:var(--red);padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;">● Cancelado</span>' : ''}
-              ${taxasAuto && !isCancelled ? `<span style="background:rgba(167,139,250,0.15);color:var(--purple);padding:1px 5px;border-radius:8px;font-size:9px;">${p.taxas?.estimado ? 'taxas estimadas' : 'taxas auto'}</span>` : ''}
-              ${p.taxasPendente && !isCancelled ? '<span style="background:rgba(234,179,8,0.15);color:var(--yellow);padding:1px 5px;border-radius:8px;font-size:9px;">aguardando taxa</span>' : ''}
+              ${isCancelled ? '<span style="background:rgba(239,68,68,0.15);color:var(--red);padding:1px 6px;border-radius:8px;font-size:var(--fs-1);font-weight:600;">● Cancelado</span>' : ''}
+              ${taxasAuto && !isCancelled ? `<span style="background:rgba(167,139,250,0.15);color:var(--purple);padding:1px 5px;border-radius:8px;font-size:var(--fs-1);">${p.taxas?.estimado ? 'taxas estimadas' : 'taxas auto'}</span>` : ''}
+              ${p.taxasPendente && !isCancelled ? '<span style="background:rgba(234,179,8,0.15);color:var(--yellow);padding:1px 5px;border-radius:8px;font-size:var(--fs-1);">aguardando taxa</span>' : ''}
             </div>
           </div>
         </div>
 
         <!-- Qtd -->
-        <div style="text-align:center;font-size:13px;color:var(--text-secondary);">${p.qtd||1}</div>
+        <div style="text-align:center;font-size:var(--fs-3);color:var(--text-secondary);">${p.qtd||1}</div>
 
         <!-- Total bruto -->
-        <div style="text-align:right;font-size:13px;font-weight:700;color:#60a5fa;">${R$(l.receita)}</div>
+        <div style="text-align:right;font-size:var(--fs-3);font-weight:700;color:var(--blue);">${R$(l.receita)}</div>
 
         <!-- Líquido MP -->
         ${liqCell}
 
         <!-- Custo efetivo usado na composição do pedido -->
         <div style="text-align:right;" onclick="event.stopPropagation()">
-          ${l.custoCompleto ? `<strong>${R$(l.custo)}</strong><details><summary style="font-size:10px;color:var(--text-muted)">Editar</summary>` : '<span style="font-size:10px;color:var(--yellow)">Custo pendente</span>'}
+          ${l.custoCompleto ? `<strong>${R$(l.custo)}</strong><details><summary style="font-size:var(--fs-1);color:var(--text-muted)">Editar</summary>` : '<span style="font-size:var(--fs-1);color:var(--yellow)">Custo pendente</span>'}
           <input aria-label="Custo unitário do pedido" type="number" min="0" step="0.01" placeholder="Custo unit." value="${c.custo||''}" data-id="${p.id}" data-campo="custo" class="inp-custo" style="width:80px;">
           ${l.custoCompleto ? '</details>' : ''}
         </div>
@@ -2010,16 +2010,16 @@ Router.register('vendas', async (params, el) => {
         ${impCell}
 
         <!-- Custo extra opcional -->
-        <div style="text-align:right;" onclick="event.stopPropagation()"><details><summary style="font-size:11px;color:var(--text-muted)">${c.outros>0?R$(c.outros):'+ Extra'}</summary>
+        <div style="text-align:right;" onclick="event.stopPropagation()"><details><summary style="font-size:var(--fs-1);color:var(--text-muted)">${c.outros>0?R$(c.outros):'+ Extra'}</summary>
           <input aria-label="Custo extra opcional" type="number" min="0" step="0.01" placeholder="0,00" value="${c.outros||''}" data-id="${p.id}" data-campo="outros" class="inp-custo" style="width:80px;">
         </details></div>
 
         <!-- Lucro -->
-        <div style="text-align:right;font-size:13px;font-weight:700;color:${corMargem(l.margem)};">${resultadoPendente ? '<span style="font-size:10px;color:var(--text-muted)">'+(!l.custoCompleto?'Custo pendente':'Taxas pendentes')+'</span>' : R$(l.lucro)}</div>
+        <div style="text-align:right;font-size:var(--fs-3);font-weight:700;color:${corMargem(l.margem)};">${resultadoPendente ? '<span style="font-size:var(--fs-1);color:var(--text-muted)">'+(!l.custoCompleto?'Custo pendente':'Taxas pendentes')+'</span>' : R$(l.lucro)}</div>
 
         <!-- Margem -->
         <div style="text-align:right;">
-          <span style="background:color-mix(in srgb,${corMargem(l.margem)} 13%,transparent);color:${corMargem(l.margem)};padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;">${resultadoPendente?'—':pct(l.margem)}</span>
+          <span style="background:color-mix(in srgb,${corMargem(l.margem)} 13%,transparent);color:${corMargem(l.margem)};padding:3px 8px;border-radius:20px;font-size:var(--fs-1);font-weight:700;">${resultadoPendente?'—':pct(l.margem)}</span>
           <button class="btn-exp" data-id="${p.id}" style="display:none;"></button>
         </div>
       </div>
@@ -2062,7 +2062,7 @@ Router.register('vendas', async (params, el) => {
         ? Math.max(0, (l.receita - l.liquido) - totalConhecido)
         : 0;
       linhasBreakdown = [
-        { label:'Total do Pedido',                 v: l.receita,        cor:'#60a5fa', sinal:'+' },
+        { label:'Total do Pedido',                 v: l.receita,        cor:'var(--blue)', sinal:'+' },
         freteML>0    ? { label:'Valor do Frete (pago pelo vendedor)', v: -freteML,   cor:'var(--orange)', sinal:'-' } : null,
         comissaoML>0 ? { label:'Comissão',          v: -comissaoML,      cor:'var(--red)', sinal:'-' } : null,
         outrasML>0.01? { label:'Outras taxas ML',   v: -outrasML,        cor:'var(--red)', sinal:'-' } : null,
@@ -2082,7 +2082,7 @@ Router.register('vendas', async (params, el) => {
       const freteVendedor = Math.max(0, n(tx.frete));
       const ajuste = l.liquido != null ? (l.receita - cupom - afiliado - l.comissao - l.taxaServico - freteVendedor) - l.liquido : 0;
       linhasBreakdown = [
-        { label:'Valor dos produtos',                 v: l.receita,          cor:'#60a5fa', sinal:'+' },
+        { label:'Valor dos produtos',                 v: l.receita,          cor:'var(--blue)', sinal:'+' },
         fretePago>0 ? { label:'Frete pago pelo comprador',   v: fretePago,      cor:'var(--green)', sinal:'+' } : null,
         fretePago>0 || freteVendedor>0 ? { label:'Frete descontado pela Shopee', v: -(fretePago + freteVendedor), cor:'var(--orange)', sinal:'-' } : null,
         cupom>0     ? { label:'Cupom do vendedor',           v: -cupom,         cor:'var(--red)', sinal:'-' } : null,
@@ -2102,7 +2102,7 @@ Router.register('vendas', async (params, el) => {
       const partes=Object.entries(tx.componentes).filter(([,v])=>+v!==0).map(([k,v])=>({label:nomes[k] || 'Rubrica TikTok: '+String(k).replace(/[<>&"']/g,''),v:-v,cor:v>0?'var(--red)':'var(--green)',sinal:v>0?'-':'+'}));
       const soma=Object.values(tx.componentes).reduce((s,v)=>s+(+v || 0),0)+(+tx.naoDiscriminado || 0)+(+tx.freteVendedor || 0);
       const ajuste=l.liquido!=null ? l.receita-soma-l.liquido : 0;
-      linhasBreakdown=[{label:'Valor dos Produtos',v:l.receita,cor:'#60a5fa',sinal:'+'},...partes,
+      linhasBreakdown=[{label:'Valor dos Produtos',v:l.receita,cor:'var(--blue)',sinal:'+'},...partes,
         tx.naoDiscriminado ? {label:'Saldo de taxas não discriminado pela API',v:-tx.naoDiscriminado,cor:'var(--yellow)',sinal:tx.naoDiscriminado>0?'-':'+'}:null,
         tx.freteVendedor ? {label:'Frete líquido do vendedor (API)',v:-tx.freteVendedor,cor:'var(--orange)',sinal:tx.freteVendedor>0?'-':'+'}:null,
         Math.abs(ajuste)>.02 ? {label:'Outros ajustes entre produtos e repasse (API)',v:-ajuste,cor:'var(--yellow)',sinal:ajuste>0?'-':'+'}:null,
@@ -2116,7 +2116,7 @@ Router.register('vendas', async (params, el) => {
       // Magalu: breakdown via API direto no pedido
       const nomePlat = p.plataforma || 'Marketplace';
       linhasBreakdown = [
-        { label:'Valor dos Produtos',           v: l.receita,            cor:'#60a5fa', sinal:'+' },
+        { label:'Valor dos Produtos',           v: l.receita,            cor:'var(--blue)', sinal:'+' },
         l.comissao>0   ? { label:`Comissão ${nomePlat}`,        v: -l.comissao,          cor:'var(--red)', sinal:'-' } : null,
         tx.afiliado ? { label:'Comissão de afiliado', v:-tx.afiliado, cor:'var(--red)', sinal:'-' } : null,
         l.taxaServico>0? { label:'Taxa de Serviço',             v: -l.taxaServico,       cor:'var(--red)', sinal:'-' } : null,
@@ -2132,7 +2132,7 @@ Router.register('vendas', async (params, el) => {
     } else {
       linhasBreakdown = [
         ...(p.taxasPendente ? [{ label:'Taxas TikTok e afiliado: aguardando acerto', v:0, cor:'var(--yellow)', sinal:'' }] : []),
-        { label:'Total do Pedido',               v: l.receita,            cor:'#60a5fa', sinal:'+' },
+        { label:'Total do Pedido',               v: l.receita,            cor:'var(--blue)', sinal:'+' },
         { label:'Custo do Produto',              v: -l.custo,             cor:'var(--red)', sinal:'-' },
         l.impVal>0 ? { label:`Imposto (${l.impPct}%)`, v: -l.impVal,     cor:'var(--yellow)', sinal:'-' } : null,
         l.outros>0 ? { label:'Outros Custos',    v: -l.outros,            cor:'var(--orange)', sinal:'-' } : null,
@@ -2150,40 +2150,40 @@ Router.register('vendas', async (params, el) => {
     return `
     <div style="display:flex;background:var(--bg-card-hover);border-top:1px solid var(--border);">
       <!-- Info + itens -->
-      <div style="flex:1;padding:16px 20px;border-right:1px solid var(--border);min-width:0;">
-        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:none;margin-bottom:10px;">Detalhes do Pedido</div>
-        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px;">
-          <div><div style="font-size:10px;color:var(--text-muted);">ID</div><div style="font-size:12px;color:var(--text-primary);">${p.id}</div></div>
-          <div><div style="font-size:10px;color:var(--text-muted);">Plataforma</div><div style="font-size:12px;color:${platCor[p.plataforma]||'#fff'};font-weight:600;">${p.plataforma}</div></div>
-          <div><div style="font-size:10px;color:var(--text-muted);">Data</div><div style="font-size:12px;color:var(--text-primary);">${p.data}</div></div>
-          <div><div style="font-size:10px;color:var(--text-muted);">Status</div><div style="font-size:12px;color:var(--text-primary);">${p.status||'—'}</div></div>
-          ${tx.instalment ? `<div><div style="font-size:10px;color:var(--text-muted);">Parcelamento</div><div style="font-size:12px;color:var(--text-primary);">${tx.instalment}</div></div>` : ''}
+      <div style="flex:1;padding:var(--space-4) var(--space-5);border-right:1px solid var(--border);min-width:0;">
+        <div style="font-size:var(--fs-1);color:var(--text-muted);font-weight:700;text-transform:none;margin-bottom:10px;">Detalhes do Pedido</div>
+        <div style="display:flex;gap:var(--space-5);flex-wrap:wrap;margin-bottom:14px;">
+          <div><div style="font-size:var(--fs-1);color:var(--text-muted);">ID</div><div style="font-size:var(--fs-2);color:var(--text-primary);">${p.id}</div></div>
+          <div><div style="font-size:var(--fs-1);color:var(--text-muted);">Plataforma</div><div style="font-size:var(--fs-2);color:${platCor[p.plataforma]||'#fff'};font-weight:600;">${p.plataforma}</div></div>
+          <div><div style="font-size:var(--fs-1);color:var(--text-muted);">Data</div><div style="font-size:var(--fs-2);color:var(--text-primary);">${p.data}</div></div>
+          <div><div style="font-size:var(--fs-1);color:var(--text-muted);">Status</div><div style="font-size:var(--fs-2);color:var(--text-primary);">${p.status||'—'}</div></div>
+          ${tx.instalment ? `<div><div style="font-size:var(--fs-1);color:var(--text-muted);">Parcelamento</div><div style="font-size:var(--fs-2);color:var(--text-primary);">${tx.instalment}</div></div>` : ''}
         </div>
         ${p.itens && p.itens.length ? `
-        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:none;margin-bottom:8px;">Itens</div>
+        <div style="font-size:var(--fs-1);color:var(--text-muted);font-weight:700;text-transform:none;margin-bottom:var(--space-2);">Itens</div>
         ${p.itens.map(it=>`
-          <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:var(--space-2);padding:6px 0;border-bottom:1px solid var(--border);">
             ${it.imagem?`<img src="${it.imagem}" style="width:36px;height:36px;object-fit:cover;border-radius:5px;flex-shrink:0;">` : ''}
-            <div style="flex:1;font-size:12px;color:var(--text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.nome}</div>
-            <div style="font-size:11px;color:var(--text-secondary);flex-shrink:0;">x${it.qtd}</div>
-            <div style="font-size:12px;color:#60a5fa;font-weight:600;flex-shrink:0;">${R$(it.preco)}</div>
+            <div style="flex:1;font-size:var(--fs-2);color:var(--text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.nome}</div>
+            <div style="font-size:var(--fs-1);color:var(--text-secondary);flex-shrink:0;">x${it.qtd}</div>
+            <div style="font-size:var(--fs-2);color:var(--blue);font-weight:600;flex-shrink:0;">${R$(it.preco)}</div>
           </div>`).join('')}` : ''}
       </div>
       <!-- Breakdown financeiro -->
-      <div style="width:300px;flex-shrink:0;padding:16px 20px;">
-        <div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:none;margin-bottom:10px;">
-          Composição do Lucro ${hasEscrow && !tx.estimado ? '<span style="color:var(--purple);font-size:9px;background:rgba(167,139,250,0.15);padding:1px 6px;border-radius:8px;margin-left:4px;">dados da API</span>' : ''}
+      <div style="width:300px;flex-shrink:0;padding:var(--space-4) var(--space-5);">
+        <div style="font-size:var(--fs-1);color:var(--text-muted);font-weight:700;text-transform:none;margin-bottom:10px;">
+          Composição do Lucro ${hasEscrow && !tx.estimado ? '<span style="color:var(--purple);font-size:var(--fs-1);background:rgba(167,139,250,0.15);padding:1px 6px;border-radius:8px;margin-left:var(--space-1);">dados da API</span>' : ''}
         </div>
         ${linhasBreakdown.map(r=>`
           <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
-            <span style="font-size:12px;${r.bold?'font-weight:700;color:var(--text-primary);':'color:var(--text-secondary);'}">${r.label}</span>
-            <span style="font-size:13px;font-weight:${r.bold?'800':'600'};color:${r.cor};">
+            <span style="font-size:var(--fs-2);${r.bold?'font-weight:700;color:var(--text-primary);':'color:var(--text-secondary);'}">${r.label}</span>
+            <span style="font-size:var(--fs-3);font-weight:${r.bold?'800':'600'};color:${r.cor};">
               ${r.sinal==='='?'= ':r.sinal==='+'?'+':'-'}${R$(Math.abs(r.v))}
             </span>
           </div>`).join('')}
         <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:12px;color:var(--text-secondary);">Margem s/ receita${glr ? ' (após GLR)' : ''}</span>
-          <span style="font-size:18px;font-weight:700;color:${corMargem(glr && l.receita>0 ? (l.lucro-glr.valor)/l.receita*100 : l.margem)};">${pct(glr && l.receita>0 ? (l.lucro-glr.valor)/l.receita*100 : l.margem)}</span>
+          <span style="font-size:var(--fs-2);color:var(--text-secondary);">Margem s/ receita${glr ? ' (após GLR)' : ''}</span>
+          <span style="font-size:var(--fs-5);font-weight:700;color:${corMargem(glr && l.receita>0 ? (l.lucro-glr.valor)/l.receita*100 : l.margem)};">${pct(glr && l.receita>0 ? (l.lucro-glr.valor)/l.receita*100 : l.margem)}</span>
         </div>
       </div>
     </div>`;
@@ -2257,7 +2257,7 @@ Router.register('vendas', async (params, el) => {
     const partes = [];
     if (fora) partes.push(`<span title="Estão fora da seleção de contas (filtro 🏬)." style="cursor:pointer;text-decoration:underline dotted" onclick="window._vendasLimparContas && window._vendasLimparContas()">⚠️ ${fora} conta(s)${plat} fora da seleção — ver todas</span>`);
     if (carregando.length) partes.push(`<span title="${carregando.map(contaNome).join(', ').replace(/"/g, '&quot;')}">⏳ ${carregando.length} conta(s)${plat} ainda carregando o histórico</span>`);
-    return partes.length ? ` &nbsp;<span style="font-size:11px;color:var(--yellow);">${partes.join(' · ')}</span>` : '';
+    return partes.length ? ` &nbsp;<span style="font-size:var(--fs-1);color:var(--yellow);">${partes.join(' · ')}</span>` : '';
   }
 
   async function carregarBaseVendas(contasAlvo, dataFrom, dataTo) {
@@ -2812,8 +2812,8 @@ Router.register('vendas', async (params, el) => {
       _backfillCatalogoCusto();
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
       const selo = viaBase.cobertas.size && !contasParaBuscar.length
-        ? `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">base automática · atualiza sozinha</span>`
-        : `<span style="font-size:10px;background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">salvo</span>`;
+        ? `<span style="font-size:var(--fs-1);background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">base automática · atualiza sozinha</span>`
+        : `<span style="font-size:var(--fs-1);background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">salvo</span>`;
       if (statusEl) statusEl.innerHTML=`${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;${selo}${await avisoContas(dataFrom).catch(() => '')}`;
       renderLista();
       completarImagens();
@@ -2876,9 +2876,9 @@ Router.register('vendas', async (params, el) => {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
     overlay.innerHTML = `
       <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:28px 32px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-        <div style="font-size:18px;font-weight:700;color:var(--red);margin-bottom:6px;">Limpar dados manuais</div>
-        <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Os seguintes dados serão removidos permanentemente:</div>
-        <div style="background:var(--bg-base);border-radius:8px;padding:14px;margin-bottom:20px;font-size:13px;display:flex;flex-direction:column;gap:8px;">
+        <div style="font-size:var(--fs-5);font-weight:700;color:var(--red);margin-bottom:6px;">Limpar dados manuais</div>
+        <div style="font-size:var(--fs-3);color:var(--text-muted);margin-bottom:var(--space-5);">Os seguintes dados serão removidos permanentemente:</div>
+        <div style="background:var(--bg-base);border-radius:8px;padding:14px;margin-bottom:var(--space-5);font-size:var(--fs-3);display:flex;flex-direction:column;gap:var(--space-2);">
           <div style="display:flex;justify-content:space-between;"><span>Custos de produto por pedido</span><strong style="color:${nCustos?'var(--red)':'var(--text-muted)'};">${nCustos ? nCustos+' pedidos' : 'vazio'}</strong></div>
           <div style="display:flex;justify-content:space-between;"><span>Catálogo de custo por produto</span><strong style="color:${nCatalogo?'var(--red)':'var(--text-muted)'};">${nCatalogo ? nCatalogo+' produtos' : 'vazio'}</strong></div>
           <div style="display:flex;justify-content:space-between;"><span>Linhas extras de custo</span><strong style="color:${nLinhas?'var(--red)':'var(--text-muted)'};">${nLinhas ? nLinhas+' linhas' : 'vazio'}</strong></div>
@@ -2886,7 +2886,7 @@ Router.register('vendas', async (params, el) => {
           <div style="display:flex;justify-content:space-between;"><span>Entradas manuais do DRE</span><strong style="color:${temDre?'var(--red)':'var(--text-muted)'};">${temDre?'sim':'vazio'}</strong></div>
           <div style="display:flex;justify-content:space-between;"><span>Dados manuais da Projeção</span><strong style="color:${temProj?'var(--red)':'var(--text-muted)'};">${temProj?'sim':'vazio'}</strong></div>
         </div>
-        <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:12px;color:var(--green);">
+        <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:8px;padding:10px 14px;margin-bottom:var(--space-5);font-size:var(--fs-2);color:var(--green);">
           ✅ Mantidos: vínculos de contas, API key, alíquotas, apelidos, cache da API
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end;">
@@ -2927,7 +2927,7 @@ Router.register('vendas', async (params, el) => {
 
       // Feedback e re-render
       const toast = document.createElement('div');
-      toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--green);color:white;font-weight:700;padding:12px 20px;border-radius:10px;z-index:9999;font-size:14px;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+      toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--green);color:white;font-weight:700;padding:var(--space-3) var(--space-5);border-radius:10px;z-index:9999;font-size:var(--fs-3);box-shadow:0 4px 20px rgba(0,0,0,0.3);';
       toast.textContent = '✅ Dados manuais removidos com sucesso';
       document.body.appendChild(toast);
       setTimeout(() => toast.remove(), 3500);
@@ -2941,24 +2941,24 @@ Router.register('vendas', async (params, el) => {
     const el=document.getElementById('linhas-extras-lista');
     if (!el) return;
     el.innerHTML=!linhasExt.length
-      ? `<div style="color:var(--text-muted);font-size:13px;padding:6px 0;">Nenhuma linha extra.</div>`
+      ? `<div style="color:var(--text-muted);font-size:var(--fs-3);padding:6px 0;">Nenhuma linha extra.</div>`
       : linhasExt.map(l=>`
-        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);">
-          <span style="flex:1;font-size:13px;color:var(--text-primary);">${l.nome}</span>
-          <span style="font-size:12px;color:var(--text-secondary);">${l.tipo==='pct'?l.valor+'%':'R$ '+parseFloat(l.valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
-          <span style="font-size:10px;color:var(--text-muted);background:var(--border);padding:1px 6px;border-radius:8px;">${l.tipo==='pct'?'% pedido':'fixo'}</span>
-          <button onclick="window.removerLinhaExtra('${l.id}')" style="background:rgba(239,68,68,0.15);border:none;color:var(--red);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:12px;">✕</button>
+        <div style="display:flex;align-items:center;gap:var(--space-2);padding:5px 0;border-bottom:1px solid var(--border);">
+          <span style="flex:1;font-size:var(--fs-3);color:var(--text-primary);">${l.nome}</span>
+          <span style="font-size:var(--fs-2);color:var(--text-secondary);">${l.tipo==='pct'?l.valor+'%':'R$ '+parseFloat(l.valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
+          <span style="font-size:var(--fs-1);color:var(--text-muted);background:var(--border);padding:1px 6px;border-radius:8px;">${l.tipo==='pct'?'% pedido':'fixo'}</span>
+          <button onclick="window.removerLinhaExtra('${l.id}')" style="background:rgba(239,68,68,0.15);border:none;color:var(--red);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:var(--fs-2);">✕</button>
         </div>`).join('');
   }
 
   // ── HTML ─────────────────────────────────────────────────────
   el.innerHTML = `<div class="page">
     <!-- Cabeçalho + Filtros -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-4);flex-wrap:wrap;gap:var(--space-3);">
       <div>
-        <div id="vendas-status" style="font-size:12px;color:var(--text-muted);margin-top:4px;">Carregando...</div>
+        <div id="vendas-status" style="font-size:var(--fs-2);color:var(--text-muted);margin-top:var(--space-1);">Carregando...</div>
       </div>
-      <div id="vendas-filtros" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div id="vendas-filtros" style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
         <select id="sel-periodo" class="form-input" style="width:155px;">
           <option value="hoje">Hoje</option>
           <option value="ontem">Ontem</option>
@@ -2986,17 +2986,17 @@ Router.register('vendas', async (params, el) => {
           <option value="Magalu">🔵 Magalu</option>
           <option value="Shein">⬛ Shein</option>
         </select>
-        <button id="btn-buscar" class="btn-primary" style="padding:8px 16px;">Atualizar</button>
+        <button id="btn-buscar" class="btn-primary" style="padding:var(--space-2) var(--space-4);">Atualizar</button>
       </div>
     </div>
 
     <!-- Abas (no portal cada aba é uma página do menu, e a barra some) -->
-    <div id="vendas-abas" style="display:flex;gap:8px;margin-bottom:20px;">
-      <button id="tab-dashboard" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:var(--accent);color:var(--text-primary);">Dashboard</button>
-      <button id="tab-pedidos"   style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">Pedidos</button>
-      <button id="tab-oportunidades" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">Oportunidades</button>
-      <button id="tab-semanal" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">Curva ABC Semanal</button>
-      ${window._portalConfig ? '' : '<button id="tab-funil" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:var(--bg-card-hover);color:var(--text-secondary);">Funil de vendas</button>'}
+    <div id="vendas-abas" style="display:flex;gap:var(--space-2);margin-bottom:var(--space-5);">
+      <button id="tab-dashboard" style="padding:var(--space-2) var(--space-5);border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:var(--fs-3);background:var(--accent);color:var(--text-primary);">Dashboard</button>
+      <button id="tab-pedidos"   style="padding:var(--space-2) var(--space-5);border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:var(--fs-3);background:var(--bg-card-hover);color:var(--text-secondary);">Pedidos</button>
+      <button id="tab-oportunidades" style="padding:var(--space-2) var(--space-5);border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:var(--fs-3);background:var(--bg-card-hover);color:var(--text-secondary);">Oportunidades</button>
+      <button id="tab-semanal" style="padding:var(--space-2) var(--space-5);border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:var(--fs-3);background:var(--bg-card-hover);color:var(--text-secondary);">Curva ABC Semanal</button>
+      ${window._portalConfig ? '' : '<button id="tab-funil" style="padding:var(--space-2) var(--space-5);border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:var(--fs-3);background:var(--bg-card-hover);color:var(--text-secondary);">Funil de vendas</button>'}
     </div>
 
     <!-- Aba Dashboard -->
@@ -3016,17 +3016,17 @@ Router.register('vendas', async (params, el) => {
 
     <!-- Aba Pedidos -->
     <div id="sec-pedidos" style="display:none;">
-      <div id="vendas-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;"></div>
+      <div id="vendas-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--space-3);margin-bottom:var(--space-5);"></div>
 
-      <details id="vendas-config-custo" style="margin-bottom:16px;">
-        <summary style="cursor:pointer;padding:10px 16px;background:var(--bg-card-hover);border-radius:8px;font-size:13px;color:var(--text-secondary);font-weight:600;list-style:none;display:flex;align-items:center;gap:8px;">
+      <details id="vendas-config-custo" style="margin-bottom:var(--space-4);">
+        <summary style="cursor:pointer;padding:10px 16px;background:var(--bg-card-hover);border-radius:8px;font-size:var(--fs-3);color:var(--text-secondary);font-weight:600;list-style:none;display:flex;align-items:center;gap:var(--space-2);">
           Configurações de Custo
-          <span style="font-size:11px;color:var(--text-muted);font-weight:400;">Linhas extras e aplicação em massa</span>
+          <span style="font-size:var(--fs-1);color:var(--text-muted);font-weight:400;">Linhas extras e aplicação em massa</span>
         </summary>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);margin-top:10px;">
           <div class="card">
-            <div class="section-title mb-10" style="font-size:13px;">Linhas de Custo Extra (por pedido)</div>
-            <div id="linhas-extras-lista" style="margin-bottom:12px;"></div>
+            <div class="section-title mb-10" style="font-size:var(--fs-3);">Linhas de Custo Extra (por pedido)</div>
+            <div id="linhas-extras-lista" style="margin-bottom:var(--space-3);"></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;">
               <input id="inp-linha-nome" class="form-input" placeholder="Nome (ex: Taxa ML)" style="flex:2;min-width:100px;">
               <input id="inp-linha-valor" class="form-input" type="number" min="0" step="0.01" placeholder="Valor" style="flex:1;min-width:70px;">
@@ -3038,38 +3038,38 @@ Router.register('vendas', async (params, el) => {
             </div>
           </div>
           <div class="card">
-            <div class="section-title mb-10" style="font-size:13px;">Aplicar em Massa</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Aplica custo a todos os pedidos filtrados.</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
-              <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Custo Prod. (R$)</div><input id="inp-global-custo" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
-              <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Imposto (%)</div><input id="inp-global-imposto" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="0" style="width:100%;box-sizing:border-box;"></div>
-              <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Outros (R$)</div><input id="inp-global-outros" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
+            <div class="section-title mb-10" style="font-size:var(--fs-3);">Aplicar em Massa</div>
+            <div style="font-size:var(--fs-1);color:var(--text-muted);margin-bottom:10px;">Aplica custo a todos os pedidos filtrados.</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-2);margin-bottom:10px;">
+              <div><div style="font-size:var(--fs-1);color:var(--text-secondary);margin-bottom:3px;">Custo Prod. (R$)</div><input id="inp-global-custo" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
+              <div><div style="font-size:var(--fs-1);color:var(--text-secondary);margin-bottom:3px;">Imposto (%)</div><input id="inp-global-imposto" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="0" style="width:100%;box-sizing:border-box;"></div>
+              <div><div style="font-size:var(--fs-1);color:var(--text-secondary);margin-bottom:3px;">Outros (R$)</div><input id="inp-global-outros" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
             </div>
             <button onclick="aplicarCustoGlobal()" class="btn-primary" style="padding:7px 16px;">Aplicar a todos</button>
           </div>
         </div>
 
         <!-- Zona de limpeza -->
-        <div style="margin-top:12px;padding:14px 18px;background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.2);border-radius:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div style="margin-top:var(--space-3);padding:14px 18px;background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.2);border-radius:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
           <div>
-            <div style="font-size:13px;font-weight:700;color:var(--red);">Limpar todos os dados manuais</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Remove custos de produto, impostos manuais, linhas extras, armazenamento, despesas e entradas do DRE. Mantém vínculos, API key, alíquotas e cache da API.</div>
+            <div style="font-size:var(--fs-3);font-weight:700;color:var(--red);">Limpar todos os dados manuais</div>
+            <div style="font-size:var(--fs-1);color:var(--text-muted);margin-top:3px;">Remove custos de produto, impostos manuais, linhas extras, armazenamento, despesas e entradas do DRE. Mantém vínculos, API key, alíquotas e cache da API.</div>
           </div>
-          <button onclick="confirmarLimpezaManuais()" style="background:var(--red);color:white;border:none;border-radius:8px;padding:8px 16px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;">Limpar dados manuais</button>
+          <button onclick="confirmarLimpezaManuais()" style="background:var(--red);color:white;border:none;border-radius:8px;padding:var(--space-2) var(--space-4);font-weight:700;font-size:var(--fs-3);cursor:pointer;white-space:nowrap;">Limpar dados manuais</button>
         </div>
       </details>
 
       <div class="card" style="padding:0;overflow:hidden;">
-        <div id="vendas-lista" style="padding:24px;text-align:center;color:var(--text-muted);">Carregando pedidos...</div>
+        <div id="vendas-lista" style="padding:var(--space-6);text-align:center;color:var(--text-muted);">Carregando pedidos...</div>
       </div>
     </div>
   </div>
   <style>
     .vg-card{padding:20px 22px 14px;}
-    .vg-topo{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
-    .vg-titulo{font-size:15px;font-weight:700;color:var(--text-primary);}
-    .vg-sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
-    .vg-legenda{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text-secondary);}
+    .vg-topo{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-3);flex-wrap:wrap;margin-bottom:10px;}
+    .vg-titulo{font-size:var(--fs-4);font-weight:700;color:var(--text-primary);}
+    .vg-sub{font-size:var(--fs-2);color:var(--text-muted);margin-top:2px;}
+    .vg-legenda{display:flex;gap:var(--space-4);flex-wrap:wrap;font-size:var(--fs-2);color:var(--text-secondary);}
     .vg-legenda span{display:flex;align-items:center;gap:6px;}
     .vg-legenda i{width:14px;height:3px;border-radius:2px;display:inline-block;}
     .vg-area{position:relative;height:280px;width:100%;}
@@ -3126,7 +3126,7 @@ Router.register('vendas', async (params, el) => {
       catalogoCusto = JSON.parse(localStorage.getItem(STORAGE_CATALOGO)||'{}');
       _backfillCatalogoCusto();
       const nTaxas = pedidos.filter(p=>p.taxas!=null).length;
-      if (statusEl) statusEl.innerHTML = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:10px;background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;">cache ${fmtAgo(at)}</span>`;
+      if (statusEl) statusEl.innerHTML = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;<span style="font-size:var(--fs-1);background:rgba(99,102,241,0.2);color:var(--accent-light);padding:1px 7px;border-radius:8px;">cache ${fmtAgo(at)}</span>`;
       renderLista();
     }
     // A base é leitura rápida (sem API pedido a pedido): já carrega ao abrir. Contas
