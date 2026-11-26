@@ -620,6 +620,8 @@ Router.register('dre', (params, el) => {
         #dre-hist,button,.btn-add-linha,.btn-rem-linha,.dre-auto-badge{display:none!important;}
       }
     </style>`;
+    // cliente em foco (barra de cima): o seletor de cliente do DRE some e fica o nome dele
+    GLR.ctx?.ajustarSeletor?.(document.getElementById('dre-cliente'), { cliente: true, disparar: false });
   }
 
   function renderCard(clienteNome, mesLabel, vals, calc, modoAuto, preenchidoDaProjecao, preenchidoGeral, isGeral, autoVazio, temCache) {

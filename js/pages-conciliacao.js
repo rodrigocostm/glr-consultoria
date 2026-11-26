@@ -424,6 +424,8 @@ Router.register('conciliacao', async (params, el) => {
     const _portalBusca = () => { if (window._portalConfig && contaSel && (filtroPeriodo !== 'custom' || (customFrom && customTo))) buscar(); };
     document.getElementById('conc-date-from')?.addEventListener('change', e => { customFrom = e.target.value; _portalBusca(); });
     document.getElementById('conc-date-to')?.addEventListener('change', e => { customTo = e.target.value; _portalBusca(); });
+    // cliente em foco (barra de cima): só as contas dele; com uma só, o seletor vira o nome da conta
+    if (!window._portalConfig) { const sc = document.getElementById('conc-sel-conta'); const r = GLR.ctx?.ajustarSeletor?.(sc, { conta: op => { const c = contas.find(x => String(x.external_id) === op.value); return c ? { mkt: c.marketplace, id: c.external_id } : null; }, disparar: false, semTodas: true, vazio: 'Este cliente não tem conta vinculada' }); if (r && sc.value && sc.value !== String(contaSel || '')) { contaSel = sc.value; pedidos = []; atualizadoEm = null; } }
     document.getElementById('conc-sel-conta')?.addEventListener('change', e => { contaSel = e.target.value || null; pedidos=[]; atualizadoEm=null; if (contaSel && !window._portalConfig) GLR.ctx?.definirPorConta('', contaSel); render(); _portalBusca(); });
   }
 

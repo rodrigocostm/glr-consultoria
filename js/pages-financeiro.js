@@ -1536,6 +1536,12 @@ Router.register('financeiro', async (params, el) => {
       sel.value = 'todas';
       contaSel = 'todas';
     }
+    // Cliente em foco (barra de cima): só as contas dele; com uma só, o seletor vira o nome da conta
+    if (!window._portalConfig && GLR.ctx?.ajustarSeletor) {
+      const r = GLR.ctx.ajustarSeletor(sel, { conta: op => { const c = contas.find(x => String(x.external_id) === op.value); return c ? { mkt: c.marketplace, id: c.external_id } : null; }, disparar: false, vazio: 'Este cliente não tem conta vinculada' });
+      if (r && r.n === 1) contaSel = sel.value; // "Todas" de um cliente com uma conta = a própria conta
+      const selEmp = document.getElementById('fin-sel-empresa'); if (selEmp) selEmp.style.display = r ? 'none' : ''; // a empresa é o cliente em foco
+    }
     console.log('[renderFiltroContas] Select preenchido com', contasFiltradas.length, 'contas, selecionado:', sel.value);
   }
 
