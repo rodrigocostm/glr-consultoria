@@ -121,7 +121,7 @@ Router.register('anuncios-novos', (params, el) => {
   const STATUS = { active: ['Ativo', 'ok'], paused: ['Pausado', 'pausa'], closed: ['Finalizado', 'fim'], under_review: ['Em revisão', 'pausa'], inactive: ['Inativo', 'fim'] };
 
   function render() {
-    if (Router.currentPage !== 'anuncios-novos') return;
+    if (!Router.estaEm('anuncios-novos')) return;
     const foco = GLR.ctx?.cliente?.();
     const q = st.busca.trim().toLowerCase();
     const vis = st.itens.filter(x => (st.mkt === 'todos' || x.mkt === st.mkt) && (!q || `${x.titulo} ${x.conta.nome} ${x.conta.cliente} ${x.id}`.toLowerCase().includes(q))).sort((a, b) => b.criado - a.criado);
@@ -198,7 +198,7 @@ Router.register('anuncios-novos', (params, el) => {
     el.querySelector('#an-atualizar').onclick = () => carregar(true);
   }
 
-  const aoTrocarCliente = () => { if (Router.currentPage === 'anuncios-novos') carregar(); else window.removeEventListener('glr:cliente', aoTrocarCliente); };
+  const aoTrocarCliente = () => { if (Router.estaEm('anuncios-novos')) carregar(); else window.removeEventListener('glr:cliente', aoTrocarCliente); };
   window.addEventListener('glr:cliente', aoTrocarCliente);
   carregar();
 });

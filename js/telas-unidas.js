@@ -12,6 +12,14 @@
   Router.unidas = Router.unidas || {};
 
   window.GLR_TELAS_UNIDAS = [
+    { rota: 'precos', titulo: 'Monitor de preços', abas: [
+      { id: 'precos-ml', nome: 'Mercado Livre' },
+      { id: 'precos-shopee', nome: 'Shopee' },
+    ] },
+    { rota: 'anuncios', titulo: 'Anúncios', abas: [
+      { id: 'criar-anuncio', nome: 'Criar anúncio' },
+      { id: 'anuncios-novos', nome: 'Anúncios novos' },
+    ] },
     { rota: 'sistema', titulo: 'Sistema', abas: [
       { id: 'integracoes', nome: 'Integrações' },
       { id: 'conexoes', nome: 'Conexões' },
@@ -49,7 +57,8 @@
     });
 
     // endereço antigo → tela nova, na aba certa (mantém os outros parâmetros)
-    validas.forEach(a => Router.register(a.id, params => setTimeout(() => Router.navigate(rota, { ...params, aba: a.id }), 0)));
+    // (no portal do cliente as telas seguem soltas: o menu dele lista cada uma)
+    validas.forEach(a => Router.register(a.id, (params, el) => window._portalConfig ? Router.embutiveis[a.id](params, el) : setTimeout(() => Router.navigate(rota, { ...params, aba: a.id }), 0)));
   }
 
   window.GLR_TELAS_UNIDAS.forEach(unir);
