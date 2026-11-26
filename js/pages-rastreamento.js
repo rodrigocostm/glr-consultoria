@@ -148,7 +148,7 @@ async function carregarContas() {
     const selC = document.getElementById('track-ads-f-conta');
     if (selC) selC.innerHTML = `<option value="">Todas as contas</option>` + contasAds.map(c => `<option value="${c.external_id}">${c.marketplace === 'shopee' ? 'Shopee' : 'ML'} · ${nomeAdsConta(c.external_id)}</option>`).sort((a, b) => a.replace(/<[^>]+>/g, '').localeCompare(b.replace(/<[^>]+>/g, ''))).join('');
     // cliente em foco (barra de cima): filtra na primeira conta dele
-    if (selC && GLR.ctx?.cliente?.()) { const c = contasAds.find(x => GLR.ctx.clienteDaConta(x.marketplace, x.external_id) === GLR.ctx.cliente()); if (c) selC.value = String(c.external_id); }
+    if (selC) GLR.ctx?.ajustarSeletor?.(selC, { conta: op => { const c = contasAds.find(x => String(x.external_id) === op.value); return c ? { mkt: c.marketplace, id: c.external_id } : null; }, disparar: false, semTodas: true, vazio: 'Este cliente não tem conta com ADS' });
     renderAdsLog();
     carregarAlteracoesServidor();
   } catch(e) {

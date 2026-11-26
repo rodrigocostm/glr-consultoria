@@ -1313,3 +1313,7 @@ body.modo-portal #global-search { display: none !important; }
 .dx-foco { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 14px; border-radius: 10px; border: 1px solid var(--border-active); background: var(--accent-glow); font-size: 13.5px; color: var(--text-secondary); }
 .dx-foco b { color: var(--text-primary); }
 .dx-foco-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Seletor local com cliente em foco e uma conta só: vira o nome da conta (GLR.ctx.ajustarSeletor) */
+.ctx-conta-fixa { display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--border-active); background: var(--accent-glow); color: var(--text-primary); font-size: 13px; font-weight: 550; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.ctx-conta-fixa.vazia { border-style: dashed; border-color: var(--border-strong); background: transparent; color: var(--text-muted); font-weight: 500; }

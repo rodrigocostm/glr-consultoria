@@ -82,7 +82,9 @@ async function carregarContas() {
       }
     });
 
-    try {
+    // cliente em foco: só as contas ML dele; com uma só, o seletor vira o nome da conta
+    const ajuste = GLR.ctx?.ajustarSeletor?.(sel, { conta: op => { const c = contasSel[parseInt(op.value)]; return c ? { mkt: 'ml', id: c.external_id } : null; }, disparar: false, vazio: 'Este cliente não tem conta do Mercado Livre' });
+    if (!ajuste || ajuste.n) try {
       let ultimaId = localStorage.getItem('glr_promo_ultima_conta');
       if (GLR.ctx?.focarConta) ultimaId = GLR.ctx.focarConta('ml', contasSel.map(c => c.external_id), ultimaId); // cliente em foco (barra de cima)
       if (ultimaId) {

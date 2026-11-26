@@ -193,6 +193,51 @@ GLR.ctx = (() => {
       if (!meus.length) return atual;
       return meus.includes(String(atual)) ? atual : meus[0];
     },
+    // Seletor local de conta (ou de cliente) de uma tela: com cliente em foco, lista só
+    // as contas dele, escolhe uma dele e some quando sobra uma só — no lugar fica o nome
+    // da conta, em texto. Sem cliente em foco, o seletor volta ao normal.
+    //   opcoes.conta(option) → { mkt, id } da conta da opção, ou null (opção "Todas"/"Selecione")
+    //                          padrão: { mkt: opcoes.mkt, id: option.value }
+    //   opcoes.cliente: true → o valor da opção é o id do cliente (seletor de cliente)
+    //   opcoes.disparar: false → não dispara 'change' quando troca a escolha
+    //   opcoes.semTodas: true → tira também a opção "Todas"/"Selecione" (sem conta)
+    //   opcoes.vazio: texto quando o cliente não tem nenhuma conta no seletor
+    // Devolve { foco, n } (n = quantas contas do cliente ficaram) ou null sem foco.
+    ajustarSeletor(sel, opcoes) {
+      if (!sel || !sel.options) return null;
+      const o = opcoes || {};
+      const c = ler();
+      let fixa = sel.nextElementSibling && sel.nextElementSibling.classList && sel.nextElementSibling.classList.contains('ctx-conta-fixa') ? sel.nextElementSibling : null;
+      const mostrar = v => {
+        if (v) { if (sel.dataset.ctxEscondido) { sel.style.display = sel.dataset.ctxDisplay || ''; delete sel.dataset.ctxEscondido; } }
+        else if (!sel.dataset.ctxEscondido) { sel.dataset.ctxDisplay = sel.style.display || ''; sel.dataset.ctxEscondido = '1'; sel.style.display = 'none'; }
+      };
+      if (!c) { mostrar(true); if (fixa) fixa.remove(); return null; }
+      const contaDe = o.conta || (op => op.value ? { mkt: o.mkt, id: op.value } : null);
+      const doCliente = op => {
+        if (o.cliente) return op.value ? String(op.value) === c : null;
+        const x = contaDe(op);
+        return x ? clienteDaConta(x.mkt, x.id) === c : null;
+      };
+      const reais = [];
+      for (const op of [...sel.options]) {
+        const d = doCliente(op);
+        if (d === false || (d === null && o.semTodas)) op.remove();
+        else if (d === true && !op.disabled) reais.push(op);
+      }
+      const antes = sel.value;
+      if (reais.length && !reais.some(op => op.value === antes)) sel.value = reais[0].value;
+      const fixo = reais.length <= 1; // uma conta só (ou nenhuma): não há o que escolher
+      mostrar(!fixo);
+      if (fixo) {
+        if (!fixa) { fixa = document.createElement('span'); fixa.className = 'ctx-conta-fixa'; sel.insertAdjacentElement('afterend', fixa); }
+        fixa.classList.toggle('vazia', !reais.length);
+        fixa.textContent = reais.length ? reais[0].textContent.trim() : (o.vazio || 'Este cliente não tem conta aqui');
+        fixa.title = reais.length ? 'Conta do cliente em foco (escolhido na barra de cima)' : 'Vincule a conta em Integrações';
+      } else if (fixa) fixa.remove();
+      if (sel.value !== antes && o.disparar !== false) sel.dispatchEvent(new Event('change', { bubbles: true }));
+      return { foco: c, n: reais.length };
+    },
     // nome do cliente em foco ('' = todos)
     nome() { const c = ler(); return c ? ((GLR.clientes || []).find(x => String(x.id) === c)?.nome || '') : ''; },
     // entre as contas da tela ({ k, mkt, id }), a do cliente em foco — mantém a atual se já for dele

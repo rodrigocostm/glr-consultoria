@@ -452,7 +452,9 @@ Router.register('agente-ml', (params, el) => {
   function renderConfig(cfg) {
     const c = cfg || {};
     const plano = state.planos[String(c.conta_id)] || {};
-    const opcoes = state.contasML.filter(x => !cfgDe(idConta(x))).map(x => `<option value="${h(idConta(x))}">${h(nomeConta(x))} (${h(idConta(x))})</option>`).join('');
+    const foco = GLR.ctx?.cliente?.(), livres = state.contasML.filter(x => !cfgDe(idConta(x)));
+    const doCli = foco ? livres.filter(x => GLR.ctx.clienteDaConta('ml', idConta(x)) === foco) : []; // cliente em foco: só as contas ML dele
+    const opcoes = (doCli.length ? doCli : livres).map(x => `<option value="${h(idConta(x))}">${h(nomeConta(x))} (${h(idConta(x))})</option>`).join('');
     const campo = (id, rot, val, dica, suf) => `<label class="aml-campo"><span>${rot}</span><div><input id="${id}" class="form-control" value="${h(val ?? '')}" inputmode="decimal">${suf ? `<em>${suf}</em>` : ''}</div>${dica ? `<small>${dica}</small>` : ''}</label>`;
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Guardrails do copiloto</div>

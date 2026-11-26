@@ -1377,7 +1377,9 @@
           <label class="ag-campo-label" for="ag-conta">Conta Shopee</label>
           <select class="form-select" id="ag-conta">
             <option value="">— Selecione —</option>
-            ${state.contasShopee.map(c => {
+            ${(() => { // cliente em foco (barra de cima): só as contas Shopee dele
+              const foco = GLR.ctx?.cliente?.(), doCli = foco ? state.contasShopee.filter(c => GLR.ctx.clienteDaConta('shopee', c.param_to_use?.shopId || c.external_id) === foco) : [];
+              return doCli.length ? doCli : state.contasShopee; })().map(c => {
               const id = c.param_to_use?.shopId || c.external_id;
               const jaConfigurada = jaConfiguradas.has(id) && id !== cfg.conta_id;
               return `<option value="${id}" ${cfg.conta_id === id ? 'selected' : ''} ${jaConfigurada ? 'disabled' : ''}>${esc(nomeConta(c))}${jaConfigurada ? ' (já configurada)' : ''}</option>`;

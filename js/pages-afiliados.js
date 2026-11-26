@@ -21,7 +21,7 @@ Router.register('afiliados', async (params, el) => {
 
   // Estado
   const _focoAfil = clientesComVinc.find(c => String(c.id) === String(GLR.ctx?.cliente?.() || ''))?.id; // cliente em foco (barra de cima)
-  let clienteSelecionado = parseInt(params?.clienteId) || _focoAfil || clientesComVinc[0]?.id;
+  let clienteSelecionado = _focoAfil || parseInt(params?.clienteId) || clientesComVinc[0]?.id;
   let plataforma = params?.plat || 'shopee';
   let _dadosCache = {};
   let _carregando = false;
@@ -108,6 +108,9 @@ Router.register('afiliados', async (params, el) => {
         </div>
       </div>
     </div>`;
+
+    // cliente em foco (barra de cima): o seletor de cliente some e fica o nome dele
+    GLR.ctx?.ajustarSeletor?.(document.getElementById('sel-cliente-afil'), { cliente: true, disparar: false, vazio: 'Este cliente não tem conta vinculada' });
 
     // Handlers globais
     window._afilClienteChange = (id) => {
