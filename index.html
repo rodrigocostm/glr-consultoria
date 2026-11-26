@@ -364,9 +364,10 @@
 </div>
 
 <!-- Scripts -->
+<script src="js/html-escape.js?v=1"></script>
 <script src="js/data.js?v=8-com1"></script>
 <script src="js/mkt-icones.js?v=5"></script>
-<script src="js/supabase-init.js?v=brand-20261115"></script>
+<script src="js/supabase-init.js?v=20261126-tiops"></script>
 <script src="js/push-notifications.js?v=20261124-prejuizo1"></script>
 <script src="js/base-dados.js?v=8"></script>
 <script>
@@ -521,26 +522,26 @@
 <script src="js/pages-dashboard.js?v=comissao-composicao-2"></script>
 <script src="js/pages-gestores.js?v=26"></script>
 <script src="js/report-save.js?v=1"></script>
-<script src="js/pages-clientes.js?v=report-confirmed-1-m3"></script>
+<script src="js/pages-clientes.js?v=20261126-tiops"></script>
 <script src="js/pages-operacional.js?v=16"></script>
 <script src="js/operacao-metricas.js?v=2"></script>
-<script src="js/pages-avancados.js?v=diario-meta-3-ctx7"></script>
+<script src="js/pages-avancados.js?v=20261126-tiops"></script>
 <script src="js/pages-dre.js?v=16-com1-cst3"></script>
-<script src="js/marketplace-api.js?v=29"></script>
-<script src="js/pages-integracoes.js?v=14"></script>
+<script src="js/marketplace-api.js?v=20261126-tiops"></script>
+<script src="js/pages-integracoes.js?v=20261126-tiops"></script>
 <script src="js/product-cost-resolver.js?v=1"></script>
 <script src="js/margem-lucro.js?v=20261125-costs"></script>
-<script src="js/pages-vendas.js?v=20261125-costs"></script>
+<script src="js/pages-vendas.js?v=20261126-tiops"></script>
 <script src="js/pages-analytics.js?v=14"></script>
-<script src="js/pages-diagnostico.js?v=13"></script>
+<script src="js/pages-diagnostico.js?v=20261126-tiops"></script>
 <script src="js/pages-conciliacao.js?v=11-ctx2"></script>
-<script src="js/pages-financeiro.js?v=89-ctx2-cst7"></script>
-<script src="js/pages-ads.js?v=48"></script>
+<script src="js/pages-financeiro.js?v=20261126-tiops"></script>
+<script src="js/pages-ads.js?v=20261126-tiops"></script>
 <script src="js/acoes-agente.js?v=4"></script>
 <script src="js/ads-resumo.js?v=2"></script>
 <script src="js/pages-agente.js?v=gestor-saldo-5-edit"></script>
 <script src="js/pages-agente-ml.js?v=20261123-plano2"></script>
-<script src="js/pages-afiliados.js?v=9-ctx2"></script>
+<script src="js/pages-afiliados.js?v=20261126-tiops"></script>
 <script src="js/pages-promocoes.js?v=11-ctx2"></script>
 <script src="js/pages-produtos.js?v=8-ctx2"></script>
 <script src="js/vendometro-historico.js?v=1"></script>
@@ -552,7 +553,7 @@
 <script src="js/pages-adviser.js?v=receita-mensal-2"></script>
 <script src="js/pages-rastreamento.js?v=20-ctx2"></script>
 <script src="js/pages-leads.js?v=5"></script>
-<script src="js/pages-anuncios.js?v=14"></script>
+<script src="js/pages-anuncios.js?v=20261126-tiops"></script>
 <script src="js/pages-criador-anuncio.js?v=10"></script>
 <script src="js/pages-tiops-market.js?v=8"></script>
 <script src="js/pages-expansao.js?v=2b"></script>
@@ -586,7 +587,7 @@
 <script src="js/pages-chat.js?v=3"></script>
 <script src="js/plano-oportunidades.js?v=1"></script>
 <script src="js/pages-plano.js?v=23"></script>
-<script src="js/pages-portal.js?v=brand-20261115-37-pj1-cst3"></script>
+<script src="js/pages-portal.js?v=20261126-tiops"></script>
 <script src="js/pages-portal-extra.js?v=3-ia1-pj2"></script>
 <script src="js/pages-atendimento-ia.js?v=1"></script>
 <script src="js/pages-portal-admin.js?v=7-mod1-pj1"></script>
@@ -640,7 +641,7 @@
     );
 
     if (!clienteResults.length && !tarefaResults.length) {
-      results.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:13px;">Nenhum resultado para "${q}"</div>`;
+      results.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:13px;">Nenhum resultado para "${glrEsc(q)}"</div>`;
       overlay.style.display = 'block';
       return;
     }
@@ -652,10 +653,10 @@
           <div onclick="Router.navigate('cliente-perfil',{id:${c.id}});document.getElementById('search-overlay').style.display='none';document.getElementById('global-search').value='';"
                style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-sm);cursor:pointer;transition:background 0.15s;"
                onmouseover="this.style.background='var(--bg-card)'" onmouseout="this.style.background='transparent'">
-            <div style="width:28px;height:28px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0;">${c.nome.charAt(0)}</div>
+            <div style="width:28px;height:28px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0;">${glrEsc(c.nome.charAt(0))}</div>
             <div>
-              <div style="font-size:13.5px;font-weight:600;">${c.nome}</div>
-              <div style="font-size:11.5px;color:var(--text-muted);">${c.categoria} · ${c.gestor}</div>
+              <div style="font-size:13.5px;font-weight:600;">${glrEsc(c.nome)}</div>
+              <div style="font-size:11.5px;color:var(--text-muted);">${glrEsc(c.categoria)} · ${glrEsc(c.gestor)}</div>
             </div>
             <span class="badge ${GLR.statusColor[c.status]}" style="margin-left:auto;">${GLR.statusLabel[c.status]}</span>
           </div>
@@ -669,8 +670,8 @@
                onmouseover="this.style.background='var(--bg-card)'" onmouseout="this.style.background='transparent'">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="color:var(--text-muted);flex-shrink:0;"><path d="M9 11l3 3L22 4"/></svg>
             <div style="flex:1;">
-              <div style="font-size:13.5px;font-weight:500;">${t.titulo}</div>
-              <div style="font-size:11.5px;color:var(--text-muted);">${t.cliente} · ${formatDate(t.prazo)}</div>
+              <div style="font-size:13.5px;font-weight:500;">${glrEsc(t.titulo)}</div>
+              <div style="font-size:11.5px;color:var(--text-muted);">${glrEsc(t.cliente)} · ${formatDate(t.prazo)}</div>
             </div>
             <span class="badge ${GLR.prioridadeColor[t.prioridade]}">${t.prioridade}</span>
           </div>
