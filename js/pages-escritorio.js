@@ -80,6 +80,18 @@ Router.register('escritorio', (params, el) => {
     if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
     return j;
   }
+  async function acompanharJob(jobId, on) {
+    const prazo = Date.now() + 240000;
+    while (Date.now() < prazo) {
+      const { data } = await _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('recurso', 'chat_job').eq('conta_id', jobId).maybeSingle();
+      const c = data?.cursor;
+      if (c && on) on(c);
+      if (c?.status === 'pronto') return c;
+      if (c?.status === 'erro') throw new Error(c.erro || 'Falha ao responder.');
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    throw new Error('A resposta demorou demais. Ela pode aparecer na conversa em instantes.');
+  }
   async function enviarFluxo(corpo, onEvent) {
     const { data } = await _sb.auth.getSession();
     const r = await fetch('/api/chat-central', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${data?.session?.access_token || ''}` }, body: JSON.stringify(corpo) });
@@ -541,11 +553,11 @@ Router.register('escritorio', (params, el) => {
     const para = state.para, t = Date.now();
     state.enviando = true; state.rascunho = ''; state.parcial = '';
     if (state.filtro !== 'todos' && state.filtro !== para && state.filtro !== 'analista') state.filtro = para; // mostra a conversa que acabou de começar
-    state.aoVivo = { agente: para, texto: 'Lendo a pergunta…' };
-    state.pend = [{ de: 'analista', t, texto: `@${AG[para].nome} ${h(texto)}`, para }, { de: para, t: t + 1, texto: 'Lendo a pergunta…', para, digitando: true }];
+    state.aoVivo = { agente: para, texto: 'Na fila…' };
+    state.pend = [{ de: 'analista', t, texto: `@${AG[para].nome} ${h(texto)}`, para }, { de: para, t: t + 1, texto: 'Na fila…', para, digitando: true }];
     render();
     try {
-      await enviarFluxo({ acao: 'enviar', stream: true, conversa_id: `escritorio${para}`, mensagem: texto, agente: `esc:${para}`, cliente_id: GLR.ctx?.cliente?.() || null }, (ev, dataEv) => {
+      const j = await enviarFluxo({ acao: 'enviar', stream: true, conversa_id: `escritorio${para}`, mensagem: texto, agente: `esc:${para}`, cliente_id: GLR.ctx?.cliente?.() || null }, (ev, dataEv) => {
         if (!state.enviando) return;
         if (ev === 'status') { state.parcial = ''; state.aoVivo = { agente: para, texto: dataEv.texto || 'Pensando…' }; mostrarAoVivo(true); }
         else if (ev === 'ferramenta') {
@@ -555,6 +567,14 @@ Router.register('escritorio', (params, el) => {
         } else if (ev === 'texto') { state.parcial += dataEv.delta || ''; state.aoVivo = { agente: para, texto: 'Escrevendo a resposta…' }; mostrarAoVivo(false); }
         else if (ev === 'texto_limpar') { state.parcial = ''; mostrarAoVivo(true); }
       });
+      if (j && j.fundo) {
+        await acompanharJob(j.job_id, (c) => {
+          if (!state.enviando) return;
+          state.parcial = '';
+          state.aoVivo = { agente: para, texto: c.texto || 'Trabalhando…' };
+          mostrarAoVivo(true);
+        });
+      }
       state.pend = []; state.aoVivo = null; state.parcial = '';
       await carregarDireto();
     } catch (e) {
@@ -657,7 +677,11 @@ Router.register('escritorio', (params, el) => {
   try {
     canal = _sb.channel('glr-escritorio-' + Date.now())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'glr_agente_log' }, () => { clearTimeout(espera); espera = setTimeout(carregar, 1500); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'glr_sync_estado' }, () => { clearTimeout(espera); espera = setTimeout(carregar, 4000); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'glr_sync_estado' }, (payload) => {
+        const rec = payload?.new?.recurso || payload?.old?.recurso;
+        if (rec === 'chat_job') return; // o progresso da fala já é lido pelo acompanhamento; não refaz as 10 consultas
+        clearTimeout(espera); espera = setTimeout(carregar, 4000);
+      })
       .subscribe();
   } catch (e) { canal = null; }
 });

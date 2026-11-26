@@ -17,6 +17,7 @@
 // ============================================================
 const sdk = require('@anthropic-ai/sdk');
 const Anthropic = sdk.default || sdk;
+const { waitUntil } = require('@vercel/functions');
 const { base } = require('./agente-chat');
 const { sbSelect, sbTodos, mcpCall, usuarioLogado, lerStorage, nomesDasLojas, hojeBRT, MKT, NOME_MKT, r2 } = base;
 const adviserChat = require('./_adviser-chat');
@@ -254,6 +255,15 @@ async function classificar(client, texto) {
     return rotaDe(r.content.filter(b => b.type === 'text').map(b => b.text).join(''));
   } catch (e) { return 'analise'; }
 }
+function pedidoLongo(texto, escritorio) {
+  if (escritorio) return true;
+  const t = String(texto || '');
+  return t.length > 280 || /plano|analis|compar|carteira|campanh|estrat[eé]g|diagn[oó]stic|relat[oó]rio/i.test(t);
+}
+async function gravarJob(conta, cursor) {
+  const agora = new Date().toISOString();
+  await sbUpsert('glr_sync_estado', [{ marketplace: 'sistema', conta_id: conta, recurso: 'chat_job', cursor, ultima_tentativa: agora, ultimo_sucesso: agora, registros: 1 }], 'marketplace,conta_id,recurso');
+}
 const dm = iso => `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}`;
 const resumo = (n, i) => `${ROTULO[n] || n}${i?.cliente ? ` · ${i.cliente}` : ''}${i?.inicio && i?.fim ? ` · ${dm(i.inicio)} a ${dm(i.fim)}` : ''}${n === 'propor_acao' && i?.titulo ? ` · ${corta(i.titulo, 50)}` : ''}`;
 
@@ -480,19 +490,28 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // enviar — JSON de sempre, ou SSE quando o cliente pede stream
+    // enviar — SSE no pedido curto; pergunta longa (e o Escritório) segue em segundo plano
     const texto = String(mensagem || '').trim().slice(0, 6000);
     if (!texto) return res.status(400).json({ error: 'Mensagem vazia.' });
-    const querStream = req.body?.stream === true || String(req.headers?.accept || req.headers?.Accept || '').includes('text/event-stream');
+    const querFundo = req.body?.fundo !== false && (req.body?.fundo === true || pedidoLongo(texto, String(agente || '').startsWith('esc:')));
+    const id = idOk(conversa_id) ? String(conversa_id) : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    const contaJob = `job:${uid}:${id}`;
+    const avisar = querFundo ? (c) => gravarJob(contaJob, { ...c, conversa_id: id, em: new Date().toISOString() }).catch(() => {}) : async () => {};
+    async function executar() {
+    const querStream = !querFundo && (req.body?.stream === true || String(req.headers?.accept || req.headers?.Accept || '').includes('text/event-stream'));
     let sse = null, pulso = null;
-    const emit = (event, data) => { if (sse) sse.send(event, data); };
+    const emit = (event, data) => {
+      if (sse) sse.send(event, data);
+      if (!querFundo) return;
+      if (event === 'status') avisar({ status: 'lendo', texto: data.texto || 'Trabalhando…' });
+      else if (event === 'ferramenta' && data.estado === 'consultando') avisar({ status: 'ferramenta', texto: `Consultando ${data.rotulo}…`, rotulo: data.rotulo });
+    };
     try {
       if (querStream) {
         sse = abrirSSE(res);
         pulso = setInterval(() => sse.ping(), 15000);
         emit('status', { texto: 'Abrindo a conversa…' });
       }
-      const id = idOk(conversa_id) ? String(conversa_id) : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
       const novoAg = agente === 'adviser' ? 'adviser' : personaDe(agente) ? String(agente) : 'copiloto';
       const conv = (await lerConversa(uid, id)) || { titulo: corta(texto, 60), criado: new Date().toISOString(), msgs: [], agente: novoAg };
       const persona = personaDe(conv.agente);
@@ -565,20 +584,33 @@ module.exports = async function handler(req, res) {
       if (conv.msgs.length > 80) conv.msgs = conv.msgs.slice(-80);
       await salvarConversa(uid, id, conv).catch(() => {});
       const payload = { conversa_id: id, titulo: conv.titulo, agente: persona ? conv.agente : ag, modelo, rota, missoes: S.missoesCriadas || 0, resposta: final, ferramentas: usadas, criadas: S.criadas, cortada: resposta.stop_reason === 'max_tokens', segundos: Math.round((Date.now() - inicio) / 1000) };
-      if (sse) { sse.send('fim', payload); return; }
+      if (sse) sse.send('fim', payload);
+      if (querFundo || sse) return payload;
       return res.status(200).json(payload);
     } catch (e) {
       const m = mapearErro(e);
-      if (sse) { sse.send('erro', { error: m.error }); return; }
+      if (querFundo) throw Object.assign(e, { glrMsg: m.error });
+      if (sse) { sse.send('erro', { error: m.error }); return null; }
       return res.status(m.status).json({ error: m.error });
     } finally {
       if (pulso) clearInterval(pulso);
       if (sse) sse.fechar();
     }
+    }
+    if (querFundo) {
+      await gravarJob(contaJob, { status: 'na_fila', texto: 'Na fila…', conversa_id: id, em: new Date().toISOString() });
+      const tarefa = executar()
+        .then((payload) => gravarJob(contaJob, { status: 'pronto', texto: 'Pronto', ...payload, em: new Date().toISOString() }))
+        .catch((e) => gravarJob(contaJob, { status: 'erro', texto: 'Falhou', erro: e.glrMsg || mapearErro(e).error, conversa_id: id, em: new Date().toISOString() }));
+      waitUntil(tarefa);
+      return res.status(200).json({ fundo: true, job_id: contaJob, conversa_id: id });
+    }
+    await executar();
+    return;
   } catch (e) {
     const m = mapearErro(e);
     return res.status(m.status).json({ error: m.error });
   }
 };
 // peças reaproveitadas pelo chat do portal do cliente (api/portal-chat.js)
-module.exports.interno = { carregarCarteira, limparCacheCarteira, CACHE_CARTEIRA_MS, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, eventoSSE, agruparFerramentas, executarEmGrupos, FERRAMENTAS_PARALELAS, MODELO_RAPIDO, rotaDe, sistemaComCache, ferramentasComCache, ferramentasDaPersona, acharPersona, consultarColega, ajusteDoPedido, planoDe };
+module.exports.interno = { carregarCarteira, limparCacheCarteira, CACHE_CARTEIRA_MS, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, eventoSSE, agruparFerramentas, executarEmGrupos, FERRAMENTAS_PARALELAS, MODELO_RAPIDO, rotaDe, sistemaComCache, ferramentasComCache, ferramentasDaPersona, acharPersona, consultarColega, ajusteDoPedido, planoDe, pedidoLongo };

@@ -48,7 +48,19 @@ Router.register('chat', (params, el) => {
     if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
     return j;
   }
-  // Envio em SSE. Se o servidor responder JSON (proxy antigo), usa o corpo inteiro.
+  async function acompanharJob(jobId) {
+    const prazo = Date.now() + 240000;
+    while (Date.now() < prazo) {
+      const { data } = await _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('recurso', 'chat_job').eq('conta_id', jobId).maybeSingle();
+      const c = data?.cursor;
+      if (c?.texto) { st.statusTxt = c.texto; const t = document.getElementById('ch-pensa-t'); if (t) t.textContent = `${c.texto} ${Math.round((Date.now() - st.inicio) / 1000)}s`; }
+      if (c?.status === 'pronto') return c;
+      if (c?.status === 'erro') throw new Error(c.erro || 'Falha ao responder.');
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    throw new Error('A resposta demorou demais. Abra a conversa de novo em instantes.');
+  }
+  // Envio em SSE. Se o servidor responder JSON (job em segundo plano), usa o corpo inteiro.
   async function enviarFluxo(corpo, onEvent) {
     const { data } = await _sb.auth.getSession();
     const r = await fetch('/api/chat-central', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${data?.session?.access_token || ''}` }, body: JSON.stringify(corpo) });
@@ -215,7 +227,7 @@ Router.register('chat', (params, el) => {
     st.parcial = ''; st.progresso = []; st.statusTxt = 'Abrindo a conversa…';
     render(); iniciarEspera();
     try {
-      const j = await enviarFluxo({ acao: 'enviar', stream: true, conversa_id: st.id, mensagem: texto, cliente_id: ehAdviser() ? null : focoId(), agente: st.agente }, (ev, dataEv) => {
+      let j = await enviarFluxo({ acao: 'enviar', stream: true, conversa_id: st.id, mensagem: texto, cliente_id: ehAdviser() ? null : focoId(), agente: st.agente }, (ev, dataEv) => {
         if (window._chSt !== st) return;
         if (ev === 'status') { st.statusTxt = dataEv.texto || st.statusTxt; pintar(true); }
         else if (ev === 'ferramenta') {
@@ -228,6 +240,7 @@ Router.register('chat', (params, el) => {
         } else if (ev === 'texto') { st.parcial += dataEv.delta || ''; st.statusTxt = 'Escrevendo…'; pintar(false); }
         else if (ev === 'texto_limpar') { st.parcial = ''; pintar(true); }
       });
+      if (j.fundo) { st.statusTxt = 'Na fila…'; const t = document.getElementById('ch-pensa-t'); if (t) t.textContent = 'Na fila…'; j = await acompanharJob(j.job_id); }
       if (window._chSt !== st) return;
       const nova = st.id !== j.conversa_id;
       st.id = j.conversa_id; gravarLS('glr_chat_atual', st.id);
