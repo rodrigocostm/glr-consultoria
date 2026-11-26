@@ -84,5 +84,5 @@ test('shared operation module loads before both pages and page versions invalida
   const html = fs.readFileSync('index.html', 'utf8');
   assert.ok(html.indexOf('js/operacao-metricas.js') < html.indexOf('js/pages-avancados.js'));
   assert.ok(html.indexOf('js/operacao-metricas.js') < html.indexOf('js/pages-agente.js'));
-  assert.match(html, /pages-avancados.js\?v=diario-tacos-1/); assert.match(html, /pages-agente.js\?v=gestor-saldo-1/);
+  assert.match(html, /pages-avancados.js\?v=20261126-tiops/); assert.match(html, /pages-agente.js\?v=gestor-saldo-5-edit/);
 });

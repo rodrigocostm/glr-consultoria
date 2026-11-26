@@ -4,6 +4,28 @@
 
 (function() {
 
+const esc = t => window.glrEsc(t);
+if (!window._adsActBound) {
+  window._adsActBound = true;
+  document.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-ads-act]');
+    if (!b) return;
+    const act = b.getAttribute('data-ads-act');
+    const idRaw = b.getAttribute('data-campanha');
+    const id = /^-?\d+$/.test(idRaw || '') ? Number(idRaw) : idRaw;
+    const nome = b.getAttribute('data-nome') || '';
+    const valor = Number(b.getAttribute('data-valor'));
+    if (act === 'pausar') window._adsPausar(id);
+    else if (act === 'orcamento') window._adsEditarOrcamento(id, nome, valor);
+    else if (act === 'roas') window._adsEditarRoas(id, nome, valor);
+    else if (act === 'rank-kw') {
+      const input = document.getElementById('ads-rank-input');
+      if (input) input.value = b.getAttribute('data-kw') || '';
+      window._adsBuscarRanking();
+    }
+  });
+}
+
 const ADS_CACHE_KEY = 'glr_ads_cache';
 const ADS_CACHE_VER = 8;
 
@@ -958,7 +980,7 @@ async function carregarContas() {
     sel.innerHTML = `<option value="">— Selecione a conta —</option>` +
       contasSel.map((c, i) => {
         const mp = c.marketplace === 'shopee' ? '🟠 Shopee' : '🟡 ML';
-        return `<option value="${i}">${mp} — ${nomeConta(c)}</option>`;
+        return `<option value="${i}">${mp} — ${esc(nomeConta(c))}</option>`;
       }).join('');
 
     sel.addEventListener('change', e => {
@@ -1010,7 +1032,7 @@ function renderErro(msg) {
     <div style="background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:12px;padding:24px;text-align:center;color:var(--red);">
       <div style="font-size:28px;margin-bottom:8px;">⚠️</div>
       <div style="font-weight:600;font-size:15px;">Erro ao buscar dados de ADS</div>
-      <div style="font-size:13px;margin-top:8px;">${msg}</div>
+      <div style="font-size:13px;margin-top:8px;">${esc(msg)}</div>
       <button onclick="window._adsAtualizar()" style="margin-top:16px;background:var(--red);color:#fff;border:none;border-radius:99px;padding:8px 20px;cursor:pointer;font-weight:600;">Tentar novamente</button>
     </div>
   `;
@@ -1060,7 +1082,7 @@ function renderConteudo() {
   const blocoErros = erros.length > 0 ? `
     <div style="background:var(--yellow-bg);border:1px solid color-mix(in srgb,var(--yellow) 28%,transparent);border-radius:12px;padding:16px;margin-bottom:20px;">
       <div style="font-weight:700;font-size:13px;color:var(--yellow);margin-bottom:8px;">⚠️ Erros ao buscar dados da API (${erros.length})</div>
-      ${erros.map(e => `<div style="font-size:12px;color:var(--yellow);padding:4px 0;border-bottom:1px solid color-mix(in srgb,var(--yellow) 28%,transparent);word-break:break-all;">${e}</div>`).join('')}
+      ${erros.map(e => `<div style="font-size:12px;color:var(--yellow);padding:4px 0;border-bottom:1px solid color-mix(in srgb,var(--yellow) 28%,transparent);word-break:break-all;">${esc(e)}</div>`).join('')}
     </div>
   ` : '';
 
@@ -1314,7 +1336,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
     // ROAS target (campanhas auto) — valor direto da Shopee, sem divisão
     const roasTarget = c.roasTarget != null ? fmtN(c.roasTarget, 0) + 'x' : '—';
     const btnRoas = c.bidding === 'auto'
-      ? `<button onclick="window._adsEditarRoas(${c.id},'${c.nome.replace(/'/g,'').slice(0,30)}',${c.roasTarget ?? 0})" title="Editar meta ROAS"
+      ? `<button type="button" data-ads-act="roas" data-campanha="${esc(c.id)}" data-nome="${esc(String(c.nome).slice(0,30))}" data-valor="${esc(c.roasTarget ?? 0)}" title="Editar meta ROAS"
           style="background:var(--green-bg);color:var(--green);border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">🎯</button>`
       : '';
 
@@ -1322,11 +1344,10 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
     // integrado aqui — pausar/orçamento dessa linha ficam somente-leitura por ora.
     const somenteLeitura = c.tipo === 'GMV Max';
 
-    const btnPausar = somenteLeitura ? '' : `<button onclick="window._adsPausar(${c.id})" title="Pausar campanha"
+    const btnPausar = somenteLeitura ? '' : `<button type="button" data-ads-act="pausar" data-campanha="${esc(c.id)}" title="Pausar campanha"
       style="background:var(--red-bg);color:var(--red);border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">⏸</button>`;
 
-    const nomeOrca = c.nome.replace(/'/g,'').slice(0,30);
-    const btnOrcamento = somenteLeitura ? '' : `<button onclick="window._adsEditarOrcamento(${c.id},'${nomeOrca}',${c.orcamento})" title="Editar orçamento"
+    const btnOrcamento = somenteLeitura ? '' : `<button type="button" data-ads-act="orcamento" data-campanha="${esc(c.id)}" data-nome="${esc(String(c.nome).slice(0,30))}" data-valor="${esc(c.orcamento)}" title="Editar orçamento"
       style="background:var(--bg-subtle);color:#2563eb;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;">✏️</button>`;
 
     // GMV Max: link "N produtos" que expande/recolhe o breakdown por item — igual
@@ -1342,7 +1363,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
       const linhasItens = c.itensGmvMax.map(it => {
         const itRoas = it.gasto > 0 && it.receita > 0 ? it.receita / it.gasto : 0;
         return `<tr style="border-bottom:1px solid var(--border);">
-          <td style="padding:6px 10px;font-size:12px;color:var(--text-primary);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${it.nome}">${it.nome}</td>
+          <td style="padding:6px 10px;font-size:12px;color:var(--text-primary);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(it.nome)}">${esc(it.nome)}</td>
           <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmt(it.gasto)}</td>
           <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmtN(it.cliques)}</td>
           <td style="padding:6px 10px;font-size:12px;text-align:right;color:var(--text-secondary);">${fmtN(it.impressoes)}</td>
@@ -1375,15 +1396,15 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
     return `
       <tr style="border-bottom:1px solid var(--border);">
         <td style="padding:10px 12px;max-width:220px;">
-          <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.nome}">${c.nome}</div>
-          ${sug ? `<span style="display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:${sug.bg};color:${sug.cor};white-space:nowrap;" title="${sug.texto}">${sug.icon} ${sug.texto}</span>` : ''}
-          ${sugIA ? `<div style="margin-top:4px;"><button onclick="Router.navigate('agente')" title="${(sugIA.motivo||'').replace(/"/g,'')}" style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--purple-bg);color:var(--purple);border:none;cursor:pointer;white-space:nowrap;">${TIPO_LABEL_IA[sugIA.tipo] || 'Sugestão'}${sugIA.valor_sugerido_label ? ' → ' + sugIA.valor_sugerido_label : ''}</button></div>` : ''}
+          <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.nome)}">${esc(c.nome)}</div>
+          ${sug ? `<span style="display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:${sug.bg};color:${sug.cor};white-space:nowrap;" title="${esc(sug.texto)}">${sug.icon} ${esc(sug.texto)}</span>` : ''}
+          ${sugIA ? `<div style="margin-top:4px;"><button onclick="Router.navigate('agente')" title="${esc(sugIA.motivo||'')}" style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--purple-bg);color:var(--purple);border:none;cursor:pointer;white-space:nowrap;">${esc(TIPO_LABEL_IA[sugIA.tipo] || 'Sugestão')}${sugIA.valor_sugerido_label ? ' → ' + esc(sugIA.valor_sugerido_label) : ''}</button></div>` : ''}
           ${vendasTrendHtml}
           ${tendenciaHtml}
           ${linkItens}
         </td>
         <td style="padding:10px 12px;">
-          <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${c.bidding==='auto'?'var(--green-bg)':'var(--bg-subtle)'};color:${c.bidding==='auto'?'var(--green)':'#2563eb'};font-weight:600;">${c.tipo}</span>
+          <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${c.bidding==='auto'?'var(--green-bg)':'var(--bg-subtle)'};color:${c.bidding==='auto'?'var(--green)':'#2563eb'};font-weight:600;">${esc(c.tipo)}</span>
         </td>
         <td style="padding:10px 12px;font-size:13px;font-weight:700;text-align:right;color:var(--text-primary);">${fmt(c.gasto)}</td>
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:var(--text-secondary);">${fmtN(c.cliques)}</td>
@@ -1393,7 +1414,7 @@ function renderTabelaCampanhas(campanhas, janelas, sugestoesPorCampanha) {
         <td style="padding:10px 12px;font-size:13px;font-weight:700;text-align:right;color:${roasCor};">${roas > 0 ? fmtN(roas, 2) + 'x' : '—'}</td>
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:${acosCor};">${acos > 0 ? fmtN(acos, 1) + '%' : '—'}</td>
         <td style="padding:10px 12px;font-size:13px;text-align:right;color:${c.roasTarget!=null?'var(--green)':'var(--text-muted,var(--text-muted))'};font-weight:${c.roasTarget!=null?'700':'400'};">${roasTarget}</td>
-        <td style="padding:10px 12px;font-size:12px;text-align:right;color:var(--text-secondary);">${c.orcamentoLabel}</td>
+        <td style="padding:10px 12px;font-size:12px;text-align:right;color:var(--text-secondary);">${esc(c.orcamentoLabel)}</td>
         <td style="padding:10px 12px;text-align:right;white-space:nowrap;display:flex;gap:4px;justify-content:flex-end;">${btnRoas}${btnOrcamento}${btnPausar}</td>
       </tr>
       ${linhaItens}
@@ -1515,7 +1536,7 @@ function renderComparativoProdutos(comp) {
 
   const linhaHtml = l => `
     <tr style="border-bottom:1px solid var(--border);">
-      <td style="padding:10px 12px;font-size:12.5px;font-weight:600;color:var(--text-primary);">${l.nome}</td>
+      <td style="padding:10px 12px;font-size:12.5px;font-weight:600;color:var(--text-primary);">${esc(l.nome)}</td>
       <td style="padding:10px 12px;text-align:center;">${cel(l.a.impressoes, pct(l.a.impressoes, l.b.impressoes))}</td>
       <td style="padding:10px 12px;text-align:center;">${cel(l.a.cliques, pct(l.a.cliques, l.b.cliques))}</td>
       <td style="padding:10px 12px;text-align:center;">${cel(l.a.pedidos, pct(l.a.pedidos, l.b.pedidos))}</td>
@@ -1670,8 +1691,7 @@ function renderTendencias(d) {
 
 // ─── Agente IA ────────────────────────────────────────────────
 function _mdToHtml(text) {
-  return text
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  return esc(text)
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
     .replace(/\*(.+?)\*/g,'<em>$1</em>')
     .replace(/^### (.+)$/gm,'<div style="font-size:13px;font-weight:700;color:var(--text-primary);margin:10px 0 4px;">$1</div>')
@@ -2057,7 +2077,7 @@ window._adsEnviarMensagem = async function(msgPredef) {
   // Bolha usuário
   const divU = document.createElement('div');
   divU.style.cssText = 'display:flex;justify-content:flex-end;';
-  divU.innerHTML = `<div style="background:linear-gradient(135deg,var(--accent),var(--purple));color:#fff;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:85%;font-size:13px;line-height:1.5;">${texto}</div>`;
+  divU.innerHTML = `<div style="background:linear-gradient(135deg,var(--accent),var(--purple));color:#fff;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:85%;font-size:13px;line-height:1.5;">${esc(texto)}</div>`;
   msgs.appendChild(divU);
   msgs.scrollTop = msgs.scrollHeight;
 
@@ -2204,7 +2224,7 @@ ${ctx}${ctxRanking}`,
   } catch(e) {
     document.getElementById('ads-ia-typing')?.remove();
     const divE = document.createElement('div');
-    divE.innerHTML = `<div style="background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:10px;padding:12px 16px;font-size:12px;color:var(--red);">❌ Erro ao conectar com o Consultor IA: ${e.message}${e.message.includes('401') ? ' — verifique a API Key do Claude nas configurações do Vercel' : ''}</div>`;
+    divE.innerHTML = `<div style="background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:10px;padding:12px 16px;font-size:12px;color:var(--red);">❌ Erro ao conectar com o Consultor IA: ${esc(e.message)}${String(e.message).includes('401') ? ' — verifique a API Key do Claude nas configurações do Vercel' : ''}</div>`;
     msgs.appendChild(divE);
     msgs.scrollTop = msgs.scrollHeight;
   }
@@ -2248,7 +2268,7 @@ window._adsBuscarRanking = async function() {
   const keyword = input.value.trim();
   if (!keyword) return;
 
-  body.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-secondary);">Pesquisando "<strong>${keyword}</strong>" no marketplace...</div>`;
+  body.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-secondary);">Pesquisando "<strong>${esc(keyword)}</strong>" no marketplace...</div>`;
 
   try {
     const mkt = contaAtual.marketplace;
@@ -2304,7 +2324,7 @@ window._adsBuscarRanking = async function() {
       _renderRankingResultado(keyword, items.length, posicoes);
     }
   } catch(e) {
-    body.innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px;">❌ Erro ao pesquisar: ${e.message}</div>`;
+    body.innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px;">❌ Erro ao pesquisar: ${esc(e.message)}</div>`;
   }
 };
 
@@ -2327,7 +2347,7 @@ function _renderRankingResultado(keyword, total, posicoes) {
   if (posicoes.length === 0) {
     body.innerHTML = `
       <div style="background:var(--yellow-bg);border:1px solid color-mix(in srgb,var(--yellow) 28%,transparent);border-radius:8px;padding:16px;font-size:13px;color:var(--yellow);">
-        <strong>Nenhum produto seu encontrado</strong> nos primeiros ${total} resultados para "<strong>${keyword}</strong>".<br>
+        <strong>Nenhum produto seu encontrado</strong> nos primeiros ${total} resultados para "<strong>${esc(keyword)}</strong>".<br>
         <span style="font-size:12px;display:block;margin-top:6px;">Isso pode indicar oportunidade de melhoria nos títulos ou necessidade de aumentar investimento em ADS para esta keyword.</span>
       </div>`;
     _renderRankingHistorico();
@@ -2354,7 +2374,7 @@ function _renderRankingResultado(keyword, total, posicoes) {
     const corPos = p.pos <= 3 ? 'var(--green)' : p.pos <= 10 ? 'var(--yellow)' : 'var(--text-secondary)';
     return `<tr style="border-bottom:1px solid var(--border);">
       <td style="padding:10px 12px;text-align:center;"><span style="font-size:18px;font-weight:700;color:${corPos};">#${p.pos}</span></td>
-      <td style="padding:10px 12px;font-size:12px;color:var(--text-primary);">${p.nome || p.id}</td>
+      <td style="padding:10px 12px;font-size:12px;color:var(--text-primary);">${esc(p.nome || p.id)}</td>
       <td style="padding:10px 12px;text-align:center;">${delta}</td>
       <td style="padding:10px 12px;text-align:right;font-size:12px;color:var(--text-secondary);">${p.preco > 0 ? p.preco.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '—'}</td>
     </tr>`;
@@ -2362,7 +2382,7 @@ function _renderRankingResultado(keyword, total, posicoes) {
 
   const bestPos = Math.min(...posicoes.map(p => p.pos));
   const alerta = bestPos <= 3
-    ? `<div style="background:var(--green-bg);border:1px solid color-mix(in srgb,var(--green) 28%,transparent);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--green);margin-bottom:12px;font-weight:600;">✅ Excelente! Seu melhor produto está na posição #${bestPos} para "<strong>${keyword}</strong>"</div>`
+    ? `<div style="background:var(--green-bg);border:1px solid color-mix(in srgb,var(--green) 28%,transparent);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--green);margin-bottom:12px;font-weight:600;">✅ Excelente! Seu melhor produto está na posição #${bestPos} para "<strong>${esc(keyword)}</strong>"</div>`
     : bestPos <= 10
     ? `<div style="background:var(--yellow-bg);border:1px solid color-mix(in srgb,var(--yellow) 28%,transparent);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--yellow);margin-bottom:12px;">⚠️ Melhor posição: #${bestPos}. Aumentar lance de ADS pode ajudar a chegar ao Top 3.</div>`
     : `<div style="background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--red);margin-bottom:12px;font-weight:600;">🔴 Melhor posição: #${bestPos}. Revise títulos e invista em ADS para esta keyword.</div>`;
@@ -2372,7 +2392,7 @@ function _renderRankingResultado(keyword, total, posicoes) {
   body.innerHTML = `
     ${alerta}
     <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">
-      <strong>${posicoes.length}</strong> produto(s) seus nos primeiros <strong>${total}</strong> resultados para "<strong>${keyword}</strong>"${comparativo}
+      <strong>${posicoes.length}</strong> produto(s) seus nos primeiros <strong>${total}</strong> resultados para "<strong>${esc(keyword)}</strong>"${comparativo}
     </div>
     <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;">
@@ -2404,9 +2424,9 @@ function _renderRankingHistorico() {
         const s = snaps[kw];
         const best = s.posicoes?.length ? Math.min(...s.posicoes.map(p => p.pos)) : null;
         const badge = best ? `<span style="font-size:10px;opacity:.7;margin-left:3px;">#${best}</span>` : '';
-        return `<button onclick="document.getElementById('ads-rank-input').value='${kw.replace(/'/g,'')}';window._adsBuscarRanking();"
+        return `<button type="button" data-ads-act="rank-kw" data-kw="${esc(kw)}"
           style="font-size:11px;background:var(--bg-base);border:1px solid var(--border);border-radius:99px;padding:4px 10px;cursor:pointer;color:var(--text-secondary);display:flex;align-items:center;gap:2px;">
-          ${kw}${badge}
+          ${esc(kw)}${badge}
         </button>`;
       }).join('')}
     </div>`;
