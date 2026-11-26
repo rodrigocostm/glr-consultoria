@@ -1526,7 +1526,8 @@ Router.register('financeiro', async (params, el) => {
 
     let html = `<option value="todas">Todas</option>`;
     if (contasFiltradas.length > 0) {
-      html += contasFiltradas.map(c => `<option value="${c.external_id}">${nomeContaDisplay(c)}</option>`).join('');
+      const sfxId = window.glrSufixoIdRepetido ? glrSufixoIdRepetido(contasFiltradas, c => `${c.marketplace}:${nomeContaDisplay(c)}`, c => glrIdConta(c)) : () => '';
+      html += contasFiltradas.map(c => `<option value="${c.external_id}">${nomeContaDisplay(c)}${sfxId(c)}</option>`).join('');
     }
     sel.innerHTML = html;
     // Tentar manter valor anterior, senão vai para "Todas"

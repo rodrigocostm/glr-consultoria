@@ -289,7 +289,7 @@ function monitorPrecos(mkt) { return (params, el) => {
     };
     root.innerHTML = `
       <div class="pml-topo">
-        <select class="pml-sel" onchange="window._pmlConta(this.value)">${st.contas.map(c => `<option value="${h(c.id)}" ${c.id === st.conta ? 'selected' : ''}>${h(c.nome)}</option>`).join('')}</select>
+        <select class="pml-sel" onchange="window._pmlConta(this.value)">${(sfx => st.contas.map(c => `<option value="${h(c.id)}" ${c.id === st.conta ? 'selected' : ''}>${h(c.nome)}${h(sfx(c))}</option>`).join(''))(window.glrSufixoIdRepetido ? glrSufixoIdRepetido(st.contas, c => c.nome, c => c.id) : () => '')}</select>
         <select class="pml-sel" onchange="window._pmlPeriodo(this.value)">${[7, 15, 30, 60].map(d => `<option value="${d}" ${+st.periodo === d ? 'selected' : ''}>Mudanças dos últimos ${d} dias</option>`).join('')}</select>
         <input class="pml-sel" style="min-width:220px" placeholder="Buscar produto ou ${SH ? 'código' : 'MLB'}…" value="${h(st.busca)}" oninput="window._pmlBusca(this.value)">
         <span style="flex:1"></span>

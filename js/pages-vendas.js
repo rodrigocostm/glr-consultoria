@@ -300,7 +300,7 @@ Router.register('vendas', async (params, el) => {
 
     _renderCheckboxDropdown(wrapCont, {
       label: 'Conta', icon: '🏬',
-      itens: contasFiltradas.map(c => ({ valor: c.external_id, label: contaNome(c), mkt: BaseDados.mktDe(c.marketplace), sub: contaEmpresas(c).join(', ') })),
+      itens: contasFiltradas.map(c => ({ valor: c.external_id, label: contaNome(c), mkt: BaseDados.mktDe(c.marketplace), sub: contaEmpresas(c).join(', '), id: window.glrIdConta?.(c) || c.external_id })),
       selecionados: filtroContasSel, porPlataforma: true,
       onChange: (novoSet) => { filtroContasSel = novoSet; if (!window._portalConfig) { const cs = [...new Set(contas.filter(c => novoSet.has(c.external_id)).map(c => GLR.ctx?.clienteDaConta(c.marketplace, c.external_id) || ''))]; if (cs.length === 1 && cs[0]) GLR.ctx?.definir(cs[0], true); else if (!novoSet.size) GLR.ctx?.definir('', true); } renderFiltroEmpresaConta(); _filtroMudou(); },
     });
@@ -323,8 +323,8 @@ Router.register('vendas', async (params, el) => {
     else if (porPlataforma) { const n = {}; itens.filter(i => selecionados.has(i.valor)).forEach(i => { const k = _MKT_DCB[i.mkt]?.sigla || '?'; n[k] = (n[k] || 0) + 1; }); textoBotao = `${icon} ${qtdSel} contas · ${Object.entries(n).map(([k, v]) => `${v} ${k}`).join(' · ')}`; }
     else textoBotao = `${icon} ${qtdSel} ${label.toLowerCase()}s`;
     const q = busca.trim().toLowerCase();
-    const visiveis = itens.filter(i => !q || `${i.label} ${i.sub || ''} ${_MKT_DCB[i.mkt]?.nome || ''}`.toLowerCase().includes(q));
-    const linha = i => `<label class="dcb-op"><input type="checkbox" value="${esc(i.valor)}" ${selecionados.has(i.valor) ? 'checked' : ''}>${porPlataforma ? selo(i.mkt) : ''}<span class="dcb-txt"><span class="dcb-nome">${esc(i.label)}</span>${i.sub ? `<span class="dcb-sub">${esc(i.sub)}</span>` : ''}</span></label>`;
+    const visiveis = itens.filter(i => !q || `${i.label} ${i.sub || ''} ${i.id || ''} ${_MKT_DCB[i.mkt]?.nome || ''}`.toLowerCase().includes(q));
+    const linha = i => `<label class="dcb-op"><input type="checkbox" value="${esc(i.valor)}" ${selecionados.has(i.valor) ? 'checked' : ''}>${porPlataforma ? selo(i.mkt) : ''}<span class="dcb-txt"><span class="dcb-nome">${esc(i.label)}</span>${i.sub || i.id ? `<span class="dcb-sub">${esc(i.sub || '')}${i.id ? `<span class="dcb-id">${i.sub ? ' · ' : ''}ID ${esc(i.id)}</span>` : ''}</span>` : ''}</span></label>`;
     let lista;
     if (porPlataforma) {
       const grupos = {}; visiveis.forEach(i => { (grupos[i.mkt || 'outro'] = grupos[i.mkt || 'outro'] || []).push(i); });
@@ -332,7 +332,7 @@ Router.register('vendas', async (params, el) => {
     } else lista = [...visiveis].sort((a, b) => selecionados.has(b.valor) - selecionados.has(a.valor)).map(linha).join('');
     container.innerHTML = `
       <div style="position:relative;">
-        <button type="button" class="form-input dcb-toggle" aria-expanded="${aberto}" title="${esc(qtdSel ? itens.filter(i => selecionados.has(i.valor)).map(i => `${_MKT_DCB[i.mkt]?.sigla ? _MKT_DCB[i.mkt].sigla + ' · ' : ''}${i.label}`).join('\n') : `Todas as ${label.toLowerCase()}s`)}">
+        <button type="button" class="form-input dcb-toggle" aria-expanded="${aberto}" title="${esc(qtdSel ? itens.filter(i => selecionados.has(i.valor)).map(i => `${_MKT_DCB[i.mkt]?.sigla ? _MKT_DCB[i.mkt].sigla + ' · ' : ''}${i.label}${i.id ? ` (ID ${i.id})` : ''}`).join('\n') : `Todas as ${label.toLowerCase()}s`)}">
           <span class="dcb-rot">${textoBotao}</span><span style="font-size:var(--fs-1);opacity:0.6;">▾</span>
         </button>
         <div class="dcb-panel" style="display:${aberto ? 'block' : 'none'};">
@@ -378,7 +378,7 @@ Router.register('vendas', async (params, el) => {
       .dcb-grupo span{display:flex;align-items:center;gap:5px}.dcb-so{font-size:var(--fs-1);border:none;background:none;color:var(--accent);cursor:pointer;padding:2px 4px;font-weight:600}
       .dcb-op{display:flex;align-items:center;gap:var(--space-2);padding:6px 8px;border-radius:6px;cursor:pointer;font-size:var(--fs-3);color:var(--text-primary)}.dcb-op:hover{background:var(--bg-card-hover)}
       .dcb-op input{width:14px;height:14px;accent-color:var(--accent);flex:none}
-      .dcb-txt{display:flex;flex-direction:column;min-width:0}.dcb-nome,.dcb-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dcb-sub{font-size:var(--fs-1);color:var(--text-muted)}
+      .dcb-txt{display:flex;flex-direction:column;min-width:0}.dcb-nome,.dcb-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dcb-sub{font-size:var(--fs-1);color:var(--text-muted)}.dcb-id{opacity:.75;font-variant-numeric:tabular-nums}
       .dcb-selo{flex:none;font-size:var(--fs-1);font-weight:800;letter-spacing:.02em;color:#fff;background:var(--c);border-radius:4px;padding:2px 5px;line-height:1.2}
       .dcb-vazio{padding:10px;font-size:var(--fs-2);color:var(--text-muted)}
       .dcb-rodape{border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;gap:var(--space-2);align-items:center;font-size:var(--fs-1);color:var(--text-muted)}

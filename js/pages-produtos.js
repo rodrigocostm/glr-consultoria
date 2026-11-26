@@ -386,7 +386,7 @@ Router.register('produtos', (params, el) => {
       </div>
       <div class="pr-info">
         <span id="pr-chips" style="display:contents">${renderChips()}</span>
-        ${multiConta ? `<select class="pr-sel" style="padding:5px 10px;font-size:12px" onchange="window._prConta(this.value)"><option value="">Todas as contas</option>${st.contas.map(c => `<option value="${c.mkt}:${h(c.id)}" ${st.conta === `${c.mkt}:${c.id}` ? 'selected' : ''}>${MKT[c.mkt].sigla} · ${h(c.nome)}</option>`).join('')}</select>` : ''}
+        ${multiConta ? `<select class="pr-sel" style="padding:5px 10px;font-size:12px" onchange="window._prConta(this.value)"><option value="">Todas as contas</option>${(sfx => st.contas.map(c => `<option value="${c.mkt}:${h(c.id)}" ${st.conta === `${c.mkt}:${c.id}` ? 'selected' : ''}>${MKT[c.mkt].sigla} · ${h(c.nome)}${h(sfx(c))}</option>`).join(''))(window.glrSufixoIdRepetido ? glrSufixoIdRepetido(st.contas, c => `${c.mkt}:${c.nome}`, c => c.id) : () => '')}</select>` : ''}
         <span class="pr-mut">${st.contas.length || st.carregando ? `${st.anuncios.length} anúncios em ${st.contas.length} conta(s)` : (portal ? 'nenhuma conta encontrada' : '⚠️ nenhuma conta vinculada a este cliente (vincule na Projeção)')}
         ${st.carregando ? ` · ⏳ ${h(st.progresso || 'carregando…')}` : ` · <a href="#" onclick="window._prRecarregar();return false;">atualizar anúncios</a>`}${st.erro ? ` · <span style="color:var(--red)">${h(st.erro)}</span>` : ''}</span>
       </div>
