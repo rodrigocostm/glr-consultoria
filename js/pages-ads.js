@@ -1094,7 +1094,7 @@ function renderConteudo() {
     <!-- Vendas totais (orgânico + ads) — contexto pra Receita ADS não ser lida como faturamento total -->
     <div style="background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(139,92,246,0.06));border:1px solid rgba(99,102,241,0.2);border-radius:12px;padding:16px 20px;margin-bottom:20px;">
       <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:none;letter-spacing:0;margin-bottom:10px;">Vendas do período — Ads vs Orgânico (${pedidosTotais} pedido${pedidosTotais!==1?'s':''} no total)</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:16px;">
         <div>
           <div style="font-size:11px;color:var(--text-secondary);">Vendas Totais (todos os canais)</div>
           <div style="font-size:20px;font-weight:700;color:var(--text-primary);">${fmt(vendasTotais)}${deltaBadge(vendasTotais, ma?.vendas.total || 0)}</div>
@@ -1116,7 +1116,7 @@ function renderConteudo() {
     </div>
 
     <!-- KPIs principais -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:16px;margin-bottom:24px;">
       ${kpiCard('Investimento', fmt(inv), ma ? `vs mês ant.: ${fmt(ma.ads.investimento)}` : '', '#f0f9ff', 'var(--cyan)')}
       ${kpiCard('Receita ADS', fmt(rec), 'atribuída pelo marketplace, não é o total', 'var(--green-bg)', 'var(--green)')}
       ${kpiCard('ROAS', fmtN(roas, 2) + 'x', roas >= 3 ? '✅ Bom' : roas >= 1.5 ? '⚠️ Regular' : '❌ Baixo', roas >= 3 ? 'var(--green-bg)' : roas >= 1.5 ? 'var(--yellow-bg)' : 'var(--red-bg)', roas >= 3 ? 'var(--green)' : roas >= 1.5 ? 'var(--yellow)' : 'var(--red)')}
@@ -1659,7 +1659,7 @@ function renderTendencias(d) {
         </div>
       `}
 
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:12px;margin-bottom:20px;">
         ${card('🛒', 'Pedidos ADS',  fmtN(ped7), fmtN(pedA), pedDiff,  false)}
         ${card('📈', 'Receita ADS',  fmt(rec7),  fmt(recA),  recDiff,  false)}
         ${card('💰', 'Investimento', fmt(inv7),  fmt(invA),  invDiff,  true)}

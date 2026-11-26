@@ -2050,7 +2050,7 @@ Router.register('relatorios', (params, el) => {
       ${plats.length ? `
       <div style="margin-bottom:28px;">
         <div style="font-size:var(--fs-4);font-weight:700;margin-bottom:14px;color:#1a2744;">Projeção do Mês — ${proj?.mes || mesAtual+' '+anoAtual}</div>
-        <div style="display:grid;grid-template-columns:repeat(${receitaGLR>0?5:4},1fr);gap:10px;">
+        <div style="display:grid;--cols:repeat(${receitaGLR>0?5:4},1fr);gap:10px;">
           ${[
             { l:'Faturamento Projetado', v: fmtFull(fatProj), icon:'💰', c:'#6366f1' },
             { l:'Vendas Projetadas',     v: Math.round(vendasProj).toLocaleString('pt-BR'), icon:'📦', c:'#10b981' },

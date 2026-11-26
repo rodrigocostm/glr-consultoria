@@ -101,7 +101,7 @@ Router.register('diagnostico', async (params, el) => {
 
       <div id="diag-saude-dados" style="margin-bottom:24px;"></div>
 
-      <div class="kpi-grid mb-24" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">
+      <div class="kpi-grid mb-24" style="grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),1fr));">
         <div class="kpi-card">
           <div class="kpi-icon" style="background:rgba(16,185,129,0.12);"><span style="font-size:18px;">🔑</span></div>
           <div class="kpi-label">Conexão Tiops</div>

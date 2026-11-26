@@ -385,7 +385,7 @@
 
     function renderBlocoAtributos(lista, titulo, colapsavel) {
       if (!lista.length) return '';
-      const conteudo = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+      const conteudo = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;">
         ${lista.map(a => `<div class="form-group" style="margin:0;">
           <label class="form-label">${esc(a.name)}${a.tags?.required || a.tags?.catalog_required ? ' *' : ''}</label>
           ${renderCampoAtributo(a)}
@@ -522,7 +522,7 @@
           </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:16px;" class="an-grid-resp">
+        <div style="display:grid;--cols:1fr 1.4fr;gap:16px;margin-bottom:16px;" class="an-grid-resp">
           <div class="card" style="padding:20px;">
             <div class="form-label" style="margin-bottom:10px;">Foto do produto</div>
             <div id="an-dropzone" ondragover="event.preventDefault();this.style.borderColor='var(--accent)';" ondragleave="this.style.borderColor='var(--border)';"
@@ -546,7 +546,7 @@
             <input type="file" accept="image/*" multiple onchange="window._anMlUploadExtra(this)">
 
             ${state.fotos.length ? `
-              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;">
+              <div style="display:grid;--cols:repeat(3,1fr);gap:8px;margin-top:14px;">
                 ${state.fotos.map((f, i) => `
                   <div style="position:relative;">
                     <img src="${f.url}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid var(--border);">
@@ -618,7 +618,7 @@
               <textarea class="form-textarea" id="an-descricao" rows="4" placeholder="Descreva o produto: material, medidas, diferenciais...">${state.descricao}</textarea>
             </div>
 
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:10px;margin-bottom:12px;">
               <div class="form-group" style="margin:0;"><label class="form-label">Preço (R$)</label><input type="number" step="0.01" class="form-input" id="an-preco" value="${esc(state.preco)}"></div>
               <div class="form-group" style="margin:0;"><label class="form-label">Estoque</label><input type="number" class="form-input" id="an-estoque" value="${esc(state.estoque)}"></div>
               <div class="form-group" style="margin:0;"><label class="form-label">Condição</label>
@@ -1049,7 +1049,7 @@
 
     function renderBlocoAtributos(lista, titulo, colapsavel) {
       if (!lista.length) return '';
-      const conteudo = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+      const conteudo = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;">
         ${lista.map(a => `<div class="form-group" style="margin:0;">
           <label class="form-label">${esc(labelAtributo(a))}${a.mandatory ? ' *' : ''}</label>
           ${renderCampoAtributo(a)}
@@ -1186,7 +1186,7 @@
           </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:16px;" class="an-grid-resp">
+        <div style="display:grid;--cols:1fr 1.4fr;gap:16px;margin-bottom:16px;" class="an-grid-resp">
           <div class="card" style="padding:20px;">
             <div class="form-label" style="margin-bottom:10px;">Foto do produto</div>
             <div id="an-sp-dropzone" ondragover="event.preventDefault();this.style.borderColor='#ee4d2d';" ondragleave="this.style.borderColor='var(--border)';"
@@ -1210,7 +1210,7 @@
             <input type="file" accept="image/*" multiple onchange="window._anSpUploadExtra(this)">
 
             ${state.fotos.length ? `
-              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;">
+              <div style="display:grid;--cols:repeat(3,1fr);gap:8px;margin-top:14px;">
                 ${state.fotos.map((f, i) => `
                   <div style="position:relative;">
                     <img src="${f.url}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid var(--border);">
@@ -1280,7 +1280,7 @@
               <textarea class="form-textarea" id="an-sp-descricao" rows="4" placeholder="Descreva o produto: material, medidas, diferenciais...">${state.descricao}</textarea>
             </div>
 
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:10px;margin-bottom:12px;">
               <div class="form-group" style="margin:0;"><label class="form-label">Preço (R$)</label><input type="number" step="0.01" class="form-input" id="an-sp-preco" value="${esc(state.preco)}"></div>
               <div class="form-group" style="margin:0;"><label class="form-label">Estoque</label><input type="number" class="form-input" id="an-sp-estoque" value="${esc(state.estoque)}"></div>
               <div class="form-group" style="margin:0;"><label class="form-label">Condição</label>
@@ -1697,7 +1697,7 @@
 
     function renderBlocoAtributos(lista, titulo, colapsavel) {
       if (!lista.length) return '';
-      const conteudo = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+      const conteudo = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;">
         ${lista.map(a => `<div class="form-group" style="margin:0;">
           <label class="form-label">${esc(a.name)}${a.rules?.some(r => r.type === 'REQUIRED' && r.value === 'true') ? ' *' : ''}</label>
           ${renderCampoAtributo(a)}
@@ -1841,7 +1841,7 @@
           </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:16px;" class="an-grid-resp">
+        <div style="display:grid;--cols:1fr 1.4fr;gap:16px;margin-bottom:16px;" class="an-grid-resp">
           <div class="card" style="padding:20px;">
             <div class="form-label" style="margin-bottom:10px;">Foto do produto</div>
             <div id="an-tt-dropzone" ondragover="event.preventDefault();this.style.borderColor='#25F4EE';" ondragleave="this.style.borderColor='var(--border)';"
@@ -1865,7 +1865,7 @@
             <input type="file" accept="image/*" multiple onchange="window._anTtUploadExtra(this)">
 
             ${state.fotos.length ? `
-              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;">
+              <div style="display:grid;--cols:repeat(3,1fr);gap:8px;margin-top:14px;">
                 ${state.fotos.map((f, i) => `
                   <div style="position:relative;">
                     <img src="${f.url}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid var(--border);">
@@ -1924,7 +1924,7 @@
               <textarea class="form-textarea" id="an-tt-descricao" rows="4" placeholder="Descreva o produto: material, medidas, diferenciais...">${state.descricao}</textarea>
             </div>
 
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:10px;margin-bottom:12px;">
               <div class="form-group" style="margin:0;"><label class="form-label">Preço (R$)</label><input type="number" step="0.01" class="form-input" id="an-tt-preco" value="${esc(state.preco)}"></div>
               <div class="form-group" style="margin:0;"><label class="form-label">Estoque</label><input type="number" class="form-input" id="an-tt-estoque" value="${esc(state.estoque)}"></div>
               <div class="form-group" style="margin:0;"><label class="form-label">SKU</label><input type="text" class="form-input" id="an-tt-sku" value="${esc(state.sku)}"></div>

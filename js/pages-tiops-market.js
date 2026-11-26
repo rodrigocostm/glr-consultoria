@@ -39,7 +39,7 @@ Router.register('mercado-tiops', async(params,el)=>{
   </section>
   <details class="mk-avancado card"><summary>Consulta avançada (direto no Tiops)</summary>
    <div id="tm-discovery" style="margin:10px 0"></div><button class="btn btn-secondary btn-sm" id="tm-discover" type="button">Verificar novidades na conexão</button>
-   <form id="tm-form" style="margin-top:16px"><label for="tm-action">Consulta</label><select id="tm-action" class="form-control" style="width:100%;margin:8px 0 12px"><option>Carregando consultas…</option></select><p id="tm-desc" class="mk-sub"></p><div id="tm-fields" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px"></div><button id="tm-run" class="btn btn-primary btn-sm" style="margin-top:14px" disabled>Consultar</button></form>
+   <form id="tm-form" style="margin-top:16px"><label for="tm-action">Consulta</label><select id="tm-action" class="form-control" style="width:100%;margin:8px 0 12px"><option>Carregando consultas…</option></select><p id="tm-desc" class="mk-sub"></p><div id="tm-fields" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:16px"></div><button id="tm-run" class="btn btn-primary btn-sm" style="margin-top:14px" disabled>Consultar</button></form>
    <p id="tm-status" role="status" aria-live="polite" class="mk-sub"></p><div id="tm-results"></div></details>
  </div>
  <style>

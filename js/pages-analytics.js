@@ -568,7 +568,7 @@ Router.register('analytics-conteudo', async (params, el) => {
     }
 
     return `
-    <div class="kpi-grid mb-24" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">
+    <div class="kpi-grid mb-24" style="grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),1fr));">
       <div class="kpi-card">
         <div class="kpi-icon" style="background:rgba(99,102,241,0.12);"><span style="font-size:18px;">🎯</span></div>
         <div class="kpi-label">Meta Total</div>
@@ -603,7 +603,7 @@ Router.register('analytics-conteudo', async (params, el) => {
       const criticas = dadosClientes.filter(d => statusDe(d.pctMeta).label==='Crítico');
       const saudaveis = dadosClientes.filter(d => statusDe(d.pctMeta).label==='Saudável');
       return `
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px;">
+      <div style="display:grid;--cols:1fr 1fr 1fr;gap:16px;margin-bottom:24px;">
         <div class="card">
           <div class="section-title mb-10" style="font-size:13px;">🔴 Contas Críticas (${criticas.length})</div>
           ${criticas.length ? criticas.map(d=>`<div style="padding:6px 0;font-size:13px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="Router.navigate('cliente-perfil',{id:${d.clienteId}})">${d.nome} <span style="float:right;color:var(--red);font-weight:700;">${d.pctMeta!=null?d.pctMeta.toFixed(0)+'%':'—'}</span></div>`).join('') : '<div style="color:var(--text-muted);font-size:12px;">Nenhuma 🎉</div>'}
@@ -620,7 +620,7 @@ Router.register('analytics-conteudo', async (params, el) => {
       </div>`;
     })()}
 
-    <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:24px;">
+    <div style="display:grid;--cols:2fr 1fr;gap:16px;margin-bottom:24px;">
       <div class="card">
         <div class="section-title mb-10" style="font-size:13px;">Meta vs Projeção (todas as contas)</div>
         <div style="height:260px;"><canvas id="analytics-chart-meta"></canvas></div>
@@ -768,7 +768,7 @@ Router.register('analytics-conteudo', async (params, el) => {
     return `
     <div class="card mb-16">
       <div class="section-title mb-10" style="font-size:13px;">Nova Ação</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 2fr 1fr auto;gap:8px;align-items:end;">
+      <div style="display:grid;--cols:1fr 1fr 2fr 1fr auto;gap:8px;align-items:end;">
         <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Cliente</div>
           <select id="pa-cliente" class="form-input" style="width:100%;"><option value="">Selecione</option>${clientesOpts}</select></div>
         <div><div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px;">Canal</div>

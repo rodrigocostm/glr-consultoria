@@ -1145,7 +1145,7 @@ Router.register('portal-dashboard', (params, el) => {
       ${_portalFiltroBar()}
 
       <!-- KPIs principais -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:16px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:16px;margin-bottom:16px;">
         ${_pKpi('Faturamento', _pR$(fat), `${_pN(qtd)} pedidos`, 'var(--green)')}
         ${_pKpi('Líq. do Marketplace', _pR$(liquido), temLiquido?'após taxas':'estimado', 'var(--cyan)')}
         ${_pKpi('Lucro Bruto', _pR$(lucroBruto), temCusto?'líquido − custo produto':'sem custo cadastrado', lucroBruto>=0?'var(--green)':'var(--red)')}
@@ -1153,7 +1153,7 @@ Router.register('portal-dashboard', (params, el) => {
       </div>
 
       <!-- KPIs ADS -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:16px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:16px;margin-bottom:16px;">
         ${_pKpi('Investimento em ADS', _pR$(adsInvestimento), 'no período selecionado', 'var(--purple)')}
         ${_pKpi('TACoS', adsInvestimento>0?_pN(tacos,1)+'%':'—', 'investido em ADS / faturamento', tacos>0&&tacos<=10?'var(--green)':tacos<=20?'var(--yellow)':'var(--red)')}
         ${_pKpi('Lucro Pós-ADS', _pR$(lucroPosAds), 'lucro bruto − investimento ADS', lucroPosAds>=0?'var(--green)':'var(--red)')}
@@ -1161,13 +1161,13 @@ Router.register('portal-dashboard', (params, el) => {
       </div>
 
       <!-- KPIs secundários -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:16px;margin-bottom:24px;">
         ${_pKpi('Número de Vendas', _pN(qtd), '', 'var(--accent)')}
         ${_pKpi('Unidades Vendidas', _pN(unidades), 'itens despachados', 'var(--purple)')}
         ${_pKpi('Ticket Médio', _pR$(ticket), 'por pedido', 'var(--cyan)')}
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+      <div style="display:grid;--cols:1fr 1fr;gap:20px;margin-bottom:24px;">
         <!-- Gráfico diário -->
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
           <h3 style="font-size:14px;font-weight:700;margin:0 0 16px;color:var(--text-primary);">Faturamento Diário</h3>
@@ -1306,7 +1306,7 @@ function _renderPortalVendasLista(todos, custos) {
           <span style="margin-left:auto;font-size:12px;color:var(--cyan);font-weight:600;">${_pR$(fatGrupo)}</span>
           <span style="font-size:12px;font-weight:700;color:${_pCorMargem(margemGrupo)};">Lucro ${_pR$(lucroGrupo)} · ${_pN(margemGrupo,1)}%</span>
         </div>
-        <div style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px;padding:6px 16px;background:var(--bg-base);border-bottom:1px solid var(--border);">
+        <div style="display:grid;--cols:2fr 50px 105px 105px 90px 90px;padding:6px 16px;background:var(--bg-base);border-bottom:1px solid var(--border);">
           ${['ITEM','QTD','TOTAL','LÍQ. MP','LUCRO','MARGEM'].map((h,i)=>
             `<div style="font-size:10px;color:var(--text-secondary);font-weight:700;text-align:${i<=1?'left':'right'};white-space:nowrap;">${h}</div>`).join('')}
         </div>
@@ -1335,7 +1335,7 @@ function _renderPortalVendaRow(p, custos) {
 
   return `
   <div style="border-bottom:1px solid var(--border);">
-    <div class="portal-row-click" data-id="${p.id}" style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px;padding:10px 16px;align-items:center;cursor:pointer;">
+    <div class="portal-row-click" data-id="${p.id}" style="display:grid;--cols:2fr 50px 105px 105px 90px 90px;padding:10px 16px;align-items:center;cursor:pointer;">
       <div style="display:flex;align-items:center;gap:10px;min-width:0;">
         ${img}
         <div style="min-width:0;">
@@ -1491,7 +1491,7 @@ Router.register('portal-abc', (params, el) => {
       ${_portalFiltroBar()}
 
       <!-- Resumo ABC -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;">
+      <div style="display:grid;--cols:repeat(3,1fr);gap:16px;margin-bottom:24px;">
         <div style="background:var(--green-bg);border:1px solid color-mix(in srgb,var(--green) 28%,transparent);border-radius:12px;padding:20px;text-align:center;">
           <div style="font-size:32px;font-weight:700;color:var(--green);">A</div>
           <div style="font-size:13px;font-weight:700;color:var(--green);margin:4px 0;">${countA} produto(s)</div>

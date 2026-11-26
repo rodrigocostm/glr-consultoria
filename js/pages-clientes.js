@@ -204,7 +204,7 @@ function setupClienteHandlers() {
         <button class="btn btn-ghost btn-sm" onclick="this.closest('.modal-overlay').remove()">✕</button>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="display:grid;--cols:1fr 1fr;gap:12px;">
         <div class="form-group" style="grid-column:1/-1;">
           <label class="form-label">Nome da Empresa *</label>
           <input class="form-input" id="c-nome" placeholder="Ex: Gama Móveis Ltda" value="${c?.nome || ''}">
@@ -507,7 +507,7 @@ Router.register('cliente-perfil', (params, el) => {
               <div class="section-title">Contas Marketplace</div>
               <button onclick="window.carregarDadosContas(${c.id})" class="btn btn-secondary btn-sm" id="btn-carregar-contas">Carregar dados</button>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;" id="contas-mp-grid">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;" id="contas-mp-grid">
               ${contas.map(ct => {
                 const mp   = ct.marketplace || ct.plataforma || '';
                 const extId = ct.external_id || ct.id || '';
@@ -755,7 +755,7 @@ Router.register('cliente-perfil', (params, el) => {
         const adsPct   = fat > 0 && ads > 0 ? (ads/fat*100).toFixed(1) : null;
 
         if (elDiv) elDiv.innerHTML = `
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div style="display:grid;--cols:1fr 1fr;gap:8px;">
             <div>
               <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Faturamento (mês)</div>
               <div style="font-size:14px;font-weight:700;color:#60a5fa;">${R$(fat)}</div>
