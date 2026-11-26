@@ -22,6 +22,7 @@ function mockRole(role) {
     if (url.endsWith('/auth/v1/user')) return { ok: true, json: async () => ({ id: 'user1', email: 'user@example.test' }) };
     if (url.endsWith('/rpc/glr_acesso')) return { ok: true, json: async () => role };
     if (url.includes('/rest/v1/glr_conhecimento?')) return { ok: true, json: async () => [] };
+    if (url.includes('/rest/v1/glr_sync_estado')) return { ok: true, json: async () => (init?.method === 'POST' ? null : []) };
     if (url === 'https://api.anthropic.com/v1/messages') return { ok: true, json: async () => ({ content: [{ text: 'ok' }] }) };
     if (url === 'https://mcp.tiops.com.br') return { ok: true, status: 200, json: async () => ({ data: { accounts: [{external_id:'own'}, {external_id:'other'}] } }) };
     throw new Error('Unexpected external request: ' + url);
@@ -56,7 +57,7 @@ test('generate-photo: portal só usa os tipos prontos do Criar anúncio, nunca p
   assert.equal(r.code, 403); assert.equal(calls.length, 2);
   calls = mockRole({ role: 'portal', portal: { contaIds: ['own'] } }); r = res();
   await require('../api/generate-photo')(req({ stage: 'tipo', tipo: 'fundo_branco' }), r);
-  assert.equal(r.code, 400); assert.equal(calls.length, 2); // passou da permissão; parou por falta de foto, sem chamar a IA paga
+  assert.equal(r.code, 400); assert.equal(calls.length, 4); assert.equal(calls.some(u => u.includes('generativelanguage.googleapis.com')), false);
 });
 test('mcp: portal cria anúncio só na própria conta', async () => {
   let calls = mockRole({ role: 'portal', portal: { contaIds: ['own'] } }); let r = res();

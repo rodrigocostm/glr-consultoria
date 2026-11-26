@@ -14,6 +14,8 @@ module.exports = async function handler(req, res) {
 
   const quem = await require('./_auth').requireEquipeOuPortal(req, res); if (!quem) return;
   if (quem.role === 'portal' && !['tipo', 'ambientada'].includes(String(req.body?.stage || 'ambientada'))) return res.status(403).json({ error: 'Opção não disponível no portal.' });
+  try { await require('./_cota-ia').consumir(quem.user?.id, 'generate-photo'); }
+  catch (e) { return res.status(e.status || 503).json({ error: e.message || 'Cota indisponível.' }); }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
