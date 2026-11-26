@@ -437,6 +437,7 @@ Router.register('vendometro', (params, el) => {
     }
     if (sc) sc.hidden = !!cfgPortal || oculta('nomes');
     if (sc && !cfgPortal) porOpcoes(sc, `<option value="">Todos os clientes</option>` + [...clientes].sort((a, b) => String(a[1]).localeCompare(String(b[1]))).map(([id, n]) => `<option value="${h(id)}" ${id === st.cliente ? 'selected' : ''}>${h(n)}</option>`).join(''));
+    if (sc && !cfgPortal && !oculta('nomes')) GLR.ctx?.ajustarSeletor?.(sc, { cliente: true, semTodas: true, disparar: false }); // cliente em foco: o seletor de cliente vira o nome dele
     if (sk) { sk.hidden = doCli.length < 2 || oculta('nomes'); porOpcoes(sk, `<option value="">Todas as contas</option>` + doCli.map(([k, ct]) => `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${MKT[ct.mkt].sigla} · ${h(ct.nome)}</option>`).join('')); }
     const nomeCli = clientes.get(st.cliente), conta = doCli.find(([k]) => k === st.conta)?.[1];
     const t = document.getElementById('vm-hoje'); if (t) t.textContent = `Vendas ${rotuloDia(periodo().dia).toLowerCase()} · ${nomeCli ? (oculta('nomes') ? (conta ? `${MKT[conta.mkt].sigla} · conta selecionada` : 'cliente selecionado') : nomeCli + (conta ? ` · ${MKT[conta.mkt].sigla} ${conta.nome}` : '')) : (st.gestor ? `carteira de ${(GLR.gestores || []).find(g => String(g.id) === st.gestor)?.nome || 'gestor'}` : 'carteira GLR')}`;

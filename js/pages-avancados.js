@@ -1214,6 +1214,8 @@ const _projecaoDetalhe = (params, el) => {
       <textarea id="proj-obs" class="form-textarea" placeholder="Contexto do mês, eventos, campanhas, rupturas de estoque…" style="min-height:70px;">${_pnEsc(projecaoAtiva.obs || '')}</textarea>
     </div>
   </div>`;
+  // cliente em foco (barra de cima): o seletor de cliente da projeção some e fica o nome dele
+  if (String(clienteIdAtivo) === String(GLR.ctx?.cliente?.() || '')) GLR.ctx.ajustarSeletor?.(document.getElementById('sel-cliente'), { cliente: true, disparar: false });
 
   if (!document.getElementById('pn-styles')) {
     const st = document.createElement('style');
@@ -1939,7 +1941,7 @@ Router.register('relatorios', (params, el) => {
     return;
   }
 
-  let clienteSel = GLR.clientes[0].id;
+  let clienteSel = (GLR.clientes.find(c => String(c.id) === String(GLR.ctx?.cliente?.() || '')) || GLR.clientes[0]).id; // cliente em foco (barra de cima)
 
   const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -2257,7 +2259,7 @@ Router.register('relatorios', (params, el) => {
       <div style="display:flex;align-items:center;gap:12px;">
         <label class="form-label" style="margin:0;white-space:nowrap;">Cliente:</label>
         <select class="form-control" id="rel-cliente" style="min-width:220px;" onchange="relClienteChange(this.value)">
-          ${GLR.clientes.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}
+          ${GLR.clientes.map(c=>`<option value="${c.id}" ${c.id===clienteSel?'selected':''}>${glrEsc(c.nome)}</option>`).join('')}
         </select>
       </div>
       <div style="display:flex;gap:10px;">
@@ -2281,6 +2283,7 @@ Router.register('relatorios', (params, el) => {
     }
   </style>`;
 
+  GLR.ctx?.ajustarSeletor?.(document.getElementById('rel-cliente'), { cliente: true, disparar: false });
   window.relClienteChange = function(val) {
     clienteSel = val;
     document.getElementById('rel-content').innerHTML = renderRelatorio();
