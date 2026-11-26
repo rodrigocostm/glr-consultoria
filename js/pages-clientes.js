@@ -354,7 +354,30 @@ function setupClienteHandlers() {
   };
 }
 
-// ---- Perfil do Cliente ----
+// ---- Perfil do Cliente (Casa do cliente) ----
+// Abas → subtelas. `rota` = tela existente embutida com o cliente em foco.
+window.GLR_PERFIL_ABAS = [
+  { id: 'visao', nome: 'Visão geral', subs: [{ id: 'plano', nome: 'Plano e projeção' }] },
+  { id: 'vendas', nome: 'Vendas', subs: [{ id: 'vendometro', nome: 'Vendômetro', rota: 'vendometro' }, { id: 'vendas', nome: 'Vendas e funil', rota: 'vendas' }] },
+  { id: 'ads', nome: 'ADS', subs: [{ id: 'ads-shopee', nome: 'Shopee', rota: 'agente' }, { id: 'ads-ml', nome: 'Mercado Livre', rota: 'agente-ml' }] },
+  { id: 'anuncios', nome: 'Anúncios e preços', subs: [{ id: 'precos-ml', nome: 'Preços ML', rota: 'precos-ml' }, { id: 'precos-shopee', nome: 'Preços Shopee', rota: 'precos-shopee' }, { id: 'anuncios-novos', nome: 'Anúncios novos', rota: 'anuncios-novos' }] },
+  { id: 'saude', nome: 'Saúde', subs: [{ id: 'estoque-margem', nome: 'Estoque e margem', rota: 'estoque-margem' }, { id: 'qualidade', nome: 'Qualidade dos anúncios', rota: 'qualidade-anuncios' }, { id: 'atendimento', nome: 'Atendimento', rota: 'atendimento' }, { id: 'rastreamento', nome: 'Rastreamento', rota: 'rastreamento' }] },
+  { id: 'financeiro', nome: 'Financeiro', subs: [{ id: 'contas', nome: 'Contas e comissão' }, { id: 'financeiro', nome: 'Financeiro', rota: 'financeiro' }, { id: 'dre', nome: 'DRE', rota: 'dre' }, { id: 'conciliacao', nome: 'Conciliação', rota: 'conciliacao' }, { id: 'prejuizo', nome: 'Vendas no prejuízo', rota: 'vendas-prejuizo' }] },
+  { id: 'relatorios', nome: 'Relatórios', subs: [{ id: 'relatorios', nome: 'Relatórios', rota: 'relatorios' }, { id: 'semanal', nome: 'Relatório semanal', rota: 'relatorio-semanal' }, { id: 'timeline', nome: 'Timeline de ações' }] },
+];
+// Trocou o cliente na barra com um perfil aberto → abre o perfil do novo cliente
+// na mesma aba (sem cliente → volta para a lista). Troca o endereço antes do
+// Router.resolve() que o GLR.ctx.definir chama logo depois.
+window.addEventListener('glr:cliente', e => {
+  if (typeof Router === 'undefined' || Router.currentPage !== 'cliente-perfil') return;
+  const novo = e.detail?.id || '';
+  if (novo && String(Router.currentParams?.id) === novo) return;
+  const p = Router.currentParams || {};
+  const hash = novo ? `#cliente-perfil?id=${encodeURIComponent(novo)}${p.aba ? `&aba=${p.aba}` : ''}${p.sub ? `&sub=${p.sub}` : ''}` : '#clientes';
+  try { history.replaceState(null, '', hash); } catch (err) {}
+  Router.currentParams = novo ? { ...p, id: novo } : {};
+});
+
 Router.register('cliente-perfil', (params, el) => {
   setupClienteHandlers(); // "Editar" funciona mesmo abrindo o perfil direto
   const clienteId = parseInt(params.id);
@@ -379,13 +402,51 @@ Router.register('cliente-perfil', (params, el) => {
     return;
   }
 
+  // ── Casa do cliente: abas com as telas do sistema já filtradas por ele ──
+  // Cada aba tem subtelas; as que têm `rota` reaproveitam a tela que já existe
+  // (embutida aqui, com o cliente em foco), as outras são deste perfil.
+  const ABAS = window.GLR_PERFIL_ABAS;
+  const antigo = { plano: ['visao', 'plano'], overview: ['financeiro', 'contas'], timeline: ['relatorios', 'timeline'] }[params.aba];
+  let aba = antigo ? antigo[0] : (ABAS.some(a => a.id === params.aba) ? params.aba : 'visao');
+  const subsDe = id => ABAS.find(a => a.id === id).subs;
+  let sub = antigo ? antigo[1] : (subsDe(aba).some(x => x.id === params.sub) ? params.sub : subsDe(aba)[0].id);
   let activeTab = 'plano';
   GLR.ctx?.definir(String(clienteId), true); // o seletor "Cliente" da barra acompanha o perfil aberto
+
+  // guarda aba e subtela no endereço (recarregar volta para o mesmo lugar)
+  function lembrarNoEndereco() {
+    try { history.replaceState(null, '', `#cliente-perfil?id=${encodeURIComponent(clienteId)}&aba=${aba}&sub=${sub}`); } catch (e) {}
+    Router.currentParams = { ...Router.currentParams, id: clienteId, aba, sub };
+  }
+
+  function renderSubs() {
+    const box = document.getElementById('perfil-subs');
+    if (!box) return;
+    const subs = subsDe(aba);
+    box.hidden = subs.length < 2;
+    box.innerHTML = subs.map(x => `<button type="button" class="perfil-sub${x.id === sub ? ' on' : ''}" aria-pressed="${x.id === sub}" onclick="window._perfilSub('${x.id}')">${x.nome}</button>`).join('');
+  }
 
   function renderTab() {
     // Relê o cliente sempre com dados frescos
     const c = getCliente();
     if (!c) return;
+    document.querySelectorAll('.perfil-abas .tab-btn').forEach(btn => { const on = btn.dataset.tab === aba; btn.classList.toggle('active', on); btn.setAttribute('aria-selected', String(on)); });
+    renderSubs();
+    const s = subsDe(aba).find(x => x.id === sub);
+    Router.embutida = null;
+    if (s.rota) {
+      const tc = document.getElementById('tab-content');
+      if (!tc) return;
+      tc.innerHTML = '<div class="perfil-embed"></div>';
+      const alvo = tc.firstChild;
+      if (!Router.routes[s.rota]) { alvo.innerHTML = `<div class="empty-state"><div class="empty-state-title">Tela indisponível</div></div>`; return; }
+      Router.embutida = s.rota;
+      try { Router.routes[s.rota]({ embed: true, clienteId: c.id }, alvo); }
+      catch (e) { console.error('[perfil]', s.rota, e); alvo.innerHTML = `<div class="empty-state"><div class="empty-state-title">Não deu para abrir ${s.nome}</div><div class="empty-state-desc">Abra a tela pelo menu ou recarregue a página.</div></div>`; }
+      return;
+    }
+    activeTab = s.id === 'contas' ? 'overview' : s.id;
 
     const acoes        = GLR.acoes.filter(a => a.clienteId === c.id);
     const tarefas      = GLR.tarefas.filter(t => t.clienteId === c.id);
@@ -562,7 +623,6 @@ Router.register('cliente-perfil', (params, el) => {
       `;
     }
 
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === activeTab));
   }
 
   // Monta o HTML estático do cabeçalho usando dados frescos
@@ -597,16 +657,21 @@ Router.register('cliente-perfil', (params, el) => {
       </div>
     </div>
 
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="plano" onclick="switchTab('plano')">Plano e meta</button>
-      <button class="tab-btn" data-tab="overview" onclick="switchTab('overview')">Contas e comissão</button>
-      <button class="tab-btn" data-tab="timeline" onclick="switchTab('timeline')">Timeline</button>
+    <div class="tabs perfil-abas" role="tablist" aria-label="Seções do cliente">
+      ${ABAS.map(a => `<button type="button" role="tab" class="tab-btn" data-tab="${a.id}" onclick="switchTab('${a.id}')">${a.nome}</button>`).join('')}
     </div>
+    <div class="perfil-subs" id="perfil-subs" role="group" aria-label="Telas desta seção"></div>
 
     <div id="tab-content"></div>
   </div>`;
 
-  window.switchTab = (tab) => { activeTab = tab; renderTab(); };
+  // aceita os nomes antigos das abas (plano, overview, timeline)
+  window.switchTab = (tab) => {
+    const v = { plano: ['visao', 'plano'], overview: ['financeiro', 'contas'], timeline: ['relatorios', 'timeline'] }[tab];
+    if (v) { aba = v[0]; sub = v[1]; } else if (ABAS.some(a => a.id === tab)) { aba = tab; sub = subsDe(tab)[0].id; } else return;
+    lembrarNoEndereco(); renderTab();
+  };
+  window._perfilSub = id => { if (!subsDe(aba).some(x => x.id === id)) return; sub = id; lembrarNoEndereco(); renderTab(); };
 
   // ── Salvar alíquota de imposto por conta ────────────────────
   // modo: 'unidade' (padrão), 'pedido' (1 por pedido) ou 'nao' (não gera); aceita o boolean antigo

@@ -1776,7 +1776,7 @@ Router.register('financeiro', async (params, el) => {
     console.log('[Contas] Carregadas:', contas.length);
     // Já tinha empresa/conta escolhida → carrega sozinho (da base, instantâneo)
     // Portal: sempre carrega (só as contas do cliente); equipe: quando já tinha empresa/conta
-    if ((window._portalConfig || empresaSel !== 'todas' || contaSel !== 'todas') && Router.currentPage === 'financeiro') buscar();
+    if ((window._portalConfig || empresaSel !== 'todas' || contaSel !== 'todas') && Router.estaEm('financeiro')) buscar();
   }).catch(e => {
     console.error('[Contas] Erro:', e.message);
   });
@@ -1797,7 +1797,7 @@ Router.register('financeiro', async (params, el) => {
   // Servidor terminou uma rodada de sincronização → recarrega sozinho, se o que
   // está na tela veio todo da base (recarregar contas da API seria lento demais).
   window._finRecarregarDaBase = () => {
-    if (Router.currentPage === 'financeiro' && ultimaBuscaSoBase && !buscando && document.getElementById('fin-conteudo')) buscar();
+    if (Router.estaEm('financeiro') && ultimaBuscaSoBase && !buscando && document.getElementById('fin-conteudo')) buscar();
   };
   if (!window._finOuvindoBase) {
     window._finOuvindoBase = true;

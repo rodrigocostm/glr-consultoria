@@ -77,7 +77,7 @@
     };
     if (!window._agOuvindoBase) {
       window._agOuvindoBase = true;
-      window.addEventListener('glr-base-atualizada', () => { if (Router.currentPage === 'agente' && window._agGmvRecarregar) window._agGmvRecarregar(); });
+      window.addEventListener('glr-base-atualizada', () => { if (Router.estaEm('agente') && window._agGmvRecarregar) window._agGmvRecarregar(); });
     }
 
     function configDaConta(id) { return state.contas.find(c => c.conta_id === id) || null; }
