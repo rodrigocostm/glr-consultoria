@@ -81,15 +81,22 @@
   function todasOpcoes() {
     const telas = [...document.querySelectorAll('#sidebar .nav-item[data-page], .sidebar .nav-item[data-page]')].filter(b => getComputedStyle(b).display !== 'none' || b.closest('.nav-grupo'))
       .map(b => ({ tipo: 'Tela', nome: b.textContent.replace(/\s+/g, ' ').trim(), grupo: b.closest('.nav-grupo')?.querySelector('.nav-grupo-tit span')?.textContent || '', ir: () => Router.navigate(b.dataset.page) }));
-    const clientes = ((typeof GLR !== 'undefined' ? GLR.clientes : null) || []).map(c => ({ tipo: 'Cliente', nome: c.nome, grupo: 'Perfil do cliente', ir: () => Router.navigate('cliente-perfil', { id: c.id }) }));
-    return [...telas, ...clientes];
+    const G = typeof GLR !== 'undefined' ? GLR : {};
+    // cliente também acha pelo responsável ou pela categoria (como a busca antiga do topo)
+    const clientes = (G.clientes || []).map(c => ({ tipo: 'Cliente', nome: c.nome, extra: [c.responsavel, c.categoria, c.gestor].filter(Boolean).join(' '), grupo: [c.categoria, c.gestor].filter(Boolean).join(' · ') || 'Perfil do cliente', ir: () => Router.navigate('cliente-perfil', { id: c.id }) }));
+    const tarefas = (G.tarefas || []).map(t => ({ tipo: 'Tarefa', nome: t.titulo, extra: t.cliente, grupo: [t.cliente, t.prazo && typeof formatDate === 'function' ? formatDate(t.prazo) : ''].filter(Boolean).join(' · '), ir: () => Router.navigate('tarefas') }));
+    return [...telas, ...clientes, ...tarefas];
   }
+  const ORDEM = { Tela: 0, Cliente: 1, Tarefa: 2 };
   function filtrar(q) {
     const t = semAcento(q).trim();
     const base = todasOpcoes();
     if (!t) return base.filter(o => o.tipo === 'Tela').slice(0, 12);
-    return base.map(o => { const n = semAcento(o.nome); const i = n.indexOf(t); return { o, s: i === 0 ? 0 : i > 0 ? 1 : -1 }; })
-      .filter(x => x.s >= 0).sort((a, b) => a.s - b.s || (a.o.tipo === 'Tela' ? -1 : 1)).slice(0, 12).map(x => x.o);
+    // 0 = nome começa com o termo, 1 = nome contém, 2 = só responsável/categoria/cliente da tarefa contém
+    const achados = base.map(o => { const i = semAcento(o.nome).indexOf(t); return { o, s: i === 0 ? 0 : i > 0 ? 1 : semAcento(o.extra).includes(t) ? 2 : -1 }; })
+      .filter(x => x.s >= 0).sort((a, b) => a.s - b.s || ORDEM[a.o.tipo] - ORDEM[b.o.tipo]);
+    let nTarefas = 0; // no máximo 4 tarefas, para não esconder telas e clientes
+    return achados.filter(x => x.o.tipo !== 'Tarefa' || ++nTarefas <= 4).slice(0, 14).map(x => x.o);
   }
   function desenhar() {
     const lista = paleta.querySelector('.cmdk-lista');
@@ -97,12 +104,14 @@
       : '<div class="cmdk-vazio">Nada encontrado</div>';
     lista.querySelector('.cmdk-op.on')?.scrollIntoView({ block: 'nearest' });
   }
-  function abrirPaleta() {
+  let voltarFoco = null;
+  function abrirPaleta(inicial) {
     if (window._portalConfig) return;
+    voltarFoco = document.activeElement;
     if (!paleta) {
       paleta = document.createElement('div');
       paleta.className = 'cmdk';
-      paleta.innerHTML = `<div class="cmdk-caixa" role="dialog" aria-label="Ir para"><input id="cmdk-input" class="cmdk-input" placeholder="Ir para tela ou cliente…" autocomplete="off"><div class="cmdk-lista"></div><div class="cmdk-rodape"><span>↑↓ escolher</span><span>Enter abrir</span><span>Esc fechar</span></div></div>`;
+      paleta.innerHTML = `<div class="cmdk-caixa" role="dialog" aria-modal="true" aria-label="Buscar"><input id="cmdk-input" class="cmdk-input" placeholder="Buscar tela, cliente ou tarefa…" autocomplete="off" aria-label="Buscar tela, cliente ou tarefa"><div class="cmdk-lista"></div><div class="cmdk-rodape"><span>↑↓ escolher</span><span>Enter abrir</span><span>Esc fechar</span></div></div>`;
       document.body.appendChild(paleta);
       paleta.addEventListener('mousedown', e => { if (e.target === paleta) fecharPaleta(); });
       paleta.querySelector('.cmdk-lista').addEventListener('click', e => { const b = e.target.closest('.cmdk-op'); if (b) escolher(+b.dataset.i); });
@@ -116,12 +125,28 @@
       });
     }
     const inp = paleta.querySelector('input');
-    inp.value = ''; selecionado = 0; opcoes = filtrar('');
+    inp.value = typeof inicial === 'string' ? inicial : ''; selecionado = 0; opcoes = filtrar(inp.value);
     paleta.classList.add('on'); desenhar();
-    setTimeout(() => inp.focus(), 0);
+    inp.focus(); // na hora: quem já começou a digitar no botão da busca não perde letras
+    try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) {}
   }
-  function fecharPaleta() { paleta?.classList.remove('on'); }
-  function escolher(i) { const o = opcoes[i]; if (!o) return; fecharPaleta(); o.ir(); }
+  function fecharPaleta() {
+    if (!paleta?.classList.contains('on')) return;
+    paleta.classList.remove('on');
+    try { voltarFoco?.focus?.(); } catch (e) {}
+  }
+  // Botão de busca do topo (aparece também no celular): abre a paleta; digitar com ele focado já começa a busca
+  function ligarBotaoBusca() {
+    const bt = document.getElementById('global-search');
+    if (!bt || bt.dataset.ligado) return;
+    bt.dataset.ligado = '1';
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+    const kbd = bt.querySelector('.search-box-kbd'); if (kbd && !mac) kbd.textContent = 'Ctrl K';
+    bt.addEventListener('click', () => abrirPaleta());
+    bt.addEventListener('keydown', e => { if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && e.key !== ' ') { e.preventDefault(); abrirPaleta(e.key); } });
+    if (window._portalConfig) bt.hidden = true;
+  }
+  function escolher(i) { const o = opcoes[i]; if (!o) return; voltarFoco = null; fecharPaleta(); o.ir(); }
   // ── Cliente em foco (GLR.ctx, em data.js): um seletor na barra de cima ──
   function montarSeletorCliente() {
     if (document.getElementById('ctx-cliente') || window._portalConfig) return;
@@ -150,12 +175,12 @@
   // contador da Caixa de decisões no menu (a tela avisa quando carrega/resolve)
   window.addEventListener('glr:decisoes', e => { const b = document.getElementById('badge-decisoes'); if (!b) return; const n = e.detail?.n || 0; b.textContent = n > 99 ? '99+' : n; b.style.display = n ? '' : 'none'; });
 
-  window.GLRNav = { abrirPaleta, alternar };
+  window.GLRNav = { abrirPaleta, fecharPaleta, alternar, filtrar };
 
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') { e.preventDefault(); paleta?.classList.contains('on') ? fecharPaleta() : abrirPaleta(); }
   });
   window.addEventListener('hashchange', () => { const g = grupoDe(paginaAtual()); if (g) alternar(g, true); });
-  const iniciar = () => { montar(); montarSeletorCliente(); };
+  const iniciar = () => { montar(); montarSeletorCliente(); ligarBotaoBusca(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
 })();
