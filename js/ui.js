@@ -173,3 +173,150 @@ window.glrMarkdown = (function () {
   return blocos.join('');
 };
 })();
+
+// ── Aviso (toast) e confirmação próprios — substituem alert/confirm/prompt ──
+//  GLR.avisar(msg, 'sucesso'|'erro'|'info')   → toast que some sozinho (aria-live)
+//  GLR.confirmar(msg, { perigo, ok, cancelar }) → Promise<boolean>
+//  GLR.perguntar(msg, { valor, placeholder, ok }) → Promise<string|null>
+//  GLR.erroCampo(campo, msg)                  → marca o campo com o erro, foca e devolve false
+// Todo texto entra com textContent: nada vindo do banco ou da API vira HTML.
+(function (raiz) {
+  const G = raiz.GLR || (typeof GLR !== 'undefined' ? GLR : (raiz.GLR = {}));
+  const doc = () => raiz.document;
+  const TEMPO = { sucesso: 4000, info: 5000, erro: 8000 };
+  const ROTULO = { sucesso: 'Sucesso', erro: 'Erro', info: 'Aviso' };
+  const novo = (tag, cls, txt) => { const el = doc().createElement(tag); if (cls) el.className = cls; if (txt != null) el.textContent = String(txt); return el; };
+
+  function pilha(tipo) {
+    const id = tipo === 'erro' ? 'glr-avisos-erro' : 'glr-avisos';
+    let el = doc().getElementById(id);
+    if (!el) {
+      el = novo('div', 'glr-avisos');
+      el.id = id;
+      // erro interrompe o leitor de tela; sucesso e info esperam a vez
+      el.setAttribute('role', tipo === 'erro' ? 'alert' : 'status');
+      el.setAttribute('aria-live', tipo === 'erro' ? 'assertive' : 'polite');
+      doc().body.appendChild(el);
+    }
+    return el;
+  }
+
+  G.avisar = function (msg, tipo, opcoes) {
+    tipo = TEMPO[tipo] ? tipo : 'info';
+    const o = opcoes || {};
+    const caixa = novo('div', `glr-aviso glr-aviso-${tipo}`);
+    const texto = novo('div', 'glr-aviso-texto', msg == null ? '' : msg);
+    texto.prepend(novo('span', 'sr-only', ROTULO[tipo] + ': '));
+    const fechar = novo('button', 'glr-aviso-fechar', '✕');
+    fechar.type = 'button';
+    fechar.setAttribute('aria-label', 'Fechar aviso');
+    caixa.appendChild(texto);
+    caixa.appendChild(fechar);
+    let tm = null;
+    const sair = () => { if (tm) raiz.clearTimeout(tm); caixa.remove(); };
+    fechar.addEventListener('click', sair);
+    const ms = o.tempo === 0 ? 0 : (o.tempo || TEMPO[tipo]);
+    if (ms) {
+      tm = raiz.setTimeout(sair, ms);
+      // passar o mouse segura o aviso na tela
+      caixa.addEventListener('mouseenter', () => { if (tm) raiz.clearTimeout(tm); tm = null; });
+      caixa.addEventListener('mouseleave', () => { tm = raiz.setTimeout(sair, 2500); });
+    }
+    pilha(tipo).appendChild(caixa);
+    return { fechar: sair, el: caixa };
+  };
+
+  function dialogo(msg, o, comCampo) {
+    return new Promise(resolve => {
+      const d = doc();
+      const antes = d.activeElement;
+      const fundo = novo('div', 'glr-dialogo-fundo');
+      const caixa = novo('div', 'glr-dialogo' + (o.perigo ? ' glr-dialogo-perigo' : ''));
+      caixa.setAttribute('role', o.perigo ? 'alertdialog' : 'dialog');
+      caixa.setAttribute('aria-modal', 'true');
+      const idTxt = 'glr-dlg-' + Math.random().toString(36).slice(2, 8);
+      if (o.titulo) { const t = novo('h3', 'glr-dialogo-titulo', o.titulo); caixa.appendChild(t); }
+      const texto = novo('div', 'glr-dialogo-texto', msg == null ? '' : msg);
+      texto.id = idTxt;
+      caixa.setAttribute('aria-describedby', idTxt);
+      caixa.setAttribute('aria-label', o.titulo || (comCampo ? 'Informe um valor' : 'Confirmar'));
+      caixa.appendChild(texto);
+      let campo = null;
+      if (comCampo) {
+        campo = novo('input', 'glr-dialogo-campo');
+        campo.type = 'text';
+        campo.value = o.valor == null ? '' : String(o.valor);
+        if (o.placeholder) campo.placeholder = o.placeholder;
+        campo.setAttribute('aria-labelledby', idTxt);
+        caixa.appendChild(campo);
+      }
+      const acoes = novo('div', 'glr-dialogo-acoes');
+      const nao = novo('button', 'btn btn-secondary', o.cancelar || 'Cancelar'); nao.type = 'button';
+      const sim = novo('button', 'btn ' + (o.perigo ? 'btn-perigo' : 'btn-primary'), o.ok || (comCampo ? 'OK' : 'Confirmar')); sim.type = 'button';
+      acoes.appendChild(nao); acoes.appendChild(sim);
+      caixa.appendChild(acoes);
+      fundo.appendChild(caixa);
+      let feito = false;
+      const fim = v => {
+        if (feito) return; feito = true;
+        d.removeEventListener('keydown', tecla, true);
+        fundo.remove();
+        try { antes && antes.focus && antes.focus(); } catch (e) {}
+        resolve(v);
+      };
+      const confirmar = () => fim(comCampo ? campo.value : true);
+      const cancelar = () => fim(comCampo ? null : false);
+      function tecla(e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelar(); }
+        else if (e.key === 'Enter' && (comCampo ? e.target === campo : e.target !== nao)) { e.preventDefault(); confirmar(); }
+        else if (e.key === 'Tab') { // foco fica dentro do diálogo
+          const f = [campo, nao, sim].filter(Boolean), i = f.indexOf(d.activeElement);
+          e.preventDefault(); f[(i + (e.shiftKey ? f.length - 1 : 1)) % f.length].focus();
+        }
+      }
+      sim.addEventListener('click', confirmar);
+      nao.addEventListener('click', cancelar);
+      fundo.addEventListener('click', e => { if (e.target === fundo) cancelar(); });
+      d.addEventListener('keydown', tecla, true);
+      d.body.appendChild(fundo);
+      // ação perigosa começa com o foco em "Cancelar", para um Enter distraído não apagar nada
+      (campo || (o.perigo ? nao : sim)).focus();
+    });
+  }
+  G.confirmar = (msg, opcoes) => dialogo(msg, opcoes || {}, false);
+  G.perguntar = (msg, opcoes) => dialogo(msg, opcoes || {}, true);
+
+  // Erro no próprio campo: borda vermelha, texto logo abaixo e foco; some quando o usuário corrige
+  G.erroCampo = function (campo, msg, opcoes) {
+    const focar = !(opcoes && opcoes.foco === false);
+    const el = typeof campo === 'string' ? doc().getElementById(campo) : campo;
+    if (!el || !el.isConnected) { G.avisar(msg, 'erro'); return false; }
+    const id = (el.id || 'campo') + '-erro';
+    let txt = doc().getElementById(id);
+    if (!txt) { txt = novo('div', 'glr-campo-erro'); txt.id = id; el.insertAdjacentElement('afterend', txt); }
+    txt.textContent = String(msg);
+    el.classList.add('glr-campo-invalido');
+    el.setAttribute('aria-invalid', 'true');
+    el.setAttribute('aria-describedby', id);
+    const limpar = () => { el.classList.remove('glr-campo-invalido'); el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby'); txt.remove(); el.removeEventListener('input', limpar); el.removeEventListener('change', limpar); };
+    el.addEventListener('input', limpar);
+    el.addEventListener('change', limpar);
+    if (focar) {
+      try { el.scrollIntoView && el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+      try { el.focus({ preventScroll: true }); } catch (e) {}
+    }
+    return false;
+  };
+
+  // Valida vários campos de uma vez: marca todos os que falharam e foca o primeiro.
+  // regras: [[condiçãoOk, campo (id ou elemento), mensagem], ...] → true se tudo ok
+  G.validar = function (regras) {
+    let ok = true;
+    for (const [passou, campo, msg] of regras) {
+      if (passou) continue;
+      G.erroCampo(campo, msg, { foco: ok });
+      ok = false;
+    }
+    return ok;
+  };
+})(typeof window !== 'undefined' ? window : globalThis);

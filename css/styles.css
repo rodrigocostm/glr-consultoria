@@ -1273,3 +1273,26 @@ body.sidebar-mini .nav-grupo .nav-grupo-itens { display: block !important; }
 .dx-mais[open] > summary::before { transform: rotate(90deg); }
 .dx-mais > summary span { font-size: 12.5px; font-weight: 400; color: var(--text-muted); }
 .dx-mais[open] > summary { margin-bottom: 14px; }
+
+/* ── Aviso (toast) e confirmação próprios — GLR.avisar / GLR.confirmar (js/ui.js) ── */
+.glr-avisos { position: fixed; right: 16px; bottom: 16px; z-index: 10050; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); pointer-events: none; }
+#glr-avisos-erro { bottom: auto; top: 16px; }
+.glr-aviso { pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; padding: 12px 12px 12px 14px; border-radius: 10px; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-strong); border-left: 4px solid var(--accent); box-shadow: 0 8px 24px rgba(0,0,0,.35); font-size: 14px; line-height: 1.4; animation: glr-aviso-entra .18s ease-out; }
+.glr-aviso-sucesso { border-left-color: var(--green); }
+.glr-aviso-erro { border-left-color: var(--red); }
+.glr-aviso-texto { flex: 1; white-space: pre-line; word-break: break-word; }
+.glr-aviso-fechar { background: none; border: 0; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 4px; }
+.glr-aviso-fechar:hover, .glr-aviso-fechar:focus-visible { color: var(--text-primary); outline: 2px solid var(--border-active); }
+@keyframes glr-aviso-entra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .glr-aviso { animation: none; } }
+.glr-dialogo-fundo { position: fixed; inset: 0; z-index: 10060; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.glr-dialogo { background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 12px; padding: 20px; width: 100%; max-width: 460px; max-height: calc(100vh - 32px); overflow: auto; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
+.glr-dialogo-titulo { margin: 0 0 8px; font-size: 16px; }
+.glr-dialogo-texto { white-space: pre-line; font-size: 14px; line-height: 1.5; color: var(--text-secondary); word-break: break-word; }
+.glr-dialogo-campo { width: 100%; margin-top: 12px; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg-input); color: var(--text-primary); font-size: 14px; box-sizing: border-box; }
+.glr-dialogo-acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+.glr-dialogo .btn:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.btn-perigo { background: var(--red); color: #fff; border: 1px solid var(--red); }
+.btn-perigo:hover { filter: brightness(1.08); }
+.glr-campo-invalido { border-color: var(--red) !important; box-shadow: 0 0 0 2px var(--red-bg) !important; }
+.glr-campo-erro { color: var(--red); font-size: 12px; margin-top: 4px; }

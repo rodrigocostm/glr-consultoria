@@ -162,7 +162,7 @@
     }
 
     async function sugerirComIA() {
-      if (!state.fotoRefBase64) { alert('Envie a foto do produto primeiro.'); return; }
+      if (!state.fotoRefBase64) { GLR.avisar('Envie a foto do produto primeiro.', 'erro'); return; }
       syncFormState();
       state.iaCarregando = true;
       render();
@@ -181,7 +181,7 @@
           return; // buscarCategoria já chama render()
         }
       } catch (e) {
-        alert('Erro ao sugerir com IA: ' + (e.message || e));
+        GLR.avisar('Erro ao sugerir com IA: ' + (e.message || e), 'erro');
       } finally {
         state.iaCarregando = false;
         render();
@@ -189,7 +189,7 @@
     }
 
     async function gerarFotoIA() {
-      if (!state.fotoRefBase64) { alert('Envie a foto do produto primeiro.'); return; }
+      if (!state.fotoRefBase64) { GLR.avisar('Envie a foto do produto primeiro.', 'erro'); return; }
       syncFormState();
       state.gerandoFoto = true;
       render();
@@ -201,10 +201,10 @@
         const json = await resp.json();
         if (!resp.ok) throw new Error(json.error || 'Erro ao gerar foto.');
         const img = json.images?.[0];
-        if (!img) { alert('A IA não devolveu nenhuma imagem.'); return; }
+        if (!img) { GLR.avisar('A IA não devolveu nenhuma imagem.', 'erro'); return; }
         state.fotos.push({ id: Date.now() + Math.random(), url: img.url, origem: 'gerada' });
       } catch (e) {
-        alert('Erro ao gerar foto: ' + (e.message || e));
+        GLR.avisar('Erro ao gerar foto: ' + (e.message || e), 'erro');
       } finally {
         state.gerandoFoto = false;
         render();
@@ -225,8 +225,8 @@
     async function buscarCategoria(qManual) {
       syncFormState();
       const q = qManual || state.categoriaBuscaInput;
-      if (!q || !q.trim()) { alert('Digite um termo pra buscar a categoria.'); return; }
-      if (!state.contaId) { alert('Selecione a conta do Mercado Livre primeiro.'); return; }
+      if (!q || !q.trim()) { GLR.erroCampo('an-cat-busca', 'Digite um termo pra buscar a categoria.'); return; }
+      if (!state.contaId) { GLR.erroCampo('an-conta', 'Selecione a conta do Mercado Livre primeiro.'); return; }
       state.buscandoCategoria = true;
       state.categoriaResultados = [];
       state.categoriaAvisoIA = '';
@@ -253,11 +253,11 @@
           }
           if (!state.categoriaResultados.length) {
             state.categoriaAvisoIA = '';
-            alert('Nenhuma categoria encontrada pra "' + q + '", nem com os termos alternativos que a IA tentou. Busque manualmente com outra palavra.');
+            GLR.avisar('Nenhuma categoria encontrada pra "' + q + '", nem com os termos alternativos que a IA tentou. Busque manualmente com outra palavra.', 'info');
           }
         }
       } catch (e) {
-        alert('Erro ao buscar categoria: ' + (e.message || e));
+        GLR.avisar('Erro ao buscar categoria: ' + (e.message || e), 'erro');
       } finally {
         state.buscandoCategoria = false;
         render();
@@ -283,7 +283,7 @@
         state.atributosOpcionais = relevantes.filter(a => !(a.tags?.required || a.tags?.catalog_required));
         state._todosAtributos = todos; // guarda pra checar EMPTY_GTIN_REASON no submit
       } catch (e) {
-        alert('Erro ao buscar ficha técnica da categoria: ' + (e.message || e));
+        GLR.avisar('Erro ao buscar ficha técnica da categoria: ' + (e.message || e), 'erro');
       } finally {
         state.carregandoAtributos = false;
         render();
@@ -295,7 +295,7 @@
     // nó, via ml_category_detail). Mais direto que digitar termo de busca. ──
     async function abrirNavegadorCategorias() {
       syncFormState();
-      if (!state.contaId) { alert('Selecione a conta do Mercado Livre primeiro.'); return; }
+      if (!state.contaId) { GLR.erroCampo('an-conta', 'Selecione a conta do Mercado Livre primeiro.'); return; }
       state.categoriaNavegando = true;
       state.categoriaNavPath = [];
       state.categoriaNavCarregando = true;
@@ -304,7 +304,7 @@
         const resp = await MarketplaceAPI.call('ml_site_categories', { meliUserId: state.contaId });
         state.categoriaNavItens = (resp.data?.items || resp.items || []).map(c => ({ id: c.id, nome: c.name }));
       } catch (e) {
-        alert('Erro ao carregar categorias: ' + (e.message || e));
+        GLR.avisar('Erro ao carregar categorias: ' + (e.message || e), 'erro');
       } finally {
         state.categoriaNavCarregando = false;
         render();
@@ -328,7 +328,7 @@
         state.categoriaNavPath.push(cat);
         state.categoriaNavItens = filhos.map(c => ({ id: c.id, nome: c.name }));
       } catch (e) {
-        alert('Erro ao carregar subcategorias: ' + (e.message || e));
+        GLR.avisar('Erro ao carregar subcategorias: ' + (e.message || e), 'erro');
       } finally {
         state.categoriaNavCarregando = false;
         render();
@@ -346,7 +346,7 @@
         const d = resp.data || resp;
         state.categoriaNavItens = (d.children_categories || []).map(c => ({ id: c.id, nome: c.name }));
       } catch (e) {
-        alert('Erro ao carregar subcategorias: ' + (e.message || e));
+        GLR.avisar('Erro ao carregar subcategorias: ' + (e.message || e), 'erro');
       } finally {
         state.categoriaNavCarregando = false;
         render();
@@ -425,10 +425,6 @@
     }
 
     async function criarAnuncio() {
-      if (!state.contaId) return alert('Selecione a conta do Mercado Livre.');
-      if (!state.categoriaEscolhida) return alert('Escolha uma categoria antes de criar o anúncio.');
-      if (!state.fotos.length) return alert('Adicione pelo menos uma foto ao anúncio.');
-
       const titulo = document.getElementById('an-titulo')?.value.trim();
       const descricao = document.getElementById('an-descricao')?.value.trim();
       const preco = parseFloat(document.getElementById('an-preco')?.value);
@@ -437,17 +433,22 @@
       const tipoAnuncio = document.getElementById('an-tipo')?.value;
       const garantia = document.getElementById('an-garantia')?.value.trim();
 
-      if (!titulo) return alert('Preencha o título do anúncio.');
-      if (titulo.length > 60) return alert('Título não pode passar de 60 caracteres.');
-      if (!(preco > 0)) return alert('Informe um preço válido.');
-      if (!(estoque >= 0)) return alert('Informe o estoque.');
+      if (!GLR.validar([
+        [state.contaId, 'an-conta', 'Selecione a conta do Mercado Livre.'],
+        [state.categoriaEscolhida, 'an-cat-busca', 'Escolha uma categoria antes de criar o anúncio.'],
+        [state.fotos.length, 'an-dropzone', 'Adicione pelo menos uma foto ao anúncio.'],
+        [titulo, 'an-titulo', 'Preencha o título do anúncio.'],
+        [!titulo || titulo.length <= 60, 'an-titulo', 'Título não pode passar de 60 caracteres.'],
+        [preco > 0, 'an-preco', 'Informe um preço válido.'],
+        [estoque >= 0, 'an-estoque', 'Informe o estoque.'],
+      ])) return;
 
       const faltando = state.atributosObrigatorios.filter(a => {
         const campo = campoDoAtributo(a);
         if (campo.tipo === 'numero_unidade') return !document.getElementById(`attr-${a.id}-num`)?.value;
         return !document.getElementById(`attr-${a.id}`)?.value?.trim();
       });
-      if (faltando.length && !confirm(`Faltam ${faltando.length} atributo(s) obrigatório(s) da ficha técnica (${faltando.map(a => a.name).join(', ')}). O Mercado Livre pode recusar o anúncio. Continuar mesmo assim?`)) return;
+      if (faltando.length && !(await GLR.confirmar(`Faltam ${faltando.length} atributo(s) obrigatório(s) da ficha técnica (${faltando.map(a => a.name).join(', ')}). O Mercado Livre pode recusar o anúncio. Continuar mesmo assim?`, { ok: 'Criar mesmo assim', cancelar: 'Voltar e preencher' }))) return;
 
       const body = {
         meliUserId: state.contaId,
@@ -781,7 +782,7 @@
     // árvore já cacheada. ──
     async function abrirNavegadorCategorias() {
       syncFormState();
-      if (!state.contaId) { alert('Selecione a loja Shopee primeiro.'); return; }
+      if (!state.contaId) { GLR.erroCampo('an-sp-conta', 'Selecione a loja Shopee primeiro.'); return; }
       state.categoriaNavegando = true;
       state.categoriaNavPath = [];
       state.categoriaAvisoIA = '';
@@ -837,7 +838,7 @@
     }
 
     async function sugerirComIA() {
-      if (!state.fotoRefBase64) { alert('Envie a foto do produto primeiro.'); return; }
+      if (!state.fotoRefBase64) { GLR.avisar('Envie a foto do produto primeiro.', 'erro'); return; }
       syncFormState();
       state.iaCarregando = true;
       render();
@@ -856,7 +857,7 @@
         // título comercial (ex: "Buffet Alaska") pra bater com a busca da Shopee.
         if (json.categoria_busca || state.nomeProduto) { await sugerirCategorias(json.categoria_busca); return; } // já chama render()
       } catch (e) {
-        alert('Erro ao sugerir com IA: ' + (e.message || e));
+        GLR.avisar('Erro ao sugerir com IA: ' + (e.message || e), 'erro');
       } finally {
         state.iaCarregando = false;
         render();
@@ -864,7 +865,7 @@
     }
 
     async function gerarFotoIA() {
-      if (!state.fotoRefBase64) { alert('Envie a foto do produto primeiro.'); return; }
+      if (!state.fotoRefBase64) { GLR.avisar('Envie a foto do produto primeiro.', 'erro'); return; }
       syncFormState();
       state.gerandoFoto = true;
       render();
@@ -876,10 +877,10 @@
         const json = await resp.json();
         if (!resp.ok) throw new Error(json.error || 'Erro ao gerar foto.');
         const img = json.images?.[0];
-        if (!img) { alert('A IA não devolveu nenhuma imagem.'); return; }
+        if (!img) { GLR.avisar('A IA não devolveu nenhuma imagem.', 'erro'); return; }
         state.fotos.push({ id: Date.now() + Math.random(), url: img.url, origem: 'gerada' });
       } catch (e) {
-        alert('Erro ao gerar foto: ' + (e.message || e));
+        GLR.avisar('Erro ao gerar foto: ' + (e.message || e), 'erro');
       } finally {
         state.gerandoFoto = false;
         render();
@@ -902,8 +903,8 @@
     async function sugerirCategorias(termoOverride) {
       syncFormState();
       const termoBase = termoOverride || state.nomeProduto;
-      if (!termoBase || !termoBase.trim()) { alert('Preencha o nome do produto primeiro.'); return; }
-      if (!state.contaId) { alert('Selecione a loja Shopee primeiro.'); return; }
+      if (!termoBase || !termoBase.trim()) { GLR.erroCampo('an-sp-nome', 'Preencha o nome do produto primeiro.'); return; }
+      if (!state.contaId) { GLR.erroCampo('an-sp-conta', 'Selecione a loja Shopee primeiro.'); return; }
       state.buscandoCategoria = true;
       state.categoriaSugestoes = [];
       state.categoriaAvisoIA = '';
@@ -934,11 +935,11 @@
           }
           if (!state.categoriaSugestoes.length) {
             state.categoriaAvisoIA = '';
-            alert('A Shopee não sugeriu categoria pra esse nome, nem com os termos alternativos que a IA tentou. Busque manualmente com outra palavra.');
+            GLR.avisar('A Shopee não sugeriu categoria pra esse nome, nem com os termos alternativos que a IA tentou. Busque manualmente com outra palavra.', 'info');
           }
         }
       } catch (e) {
-        alert('Erro ao sugerir categoria: ' + (e.message || e));
+        GLR.avisar('Erro ao sugerir categoria: ' + (e.message || e), 'erro');
       } finally {
         state.buscandoCategoria = false;
         render();
@@ -952,8 +953,8 @@
     async function buscarCategoriaManual() {
       syncFormState();
       const termo = document.getElementById('an-sp-cat-manual')?.value.trim().toLowerCase();
-      if (!termo) { alert('Digite uma palavra-chave do produto (ex: "armário", "buffet", "cadeira").'); return; }
-      if (!state.contaId) { alert('Selecione a loja Shopee primeiro.'); return; }
+      if (!termo) { GLR.erroCampo('an-sp-cat-manual', 'Digite uma palavra-chave do produto (ex: "armário", "buffet", "cadeira").'); return; }
+      if (!state.contaId) { GLR.erroCampo('an-sp-conta', 'Selecione a loja Shopee primeiro.'); return; }
       state.buscandoCategoria = true;
       state.categoriaSugestoes = [];
       state.categoriaAvisoIA = '';
@@ -962,9 +963,9 @@
         const arvore = await obterArvoreCategorias();
         const achadas = arvore.filter(c => !c.has_children && ((c.display_category_name || '').toLowerCase().includes(termo) || (c.original_category_name || '').toLowerCase().includes(termo)));
         state.categoriaSugestoes = achadas.slice(0, 20).map(c => ({ category_id: c.category_id, nome: c.display_category_name || c.original_category_name }));
-        if (!state.categoriaSugestoes.length) alert('Nenhuma categoria encontrada com esse termo. Tente uma palavra mais genérica (ex: "móveis" em vez de "buffet retrô").');
+        if (!state.categoriaSugestoes.length) GLR.avisar('Nenhuma categoria encontrada com esse termo. Tente uma palavra mais genérica (ex: "móveis" em vez de "buffet retrô").', 'info');
       } catch (e) {
-        alert('Erro ao buscar categoria: ' + (e.message || e));
+        GLR.avisar('Erro ao buscar categoria: ' + (e.message || e), 'erro');
       } finally {
         state.buscandoCategoria = false;
         render();
@@ -998,7 +999,7 @@
           state.marcaObrigatoria = !!r.is_mandatory;
         }
       } catch (e) {
-        alert('Erro ao buscar ficha técnica / marcas: ' + (e.message || e));
+        GLR.avisar('Erro ao buscar ficha técnica / marcas: ' + (e.message || e), 'erro');
       } finally {
         state.carregandoAtributos = false;
         state.carregandoMarca = false;
@@ -1085,10 +1086,6 @@
     }
 
     async function criarAnuncio() {
-      if (!state.contaId) return alert('Selecione a loja Shopee.');
-      if (!state.categoriaEscolhida) return alert('Escolha uma categoria antes de criar o anúncio.');
-      if (!state.fotos.length) return alert('Adicione pelo menos uma foto ao anúncio.');
-
       const nome = document.getElementById('an-sp-nome')?.value.trim();
       const descricao = document.getElementById('an-sp-descricao')?.value.trim();
       const preco = parseFloat(document.getElementById('an-sp-preco')?.value);
@@ -1102,10 +1099,15 @@
       const marcaSel = document.getElementById('an-sp-marca')?.value;
       const marcaCustom = document.getElementById('an-sp-marca-custom')?.value.trim();
 
-      if (!nome) return alert('Preencha o nome do produto.');
-      if (!descricao) return alert('Preencha a descrição.');
-      if (!(preco > 0)) return alert('Informe um preço válido.');
-      if (!(estoque >= 0)) return alert('Informe o estoque.');
+      if (!GLR.validar([
+        [state.contaId, 'an-sp-conta', 'Selecione a loja Shopee.'],
+        [state.categoriaEscolhida, 'an-sp-cat-manual', 'Escolha uma categoria antes de criar o anúncio.'],
+        [state.fotos.length, 'an-sp-dropzone', 'Adicione pelo menos uma foto ao anúncio.'],
+        [nome, 'an-sp-nome', 'Preencha o nome do produto.'],
+        [descricao, 'an-sp-descricao', 'Preencha a descrição.'],
+        [preco > 0, 'an-sp-preco', 'Informe um preço válido.'],
+        [estoque >= 0, 'an-sp-estoque', 'Informe o estoque.'],
+      ])) return;
 
       const faltando = state.atributosObrigatorios.filter(a => {
         const tipo = campoTipoAtributo(a);
@@ -1113,7 +1115,7 @@
         if (tipo === 'multi') return !document.getElementById(`attr-${a.attribute_id}`)?.selectedOptions?.length;
         return !document.getElementById(`attr-${a.attribute_id}`)?.value;
       });
-      if (faltando.length && !confirm(`Faltam ${faltando.length} atributo(s) obrigatório(s) (${faltando.map(labelAtributo).join(', ')}). A Shopee pode recusar o anúncio. Continuar mesmo assim?`)) return;
+      if (faltando.length && !(await GLR.confirmar(`Faltam ${faltando.length} atributo(s) obrigatório(s) (${faltando.map(labelAtributo).join(', ')}). A Shopee pode recusar o anúncio. Continuar mesmo assim?`, { ok: 'Criar mesmo assim', cancelar: 'Voltar e preencher' }))) return;
 
       const body = {
         shopId: state.contaId,
@@ -1452,7 +1454,7 @@
 
     async function abrirNavegadorCategorias() {
       syncFormState();
-      if (!state.contaId) { alert('Selecione a loja TikTok primeiro.'); return; }
+      if (!state.contaId) { GLR.erroCampo('an-tt-conta', 'Selecione a loja TikTok primeiro.'); return; }
       state.categoriaNavegando = true;
       state.categoriaNavPath = [];
       state.categoriaAvisoIA = '';
@@ -1509,7 +1511,7 @@
     }
 
     async function sugerirComIA() {
-      if (!state.fotoRefBase64) { alert('Envie a foto do produto primeiro.'); return; }
+      if (!state.fotoRefBase64) { GLR.avisar('Envie a foto do produto primeiro.', 'erro'); return; }
       syncFormState();
       state.iaCarregando = true;
       render();
@@ -1526,7 +1528,7 @@
         // categoria_busca é mais descritivo que o título comercial pra achar categoria.
         if (json.categoria_busca || state.nomeProduto) { await sugerirCategoria(json.categoria_busca); return; }
       } catch (e) {
-        alert('Erro ao sugerir com IA: ' + (e.message || e));
+        GLR.avisar('Erro ao sugerir com IA: ' + (e.message || e), 'erro');
       } finally {
         state.iaCarregando = false;
         render();
@@ -1534,7 +1536,7 @@
     }
 
     async function gerarFotoIA() {
-      if (!state.fotoRefBase64) { alert('Envie a foto do produto primeiro.'); return; }
+      if (!state.fotoRefBase64) { GLR.avisar('Envie a foto do produto primeiro.', 'erro'); return; }
       syncFormState();
       state.gerandoFoto = true;
       render();
@@ -1546,10 +1548,10 @@
         const json = await resp.json();
         if (!resp.ok) throw new Error(json.error || 'Erro ao gerar foto.');
         const img = json.images?.[0];
-        if (!img) { alert('A IA não devolveu nenhuma imagem.'); return; }
+        if (!img) { GLR.avisar('A IA não devolveu nenhuma imagem.', 'erro'); return; }
         state.fotos.push({ id: Date.now() + Math.random(), url: img.url, origem: 'gerada' });
       } catch (e) {
-        alert('Erro ao gerar foto: ' + (e.message || e));
+        GLR.avisar('Erro ao gerar foto: ' + (e.message || e), 'erro');
       } finally {
         state.gerandoFoto = false;
         render();
@@ -1571,8 +1573,8 @@
     async function sugerirCategoria(termoOverride) {
       syncFormState();
       const termoBase = termoOverride || state.nomeProduto;
-      if (!termoBase || !termoBase.trim()) { alert('Preencha o nome do produto primeiro.'); return; }
-      if (!state.contaId) { alert('Selecione a loja TikTok primeiro.'); return; }
+      if (!termoBase || !termoBase.trim()) { GLR.erroCampo('an-tt-nome', 'Preencha o nome do produto primeiro.'); return; }
+      if (!state.contaId) { GLR.erroCampo('an-tt-conta', 'Selecione a loja TikTok primeiro.'); return; }
       state.buscandoCategoria = true;
       state.categoriaAvisoIA = '';
       render();
@@ -1601,7 +1603,7 @@
         }
         if (!achada) {
           state.categoriaAvisoIA = '';
-          alert('O TikTok não sugeriu categoria pra esse nome, nem com os termos alternativos que a IA tentou. Ajuste o nome do produto e tente de novo.');
+          GLR.avisar('O TikTok não sugeriu categoria pra esse nome, nem com os termos alternativos que a IA tentou. Ajuste o nome do produto e tente de novo.', 'info');
           return;
         }
         state.categoriaEscolhida = { category_id: achada.category_id, nome: achada.nome };
@@ -1609,7 +1611,7 @@
         state.categoriaNavegando = false;
         await carregarFichaTecnica();
       } catch (e) {
-        alert('Erro ao sugerir categoria: ' + (e.message || e));
+        GLR.avisar('Erro ao sugerir categoria: ' + (e.message || e), 'erro');
       } finally {
         state.buscandoCategoria = false;
         render();
@@ -1629,7 +1631,7 @@
         state.atributosObrigatorios = todos.filter(a => a.rules?.some(r => r.type === 'REQUIRED' && r.value === 'true'));
         state.atributosOpcionais = todos.filter(a => !a.rules?.some(r => r.type === 'REQUIRED' && r.value === 'true'));
       } catch (e) {
-        alert('Erro ao buscar ficha técnica da categoria: ' + (e.message || e));
+        GLR.avisar('Erro ao buscar ficha técnica da categoria: ' + (e.message || e), 'erro');
       } finally {
         state.carregandoAtributos = false;
         render();
@@ -1639,15 +1641,15 @@
     // ── Marca (busca sob demanda — lista global tem milhares de itens) ──
     async function buscarMarca() {
       syncFormState();
-      if (!state.marcaBusca.trim()) { alert('Digite o nome da marca pra buscar.'); return; }
+      if (!state.marcaBusca.trim()) { GLR.erroCampo('an-tt-marca-busca', 'Digite o nome da marca pra buscar.'); return; }
       state.buscandoMarca = true;
       render();
       try {
         const resp = await MarketplaceAPI.call('tiktok_get_brands', { open_id: state.contaId, brand_name: state.marcaBusca, page_size: 15 });
         state.marcaResultados = resp.data?.brands || resp.brands || [];
-        if (!state.marcaResultados.length) alert('Nenhuma marca encontrada com esse nome.');
+        if (!state.marcaResultados.length) GLR.avisar('Nenhuma marca encontrada com esse nome.', 'info');
       } catch (e) {
-        alert('Erro ao buscar marca: ' + (e.message || e));
+        GLR.avisar('Erro ao buscar marca: ' + (e.message || e), 'erro');
       } finally {
         state.buscandoMarca = false;
         render();
@@ -1730,10 +1732,7 @@
     // ── Criação: sobe cada foto (TikTok exige uri própria, não aceita
     // base64/URL de outro site direto no anúncio) e então cria o produto ──
     async function criarAnuncio() {
-      if (!state.contaId) return alert('Selecione a loja TikTok.');
-      if (!state.warehouseId) return alert('Essa loja não tem um armazém de vendas configurado — não dá pra criar o produto.');
-      if (!state.categoriaEscolhida) return alert('Sugira e confirme uma categoria antes de criar o anúncio.');
-      if (!state.fotos.length) return alert('Adicione pelo menos uma foto ao anúncio.');
+      if (state.contaId && !state.warehouseId) return GLR.avisar('Essa loja não tem um armazém de vendas configurado — não dá pra criar o produto.', 'erro');
 
       const nome = document.getElementById('an-tt-nome')?.value.trim();
       const descricao = document.getElementById('an-tt-descricao')?.value.trim();
@@ -1746,19 +1745,26 @@
       const larg = document.getElementById('an-tt-larg')?.value;
       const alt = document.getElementById('an-tt-alt')?.value;
 
-      if (!nome) return alert('Preencha o nome do produto.');
-      if (!descricao) return alert('Preencha a descrição.');
-      if (!(preco > 0)) return alert('Informe um preço válido.');
-      if (!(estoque >= 0)) return alert('Informe o estoque.');
-      if (!(peso > 0)) return alert('Informe o peso da embalagem.');
-      if (!(compr > 0 && larg > 0 && alt > 0)) return alert('Informe comprimento, largura e altura da embalagem.');
+      if (!GLR.validar([
+        [state.contaId, 'an-tt-conta', 'Selecione a loja TikTok.'],
+        [state.categoriaEscolhida, 'an-tt-nome', 'Sugira e confirme uma categoria antes de criar o anúncio.'],
+        [state.fotos.length, 'an-tt-dropzone', 'Adicione pelo menos uma foto ao anúncio.'],
+        [nome, 'an-tt-nome', 'Preencha o nome do produto.'],
+        [descricao, 'an-tt-descricao', 'Preencha a descrição.'],
+        [preco > 0, 'an-tt-preco', 'Informe um preço válido.'],
+        [estoque >= 0, 'an-tt-estoque', 'Informe o estoque.'],
+        [peso > 0, 'an-tt-peso', 'Informe o peso da embalagem.'],
+        [compr > 0, 'an-tt-compr', 'Informe o comprimento da embalagem.'],
+        [larg > 0, 'an-tt-larg', 'Informe a largura da embalagem.'],
+        [alt > 0, 'an-tt-alt', 'Informe a altura da embalagem.'],
+      ])) return;
 
       const faltando = state.atributosObrigatorios.filter(a => {
         const tipo = campoTipoAtributo(a);
         if (tipo === 'multi') return !document.getElementById(`attr-${a.id}`)?.selectedOptions?.length;
         return !document.getElementById(`attr-${a.id}`)?.value;
       });
-      if (faltando.length && !confirm(`Faltam ${faltando.length} atributo(s) obrigatório(s) (${faltando.map(a => a.name).join(', ')}). O TikTok pode recusar o anúncio. Continuar mesmo assim?`)) return;
+      if (faltando.length && !(await GLR.confirmar(`Faltam ${faltando.length} atributo(s) obrigatório(s) (${faltando.map(a => a.name).join(', ')}). O TikTok pode recusar o anúncio. Continuar mesmo assim?`, { ok: 'Criar mesmo assim', cancelar: 'Voltar e preencher' }))) return;
 
       state.criando = true; state.erro = ''; state.resultado = null;
       render();
