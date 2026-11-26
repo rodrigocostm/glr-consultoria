@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="/favicon.ico?v=20261115-arrow" sizes="48x48"><link rel="icon" href="/img/favicon.svg?v=20261115-arrow" type="image/svg+xml"><link rel="apple-touch-icon" href="/img/brand/glr-monogram-180.png">
   <title>GLR Consultoria — Centro de Operações</title>
-  <link rel="stylesheet" href="css/styles.css?v=27-ctx5-casa-modos-est">
+  <link rel="stylesheet" href="css/styles.css?v=27-ctx5-casa-modos-est-painel">
   <link rel="stylesheet" href="css/apple-interface.css?v=2">
   <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.86.0/dist/umd/supabase.js" integrity="sha384-3Sgm1bFlHa+gvzgZCHY6SyQwlKZpsgWl0qwxcwsypsSZQvo1vV1miPkn7n1lU1/L" crossorigin="anonymous"></script>
@@ -338,7 +338,7 @@
         <button class="icon-btn" id="push-toggle" onclick="_handlePushToggle()" title="Notificações de vendas (push)">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
         </button>
-        <button class="icon-btn" onclick="Router.navigate('ia')" title="IA Copiloto">
+        <button class="icon-btn" id="painel-ia-toggle" onclick="GLRPainelIA.alternar('chat')" title="Assistente de IA (Chat, Adviser e Segundo Cérebro)" aria-label="Abrir o assistente de IA">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
         </button>
         <div id="header-avatar" title="Seu perfil" style="width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:650;color:var(--on-accent);cursor:pointer;margin-left:4px;">DS</div>
@@ -539,7 +539,7 @@
 <script src="js/pages-funil.js?v=3-ctx5e-est"></script>
 <script src="js/office-scene.js?v=1"></script>
 <script src="js/pages-escritorio.js?v=office-1"></script>
-<script src="js/pages-conhecimento.js?v=1"></script>
+<script src="js/pages-conhecimento.js?v=1-painel"></script>
 <script src="js/pages-adviser.js?v=receita-mensal-2"></script>
 <script src="js/pages-rastreamento.js?v=20-ctx2-av2-ctx5-ctx5c-glr"></script>
 <script src="js/pages-leads.js?v=5-av2"></script>
@@ -574,7 +574,7 @@
 <script src="js/playbook-checklist.js?v=20261125-priorities"></script>
 <script src="js/playbook-acceleration.js?v=1"></script>
 <script src="js/pages-playbook.js?v=20261125-acceleration"></script>
-<script src="js/pages-chat.js?v=3-av2"></script>
+<script src="js/pages-chat.js?v=3-av2-painel"></script>
 <script src="js/plano-oportunidades.js?v=1"></script>
 <script src="js/pages-plano.js?v=23-av2-glr"></script>
 <script src="js/pages-portal.js?v=20261126-custos-cliente"></script>
@@ -586,6 +586,7 @@
 <script src="js/pages-agente-fotos.js?v=1-av2-est"></script>
 <script src="js/pages-anuncios-novos.js?v=2-un"></script>
 <script src="js/telas-unidas.js?v=2"></script>
+<script src="js/painel-ia.js?v=1"></script>
 <script>
   // ---- App Init ----
   document.addEventListener('DOMContentLoaded', () => {
