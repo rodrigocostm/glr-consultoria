@@ -32,11 +32,25 @@ Router.register('vendas', async (params, el) => {
   let customTo      = fmtDate(ontem); // ontem
   let expandido     = null;
   let abaAtiva      = 'dashboard'; // 'dashboard' | 'pedidos'
-  let _buscandoPedidos = false, _buscaCompleta = false, _recarregarDepois = null, _timerFiltro = null, _geracao = 0, _adsTok = 0;
+  let _semSelecao = false, _buscandoPedidos = false, _buscaCompleta = false, _recarregarDepois = null, _timerFiltro = null, _geracao = 0, _adsTok = 0;
   // Filtro de empresa/conta: relê a base sozinho (leitura rápida), sem precisar clicar em Atualizar
   function _filtroMudou() {
     clearTimeout(_timerFiltro);
+    // Tirou toda a seleção: não puxa "todas as contas" — fica parado até marcar algo de novo
+    // (ver todas = link "ver todas" ou botão Atualizar)
+    if (!filtroContasSel.size && !filtroEmpresas.size) { _pararSemSelecao(); return; }
+    _semSelecao = false;
     _timerFiltro = setTimeout(() => buscarPedidos({ silencioso: true, soBase: true }), 200);
+  }
+  function _pararSemSelecao() {
+    _semSelecao = true;
+    if (!_buscaCompleta) { // leitura da base em andamento é descartada (e para de ler as contas)
+      _geracao++; _buscandoPedidos = false; _recarregarDepois = null;
+      const btn = document.getElementById('btn-buscar'); if (btn) { btn.disabled = false; btn.textContent = 'Atualizar'; }
+    }
+    const st = document.getElementById('vendas-status');
+    if (st) st.textContent = 'Nenhuma conta marcada. Marque uma ou mais contas para ver as vendas (ou clique em Atualizar para ver todas).';
+    if (abaAtiva === 'dashboard' || abaAtiva === 'pedidos') renderLista(); // as outras abas leem a base sozinhas: ficam como estão
   }
 
   // Adota o período do último cache salvo (se existir) ANTES de montar a tela —
@@ -109,6 +123,7 @@ Router.register('vendas', async (params, el) => {
     return { total, falhou };
   }
   async function _buscarAdsTotalVendas(dataFrom, dataTo) {
+    if (_semSelecao) return 0;
     const contasParaBuscar = filtroContasSel.size > 0
       ? contas.filter(c => filtroContasSel.has(c.external_id))
       : filtroEmpresas.size > 0
@@ -233,6 +248,7 @@ Router.register('vendas', async (params, el) => {
   }
 
   function pedidosFiltrados() {
+    if (_semSelecao) return []; // seleção vazia: nada na tela até marcar uma conta
     return pedidos.filter(p => {
       if (isCanceladoVendas(p)) return false; // cancelados nunca entram nos totais
       if (filtroPlat !== 'todas' && p.plataforma !== filtroPlat) return false;
@@ -277,7 +293,7 @@ Router.register('vendas', async (params, el) => {
     return _indiceEmpresas().get(String(c.external_id)) || ['Sem vínculo'];
   }
 
-  window._vendasLimparContas = () => { if (!window._portalConfig) GLR.ctx?.definir('', true); filtroEmpresas = new Set(); filtroContasSel = new Set(); renderFiltroEmpresaConta(); _filtroMudou(); };
+  window._vendasLimparContas = () => { if (!window._portalConfig) GLR.ctx?.definir('', true); filtroEmpresas = new Set(); filtroContasSel = new Set(); renderFiltroEmpresaConta(); _semSelecao = false; buscarPedidos({ silencioso: true, soBase: true }); }; // "ver todas": pedido explícito de todas as contas
   function renderFiltroEmpresaConta() {
     const wrapEmp  = document.getElementById('filtro-empresa');
     const wrapCont = document.getElementById('filtro-conta');
@@ -2402,7 +2418,9 @@ Router.register('vendas', async (params, el) => {
     // enquanto outra leitura roda: espera e roda de novo ao terminar, com o filtro novo.
     // Leitura só da base (clique no filtro): não espera — a mais nova vale e a antiga
     // é descartada sem desenhar (o que ela já leu fica guardado e é reaproveitado).
+    if (_semSelecao && opts.soBase) return; // seleção vazia: só busca quando marcar uma conta (ou Atualizar)
     if (_buscaCompleta || (_buscandoPedidos && !opts.soBase)) { _recarregarDepois = opts; return; }
+    if (!opts.soBase) _semSelecao = false; // Atualizar sem conta marcada = ver todas
     const ger = ++_geracao;
     _buscandoPedidos = true;
     if (!opts.soBase) _buscaCompleta = true;
@@ -2424,7 +2442,7 @@ Router.register('vendas', async (params, el) => {
       try {
         viaBase = await carregarBaseVendas(alvoBase, dataFrom, dataTo, {
           forcar: !!opts.forcar,
-          ainda: c => ger === _geracao || (doPeriodo() && (!filtroContasSel.size || filtroContasSel.has(c.external_id))),
+          ainda: c => ger === _geracao || (!_semSelecao && doPeriodo() && (!filtroContasSel.size || filtroContasSel.has(c.external_id))),
         });
       }
       catch (e) { console.warn('[Vendas] base indisponível, seguindo pela API:', e.message); }
