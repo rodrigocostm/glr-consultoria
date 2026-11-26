@@ -240,6 +240,8 @@ Router.register('anuncios-amazon', (params, el) => {
       ${st.erro ? `<div class="az-erro">⚠️ ${h(st.erro)}</div>` : ''}
       <div class="az-abas">${ABAS.map(([k, t]) => `<button class="az-aba ${st.aba === k ? 'on' : ''}" onclick="window._azAba('${k}')">${t}</button>`).join('')}</div>
       ${st.aba === 'promo' ? abaPromo() : st.aba === 'margem' ? abaMargem() : abaBuyBox()}`;
+    // cliente em foco (barra de cima): só as contas Amazon dele; com uma só, o seletor vira o nome da conta
+    GLR.ctx?.ajustarSeletor?.(box.querySelector('.az-sel'), { mkt: 'amazon', disparar: false });
   }
 
   // ── Ações ──
@@ -338,6 +340,7 @@ Router.register('anuncios-amazon', (params, el) => {
         nome: c.tags?.find?.(t => t?.name)?.name || c.nickname || c.external_id,
       })).sort((a, b) => a.nome.localeCompare(b.nome));
       if (!st.contas.length) { st.erro = 'Nenhuma conta Amazon conectada.'; render(); return; }
+      { const foco = GLR.ctx?.cliente?.(); if (foco && !st.contas.some(c => GLR.ctx.clienteDaConta('amazon', c.id) === foco)) { st.contas = []; st.erro = 'Este cliente não tem conta Amazon vinculada. Vincule em Integrações.'; render(); return; } } // não abre a conta de outro cliente
       if (!st.contas.some(c => c.id === st.conta)) st.conta = st.contas[0].id;
       st.conta = GLR.ctx?.focarConta ? GLR.ctx.focarConta('amazon', st.contas.map(c => c.id), st.conta) : st.conta; // cliente em foco (barra de cima)
       render();

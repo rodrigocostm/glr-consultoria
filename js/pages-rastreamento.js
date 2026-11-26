@@ -145,6 +145,8 @@ async function carregarContas() {
       });
     }
 
+    if (selPreco) GLR.ctx?.ajustarSeletor?.(selPreco, { conta: op => { const c = contasAds[parseInt(op.value)]; return c ? { mkt: c.marketplace, id: c.external_id } : null; }, disparar: false, vazio: 'Este cliente não tem conta ML ou Shopee' });
+    { const b = document.getElementById('track-btn-precos'); if (b && selPreco && selPreco.value !== '') b.disabled = false; }
     const selC = document.getElementById('track-ads-f-conta');
     if (selC) selC.innerHTML = `<option value="">Todas as contas</option>` + contasAds.map(c => `<option value="${c.external_id}">${c.marketplace === 'shopee' ? 'Shopee' : 'ML'} · ${nomeAdsConta(c.external_id)}</option>`).sort((a, b) => a.replace(/<[^>]+>/g, '').localeCompare(b.replace(/<[^>]+>/g, ''))).join('');
     // cliente em foco (barra de cima): filtra na primeira conta dele
