@@ -1308,3 +1308,8 @@ body.modo-portal #global-search { display: none !important; }
   button.search-box { width: 36px !important; height: 36px; padding: 0; justify-content: center; border-radius: 10px; }
   button.search-box .search-box-txt, button.search-box .search-box-kbd { display: none; }
 }
+
+/* Dashboard com cliente em foco: faixa que diz o escopo e volta para a carteira */
+.dx-foco { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 14px; border-radius: 10px; border: 1px solid var(--border-active); background: var(--accent-glow); font-size: 13.5px; color: var(--text-secondary); }
+.dx-foco b { color: var(--text-primary); }
+.dx-foco-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
