@@ -20,11 +20,14 @@ const POR_LINK = {
   'portal-dashboard': 'portal antigo (admin cai no Painel)', 'portal-vendas': 'portal antigo', 'portal-abc': 'portal antigo',
 };
 
+// abas de uma tela unida (js/telas-unidas.js): o endereço antigo abre a tela nova
+const unidas = new Set([...fs.readFileSync(path.join(raiz, 'js/telas-unidas.js'), 'utf8').matchAll(/\{ id: '([^']+)', nome:/g)].map(m => m[1]));
+
 test('nenhuma tela fica órfã do menu', () => {
   const rotas = [...js.matchAll(/Router\.register\('([^']+)'\s*,\s*([^\n]*)/g)];
   const noMenu = new Set([...html.matchAll(/data-page="([^"$]+)"/g), ...js.matchAll(/data-page="([^"$]+)"/g)].map(m => m[1]));
   const orfas = rotas.filter(([, r, corpo]) => {
-    if (noMenu.has(r) || POR_LINK[r]) return false;
+    if (noMenu.has(r) || POR_LINK[r] || unidas.has(r)) return false;
     // redirecionamento: o registro só chama Router.navigate para outra tela
     if (/^(\(\)|\([^)]*\))\s*=>\s*(setTimeout\(\(\)\s*=>\s*)?Router\.navigate\(/.test(corpo)) return false;
     if (/^paginaDatasEspeciais/.test(corpo)) return false; // black-friday = Datas especiais

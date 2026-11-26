@@ -48,7 +48,7 @@ test('portal do cliente nunca redireciona', () => {
 
 test('nav.js monta o modo Cliente a partir das abas do perfil', () => {
   const nav = ler('js/nav.js');
-  assert.match(nav, /function casaDe\(pagina\)/);
+  assert.match(nav, /function casaDe\(pagina, params\)/);
   assert.match(nav, /classList\.toggle\('modo-cliente'/);
   assert.match(ler('css/styles.css'), /#sidebar\.modo-cliente \.nav-item\.na-casa/);
   assert.doesNotMatch(nav, /window\.GLR\?/, 'GLR é const global, não fica em window');
