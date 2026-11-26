@@ -201,6 +201,15 @@ const ADVISER_BASE = ['recursos_tiops', 'consultar_mercado_tiops', 'carteira', '
 const ferramentasDe = ag => ag === 'adviser' ? [...FERRAMENTAS.filter(f => ADVISER_BASE.includes(f.name)), ...adviserChat.FERRAMENTAS] : FERRAMENTAS;
 const execDe = ag => ag === 'adviser' ? { ...Object.fromEntries(ADVISER_BASE.map(k => [k, EXEC[k]])), ...adviserChat.EXEC } : EXEC;
 const ROTULO = { ...adviserChat.ROTULO, carteira: 'carteira', plano_cliente: 'plano do Gerente', vendas: 'vendas', produtos: 'produtos', curva_abc: 'curva ABC', ads: 'ADS', estoque_margem: 'estoque e margem', campanhas_shopee: 'campanhas Shopee', campanhas_ml: 'campanhas ML', decisoes_pendentes: 'Caixa de decisões', historico_agentes: 'histórico dos agentes', propor_acao: 'sugestão criada', anotar_cerebro: 'Segundo Cérebro' };
+function pedidoCurto(texto) {
+  const t = String(texto || '').trim();
+  if (t.length > 400) return false;
+  return !/plano completo|relat[oó]rio|compar|carteira inteira|passo a passo|estrat[eé]g|diagn[oó]stic/i.test(t);
+}
+function ajusteDoPedido(texto, temPersona) {
+  const curto = pedidoCurto(texto);
+  return { max_tokens: temPersona ? 3000 : (curto ? 4000 : 16000), effort: curto ? 'low' : 'medium' };
+}
 const dm = iso => `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}`;
 const resumo = (n, i) => `${ROTULO[n] || n}${i?.cliente ? ` · ${i.cliente}` : ''}${i?.inicio && i?.fim ? ` · ${dm(i.inicio)} a ${dm(i.fim)}` : ''}${n === 'propor_acao' && i?.titulo ? ` · ${corta(i.titulo, 50)}` : ''}`;
 
@@ -314,14 +323,20 @@ module.exports = async function handler(req, res) {
     mensagens.push({ role: 'user', content: texto });
 
     const conhecimento = await require('./_conhecimento').contexto(texto + " " + (persona?.nome || conv.agente || ""));
+    let planoPronto = '';
+    if (foco && ag !== 'adviser') {
+      const plano = await planoDe(foco.id);
+      if (plano) planoPronto = '\n\nPLANO DO CLIENTE EM FOCO (já carregado; chame plano_cliente só para outro cliente):\n' + JSON.stringify({ cliente: foco.nome, semaforo: plano.semaforo, diagnostico: plano.diagnostico, metricas: plano.metricas, caminho_para_meta: plano.caminho, raio_x: plano.raioX, gerado_em: plano.em || null }).slice(0, 7000);
+    }
     const client = new Anthropic();
+    const ajuste = ajusteDoPedido(texto, !!persona);
     const usadas = [], inicio = Date.now();
     let resposta = null;
     for (let rodada = 0; rodada < MAX_RODADAS + 1; rodada++) {
       const semTempo = Date.now() - inicio > ORCAMENTO_MS || rodada >= MAX_RODADAS;
       resposta = await client.beta.messages.create({
-        model: MODELO, max_tokens: 16000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' },
-        system: (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + conhecimento + tiopsMarket.guide, tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+        model: MODELO, max_tokens: ajuste.max_tokens, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: ajuste.effort },
+        system: (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + planoPronto + conhecimento + tiopsMarket.guide, tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
       });
       if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
       if (resposta.stop_reason !== 'tool_use') break;
@@ -358,4 +373,4 @@ module.exports = async function handler(req, res) {
   }
 };
 // peças reaproveitadas pelo chat do portal do cliente (api/portal-chat.js)
-module.exports.interno = { carregarCarteira, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO };
+module.exports.interno = { carregarCarteira, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, ajusteDoPedido, planoDe };
