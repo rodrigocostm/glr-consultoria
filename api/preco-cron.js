@@ -107,7 +107,7 @@ module.exports = async function handler(req, res) {
           const detalhes = rd.data?.response?.item_list || [];
           for (const it of detalhes) {
             const chave = `shopee_${it.item_id}`;
-            const precoAtual = (it.price_info?.[0]?.current_price || 0) / 100000;
+            const precoAtual = it.has_model ? (parseFloat(it.price_min) || 0) : (parseFloat(it.price_info?.[0]?.current_price) || 0);
             const antes = snap[chave];
             if (antes && antes._conta === extId && antes.preco !== precoAtual) {
               logArr.unshift({ id: novoId(), itemId: it.item_id, apelido: (it.item_name||String(it.item_id)).slice(0,60), de: R$(antes.preco), para: R$(precoAtual), quando: new Date().toISOString() });
