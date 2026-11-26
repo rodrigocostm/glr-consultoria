@@ -1,6 +1,6 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const {calcularPedido,agrupar}=require('../api/_vendas-prejuizo');
-const base={marketplace:'ml',conta_id:'a',pedido_id:'1',situacao:'valido',status_original:'paid',criado_em:'2026-11-24T12:00:00Z',valor_bruto:200,liquido:170,frete:10,itens:[{item_id:'x',nome:'Rack',qtd:2,preco:100}]};
+const base={marketplace:'ml',conta_id:'a',pedido_id:'1',situacao:'valido',status_original:'paid',criado_em:'2026-11-24T12:00:00Z',valor_bruto:200,liquido:160,frete:10,itens:[{item_id:'x',nome:'Rack',qtd:2,preco:100}]};
 test('custo unitário × quantidade, frete e imposto geram perda por pedido',()=>{const p=calcularPedido(base,{catalogo:{x:80},aliquotas:{a:5}});assert.equal(p.custo,160);assert.equal(p.resultado,-10);assert.equal(p.status,'prejuizo');assert.equal(p.margem,-5);});
 test('apenas um item com custo não permite concluir o lucro de pedido misto',()=>{const p=calcularPedido({...base,itens:[...base.itens,{item_id:'y',nome:'Mesa',qtd:1}]},{catalogo:{x:80}});assert.equal(p.status,'sem_custo');assert.equal(p.resultado,null);});
 test('custo manual tem prioridade e também multiplica unidades',()=>{const p=calcularPedido(base,{catalogo:{x:80},custos:{1:{custo:90,outros:5,imposto:2}}});assert.equal(p.custo,180);assert.equal(p.imposto,4);assert.equal(p.resultado,-29);});
@@ -24,3 +24,4 @@ test('filtro por cliente (cliente em foco) só apura as contas desse cliente', a
   try { await api({ method: 'GET', query: { cliente: '1;drop' } }, res); } finally { auth.requireStaff = antes; }
   assert.equal(status, 400, 'cliente com caractere inválido é recusado');
 });
+test('ML: frete já está dentro do líquido do recebimento e não é descontado de novo',()=>{const p=calcularPedido({...base,valor_bruto:579.9,liquido:397.4,frete:116.85,itens:[{item_id:'x',nome:'Cozinha',qtd:1}]},{catalogo:{x:355}});assert.equal(p.frete,116.85);assert.equal(p.resultado,42.4);assert.equal(p.status,'sem_prejuizo');});

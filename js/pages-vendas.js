@@ -2055,7 +2055,7 @@ Router.register('vendas', async (params, el) => {
     let linhasBreakdown;
     if (hasEscrow && isML) {
       const comissaoML = l.comissao || 0;           // sale_fee da API (pode ser parcial)
-      const freteML    = tx.frete   || 0;           // list_cost do shipment
+      const freteML    = tx.frete   || 0;           // frete já descontado do líquido (recebimento − tarifa)
       const totalConhecido = comissaoML + freteML;
       // Se net_received existe, calcula se há outras taxas não mapeadas
       const outrasML = l.liquido != null
@@ -2478,14 +2478,19 @@ Router.register('vendas', async (params, el) => {
               p.imagem = thumbMap[firstItemId];
               p.itens.forEach(i => { i.imagem = thumbMap[i.itemId] || ''; });
             }
+            const freteEnvio = p.shippingId && freteMap[p.shippingId] != null ? freteMap[p.shippingId] : null;
             if (p.paymentId && collectionsMap[p.paymentId] != null) {
-              p.taxas.liquido = collectionsMap[p.paymentId];
+              // net_received_amount já vem com tarifa e frete do vendedor descontados:
+              // frete = o que o ML tirou além da tarifa (mesma regra da base e do Financeiro)
+              const net = collectionsMap[p.paymentId];
+              p.taxas.liquido = net;
+              p.taxas.frete = Math.max(0, Math.round((p.valor - net - p.taxas.comissao) * 100) / 100);
             } else if (p.taxas.comissao > 0) {
-              // fallback: total - comissao
-              p.taxas.liquido = p.valor - p.taxas.comissao;
-            }
-            if (p.shippingId && freteMap[p.shippingId] != null) {
-              p.taxas.frete = freteMap[p.shippingId];
+              // sem recebimento ainda: estima total − tarifa − frete do envio
+              p.taxas.liquido = p.valor - p.taxas.comissao - (freteEnvio || 0);
+              p.taxas.frete = freteEnvio;
+            } else if (freteEnvio != null) {
+              p.taxas.frete = freteEnvio;
             }
           }
           pedidos.push(...mlPedidos);

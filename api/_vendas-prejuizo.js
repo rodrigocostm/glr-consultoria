@@ -18,6 +18,7 @@ function calcularPedido(p,ctx={}){
  // Chave legada de conjunto usada pela página Vendas.
  else {const key=itens.length>1?`${itens[0].nome} (+${itens.length-1})`:null;if(key&&n(cat[key])>0)custo=n(cat[key])*qtd;}
  const tx=p.taxas||{},liquido=n(p.liquido),recarga=n(tx.detalhes?.ads_escrow_top_up_fee_or_technical_support_fee)||0;
+ // ML: o líquido (net_received_amount) já vem com o frete do vendedor descontado; o frete é só informativo.
  const frete=p.marketplace==='ml'?(n(p.frete)||0):0;
  // Imposto já retido no repasse não é deduzido uma segunda vez.
  const impostoRetido=(n(tx.imposto)||0)>0;
@@ -25,7 +26,7 @@ function calcularPedido(p,ctx={}){
  const imposto=impostoRetido?0:receita*aliquota/100;
  const outros=n(manual.outros)||0;
  const extras=(Array.isArray(ctx.linhas)?ctx.linhas:[]).reduce((s,l)=>s+(l.tipo==='pct'?receita*(n(l.valor)||0)/100:(n(l.valor)||0)),0);
- const resultado=custo==null||liquido==null?null:r(liquido+recarga-frete-custo-imposto-outros-extras);
+ const resultado=custo==null||liquido==null?null:r(liquido+recarga-custo-imposto-outros-extras);
  const status=custo==null?'sem_custo':liquido==null?'taxas_pendentes':resultado<0?'prejuizo':'sem_prejuizo';
  return {marketplace:p.marketplace,conta_id:String(p.conta_id),pedido_id:String(p.pedido_id),criado_em:p.criado_em,produto,itens:itens.map(i=>({id:String(i.item_id||i.nome||''),nome:i.nome||i.item_id,qtd:n(i.qtd)||1})),qtd,receita:r(receita),liquido,custo:custo==null?null:r(custo),frete:r(frete),recarga:r(recarga),imposto:r(imposto),impostoRetido,outros:r(outros),extras:r(extras),resultado,margem:resultado==null?null:r(resultado/receita*100),estimado:!!tx.estimado,status};
 }
