@@ -694,7 +694,7 @@
     async function salvarConfig() {
       const v = id => document.getElementById(id)?.value;
       const contaId = v('ag-conta');
-      if (!contaId) { alert('Selecione a conta Shopee que vai virar o piloto.'); return; }
+      if (!contaId) { GLR.erroCampo('ag-conta', 'Selecione a conta Shopee que vai virar o piloto.'); return; }
       const contaObj = state.contasShopee.find(c => (c.param_to_use?.shopId || c.external_id) === contaId);
       const chkAtivo = document.getElementById('ag-ativo');
       const ativo = chkAtivo ? chkAtivo.checked : !!configDaConta(contaId)?.ativo;
@@ -738,7 +738,7 @@
         await carregarTudo();
         setTimeout(() => render(), 20500);
       } catch (e) {
-        alert('Erro ao salvar configuração: ' + (e.message || e));
+        GLR.avisar('Erro ao salvar configuração: ' + (e.message || e), 'erro');
       } finally {
         state.salvandoConfig = false;
         render();
@@ -797,24 +797,24 @@
     // nunca executa direto — sempre passa por Aprovar.
     async function boostCampanha(campaignId, nome, budgetAtual, roasAtual, acos) {
       const cfg = configDaConta(state.contaAbertaId);
-      if (!cfg?.meta_acos) { alert('Configura a meta de TACOS dessa conta primeiro (seção "Guardrails do piloto") pra eu saber até onde posso ser agressivo.'); return; }
+      if (!cfg?.meta_acos) { GLR.avisar('Configure a meta de TACOS dessa conta primeiro (seção "Guardrails do piloto") pra eu saber até onde posso ser agressivo.', 'info'); return; }
       const usaRoasTarget = (parseFloat(budgetAtual) || 0) === 0 && roasAtual != null;
       let sugestao;
       if (usaRoasTarget) {
         const metaRoasConta = 100 / cfg.meta_acos;
         const novoRoas = Math.round(Math.max(1, metaRoasConta, roasAtual * 0.85) * 10) / 10;
-        if (novoRoas >= roasAtual) { alert(`"${nome}" já está no lance mais agressivo permitido pela meta de TACOS da conta (${cfg.meta_acos}%) — não dá pra baixar mais a meta de ROAS sem furar o guardrail.`); return; }
+        if (novoRoas >= roasAtual) { GLR.avisar(`"${nome}" já está no lance mais agressivo permitido pela meta de TACOS da conta (${cfg.meta_acos}%) — não dá pra baixar mais a meta de ROAS sem furar o guardrail.`, 'info'); return; }
         sugestao = { campaign_id: Number(campaignId), nome_campanha: nome, tipo: 'roas', valor_atual: roasAtual, valor_sugerido: novoRoas, titulo: `Boost solicitado — ${nome}`, explicacao: `Analista pediu boost manual. Baixando meta de ROAS de ${roasAtual}x pra ${novoRoas}x (piso: 100/meta TACOS = ${metaRoasConta.toFixed(1)}x) pra deixar o lance mais agressivo.` };
       } else {
         const budgetNum = parseFloat(budgetAtual) || 0;
-        if (budgetNum <= 0) { alert(`"${nome}" não tem orçamento fixo nem meta de ROAS configurada — não dá pra calcular um boost automático. Ajusta manualmente no painel "Avançado".`); return; }
+        if (budgetNum <= 0) { GLR.avisar(`"${nome}" não tem orçamento fixo nem meta de ROAS configurada — não dá pra calcular um boost automático. Ajusta manualmente no painel "Avançado".`, 'info'); return; }
         const novoBudget = Math.round(Math.min(cfg.orcamento_max || Infinity, budgetNum * 1.2) * 100) / 100;
-        if (novoBudget <= budgetNum) { alert(`"${nome}" já está no teto de orçamento configurado (${R$(cfg.orcamento_max)}) — não dá pra subir mais sem mudar o guardrail.`); return; }
+        if (novoBudget <= budgetNum) { GLR.avisar(`"${nome}" já está no teto de orçamento configurado (${R$(cfg.orcamento_max)}) — não dá pra subir mais sem mudar o guardrail.`, 'info'); return; }
         sugestao = { campaign_id: Number(campaignId), nome_campanha: nome, tipo: 'orcamento', valor_atual: budgetNum, valor_sugerido: novoBudget, titulo: `Boost solicitado — ${nome}`, explicacao: `Analista pediu boost manual. Subindo orçamento de ${R$(budgetNum)} pra ${R$(novoBudget)} (+20%). ACOS atual: ${acos === Infinity ? '∞' : acos.toFixed(1) + '%'}.` };
       }
       await criarSugestoesNoKanban([sugestao]);
       await carregarTudo();
-      alert(`Sugestão de boost criada pra "${nome}" — veja em "Mudanças e resultados", coluna "Aguardando aprovação", pra aprovar.`);
+      GLR.avisar(`Sugestão de boost criada pra "${nome}" — veja em "Mudanças e resultados", coluna "Aguardando aprovação", pra aprovar.`, 'sucesso');
     }
 
     // Tira o bloco ```json...``` (se houver) da resposta do modelo e devolve
@@ -1021,7 +1021,7 @@
         const r = await window.glrApiFetch('/api/agente-cron?rodada=saldo&agora=1');
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-      } catch (e) { alert('Não consegui ler os saldos agora: ' + (e.message || e)); }
+      } catch (e) { GLR.avisar('Não consegui ler os saldos agora: ' + (e.message || e), 'erro'); }
       state.atualizandoSaldo = false;
       await carregarSaldos();
     };
@@ -1129,8 +1129,10 @@
       const valor = parseFloat(over ? over.valor : v('ag-man-valor'));
       const explicacaoInput = over ? over.explicacao : v('ag-man-explicacao');
 
-      if (!campaignId) { alert('Cola o ID da campanha (aparece na tabela "Campanhas ao vivo", coluna ID).'); return; }
-      if (tipo !== 'pausar' && (isNaN(valor) || valor <= 0)) { alert('Preenche o valor novo (orçamento ou meta de ROAS).'); return; }
+      if (!GLR.validar([
+        [campaignId, 'ag-man-campanha', 'Cole o ID da campanha (aparece na tabela "Campanhas ao vivo", coluna ID).'],
+        [tipo === 'pausar' || valor > 0, 'ag-man-valor', 'Preencha o valor novo (orçamento ou meta de ROAS).'],
+      ])) return;
 
       const acaoLabel = { orcamento: 'Orçamento ajustado manualmente', roas: 'Meta de ROAS ajustada manualmente', pausar: 'Campanha pausada manualmente' }[tipo];
       const explicacao = explicacaoInput || `Ação manual do analista via botão "Executar agora" — bypassa a listagem automática de campanhas.`;
@@ -1180,7 +1182,7 @@
             dados: { campaign_id: Number(campaignId) || null }, resultado: 'erro', origem: 'analista',
           });
         } catch (e2) {}
-        alert('Erro ao executar: ' + (e.message || e));
+        GLR.avisar('Erro ao executar: ' + (e.message || e), 'erro');
         await carregarTudo();
       } finally {
         state.executandoAcaoManual = false;
@@ -1279,7 +1281,7 @@
       const d = l.dados || {};
       const tipoAcao = temAcaoReconhecida(d);
       if (!tipoAcao) {
-        alert('Esse alerta é informativo — não tem ação automática associada pra aprovar. Ajuste manualmente no marketplace se for o caso, ou descarte.');
+        GLR.avisar('Esse alerta é informativo — não tem ação automática associada pra aprovar. Ajuste manualmente no marketplace se for o caso, ou descarte.', 'info');
         return;
       }
       const cfg = configDaConta(l.conta_id);
@@ -1290,7 +1292,7 @@
         await GLRAcoes.executar(l, cfg?.cliente_nome); // mesma regra da Caixa de decisões (js/acoes-agente.js)
         ok = true;
       } catch (e) {
-        if (emLote) state.ultimoErroLote = `${l.titulo}: ${e.message || e}`; else alert('Erro ao executar: ' + (e.message || e));
+        if (emLote) state.ultimoErroLote = `${l.titulo}: ${e.message || e}`; else GLR.avisar('Erro ao executar: ' + (e.message || e), 'erro');
       } finally {
         state.processandoAlertaId = null;
         if (!emLote) await carregarTudo();
@@ -1305,7 +1307,7 @@
       const pend = logsDaConta(contaId).filter(l => l.tipo === 'alerta' && l.resultado === 'so_alerta' && temAcaoReconhecida(l.dados || {})).sort(maisRecente);
       if (pend.length < 2 || state.aprovandoLote) return;
       const resumo = pend.slice(0, 12).map(l => '• ' + (descreverAcao(l).acaoLabel || '') + ' — ' + (nomeNoLog(l.titulo) || l.titulo).slice(0, 55)).join('\n');
-      if (!confirm(`Aprovar e executar agora ${pend.length} sugestão(ões) na Shopee?\n\n${resumo}${pend.length > 12 ? `\n… e mais ${pend.length - 12}` : ''}`)) return;
+      if (!(await GLR.confirmar(`Aprovar e executar agora ${pend.length} sugestão(ões) na Shopee?\n\n${resumo}${pend.length > 12 ? `\n… e mais ${pend.length - 12}` : ''}`, { ok: 'Aprovar e executar' }))) return;
       state.aprovandoLote = true; state.ultimoErroLote = null; render();
       let feitas = 0; const falhas = [];
       for (const l of pend) {
@@ -1314,7 +1316,7 @@
       }
       state.aprovandoLote = false;
       await carregarTudo();
-      alert(falhas.length ? `Executei ${feitas} de ${pend.length}. Falharam:\n${falhas.slice(0, 8).join('\n')}` : `${feitas} sugestão(ões) aprovada(s) e enviada(s) à Shopee. A confirmação aparece na timeline.`);
+      GLR.avisar(falhas.length ? `Executei ${feitas} de ${pend.length}. Falharam:\n${falhas.slice(0, 8).join('\n')}` : `${feitas} sugestão(ões) aprovada(s) e enviada(s) à Shopee. A confirmação aparece na timeline.`, falhas.length ? 'erro' : 'sucesso');
     }
 
     async function descartarAlerta(logId) {
@@ -1325,7 +1327,7 @@
       try {
         await _sb.from('glr_agente_log').update({ resultado: 'descartado' }).eq('id', l.id);
       } catch (e) {
-        alert('Erro ao descartar: ' + (e.message || e));
+        GLR.avisar('Erro ao descartar: ' + (e.message || e), 'erro');
       } finally {
         state.processandoAlertaId = null;
         await carregarTudo();
@@ -1753,7 +1755,7 @@
       const contaId = state.contaAbertaId;
       const itens = reativacoesPendentes(contaId);
       if (!itens.length || state.reativando) return;
-      if (!confirm(`Reativar agora na Shopee ${itens.length} campanha(s)?\n\n${itens.map(i => '• ' + i.c.nome.slice(0, 70)).join('\n')}\n\nElas voltam a gastar com ADS.`)) return;
+      if (!(await GLR.confirmar(`Reativar agora na Shopee ${itens.length} campanha(s)?\n\n${itens.map(i => '• ' + i.c.nome.slice(0, 70)).join('\n')}\n\nElas voltam a gastar com ADS.`, { ok: 'Reativar' }))) return;
       const cfg = configDaConta(contaId);
       state.reativando = true; render();
       const falhas = [];
@@ -1773,7 +1775,7 @@
       }
       state.reativando = false;
       await carregarTudo();
-      alert(falhas.length ? `Reativei ${itens.length - falhas.length} de ${itens.length}. Falhas:\n${falhas.join('\n')}` : `${itens.length} campanha(s) reativada(s). A confirmação aparece na timeline assim que a Shopee atualizar.`);
+      GLR.avisar(falhas.length ? `Reativei ${itens.length - falhas.length} de ${itens.length}. Falhas:\n${falhas.join('\n')}` : `${itens.length} campanha(s) reativada(s). A confirmação aparece na timeline assim que a Shopee atualizar.`, falhas.length ? 'erro' : 'sucesso');
     }
 
     // ── 2. Faixa "Precisa de você" (só aparece se houver o que fazer) ──
@@ -2863,7 +2865,7 @@
           dados: { ativo }, resultado: 'executado', origem: 'analista',
         });
       } catch (e) {
-        alert('Não consegui alterar o piloto: ' + (e.message || e));
+        GLR.avisar('Não consegui alterar o piloto: ' + (e.message || e), 'erro');
       } finally {
         render();
       }
@@ -2912,7 +2914,7 @@
       const rotulo = tipo === 'pausar' ? 'Pausar' : 'Reativar';
       await criarSugestoesNoKanban([{ campaign_id: Number(id), nome_campanha: nome, tipo, titulo: `${rotulo} campanha — ${nome}`, explicacao: `${rotulo} solicitado por você na tabela de campanhas.` }]);
       await carregarTudo();
-      alert(`Sugestão criada: "${rotulo} — ${nome}". Aprove (ou rejeite) na faixa "Precisa de você" lá em cima.`);
+      GLR.avisar(`Sugestão criada: "${rotulo} — ${nome}". Aprove (ou rejeite) na faixa "Precisa de você" lá em cima.`, 'sucesso');
     };
     window._agAnalisarABC = () => abcAtualizar(state.contaAbertaId);
     window._agVoltarPortfolio = () => { state.contaAbertaId = null; GLR.ctx?.definir('', true); render(); };
@@ -2970,10 +2972,10 @@
       atualizar(); inp.focus(); inp.select();
       w.querySelector('#ag-aj-ok').addEventListener('click', async () => {
         const t = sel.value, n = parseFloat(String(inp.value).replace(',', '.'));
-        if (t !== 'pausar' && !(n > 0)) { alert('Preencha o novo valor.'); inp.focus(); return; }
-        if (t === 'roas' && n < 1) { alert('A Shopee não aceita meta de ROAS abaixo de 1,0x.'); return; }
+        if (t !== 'pausar' && !(n > 0)) { GLR.erroCampo(inp, 'Preencha o novo valor.'); return; }
+        if (t === 'roas' && n < 1) { GLR.erroCampo(inp, 'A Shopee não aceita meta de ROAS abaixo de 1,0x.'); return; }
         const resumo = t === 'pausar' ? `Pausar "${nome}"?` : t === 'roas' ? `Mudar a meta de ROAS de "${nome}" para ${String(n).replace('.', ',')}x?` : `Mudar o orçamento de "${nome}" para ${R$(n)} por dia?`;
-        if (!confirm(resumo + '\n\nA mudança vai direto para a Shopee.')) return;
+        if (!(await GLR.confirmar(resumo + '\n\nA mudança vai direto para a Shopee.', { ok: t === 'pausar' ? 'Pausar' : 'Aplicar na Shopee', perigo: t === 'pausar' }))) return;
         const b = w.querySelector('#ag-aj-ok'); b.disabled = true; b.textContent = 'Aplicando…';
         await executarAcaoManual({ campaignId: id, nome, tipo: t, valor: n, explicacao: w.querySelector('#ag-aj-motivo').value.trim() || 'Ajuste manual do analista pela tabela de campanhas.' });
         document.getElementById('ag-ajuste-modal')?.remove();
