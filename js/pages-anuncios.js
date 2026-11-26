@@ -123,6 +123,7 @@
       try {
         const todas = await MarketplaceAPI.listAccounts();
         state.contas = todas.filter(c => ['meli', 'ml', 'mercadolivre'].includes((c.marketplace || '').toLowerCase()));
+        { const foco = GLR.ctx?.cliente?.(), doCli = foco ? state.contas.filter(c => GLR.ctx.clienteDaConta('ml', c.param_to_use?.meliUserId || c.external_id) === foco) : []; state.contasDoFoco = doCli.length > 0; if (doCli.length) state.contas = doCli; } // cliente em foco (barra de cima): só as contas dele (sem nenhuma, mostra todas)
         if (state.contas.length === 1) state.contaId = state.contas[0].param_to_use?.meliUserId || state.contas[0].external_id;
       } catch (e) {
         state.erro = 'Não consegui carregar as contas: ' + e.message;
@@ -650,6 +651,7 @@
           </div>
         </div>
       `;
+      if (state.contasDoFoco) GLR.ctx?.ajustarSeletor?.(document.getElementById('an-conta'), { mkt: 'ml', disparar: false }); // cliente em foco: só as contas dele
     }
 
     el.innerHTML = `<div class="page">
@@ -743,6 +745,7 @@
       try {
         const todas = await MarketplaceAPI.listAccounts();
         state.contas = todas.filter(c => (c.marketplace || '').toLowerCase() === 'shopee');
+        { const foco = GLR.ctx?.cliente?.(), doCli = foco ? state.contas.filter(c => GLR.ctx.clienteDaConta('shopee', c.param_to_use?.shopId || c.external_id) === foco) : []; state.contasDoFoco = doCli.length > 0; if (doCli.length) state.contas = doCli; } // cliente em foco (barra de cima): só as contas dele (sem nenhuma, mostra todas)
         if (state.contas.length === 1) state.contaId = state.contas[0].param_to_use?.shopId || state.contas[0].external_id;
       } catch (e) {
         state.erro = 'Não consegui carregar as contas: ' + e.message;
@@ -1318,6 +1321,7 @@
           </div>
         </div>
       `;
+      if (state.contasDoFoco) GLR.ctx?.ajustarSeletor?.(document.getElementById('an-sp-conta'), { mkt: 'shopee', disparar: false }); // cliente em foco: só as contas dele
     }
 
     el.innerHTML = `<div class="page">
@@ -1411,6 +1415,7 @@
       try {
         const todas = await MarketplaceAPI.listAccounts();
         state.contas = todas.filter(c => (c.marketplace || '').toLowerCase() === 'tiktok_shop');
+        { const foco = GLR.ctx?.cliente?.(), doCli = foco ? state.contas.filter(c => GLR.ctx.clienteDaConta('tiktok_shop', c.external_id) === foco) : []; state.contasDoFoco = doCli.length > 0; if (doCli.length) state.contas = doCli; } // cliente em foco (barra de cima): só as contas dele (sem nenhuma, mostra todas)
         if (state.contas.length === 1) { state.contaId = state.contas[0].external_id; await carregarWarehouse(); }
       } catch (e) {
         state.erro = 'Não consegui carregar as lojas: ' + e.message;
@@ -1957,6 +1962,7 @@
           </div>
         </div>
       `;
+      if (state.contasDoFoco) GLR.ctx?.ajustarSeletor?.(document.getElementById('an-tt-conta'), { mkt: 'tiktok_shop', disparar: false }); // cliente em foco: só as contas dele
     }
 
     el.innerHTML = `<div class="page">

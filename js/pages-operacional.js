@@ -299,6 +299,12 @@ Router.register('timeline', (params, el) => {
     <div id="timeline-list" class="timeline">${renderTimeline()}</div>
   </div>`;
 
+  // cliente em foco (barra de cima): a timeline já abre só nas ações dele e o filtro de cliente vira o nome
+  if (GLR.ctx?.ajustarSeletor?.(document.getElementById('tl-filter-cliente'), { cliente: true, semTodas: true, disparar: false })) {
+    filtroCliente = document.getElementById('tl-filter-cliente').value;
+    document.getElementById('timeline-list').innerHTML = renderTimeline();
+  }
+
   window.filterTimeline = () => {
     filtroCliente = document.getElementById('tl-filter-cliente').value;
     filtroCategoria = document.getElementById('tl-filter-cat').value;
@@ -520,7 +526,7 @@ function openModalNovaTarefa(clienteId) {
     <div class="form-group"><label class="form-label">Cliente</label>
       <select class="form-select" id="nt-cliente">
         <option value="">Interno</option>
-        ${GLR.clientes.map(c => `<option value="${c.id}" ${c.id === clienteId ? 'selected' : ''}>${c.nome}</option>`).join('')}
+        ${GLR.clientes.map(c => `<option value="${c.id}" ${String(c.id) === String(clienteId ?? GLR.ctx?.cliente?.() ?? '') ? 'selected' : ''}>${glrEsc(c.nome)}</option>`).join('')}
       </select>
     </div>
     <div class="grid-2" style="gap:12px;">

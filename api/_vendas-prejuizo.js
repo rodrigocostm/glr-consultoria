@@ -39,7 +39,7 @@ function agrupar(rows){
   g.pedidos++;g.perda=r(g.perda-p.resultado);g.estimado=g.estimado||p.estimado;if(p.criado_em>g.ultimo)g.ultimo=p.criado_em;grupos.set(key,g);
  }return [...grupos.values()].sort((a,b)=>b.perda-a.perda);
 }
-async function carregar({inicio,fim,conta,gestor,cache,versaoBase}={}){
+async function carregar({inicio,fim,conta,gestor,cliente,cache,versaoBase}={}){
  const hoje=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
  inicio=inicio||new Date(Date.parse(hoje+'T12:00:00-03:00')-29*864e5).toISOString().slice(0,10);fim=fim||hoje;
  const [catalogo,custos,aliquotas,linhas,clientes,gestores,vinc]=await Promise.all(['glr_vendas_custo_catalogo','glr_vendas_custos','glr_aliquotas','glr_vendas_linhas','glr_clientes','glr_gestores','glr_mc_vinculos'].map(config));
@@ -47,7 +47,7 @@ async function carregar({inicio,fim,conta,gestor,cache,versaoBase}={}){
  if(cache?.assinatura===assinatura&&Date.now()-cache.em<15*60000)return {grupos:cache.grupos,cache};
  const {carteira}=require('./_push-audience');const contas=carteira(vinc,clientes),listaContas=[];
  for(const [key,c]of contas){const cli=(clientes||[]).find(x=>carteira({[x.id]:vinc?.[x.id]||[]},[x]).has(key));const g=(gestores||[]).find(g=>String(g.id)===String(cli?.gestorId)||g.nome===cli?.gestor);listaContas.push({key,marketplace:c.mkt,conta_id:c.id,nome:c.nome,cliente:cli?.nome||'',cliente_id:String(cli?.id||''),gestor_id:g?String(g.id):'sem',gestor:g?.nome||'Sem gestor'});}
- const selecionadas=listaContas.filter(c=>(!conta||c.key===conta)&&(!gestor||c.gestor_id===gestor));
+ const selecionadas=listaContas.filter(c=>(!conta||c.key===conta)&&(!gestor||c.gestor_id===gestor)&&(!cliente||c.cliente_id===String(cliente)));
  const selecionados=new Set(selecionadas.map(c=>c.key));
  const filtro=conta?`&marketplace=eq.${encodeURIComponent(conta.split(':')[0])}&conta_id=eq.${encodeURIComponent(conta.slice(conta.indexOf(':')+1))}`:'';
  const pedidos=selecionadas.length?await listar('glr_pedidos?situacao=eq.valido&criado_em=gte.'+encodeURIComponent(inicio+'T00:00:00-03:00')+'&criado_em=lte.'+encodeURIComponent(fim+'T23:59:59.999-03:00')+filtro+'&select=marketplace,conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto,liquido,frete,taxas,itens&order=criado_em.desc,marketplace,conta_id,pedido_id',150000):[];
