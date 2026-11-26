@@ -227,7 +227,7 @@ Router.register('chat', (params, el) => {
     st.parcial = ''; st.progresso = []; st.statusTxt = 'Abrindo a conversa…';
     render(); iniciarEspera();
     try {
-      let j = await enviarFluxo({ acao: 'enviar', stream: true, conversa_id: st.id, mensagem: texto, cliente_id: ehAdviser() ? null : focoId(), agente: st.agente }, (ev, dataEv) => {
+      let j = await enviarFluxo({ acao: 'enviar', stream: true, conversa_id: st.id, mensagem: texto, cliente_id: ehAdviser() ? null : focoId(), agente: st.agente, tela: window.glrTelaAtual ? window.glrTelaAtual() : null }, (ev, dataEv) => {
         if (window._chSt !== st) return;
         if (ev === 'status') { st.statusTxt = dataEv.texto || st.statusTxt; pintar(true); }
         else if (ev === 'ferramenta') {

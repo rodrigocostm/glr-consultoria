@@ -1359,3 +1359,23 @@ body.sidebar-mini .nav-casa::before { content: attr(data-ini); font-size: 13px; 
 #page-content .card.glr-estado-card { padding: 0; }
 /* os vazios de cada tela (.xx-vazio) ganham o mesmo visual */
 #page-content .card[class*="-vazio"]:not(.glr-estado-card) { padding: 32px 20px; text-align: center; font-size: 13.5px; line-height: 1.5; color: var(--text-secondary); }
+
+/* ── Painel único de IA (js/painel-ia.js): Chat, Adviser e Segundo Cérebro ao lado da tela ── */
+.painel-ia { position: fixed; top: 0; right: 0; bottom: 0; z-index: 9000; width: min(480px, 100vw); display: flex; flex-direction: column; background: var(--bg-surface); border-left: 1px solid var(--border); box-shadow: -12px 0 40px rgba(0,0,0,.12); transition: width .2s ease; }
+.painel-ia[hidden] { display: none; }
+.painel-ia.largo { width: min(1040px, 94vw); }
+.painel-ia-topo { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.painel-ia-abas { margin: 0; }
+.painel-ia-ctx { flex: 1; min-width: 0; font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.painel-ia-fechar { margin-left: auto; flex: none; }
+.painel-ia-corpo { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.painel-ia-corpo > .page { padding: 16px; max-width: none; }
+/* o chat no painel usa o layout estreito (lista de conversas por cima) */
+#glr-painel-ia .ch { grid-template-columns: 1fr; height: 100%; }
+#glr-painel-ia .ch-lista { position: absolute; z-index: 20; top: 0; bottom: 0; left: 0; width: 270px; transform: translateX(-105%); transition: transform .2s; box-shadow: var(--shadow-sm); }
+#glr-painel-ia .ch-lista.aberta { transform: none; }
+#glr-painel-ia .ch-menu { display: inline-block; }
+#glr-painel-ia .ch-sugs { grid-template-columns: 1fr; }
+#glr-painel-ia .ch-topo small { display: none; }
+@media (min-width: 1280px) { body.com-painel-ia:not(.painel-ia-largo) #main { margin-right: 480px; min-width: 0; } }
+@media (max-width: 640px) { .painel-ia, .painel-ia.largo { width: 100vw; } .painel-ia-ctx { order: 3; flex-basis: 100%; } }

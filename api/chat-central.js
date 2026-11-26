@@ -467,6 +467,8 @@ module.exports = async function handler(req, res) {
   const usuario = await usuarioLogado(req).catch(() => null);
   if (!usuario) return res.status(401).json({ error: 'Sessão expirada — entre de novo no sistema.' });
   const uid = usuario.id, { acao, conversa_id, mensagem, cliente_id, agente } = req.body || {};
+  // tela em que a pessoa está (painel de IA): só texto curto, sem marcação
+  const tela = String(req.body?.tela || '').replace(/\s+/g, ' ').replace(/[^\p{L}\p{N} ›·\-–,.()/]/gu, '').trim().slice(0, 80);
   const idOk = v => /^[a-z0-9]{6,40}$/i.test(String(v || ''));
 
   try {
@@ -549,7 +551,7 @@ module.exports = async function handler(req, res) {
         let turno = '';
         const pedido = {
           model: modelo, max_tokens: ajuste.max_tokens,
-          system: sistemaComCache(estavel, planoPronto + conhecimento), tools: ferramentasComCache(TOOLS), tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+          system: sistemaComCache(estavel, planoPronto + conhecimento + (tela ? `\n\nTELA ABERTA PELO USUÁRIO AGORA: ${tela} (use como contexto do que ele está olhando).` : '')), tools: ferramentasComCache(TOOLS), tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
         };
         if (rota !== 'simples') Object.assign(pedido, { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: ajuste.effort } });
         resposta = await pedirModelo(client, pedido, sse ? (delta) => { turno += delta; emit('texto', { delta }); } : null, rota !== 'simples');
