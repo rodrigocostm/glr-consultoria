@@ -15,12 +15,11 @@
 // ============================================================
 (function () {
   if (window.__glrIA) return;
-  let seq = 0; const pend = new Map();
-  window.addEventListener('message', e => { const m = e.data; if (e.source === window && m && m.glr === 'resp' && pend.has(m.id)) { pend.get(m.id)(m); pend.delete(m.id); } });
-  const get = caminho => new Promise(res => {
-    const id = `g${++seq}`, t = setTimeout(() => { if (pend.has(id)) { pend.delete(id); res({ ok: false, erro: 'tempo esgotado' }); } }, 20000);
-    pend.set(id, r => { clearTimeout(t); res(r); }); window.postMessage({ glr: 'req', id, caminho }, '*');
-  });
+  const get = caminho => {
+    const pedir = window.__glrPonte;
+    if (typeof pedir !== 'function' || !window.__glrPonteNonce) return Promise.resolve({ ok: false, erro: 'ponte indisponível' });
+    return pedir(caminho, window.__glrPonteNonce);
+  };
   const diasAtras = n => { const d = new Date(Date.now() - 3 * 3600e3); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
   const ATE = () => diasAtras(2); // D-2
   const JAN = [7, 15, 30];

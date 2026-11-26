@@ -2335,10 +2335,8 @@ Router.register('vendas', async (params, el) => {
   }
 
   async function buscarPedidos(opts = {}) {
-    const apiKey = window._portalConfig ? 'portal' : (localStorage.getItem('glr_mc_apikey')||''); // portal: a chave fica no servidor (/api/mcp)
     const statusEl = document.getElementById('vendas-status');
     const btnEl    = document.getElementById('btn-buscar');
-    if (!apiKey) { if(statusEl) statusEl.textContent='⚠️ Configure a API Key nas Integrações.'; return; }
     // Trava: não busca nada até o usuário escolher pelo menos uma conta.
     // Buscar "todas as contas" de uma vez empilha chamada em cima de chamada
     // e já causou bug de dados — melhor forçar a escolha explícita.

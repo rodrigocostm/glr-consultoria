@@ -22,6 +22,7 @@ function mockRole(role) {
     if (url.endsWith('/auth/v1/user')) return { ok: true, json: async () => ({ id: 'user1', email: 'user@example.test' }) };
     if (url.endsWith('/rpc/glr_acesso')) return { ok: true, json: async () => role };
     if (url.includes('/rest/v1/glr_conhecimento?')) return { ok: true, json: async () => [] };
+    if (url.includes('/rest/v1/glr_sync_estado')) return { ok: true, json: async () => (init?.method === 'POST' ? null : []) };
     if (url === 'https://api.anthropic.com/v1/messages') return { ok: true, json: async () => ({ content: [{ text: 'ok' }] }) };
     if (url === 'https://mcp.tiops.com.br') return { ok: true, status: 200, json: async () => ({ data: { accounts: [{external_id:'own'}, {external_id:'other'}] } }) };
     throw new Error('Unexpected external request: ' + url);
@@ -56,7 +57,7 @@ test('generate-photo: portal só usa os tipos prontos do Criar anúncio, nunca p
   assert.equal(r.code, 403); assert.equal(calls.length, 2);
   calls = mockRole({ role: 'portal', portal: { contaIds: ['own'] } }); r = res();
   await require('../api/generate-photo')(req({ stage: 'tipo', tipo: 'fundo_branco' }), r);
-  assert.equal(r.code, 400); assert.equal(calls.length, 2); // passou da permissão; parou por falta de foto, sem chamar a IA paga
+  assert.equal(r.code, 400); assert.equal(calls.length, 4); assert.equal(calls.some(u => u.includes('generativelanguage.googleapis.com')), false);
 });
 test('mcp: portal cria anúncio só na própria conta', async () => {
   let calls = mockRole({ role: 'portal', portal: { contaIds: ['own'] } }); let r = res();
@@ -69,7 +70,7 @@ test('mcp: portal cria anúncio só na própria conta', async () => {
 test('staff chat still works with a verified staff session', async () => {
   const calls = mockRole({ role: 'staff' }); const r = res();
   await require('../api/chat')(req({ messages: [{ role: 'user', content: 'test' }] }), r);
-  assert.equal(r.code, 200); assert.equal(r.body.content, 'ok'); assert.equal(calls.length, 4); assert(calls[2].includes('/glr_conhecimento?'));
+  assert.equal(r.code, 200); assert.equal(r.body.content, 'ok'); assert.equal(calls.length, 4); assert(calls[2].includes('glr_conhecimento'));
 });
 test('authorization outage fails closed', async () => {
   global.fetch = async () => { throw Error('offline'); };
@@ -164,4 +165,17 @@ test('mcp: notas fiscais só para acesso com o módulo Notas liberado', async ()
   const calls = mockRole({ role: 'portal', portal: { contaIds: ['own'], clienteId: '1' } }); const r = res();
   await require('../api/mcp')(req({ action: 'glr_nfe_pedidos', params: { shopId: 'own' } }), r);
   assert.equal(r.code, 403); assert.match(r.body.error, /Notas não está liberada/); assert(!calls.includes('https://mcp.tiops.com.br'));
+});
+test('staff can pause a Shopee campaign through the proxy; portal cannot', async () => {
+  let calls = mockRole({ role: 'staff' }); let r = res();
+  await require('../api/mcp')(req({ action: 'shopee_ads_pause_campaign', params: { shopId: '1', campaign_id: 2 } }), r);
+  assert.equal(r.code, 200); assert(calls.includes('https://mcp.tiops.com.br'));
+  calls = mockRole({ role: 'portal', portal: { contaIds: ['1'] } }); r = res();
+  await require('../api/mcp')(req({ action: 'shopee_ads_pause_campaign', params: { shopId: '1', campaign_id: 2 } }), r);
+  assert.equal(r.code, 403); assert(!calls.includes('https://mcp.tiops.com.br'));
+});
+test('staff cannot call an action the screens do not use', async () => {
+  const calls = mockRole({ role: 'staff' }); const r = res();
+  await require('../api/mcp')(req({ action: 'billing_charge', params: {} }), r);
+  assert.equal(r.code, 403); assert(!calls.includes('https://mcp.tiops.com.br'));
 });
