@@ -14,7 +14,7 @@ Router.register('chat', (params, el) => {
   const h = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const lerLS = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } };
   const gravarLS = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
-  const st = { conversas: [], id: lerLS('glr_chat_atual', null), msgs: [], enviando: false, erro: null, listaAberta: false, carregando: true, inicio: 0, rascunho: '', agente: lerLS('glr_chat_agente', 'copiloto') };
+  const st = { conversas: [], id: lerLS('glr_chat_atual', null), msgs: [], enviando: false, erro: null, listaAberta: false, carregando: true, inicio: 0, rascunho: '', agente: lerLS('glr_chat_agente', 'copiloto'), statusTxt: '' };
   if (window._glrChatAgente) { st.agente = window._glrChatAgente; st.id = null; window._glrChatAgente = null; } // veio do botão "Conversar com o Adviser"
   const ehAdviser = () => st.agente === 'adviser';
   window._chSt = st; // respostas que chegam depois de sair da tela conferem se ainda são a tela atual
@@ -28,6 +28,18 @@ Router.register('chat', (params, el) => {
     const j = await r.json().catch(() => ({ error: `Resposta inválida do servidor (HTTP ${r.status}).` }));
     if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
     return j;
+  }
+  async function acompanharJob(jobId) {
+    const prazo = Date.now() + 240000;
+    while (Date.now() < prazo) {
+      const { data } = await _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('recurso', 'chat_job').eq('conta_id', jobId).maybeSingle();
+      const c = data?.cursor;
+      if (c?.texto) st.statusTxt = c.texto;
+      if (c?.status === 'pronto') return c;
+      if (c?.status === 'erro') throw new Error(c.erro || 'Falha ao responder.');
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    throw new Error('A resposta demorou demais. Abra a conversa de novo em instantes.');
   }
 
   const md = t => window.glrMarkdown(t); // js/ui.js
@@ -87,7 +99,7 @@ Router.register('chat', (params, el) => {
         <div class="ch-sugs">${sug.map(s => `<button onclick="window._chUsar(this.textContent)">${h(s)}</button>`).join('')}</div>
       </div>`;
     }
-    const pensando = st.enviando ? `<div class="ch-m ch-a"><div class="ch-av ${ehAdviser() ? 'adv' : ''}" aria-hidden="true">${ehAdviser() ? 'A' : 'G'}</div><div class="ch-corpo"><div class="ch-pensa" role="status"><i></i><i></i><i></i><span id="ch-pensa-t">Consultando os agentes…</span></div></div></div>` : '';
+    const pensando = st.enviando ? `<div class="ch-m ch-a"><div class="ch-av ${ehAdviser() ? 'adv' : ''}" aria-hidden="true">${ehAdviser() ? 'A' : 'G'}</div><div class="ch-corpo"><div class="ch-pensa" role="status"><i></i><i></i><i></i><span id="ch-pensa-t">${h(st.statusTxt || 'Consultando os agentes…')}</span></div></div></div>` : '';
     return st.msgs.map(renderMsg).join('') + pensando + (st.erro ? `<div class="ch-erro">${h(st.erro)} <button class="ch-link" onclick="window._chReenviar()">Tentar de novo</button></div>` : '');
   }
 
@@ -133,7 +145,9 @@ Router.register('chat', (params, el) => {
     clearInterval(timer); let k = 0;
     timer = setInterval(() => {
       const t = document.getElementById('ch-pensa-t'); if (!t || !st.enviando || window._chSt !== st) { clearInterval(timer); return; }
-      k++; t.textContent = `${FRASES[Math.floor(k / 4) % FRASES.length]} ${Math.round((Date.now() - st.inicio) / 1000)}s`;
+      const seg = Math.round((Date.now() - st.inicio) / 1000);
+      if (st.statusTxt) { t.textContent = `${st.statusTxt} ${seg}s`; return; }
+      k++; t.textContent = `${FRASES[Math.floor(k / 4) % FRASES.length]} ${seg}s`;
     }, 1000);
   }
 
@@ -150,10 +164,11 @@ Router.register('chat', (params, el) => {
   async function enviar(texto) {
     texto = String(texto || '').trim();
     if (!texto || st.enviando) return;
-    st.msgs.push({ r: 'user', t: texto }); st.ultima = texto; st.rascunho = ''; st.enviando = true; st.erro = null; st.inicio = Date.now();
+    st.msgs.push({ r: 'user', t: texto }); st.ultima = texto; st.rascunho = ''; st.enviando = true; st.erro = null; st.inicio = Date.now(); st.statusTxt = '';
     render(); iniciarEspera();
     try {
-      const j = await api({ acao: 'enviar', conversa_id: st.id, mensagem: texto, cliente_id: ehAdviser() ? null : focoId(), agente: st.agente });
+      let j = await api({ acao: 'enviar', conversa_id: st.id, mensagem: texto, cliente_id: ehAdviser() ? null : focoId(), agente: st.agente });
+      if (j.fundo) { st.statusTxt = 'Na fila…'; j = await acompanharJob(j.job_id); }
       if (window._chSt !== st) return;
       const nova = st.id !== j.conversa_id;
       st.id = j.conversa_id; gravarLS('glr_chat_atual', st.id);
