@@ -47,7 +47,16 @@ const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ
 const corta = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
 // ── Carteira: clientes com conta vinculada e as lojas de cada um ──
+const CACHE_CARTEIRA_MS = 45000;
+let cacheCarteira = { em: 0, valor: null };
+function limparCacheCarteira() { cacheCarteira = { em: 0, valor: null }; }
 async function carregarCarteira() {
+  if (cacheCarteira.valor && Date.now() - cacheCarteira.em < CACHE_CARTEIRA_MS) return cacheCarteira.valor;
+  const valor = await lerCarteira();
+  cacheCarteira = { em: Date.now(), valor };
+  return valor;
+}
+async function lerCarteira() {
   const [clientes, vinc, gestores, nomes] = await Promise.all([lerStorage('glr_clientes'), lerStorage('glr_mc_vinculos'), lerStorage('glr_gestores'), nomesDasLojas()]);
   const gNome = id => ((Array.isArray(gestores) ? gestores : []).find(g => String(g.id) === String(id)) || {}).nome || '';
   return (Array.isArray(clientes) ? clientes : []).map(c => {
@@ -557,4 +566,4 @@ module.exports = async function handler(req, res) {
   }
 };
 // peças reaproveitadas pelo chat do portal do cliente (api/portal-chat.js)
-module.exports.interno = { carregarCarteira, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, eventoSSE, agruparFerramentas, executarEmGrupos, FERRAMENTAS_PARALELAS, MODELO_RAPIDO, rotaDe, sistemaComCache, ferramentasComCache, ferramentasDaPersona, acharPersona, consultarColega };
+module.exports.interno = { carregarCarteira, limparCacheCarteira, CACHE_CARTEIRA_MS, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, eventoSSE, agruparFerramentas, executarEmGrupos, FERRAMENTAS_PARALELAS, MODELO_RAPIDO, rotaDe, sistemaComCache, ferramentasComCache, ferramentasDaPersona, acharPersona, consultarColega };
