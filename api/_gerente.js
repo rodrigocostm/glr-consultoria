@@ -448,7 +448,7 @@ async function escrever(Anthropic, anthropicKey, fatos) {
 }
 async function escreverUmaVez(Anthropic, anthropicKey, fatos) {
   try {
-    const client = new Anthropic({ apiKey: anthropicKey });
+    const client = require('./_ia-uso').medir(new Anthropic({ apiKey: anthropicKey }), 'gerente');
     const r = await client.messages.create({
       model: 'claude-haiku-5-5',
       max_tokens: 2500,

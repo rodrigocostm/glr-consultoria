@@ -111,7 +111,7 @@ Responda SÓ com JSON: {"titulo": "até 90 caracteres, diferente do título da f
 
 async function escrever(anthropicKey, n) {
   const sdk = require('@anthropic-ai/sdk'), Anthropic = sdk.default || sdk;
-  const client = new Anthropic({ apiKey: anthropicKey });
+  const client = require('./_ia-uso').medir(new Anthropic({ apiKey: anthropicKey }), 'blog');
   const r = await client.messages.create({ model: 'claude-sonnet-5-5', max_tokens: 3000, system: SISTEMA,
     messages: [{ role: 'user', content: JSON.stringify({ fonte: n.fonte, titulo: n.titulo, link: n.url, publicada: n.data, resumo: n.resumo }) }] });
   const txt = r.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();

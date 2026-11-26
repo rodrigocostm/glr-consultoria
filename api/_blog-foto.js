@@ -34,7 +34,7 @@ async function cenaDoPost(p) {
   const key = process.env.ANTHROPIC_API_KEY; if (!key) return null;
   try {
     const sdk = require('@anthropic-ai/sdk'), Anthropic = sdk.default || sdk;
-    const r = await new Anthropic({ apiKey: key }).messages.create({ model: 'claude-sonnet-5-5', max_tokens: 300, system: SISTEMA_CENA,
+    const r = await require('./_ia-uso').medir(new Anthropic({ apiKey: key }), 'blog-foto').messages.create({ model: 'claude-sonnet-5-5', max_tokens: 300, system: SISTEMA_CENA,
       messages: [{ role: 'user', content: JSON.stringify({ titulo: p.titulo, resumo: p.resumo, tags: p.tags, inicio_do_texto: String(p.corpo || '').slice(0, 1500) }) }] });
     const t = r.content.filter(b => b.type === 'text').map(b => b.text).join(' ').trim();
     return t ? t.slice(0, 600) : null;

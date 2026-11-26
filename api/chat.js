@@ -35,6 +35,7 @@ module.exports = async function handler(req, res) {
     }
 
     const data = await response.json();
+    require('./_ia-uso').registrar('chat', data.model, data.usage);
     return res.status(200).json({ content: data.content?.[0]?.text || '' });
   } catch (e) {
     return res.status(500).json({ error: e.message });

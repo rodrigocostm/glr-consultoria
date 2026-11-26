@@ -44,7 +44,7 @@ async function revisar({ Anthropic, anthropicKey, conta, candidatos }) {
     candidatas: candidatos.map(c => ({ id: c.id, titulo: c.titulo, explicacao: String(c.explicacao || '').slice(0, 600), acao: c.dados?.acao, campanha: c.dados?.campanha || null, impacto_semana_rs: c.dados?.impacto ?? null, tipo_impacto: c.dados?.impacto_tipo || null, crescimento: c.dados?.crescimento || null, experimento: c.dados?.experimento || null, prioridade_calculada: c.dados?.prioridade ?? null })),
   };
   try {
-    const client = new Anthropic({ apiKey: anthropicKey });
+    const client = require('./_ia-uso').medir(new Anthropic({ apiKey: anthropicKey }), 'especialista-ml');
     const r = await client.messages.create({
       model: 'claude-sonnet-5-5', max_tokens: 3000,
       system: `${SISTEMA}\n\n${GUIA}`,
@@ -177,7 +177,7 @@ async function planejar({ Anthropic, anthropicKey, hoje, dossie, candidatos, tra
     travas,
     candidatas: candidatos.map(c => ({ id: c.id, titulo: c.titulo, explicacao: String(c.explicacao || '').slice(0, 500), acao: c.dados?.acao, campaign_id: c.dados?.campaign_id ?? null, item_ids: c.dados?.item_ids || null, de: c.dados?.de ?? null, para: c.dados?.para ?? null, impacto_semana_rs: c.dados?.impacto ?? null, tipo_impacto: c.dados?.impacto_tipo || null, grupo: c.dados?.crescimento?.grupo || null })),
   };
-  const client = new Anthropic({ apiKey: anthropicKey });
+  const client = require('./_ia-uso').medir(new Anthropic({ apiKey: anthropicKey }), 'especialista-ml');
   const pedir = msgs => client.messages.create({ model: 'claude-sonnet-5-5', max_tokens: 8000, system: `${SISTEMA_PLANO}\n\n${GUIA}`, messages: msgs });
   const texto = r => (r.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
   const ler = t => JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
