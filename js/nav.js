@@ -23,7 +23,7 @@
     { id: 'financeiro', titulo: 'Financeiro', paginas: ['financeiro', 'vendas-prejuizo', 'dre', 'conciliacao'] },
     { id: 'comercial', titulo: 'Comercial', paginas: ['leads', 'blog'] },
     { id: 'ia', titulo: 'Agentes de IA', paginas: ['adviser', 'chat', 'escritorio', 'segundo-cerebro'] },
-    { id: 'sistema', titulo: 'Sistema', paginas: ['integracoes', 'conexoes', 'saude-api', 'diagnostico'] },
+    { id: 'sistema', titulo: 'Sistema', paginas: ['sistema'] },
   ];
   const K_ABERTOS = 'glr_nav_abertos_v2'; // v2: grupos novos (o estado antigo tinha outros ids)
   const lerAbertos = () => { try { const v = JSON.parse(localStorage.getItem(K_ABERTOS) || 'null'); return Array.isArray(v) ? v : ['hoje']; } catch (e) { return ['hoje']; } };
@@ -180,7 +180,10 @@
   // Cliente (com foco): no topo, as seções da Casa do cliente; as telas que já
   // vivem dentro da Casa somem dos grupos, e abrir uma delas pelo endereço antigo
   // (#agente, #financeiro…) leva para a aba certa do perfil (ver Router.resolve).
-  function casaDe(pagina) {
+  function casaDe(pagina, params) {
+    // tela unida (ex.: Preços com abas ML/Shopee): vale a aba pedida, ou a primeira
+    const un = typeof Router !== 'undefined' && Router.unidas?.[pagina];
+    if (un) return casaDe(un.includes(params?.aba) ? params.aba : un[0]);
     const abas = window.GLR_PERFIL_ABAS || [];
     for (const a of abas) for (const s of a.subs) if (s.rota === pagina) return { aba: a.id, sub: s.id };
     return null;

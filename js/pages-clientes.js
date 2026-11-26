@@ -440,9 +440,10 @@ Router.register('cliente-perfil', (params, el) => {
       if (!tc) return;
       tc.innerHTML = '<div class="perfil-embed"></div>';
       const alvo = tc.firstChild;
-      if (!Router.routes[s.rota]) { alvo.innerHTML = `<div class="empty-state"><div class="empty-state-title">Tela indisponível</div></div>`; return; }
+      const tela = Router.embutiveis?.[s.rota] || Router.routes[s.rota]; // a original, mesmo que o endereço antigo redirecione
+      if (!tela) { alvo.innerHTML = `<div class="empty-state"><div class="empty-state-title">Tela indisponível</div></div>`; return; }
       Router.embutida = s.rota;
-      try { Router.routes[s.rota]({ embed: true, clienteId: c.id }, alvo); }
+      try { tela({ embed: true, clienteId: c.id }, alvo); }
       catch (e) { console.error('[perfil]', s.rota, e); alvo.innerHTML = `<div class="empty-state"><div class="empty-state-title">Não deu para abrir ${s.nome}</div><div class="empty-state-desc">Abra a tela pelo menu ou recarregue a página.</div></div>`; }
       return;
     }

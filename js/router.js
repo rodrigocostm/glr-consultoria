@@ -52,7 +52,7 @@ const Router = {
     }
     // Modo Cliente: tela que vive dentro da Casa do cliente abre na aba dela
     const foco = !window._portalConfig && typeof GLR !== 'undefined' && GLR.ctx?.cliente ? GLR.ctx.cliente() : '';
-    const casa = foco && window.GLRNav?.casaDe ? window.GLRNav.casaDe(path) : null;
+    const casa = foco && window.GLRNav?.casaDe ? window.GLRNav.casaDe(path, params) : null;
     if (casa) {
       window.location.replace(`#cliente-perfil?id=${encodeURIComponent(foco)}&aba=${casa.aba}&sub=${casa.sub}`);
       return;
@@ -100,6 +100,7 @@ const Router = {
       'precos-shopee': 'Monitor de preços Shopee',
       'conexoes': 'Saúde das conexões',
       'saude-api': 'Saúde da API',
+      sistema: 'Sistema',
       'agente-fotos': 'Agente de Fotos',
       'anuncios-novos': 'Anúncios novos',
       'datas-especiais': 'Datas especiais',
