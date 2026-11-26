@@ -89,8 +89,8 @@ async function tiops(apiKey, action, params) {
 }
 
 // params: { meliUserId | shopId, itens: [{ id, valor }] } — valor = custo total
-// do produto (0 = apaga). Chaves iguais às da tela: ML = id; Shopee = id e nome.
-async function salvarCustoPortal(apiKey, p) {
+// do produto (0 = apaga). A chave é só o id do anúncio, nunca o nome.
+async function salvarCustoPortal(apiKey, p, clienteId) {
   const itens = Array.isArray(p.itens) ? p.itens.slice(0, 100) : [];
   if (!itens.length) throw new Error('Nenhum item informado');
   const valorDe = new Map();
@@ -116,25 +116,15 @@ async function salvarCustoPortal(apiKey, p) {
       for (const d of (r?.data?.response?.item_list || r?.response?.item_list || r?.data?.item_list || [])) {
         const v = valorDe.get(String(d.item_id)); if (v == null) continue;
         chaves.push([String(d.item_id), v]);
-        if (d.item_name) chaves.push([d.item_name, v]);
       }
     }
   } else throw new Error('Informe a conta');
   if (!chaves.length) throw new Error('Nenhum anúncio desta conta encontrado');
-
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const H = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?chave=eq.glr_vendas_custo_catalogo&select=dados`, { headers: H });
-  const rows = r.ok ? await r.json() : null;
-  if (!rows) throw new Error('Não consegui ler o catálogo de custos');
-  const cat = rows[0]?.dados && typeof rows[0].dados === 'object' && !Array.isArray(rows[0].dados) ? rows[0].dados : {};
-  for (const [k, v] of chaves) { if (v > 0) cat[k] = v; else delete cat[k]; }
-  const w = await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?on_conflict=chave`, {
-    method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify({ chave: 'glr_vendas_custo_catalogo', dados: cat, atualizado_em: new Date().toISOString() }),
-  });
-  if (!w.ok) throw new Error('Não consegui salvar o custo');
-  return { ok: true, chaves: Object.fromEntries(chaves) };
+  // Só o id do anúncio. O nome do produto não é chave: dois clientes com o mesmo nome se atropelavam.
+  const custosCliente = require('./_custos-cliente');
+  const dados = await custosCliente.fundirCatalogo(chaves);
+  if (clienteId) await custosCliente.fundirColecao(clienteId, chaves);
+  return { ok: true, chaves: Object.fromEntries(chaves.filter(([id]) => Object.prototype.hasOwnProperty.call(dados, id))) };
 }
 
 // ── Login de cliente do portal pelo servidor (só a equipe, glr_staff) ──
@@ -333,7 +323,7 @@ async function handler(req, res) {
 
   if (action === 'glr_portal_salvar_custo') {
     if (!contasPermitidas) return res.status(403).json({ error: 'Somente para o portal do cliente' });
-    try { return res.status(200).json(await salvarCustoPortal(apiKey, p)); }
+    try { return res.status(200).json(await salvarCustoPortal(apiKey, p, String(identity.portal?.clienteId || ''))); }
     catch (e) { return res.status(400).json({ error: e.message }); }
   }
 
