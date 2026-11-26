@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ler = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 
-const MIGRADAS = ['js/pages-vendas.js'];
+const MIGRADAS = ['js/pages-vendas.js', 'js/pages-agente.js'];
 
 test('tokens do design system existem', () => {
   const css = ler('css/styles.css');

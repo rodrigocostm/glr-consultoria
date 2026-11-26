@@ -626,28 +626,28 @@
       const cor = a && !a.erro && a.alertas.length ? 'var(--red)' : 'var(--accent)';
       const mesLabel = k => { const [y, m] = k.split('-'); return new Date(+y, +m - 1, 1).toLocaleDateString('pt-BR', { month: 'short' }); };
       let corpo;
-      if (carregando) corpo = `<div id="ag-abc-prog" style="color:var(--text-muted);font-size:13px;">⏳ ${esc(state.abcProgresso || 'calculando...')}</div><div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">A primeira leitura puxa 3 meses de pedidos e pode levar alguns minutos — os meses fechados ficam guardados e as próximas atualizações leem só o mês atual.</div>`;
-      else if (!a) corpo = `<div style="color:var(--text-muted);font-size:13px;">Ainda não analisado. Clique em Analisar pra montar a curva e comparar a projeção do mês com o mês passado.</div>`;
-      else if (a.erro) corpo = `<div style="color:var(--red);font-size:13px;">⚠️ ${esc(a.erro)}</div>`;
+      if (carregando) corpo = `<div id="ag-abc-prog" style="color:var(--text-muted);font-size:var(--fs-3);">⏳ ${esc(state.abcProgresso || 'calculando...')}</div><div style="font-size:var(--fs-1);color:var(--text-muted);margin-top:6px;">A primeira leitura puxa 3 meses de pedidos e pode levar alguns minutos — os meses fechados ficam guardados e as próximas atualizações leem só o mês atual.</div>`;
+      else if (!a) corpo = `<div style="color:var(--text-muted);font-size:var(--fs-3);">Ainda não analisado. Clique em Analisar pra montar a curva e comparar a projeção do mês com o mês passado.</div>`;
+      else if (a.erro) corpo = `<div style="color:var(--red);font-size:var(--fs-3);">⚠️ ${esc(a.erro)}</div>`;
       else {
         const top = a.produtos.filter(p => p.classe === 'A' || p.alerta).slice(0, 12);
         corpo = `
-          <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:12px;">
-            ${['A', 'B', 'C'].map(c => `<div><div class="ag-hud-label" style="margin-bottom:2px;">Curva ${c}</div><div class="ag-mono" style="font-size:20px;font-weight:700;color:${COR_CLASSE[c]};">${a.resumo[c]}</div></div>`).join('')}
-            <div><div class="ag-hud-label" style="margin-bottom:2px;">Receita ${mesLabel(a.k1)}</div><div class="ag-mono" style="font-size:20px;font-weight:700;">${R$(a.total1)}</div></div>
+          <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:var(--space-3);">
+            ${['A', 'B', 'C'].map(c => `<div><div class="ag-hud-label" style="margin-bottom:2px;">Curva ${c}</div><div class="ag-mono" style="font-size:var(--fs-5);font-weight:700;color:${COR_CLASSE[c]};">${a.resumo[c]}</div></div>`).join('')}
+            <div><div class="ag-hud-label" style="margin-bottom:2px;">Receita ${mesLabel(a.k1)}</div><div class="ag-mono" style="font-size:var(--fs-5);font-weight:700;">${R$(a.total1)}</div></div>
           </div>
-          ${a.alertas.length ? `<div style="background:#dc26261a;border:1px solid var(--red);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
-            <div style="font-size:12.5px;font-weight:700;color:var(--red);margin-bottom:6px;">${a.alertas.length} produto(s) pedindo ação conjunta</div>
-            ${a.alertas.map(p => `<div style="font-size:12px;line-height:1.5;margin-top:4px;"><b>${esc(p.nome.slice(0, 70))}</b> <span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:color-mix(in srgb,${COR_CLASSE[p.classe]} 10%,transparent);">Curva ${p.classe}</span> — ${p.alerta === 'virada' ? `vinha crescendo (${pct(p.crescimentoAnterior)}) e` : ''} projeta ${R$(p.proj)} (${pct(p.varProj)} vs ${mesLabel(a.k1)}), impacto ≈ ${R$(p.impacto)}</div>`).join('')}
-          </div>` : (a.projecaoOk ? `<div style="font-size:12.5px;color:var(--green);margin-bottom:12px;">✅ Nenhum produto A/B com queda projetada relevante neste mês.</div>` : `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px;">Projeção do mês só é confiável a partir do dia ${ABC_DIA_MIN_PROJECAO + 1} (hoje há ${a.diasDecorridos} dia(s) de dados) — por enquanto sem alertas.</div>`)}
+          ${a.alertas.length ? `<div style="background:#dc26261a;border:1px solid var(--red);border-radius:8px;padding:10px 12px;margin-bottom:var(--space-3);">
+            <div style="font-size:var(--fs-2);font-weight:700;color:var(--red);margin-bottom:6px;">${a.alertas.length} produto(s) pedindo ação conjunta</div>
+            ${a.alertas.map(p => `<div style="font-size:var(--fs-2);line-height:1.5;margin-top:var(--space-1);"><b>${esc(p.nome.slice(0, 70))}</b> <span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:color-mix(in srgb,${COR_CLASSE[p.classe]} 10%,transparent);">Curva ${p.classe}</span> — ${p.alerta === 'virada' ? `vinha crescendo (${pct(p.crescimentoAnterior)}) e` : ''} projeta ${R$(p.proj)} (${pct(p.varProj)} vs ${mesLabel(a.k1)}), impacto ≈ ${R$(p.impacto)}</div>`).join('')}
+          </div>` : (a.projecaoOk ? `<div style="font-size:var(--fs-2);color:var(--green);margin-bottom:var(--space-3);">✅ Nenhum produto A/B com queda projetada relevante neste mês.</div>` : `<div style="font-size:var(--fs-2);color:var(--text-muted);margin-bottom:var(--space-3);">Projeção do mês só é confiável a partir do dia ${ABC_DIA_MIN_PROJECAO + 1} (hoje há ${a.diasDecorridos} dia(s) de dados) — por enquanto sem alertas.</div>`)}
           <div style="overflow-x:auto;"><table class="ag-tech-table"><thead><tr><th>Produto</th><th>Classe</th><th>${mesLabel(a.k2)}</th><th>${mesLabel(a.k1)}</th><th>Projeção ${mesLabel(a.k0)}</th><th>Variação</th></tr></thead><tbody>
             ${top.map(p => `<tr style="--row-accent:${COR_CLASSE[p.classe]};"><td>${esc(p.nome.slice(0, 55))}</td><td><span class="ag-action-chip" style="color:${COR_CLASSE[p.classe]};background:color-mix(in srgb,${COR_CLASSE[p.classe]} 10%,transparent);">${p.classe}</span></td><td class="ag-mono">${a.semMes2 ? '—' : R$(p.r2)}</td><td class="ag-mono">${R$(p.r1)}</td><td class="ag-mono">${p.proj != null && a.projecaoOk ? R$(p.proj) : '—'}</td><td class="ag-mono" style="font-weight:700;color:${p.varProj == null ? 'var(--text-muted)' : p.varProj <= ABC_QUEDA_PROJ ? 'var(--red)' : 'var(--green)'};">${p.varProj == null ? '—' : pct(p.varProj)}</td></tr>`).join('')}
           </tbody></table></div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Curva A = produtos que somam ~80% da receita de ${mesLabel(a.k1)}, B até 95%, C o resto. Projeção linear (receita até ontem ÷ dias decorridos × dias do mês), receita sem cancelados.${a.atualizadoEm ? ` Atualizado ${new Date(a.atualizadoEm).toLocaleString('pt-BR')}.` : ''}</div>`;
+          <div style="font-size:var(--fs-1);color:var(--text-muted);margin-top:var(--space-2);">Curva A = produtos que somam ~80% da receita de ${mesLabel(a.k1)}, B até 95%, C o resto. Projeção linear (receita até ontem ÷ dias decorridos × dias do mês), receita sem cancelados.${a.atualizadoEm ? ` Atualizado ${new Date(a.atualizadoEm).toLocaleString('pt-BR')}.` : ''}</div>`;
       }
-      return `<div class="ag-hud-card" style="--ag-hud-accent:${cor};margin-bottom:20px;">
+      return `<div class="ag-hud-card" style="--ag-hud-accent:${cor};margin-bottom:var(--space-5);">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:2px;">
-          <div style="font-size:14px;font-weight:700;">Curva ABC de vendas</div>
+          <div style="font-size:var(--fs-3);font-weight:700;">Curva ABC de vendas</div>
           <button class="btn btn-secondary btn-sm" ${carregando ? 'disabled' : ''} onclick="window._agAnalisarABC()">${a && !a.erro ? 'Atualizar' : '▶ Analisar'}</button>
         </div>
         <div class="ajuda">Produto que cresceu mês passado e projeta queda neste mês vira alerta na Fila de Atenção, pra decidirmos a ação juntos.</div>
@@ -974,7 +974,7 @@
       if (!state.saldos) return '';
       const gestores = GLR.gestores || [];
       let vinculos = {}; try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
-      const filtroGestor = `<label style="display:flex;align-items:center;gap:6px;font-size:12px;">Selecionar gestor <select class="form-select" style="width:auto;max-width:220px;" onchange="window._agSaldosGestor(this.value)">
+      const filtroGestor = `<label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-2);">Selecionar gestor <select class="form-select" style="width:auto;max-width:220px;" onchange="window._agSaldosGestor(this.value)">
         <option value="" ${!state.saldosGestor ? 'selected' : ''}>Todos os gestores</option>
         ${gestores.map(g => `<option value="${h(g.id)}" ${String(g.id) === state.saldosGestor ? 'selected' : ''}>${h(g.nome)}</option>`).join('')}
         <option value="sem" ${state.saldosGestor === 'sem' ? 'selected' : ''}>Sem gestor</option></select></label>`;
@@ -995,7 +995,7 @@
             <div class="ag-saldos-t">Saldo de ADS das lojas</div>
             <div class="ag-saldos-sub">${[cont('zerado') ? `<b style="color:var(--red)">${cont('zerado')} zerada(s)</b>` : '', cont('critico') ? `<b style="color:var(--red)">${cont('critico')} acaba(m) hoje</b>` : '', cont('baixo') ? `<b style="color:var(--yellow)">${cont('baixo')} baixa(s)</b>` : '', `${cont('ok')} ok`, semLeitura.length ? `${semLeitura.length} sem leitura` : ''].filter(Boolean).join(' · ')}${atual ? ` · lido ${atual}` : ''}. Duração estimada pelo gasto médio dos últimos 7 dias.</div>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
             ${filtroGestor}
             <button class="btn btn-secondary btn-sm" onclick="window._agSaldosTodas()">${state.saldosTodas ? 'Só as que precisam de recarga' : `Ver todas (${todas.length})`}</button>
             <button class="btn btn-secondary btn-sm" ${state.atualizandoSaldo ? 'disabled' : ''} onclick="window._agSaldosAgora()" title="Lê o saldo de todas as lojas agora (e avisa se alguma piorou)">${state.atualizandoSaldo ? '⏳ Lendo…' : '↻ Ler agora'}</button>
@@ -1033,7 +1033,7 @@
     const filtrarContas = q => { const t = semAcento(q).trim().split(/\s+/).filter(Boolean); return state.contas.filter(c => { const x = textoConta(c); return t.every(p => x.includes(p)); }); };
     function renderPortfolio() {
       return `${renderSaldos()}<div class="ag-busca-port"><input id="ag-busca-port" class="form-input" type="search" placeholder="Buscar conta ou cliente…" value="${esc(state.portBusca || '')}" oninput="window._agPortBusca(this.value)" autocomplete="off" aria-label="Buscar conta ou cliente"><span id="ag-busca-port-n">${cartoesPortfolio().n}</span></div>
-        <div id="ag-port-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">${cartoesPortfolio().html}</div>`;
+        <div id="ag-port-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--space-4);">${cartoesPortfolio().html}</div>`;
     }
     function cartoesPortfolio() {
       const lista = filtrarContas(state.portBusca || '');
@@ -1046,31 +1046,31 @@
           const tacos = mes?.tacos ?? relatorio?.metricas?.tacos_mes ?? relatorio?.metricas?.tacos_conta;
           const pendencias = state.logs.filter(l => l.conta_id === cfg.conta_id && l.tipo === 'alerta' && l.resultado === 'so_alerta').length;
           return `<div class="ag-hud-card" style="--ag-hud-accent:${saude.cor};cursor:pointer;" onclick="window._agAbrirConta('${esc(cfg.conta_id)}')">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-2);">
               <div>
-                <div style="font-size:15px;font-weight:700;">${h(nomeExibicao(cfg))}</div>
+                <div style="font-size:var(--fs-4);font-weight:700;">${h(nomeExibicao(cfg))}</div>
                 ${(() => { // só o que diferencia: piloto pausado e o cliente quando o nome dele não é o da conta
                   const cli = clienteVinculado(cfg.conta_id).cliente_nome || '';
                   const mostraCli = cli && !String(nomeExibicao(cfg)).toLowerCase().includes(String(cli).toLowerCase().split(' ')[0]);
                   const partes = [!cfg.ativo ? '<span style="color:var(--yellow);font-weight:600">piloto pausado</span>' : '', mostraCli ? h(cli) : ''].filter(Boolean);
-                  return partes.length ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${partes.join(' · ')}</div>` : '';
+                  return partes.length ? `<div style="font-size:var(--fs-1);color:var(--text-muted);margin-top:2px;">${partes.join(' · ')}</div>` : '';
                 })()}
               </div>
               <div style="display:flex;align-items:center;gap:6px;">
-                <span style="font-size:20px;line-height:1;" title="${saude.label}">${saude.emoji}</span>
+                <span style="font-size:var(--fs-5);line-height:1;" title="${saude.label}">${saude.emoji}</span>
                 <button type="button" class="btn btn-secondary btn-sm" style="padding:2px 7px;line-height:1.2;" onclick="event.stopPropagation();window._agExcluirConta('${esc(cfg.conta_id)}')" title="Excluir esta conta do agente" aria-label="Excluir ${esc(nomeExibicao(cfg))} do agente">🗑</button>
               </div>
             </div>
             <div style="display:flex;gap:18px;margin-top:14px;">
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS mês</div><div class="ag-mono" style="font-size:18px;font-weight:700;color:${tacos != null && cfg.meta_acos ? (tacos <= cfg.meta_acos ? 'var(--green)' : tacos <= cfg.meta_acos * 1.3 ? 'var(--yellow)' : 'var(--red)') : 'inherit'};">${tacos != null ? fmtPct(tacos) : '—'}</div></div>
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">Projeção mês</div><div class="ag-mono" style="font-size:18px;font-weight:700;">${mes ? R$(mes.projecao).replace(/,\d{2}$/, '') : '—'}</div></div>
-              <div><div class="ag-hud-label" style="margin-bottom:2px;">Fila</div><div class="ag-mono" style="font-size:18px;font-weight:700;color:${pendencias ? 'var(--yellow)' : 'inherit'};">${pendencias}</div></div>
-              ${(() => { const s = saldoDe(cfg.conta_id); return s?.saldo != null ? `<div title="${esc(`${SALDO_NIV[s.nivel]?.t || ''} · dura ${duraTxt(s)}`)}"><div class="ag-hud-label" style="margin-bottom:2px;">Saldo ADS</div><div class="ag-mono" style="font-size:18px;font-weight:700;color:${SALDO_NIV[s.nivel]?.c || 'inherit'};">${R$(s.saldo).replace(/,\d{2}$/, '')}</div></div>` : ''; })()}
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS mês</div><div class="ag-mono" style="font-size:var(--fs-5);font-weight:700;color:${tacos != null && cfg.meta_acos ? (tacos <= cfg.meta_acos ? 'var(--green)' : tacos <= cfg.meta_acos * 1.3 ? 'var(--yellow)' : 'var(--red)') : 'inherit'};">${tacos != null ? fmtPct(tacos) : '—'}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">Projeção mês</div><div class="ag-mono" style="font-size:var(--fs-5);font-weight:700;">${mes ? R$(mes.projecao).replace(/,\d{2}$/, '') : '—'}</div></div>
+              <div><div class="ag-hud-label" style="margin-bottom:2px;">Fila</div><div class="ag-mono" style="font-size:var(--fs-5);font-weight:700;color:${pendencias ? 'var(--yellow)' : 'inherit'};">${pendencias}</div></div>
+              ${(() => { const s = saldoDe(cfg.conta_id); return s?.saldo != null ? `<div title="${esc(`${SALDO_NIV[s.nivel]?.t || ''} · dura ${duraTxt(s)}`)}"><div class="ag-hud-label" style="margin-bottom:2px;">Saldo ADS</div><div class="ag-mono" style="font-size:var(--fs-5);font-weight:700;color:${SALDO_NIV[s.nivel]?.c || 'inherit'};">${R$(s.saldo).replace(/,\d{2}$/, '')}</div></div>` : ''; })()}
             </div>
           </div>`;
         }).join('')}
         <div class="ag-hud-card" style="--ag-hud-accent:var(--text-muted);cursor:pointer;border-style:dashed;display:flex;align-items:center;justify-content:center;min-height:110px;" onclick="window._agAbrirConta('__novo__')">
-          <div style="text-align:center;color:var(--text-muted);font-size:13px;font-weight:600;">+ Adicionar conta</div>
+          <div style="text-align:center;color:var(--text-muted);font-size:var(--fs-3);font-weight:600;">+ Adicionar conta</div>
         </div>` };
     }
 
@@ -1211,7 +1211,7 @@
           </div>
           <div class="form-group" style="margin:0;" id="ag-man-valor-wrap"><label class="form-label">Valor novo</label><input type="number" step="0.1" class="form-input" id="ag-man-valor" placeholder="Ex: 300 ou 17.5"></div>
         </div>
-        <div class="form-group" style="margin-bottom:12px;"><label class="form-label">Por quê (opcional, vai pro log)</label><input type="text" class="form-input" id="ag-man-explicacao" placeholder="Ex: recomendação do chat — Rack Linea, ACOS saudável, aumentar orçamento"></div>
+        <div class="form-group" style="margin-bottom:var(--space-3);"><label class="form-label">Por quê (opcional, vai pro log)</label><input type="text" class="form-input" id="ag-man-explicacao" placeholder="Ex: recomendação do chat — Rack Linea, ACOS saudável, aumentar orçamento"></div>
         <button class="btn btn-primary" style="background:var(--red);border-color:var(--red);" ${state.executandoAcaoManual ? 'disabled' : ''} onclick="window._agExecutarAcaoManual()">
           ${state.executandoAcaoManual ? '⏳ Executando na Shopee...' : 'Executar agora'}
         </button>
@@ -1385,7 +1385,7 @@
               return `<option value="${id}" ${cfg.conta_id === id ? 'selected' : ''} ${jaConfigurada ? 'disabled' : ''}>${esc(nomeConta(c))}${jaConfigurada ? ' (já configurada)' : ''}</option>`;
             }).join('')}
           </select>
-          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;margin-top:10px;"><input type="checkbox" id="ag-ativo"> Ligar o piloto nesta conta</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-2);cursor:pointer;margin-top:10px;"><input type="checkbox" id="ag-ativo"> Ligar o piloto nesta conta</label>
         </div>` : `<input type="hidden" id="ag-conta" value="${esc(cfg.conta_id)}">`}
         <div class="ag-regras-grid">
           <div class="ag-regra-bloco" style="--c:var(--red);">
@@ -1431,7 +1431,7 @@
 
     // Formulário de conta nova (sem conta aberta ainda)
     function renderConfig() {
-      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:20px;">
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:var(--space-5);">
         <div class="ag-sec-head"><div class="ag-sec-titulo">Guardrails do piloto <span class="ag-sec-sub">Defina as regras que o agente vai seguir nesta conta. O agente avalia todas as contas com o piloto ligado 4 vezes por dia: 07:00 (revisão completa do dia anterior) e 12:00, 16:00 e 20:00 (acompanhamento do dia: orçamento esgotando, gasto sem venda, ritmo de vendas).</span></div></div>
         ${formRegras({}, true)}
       </div>`;
@@ -1444,7 +1444,7 @@
       const v = { pausaAcos: cfg.regra_pausa_acos, pausaDias: cfg.regra_pausa_dias ?? 3, mat: cfg.dias_maturacao_campanha ?? 7, meta: cfg.meta_acos, orcMin: cfg.orcamento_min, orcMax: cfg.orcamento_max, alerta: cfg.alerta_variacao_pct ?? 30 };
       const salvoAgora = state.regrasSalvoEm && Date.now() - state.regrasSalvoEm < 20000;
       const chip = (txt, cor) => `<span class="ag-action-chip" style="color:${cor};background:color-mix(in srgb,${cor} 10%,transparent);">${txt}</span>`;
-      return `<div class="ag-hud-card" id="ag-regras-card" style="--ag-hud-accent:var(--accent);margin-bottom:20px;">
+      return `<div class="ag-hud-card" id="ag-regras-card" style="--ag-hud-accent:var(--accent);margin-bottom:var(--space-5);">
         <div class="ag-sec-head">
           <div class="ag-sec-titulo">Guardrails do piloto <span class="ag-sec-sub">as regras que o agente segue sozinho em cada campanha</span></div>
           <div class="ag-periodos">
@@ -1453,7 +1453,7 @@
           </div>
         </div>
         ${aberto ? formRegras(cfg, false) : `
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:var(--space-3);">
             ${chip(`Pausa: só gasto alto sem retorno · ${numRegra(v.pausaDias)} dia(s)`, 'var(--red)')}
             ${chip(`Maturação: ${numRegra(v.mat)} dias`, 'var(--text-muted)')}
             ${chip(`Meta ${sigla('TACOS')}: ${numRegra(v.meta)}%`, 'var(--green)')}
@@ -1505,18 +1505,18 @@
           ${l.explicacao ? `<div class="ag-log-corpo">${nl2br(h(l.explicacao))}</div>` : '<div class="ag-log-corpo ag-camp-motivo">Sem detalhes.</div>'}
         </details>`;
       });
-      if (todos.length > lista.length) html += `<div style="text-align:center;margin-top:12px;"><button class="btn btn-secondary btn-sm" onclick="window._agLogMais()">Ver mais (${todos.length - lista.length})</button></div>`;
+      if (todos.length > lista.length) html += `<div style="text-align:center;margin-top:var(--space-3);"><button class="btn btn-secondary btn-sm" onclick="window._agLogMais()">Ver mais (${todos.length - lista.length})</button></div>`;
       return html;
     }
     function renderLog(contaId) {
       const doConta = logsDaConta(contaId);
       const cont = t => t === 'todos' ? doConta.length : doConta.filter(l => l.tipo === t).length;
-      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:20px;">
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:var(--space-5);">
         <div class="ag-sec-head">
           <div class="ag-sec-titulo">Registro do agente <span class="ag-sec-sub">tudo que foi feito, decidido e conversado — inclusive as ações automáticas e as suas</span></div>
           <div class="ag-periodos">${['todos', 'decisao', 'alerta', 'sistema', 'chat'].map(t => `<button class="btn btn-sm ${state.filtroLog === t ? 'btn-primary' : 'btn-secondary'}" onclick="window._agFiltrarLog('${t}')">${t === 'todos' ? 'Todos' : TIPO_LABEL[t]} (${cont(t)})</button>`).join('')}</div>
         </div>
-        <input type="search" class="form-input" id="ag-log-busca" placeholder="Buscar no registro (campanha, motivo, ação)…" value="${esc(state.logBusca || '')}" oninput="window._agLogBusca(this.value)" style="margin-bottom:12px;" aria-label="Buscar no registro do agente">
+        <input type="search" class="form-input" id="ag-log-busca" placeholder="Buscar no registro (campanha, motivo, ação)…" value="${esc(state.logBusca || '')}" oninput="window._agLogBusca(this.value)" style="margin-bottom:var(--space-3);" aria-label="Buscar no registro do agente">
         <div id="ag-log-lista">${renderLogLista(contaId)}</div>
       </div>`;
     }
@@ -1535,9 +1535,9 @@
         const txt = v === Infinity ? 'novo' : `${sobe ? '+' : '−'}${fmtNum(Math.abs(v))}%`;
         return `<span style="color:${cor};font-weight:700;">${sobe ? '▲' : v < 0 ? '▼' : '–'} ${txt}</span>`;
       };
-      const metrica = (label, valor, sub, variacao) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${label}</div><div class="ag-mono" style="font-size:20px;font-weight:700;">${valor}</div><div class="ag-hud-sub">${sub || ''}${sub && variacao != null ? ' · ' : ''}${varChip(variacao)}</div></div>`;
-      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--cyan);margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Impressões, Cliques e Vendas (${periodoLabel(d.periodo || state.negocioPeriodo)})</div>
+      const metrica = (label, valor, sub, variacao) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${label}</div><div class="ag-mono" style="font-size:var(--fs-5);font-weight:700;">${valor}</div><div class="ag-hud-sub">${sub || ''}${sub && variacao != null ? ' · ' : ''}${varChip(variacao)}</div></div>`;
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--cyan);margin-bottom:var(--space-5);">
+        <div style="font-size:var(--fs-3);font-weight:700;margin-bottom:2px;">Impressões, Cliques e Vendas (${periodoLabel(d.periodo || state.negocioPeriodo)})</div>
         <div class="ajuda">Funil de ADS da conta inteira — de quantas vezes o anúncio apareceu até quantas vendas ele gerou. Variação vs o período anterior equivalente.</div>
         <div style="display:flex;gap:28px;flex-wrap:wrap;">
           ${metrica('Impressões', n(d.impressoesTotal), null, d.variacaoImpressoes)}
@@ -1824,7 +1824,7 @@
           </div>
         </div>`;
       };
-      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--yellow);margin-bottom:20px;">
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--yellow);margin-bottom:var(--space-5);">
         <div class="ag-sec-head"><div class="ag-sec-titulo">Precisa de você <span class="ag-contagem">${pend.length + falhas.length + (reativ.length ? 1 : 0)}</span></div>
           ${pend.filter(l => temAcaoReconhecida(l.dados || {})).length >= 2 ? `<button class="btn btn-sm ag-btn-ok" ${state.aprovandoLote ? 'disabled' : ''} onclick="window._agAprovarTodas()">${state.aprovandoLote ? '⏳ Aprovando...' : `✅ Aprovar todas (${pend.filter(l => temAcaoReconhecida(l.dados || {})).length})`}</button>` : ''}
         </div>
@@ -1853,18 +1853,18 @@
       else {
         const A = v.totAtual, P = v.totAnterior;
         const ctrA = A.impressoes > 0 ? A.cliques / A.impressoes * 100 : 0, ctrP = P.impressoes > 0 ? P.cliques / P.impressoes * 100 : 0;
-        const bloco = (rot, val, sub, va) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${rot}</div><div class="ag-mono" style="font-size:20px;font-weight:700;">${val}</div><div class="ag-hud-sub">${sub}${va ? ' · ' + va : ''}</div></div>`;
-        corpo = `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:12px;">
+        const bloco = (rot, val, sub, va) => `<div><div class="ag-hud-label" style="margin-bottom:2px;">${rot}</div><div class="ag-mono" style="font-size:var(--fs-5);font-weight:700;">${val}</div><div class="ag-hud-sub">${sub}${va ? ' · ' + va : ''}</div></div>`;
+        corpo = `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:var(--space-3);">
             ${bloco('Impressões', n(A.impressoes), `vs ${n(P.impressoes)}`, chip(A.impressoes, P.impressoes))}
             ${bloco('Cliques', n(A.cliques), `vs ${n(P.cliques)}`, chip(A.cliques, P.cliques))}
             ${bloco('CTR', fmtPct(ctrA, 2), `vs ${fmtPct(ctrP, 2)}`, ctrP > 0 ? chip(ctrA, ctrP) : '')}
             ${bloco('Impressões por dia', n(A.impressoes / v.dias), `vs ${n(P.impressoes / v.dias)}`, '')}
           </div>
-          <div style="display:flex;gap:6px;margin-bottom:8px;">${METR.map(([k, l]) => `<button class="btn btn-sm ${state.visMetrica === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agVisMetrica('${k}')">${l}</button>`).join('')}</div>
+          <div style="display:flex;gap:6px;margin-bottom:var(--space-2);">${METR.map(([k, l]) => `<button class="btn btn-sm ${state.visMetrica === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agVisMetrica('${k}')">${l}</button>`).join('')}</div>
           <div style="position:relative;height:230px;"><canvas id="ag-vis-graf"></canvas></div>`;
       }
-      return `<div class="ag-hud-card" style="--ag-hud-accent:#2a78d6;margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Comparativo de visualizações (${periodoLabel(p)} × período anterior)</div>
+      return `<div class="ag-hud-card" style="--ag-hud-accent:#2a78d6;margin-bottom:var(--space-5);">
+        <div style="font-size:var(--fs-3);font-weight:700;margin-bottom:2px;">Comparativo de visualizações (${periodoLabel(p)} × período anterior)</div>
         <div class="ajuda">Quantas vezes os anúncios da loja apareceram (impressões de ADS), dia a dia, contra o mesmo número de dias do período anterior. A visualização orgânica dos anúncios a Shopee não informa pela API.</div>
         ${corpo}
       </div>`;
@@ -1952,7 +1952,7 @@
         if (!state.autoNegocio[contaId + ':' + p]) { state.autoNegocio[contaId + ':' + p] = true; setTimeout(() => buscarNegocio(contaId, p), 0); }
         corpo = `<div class="ag-kpi-grid">${'<div class="ag-kpi ag-skel"></div>'.repeat(5)}</div>`;
       } else if (n.erro) {
-        corpo = `<div class="ag-aviso ag-aviso-erro">⚠️ Não consegui buscar os indicadores: ${h(n.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._agAtualizarTudo()">Tentar de novo</button></div>`;
+        corpo = `<div class="ag-aviso ag-aviso-erro">⚠️ Não consegui buscar os indicadores: ${h(n.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:var(--space-2);" onclick="window._agAtualizarTudo()">Tentar de novo</button></div>`;
       } else {
         const fat = n.semanaAtual, fatAnt = n.semanaAnterior, A = n.adsAtual, P = n.adsAnterior;
         // Mês atual: projeção linear do mês (mesma conta da Projeção de Crescimento)
@@ -1992,7 +1992,7 @@
         if (n.adsJanelaReduzida) notas += '<div class="ag-nota">ℹ️ A Shopee só entrega até 30 dias de dados de ADS por consulta — o investimento e as vendas via ADS usam os últimos 30 dias, mesmo com "Mês atual" mais longo.</div>';
         corpo = `<div class="ag-kpi-grid">${cards.join('')}</div>${notas}`;
       }
-      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:20px;">${cab}${corpo}</div>`;
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:var(--space-5);">${cab}${corpo}</div>`;
     }
 
     // ── 4. O que o agente fez (timeline) ──
@@ -2011,7 +2011,7 @@
       const st = state.resultadosAds?.[contaId];
       const hx = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
       const cab = `<div class="ag-sec-head"><div class="ag-sec-titulo">Deu resultado? <span class="ag-sec-sub">cada ação aplicada é medida na campanha: 7 dias antes × 7 dias depois</span></div></div>`;
-      if (!st || st.carregando) return `<div class="ag-hud-card" style="margin-bottom:20px;">${cab}<div class="ag-vazio">Carregando…</div></div>`;
+      if (!st || st.carregando) return `<div class="ag-hud-card" style="margin-bottom:var(--space-5);">${cab}<div class="ag-vazio">Carregando…</div></div>`;
       const medivel = l => { const d = l.dados || {}; return d.campaign_id && (d.pausada === true || /pausad/i.test(l.titulo || '') || d.retomada === true || (d.roas_de != null && d.roas_para != null) || (d.budget_de != null && d.budget_para != null)); };
       const acoes = st.lista.filter(medivel);
       const medidas = acoes.filter(l => ['melhorou', 'piorou', 'neutro'].includes(l.dados?.medicao?.veredito));
@@ -2025,7 +2025,7 @@
       const dm = s => s ? s.split('-').reverse().slice(0, 2).join('/') : '';
       const auto = medidas.filter(l => l.origem === 'cron'), autoOk = auto.filter(l => l.dados.medicao.veredito === 'melhorou').length;
       const kpi = (rot, val, sub, cor) => `<div><div class="ag-res-rot">${rot}</div><div class="ag-res-val" style="color:${cor || 'inherit'}">${val}</div><div class="ag-res-sub">${sub}</div></div>`;
-      return `<div class="ag-hud-card" style="margin-bottom:20px;">${cab}
+      return `<div class="ag-hud-card" style="margin-bottom:var(--space-5);">${cab}
         <div class="ag-res-kpis">
           ${kpi('Taxa de acerto', taxa == null ? '—' : taxa + '%', medidas.length ? `${n('melhorou')} de ${medidas.length} ações melhoraram` : 'nada medido ainda', taxa == null ? '' : taxa >= 70 ? 'var(--green)' : taxa >= 50 ? 'var(--yellow)' : 'var(--red)')}
           ${kpi('Automáticas do agente', auto.length ? Math.round(autoOk / auto.length * 100) + '%' : '—', auto.length ? `${autoOk} de ${auto.length} melhoraram` : 'sem medição ainda')}
@@ -2079,11 +2079,11 @@
       const mostrados = lista.slice(0, state.timelineMostrar);
       // Muitas pausas de uma vez: atalho pro chat sugerir quais reativar/otimizar.
       const pausas24h = todas.filter(l => l.resultado === 'executado' && (l.dados?.pausada === true || /pausada/i.test(l.titulo || '')) && Date.now() - new Date(l.criado_em).getTime() < 86400000).length;
-      const bannerPausas = pausas24h >= 3 ? `<div class="ag-aviso ag-aviso-aten" style="margin:0 0 12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      const bannerPausas = pausas24h >= 3 ? `<div class="ag-aviso ag-aviso-aten" style="margin:0 0 var(--space-3);display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap;">
         <span>⏸ O agente pausou <b>${pausas24h} campanhas</b> nas últimas 24 horas. Quer revisar quais valem ser reativadas e como otimizar?</span>
         <button class="btn btn-primary btn-sm" onclick="window._agChatPedir(0)">Pedir ao chat pra sugerir reativações</button>
       </div>` : '';
-      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:20px;">
+      return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent);margin-bottom:var(--space-5);">
         <div class="ag-sec-head">
           <div class="ag-sec-titulo">O que o agente fez <span class="ag-sec-sub">últimos 7 dias: ${c7('auto')} automáticas · ${c7('manual')} manuais · ${c7('falhas')} falhas</span></div>
           <div class="ag-periodos">${FILTROS.map(([k, l]) => `<button class="btn btn-sm ${filtro === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agFiltroTimeline('${k}')">${l} (${grupos[k].length})</button>`).join('')}</div>
@@ -2091,7 +2091,7 @@
         ${bannerPausas}
         ${mostrados.length ? `<div class="ag-tl">${mostrados.map(item).join('')}</div>` : '<div class="ag-vazio">Nenhuma ação neste filtro nos últimos 30 dias.</div>'}
         ${lista.length > mostrados.length ? `<div style="text-align:center;margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="window._agTimelineMais()">Ver mais (${lista.length - mostrados.length})</button></div>` : ''}
-        <div class="ag-nota" style="margin-top:12px;">Contagens dos últimos 30 dias registrados. “Confirmada na Shopee” compara a ação com o estado atual da campanha.</div>
+        <div class="ag-nota" style="margin-top:var(--space-3);">Contagens dos últimos 30 dias registrados. “Confirmada na Shopee” compara a ação com o estado atual da campanha.</div>
       </div>`;
     }
 
@@ -2226,15 +2226,15 @@
         <div class="ag-sec-titulo">Campanhas <span class="ag-sec-sub">${periodoLabel(state.negocioPeriodo)} · ativas com atividade no período e todas as pausadas</span></div>
         <button class="btn btn-secondary btn-sm" ${state.carregandoDadosAoVivo ? 'disabled' : ''} onclick="window._agAtualizarDados()">Atualizar</button>
       </div>`;
-      if (!d && state.carregandoDadosAoVivo) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">${cab}<div class="ag-skel" style="height:180px;border-radius:10px;"></div></div>`;
+      if (!d && state.carregandoDadosAoVivo) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:var(--space-5);">${cab}<div class="ag-skel" style="height:180px;border-radius:10px;"></div></div>`;
       if (!d) {
         // Carrega sozinho (uma vez por conta), sem precisar clicar
         state.autoCampanhas = state.autoCampanhas || {};
         if (!state.autoCampanhas[contaId] && !state.carregandoDadosAoVivo) { state.autoCampanhas[contaId] = true; setTimeout(() => buscarDadosAoVivo(contaId, state.negocioPeriodo), 0); }
-        return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">${cab}<div class="ag-vazio">⏳ Carregando as campanhas da Shopee…</div></div>`;
+        return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:var(--space-5);">${cab}<div class="ag-vazio">⏳ Carregando as campanhas da Shopee…</div></div>`;
       }
-      if (d.erro) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--yellow);margin-bottom:20px;">${cab}<div class="ag-aviso ag-aviso-erro">⚠️ ${h(d.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="window._agAtualizarDados()">Tentar de novo</button></div></div>`;
-      if (!d.todasCampanhas?.length) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">${cab}<div class="ag-vazio">Nenhuma campanha com atividade em ${periodoLabel(state.negocioPeriodo)}.</div></div>`;
+      if (d.erro) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--yellow);margin-bottom:var(--space-5);">${cab}<div class="ag-aviso ag-aviso-erro">⚠️ ${h(d.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:var(--space-2);" onclick="window._agAtualizarDados()">Tentar de novo</button></div></div>`;
+      if (!d.todasCampanhas?.length) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:var(--space-5);">${cab}<div class="ag-vazio">Nenhuma campanha com atividade em ${periodoLabel(state.negocioPeriodo)}.</div></div>`;
 
       const { col, dir } = state.tabOrdem;
       const acesso = ORDENACAO[col] || ORDENACAO.gasto;
@@ -2242,7 +2242,7 @@
       const FILTROS_CAMP = { todas: () => true, ativas: c => st(c) === 'ongoing', pausadas: c => st(c) === 'paused' };
       const contagem = k => d.todasCampanhas.filter(FILTROS_CAMP[k]).length;
       const filtro = FILTROS_CAMP[state.tabFiltro] ? state.tabFiltro : 'todas';
-      const abas = `<div class="ag-periodos" style="margin-bottom:12px;">
+      const abas = `<div class="ag-periodos" style="margin-bottom:var(--space-3);">
         ${[['todas', 'Todas'], ['ativas', 'Ativas'], ['pausadas', '⏸ Pausadas']].map(([k, l]) => `<button class="btn btn-sm ${filtro === k ? 'btn-primary' : 'btn-secondary'}" onclick="window._agTabFiltro('${k}')">${l} (${contagem(k)})</button>`).join('')}
       </div>`;
       // TACOS da campanha = gasto ÷ tudo o que os produtos dela venderam no período (orgânico + ADS).
@@ -2256,7 +2256,7 @@
         c._vendaProd = den; c._tacosProd = den == null || !(c.gasto > 0) ? null : den > 0 ? c.gasto / den * 100 : Infinity;
       });
       const linhasOrd = d.todasCampanhas.filter(FILTROS_CAMP[filtro]).sort((a, b) => { const x = acesso(a), y = acesso(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
-      if (!linhasOrd.length) return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">${cab}${abas}<div class="ag-vazio">${filtro === 'pausadas' ? '✅ Nenhuma campanha pausada agora.' : 'Nenhuma campanha neste filtro.'}</div></div>`;
+      if (!linhasOrd.length) return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:var(--accent-light);margin-bottom:var(--space-5);">${cab}${abas}<div class="ag-vazio">${filtro === 'pausadas' ? '✅ Nenhuma campanha pausada agora.' : 'Nenhuma campanha neste filtro.'}</div></div>`;
       const LIMITE = 10;
       const linhas = state.tabTodas ? linhasOrd : linhasOrd.slice(0, LIMITE);
       const th = (chave, rotulo, extra) => `<th class="ag-th-sort" onclick="window._agOrdenar('${chave}')">${rotulo}${col === chave ? (dir === 1 ? ' ▲' : ' ▼') : ''}${extra || ''}</th>`;
@@ -2298,10 +2298,10 @@
           </div></details></td>
         </tr>`;
       };
-      return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:var(--accent-light);margin-bottom:20px;">
+      return `<div class="ag-hud-card" id="ag-tabela-campanhas" style="--ag-hud-accent:var(--accent-light);margin-bottom:var(--space-5);">
         ${cab}
         ${abas}
-        ${filtro === 'pausadas' ? '<div class="ag-nota" style="margin:-4px 0 12px;">Todas as campanhas pausadas na Shopee agora, inclusive as que não gastaram neste período. A coluna “Última ação” mostra quem pausou e por quê; as marcadas com ⚠ estão pausadas com o ACOS dentro da meta (candidatas a reativar). Use o menu ⋯ pra sugerir a reativação.</div>' : ''}
+        ${filtro === 'pausadas' ? '<div class="ag-nota" style="margin:calc(-1 * var(--space-1)) 0 var(--space-3);">Todas as campanhas pausadas na Shopee agora, inclusive as que não gastaram neste período. A coluna “Última ação” mostra quem pausou e por quê; as marcadas com ⚠ estão pausadas com o ACOS dentro da meta (candidatas a reativar). Use o menu ⋯ pra sugerir a reativação.</div>' : ''}
         <div style="overflow-x:auto;">
         <table class="ag-tech-table">
           <thead><tr>
@@ -2403,12 +2403,12 @@
     function renderRelatorios(contaId) {
       const lista = state.relatorios.filter(r => r.conta_id === contaId);
       return `<div class="card" style="padding:20px 22px;margin-bottom:10px;">
-        ${!lista.length ? `<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:13px;">Nenhum relatório ainda — sai amanhã de manhã se o piloto estiver ativo hoje.</div>` : `
+        ${!lista.length ? `<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:var(--fs-3);">Nenhum relatório ainda — sai amanhã de manhã se o piloto estiver ativo hoje.</div>` : `
         <div style="display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;">
           ${lista.map((r, i) => `
             <details ${i === 0 ? 'open' : ''} style="border:1px solid var(--border);border-radius:10px;padding:10px 14px;">
-              <summary style="cursor:pointer;font-size:13px;font-weight:600;">${new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })} — ${esc(r.cliente_nome || r.conta_id)}</summary>
-              <div style="font-size:12.5px;color:var(--text-secondary);margin-top:8px;line-height:1.6;white-space:pre-wrap;">${nl2br(r.resumo)}</div>
+              <summary style="cursor:pointer;font-size:var(--fs-3);font-weight:600;">${new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })} — ${esc(r.cliente_nome || r.conta_id)}</summary>
+              <div style="font-size:var(--fs-2);color:var(--text-secondary);margin-top:var(--space-2);line-height:1.6;white-space:pre-wrap;">${nl2br(r.resumo)}</div>
             </details>`).join('')}
         </div>`}
       </div>`;
@@ -2471,7 +2471,7 @@
         </div>
         <div class="ag-chat-msgs" id="ag-chat-msgs">
           ${!state.chatMessages.length ? `<div class="ag-chat-vazio">
-            <div style="font-weight:700;margin-bottom:4px;">Pergunte ou peça uma ação</div>
+            <div style="font-weight:700;margin-bottom:var(--space-1);">Pergunte ou peça uma ação</div>
             <div>Eu vejo os indicadores, as campanhas, o que o agente fez e a curva ABC desta conta. Pedidos de mudança viram sugestões em "Precisa de você" — nada é executado sem o seu aprovar.</div>
             <div class="ag-chat-chips">${PERGUNTAS_RAPIDAS.map((p, i) => `<button onclick="window._agPerguntar(${i})">${h(p)}</button>`).join('')}</div>
           </div>` : ''}
@@ -2518,12 +2518,12 @@
       if (state.contaAbertaId == null) {
         root.innerHTML = state.contas.length
           ? renderPortfolio()
-          : `<div style="text-align:center;padding:50px;color:var(--text-muted);font-size:13px;">Nenhuma conta configurada ainda.</div>${renderConfig()}`;
+          : `<div style="text-align:center;padding:50px;color:var(--text-muted);font-size:var(--fs-3);">Nenhuma conta configurada ainda.</div>${renderConfig()}`;
         return;
       }
 
       const cfg = state.contaAbertaId === '__novo__' ? null : configDaConta(state.contaAbertaId);
-      const voltar = state.contas.length > 0 ? `<button class="btn btn-secondary btn-sm" style="margin-bottom:16px;" onclick="window._agVoltarPortfolio()">← Voltar</button>` : '';
+      const voltar = state.contas.length > 0 ? `<button class="btn btn-secondary btn-sm" style="margin-bottom:var(--space-4);" onclick="window._agVoltarPortfolio()">← Voltar</button>` : '';
 
       if (!cfg) {
         // '__novo__' ou conta_id que ainda não tem linha salva — só o form.
@@ -2582,191 +2582,191 @@
       <div id="ag-chat-root"></div>
       <style>
         .ag-saldos { padding:16px 18px; margin-bottom:18px; }
-        .ag-saldos-top { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start; margin-bottom:10px; }
-        .ag-saldos-t { font-size:15px; font-weight:700; }
-        .ag-saldos-sub { font-size:12.5px; color:var(--text-muted); line-height:1.5; margin-top:2px; }
-        .ag-saldos-tab { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
-        .ag-saldos-tab th { text-align:left; font-size:11.5px; font-weight:600; color:var(--text-muted); padding:7px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+        .ag-saldos-top { display:flex; justify-content:space-between; gap:var(--space-3); flex-wrap:wrap; align-items:flex-start; margin-bottom:10px; }
+        .ag-saldos-t { font-size:var(--fs-4); font-weight:700; }
+        .ag-saldos-sub { font-size:var(--fs-2); color:var(--text-muted); line-height:1.5; margin-top:2px; }
+        .ag-saldos-tab { width:100%; border-collapse:collapse; font-size:var(--fs-3); font-variant-numeric:tabular-nums; }
+        .ag-saldos-tab th { text-align:left; font-size:var(--fs-1); font-weight:600; color:var(--text-muted); padding:7px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
         .ag-saldos-tab td { padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
         .ag-saldos-tab .num { text-align:right; white-space:nowrap; }
         .ag-saldos-tab tr:last-child td { border-bottom:none; }
         .ag-saldos-link { cursor:pointer; } .ag-saldos-link:hover td { background:var(--bg-subtle); }
-        .ag-saldo-pill { display:inline-block; font-size:11.5px; font-weight:650; padding:2px 8px; border-radius:99px; color:var(--c); background:color-mix(in srgb,var(--c) 12%,transparent); white-space:nowrap; }
-        .ag-saldos-err { font-size:11px; color:var(--text-muted); margin-top:3px; max-width:340px; }
-        .ag-chat-fab { position:fixed; right:22px; bottom:22px; z-index:40; padding:12px 18px; border:none; border-radius:99px; background:var(--accent); color:#fff; font-size:13.5px; font-weight:700; cursor:pointer; box-shadow:0 8px 24px rgba(99,102,241,.45); }
+        .ag-saldo-pill { display:inline-block; font-size:var(--fs-1); font-weight:650; padding:2px 8px; border-radius:99px; color:var(--c); background:color-mix(in srgb,var(--c) 12%,transparent); white-space:nowrap; }
+        .ag-saldos-err { font-size:var(--fs-1); color:var(--text-muted); margin-top:3px; max-width:340px; }
+        .ag-chat-fab { position:fixed; right:22px; bottom:22px; z-index:40; padding:12px 18px; border:none; border-radius:99px; background:var(--accent); color:#fff; font-size:var(--fs-3); font-weight:700; cursor:pointer; box-shadow:0 8px 24px rgba(99,102,241,.45); }
         .ag-chat-fab:hover { background:var(--accent-strong); }
         .ag-chat-panel { position:fixed; right:22px; bottom:22px; z-index:41; width:min(430px, calc(100vw - 24px)); height:min(680px, calc(100vh - 110px)); display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:16px; box-shadow:0 18px 50px rgba(0,0,0,.28); overflow:hidden; }
         .ag-chat-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; border-bottom:1px solid var(--border); background:linear-gradient(135deg, rgba(99,102,241,.14), transparent); }
-        .ag-chat-titulo { font-size:14px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .ag-chat-sub { font-size:11px; color:var(--text-muted); margin-top:2px; }
-        .ag-chat-head-acoes { display:flex; gap:4px; flex-shrink:0; }
-        .ag-chat-head-acoes button { width:30px; height:30px; border:none; border-radius:8px; background:transparent; color:var(--text-muted); font-size:15px; cursor:pointer; }
+        .ag-chat-titulo { font-size:var(--fs-3); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ag-chat-sub { font-size:var(--fs-1); color:var(--text-muted); margin-top:2px; }
+        .ag-chat-head-acoes { display:flex; gap:var(--space-1); flex-shrink:0; }
+        .ag-chat-head-acoes button { width:30px; height:30px; border:none; border-radius:8px; background:transparent; color:var(--text-muted); font-size:var(--fs-4); cursor:pointer; }
         .ag-chat-head-acoes button:hover:not(:disabled) { background:var(--bg-card-hover,var(--bg-subtle)); color:var(--text-primary,inherit); }
         .ag-chat-head-acoes button:disabled { opacity:.35; cursor:default; }
         .ag-chat-msgs { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; scroll-behavior:smooth; }
-        .ag-chat-vazio { font-size:12.5px; line-height:1.6; color:var(--text-muted); padding:6px 2px; }
-        .ag-chat-chips { display:flex; flex-direction:column; gap:7px; margin-top:12px; }
-        .ag-chat-chips button { text-align:left; padding:9px 12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card-hover,var(--bg-subtle)); color:var(--text-primary,inherit); font-size:12.5px; cursor:pointer; }
+        .ag-chat-vazio { font-size:var(--fs-2); line-height:1.6; color:var(--text-muted); padding:6px 2px; }
+        .ag-chat-chips { display:flex; flex-direction:column; gap:7px; margin-top:var(--space-3); }
+        .ag-chat-chips button { text-align:left; padding:9px 12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card-hover,var(--bg-subtle)); color:var(--text-primary,inherit); font-size:var(--fs-2); cursor:pointer; }
         .ag-chat-chips button:hover { border-color:var(--accent); }
-        .ag-chat-fontes { margin-top:8px; padding-top:6px; border-top:1px dashed var(--border); font-size:11px; line-height:1.45; color:var(--text-muted); }
+        .ag-chat-fontes { margin-top:var(--space-2); padding-top:6px; border-top:1px dashed var(--border); font-size:var(--fs-1); line-height:1.45; color:var(--text-muted); }
         .ag-chat-linha { display:flex; }
         .ag-chat-linha.eu { justify-content:flex-end; }
-        .ag-chat-balao { max-width:90%; padding:9px 13px; border-radius:14px; font-size:13px; line-height:1.55; word-break:break-word; }
+        .ag-chat-balao { max-width:90%; padding:9px 13px; border-radius:14px; font-size:var(--fs-3); line-height:1.55; word-break:break-word; }
         .ag-chat-linha.eu .ag-chat-balao { background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
         .ag-chat-linha.ag .ag-chat-balao { background:var(--bg-card-hover,var(--bg-subtle)); color:var(--text-primary,inherit); border-bottom-left-radius:4px; }
-        .ag-chat-digitando { display:flex; gap:4px; align-items:center; padding:12px 14px; }
+        .ag-chat-digitando { display:flex; gap:var(--space-1); align-items:center; padding:12px 14px; }
         .ag-chat-digitando span { width:6px; height:6px; border-radius:50%; background:var(--text-muted); animation:ag-ponto 1.2s infinite ease-in-out; }
         .ag-chat-digitando span:nth-child(2) { animation-delay:.15s; } .ag-chat-digitando span:nth-child(3) { animation-delay:.3s; }
         @keyframes ag-ponto { 0%,80%,100% { opacity:.3; transform:translateY(0); } 40% { opacity:1; transform:translateY(-3px); } }
-        .ag-chat-entrada { display:flex; align-items:flex-end; gap:8px; padding:10px 12px 4px; border-top:1px solid var(--border); }
-        .ag-chat-entrada textarea { flex:1; resize:none; max-height:120px; padding:9px 12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); color:var(--text-primary,inherit); font:inherit; font-size:13px; line-height:1.45; }
+        .ag-chat-entrada { display:flex; align-items:flex-end; gap:var(--space-2); padding:10px 12px 4px; border-top:1px solid var(--border); }
+        .ag-chat-entrada textarea { flex:1; resize:none; max-height:120px; padding:9px 12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); color:var(--text-primary,inherit); font:inherit; font-size:var(--fs-3); line-height:1.45; }
         .ag-chat-entrada textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
-        .ag-chat-dica { padding:0 14px 8px; font-size:10.5px; color:var(--text-muted); }
+        .ag-chat-dica { padding:0 14px 8px; font-size:var(--fs-1); color:var(--text-muted); }
         @media (max-width:640px) { .ag-chat-panel { right:8px; bottom:8px; height:calc(100vh - 80px); } }
         @media (prefers-reduced-motion:reduce) { .ag-chat-digitando span { animation:none; } .ag-chat-msgs { scroll-behavior:auto; } }
         @media (max-width:980px){.ag-grid-resp{grid-template-columns:1fr !important;}}
 
         .ag-titulo-pagina { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
-        .ag-titulo-pagina .ag-hero-title { color:var(--text-primary,inherit); font-size:19px; }
-        .ag-como summary { cursor:pointer; font-size:12px; color:var(--text-muted); list-style:none; padding:3px 10px; border:1px solid var(--border); border-radius:99px; }
+        .ag-titulo-pagina .ag-hero-title { color:var(--text-primary,inherit); font-size:var(--fs-5); }
+        .ag-como summary { cursor:pointer; font-size:var(--fs-2); color:var(--text-muted); list-style:none; padding:3px 10px; border:1px solid var(--border); border-radius:99px; }
         .ag-como summary::-webkit-details-marker { display:none; }
-        .ag-como-corpo { position:absolute; z-index:5; max-width:520px; margin-top:6px; padding:12px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; font-size:12.5px; line-height:1.6; box-shadow:0 8px 24px rgba(0,0,0,.18); }
+        .ag-como-corpo { position:absolute; z-index:5; max-width:520px; margin-top:6px; padding:12px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; font-size:var(--fs-2); line-height:1.6; box-shadow:0 8px 24px rgba(0,0,0,.18); }
         .ag-como { position:relative; }
         .ag-sigla { text-decoration:underline dotted; cursor:help; }
-        .ag-topbar { display:flex; align-items:center; justify-content:space-between; gap:12px 18px; flex-wrap:wrap; padding:12px 16px; margin-bottom:14px; border:1px solid var(--border); border-left:4px solid var(--ag-hud-accent,var(--accent)); border-radius:12px; background:var(--bg-card); }
+        .ag-topbar { display:flex; align-items:center; justify-content:space-between; gap:12px 18px; flex-wrap:wrap; padding:var(--space-3) var(--space-4); margin-bottom:14px; border:1px solid var(--border); border-left:4px solid var(--ag-hud-accent,var(--accent)); border-radius:12px; background:var(--bg-card); }
         .ag-topbar-l, .ag-topbar-r { display:flex; align-items:center; gap:10px 14px; flex-wrap:wrap; }
         .ag-sel-conta { width:auto; min-width:170px; font-weight:700; }
         .ag-combo { position:relative; }
         .ag-combo-btn { text-align:left; cursor:pointer; min-width:220px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .ag-combo-painel { position:absolute; top:calc(100% + 6px); left:0; z-index:40; width:min(360px, calc(100vw - 32px)); background:var(--bg-card); border:1px solid var(--border); border-radius:12px; box-shadow:0 12px 32px rgba(15,23,42,.18); padding:8px; }
+        .ag-combo-painel { position:absolute; top:calc(100% + 6px); left:0; z-index:40; width:min(360px, calc(100vw - 32px)); background:var(--bg-card); border:1px solid var(--border); border-radius:12px; box-shadow:0 12px 32px rgba(15,23,42,.18); padding:var(--space-2); }
         .ag-combo-painel .form-input { width:100%; margin-bottom:6px; }
         .ag-combo-lista { max-height:320px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
-        .ag-combo-item { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; border:none; background:none; padding:8px 10px; border-radius:8px; font:inherit; font-size:13px; color:var(--text-primary); cursor:pointer; }
-        .ag-combo-item small { font-size:11.5px; color:var(--text-muted); } .ag-combo-item small.pausado { color:var(--yellow); }
-        .ag-combo-item.on { background:color-mix(in srgb, var(--accent) 12%, transparent); } .ag-combo-item.atual b::after { content:' · atual'; font-weight:400; color:var(--text-muted); font-size:11.5px; }
-        .ag-combo-vazio { padding:12px; font-size:13px; color:var(--text-muted); text-align:center; }
-        .ag-combo-rod { display:flex; justify-content:space-between; gap:8px; border-top:1px solid var(--border); margin-top:6px; padding-top:6px; }
-        .ag-combo-rod button { border:none; background:none; color:var(--accent); font:inherit; font-size:12.5px; cursor:pointer; padding:4px 6px; }
-        .ag-busca-port { display:flex; align-items:center; gap:12px; margin:0 0 14px; flex-wrap:wrap; } .ag-busca-port .form-input { max-width:360px; flex:1; min-width:200px; } .ag-busca-port span { font-size:12.5px; color:var(--text-muted); }
-        .ag-saude-pill { font-size:12px; font-weight:700; padding:4px 11px; border-radius:99px; white-space:nowrap; }
-        .ag-topbar-run { font-size:12px; color:var(--text-muted); }
-        .ag-toggle { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:700; cursor:pointer; }
+        .ag-combo-item { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; border:none; background:none; padding:8px 10px; border-radius:8px; font:inherit; font-size:var(--fs-3); color:var(--text-primary); cursor:pointer; }
+        .ag-combo-item small { font-size:var(--fs-1); color:var(--text-muted); } .ag-combo-item small.pausado { color:var(--yellow); }
+        .ag-combo-item.on { background:color-mix(in srgb, var(--accent) 12%, transparent); } .ag-combo-item.atual b::after { content:' · atual'; font-weight:400; color:var(--text-muted); font-size:var(--fs-1); }
+        .ag-combo-vazio { padding:var(--space-3); font-size:var(--fs-3); color:var(--text-muted); text-align:center; }
+        .ag-combo-rod { display:flex; justify-content:space-between; gap:var(--space-2); border-top:1px solid var(--border); margin-top:6px; padding-top:6px; }
+        .ag-combo-rod button { border:none; background:none; color:var(--accent); font:inherit; font-size:var(--fs-2); cursor:pointer; padding:4px 6px; }
+        .ag-busca-port { display:flex; align-items:center; gap:var(--space-3); margin:0 0 14px; flex-wrap:wrap; } .ag-busca-port .form-input { max-width:360px; flex:1; min-width:200px; } .ag-busca-port span { font-size:var(--fs-2); color:var(--text-muted); }
+        .ag-saude-pill { font-size:var(--fs-2); font-weight:700; padding:4px 11px; border-radius:99px; white-space:nowrap; }
+        .ag-topbar-run { font-size:var(--fs-2); color:var(--text-muted); }
+        .ag-toggle { display:inline-flex; align-items:center; gap:7px; font-size:var(--fs-2); font-weight:700; cursor:pointer; }
         .ag-toggle input { position:absolute; opacity:0; pointer-events:none; }
         .ag-toggle-trilho { width:34px; height:19px; border-radius:99px; background:var(--text-muted); position:relative; transition:background .15s; flex-shrink:0; }
         .ag-toggle-trilho::after { content:''; position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%; background:#fff; transition:transform .15s; }
         .ag-toggle input:checked + .ag-toggle-trilho { background:var(--cyan); }
         .ag-toggle input:checked + .ag-toggle-trilho::after { transform:translateX(15px); }
         .ag-toggle input:focus-visible + .ag-toggle-trilho { outline:2px solid var(--accent); outline-offset:2px; }
-        .ag-aviso { margin:-6px 0 14px; padding:9px 13px; border-radius:8px; font-size:12.5px; line-height:1.5; }
+        .ag-aviso { margin:-6px 0 14px; padding:9px 13px; border-radius:8px; font-size:var(--fs-2); line-height:1.5; }
         .ag-aviso-ok { background:#16a34a1a; border:1px solid #16a34a55; color:var(--green); }
         .ag-aviso-erro { background:#dc26261a; border:1px solid var(--red); color:var(--red); margin-top:0; }
         .ag-aviso-aten { background:#d977061a; border:1px solid var(--yellow); color:var(--yellow); margin:10px 0 0; }
-        .ag-nada { margin-bottom:14px; padding:8px 14px; font-size:12.5px; color:var(--green); background:#16a34a12; border:1px solid #16a34a33; border-radius:10px; }
-        .ag-nota { margin-top:10px; font-size:11.5px; line-height:1.6; color:var(--text-muted); }
+        .ag-nada { margin-bottom:14px; padding:8px 14px; font-size:var(--fs-2); color:var(--green); background:#16a34a12; border:1px solid #16a34a33; border-radius:10px; }
+        .ag-nota { margin-top:10px; font-size:var(--fs-1); line-height:1.6; color:var(--text-muted); }
         .ag-res-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; margin-top:6px; }
-        .ag-res-rot { font-size:12px; color:var(--text-secondary); }
-        .ag-res-val { font-size:20px; font-weight:650; font-variant-numeric:tabular-nums; }
-        .ag-res-sub { font-size:11.5px; color:var(--text-muted); }
-        .ag-res-tipos { display:flex; gap:14px; flex-wrap:wrap; margin-top:12px; font-size:12.5px; color:var(--text-secondary); }
-        .ag-res-lista { margin-top:12px; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+        .ag-res-rot { font-size:var(--fs-2); color:var(--text-secondary); }
+        .ag-res-val { font-size:var(--fs-5); font-weight:650; font-variant-numeric:tabular-nums; }
+        .ag-res-sub { font-size:var(--fs-1); color:var(--text-muted); }
+        .ag-res-tipos { display:flex; gap:14px; flex-wrap:wrap; margin-top:var(--space-3); font-size:var(--fs-2); color:var(--text-secondary); }
+        .ag-res-lista { margin-top:var(--space-3); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
         .ag-res-li { display:grid; grid-template-columns:110px minmax(0,1fr) auto auto; gap:4px 14px; align-items:center; padding:9px 14px; border-left:4px solid var(--c); border-bottom:1px solid var(--border); }
         .ag-res-li:last-child { border-bottom:none; }
-        .ag-res-tipo { font-size:11.5px; font-weight:650; color:var(--text-secondary); }
-        .ag-res-nome { font-size:13px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .ag-res-ver { font-size:12px; font-weight:650; color:var(--c); white-space:nowrap; }
+        .ag-res-tipo { font-size:var(--fs-1); font-weight:650; color:var(--text-secondary); }
+        .ag-res-nome { font-size:var(--fs-3); font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ag-res-ver { font-size:var(--fs-2); font-weight:650; color:var(--c); white-space:nowrap; }
         @media (max-width:800px) { .ag-res-li { grid-template-columns:1fr auto; } .ag-res-li > div { grid-column:1/-1; } }
-        .ag-vazio { padding:18px 6px; font-size:13px; color:var(--text-muted); text-align:center; }
+        .ag-vazio { padding:18px 6px; font-size:var(--fs-3); color:var(--text-muted); text-align:center; }
         .ag-sec-head { display:flex; align-items:center; justify-content:space-between; gap:10px 16px; flex-wrap:wrap; margin-bottom:14px; }
-        .ag-sec-titulo { font-size:14px; font-weight:700; }
-        .ag-sec-sub { display:block; font-size:11.5px; font-weight:400; color:var(--text-muted); margin-top:2px; }
-        .ag-contagem { display:inline-block; min-width:20px; padding:0 7px; margin-left:4px; border-radius:99px; background:var(--yellow); color:#fff; font-size:11px; font-weight:700; text-align:center; line-height:19px; vertical-align:middle; }
+        .ag-sec-titulo { font-size:var(--fs-3); font-weight:700; }
+        .ag-sec-sub { display:block; font-size:var(--fs-1); font-weight:400; color:var(--text-muted); margin-top:2px; }
+        .ag-contagem { display:inline-block; min-width:20px; padding:0 7px; margin-left:var(--space-1); border-radius:99px; background:var(--yellow); color:#fff; font-size:var(--fs-1); font-weight:700; text-align:center; line-height:19px; vertical-align:middle; }
         .ag-periodos { display:flex; gap:6px; flex-wrap:wrap; }
-        .ag-lista-precisa { display:flex; flex-direction:column; gap:8px; }
-        .ag-precisa-item { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:10px 12px; border:1px solid var(--border); border-left:3px solid var(--c); border-radius:8px; background:var(--bg-card-hover,var(--bg-subtle)); }
+        .ag-lista-precisa { display:flex; flex-direction:column; gap:var(--space-2); }
+        .ag-precisa-item { display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); flex-wrap:wrap; padding:10px 12px; border:1px solid var(--border); border-left:3px solid var(--c); border-radius:8px; background:var(--bg-card-hover,var(--bg-subtle)); }
         .ag-precisa-corpo { flex:1; min-width:240px; }
-        .ag-precisa-titulo { font-size:13px; font-weight:700; line-height:1.5; }
-        .ag-precisa-depara { font-size:12px; margin-top:4px; }
-        .ag-precisa-motivo { font-size:11.5px; color:var(--text-secondary,var(--text-muted)); margin-top:4px; line-height:1.5; }
+        .ag-precisa-titulo { font-size:var(--fs-3); font-weight:700; line-height:1.5; }
+        .ag-precisa-depara { font-size:var(--fs-2); margin-top:var(--space-1); }
+        .ag-precisa-motivo { font-size:var(--fs-1); color:var(--text-secondary,var(--text-muted)); margin-top:var(--space-1); line-height:1.5; }
         .ag-precisa-acoes { display:flex; gap:6px; flex-shrink:0; }
         .ag-btn-ok { background:#16a34a1a; color:var(--green); border:1px solid #16a34a55; }
         .ag-btn-no { background:#dc26261a; color:var(--red); border:1px solid #dc262655; }
-        .ag-kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; }
+        .ag-kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:var(--space-3); }
         .ag-kpi { position:relative; border-radius:12px; padding:13px 15px; border:1px solid var(--border); background:var(--bg-card-hover,var(--bg-subtle)); overflow:hidden; min-height:92px; }
         .ag-kpi::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--ag-hud-accent,var(--accent)); }
-        .ag-kpi .ag-hud-value { font-size:21px; }
+        .ag-kpi .ag-hud-value { font-size:var(--fs-5); }
         .ag-meter { position:relative; height:6px; border-radius:99px; background:var(--border); margin:2px 0 6px; }
         .ag-meter-fill { height:100%; border-radius:99px; }
         .ag-meter-meta { position:absolute; top:-3px; width:2px; height:12px; background:var(--text-primary,#111); opacity:.55; }
         .ag-skel { background:linear-gradient(90deg,var(--border) 25%,transparent 50%,var(--border) 75%); background-size:200% 100%; animation:ag-brilho 1.3s infinite linear; border:none; }
         @keyframes ag-brilho { to { background-position:-200% 0; } }
         .ag-tl { display:flex; flex-direction:column; gap:0; }
-        .ag-tl-item { display:flex; gap:12px; padding:10px 0 10px 12px; border-left:3px solid var(--c); margin-left:4px; border-bottom:1px solid var(--border); }
+        .ag-tl-item { display:flex; gap:var(--space-3); padding:10px 0 10px 12px; border-left:3px solid var(--c); margin-left:var(--space-1); border-bottom:1px solid var(--border); }
         .ag-tl-item:last-child { border-bottom:none; }
-        .ag-tl-quando { width:92px; flex-shrink:0; font-size:11.5px; color:var(--text-muted); padding-top:2px; }
-        .ag-tl-corpo { flex:1; font-size:12.5px; line-height:1.55; min-width:0; }
+        .ag-tl-quando { width:92px; flex-shrink:0; font-size:var(--fs-1); color:var(--text-muted); padding-top:2px; }
+        .ag-tl-corpo { flex:1; font-size:var(--fs-2); line-height:1.55; min-width:0; }
         .ag-tl-meta { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:5px; }
-        .ag-tl-motivo { font-size:11.5px; color:var(--text-muted); }
+        .ag-tl-motivo { font-size:var(--fs-1); color:var(--text-muted); }
         .ag-link { color:var(--accent-light,var(--accent-light)); font-weight:700; text-decoration:none; }
         .ag-link:hover { text-decoration:underline; }
         .ag-th-sort { cursor:pointer; user-select:none; white-space:nowrap; }
         .ag-th-sort:hover { color:var(--text-primary,inherit); }
         .ag-tech-table td.ag-mono { white-space:nowrap; }
         .ag-camp-nome { font-weight:700; line-height:1.4; }
-        .ag-camp-id { font-size:10.5px; color:var(--text-muted); font-weight:400; }
-        .ag-camp-quando { font-size:11px; color:var(--text-muted); }
-        .ag-camp-motivo { font-size:11px; color:var(--text-muted); font-weight:400; line-height:1.45; }
-        .ag-camp-anom { margin-top:4px; font-size:10.5px; font-weight:700; color:var(--red); }
+        .ag-camp-id { font-size:var(--fs-1); color:var(--text-muted); font-weight:400; }
+        .ag-camp-quando { font-size:var(--fs-1); color:var(--text-muted); }
+        .ag-camp-motivo { font-size:var(--fs-1); color:var(--text-muted); font-weight:400; line-height:1.45; }
+        .ag-camp-anom { margin-top:var(--space-1); font-size:var(--fs-1); font-weight:700; color:var(--red); }
         .ag-tech-table tbody td { font-weight:400; }
         .ag-tech-table tbody td:first-child { font-weight:400; }
         .ag-linha-destaque td { background:#6366f126 !important; transition:background .3s; }
         .ag-menu { position:relative; }
-        .ag-menu summary { list-style:none; cursor:pointer; font-size:18px; line-height:1; padding:2px 9px; border-radius:6px; border:1px solid var(--border); color:var(--text-muted); }
+        .ag-menu summary { list-style:none; cursor:pointer; font-size:var(--fs-5); line-height:1; padding:2px 9px; border-radius:6px; border:1px solid var(--border); color:var(--text-muted); }
         .ag-menu summary::-webkit-details-marker { display:none; }
-        .ag-menu-lista { position:absolute; right:0; z-index:6; min-width:210px; margin-top:4px; padding:5px; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.2); }
-        .ag-menu-lista button { text-align:left; background:none; border:none; color:inherit; font-size:12.5px; padding:8px 10px; border-radius:6px; cursor:pointer; }
+        .ag-menu-lista { position:absolute; right:0; z-index:6; min-width:210px; margin-top:var(--space-1); padding:5px; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.2); }
+        .ag-menu-lista button { text-align:left; background:none; border:none; color:inherit; font-size:var(--fs-2); padding:8px 10px; border-radius:6px; cursor:pointer; }
         .ag-menu-lista button:hover { background:var(--bg-card-hover,var(--bg-subtle)); }
-        .ag-regras-resumo p, .ag-regras-live p { margin:0 0 8px; font-size:13px; line-height:1.65; }
+        .ag-regras-resumo p, .ag-regras-live p { margin:0 0 var(--space-2); font-size:var(--fs-3); line-height:1.65; }
         .ag-regras-aviso { color:var(--yellow); font-weight:700; }
-        .ag-regras-salvo { font-size:12px; font-weight:700; color:var(--green); align-self:center; }
+        .ag-regras-salvo { font-size:var(--fs-2); font-weight:700; color:var(--green); align-self:center; }
         .ag-regras-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px; }
         .ag-regra-bloco { padding:14px; border:1px solid var(--border); border-top:3px solid var(--c); border-radius:12px; background:var(--bg-card-hover,var(--bg-subtle)); }
-        .ag-regra-tit { font-size:13px; font-weight:700; margin-bottom:12px; }
-        .ag-campo { margin-bottom:12px; }
+        .ag-regra-tit { font-size:var(--fs-3); font-weight:700; margin-bottom:var(--space-3); }
+        .ag-campo { margin-bottom:var(--space-3); }
         .ag-campo:last-child { margin-bottom:0; }
-        .ag-campo-label { display:block; font-size:12px; font-weight:700; margin-bottom:5px; }
+        .ag-campo-label { display:block; font-size:var(--fs-2); font-weight:700; margin-bottom:5px; }
         .ag-campo-grupo { display:flex; align-items:stretch; }
         .ag-campo-grupo .form-input { border-top-right-radius:0; border-bottom-right-radius:0; min-width:0; }
-        .ag-campo-sufixo { display:flex; align-items:center; padding:0 10px; border:1px solid var(--border); border-left:none; border-radius:0 8px 8px 0; background:var(--bg-card); color:var(--text-muted); font-size:11.5px; font-weight:700; white-space:nowrap; }
-        .ag-campo-dica { margin-top:4px; font-size:11px; line-height:1.45; color:var(--text-muted); }
+        .ag-campo-sufixo { display:flex; align-items:center; padding:0 10px; border:1px solid var(--border); border-left:none; border-radius:0 8px 8px 0; background:var(--bg-card); color:var(--text-muted); font-size:var(--fs-1); font-weight:700; white-space:nowrap; }
+        .ag-campo-dica { margin-top:var(--space-1); font-size:var(--fs-1); line-height:1.45; color:var(--text-muted); }
         .ag-avancado { margin-top:14px; }
-        .ag-avancado > summary { cursor:pointer; font-size:12px; font-weight:700; color:var(--text-muted); }
-        .ag-regras-live { margin-top:16px; padding:12px 14px; border:1px dashed var(--border); border-radius:12px; }
-        .ag-regras-live-tit { font-size:11px; font-weight:700; text-transform:none; letter-spacing:0; color:var(--text-muted); margin-bottom:6px; }
+        .ag-avancado > summary { cursor:pointer; font-size:var(--fs-2); font-weight:700; color:var(--text-muted); }
+        .ag-regras-live { margin-top:var(--space-4); padding:12px 14px; border:1px dashed var(--border); border-radius:12px; }
+        .ag-regras-live-tit { font-size:var(--fs-1); font-weight:700; text-transform:none; letter-spacing:0; color:var(--text-muted); margin-bottom:6px; }
         .ag-regras-rodape { display:flex; align-items:center; justify-content:flex-end; gap:10px; flex-wrap:wrap; margin-top:14px; }
-        .ag-regras-estado { margin-right:auto; font-size:12px; font-weight:700; color:var(--yellow); }
-        .ag-log-dia { margin:14px 0 4px; font-size:11px; font-weight:700; text-transform:none; letter-spacing:0; color:var(--text-muted); }
+        .ag-regras-estado { margin-right:auto; font-size:var(--fs-2); font-weight:700; color:var(--yellow); }
+        .ag-log-dia { margin:14px 0 4px; font-size:var(--fs-1); font-weight:700; text-transform:none; letter-spacing:0; color:var(--text-muted); }
         .ag-log-dia:first-child { margin-top:0; }
-        .ag-log-item { border-left:3px solid var(--c); margin-bottom:4px; border-radius:0 8px 8px 0; background:var(--bg-card-hover,var(--bg-subtle)); }
-        .ag-log-item > summary { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:8px 12px; cursor:pointer; list-style:none; font-size:12.5px; }
+        .ag-log-item { border-left:3px solid var(--c); margin-bottom:var(--space-1); border-radius:0 8px 8px 0; background:var(--bg-card-hover,var(--bg-subtle)); }
+        .ag-log-item > summary { display:flex; align-items:center; gap:var(--space-2); flex-wrap:wrap; padding:var(--space-2) var(--space-3); cursor:pointer; list-style:none; font-size:var(--fs-2); }
         .ag-log-item > summary::-webkit-details-marker { display:none; }
-        .ag-log-hora { font-size:11px; color:var(--text-muted); font-variant-numeric:tabular-nums; min-width:36px; }
+        .ag-log-hora { font-size:var(--fs-1); color:var(--text-muted); font-variant-numeric:tabular-nums; min-width:36px; }
         .ag-log-titulo { flex:1; min-width:180px; font-weight:600; }
-        .ag-log-origem { font-size:11px; color:var(--text-muted); }
-        .ag-log-corpo { padding:2px 14px 12px 56px; font-size:12.5px; line-height:1.6; color:var(--text-secondary,inherit); }
-        .ag-secundarias { margin-bottom:20px; }
-        .ag-gmv { padding:16px 18px; margin-bottom:20px; }
+        .ag-log-origem { font-size:var(--fs-1); color:var(--text-muted); }
+        .ag-log-corpo { padding:2px 14px 12px 56px; font-size:var(--fs-2); line-height:1.6; color:var(--text-secondary,inherit); }
+        .ag-secundarias { margin-bottom:var(--space-5); }
+        .ag-gmv { padding:16px 18px; margin-bottom:var(--space-5); }
         .ag-gmv-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:10px 0 12px; }
         .ag-gmv-kpi { background:var(--bg-surface); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
-        .ag-gmv-rot { font-size:11px; color:var(--text-muted); text-transform:none; letter-spacing:0; }
-        .ag-gmv-val { font-size:17px; font-weight:700; margin-top:2px; font-variant-numeric:tabular-nums; }
-        .ag-gmv-sub { font-size:11.5px; color:var(--text-muted); margin-top:2px; }
-        .ag-gmv-tab { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric:tabular-nums; }
+        .ag-gmv-rot { font-size:var(--fs-1); color:var(--text-muted); text-transform:none; letter-spacing:0; }
+        .ag-gmv-val { font-size:var(--fs-4); font-weight:700; margin-top:2px; font-variant-numeric:tabular-nums; }
+        .ag-gmv-sub { font-size:var(--fs-1); color:var(--text-muted); margin-top:2px; }
+        .ag-gmv-tab { width:100%; border-collapse:collapse; font-size:var(--fs-2); font-variant-numeric:tabular-nums; }
         .ag-gmv-tab th, .ag-gmv-tab td { padding:5px 8px; text-align:right; border-bottom:1px solid var(--border); white-space:nowrap; }
         .ag-gmv-tab th:first-child, .ag-gmv-tab td:first-child { text-align:left; color:var(--text-muted); }
         .ag-sec { margin-bottom:10px; }
-        .ag-sec > summary { cursor:pointer; font-size:13px; font-weight:700; color:var(--text-muted); padding:6px 0; }
-        .ag-sec-corpo { margin-top:8px; }
-        .ag-linha-abc { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13px; color:var(--text-muted); padding:6px 0; }
+        .ag-sec > summary { cursor:pointer; font-size:var(--fs-3); font-weight:700; color:var(--text-muted); padding:6px 0; }
+        .ag-sec-corpo { margin-top:var(--space-2); }
+        .ag-linha-abc { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:var(--fs-3); color:var(--text-muted); padding:6px 0; }
         .ag-linha-abc .ag-sec-sub { display:inline; margin:0; }
         @media (prefers-reduced-motion:reduce){ .ag-skel { animation:none; } .ag-toggle-trilho, .ag-toggle-trilho::after { transition:none; } }
 
@@ -2777,28 +2777,28 @@
           background-image: linear-gradient(rgba(99,102,241,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.12) 1px, transparent 1px);
           background-size: 26px 26px; mask-image: radial-gradient(80% 100% at 50% 0%, #000, transparent 75%); }
         .ag-hero-top { position:relative; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
-        .ag-hero-title { display:flex; align-items:center; gap:10px; font-size:19px; font-weight:700; color:#fff; letter-spacing:.01em; }
-        .ag-hero-sub { position:relative; font-size:13px; color:#9ca3d4; margin-top:10px; max-width:760px; line-height:1.6; }
+        .ag-hero-title { display:flex; align-items:center; gap:10px; font-size:var(--fs-5); font-weight:700; color:#fff; letter-spacing:.01em; }
+        .ag-hero-sub { position:relative; font-size:var(--fs-3); color:#9ca3d4; margin-top:10px; max-width:760px; line-height:1.6; }
         .ag-pulse-dot { position:relative; width:10px; height:10px; border-radius:50%; background:var(--cyan); box-shadow:0 0 0 0 rgba(34,211,238,0.6); animation: ag-pulse 1.8s infinite; flex-shrink:0; }
         @keyframes ag-pulse { 0%{box-shadow:0 0 0 0 rgba(34,211,238,0.55);} 70%{box-shadow:0 0 0 9px rgba(34,211,238,0);} 100%{box-shadow:0 0 0 0 rgba(34,211,238,0);} }
-        .ag-chip { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; letter-spacing:.02em; padding:5px 11px; border-radius:99px; white-space:nowrap; }
+        .ag-chip { display:inline-flex; align-items:center; gap:6px; font-size:var(--fs-1); font-weight:700; letter-spacing:.02em; padding:5px 11px; border-radius:99px; white-space:nowrap; }
         .ag-chip-ai { color:var(--cyan); background:rgba(34,211,238,0.10); border:1px solid rgba(34,211,238,0.35); }
 
         .ag-hud-card { position:relative; border-radius:14px; padding:16px 18px; overflow:hidden;
           background: linear-gradient(160deg, var(--bg-card), rgba(99,102,241,0.05)); border:1px solid var(--border); }
         .ag-hud-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--ag-hud-accent,var(--accent)); box-shadow:0 0 12px var(--ag-hud-accent,var(--accent)); }
-        .ag-hud-label { font-size:10.5px; color:var(--text-muted); text-transform:none; letter-spacing:0; margin-bottom:8px; display:flex; align-items:center; gap:6px; font-weight:700; }
-        .ag-hud-value { font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size:23px; font-weight:700; font-variant-numeric:tabular-nums; }
-        .ag-hud-sub { font-size:11px; color:var(--text-muted); margin-top:5px; }
+        .ag-hud-label { font-size:var(--fs-1); color:var(--text-muted); text-transform:none; letter-spacing:0; margin-bottom:var(--space-2); display:flex; align-items:center; gap:6px; font-weight:700; }
+        .ag-hud-value { font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size:var(--fs-5); font-weight:700; font-variant-numeric:tabular-nums; }
+        .ag-hud-sub { font-size:var(--fs-1); color:var(--text-muted); margin-top:5px; }
 
-        .ag-tech-table { width:100%; border-collapse:separate; border-spacing:0 6px; font-size:12.5px; }
-        .ag-tech-table thead th { text-align:left; padding:0 10px 6px; font-size:10px; text-transform:none; letter-spacing:0; color:var(--text-muted); font-weight:700; }
+        .ag-tech-table { width:100%; border-collapse:separate; border-spacing:0 6px; font-size:var(--fs-2); }
+        .ag-tech-table thead th { text-align:left; padding:0 10px 6px; font-size:var(--fs-1); text-transform:none; letter-spacing:0; color:var(--text-muted); font-weight:700; }
         .ag-tech-table tbody tr { background:var(--bg-card-hover,var(--bg-subtle)); }
         .ag-tech-table tbody td { padding:9px 10px; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
         .ag-tech-table tbody td:first-child { border-left:3px solid var(--row-accent,var(--accent)); border-top-left-radius:8px; border-bottom-left-radius:8px; font-weight:700; }
         .ag-tech-table tbody td:last-child { border-top-right-radius:8px; border-bottom-right-radius:8px; color:var(--text-muted); }
         .ag-mono { font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace; font-variant-numeric:tabular-nums; }
-        .ag-action-chip { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:3px 9px; border-radius:99px; white-space:nowrap; }
+        .ag-action-chip { display:inline-flex; align-items:center; gap:5px; font-size:var(--fs-1); font-weight:700; padding:3px 9px; border-radius:99px; white-space:nowrap; }
       </style>
     </div>`;
 
@@ -2985,10 +2985,10 @@
           <div class="ag-aj-bts"><button class="btn btn-secondary btn-sm" onclick="document.getElementById('ag-ajuste-modal').remove()">Cancelar</button>
             <button class="btn btn-primary btn-sm" id="ag-aj-ok">Aplicar agora</button></div>
         </div></div>
-        <style>.ag-aj-fundo{position:fixed;inset:0;background:rgba(10,15,30,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px}
-        .ag-aj-box{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.3);width:420px;max-width:100%;padding:20px;display:flex;flex-direction:column;gap:8px}
-        .ag-aj-box h3{margin:0;font-size:17px}.ag-aj-camp{font-size:13px;font-weight:600;margin-bottom:6px}.ag-aj-camp span{display:block;font-weight:400;font-size:12px;color:var(--text-muted)}
-        .ag-aj-dica{font-size:12px;color:var(--text-muted);margin-top:4px;min-height:16px}.ag-aj-bts{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}</style>`;
+        <style>.ag-aj-fundo{position:fixed;inset:0;background:rgba(10,15,30,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:var(--space-4)}
+        .ag-aj-box{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.3);width:420px;max-width:100%;padding:var(--space-5);display:flex;flex-direction:column;gap:var(--space-2)}
+        .ag-aj-box h3{margin:0;font-size:var(--fs-4)}.ag-aj-camp{font-size:var(--fs-3);font-weight:600;margin-bottom:6px}.ag-aj-camp span{display:block;font-weight:400;font-size:var(--fs-2);color:var(--text-muted)}
+        .ag-aj-dica{font-size:var(--fs-2);color:var(--text-muted);margin-top:var(--space-1);min-height:16px}.ag-aj-bts{display:flex;justify-content:flex-end;gap:var(--space-2);margin-top:var(--space-2)}</style>`;
       document.body.appendChild(w);
       const sel = w.querySelector('#ag-aj-tipo'), inp = w.querySelector('#ag-aj-valor'), dica = w.querySelector('#ag-aj-dica');
       const atualizar = () => {
