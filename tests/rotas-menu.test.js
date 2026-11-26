@@ -37,9 +37,10 @@ test('nenhuma tela fica órfã do menu', () => {
   assert.deepEqual(orfas, []);
 });
 
-test('Tarefas, Score GLR e Performance Gestor estão no menu e nos grupos', () => {
-  for (const p of ['tarefas', 'score', 'performance']) assert.match(html, new RegExp(`data-page="${p}"`));
+test('Tarefas está no menu; Score GLR e Performance Gestor foram removidas', () => {
+  assert.match(html, /data-page="tarefas"/);
+  for (const p of ['score', 'performance']) assert.doesNotMatch(html, new RegExp(`data-page="${p}"`));
   const nav = fs.readFileSync(path.join(raiz, 'js/nav.js'), 'utf8');
   assert.match(nav, /'plano-acao', 'tarefas'/);
-  assert.match(nav, /'gestores', 'performance', 'score'/);
+  assert.doesNotMatch(nav, /'performance'|'score'/);
 });
