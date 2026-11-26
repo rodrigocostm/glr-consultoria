@@ -99,9 +99,11 @@ Router.register('funil', (params, el) => {
     const filtros = `<div class="fn-filtros">
       <label>Cliente <select id="fn-cli" class="form-control" onchange="window._fnSet('cliente', this.value)"><option value="">Toda a carteira</option>${clientes.map(c => `<option value="${h(c.id)}" ${String(c.id) === st.cliente ? 'selected' : ''}>${h(c.nome)}</option>`).join('')}</select></label>
       <label>Plataforma <select id="fn-mkt" class="form-control" onchange="window._fnSet('mkt', this.value)">${[['todos', 'ML e Shopee'], ['ml', 'Mercado Livre'], ['shopee', 'Shopee']].map(([k, t]) => `<option value="${k}" ${st.mkt === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
-      ${st.cliente ? `<label>Conta <select id="fn-conta" class="form-control" onchange="window._fnSet('conta', this.value)"><option value="">Todas do cliente</option>${doCli.map(([k, c]) => `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${h(c.nome)} · ${MKT[c.mkt]}</option>`).join('')}</select></label>` : ''}
+      ${st.cliente && doCli.length > 1 ? `<label>Conta <select id="fn-conta" class="form-control" onchange="window._fnSet('conta', this.value)"><option value="">Todas do cliente</option>${doCli.map(([k, c]) => `<option value="${h(k)}" ${k === st.conta ? 'selected' : ''}>${h(c.nome)} · ${MKT[c.mkt]}</option>`).join('')}</select></label>` : ''}
       <label>Dia <input id="fn-dia" type="date" class="form-control" value="${st.dia}" min="${isoBRT(27)}" max="${isoBRT(1)}" onchange="window._fnSet('dia', this.value)"></label>
     </div>`;
+    // cliente em foco (barra de cima): o seletor de cliente vira o nome dele (roda depois que a tela é desenhada)
+    if (typeof GLR !== 'undefined' && GLR.ctx?.cliente?.() === st.cliente) queueMicrotask(() => GLR.ctx.ajustarSeletor?.(root.querySelector('#fn-cli'), { cliente: true, semTodas: true, disparar: false }));
     if (st.carregando && !st.dados) { root.innerHTML = filtros + '<div class="card fn-vazio">Carregando o funil…</div>'; return; }
     if (st.erro) { root.innerHTML = filtros + `<div class="card fn-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
     if (!sel.size) { root.innerHTML = filtros + '<div class="card fn-vazio">Nenhuma conta do Mercado Livre ou da Shopee vinculada a este filtro.</div>'; return; }
