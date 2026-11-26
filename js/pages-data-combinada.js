@@ -19,6 +19,7 @@ Router.register('data-combinada', (params, el) => {
   const K_METAS = 'glr_metas_data_combinada', K_SEL = 'glr_dc_sel';
   const hojeIso = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const dm = iso => iso.split('-').reverse().slice(0, 2).join('/');
+  const fimDoMes = iso => { const [a, m] = iso.split('-').map(Number); return new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10); };
   // próxima data "dupla" (11.11, 12.12…): hoje, se for uma; senão a próxima
   const proximaDupla = () => {
     const [a, m, d] = hojeIso.split('-').map(Number);
@@ -40,6 +41,8 @@ Router.register('data-combinada', (params, el) => {
   // clientes → lojas, com a meta e os números do dia
   function montar() {
     const vinc = lerJSON('glr_mc_vinculos', {}), metas = (lerJSON(K_METAS, {}) || {})[st.dia] || {};
+    const metasMes = lerJSON('glr_metas', {}) || {}; // meta do mês por cliente (a mesma da Meta diária e do Plano de ação)
+    const mesIni = st.dia.slice(0, 8) + '01', mesAte = st.dia.slice(0, 7) === hojeIso.slice(0, 7) ? hojeIso : (st.dia < hojeIso ? fimDoMes(st.dia) : null);
     const gestores = GLR.gestores || [];
     const out = [];
     for (const c of (GLR.clientes || [])) {
@@ -59,11 +62,17 @@ Router.register('data-combinada', (params, el) => {
         const temAds = !!(info && BaseDados.cobreAds(info, st.dia));
         const nome = String(GLR.nomeConta(mkt, id) || id).replace(new RegExp(`^${String(c.nome).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · `), '');
         const chave = `${mkt}:${id}`, meta = parseFloat(metas[chave]) || 0;
-        lojas.push({ chave, mkt, nome, meta, cobre, fat: t ? t.faturamento : null, ads: t && temAds ? t.ads : null, pedidos: t ? t.pedidos : null });
+        const cobreMes = !!(mesAte && info && BaseDados.cobre(info, mesIni));
+        const fatMes = cobreMes ? BaseDados.somar(info, mesIni, mesAte).faturamento : null;
+        lojas.push({ chave, mkt, nome, meta, cobre, fatMes, fat: t ? t.faturamento : null, ads: t && temAds ? t.ads : null, pedidos: t ? t.pedidos : null });
       }
       if (!lojas.length) continue;
       const soma = k => lojas.reduce((s, l) => s + (l[k] || 0), 0);
-      out.push({ id: String(c.id), nome: c.nome, gestor: g?.nome || 'Sem gestor', lojas, meta: soma('meta'), fat: soma('fat'), ads: soma('ads'), pedidos: soma('pedidos') });
+      // quanto falta para a meta do mês, em % (faturado no mês até hoje; no próprio dia, parcial)
+      const metaMes = parseFloat(metasMes[c.id] ?? metasMes[String(c.id)]) || parseFloat(c.metaMensal) || 0;
+      const fatMes = lojas.every(l => l.fatMes != null) ? soma('fatMes') : null;
+      const faltaMesPct = metaMes > 0 && fatMes != null ? Math.max(0, metaMes - fatMes) / metaMes * 100 : null;
+      out.push({ id: String(c.id), nome: c.nome, gestor: g?.nome || 'Sem gestor', lojas, metaMes, fatMes, faltaMesPct, meta: soma('meta'), fat: soma('fat'), ads: soma('ads'), pedidos: soma('pedidos') });
     }
     return out.sort((a, b) => b.meta - a.meta || a.nome.localeCompare(b.nome));
   }
@@ -93,6 +102,16 @@ Router.register('data-combinada', (params, el) => {
     </tr>`;
   }
 
+  // "Falta X% da meta do mês" ao lado dos totais do cliente
+  function faltaMes(c) {
+    if (!(c.metaMes > 0)) return '<span class="dc-mut" title="Cliente sem meta do mês cadastrada">Sem meta do mês</span>';
+    if (c.faltaMesPct == null) return `<span class="dc-mut" title="A base automática não tem o mês inteiro de todas as lojas">Meta do mês ${R$(c.metaMes)}</span>`;
+    const t = `Meta do mês ${R$(c.metaMes)} · faturado no mês ${R$(c.fatMes)}`;
+    return c.faltaMesPct === 0
+      ? `<span title="${h(t)}" style="color:var(--green)"><b style="color:inherit">Bateu a meta do mês</b></span>`
+      : `<span title="${h(t)}">Falta p/ meta do mês <b style="color:${corMeta(100 - c.faltaMesPct)}">${pct(c.faltaMesPct)}</b></span>`;
+  }
+
   function render() {
     const root = el.querySelector('#dc-root'); if (!root) return;
     const focado = document.activeElement?.closest?.('.dc-meta') ? document.activeElement.getAttribute('aria-label') : null;
@@ -118,7 +137,7 @@ Router.register('data-combinada', (params, el) => {
         const p = c.meta > 0 ? c.fat / c.meta * 100 : null;
         return `<section class="card dc-cli">
           <div class="dc-cli-cab"><div><b>${h(c.nome)}</b><span>${h(c.gestor)}</span></div>
-            <div class="dc-cli-tot"><span>Meta <b>${R$(c.meta)}</b></span><span>Faturado <b>${R$(c.fat)}</b></span><span style="color:${corMeta(p)}"><b style="color:inherit">${pct(p)}</b></span><span>Pedidos <b>${Math.round(c.pedidos).toLocaleString('pt-BR')}</b></span></div></div>
+            <div class="dc-cli-tot"><span>Meta <b>${R$(c.meta)}</b></span><span>Faturado <b>${R$(c.fat)}</b></span><span style="color:${corMeta(p)}"><b style="color:inherit">${pct(p)}</b></span><span>Pedidos <b>${Math.round(c.pedidos).toLocaleString('pt-BR')}</b></span>${faltaMes(c)}</div></div>
           <div class="dc-scroll"><table class="dc-tab" data-todas-colunas>
             <colgroup><col style="width:11%"><col style="width:21%"><col style="width:14%"><col style="width:12%"><col style="width:9%"><col style="width:11%"><col style="width:9%"><col style="width:6%"><col style="width:7%"></colgroup>
             <thead><tr><th>Marketplace</th><th>Loja</th><th class="num">Meta</th><th class="num">Faturamento ${dm(st.dia)}</th><th class="num">% sobre meta</th><th class="num">Falta para meta</th><th class="num">ADS</th><th class="num" title="ADS ÷ faturamento do dia">% ADS</th><th class="num">Pedidos</th></tr></thead>
