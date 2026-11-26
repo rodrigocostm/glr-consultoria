@@ -279,8 +279,28 @@ async function handler(req, res) {
       if (action === 'glr_nfe_nota') return res.status(200).json(await nfeMod.consultarNota(cli, String(p.id || '')));
       if (action === 'glr_nfe_danfe') return res.status(200).json(await nfeMod.danfe(cli, String(p.id || ''), p.formato));
       if (action === 'glr_portal_ncm') {
-        const cat = await nfeMod.lerNcm(), ids = (Array.isArray(p.ids) ? p.ids : []).slice(0, 3000).map(String);
-        return res.status(200).json({ ncm: Object.fromEntries(ids.filter(id => cat[id]).map(id => [id, cat[id]])) });
+        const cat = await nfeMod.lerNcm();
+        const pedidos = (Array.isArray(p.itens) ? p.itens : []).slice(0, 3000)
+          .map(x => ({ conta: String(x.conta || ''), id: String(x.id || ''), ml: x.mkt === 'ml' }))
+          .filter(x => x.conta && x.id && contasPermitidas.has(x.conta));
+        const porConta = new Map();
+        for (const it of pedidos) {
+          const g = porConta.get(it.conta) || { ml: it.ml, ids: [] };
+          g.ids.push(it.id); porConta.set(it.conta, g);
+        }
+        const out = {};
+        for (const [conta, g] of porConta) {
+          const donos = new Set();
+          if (g.ml) for (let i = 0; i < g.ids.length; i += 20) {
+            const r = await t('get_items', { meliUserId: conta, ids: g.ids.slice(i, i + 20) });
+            for (const e of (Array.isArray(r?.data) ? r.data : (Array.isArray(r) ? r : []))) { const b = e?.body || e; if (b?.id && String(b.seller_id) === conta) donos.add(String(b.id)); }
+          } else for (let i = 0; i < g.ids.length; i += 50) {
+            const r = await t('shopee_get_items_batch', { shopId: conta, item_id_list: g.ids.slice(i, i + 50).map(Number) });
+            for (const d of (r?.data?.response?.item_list || r?.response?.item_list || [])) donos.add(String(d.item_id));
+          }
+          for (const id of donos) { const n = nfeMod.ncmDe(cat, conta, id); if (n) out[id] = n; }
+        }
+        return res.status(200).json({ ncm: out });
       }
       if (action === 'glr_portal_salvar_ncm') { // confere que cada anúncio é da conta do cliente (como o custo)
         const conta = String(p.meliUserId || p.shopId || '');
@@ -296,7 +316,7 @@ async function handler(req, res) {
           for (const d of (r?.data?.response?.item_list || r?.response?.item_list || [])) if (pedidos.has(String(d.item_id))) ok.push({ id: String(d.item_id), ncm: pedidos.get(String(d.item_id)) });
         }
         if (!ok.length) return res.status(400).json({ error: 'Nenhum anúncio desta conta encontrado' });
-        await nfeMod.salvarNcm(ok);
+        await nfeMod.salvarNcm(ok.map(x => ({ ...x, conta })));
         return res.status(200).json({ ok: true, salvos: ok.length });
       }
       return res.status(400).json({ error: 'Ação de nota inválida' });
