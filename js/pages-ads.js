@@ -993,9 +993,13 @@ async function carregarContas() {
       }
     });
 
+    // Cliente em foco (barra de cima): só as contas dele; com uma só, o seletor vira o nome da conta
+    const ajuste = GLR.ctx?.ajustarSeletor?.(sel, { conta: op => { const c = contasSel[parseInt(op.value)]; return c ? { mkt: c.marketplace, id: c.param_to_use?.shopId || c.param_to_use?.meliUserId || c.external_id } : null; }, disparar: false });
+    if (sel.value !== '') { contaAtual = contasSel[parseInt(sel.value)]; buscarDados(false); }
+    else if (ajuste && !ajuste.n) { /* cliente em foco sem conta de ADS: não reabre a conta de outro cliente */ }
     // Reabre automaticamente na última conta vista — evita ter que reselecionar
     // toda vez que a página é aberta de novo (usa o cache de 15min se ainda valer).
-    try {
+    else try {
       const ultimaId = localStorage.getItem('glr_ads_ultima_conta');
       if (ultimaId) {
         const idx = contasSel.findIndex(c => String(c.external_id) === String(ultimaId));
