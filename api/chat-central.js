@@ -23,6 +23,11 @@ const tiopsMarket = require('./_tiops-market');
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const MODELO = 'claude-sonnet-5-5';
+const MODELO_RAPIDO = 'claude-haiku-5-5'; // o mesmo Haiku do Gerente, da reputação e do cron
+const ROTEADOR_SISTEMA = `Você classifica UMA mensagem de um analista da GLR (consultoria de Mercado Livre e Shopee) para o chat dos agentes. Responda APENAS um JSON {"rota":"simples"} ou {"rota":"analise"}.
+simples = saudação, agradecimento, confirmação, ou pergunta operacional que uma consulta direta resolve (semáforo, quantas pendências, faturamento de um período, o que um agente fez, estoque de um produto, status de uma campanha).
+analise = plano, diagnóstico, causa de queda ou alta, comparação de vários clientes ou produtos, funil, estratégia, o que fazer para bater a meta, ajuste de várias campanhas, relatório ou qualquer pedido que cruze mais de uma frente.
+Na dúvida, analise.`;
 const ORCAMENTO_MS = 230000; // folga dentro do maxDuration (300s) do vercel.json
 const MAX_RODADAS = 12;
 const LIMITE_RESULTADO = 16000;
@@ -201,6 +206,34 @@ const ADVISER_BASE = ['recursos_tiops', 'consultar_mercado_tiops', 'carteira', '
 const ferramentasDe = ag => ag === 'adviser' ? [...FERRAMENTAS.filter(f => ADVISER_BASE.includes(f.name)), ...adviserChat.FERRAMENTAS] : FERRAMENTAS;
 const execDe = ag => ag === 'adviser' ? { ...Object.fromEntries(ADVISER_BASE.map(k => [k, EXEC[k]])), ...adviserChat.EXEC } : EXEC;
 const ROTULO = { ...adviserChat.ROTULO, carteira: 'carteira', plano_cliente: 'plano do Gerente', vendas: 'vendas', produtos: 'produtos', curva_abc: 'curva ABC', ads: 'ADS', estoque_margem: 'estoque e margem', campanhas_shopee: 'campanhas Shopee', campanhas_ml: 'campanhas ML', decisoes_pendentes: 'Caixa de decisões', historico_agentes: 'histórico dos agentes', propor_acao: 'sugestão criada', anotar_cerebro: 'Segundo Cérebro' };
+function rotaDe(texto) {
+  const bruto = String(texto || '');
+  const i = bruto.indexOf('{'), j = bruto.lastIndexOf('}');
+  if (i < 0 || j <= i) return 'analise';
+  try {
+    const rota = JSON.parse(bruto.slice(i, j + 1)).rota;
+    return rota === 'simples' ? 'simples' : 'analise';
+  } catch (e) { return 'analise'; }
+}
+function sistemaComCache(estavel, variavel) {
+  const blocos = [{ type: 'text', text: String(estavel || ''), cache_control: { type: 'ephemeral' } }];
+  if (variavel) blocos.push({ type: 'text', text: String(variavel) });
+  return blocos;
+}
+function ferramentasComCache(tools) {
+  if (!Array.isArray(tools) || !tools.length) return tools;
+  return tools.map((t, i) => i === tools.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : { ...t });
+}
+async function classificar(client, texto) {
+  try {
+    const r = await client.messages.create({
+      model: MODELO_RAPIDO, max_tokens: 80,
+      system: sistemaComCache(ROTEADOR_SISTEMA),
+      messages: [{ role: 'user', content: String(texto || '').slice(0, 1500) }],
+    });
+    return rotaDe(r.content.filter(b => b.type === 'text').map(b => b.text).join(''));
+  } catch (e) { return 'analise'; }
+}
 const dm = iso => `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}`;
 const resumo = (n, i) => `${ROTULO[n] || n}${i?.cliente ? ` · ${i.cliente}` : ''}${i?.inicio && i?.fim ? ` · ${dm(i.inicio)} a ${dm(i.fim)}` : ''}${n === 'propor_acao' && i?.titulo ? ` · ${corta(i.titulo, 50)}` : ''}`;
 
@@ -315,14 +348,20 @@ module.exports = async function handler(req, res) {
 
     const conhecimento = await require('./_conhecimento').contexto(texto + " " + (persona?.nome || conv.agente || ""));
     const client = new Anthropic();
+    const rota = await classificar(client, texto);
+    const modelo = rota === 'simples' ? MODELO_RAPIDO : MODELO;
+    const estavel = (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + tiopsMarket.guide;
     const usadas = [], inicio = Date.now();
     let resposta = null;
     for (let rodada = 0; rodada < MAX_RODADAS + 1; rodada++) {
       const semTempo = Date.now() - inicio > ORCAMENTO_MS || rodada >= MAX_RODADAS;
-      resposta = await client.beta.messages.create({
-        model: MODELO, max_tokens: 16000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' },
-        system: (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + conhecimento + tiopsMarket.guide, tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
-      });
+      const pedido = {
+        model: modelo, max_tokens: rota === 'simples' ? 4000 : 16000,
+        system: sistemaComCache(estavel, conhecimento), tools: ferramentasComCache(TOOLS), tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+      };
+      resposta = rota === 'simples'
+        ? await client.messages.create(pedido)
+        : await client.beta.messages.create({ ...pedido, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' } });
       if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
       if (resposta.stop_reason !== 'tool_use') break;
       mensagens.push({ role: 'assistant', content: resposta.content });
@@ -349,7 +388,7 @@ module.exports = async function handler(req, res) {
     conv.msgs.push({ r: 'user', t: texto, em: new Date(inicio).toISOString() }, { r: 'assistant', t: final, em: new Date().toISOString(), ferramentas: usadas, criadas: S.criadas });
     if (conv.msgs.length > 80) conv.msgs = conv.msgs.slice(-80);
     await salvarConversa(uid, id, conv).catch(() => {});
-    return res.status(200).json({ conversa_id: id, titulo: conv.titulo, agente: persona ? conv.agente : ag, missoes: S.missoesCriadas || 0, resposta: final, ferramentas: usadas, criadas: S.criadas, cortada: resposta.stop_reason === 'max_tokens', segundos: Math.round((Date.now() - inicio) / 1000) });
+    return res.status(200).json({ conversa_id: id, titulo: conv.titulo, agente: persona ? conv.agente : ag, modelo, rota, missoes: S.missoesCriadas || 0, resposta: final, ferramentas: usadas, criadas: S.criadas, cortada: resposta.stop_reason === 'max_tokens', segundos: Math.round((Date.now() - inicio) / 1000) });
   } catch (e) {
     if (e instanceof Anthropic.RateLimitError) return res.status(429).json({ error: 'Muitas perguntas ao mesmo tempo — espere alguns segundos e tente de novo.' });
     if (e instanceof Anthropic.APIError && /credit balance is too low/i.test(e.message)) return res.status(402).json({ error: 'Os créditos da API da Anthropic acabaram — recarregue em console.anthropic.com → Plans & Billing e o chat volta na hora.' });
@@ -358,4 +397,4 @@ module.exports = async function handler(req, res) {
   }
 };
 // peças reaproveitadas pelo chat do portal do cliente (api/portal-chat.js)
-module.exports.interno = { carregarCarteira, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO };
+module.exports.interno = { carregarCarteira, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, MODELO_RAPIDO, rotaDe, sistemaComCache, ferramentasComCache };
