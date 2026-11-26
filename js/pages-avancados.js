@@ -106,7 +106,7 @@ Router.register('performance', (params, el) => {
 
   function renderTabela(gestorNome) {
     const clientes = GLR.clientes.filter(c => c.gestor === gestorNome);
-    if (!clientes.length) return `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">Nenhum cliente atribuído a este gestor.</div>`;
+    if (!clientes.length) return `<div style="padding:var(--space-6);text-align:center;color:var(--text-muted);font-size:var(--fs-3);">Nenhum cliente atribuído a este gestor.</div>`;
 
     const rows = clientes.map(c => ({ c, d: dadosCliente(c) }));
 
@@ -133,8 +133,8 @@ Router.register('performance', (params, el) => {
     };
 
     return `
-    <div style="overflow-x:auto;margin-bottom:8px;">
-    <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1100px;">
+    <div style="overflow-x:auto;margin-bottom:var(--space-2);">
+    <table style="width:100%;border-collapse:collapse;font-size:var(--fs-2);min-width:1100px;">
       <thead>
         <tr style="background:var(--bg-subtle);color:var(--text-secondary);">
           <th style="padding:10px 12px;text-align:left;border-radius:8px 0 0 0;white-space:nowrap;">Empresa</th>
@@ -162,17 +162,17 @@ Router.register('performance', (params, el) => {
               onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
             <td style="padding:9px 12px;font-weight:600;border-left:3px solid ${cor.text};">
               ${c.nome}
-              <div style="font-size:10px;color:var(--text-muted);font-weight:400;">${GLR.statusLabel[c.status]||c.status}</div>
+              <div style="font-size:var(--fs-1);color:var(--text-muted);font-weight:400;">${GLR.statusLabel[c.status]||c.status}</div>
             </td>
             <td style="padding:9px 8px;text-align:right;">${d.fatBase > 0 ? fmtR(d.fatBase) : '<span style="color:var(--text-muted)">—</span>'}</td>
             <td style="padding:9px 8px;text-align:right;color:${d.pctADSBase>20?'var(--red)':d.pctADSBase>15?'var(--yellow)':'var(--text-secondary)'};">${d.pctADSBase > 0 ? d.pctADSBase.toFixed(1)+'%' : '—'}</td>
             <td style="padding:9px 8px;text-align:right;font-weight:600;color:var(--accent-light);">${d.fatProj > 0 ? fmtR(d.fatProj) : '—'}</td>
-            <td style="padding:9px 8px;text-align:right;font-weight:${d.fatReal>0?'700':'400'};color:${d.fatReal>0?'var(--text-primary)':'var(--text-muted)'};">${d.fatReal > 0 ? fmtR(d.fatReal) : '<span style="font-size:10px;">sem DRE</span>'}</td>
+            <td style="padding:9px 8px;text-align:right;font-weight:${d.fatReal>0?'700':'400'};color:${d.fatReal>0?'var(--text-primary)':'var(--text-muted)'};">${d.fatReal > 0 ? fmtR(d.fatReal) : '<span style="font-size:var(--fs-1);">sem DRE</span>'}</td>
             <td style="padding:9px 8px;text-align:right;font-weight:600;color:${corCrescimento(d.compMesAnt)};">${d.compMesAnt !== null ? fmtPct(d.compMesAnt) : '—'}</td>
             <td style="padding:9px 8px;text-align:right;color:${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text-muted)'};">${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? '✅ Batida' : fmtR(d.faltaMeta)) : '—'}</td>
             <td style="padding:9px 8px;text-align:center;">
               ${d.pctMeta !== null ? `
-              <span style="background:${cor.bg};color:${cor.text};font-weight:700;padding:3px 8px;border-radius:99px;font-size:11px;">
+              <span style="background:${cor.bg};color:${cor.text};font-weight:700;padding:3px 8px;border-radius:99px;font-size:var(--fs-1);">
                 ${d.pctMeta.toFixed(1)}%
               </span>` : '<span style="color:var(--text-muted)">—</span>'}
             </td>
@@ -186,7 +186,7 @@ Router.register('performance', (params, el) => {
         }).join('')}
       </tbody>
       <tfoot>
-        <tr style="background:var(--bg-subtle);font-weight:700;font-size:12.5px;border-top:2px solid var(--border);">
+        <tr style="background:var(--bg-subtle);font-weight:700;font-size:var(--fs-2);border-top:2px solid var(--border);">
           <td style="padding:10px 12px;">Total — ${clientes.length} cliente${clientes.length!==1?'s':''}</td>
           <td style="padding:10px 8px;text-align:right;">${tot.fatBase > 0 ? fmtR(tot.fatBase) : '—'}</td>
           <td style="padding:10px 8px;text-align:right;">${tot.fatBase > 0 ? ((tot.adsProj/tot.fatProj)*100).toFixed(1)+'%' : '—'}</td>
@@ -195,7 +195,7 @@ Router.register('performance', (params, el) => {
           <td style="padding:10px 8px;text-align:right;color:${corCrescimento(totCompM1)};">${totCompM1 !== null ? fmtPct(totCompM1) : '—'}</td>
           <td style="padding:10px 8px;text-align:right;"></td>
           <td style="padding:10px 8px;text-align:center;">
-            ${totPctMeta !== null ? `<span style="background:${corTot.bg};color:${corTot.text};font-weight:700;padding:3px 8px;border-radius:99px;font-size:11px;">${totPctMeta.toFixed(1)}%</span>` : '—'}
+            ${totPctMeta !== null ? `<span style="background:${corTot.bg};color:${corTot.text};font-weight:700;padding:3px 8px;border-radius:99px;font-size:var(--fs-1);">${totPctMeta.toFixed(1)}%</span>` : '—'}
           </td>
           <td style="padding:10px 8px;text-align:right;">${tot.adsProj > 0 ? fmtR(tot.adsProj) : '—'}</td>
           <td style="padding:10px 8px;text-align:right;"></td>
@@ -209,7 +209,7 @@ Router.register('performance', (params, el) => {
     </div>
 
     <!-- Legenda -->
-    <div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 4px;font-size:11px;color:var(--text-muted);">
+    <div style="display:flex;gap:var(--space-4);flex-wrap:wrap;padding:10px 4px;font-size:var(--fs-1);color:var(--text-muted);">
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--green);border-radius:3px;"></span> Batendo a meta (≥100%)</span>
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--yellow);border-radius:3px;"></span> Quase batendo (85–99%)</span>
       <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:var(--red);border-radius:3px;"></span> Abaixo da meta (&lt;85%)</span>
@@ -220,9 +220,9 @@ Router.register('performance', (params, el) => {
   // ── Render principal — tudo numa página ───────────────────────
   if (!gestoresAtivos.length) {
     el.innerHTML = `<div class="page"><div style="text-align:center;padding:80px;color:var(--text-muted);">
-      <div style="font-size:36px;margin-bottom:12px;">📊</div>
-      <div style="font-size:16px;font-weight:700;margin-bottom:8px;">Nenhum gestor com clientes</div>
-      <div style="font-size:13px;">Atribua clientes a gestores para ver a performance aqui.</div>
+      <div style="font-size:var(--fs-6);margin-bottom:var(--space-3);">📊</div>
+      <div style="font-size:var(--fs-4);font-weight:700;margin-bottom:var(--space-2);">Nenhum gestor com clientes</div>
+      <div style="font-size:var(--fs-3);">Atribua clientes a gestores para ver a performance aqui.</div>
     </div></div>`;
     return;
   }
@@ -235,9 +235,9 @@ Router.register('performance', (params, el) => {
   el.innerHTML = `<div class="page">
 
     <!-- Cabeçalho -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-6);flex-wrap:wrap;gap:var(--space-3);">
       <div>
-        <div class="section-title" style="font-size:20px;">Performance Gestor</div>
+        <div class="section-title" style="font-size:var(--fs-5);">Performance Gestor</div>
         <div class="section-subtitle">${meses[hoje.getMonth()]} ${hoje.getFullYear()} · Dados em tempo real</div>
       </div>
       <button class="btn" style="background:var(--bg-card);border:1px solid var(--border);" onclick="window.print()">
@@ -268,60 +268,60 @@ Router.register('performance', (params, el) => {
       const corTot     = corMeta(totPctMeta);
 
       return `
-      <div class="card" style="padding:0;overflow:hidden;margin-bottom:24px;">
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:var(--space-6);">
 
         <!-- Header do gestor -->
-        <div style="padding:16px 20px;background:var(--bg-subtle);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-          <div style="display:flex;align-items:center;gap:12px;">
-            <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:700;color:white;font-size:18px;">${g.nome.charAt(0)}</div>
+        <div style="padding:var(--space-4) var(--space-5);background:var(--bg-subtle);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--space-3);">
+          <div style="display:flex;align-items:center;gap:var(--space-3);">
+            <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:700;color:white;font-size:var(--fs-5);">${g.nome.charAt(0)}</div>
             <div>
-              <div style="font-size:16px;font-weight:700;color:var(--text-primary);">${g.nome}</div>
-              <div style="font-size:12px;color:var(--text-muted);">${clientes.length} cliente${clientes.length!==1?'s':''} · ${meses[hoje.getMonth()]} ${hoje.getFullYear()}</div>
+              <div style="font-size:var(--fs-4);font-weight:700;color:var(--text-primary);">${g.nome}</div>
+              <div style="font-size:var(--fs-2);color:var(--text-muted);">${clientes.length} cliente${clientes.length!==1?'s':''} · ${meses[hoje.getMonth()]} ${hoje.getFullYear()}</div>
             </div>
           </div>
-          <div style="display:flex;gap:20px;flex-wrap:wrap;">
+          <div style="display:flex;gap:var(--space-5);flex-wrap:wrap;">
             <div style="text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Meta Total</div>
-              <div style="font-size:15px;font-weight:700;color:var(--text-primary);">${tot.fatBase > 0 ? fmtR(tot.fatBase) : '—'}</div>
+              <div style="font-size:var(--fs-1);color:var(--text-muted);margin-bottom:2px;">Meta Total</div>
+              <div style="font-size:var(--fs-4);font-weight:700;color:var(--text-primary);">${tot.fatBase > 0 ? fmtR(tot.fatBase) : '—'}</div>
             </div>
             <div style="text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Projeção</div>
-              <div style="font-size:15px;font-weight:700;color:var(--accent-light);">${tot.fatProj > 0 ? fmtR(tot.fatProj) : '—'}</div>
+              <div style="font-size:var(--fs-1);color:var(--text-muted);margin-bottom:2px;">Projeção</div>
+              <div style="font-size:var(--fs-4);font-weight:700;color:var(--accent-light);">${tot.fatProj > 0 ? fmtR(tot.fatProj) : '—'}</div>
             </div>
             ${tot.fatReal > 0 ? `<div style="text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Realizado</div>
-              <div style="font-size:15px;font-weight:700;color:var(--green);">${fmtR(tot.fatReal)}</div>
+              <div style="font-size:var(--fs-1);color:var(--text-muted);margin-bottom:2px;">Realizado</div>
+              <div style="font-size:var(--fs-4);font-weight:700;color:var(--green);">${fmtR(tot.fatReal)}</div>
             </div>` : ''}
             <div style="text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">% Meta</div>
-              <div style="font-size:15px;font-weight:700;color:${corTot.text};">${totPctMeta !== null ? totPctMeta.toFixed(0)+'%' : '—'}</div>
+              <div style="font-size:var(--fs-1);color:var(--text-muted);margin-bottom:2px;">% Meta</div>
+              <div style="font-size:var(--fs-4);font-weight:700;color:${corTot.text};">${totPctMeta !== null ? totPctMeta.toFixed(0)+'%' : '—'}</div>
             </div>
             ${tot.recGLR > 0 ? `<div style="text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Receita GLR</div>
-              <div style="font-size:15px;font-weight:700;color:var(--green);">${fmtR(tot.recGLR)}</div>
+              <div style="font-size:var(--fs-1);color:var(--text-muted);margin-bottom:2px;">Receita GLR</div>
+              <div style="font-size:var(--fs-4);font-weight:700;color:var(--green);">${fmtR(tot.recGLR)}</div>
             </div>` : ''}
           </div>
         </div>
 
         <!-- Tabela de clientes -->
         <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1000px;">
+        <table style="width:100%;border-collapse:collapse;font-size:var(--fs-2);min-width:1000px;">
           <thead>
             <tr style="background:var(--bg-base);border-bottom:2px solid var(--border);">
-              <th style="padding:9px 14px;text-align:left;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;letter-spacing:0;">Empresa</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;letter-spacing:0;white-space:nowrap;">Meta Base</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">ADS%</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">Projeção</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">Fat. Real</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">vs Mês Ant.</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">Falta p/ Meta</th>
-              <th style="padding:9px 8px;text-align:center;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">% Meta</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">ADS Proj.</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">%ADS</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">Rec. GLR</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">${mesN(3)}</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">${mesN(2)}</th>
-              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;text-transform:none;white-space:nowrap;">${mesN(1)}</th>
+              <th style="padding:9px 14px;text-align:left;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;letter-spacing:0;">Empresa</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;letter-spacing:0;white-space:nowrap;">Meta Base</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">ADS%</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">Projeção</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">Fat. Real</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">vs Mês Ant.</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">Falta p/ Meta</th>
+              <th style="padding:9px 8px;text-align:center;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">% Meta</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">ADS Proj.</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">%ADS</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">Rec. GLR</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">${mesN(3)}</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">${mesN(2)}</th>
+              <th style="padding:9px 8px;text-align:right;color:var(--text-muted);font-weight:600;font-size:var(--fs-1);text-transform:none;white-space:nowrap;">${mesN(1)}</th>
             </tr>
           </thead>
           <tbody>
@@ -333,30 +333,30 @@ Router.register('performance', (params, el) => {
                   onmouseenter="this.style.background='var(--bg-hover)'" onmouseleave="this.style.background='${i%2===0?'var(--bg-surface)':'var(--bg-card)'}'">
                 <td style="padding:10px 14px;font-weight:600;border-left:3px solid ${cor.text};">
                   ${c.nome}
-                  <div style="font-size:10px;color:var(--text-muted);font-weight:400;margin-top:1px;">${GLR.statusLabel[c.status]||c.status}</div>
+                  <div style="font-size:var(--fs-1);color:var(--text-muted);font-weight:400;margin-top:1px;">${GLR.statusLabel[c.status]||c.status}</div>
                 </td>
                 <td style="padding:10px 8px;text-align:right;">${d.fatBase > 0 ? fmtR(d.fatBase) : '<span style="color:var(--text-muted)">—</span>'}</td>
                 <td style="padding:10px 8px;text-align:right;color:${d.pctADSBase>20?'var(--red)':d.pctADSBase>15?'var(--yellow)':'var(--text-secondary)'};">${d.pctADSBase > 0 ? d.pctADSBase.toFixed(1)+'%' : '—'}</td>
                 <td style="padding:10px 8px;text-align:right;font-weight:600;color:var(--accent-light);">${d.fatProj > 0 ? fmtR(d.fatProj) : '—'}</td>
-                <td style="padding:10px 8px;text-align:right;font-weight:${d.fatReal>0?'700':'400'};color:${d.fatReal>0?'var(--text-primary)':'var(--text-muted)'};">${d.fatReal > 0 ? fmtR(d.fatReal) : '<span style="font-size:10px;">sem DRE</span>'}</td>
+                <td style="padding:10px 8px;text-align:right;font-weight:${d.fatReal>0?'700':'400'};color:${d.fatReal>0?'var(--text-primary)':'var(--text-muted)'};">${d.fatReal > 0 ? fmtR(d.fatReal) : '<span style="font-size:var(--fs-1);">sem DRE</span>'}</td>
                 <td style="padding:10px 8px;text-align:right;font-weight:600;color:${corCrescimento(d.compMesAnt)};">${d.compMesAnt !== null ? fmtPct(d.compMesAnt) : '—'}</td>
                 <td style="padding:10px 8px;text-align:right;color:${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? 'var(--green)' : 'var(--orange)') : 'var(--text-muted)'};">${d.faltaMeta !== null ? (d.faltaMeta <= 0 ? '✅ Batida' : fmtR(d.faltaMeta)) : '—'}</td>
                 <td style="padding:10px 8px;text-align:center;">
                   ${d.pctMeta !== null
-                    ? `<span style="background:${cor.bg};color:${cor.text};font-weight:700;padding:3px 10px;border-radius:99px;font-size:11px;white-space:nowrap;">${d.pctMeta.toFixed(1)}%</span>`
+                    ? `<span style="background:${cor.bg};color:${cor.text};font-weight:700;padding:3px 10px;border-radius:99px;font-size:var(--fs-1);white-space:nowrap;">${d.pctMeta.toFixed(1)}%</span>`
                     : '<span style="color:var(--text-muted)">—</span>'}
                 </td>
                 <td style="padding:10px 8px;text-align:right;color:var(--text-secondary);">${d.adsProj > 0 ? fmtR(d.adsProj) : '—'}</td>
                 <td style="padding:10px 8px;text-align:right;color:${d.pctADSProj>20?'var(--red)':d.pctADSProj>15?'var(--yellow)':'var(--text-secondary)'};">${d.pctADSProj > 0 ? d.pctADSProj.toFixed(1)+'%' : '—'}</td>
                 <td style="padding:10px 8px;text-align:right;color:var(--green);font-weight:600;">${d.receitaGLR > 0 ? fmtR(d.receitaGLR) : '—'}</td>
-                <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:11px;">${d.fatM3 > 0 ? fmtR(d.fatM3) : '—'}</td>
-                <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:11px;">${d.fatM2 > 0 ? fmtR(d.fatM2) : '—'}</td>
-                <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:11px;">${d.fatM1 > 0 ? fmtR(d.fatM1) : '—'}</td>
+                <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:var(--fs-1);">${d.fatM3 > 0 ? fmtR(d.fatM3) : '—'}</td>
+                <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:var(--fs-1);">${d.fatM2 > 0 ? fmtR(d.fatM2) : '—'}</td>
+                <td style="padding:10px 8px;text-align:right;color:var(--text-muted);font-size:var(--fs-1);">${d.fatM1 > 0 ? fmtR(d.fatM1) : '—'}</td>
               </tr>`;
             }).join('')}
           </tbody>
           <tfoot>
-            <tr style="background:var(--bg-subtle);font-weight:700;font-size:12.5px;border-top:2px solid var(--border);">
+            <tr style="background:var(--bg-subtle);font-weight:700;font-size:var(--fs-2);border-top:2px solid var(--border);">
               <td style="padding:10px 14px;color:var(--text-primary);">Total</td>
               <td style="padding:10px 8px;text-align:right;">${tot.fatBase > 0 ? fmtR(tot.fatBase) : '—'}</td>
               <td style="padding:10px 8px;text-align:right;">${tot.fatProj > 0 && tot.adsProj > 0 ? ((tot.adsProj/tot.fatProj)*100).toFixed(1)+'%' : '—'}</td>
@@ -364,20 +364,20 @@ Router.register('performance', (params, el) => {
               <td style="padding:10px 8px;text-align:right;">${tot.fatReal > 0 ? fmtR(tot.fatReal) : '—'}</td>
               <td style="padding:10px 8px;text-align:right;color:${corCrescimento(totCompM1)};">${totCompM1 !== null ? fmtPct(totCompM1) : '—'}</td>
               <td style="padding:10px 8px;"></td>
-              <td style="padding:10px 8px;text-align:center;">${totPctMeta !== null ? `<span style="background:${corTot.bg};color:${corTot.text};font-weight:700;padding:3px 10px;border-radius:99px;font-size:11px;">${totPctMeta.toFixed(1)}%</span>` : '—'}</td>
+              <td style="padding:10px 8px;text-align:center;">${totPctMeta !== null ? `<span style="background:${corTot.bg};color:${corTot.text};font-weight:700;padding:3px 10px;border-radius:99px;font-size:var(--fs-1);">${totPctMeta.toFixed(1)}%</span>` : '—'}</td>
               <td style="padding:10px 8px;text-align:right;">${tot.adsProj > 0 ? fmtR(tot.adsProj) : '—'}</td>
               <td style="padding:10px 8px;"></td>
               <td style="padding:10px 8px;text-align:right;color:var(--green);">${tot.recGLR > 0 ? fmtR(tot.recGLR) : '—'}</td>
-              <td style="padding:10px 8px;text-align:right;font-size:11px;">${tot.fatM3 > 0 ? fmtR(tot.fatM3) : '—'}</td>
-              <td style="padding:10px 8px;text-align:right;font-size:11px;">${tot.fatM2 > 0 ? fmtR(tot.fatM2) : '—'}</td>
-              <td style="padding:10px 8px;text-align:right;font-size:11px;">${tot.fatM1 > 0 ? fmtR(tot.fatM1) : '—'}</td>
+              <td style="padding:10px 8px;text-align:right;font-size:var(--fs-1);">${tot.fatM3 > 0 ? fmtR(tot.fatM3) : '—'}</td>
+              <td style="padding:10px 8px;text-align:right;font-size:var(--fs-1);">${tot.fatM2 > 0 ? fmtR(tot.fatM2) : '—'}</td>
+              <td style="padding:10px 8px;text-align:right;font-size:var(--fs-1);">${tot.fatM1 > 0 ? fmtR(tot.fatM1) : '—'}</td>
             </tr>
           </tfoot>
         </table>
         </div>
 
         <!-- Legenda -->
-        <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--text-muted);">
+        <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:var(--space-4);flex-wrap:wrap;font-size:var(--fs-1);color:var(--text-muted);">
           <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:var(--green);border-radius:2px;"></span> Batendo meta (≥100%)</span>
           <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:var(--yellow);border-radius:2px;"></span> Quase lá (85–99%)</span>
           <span style="display:flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;background:var(--red);border-radius:2px;"></span> Abaixo da meta (&lt;85%)</span>
@@ -634,17 +634,17 @@ const _projecaoDetalhe = (params, el) => {
     if (!box) {
       box = document.createElement('div');
       box.id = 'diag-api-box';
-      box.style.cssText = 'position:fixed;bottom:12px;right:12px;width:520px;max-height:70vh;overflow-y:auto;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;z-index:99999;font-family:monospace;font-size:11px;color:#e5e7eb;box-shadow:0 10px 40px rgba(0,0,0,.5);';
-      box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      box.style.cssText = 'position:fixed;bottom:12px;right:12px;width:520px;max-height:70vh;overflow-y:auto;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;z-index:99999;font-family:monospace;font-size:var(--fs-1);color:#e5e7eb;box-shadow:0 10px 40px rgba(0,0,0,.5);';
+      box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
         <strong style="color:var(--accent-light);">Diagnóstico Projeção (temporário)</strong>
-        <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button>
+        <button onclick="document.getElementById('diag-api-box').remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:var(--fs-3);">✕</button>
       </div><div id="diag-api-conteudo"></div>`;
       document.body.appendChild(box);
     }
     const cont = document.getElementById('diag-api-conteudo');
     const bloco = document.createElement('div');
-    bloco.style.cssText = 'margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #2a2a3a;';
-    bloco.innerHTML = `<div style="color:#fbbf24;margin-bottom:4px;">[${grupo}] ${chaveId}</div><pre style="white-space:pre-wrap;word-break:break-all;margin:0;">${JSON.stringify(obj,null,2).replace(/</g,'&lt;')}</pre>`;
+    bloco.style.cssText = 'margin-bottom:var(--space-3);padding-bottom:var(--space-3);border-bottom:1px solid #2a2a3a;';
+    bloco.innerHTML = `<div style="color:#fbbf24;margin-bottom:var(--space-1);">[${grupo}] ${chaveId}</div><pre style="white-space:pre-wrap;word-break:break-all;margin:0;">${JSON.stringify(obj,null,2).replace(/</g,'&lt;')}</pre>`;
     cont.appendChild(bloco);
   }
 
@@ -1210,7 +1210,7 @@ const _projecaoDetalhe = (params, el) => {
     </div>
     <div id="pn-conteudo"></div>
     <div class="card" style="margin-top:18px;padding:16px 18px;">
-      <div class="pn-graf-t" style="margin-bottom:8px;">Observações</div>
+      <div class="pn-graf-t" style="margin-bottom:var(--space-2);">Observações</div>
       <textarea id="proj-obs" class="form-textarea" placeholder="Contexto do mês, eventos, campanhas, rupturas de estoque…" style="min-height:70px;">${_pnEsc(projecaoAtiva.obs || '')}</textarea>
     </div>
   </div>`;
@@ -1222,94 +1222,94 @@ const _projecaoDetalhe = (params, el) => {
     st.id = 'pn-styles';
     st.textContent = `
       .pn{--pn-azul:var(--accent);--pn-cinza:var(--text-muted);--pn-bom:var(--green);--pn-ruim:var(--red);}
-      .pn-mut{font-size:12px;color:var(--text-muted);}
+      .pn-mut{font-size:var(--fs-2);color:var(--text-muted);}
       .pn-diario{padding:18px;margin:18px 0;}
-      .pn-diario-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+      .pn-diario-top{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap;margin-bottom:14px;}
       .pn-diario-scroll{overflow:auto;max-height:520px;}
-      .pn-diario-tab{border-collapse:separate;border-spacing:0;width:100%;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+      .pn-diario-tab{border-collapse:separate;border-spacing:0;width:100%;font-size:var(--fs-2);font-variant-numeric:tabular-nums;white-space:nowrap;}
       .pn-diario-tab th,.pn-diario-tab td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:right;}
       .pn-diario-tab thead th{background:var(--bg-card);color:var(--text-muted);text-align:center;}
       .pn-diario-tab th:first-child{position:sticky;left:0;text-align:left;background:var(--bg-card);z-index:1;}
       .pn-diario-tab tbody tr:hover td{background:var(--bg-card-hover);}
       .pn-diario-tab tfoot th,.pn-diario-tab tfoot td{font-weight:700;border-top:2px solid var(--border);}
-      .pn-diario-parcial{display:block;font-size:10px;color:var(--yellow);font-weight:500;}
-      .pn-diario-resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
-      .pn-diario-chip{display:flex;flex-direction:column;gap:2px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;min-width:140px;}
-      .pn-diario-chip span{font-size:11px;color:var(--text-muted);}
-      .pn-diario-chip b{font-size:15px;font-variant-numeric:tabular-nums;}
+      .pn-diario-parcial{display:block;font-size:var(--fs-1);color:var(--yellow);font-weight:500;}
+      .pn-diario-resumo{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-bottom:var(--space-3);}
+      .pn-diario-chip{display:flex;flex-direction:column;gap:2px;padding:var(--space-2) var(--space-3);border:1px solid var(--border);border-radius:8px;min-width:140px;}
+      .pn-diario-chip span{font-size:var(--fs-1);color:var(--text-muted);}
+      .pn-diario-chip b{font-size:var(--fs-4);font-variant-numeric:tabular-nums;}
       .pn-diario-chip.ok b,.pn-diario-meta.ok{color:var(--green);}
       .pn-diario-chip.abaixo b,.pn-diario-meta.abaixo{color:var(--red);}
       .pn-diario-meta{font-weight:600;}
       .pn-diario-tab tfoot tr.pn-diario-media th,.pn-diario-tab tfoot tr.pn-diario-media td{border-top:1px solid var(--border);font-weight:600;}
       .pn-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:10px;}
       .pn-head-l{min-width:0;}
-      .pn-cliente{appearance:none;-webkit-appearance:none;background:transparent;border:none;font-size:26px;font-weight:800;color:var(--text-primary);cursor:pointer;outline:none;padding:0 22px 0 0;max-width:100%;
+      .pn-cliente{appearance:none;-webkit-appearance:none;background:transparent;border:none;font-size:var(--fs-6);font-weight:800;color:var(--text-primary);cursor:pointer;outline:none;padding:0 22px 0 0;max-width:100%;
         background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 9px) 55%,calc(100% - 4px) 55%;background-size:5px 5px;background-repeat:no-repeat;}
-      .pn-cliente option{font-size:14px;color:#111;}
-      .pn-cliente-txt{font-size:26px;font-weight:800;color:var(--text-primary);}
-      .pn-head-info{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px;}
-      .pn-tag{font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;background:rgba(42,120,214,.12);color:var(--pn-azul);}
+      .pn-cliente option{font-size:var(--fs-3);color:#111;}
+      .pn-cliente-txt{font-size:var(--fs-6);font-weight:800;color:var(--text-primary);}
+      .pn-head-info{display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-top:var(--space-1);}
+      .pn-tag{font-size:var(--fs-2);font-weight:700;padding:3px 10px;border-radius:99px;background:rgba(42,120,214,.12);color:var(--pn-azul);}
       .pn-tag-fonte{background:rgba(22,163,74,.12);color:var(--pn-bom);}
-      .pn-head-r{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
-      .pn-btn{border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;list-style:none;}
+      .pn-head-r{display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;}
+      .pn-btn{border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);border-radius:9px;padding:7px 12px;font-size:var(--fs-2);font-weight:600;cursor:pointer;list-style:none;}
       .pn-btn::-webkit-details-marker{display:none;}
       .pn-btn:hover{border-color:var(--pn-azul);}
       .pn-btn-p{background:var(--pn-azul);border-color:var(--pn-azul);color:#fff;}
       .pn-mais{position:relative;}
       .pn-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:6px;min-width:250px;box-shadow:0 12px 30px rgba(0,0,0,.18);}
-      .pn-menu button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--text-primary);padding:9px 10px;border-radius:8px;font-size:13px;cursor:pointer;}
+      .pn-menu button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--text-primary);padding:9px 10px;border-radius:8px;font-size:var(--fs-3);cursor:pointer;}
       .pn-menu button:hover{background:var(--bg-card-hover);}
-      .pn-menu small{display:block;color:var(--text-muted);font-size:11px;}
-      .pn-periodo{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:16px;font-size:12.5px;color:var(--text-secondary);}
-      .pn-date,.pn-dia{background:var(--bg-card);border:1px solid var(--border);border-radius:7px;color:var(--text-primary);padding:4px 7px;font-size:12px;margin-left:4px;}
+      .pn-menu small{display:block;color:var(--text-muted);font-size:var(--fs-1);}
+      .pn-periodo{display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap;margin-bottom:var(--space-4);font-size:var(--fs-2);color:var(--text-secondary);}
+      .pn-date,.pn-dia{background:var(--bg-card);border:1px solid var(--border);border-radius:7px;color:var(--text-primary);padding:4px 7px;font-size:var(--fs-2);margin-left:var(--space-1);}
       .pn-dia{width:48px;margin:0 2px;}
       .pn-hero{padding:22px 24px 18px;margin-bottom:14px;}
-      .pn-hero-top{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;}
-      .pn-rot{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);font-weight:600;}
-      .pn-big{font-size:40px;font-weight:800;color:var(--text-primary);letter-spacing:-1px;font-variant-numeric:tabular-nums;line-height:1.1;margin:2px 0 4px;}
-      .pn-sub{font-size:12.5px;color:var(--text-muted);}
+      .pn-hero-top{display:flex;justify-content:space-between;gap:var(--space-4);flex-wrap:wrap;align-items:flex-end;margin-bottom:var(--space-4);}
+      .pn-rot{font-size:var(--fs-1);text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);font-weight:600;}
+      .pn-big{font-size:var(--fs-6);font-weight:800;color:var(--text-primary);letter-spacing:-1px;font-variant-numeric:tabular-nums;line-height:1.1;margin:2px 0 4px;}
+      .pn-sub{font-size:var(--fs-2);color:var(--text-muted);}
       .pn-sub b{color:var(--text-primary);}
-      .pn-chips{display:flex;gap:8px;flex-wrap:wrap;}
-      .pn-chip{display:inline-flex;flex-direction:column;gap:1px;font-weight:800;font-size:15px;color:var(--c);background:color-mix(in srgb,var(--c) 10%,transparent);border-radius:10px;padding:7px 12px;font-variant-numeric:tabular-nums;}
-      .pn-chip em{font-style:normal;font-weight:500;font-size:11px;color:var(--text-muted);}
+      .pn-chips{display:flex;gap:var(--space-2);flex-wrap:wrap;}
+      .pn-chip{display:inline-flex;flex-direction:column;gap:1px;font-weight:800;font-size:var(--fs-4);color:var(--c);background:color-mix(in srgb,var(--c) 10%,transparent);border-radius:10px;padding:7px 12px;font-variant-numeric:tabular-nums;}
+      .pn-chip em{font-style:normal;font-weight:500;font-size:var(--fs-1);color:var(--text-muted);}
       .pn-barra{position:relative;height:12px;background:var(--bg-card-hover);border-radius:99px;overflow:visible;}
       .pn-barra-fat{height:100%;background:var(--pn-azul);border-radius:99px;transition:width .4s;}
       .pn-barra-dia{position:absolute;top:-4px;width:2px;height:20px;background:var(--text-primary);opacity:.55;border-radius:2px;}
-      .pn-barra-leg{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--text-muted);margin-top:8px;}
+      .pn-barra-leg{display:flex;gap:var(--space-4);flex-wrap:wrap;font-size:var(--fs-1);color:var(--text-muted);margin-top:var(--space-2);}
       .pn-barra-leg span{display:flex;align-items:center;gap:6px;}
       .pn-barra-leg i{width:10px;height:10px;border-radius:3px;display:inline-block;}
       .pn-barra-leg .pn-tick{width:2px;height:12px;background:var(--text-primary);opacity:.55;border-radius:1px;}
-      .pn-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px;}
-      @media (max-width:900px){.pn-kpis{grid-template-columns:1fr;}.pn-big{font-size:32px;}}
+      .pn-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-3);margin-bottom:14px;}
+      @media (max-width:900px){.pn-kpis{grid-template-columns:1fr;}.pn-big{font-size:var(--fs-6);}}
       .pn-kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;}
-      .pn-val{font-size:21px;font-weight:800;color:var(--text-primary);font-variant-numeric:tabular-nums;margin:2px 0;}
+      .pn-val{font-size:var(--fs-5);font-weight:800;color:var(--text-primary);font-variant-numeric:tabular-nums;margin:2px 0;}
       .pn-graficos{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:18px;}
       @media (max-width:1000px){.pn-graficos{grid-template-columns:1fr;}}
       .pn-graf{padding:16px 18px 12px;min-width:0;}
       .pn-graficos>*,.pn-kpis>*,.pn-contas>*{min-width:0;}
-      .pn-graf-t{font-size:14.5px;font-weight:800;color:var(--text-primary);}
+      .pn-graf-t{font-size:var(--fs-4);font-weight:800;color:var(--text-primary);}
       .pn-graf-area{position:relative;height:250px;margin-top:10px;}
-      .pn-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--text-secondary);margin-top:6px;}
+      .pn-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:var(--fs-1);color:var(--text-secondary);margin-top:6px;}
       .pn-leg span{display:flex;align-items:center;gap:6px;} .pn-leg i{width:16px;height:0;border-top:2px solid;display:inline-block;}
-      .pn-sec-t{font-size:15px;font-weight:800;color:var(--text-primary);margin:4px 0 10px;}
+      .pn-sec-t{font-size:var(--fs-4);font-weight:800;color:var(--text-primary);margin:4px 0 10px;}
       .pn-contas{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:14px;}
       .pn-conta{padding:20px 22px;border-top:4px solid var(--m);}
-      .pn-conta-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:8px;}
-      .pn-conta-nome{font-weight:800;color:var(--text-primary);font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+      .pn-conta-top{display:flex;justify-content:space-between;gap:var(--space-2);align-items:flex-start;margin-bottom:var(--space-2);}
+      .pn-conta-nome{font-weight:800;color:var(--text-primary);font-size:var(--fs-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
       .pn-mkt{color:var(--m);font-weight:700;}
-      .pn-conta .pn-sub{font-size:13px;}
-      .pn-x{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:6px;} .pn-x:hover{color:var(--red);background:rgba(220,38,38,.08);}
-      .pn-conta-num{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;margin:6px 0 16px;}
-      .pn-conta-num .pn-val{font-size:30px;letter-spacing:-.5px;}
-      .pn-conta-num .pn-chip{font-size:15px;padding:7px 11px;}
-      .pn-conta-grid,.pn-conta-meses{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+      .pn-conta .pn-sub{font-size:var(--fs-3);}
+      .pn-x{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:var(--fs-3);padding:2px 4px;border-radius:6px;} .pn-x:hover{color:var(--red);background:rgba(220,38,38,.08);}
+      .pn-conta-num{display:flex;justify-content:space-between;align-items:flex-end;gap:var(--space-2);margin:6px 0 16px;}
+      .pn-conta-num .pn-val{font-size:var(--fs-6);letter-spacing:-.5px;}
+      .pn-conta-num .pn-chip{font-size:var(--fs-4);padding:7px 11px;}
+      .pn-conta-grid,.pn-conta-meses{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3);}
       .pn-conta-meses{grid-template-columns:repeat(3,1fr);border-top:1px solid var(--border);padding-top:14px;margin-top:14px;}
       .pn-conta-grid>div,.pn-conta-meses>div{background:var(--bg-card-hover);border-radius:10px;padding:9px 11px;}
-      .pn-conta-grid span,.pn-conta-meses span{display:block;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;}
-      .pn-conta-grid b,.pn-conta-meses b{color:var(--text-primary);font-variant-numeric:tabular-nums;font-size:16px;}
-      .pn-teto{display:block;color:var(--text-muted);font-size:11px;margin-top:2px;}
+      .pn-conta-grid span,.pn-conta-meses span{display:block;color:var(--text-muted);font-size:var(--fs-1);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;}
+      .pn-conta-grid b,.pn-conta-meses b{color:var(--text-primary);font-variant-numeric:tabular-nums;font-size:var(--fs-4);}
+      .pn-teto{display:block;color:var(--text-muted);font-size:var(--fs-1);margin-top:2px;}
       @media (max-width:520px){.pn-conta-grid{grid-template-columns:repeat(2,1fr);}}
-      .pn-inp{width:100%;background:var(--bg-card-hover);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);padding:3px 6px;font-size:12px;font-weight:600;}
+      .pn-inp{width:100%;background:var(--bg-card-hover);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);padding:3px 6px;font-size:var(--fs-2);font-weight:600;}
       .pn-vazio{padding:28px;text-align:center;color:var(--text-muted);grid-column:1/-1;}
     `;
     document.head.appendChild(st);
@@ -1496,7 +1496,7 @@ const _projecaoDetalhe = (params, el) => {
 
     // Mini-toast de confirmação
     const toast = document.createElement('div');
-    toast.style.cssText = `position:fixed;bottom:24px;right:24px;background:var(--green);color:white;padding:12px 20px;border-radius:10px;font-size:13.5px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.3);animation:fadeIn 0.2s ease;`;
+    toast.style.cssText = `position:fixed;bottom:24px;right:24px;background:var(--green);color:white;padding:var(--space-3) var(--space-5);border-radius:10px;font-size:var(--fs-3);font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.3);animation:fadeIn 0.2s ease;`;
     toast.innerHTML = `✅ Projeção salva — dados sincronizados com o cliente`;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
@@ -1568,7 +1568,7 @@ const _projecaoDetalhe = (params, el) => {
     // Mostrar loading enquanto busca contas da API
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;';
-    overlay.innerHTML = `<div style="background:var(--bg-surface);border-radius:14px;padding:40px 48px;text-align:center;color:var(--text-muted);font-size:14px;">⏳ Carregando contas...</div>`;
+    overlay.innerHTML = `<div style="background:var(--bg-surface);border-radius:14px;padding:40px 48px;text-align:center;color:var(--text-muted);font-size:var(--fs-3);">⏳ Carregando contas...</div>`;
     document.body.appendChild(overlay);
 
     let vinculos = {};
@@ -1593,29 +1593,29 @@ const _projecaoDetalhe = (params, el) => {
       const contasDisponiveis = contas.filter(c => !vinculadasIds.has(c.external_id));
       overlay.innerHTML = `
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:28px 32px;max-width:520px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.5);max-height:85vh;overflow-y:auto;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-5);">
             <div>
-              <div style="font-size:16px;font-weight:700;color:var(--text-primary);">Contas vinculadas</div>
-              <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${cliente?.nome || 'Cliente #'+cidAtivo}</div>
+              <div style="font-size:var(--fs-4);font-weight:700;color:var(--text-primary);">Contas vinculadas</div>
+              <div style="font-size:var(--fs-2);color:var(--text-muted);margin-top:2px;">${cliente?.nome || 'Cliente #'+cidAtivo}</div>
             </div>
-            <button id="btn-fechar-vinculos" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted);">✕</button>
+            <button id="btn-fechar-vinculos" style="background:none;border:none;font-size:var(--fs-5);cursor:pointer;color:var(--text-muted);">✕</button>
           </div>
 
           ${vinculadas.length === 0
-            ? `<div style="padding:16px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;font-size:13px;color:var(--yellow);margin-bottom:16px;">⚠️ Nenhuma conta vinculada ainda</div>`
-            : `<div style="margin-bottom:16px;">
-                <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-bottom:8px;">Contas vinculadas (${vinculadas.length})</div>
-                <div style="display:flex;flex-direction:column;gap:8px;">
+            ? `<div style="padding:var(--space-4);background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;font-size:var(--fs-3);color:var(--yellow);margin-bottom:var(--space-4);">⚠️ Nenhuma conta vinculada ainda</div>`
+            : `<div style="margin-bottom:var(--space-4);">
+                <div style="font-size:var(--fs-1);font-weight:700;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-bottom:var(--space-2);">Contas vinculadas (${vinculadas.length})</div>
+                <div style="display:flex;flex-direction:column;gap:var(--space-2);">
                   ${vinculadas.map(c => {
                     const tag = (c.tags||[]).map(t=>t.name||t.value).filter(Boolean).join(' · ');
                     const nick = nicks[c.external_id] || '';
                     return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-base);border:1px solid rgba(34,197,94,0.3);border-radius:8px;">
-                      <span style="font-size:16px;">${platIcon[c.marketplace]||'🏪'}</span>
+                      <span style="font-size:var(--fs-4);">${platIcon[c.marketplace]||'🏪'}</span>
                       <div style="flex:1;min-width:0;">
-                        <div style="font-size:12px;font-weight:600;">${nick || tag || platNome[c.marketplace]||c.marketplace}</div>
-                        <div style="font-size:10px;color:var(--text-muted);">ID: ${c.external_id}</div>
+                        <div style="font-size:var(--fs-2);font-weight:600;">${nick || tag || platNome[c.marketplace]||c.marketplace}</div>
+                        <div style="font-size:var(--fs-1);color:var(--text-muted);">ID: ${c.external_id}</div>
                       </div>
-                      <button onclick="window._desvincularProj('${c.external_id}')" style="background:rgba(239,68,68,0.15);border:none;color:var(--red);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">remover</button>
+                      <button onclick="window._desvincularProj('${c.external_id}')" style="background:rgba(239,68,68,0.15);border:none;color:var(--red);border-radius:6px;padding:4px 10px;font-size:var(--fs-1);cursor:pointer;">remover</button>
                     </div>`;
                   }).join('')}
                 </div>
@@ -1624,26 +1624,26 @@ const _projecaoDetalhe = (params, el) => {
 
           ${contasDisponiveis.length > 0 ? `
           <div>
-            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-bottom:8px;">Adicionar conta</div>
+            <div style="font-size:var(--fs-1);font-weight:700;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-bottom:var(--space-2);">Adicionar conta</div>
             <div style="display:flex;flex-direction:column;gap:6px;">
               ${contasDisponiveis.map(c => {
                 const tag = (c.tags||[]).map(t=>t.name||t.value).filter(Boolean).join(' · ');
                 const nick = nicks[c.external_id] || '';
                 return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-base);border:1px solid var(--border);border-radius:8px;">
-                  <span style="font-size:16px;">${platIcon[c.marketplace]||'🏪'}</span>
+                  <span style="font-size:var(--fs-4);">${platIcon[c.marketplace]||'🏪'}</span>
                   <div style="flex:1;min-width:0;">
-                    <div style="font-size:12px;font-weight:600;">${nick || tag || platNome[c.marketplace]||c.marketplace}</div>
-                    <div style="font-size:10px;color:var(--text-muted);">ID: ${c.external_id}</div>
-                    ${tag ? `<div style="font-size:10px;color:var(--accent-light);">${tag}</div>` : ''}
+                    <div style="font-size:var(--fs-2);font-weight:600;">${nick || tag || platNome[c.marketplace]||c.marketplace}</div>
+                    <div style="font-size:var(--fs-1);color:var(--text-muted);">ID: ${c.external_id}</div>
+                    ${tag ? `<div style="font-size:var(--fs-1);color:var(--accent-light);">${tag}</div>` : ''}
                   </div>
-                  <button onclick="window._vincularProj('${c.external_id}')" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);color:var(--accent-light);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">+ vincular</button>
+                  <button onclick="window._vincularProj('${c.external_id}')" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);color:var(--accent-light);border-radius:6px;padding:4px 10px;font-size:var(--fs-1);font-weight:600;cursor:pointer;">+ vincular</button>
                 </div>`;
               }).join('')}
             </div>
-          </div>` : `<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:8px;">Todas as contas disponíveis já estão vinculadas.</div>`}
+          </div>` : `<div style="font-size:var(--fs-2);color:var(--text-muted);text-align:center;padding:var(--space-2);">Todas as contas disponíveis já estão vinculadas.</div>`}
 
-          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
-            <button id="btn-fechar-vinculos2" style="padding:8px 20px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card-hover);color:var(--text-primary);font-weight:600;cursor:pointer;">Fechar</button>
+          <div style="margin-top:var(--space-5);padding-top:var(--space-4);border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
+            <button id="btn-fechar-vinculos2" style="padding:var(--space-2) var(--space-5);border-radius:8px;border:1px solid var(--border);background:var(--bg-card-hover);color:var(--text-primary);font-weight:600;cursor:pointer;">Fechar</button>
           </div>
         </div>`;
 
@@ -1911,16 +1911,16 @@ Router.register('projecao', (params, el) => {
     </div>
     <div id="pj-lista"></div>
     <style>
-      .pj-head h1{margin:0;font-size:22px;letter-spacing:-.02em}.pj-head p{margin:4px 0 14px;color:var(--text-secondary);font-size:13px;max-width:90ch}
-      .pj-filtros{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}.pj-filtros label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary)}.pj-busca{flex:1;min-width:220px;max-width:380px}
-      .pj-resumo{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--text-secondary);margin-left:auto;padding-bottom:8px}.pj-resumo b{color:var(--text-primary);font-variant-numeric:tabular-nums}
-      .pj-item{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden}.pj-item.aberto{border-color:var(--accent)}
-      .pj-linha{width:100%;display:grid;grid-template-columns:18px minmax(180px,1.6fr) repeat(3,minmax(100px,1fr)) minmax(140px,1.2fr);gap:12px;align-items:center;padding:12px 16px;background:none;border:none;font:inherit;color:var(--text-primary);text-align:left;cursor:pointer}
+      .pj-head h1{margin:0;font-size:var(--fs-5);letter-spacing:-.02em}.pj-head p{margin:4px 0 14px;color:var(--text-secondary);font-size:var(--fs-3);max-width:90ch}
+      .pj-filtros{display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:flex-end;margin-bottom:var(--space-3)}.pj-filtros label{display:flex;flex-direction:column;gap:var(--space-1);font-size:var(--fs-2);color:var(--text-secondary)}.pj-busca{flex:1;min-width:220px;max-width:380px}
+      .pj-resumo{display:flex;gap:var(--space-4);flex-wrap:wrap;font-size:var(--fs-3);color:var(--text-secondary);margin-left:auto;padding-bottom:var(--space-2)}.pj-resumo b{color:var(--text-primary);font-variant-numeric:tabular-nums}
+      .pj-item{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;margin-bottom:var(--space-2);overflow:hidden}.pj-item.aberto{border-color:var(--accent)}
+      .pj-linha{width:100%;display:grid;grid-template-columns:18px minmax(180px,1.6fr) repeat(3,minmax(100px,1fr)) minmax(140px,1.2fr);gap:var(--space-3);align-items:center;padding:var(--space-3) var(--space-4);background:none;border:none;font:inherit;color:var(--text-primary);text-align:left;cursor:pointer}
       .pj-linha:hover{background:var(--bg-subtle)}.pj-linha:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-      .pj-seta{color:var(--text-muted)}.pj-nome b{display:block;font-size:14px}.pj-nome small,.pj-num small{display:block;font-size:11.5px;color:var(--text-muted)}
-      .pj-num b{font-size:14px;font-variant-numeric:tabular-nums}.pj-meta i{display:block;height:5px;border-radius:99px;background:var(--bg-subtle);margin-top:4px;overflow:hidden}.pj-meta em{display:block;height:100%}
-      .pj-det{border-top:1px solid var(--border);padding:4px 8px 8px}.pj-vazio{padding:28px;text-align:center;color:var(--text-secondary)}
-      .pj-volta{margin-bottom:8px}.pj-sozinho-h{padding:14px 16px 4px}.pj-sozinho-h b{display:block;font-size:16px}.pj-sozinho-h small{font-size:12px;color:var(--text-muted)}.pj-link{border:none;background:none;color:var(--accent);font:inherit;font-size:13px;cursor:pointer;padding:4px 0}
+      .pj-seta{color:var(--text-muted)}.pj-nome b{display:block;font-size:var(--fs-3)}.pj-nome small,.pj-num small{display:block;font-size:var(--fs-1);color:var(--text-muted)}
+      .pj-num b{font-size:var(--fs-3);font-variant-numeric:tabular-nums}.pj-meta i{display:block;height:5px;border-radius:99px;background:var(--bg-subtle);margin-top:var(--space-1);overflow:hidden}.pj-meta em{display:block;height:100%}
+      .pj-det{border-top:1px solid var(--border);padding:var(--space-1) var(--space-2) var(--space-2)}.pj-vazio{padding:28px;text-align:center;color:var(--text-secondary)}
+      .pj-volta{margin-bottom:var(--space-2)}.pj-sozinho-h{padding:14px 16px 4px}.pj-sozinho-h b{display:block;font-size:var(--fs-4)}.pj-sozinho-h small{font-size:var(--fs-2);color:var(--text-muted)}.pj-link{border:none;background:none;color:var(--accent);font:inherit;font-size:var(--fs-3);cursor:pointer;padding:var(--space-1) 0}
       @media (max-width:900px){.pj-linha{grid-template-columns:18px 1fr 1fr;}.pj-linha .pj-num:nth-of-type(3),.pj-linha .pj-num:nth-of-type(4){display:none}}
     </style>
   </div>`;
@@ -1933,9 +1933,9 @@ Router.register('projecao', (params, el) => {
 Router.register('relatorios', (params, el) => {
   if (!GLR.clientes.length) {
     el.innerHTML = `<div class="page"><div style="text-align:center;padding:80px 24px;">
-      <div style="font-size:40px;margin-bottom:12px;">📄</div>
-      <div style="font-size:16px;font-weight:700;margin-bottom:8px;">Nenhum cliente cadastrado</div>
-      <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Cadastre clientes para gerar relatórios.</div>
+      <div style="font-size:var(--fs-6);margin-bottom:var(--space-3);">📄</div>
+      <div style="font-size:var(--fs-4);font-weight:700;margin-bottom:var(--space-2);">Nenhum cliente cadastrado</div>
+      <div style="font-size:var(--fs-3);color:var(--text-muted);margin-bottom:var(--space-5);">Cadastre clientes para gerar relatórios.</div>
       <button class="btn btn-primary" onclick="Router.navigate('clientes')">Cadastrar cliente</button>
     </div></div>`;
     return;
@@ -2029,27 +2029,27 @@ Router.register('relatorios', (params, el) => {
     <div id="relatorio-preview" style="background:white;color:#111;border-radius:12px;padding:40px;max-width:820px;margin:0 auto;font-family:'Inter',sans-serif;">
 
       <!-- Cabeçalho -->
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:3px solid #1a2744;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:var(--space-5);border-bottom:3px solid #1a2744;">
         <div>
-          <div style="font-size:11px;color:#888;text-transform:none;letter-spacing:0;margin-bottom:6px;">Relatório de Gestão · Confidencial</div>
-          <div style="font-size:26px;font-weight:700;color:#1a2744;">${c.nome}</div>
-          <div style="font-size:13px;color:#666;margin-top:4px;">${mesAtual} ${anoAtual} · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
-          <div style="margin-top:8px;">
-            <span style="background:${sc}22;color:${sc};border:1px solid ${sc}44;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">${GLR.statusLabel[c.status]||c.status}</span>
+          <div style="font-size:var(--fs-1);color:#888;text-transform:none;letter-spacing:0;margin-bottom:6px;">Relatório de Gestão · Confidencial</div>
+          <div style="font-size:var(--fs-6);font-weight:700;color:#1a2744;">${c.nome}</div>
+          <div style="font-size:var(--fs-3);color:#666;margin-top:var(--space-1);">${mesAtual} ${anoAtual} · Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+          <div style="margin-top:var(--space-2);">
+            <span style="background:${sc}22;color:${sc};border:1px solid ${sc}44;padding:3px 10px;border-radius:20px;font-size:var(--fs-2);font-weight:600;">${GLR.statusLabel[c.status]||c.status}</span>
           </div>
         </div>
         <div style="text-align:right;">
-          <div style="width:60px;height:60px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:white;margin-left:auto;">${c.nome.charAt(0)}</div>
-          <div style="font-size:12px;color:#888;margin-top:8px;">Gestor: <strong style="color:#333;">${c.gestor||'—'}</strong></div>
-          <div style="font-size:12px;color:#888;">Responsável: <strong style="color:#333;">${c.responsavel||'—'}</strong></div>
-          ${GLR.comissao.temComissao(c) ? `<div style="font-size:12px;color:#888;">Comissão GLR: <strong style="color:#333;">${GLR.comissao.descricao(c)}</strong></div>` : ''}
+          <div style="width:60px;height:60px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:var(--fs-6);font-weight:700;color:white;margin-left:auto;">${c.nome.charAt(0)}</div>
+          <div style="font-size:var(--fs-2);color:#888;margin-top:var(--space-2);">Gestor: <strong style="color:#333;">${c.gestor||'—'}</strong></div>
+          <div style="font-size:var(--fs-2);color:#888;">Responsável: <strong style="color:#333;">${c.responsavel||'—'}</strong></div>
+          ${GLR.comissao.temComissao(c) ? `<div style="font-size:var(--fs-2);color:#888;">Comissão GLR: <strong style="color:#333;">${GLR.comissao.descricao(c)}</strong></div>` : ''}
         </div>
       </div>
 
       <!-- KPIs da Projeção -->
       ${plats.length ? `
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:14px;color:#1a2744;">Projeção do Mês — ${proj?.mes || mesAtual+' '+anoAtual}</div>
+        <div style="font-size:var(--fs-4);font-weight:700;margin-bottom:14px;color:#1a2744;">Projeção do Mês — ${proj?.mes || mesAtual+' '+anoAtual}</div>
         <div style="display:grid;grid-template-columns:repeat(${receitaGLR>0?5:4},1fr);gap:10px;">
           ${[
             { l:'Faturamento Projetado', v: fmtFull(fatProj), icon:'💰', c:'#6366f1' },
@@ -2059,22 +2059,22 @@ Router.register('relatorios', (params, el) => {
             ...(receitaGLR>0 ? [{ l:'Receita GLR', v: fmtFull(receitaGLR), icon:'🏆', c:'#10b981' }] : []),
           ].map(k=>`
             <div style="background:var(--bg-subtle);border:1px solid #e5e7eb;border-radius:8px;padding:14px;text-align:center;">
-              <div style="font-size:20px;margin-bottom:4px;">${k.icon}</div>
-              <div style="font-size:15px;font-weight:700;color:${k.c};">${k.v}</div>
-              <div style="font-size:10px;color:#888;margin-top:2px;text-transform:none;letter-spacing:0;">${k.l}</div>
+              <div style="font-size:var(--fs-5);margin-bottom:var(--space-1);">${k.icon}</div>
+              <div style="font-size:var(--fs-4);font-weight:700;color:${k.c};">${k.v}</div>
+              <div style="font-size:var(--fs-1);color:#888;margin-top:2px;text-transform:none;letter-spacing:0;">${k.l}</div>
             </div>`).join('')}
         </div>
-        ${pctADS>0?`<div style="margin-top:10px;font-size:12px;color:#888;text-align:right;">% ADS sobre Faturamento: <strong style="color:var(--yellow);">${pctADS.toFixed(1)}%</strong> · Dias decorridos: <strong>${dd}</strong> de <strong>${dm}</strong></div>`:''}
+        ${pctADS>0?`<div style="margin-top:10px;font-size:var(--fs-2);color:#888;text-align:right;">% ADS sobre Faturamento: <strong style="color:var(--yellow);">${pctADS.toFixed(1)}%</strong> · Dias decorridos: <strong>${dd}</strong> de <strong>${dm}</strong></div>`:''}
       </div>` : `
-      <div style="margin-bottom:24px;padding:16px;background:var(--bg-subtle);border-radius:8px;text-align:center;color:#888;font-size:13px;">
+      <div style="margin-bottom:var(--space-6);padding:var(--space-4);background:var(--bg-subtle);border-radius:8px;text-align:center;color:#888;font-size:var(--fs-3);">
         Nenhuma projeção cadastrada para este cliente. <a href="#projecao" style="color:var(--accent);">Cadastrar projeção</a>
       </div>`}
 
       <!-- Plataformas -->
       ${plats.length ? `
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#1a2744;">Desempenho por Plataforma</div>
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <div style="font-size:var(--fs-4);font-weight:700;margin-bottom:var(--space-3);color:#1a2744;">Desempenho por Plataforma</div>
+        <table style="width:100%;border-collapse:collapse;font-size:var(--fs-3);">
           <thead>
             <tr style="background:var(--bg-subtle);color:var(--text-secondary);">
               <th style="padding:9px 12px;text-align:left;border-radius:6px 0 0 0;">Plataforma</th>
@@ -2115,7 +2115,7 @@ Router.register('relatorios', (params, el) => {
       <!-- Comparativo de Faturamento -->
       ${(fatAtual > 0 || fatProj > 0 || histAnteriores.length > 0) ? `
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:14px;color:#1a2744;">Comparativo de Faturamento — ${mesAnoAtual}</div>
+        <div style="font-size:var(--fs-4);font-weight:700;margin-bottom:14px;color:#1a2744;">Comparativo de Faturamento — ${mesAnoAtual}</div>
 
         ${(()=>{
           // Monta todas as linhas: Atual + Projeção + meses anteriores
@@ -2136,23 +2136,23 @@ Router.register('relatorios', (params, el) => {
               badgeColor: subiu ? '#10b981' : '#ef4444' });
           });
 
-          if (!linhas.length) return '<div style="color:#888;font-size:13px;">Nenhum dado de faturamento disponível.</div>';
+          if (!linhas.length) return '<div style="color:#888;font-size:var(--fs-3);">Nenhum dado de faturamento disponível.</div>';
 
           const maxV = Math.max(...linhas.map(l => l.v));
           return linhas.map(l => {
             const pct = maxV > 0 ? (l.v / maxV) * 100 : 0;
             return `
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:10px;">
               <div style="width:100px;text-align:right;flex-shrink:0;">
-                <div style="font-size:12px;font-weight:600;color:#333;">${l.label}</div>
-                ${l.sub ? `<div style="font-size:10px;color:#888;">${l.sub}</div>` : ''}
+                <div style="font-size:var(--fs-2);font-weight:600;color:#333;">${l.label}</div>
+                ${l.sub ? `<div style="font-size:var(--fs-1);color:#888;">${l.sub}</div>` : ''}
               </div>
               <div style="flex:1;background:#f0f0f5;border-radius:6px;height:28px;overflow:hidden;">
                 <div style="width:${pct.toFixed(1)}%;min-width:${l.v>0?'60px':'0'};height:100%;background:${l.color};border-radius:6px;display:flex;align-items:center;padding:0 10px;box-sizing:border-box;">
-                  <span style="font-size:11px;font-weight:700;color:white;white-space:nowrap;">${fmtFull(l.v)}</span>
+                  <span style="font-size:var(--fs-1);font-weight:700;color:white;white-space:nowrap;">${fmtFull(l.v)}</span>
                 </div>
               </div>
-              <div style="width:130px;font-size:11px;font-weight:700;color:${l.badgeColor||l.color};flex-shrink:0;">
+              <div style="width:130px;font-size:var(--fs-1);font-weight:700;color:${l.badgeColor||l.color};flex-shrink:0;">
                 ${l.badge || ''}
               </div>
             </div>`;
@@ -2163,8 +2163,8 @@ Router.register('relatorios', (params, el) => {
       <!-- DRE mais recente -->
       ${dreRecente ? `
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#1a2744;">DRE — ${meses[dreRecente.mes]} ${dreRecente.ano} · ${dreRecente.plataforma}</div>
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <div style="font-size:var(--fs-4);font-weight:700;margin-bottom:var(--space-3);color:#1a2744;">DRE — ${meses[dreRecente.mes]} ${dreRecente.ano} · ${dreRecente.plataforma}</div>
+        <table style="width:100%;border-collapse:collapse;font-size:var(--fs-3);">
           ${[
             { l:'Faturamento', v: dreRecente.valores.faturamento, receita: true },
             { l:'Comissão e Frete', v: dreRecente.valores.comissaoFrete },
@@ -2178,9 +2178,9 @@ Router.register('relatorios', (params, el) => {
             const fat = parseFloat(dreRecente.valores.faturamento)||0;
             const pct = fat>0?((parseFloat(r.v)||0)/fat*100):0;
             return `<tr style="background:${i%2===0?'var(--bg-subtle)':'white'};">
-              <td style="padding:8px 12px;font-style:italic;${r.receita?'font-weight:700;':''}">${r.l}</td>
-              <td style="padding:8px 12px;text-align:right;${r.receita?'font-weight:700;':''}">${fmtFull(parseFloat(r.v)||0)}</td>
-              <td style="padding:8px 12px;text-align:right;color:#888;">${pct.toFixed(2)}%</td>
+              <td style="padding:var(--space-2) var(--space-3);font-style:italic;${r.receita?'font-weight:700;':''}">${r.l}</td>
+              <td style="padding:var(--space-2) var(--space-3);text-align:right;${r.receita?'font-weight:700;':''}">${fmtFull(parseFloat(r.v)||0)}</td>
+              <td style="padding:var(--space-2) var(--space-3);text-align:right;color:#888;">${pct.toFixed(2)}%</td>
             </tr>`;
           }).join('')}
           ${(()=>{
@@ -2188,7 +2188,7 @@ Router.register('relatorios', (params, el) => {
             const custos = ['comissaoFrete','produtos','ads','imposto','juros','custoFixo','comissaoGLR'].reduce((s,k)=>s+(parseFloat(dreRecente.valores[k])||0),0);
             const res = fat-custos;
             const pct = fat>0?(res/fat*100):0;
-            return `<tr style="background:var(--bg-subtle);font-weight:700;font-size:14px;">
+            return `<tr style="background:var(--bg-subtle);font-weight:700;font-size:var(--fs-3);">
               <td style="padding:10px 12px;">Resultado</td>
               <td style="padding:10px 12px;text-align:right;color:${res>=0?'var(--green)':'var(--red)'};">${fmtFull(res)}</td>
               <td style="padding:10px 12px;text-align:right;color:${res>=0?'var(--green)':'var(--red)'};">${pct.toFixed(2)}%</td>
@@ -2196,7 +2196,7 @@ Router.register('relatorios', (params, el) => {
           })()}
         </table>
         ${dreRecente.valores.produtosVendidos>0?`
-        <div style="margin-top:10px;display:flex;gap:16px;font-size:12px;color:#888;">
+        <div style="margin-top:10px;display:flex;gap:var(--space-4);font-size:var(--fs-2);color:#888;">
           <span>Produtos Vendidos: <strong style="color:#333;">${Math.round(dreRecente.valores.produtosVendidos)}</strong></span>
           ${dreRecente.valores.faturamento>0&&dreRecente.valores.produtosVendidos>0?`<span>Ticket Médio: <strong style="color:#333;">${fmtFull(parseFloat(dreRecente.valores.faturamento)/parseFloat(dreRecente.valores.produtosVendidos))}</strong></span>`:''}
         </div>` : ''}
@@ -2204,50 +2204,50 @@ Router.register('relatorios', (params, el) => {
 
       <!-- Ações Executadas -->
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:#1a2744;">Ações Executadas</div>
+        <div style="font-size:var(--fs-4);font-weight:700;margin-bottom:var(--space-3);color:#1a2744;">Ações Executadas</div>
         ${acoes.length ? `
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <table style="width:100%;border-collapse:collapse;font-size:var(--fs-3);">
           ${acoes.slice(0,10).map((a,i)=>`
           <tr style="background:${i%2===0?'var(--bg-subtle)':'white'};">
-            <td style="padding:8px 12px;color:#888;white-space:nowrap;">${a.data?new Date(a.data+'T00:00:00').toLocaleDateString('pt-BR'):''}</td>
-            <td style="padding:8px 12px;"><span style="background:#6366f111;color:var(--accent);padding:2px 8px;border-radius:20px;font-size:11px;">${a.categoria||a.tipo||''}</span></td>
-            <td style="padding:8px 12px;">${a.descricao||''}</td>
-            <td style="padding:8px 12px;color:#888;">${a.responsavel||''}</td>
+            <td style="padding:var(--space-2) var(--space-3);color:#888;white-space:nowrap;">${a.data?new Date(a.data+'T00:00:00').toLocaleDateString('pt-BR'):''}</td>
+            <td style="padding:var(--space-2) var(--space-3);"><span style="background:#6366f111;color:var(--accent);padding:2px 8px;border-radius:20px;font-size:var(--fs-1);">${a.categoria||a.tipo||''}</span></td>
+            <td style="padding:var(--space-2) var(--space-3);">${a.descricao||''}</td>
+            <td style="padding:var(--space-2) var(--space-3);color:#888;">${a.responsavel||''}</td>
           </tr>`).join('')}
-        </table>` : '<div style="color:#888;font-size:13px;padding:8px 0;">Nenhuma ação registrada para este cliente.</div>'}
+        </table>` : '<div style="color:#888;font-size:var(--fs-3);padding:var(--space-2) 0;">Nenhuma ação registrada para este cliente.</div>'}
       </div>
 
       <!-- Oportunidades -->
       ${opps.length ? `
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:var(--green);">Oportunidades</div>
+        <div style="font-size:var(--fs-4);font-weight:700;margin-bottom:var(--space-3);color:var(--green);">Oportunidades</div>
         ${opps.map(o=>`
-          <div style="padding:10px 14px;background:#10b98108;border:1px solid #10b98133;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+          <div style="padding:10px 14px;background:#10b98108;border:1px solid #10b98133;border-radius:8px;margin-bottom:var(--space-2);display:flex;justify-content:space-between;align-items:center;">
             <div>
-              <div style="font-weight:600;font-size:13.5px;">${o.titulo}</div>
-              <div style="font-size:12px;color:#666;margin-top:2px;">${o.descricao||''}</div>
+              <div style="font-weight:600;font-size:var(--fs-3);">${o.titulo}</div>
+              <div style="font-size:var(--fs-2);color:#666;margin-top:2px;">${o.descricao||''}</div>
             </div>
-            ${o.impacto?`<div style="font-weight:700;color:var(--green);white-space:nowrap;margin-left:16px;">${fmtFull(o.impacto)}/mês</div>`:''}
+            ${o.impacto?`<div style="font-weight:700;color:var(--green);white-space:nowrap;margin-left:var(--space-4);">${fmtFull(o.impacto)}/mês</div>`:''}
           </div>`).join('')}
       </div>` : ''}
 
       <!-- Próximos Passos -->
       <div style="margin-bottom:28px;">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px;color:var(--yellow);">Próximos Passos</div>
+        <div style="font-size:var(--fs-4);font-weight:700;margin-bottom:var(--space-3);color:var(--yellow);">Próximos Passos</div>
         ${tarefasPend.length ? `
-        <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;flex-direction:column;gap:var(--space-2);">
           ${tarefasPend.map((t,i)=>`
-            <div style="display:flex;gap:10px;align-items:center;padding:8px 12px;background:var(--bg-subtle);border-radius:6px;">
-              <div style="width:22px;height:22px;border-radius:50%;background:var(--bg-subtle);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${i+1}</div>
-              <div style="flex:1;font-size:13px;">${t.titulo}</div>
-              <div style="font-size:12px;color:#888;">${t.prazo?new Date(t.prazo+'T00:00:00').toLocaleDateString('pt-BR'):''}</div>
-              <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${{urgente:'#ef444422',alta:'#f9731622',media:'#f59e0b22',baixa:'#10b98122'}[t.prioridade]||'#88888822'};color:${{urgente:'var(--red)',alta:'#f97316',media:'var(--yellow)',baixa:'var(--green)'}[t.prioridade]||'#888'};">${t.prioridade||''}</span>
+            <div style="display:flex;gap:10px;align-items:center;padding:var(--space-2) var(--space-3);background:var(--bg-subtle);border-radius:6px;">
+              <div style="width:22px;height:22px;border-radius:50%;background:var(--bg-subtle);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;font-size:var(--fs-1);font-weight:700;flex-shrink:0;">${i+1}</div>
+              <div style="flex:1;font-size:var(--fs-3);">${t.titulo}</div>
+              <div style="font-size:var(--fs-2);color:#888;">${t.prazo?new Date(t.prazo+'T00:00:00').toLocaleDateString('pt-BR'):''}</div>
+              <span style="font-size:var(--fs-1);padding:2px 8px;border-radius:20px;background:${{urgente:'#ef444422',alta:'#f9731622',media:'#f59e0b22',baixa:'#10b98122'}[t.prioridade]||'#88888822'};color:${{urgente:'var(--red)',alta:'#f97316',media:'var(--yellow)',baixa:'var(--green)'}[t.prioridade]||'#888'};">${t.prioridade||''}</span>
             </div>`).join('')}
-        </div>` : '<div style="color:#888;font-size:13px;">Sem tarefas pendentes.</div>'}
+        </div>` : '<div style="color:#888;font-size:var(--fs-3);">Sem tarefas pendentes.</div>'}
       </div>
 
       <!-- Rodapé -->
-      <div style="margin-top:32px;padding-top:16px;border-top:2px solid #1a2744;display:flex;justify-content:space-between;font-size:11.5px;color:#888;">
+      <div style="margin-top:var(--space-8);padding-top:var(--space-4);border-top:2px solid #1a2744;display:flex;justify-content:space-between;font-size:var(--fs-1);color:#888;">
         <span><strong style="color:#1a2744;">GLR Consultoria</strong> · Gestor: ${c.gestor||'—'}</span>
         <span>Confidencial · ${mesAtual} ${anoAtual}</span>
       </div>
@@ -2255,8 +2255,8 @@ Router.register('relatorios', (params, el) => {
   }
 
   el.innerHTML = `<div class="page">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
-      <div style="display:flex;align-items:center;gap:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-5);flex-wrap:wrap;gap:var(--space-3);">
+      <div style="display:flex;align-items:center;gap:var(--space-3);">
         <label class="form-label" style="margin:0;white-space:nowrap;">Cliente:</label>
         <select class="form-control" id="rel-cliente" style="min-width:220px;" onchange="relClienteChange(this.value)">
           ${GLR.clientes.map(c=>`<option value="${c.id}" ${c.id===clienteSel?'selected':''}>${glrEsc(c.nome)}</option>`).join('')}
@@ -2388,22 +2388,22 @@ Router.register('ia', (params, el) => {
     return `Entendi sua pergunta sobre **"${pergunta}"**.\n\nAqui está um resumo da carteira atual:\n\n📊 **${total}** clientes cadastrados\n💰 **${GLR.formatCurrency(fatTotal)}** de faturamento total\n📈 **${crescMedio>=0?'+':''}${crescMedio.toFixed(1)}%** crescimento médio\n⚠️ **${emRisco}** cliente${emRisco!==1?'s':''} em risco ou queda\n✅ **${ta.filter(t=>t.status==='concluida').length}** tarefas concluídas\n\nUse as perguntas sugeridas ao lado para análises mais detalhadas.`;
   }
 
-  el.innerHTML = `<div class="page" style="height:calc(100vh - ${64+24}px);display:flex;gap:16px;">
+  el.innerHTML = `<div class="page" style="height:calc(100vh - ${64+24}px);display:flex;gap:var(--space-4);">
     <!-- Painel de sugestões -->
-    <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;">
+    <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:var(--space-2);">
       <div class="card" style="flex-shrink:0;">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-          <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:16px;">🤖</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:var(--space-3);">
+          <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:var(--fs-4);">🤖</div>
           <div>
-            <div style="font-size:14px;font-weight:700;">GLR IA Copiloto</div>
-            <div style="font-size:11px;color:var(--green);">● Online</div>
+            <div style="font-size:var(--fs-3);font-weight:700;">GLR IA Copiloto</div>
+            <div style="font-size:var(--fs-1);color:var(--green);">● Online</div>
           </div>
         </div>
-        <div style="font-size:12.5px;color:var(--text-secondary);">Analiso os dados reais da sua carteira — clientes, tarefas, gestores e faturamentos cadastrados no sistema.</div>
+        <div style="font-size:var(--fs-2);color:var(--text-secondary);">Analiso os dados reais da sua carteira — clientes, tarefas, gestores e faturamentos cadastrados no sistema.</div>
       </div>
 
       <div class="card" style="flex:1;overflow-y:auto;">
-        <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-bottom:10px;">Perguntas Sugeridas</div>
+        <div style="font-size:var(--fs-2);font-weight:600;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-bottom:10px;">Perguntas Sugeridas</div>
         <div style="display:flex;flex-direction:column;gap:6px;">
           ${sugestoes.map(s => `
             <button class="ia-chip" style="text-align:left;justify-content:flex-start;border-radius:var(--radius-sm);" onclick="sendIAMessage('${s.replace(/'/g, "\\'")}')">
@@ -2416,16 +2416,16 @@ Router.register('ia', (params, el) => {
 
     <!-- Chat -->
     <div class="card" style="flex:1;display:flex;flex-direction:column;padding:0;overflow:hidden;">
-      <div id="ia-messages" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;">
+      <div id="ia-messages" style="flex:1;overflow-y:auto;padding:var(--space-5);display:flex;flex-direction:column;gap:var(--space-4);">
         <div style="display:flex;gap:10px;">
-          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
+          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:var(--fs-3);flex-shrink:0;">🤖</div>
           <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;max-width:80%;">
-            <div style="font-size:14px;font-weight:600;margin-bottom:6px;color:var(--accent-light);">Olá! Sou o Copiloto da GLR 👋</div>
-            <div style="font-size:13.5px;color:var(--text-secondary);line-height:1.6;">Analiso os dados reais cadastrados no sistema — sem inventar nada. Clientes, tarefas, gestores e faturamentos. Pergunte o que quiser!</div>
+            <div style="font-size:var(--fs-3);font-weight:600;margin-bottom:6px;color:var(--accent-light);">Olá! Sou o Copiloto da GLR 👋</div>
+            <div style="font-size:var(--fs-3);color:var(--text-secondary);line-height:1.6;">Analiso os dados reais cadastrados no sistema — sem inventar nada. Clientes, tarefas, gestores e faturamentos. Pergunte o que quiser!</div>
           </div>
         </div>
       </div>
-      <div style="padding:16px;border-top:1px solid var(--border);display:flex;gap:10px;">
+      <div style="padding:var(--space-4);border-top:1px solid var(--border);display:flex;gap:10px;">
         <input class="ia-input" id="ia-input-field" placeholder="Pergunte sobre sua carteira de clientes..." onkeydown="if(event.key==='Enter')sendIAMessage()">
         <button class="btn btn-primary" onclick="sendIAMessage()" style="flex-shrink:0;">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -2444,15 +2444,15 @@ Router.register('ia', (params, el) => {
     const messagesDiv = document.getElementById('ia-messages');
 
     messagesDiv.innerHTML += `<div style="display:flex;gap:10px;flex-direction:row-reverse;">
-      <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:white;flex-shrink:0;">EU</div>
-      <div style="background:var(--accent);border-radius:var(--radius);padding:12px 16px;max-width:80%;color:white;font-size:13.5px;">${userMsg}</div>
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:var(--fs-3);font-weight:700;color:white;flex-shrink:0;">EU</div>
+      <div style="background:var(--accent);border-radius:var(--radius);padding:var(--space-3) var(--space-4);max-width:80%;color:white;font-size:var(--fs-3);">${userMsg}</div>
     </div>`;
 
     const typingId = 'typing-' + Date.now();
     messagesDiv.innerHTML += `<div id="${typingId}" style="display:flex;gap:10px;">
-      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
-      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;">
-        <div style="display:flex;gap:4px;align-items:center;">
+      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:var(--fs-3);flex-shrink:0;">🤖</div>
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-3) var(--space-4);">
+        <div style="display:flex;gap:var(--space-1);align-items:center;">
           <div style="width:6px;height:6px;border-radius:50%;background:var(--text-muted);animation:pulse 1s infinite;"></div>
           <div style="width:6px;height:6px;border-radius:50%;background:var(--text-muted);animation:pulse 1s 0.2s infinite;"></div>
           <div style="width:6px;height:6px;border-radius:50%;background:var(--text-muted);animation:pulse 1s 0.4s infinite;"></div>
@@ -2471,8 +2471,8 @@ Router.register('ia', (params, el) => {
         .replace(/\n/g, '<br>');
 
       messagesDiv.innerHTML += `<div style="display:flex;gap:10px;">
-        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🤖</div>
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;max-width:85%;font-size:13.5px;line-height:1.7;color:var(--text-secondary);">${formatted}</div>
+        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:var(--fs-3);flex-shrink:0;">🤖</div>
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;max-width:85%;font-size:var(--fs-3);line-height:1.7;color:var(--text-secondary);">${formatted}</div>
       </div>`;
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }, 600 + Math.random() * 500);
