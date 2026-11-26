@@ -50,7 +50,7 @@ Router.register('atendimento-ia', (params, el) => {
     if (window._aiaSt !== st) return;
     const root = document.getElementById('aia-root'); if (!root) return;
     if (st.carregando && !st.itens.length) { root.innerHTML = '<div class="card aia-vazio">Carregando os atendimentos…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card aia-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card aia-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     if (st.liberado === false) { root.innerHTML = '<div class="card aia-vazio"><b>O Atendimento com IA não está ativo na sua conta.</b><span>Fale com a GLR Consultoria para ativar.</span></div>'; return; }
     const r = st.resumo || {}, n = k => st.itens.filter(i => naAba(i, k)).length;
     const lista = st.itens.filter(i => naAba(i, st.aba));

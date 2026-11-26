@@ -39,7 +39,7 @@ Router.register('conversao-ml', (params, el) => {
     if (window._cvSt !== st) return;
     const root = document.getElementById('cv-root'); if (!root) return;
     if (st.carregando && !st.contas.length) { root.innerHTML = '<div class="card cv-vazio">Carregando…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card cv-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card cv-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     const cs = doFoco(), foco = GLR.ctx?.cliente();
     const soma = k => cs.reduce((s, c) => s + (c.resumo?.[k] || 0), 0);
     const perd = linhas('perdendo'), eleg = linhas('elegiveis');

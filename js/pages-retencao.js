@@ -50,7 +50,7 @@ Router.register('retencao', (params, el) => {
     if (window._rtSt !== st) return;
     const root = document.getElementById('rt-root'); if (!root) return;
     if (st.carregando && !st.clientes.length) { root.innerHTML = '<div class="card rt-vazio">Carregando…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card rt-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card rt-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     if (!st.em) { root.innerHTML = `<div class="card rt-vazio"><b>O agente ainda não avaliou a carteira.</b><span>Ele roda todo dia às 7h.</span><button class="btn btn-primary btn-sm" style="margin-top:10px" ${st.atualizando ? 'disabled' : ''} onclick="window._rtAtualizar()">${st.atualizando ? 'Avaliando…' : 'Avaliar agora'}</button></div>`; return; }
     const foco = GLR.ctx?.cliente();
     const base = st.clientes.filter(x => !foco || x.id === String(foco)).map(x => ({ ...x, nome: cliente(x.id)?.nome || x.nome, com: comissaoMes(x) }));

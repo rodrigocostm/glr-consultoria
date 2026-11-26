@@ -111,7 +111,7 @@ window.GLRDashClientes = (function () {
 
   function render() {
     const el = st.el; if (!el || !el.isConnected) return;
-    if (st.erro) { el.innerHTML = `<div class="card dc-vazio" style="color:var(--red)">Não consegui carregar os clientes: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { el.innerHTML = `<div class="card dc-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro, oque: 'os clientes' })}</div>`; return; }
     if (!st.base) { el.innerHTML = '<div class="card dc-vazio">Carregando os clientes…</div>'; return; }
     const foco = GLR.ctx?.cliente();
     const carteira = calcular();

@@ -30,7 +30,7 @@ Router.register('blog', (params, el) => {
     if (window._blSt !== st) return;
     const root = document.getElementById('bl-root'); if (!root) return;
     if (st.carregando && !st.posts.length) { root.innerHTML = '<div class="card bl-vazio">Carregando…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card bl-vazio" style="color:var(--red)">Não consegui carregar o blog: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card bl-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro, oque: 'o blog' })}</div>`; return; }
     const cont = k => st.posts.filter(p => p.status === k).length;
     const lista = st.posts.filter(p => p.status === st.aba).sort((a, b) => String(b.publicado_em || b.criado_em).localeCompare(String(a.publicado_em || a.criado_em)));
     root.innerHTML = `

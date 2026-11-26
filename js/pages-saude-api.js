@@ -94,7 +94,7 @@ Router.register('saude-api', (params, el) => {
   function render() {
     const root = document.getElementById('sa-root'); if (!root) return;
     if (st.carregando && !st.dados) { root.innerHTML = '<div class="card sa-vazio">Carregando…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card sa-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card sa-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     const contas = Object.values(st.dados?.contas || {});
     if (!contas.length) {
       root.innerHTML = `<div class="card sa-vazio">A primeira conferência ainda não rodou (ela roda de hora em hora).<div style="margin-top:12px"><button class="btn btn-primary btn-sm" ${st.conferindo ? 'disabled' : ''} onclick="window._saConferir()">${st.conferindo ? 'Conferindo… (até 4 min)' : 'Conferir agora'}</button></div></div>`;

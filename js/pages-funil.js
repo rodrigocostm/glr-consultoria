@@ -105,7 +105,7 @@ Router.register('funil', (params, el) => {
     // cliente em foco (barra de cima): o seletor de cliente vira o nome dele (roda depois que a tela é desenhada)
     if (typeof GLR !== 'undefined' && GLR.ctx?.cliente?.() === st.cliente) queueMicrotask(() => GLR.ctx.ajustarSeletor?.(root.querySelector('#fn-cli'), { cliente: true, semTodas: true, disparar: false }));
     if (st.carregando && !st.dados) { root.innerHTML = filtros + '<div class="card fn-vazio">Carregando o funil…</div>'; return; }
-    if (st.erro) { root.innerHTML = filtros + `<div class="card fn-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = filtros + `<div class="card fn-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     if (!sel.size) { root.innerHTML = filtros + '<div class="card fn-vazio">Nenhuma conta do Mercado Livre ou da Shopee vinculada a este filtro.</div>'; return; }
 
     const a = etapas(st.dados.d0, sel), b = etapas(st.dados.d1, sel);

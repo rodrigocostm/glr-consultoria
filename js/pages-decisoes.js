@@ -325,7 +325,7 @@ Router.register('decisoes', (params, el) => {
     if (window._dcSt !== st) return;
     const root = document.getElementById('dc-root'); if (!root) return;
     if (st.carregando && !st.itens.length) { root.innerHTML = '<div class="dc-carregando"><span></span><span></span><span></span></div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card" style="padding:18px;color:var(--red)">Não consegui carregar as decisões: ${h(st.erro)} <button class="btn btn-secondary btn-sm" onclick="window._dcRecarregar()">Tentar de novo</button></div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card glr-estado-card">${GLR.estado('erro', { erro: st.erro, oque: 'as decisões' })}</div>`; return; }
     const B = base();
     // abre na faixa mais importante que tem algo
     if (!st.faixa) st.faixa = (FAIXAS.find(f => f.k !== 'todas' && B.some(f.ok)) || FAIXAS[3]).k;

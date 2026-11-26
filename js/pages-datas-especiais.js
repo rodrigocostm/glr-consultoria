@@ -125,7 +125,7 @@ function paginaDatasEspeciais(params, el) {
   function render() {
     const root = document.getElementById('bf-root'); if (!root) return;
     if (st.carregando && !st.lojas.length) { root.innerHTML = '<div class="card bf-vazio">Carregando…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card bf-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card bf-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     const e = EV(); if (!e) { root.innerHTML = '<div class="card bf-vazio">Nenhuma data especial nos próximos meses.</div>'; return; }
     const FIM = e.fim, p = pesos(), cont = contador();
     const foco = GLR.ctx?.cliente();

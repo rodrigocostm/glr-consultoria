@@ -51,7 +51,7 @@ Router.register('meu-estoque', (params, el) => {
   function render() {
     const root = document.getElementById('me-root'); if (!root) return;
     if (st.carregando && !st.produtos.length) { root.innerHTML = '<div class="card me-vazio">Lendo o estoque dos anúncios nas lojas…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card me-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card me-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     const q = st.busca.trim().toLowerCase();
     const multi = st.produtos.filter(p => p.anuncios.length > 1).length, div = st.produtos.filter(p => p.diverge).length, zer = st.produtos.filter(p => p.estoque === 0).length;
     const F = { todos: () => true, multi: p => p.anuncios.length > 1, diverge: p => p.diverge, zerado: p => p.estoque === 0 };

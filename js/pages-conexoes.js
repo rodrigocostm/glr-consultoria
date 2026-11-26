@@ -54,7 +54,7 @@ Router.register('conexoes', (params, el) => {
   function render() {
     const root = document.getElementById('cx-root'); if (!root) return;
     if (st.carregando && !st.contas.length) { root.innerHTML = '<div class="card cx-vazio">Carregando…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card cx-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card cx-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     if (!st.contas.length) {
       root.innerHTML = `<div class="card cx-vazio">A primeira verificação ainda não rodou (ela roda de hora em hora).<div style="margin-top:12px"><button class="btn btn-primary btn-sm" ${st.verificando ? 'disabled' : ''} onclick="window._cxVerificar()">${st.verificando ? 'Verificando…' : 'Verificar agora'}</button></div></div>`;
       return;

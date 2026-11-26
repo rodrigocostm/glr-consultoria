@@ -40,7 +40,7 @@ Router.register('relatorio-semanal', (params, el) => {
   function render() {
     const root = document.getElementById('rs-root'); if (!root) return;
     if (st.carregando && !st.lista.length) { root.innerHTML = '<div class="card rs-vazio">Carregando…</div>'; return; }
-    if (st.erro) { root.innerHTML = `<div class="card rs-vazio" style="color:var(--red)">Não consegui carregar: ${h(st.erro)}</div>`; return; }
+    if (st.erro) { root.innerHTML = `<div class="card rs-vazio glr-estado-card">${GLR.estado('erro', { erro: st.erro })}</div>`; return; }
     const foco = GLR.ctx?.cliente();
     const lista = st.lista.filter(r => !foco || String(r.cid) === String(foco))
       .sort((a, b) => (b.numeros?.total?.fat || 0) - (a.numeros?.total?.fat || 0));
