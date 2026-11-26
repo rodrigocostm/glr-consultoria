@@ -13,6 +13,86 @@
 // vendas caíram…), o registro guarda essa consulta (dados.colaboracoes). Ela
 // vira um diálogo: quem decide pergunta, quem tem o dado responde com o dado
 // real, e quem decide fecha com a decisão que tomou. Nada além do registrado.
+// O quadro não refaz as consultas pesadas a cada evento: aplica o registro novo
+// e só reconcilia tudo a cada 3 min, no botão Atualizar ou ao trocar o cliente.
+// Com cliente em foco, as consultas ficam nas contas dele.
+// ============================================================
+const RECURSOS_SYNC = ['pedidos', 'ads', 'resumo', 'precos', 'oportunidades'];
+function contasDoFoco(clienteId, vinculos) {
+  const cid = String(clienteId || '');
+  if (!cid) return null;
+  const ids = [];
+  for (const ct of ((vinculos || {})[cid] || [])) {
+    for (const v of [ct?.param_to_use?.shopId, ct?.param_to_use?.meliUserId, ct?.external_id]) {
+      if (v != null && String(v) !== '' && !ids.includes(String(v))) ids.push(String(v));
+    }
+  }
+  return { cid, ids };
+}
+function cabeNoFoco(row, foco) {
+  if (!foco) return true;
+  const conta = String(row?.conta_id || '');
+  if (row?.recurso === 'plano' || conta.startsWith('cliente:')) return conta === `cliente:${foco.cid}`;
+  if (row?.marketplace === 'sistema' && row?.recurso === 'agenda') return true;
+  if (!foco.ids.length) return false;
+  return foco.ids.includes(conta);
+}
+function upsertLista(lista, row, chave) {
+  const k = chave(row);
+  const i = lista.findIndex(x => chave(x) === k);
+  if (i >= 0) lista[i] = { ...lista[i], ...row };
+  else lista.unshift(row);
+}
+function linhaEstado(row) {
+  const c = row.cursor || {};
+  return {
+    marketplace: row.marketplace, conta_id: String(row.conta_id || ''), recurso: row.recurso,
+    ultimo_sucesso: row.ultimo_sucesso, ultima_tentativa: row.ultima_tentativa, ultimo_erro: row.ultimo_erro, registros: row.registros,
+    resumo: c.resumo, destaques: c.destaques, cliente: c.cliente, semaforo: c.semaforo, acoes: c.acoes,
+  };
+}
+function aplicarDelta(state, tabela, payload, foco) {
+  const ev = payload.eventType || payload.event || 'UPDATE';
+  const row = ev === 'DELETE' ? payload.old : payload.new;
+  if (!row) return false;
+  if (tabela === 'glr_agente_relatorios') {
+    if (ev !== 'DELETE' && !cabeNoFoco(row, foco)) return true;
+    if (ev === 'DELETE') state.rels = state.rels.filter(r => r.id !== row.id);
+    else upsertLista(state.rels, row, r => r.id);
+    return true;
+  }
+  if (tabela === 'glr_agente_log') {
+    const pendia = r => !!(r && r.tipo === 'alerta' && r.resultado === 'so_alerta' && cabeNoFoco(r, foco));
+    if (pendia(payload.old) && !(ev !== 'DELETE' && pendia(row))) state.pendentes = Math.max(0, (state.pendentes || 0) - 1);
+    if (!pendia(payload.old) && ev !== 'DELETE' && pendia(row)) state.pendentes = (state.pendentes || 0) + 1;
+    if (!cabeNoFoco(row, foco)) { state.logs = state.logs.filter(l => l.id !== row.id); return true; }
+    if (ev === 'DELETE') state.logs = state.logs.filter(l => l.id !== row.id);
+    else upsertLista(state.logs, row, l => l.id);
+    return true;
+  }
+  if (tabela !== 'glr_sync_estado') return false;
+  if (row.recurso === 'chat_job') return true;
+  if (row.recurso === 'agenda' && String(row.conta_id) === 'agente') { state.agenda = row.cursor?.rodadas || {}; return true; }
+  if (row.recurso === 'chat' && String(row.conta_id || '').includes(':escritorio')) {
+    if (state.uid && !String(row.conta_id).startsWith(`chat:${state.uid}:`)) return true;
+    const agente = String(row.cursor?.agente || '').replace(/^esc:/, '');
+    if (!agente) return true;
+    const desde = Date.now() - 48 * 3600e3;
+    const msgs = (row.cursor?.msgs || []).filter(m => Date.parse(m.em) >= desde).map(m => ({ r: m.r, t: m.t, em: m.em, criadas: m.criadas || 0 }));
+    const i = state.direto.findIndex(c => c.agente === agente);
+    const item = { agente, msgs };
+    if (i >= 0) state.direto[i] = item; else state.direto.push(item);
+    return true;
+  }
+  const destino = row.recurso === 'sinais' ? 'sinais' : row.recurso === 'reputacao' ? 'repu' : row.recurso === 'qualidade' ? 'quali' : row.recurso === 'plano' ? 'planos' : RECURSOS_SYNC.includes(row.recurso) ? 'sync' : null;
+  if (!destino) return true;
+  const chave = destino === 'sync' ? (x => `${x.marketplace}|${x.conta_id}|${x.recurso || ''}`) : (x => `${x.marketplace || ''}|${x.conta_id || x.cliente?.id || ''}`);
+  const linha = linhaEstado(row);
+  if (ev === 'DELETE' || !cabeNoFoco(row, foco)) { state[destino] = state[destino].filter(x => chave(x) !== chave(linha)); return true; }
+  upsertLista(state[destino], linha, chave);
+  return true;
+}
+globalThis.GLRQuadro = { contasDoFoco, cabeNoFoco, aplicarDelta, RECURSOS_SYNC };
 // A conversa direta com um agente chega por SSE: o texto e a ferramenta em uso
 // aparecem na bolha e na mesa enquanto a resposta ainda está sendo escrita.
 // ============================================================
@@ -70,6 +150,7 @@ Router.register('escritorio', (params, el) => {
     atualizadoEm: 0, novos: new Set(), vistos: new Set(),
     // conversa direta com um agente (api/chat-central.js, persona do agente)
     direto: [], pend: [], para: (() => { try { return localStorage.getItem('glr_esc_para') || 'gerente'; } catch (e) { return 'gerente'; } })(), rascunho: '', enviando: false,
+    uid: '', focoKey: '',
     aoVivo: null, parcial: '',
   };
 
@@ -138,24 +219,38 @@ Router.register('escritorio', (params, el) => {
   }
 
 
+  function focoAtual() {
+    let vinc = {};
+    try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch (e) {}
+    const cid = (typeof GLR !== 'undefined' && GLR.ctx?.cliente) ? GLR.ctx.cliente() : '';
+    return contasDoFoco(cid, vinc);
+  }
   async function carregar() {
     carregarDireto();
+    const foco = focoAtual();
+    state.focoKey = foco ? foco.cid : '';
     const desde = new Date(Date.now() - 48 * HORA).toISOString();
+    const semConta = foco && !foco.ids.length;
     try {
+      if (semConta) {
+        state.logs = []; state.sync = []; state.sinais = []; state.repu = []; state.quali = []; state.planos = []; state.rels = []; state.pendentes = 0; state.erro = null;
+      } else {
       const COLS = 'id,conta_id,cliente_nome,tipo,titulo,explicacao,dados,resultado,origem,criado_em';
+      const nas = q => foco ? q.in('conta_id', foco.ids) : q;
       const [logs, antigos, sync, rels, agenda, pend, sinais, repu, quali, planos] = await Promise.all([
-        _sb.from('glr_agente_log').select(COLS).gte('criado_em', desde).order('criado_em', { ascending: false }).limit(800),
+        nas(_sb.from('glr_agente_log').select(COLS).gte('criado_em', desde).order('criado_em', { ascending: false }).limit(800)),
         // ações antigas que foram detectadas no painel ou medidas nas últimas 48 h
-        _sb.from('glr_agente_log').select(COLS).lt('criado_em', desde).gte('criado_em', new Date(Date.now() - 46 * DIA).toISOString())
-          .or(`dados->medicao->>medido_em.gte.${desde},dados->>aplicado_em.gte.${desde}`).limit(300),
-        _sb.from('glr_sync_estado').select('marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,ultimo_erro,registros').neq('marketplace', 'sistema'),
-        _sb.from('glr_agente_relatorios').select('*').gte('data', desde.slice(0, 10)).order('data', { ascending: false }).limit(80),
+        nas(_sb.from('glr_agente_log').select(COLS).lt('criado_em', desde).gte('criado_em', new Date(Date.now() - 46 * DIA).toISOString())
+          .or(`dados->medicao->>medido_em.gte.${desde},dados->>aplicado_em.gte.${desde}`).limit(300)),
+        nas(_sb.from('glr_sync_estado').select('marketplace,conta_id,recurso,ultimo_sucesso,ultima_tentativa,ultimo_erro,registros').in('recurso', RECURSOS_SYNC).neq('marketplace', 'sistema')),
+        nas(_sb.from('glr_agente_relatorios').select('*').gte('data', desde.slice(0, 10)).order('data', { ascending: false }).limit(80)),
         _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('conta_id', 'agente').eq('recurso', 'agenda'),
-        _sb.from('glr_agente_log').select('id', { count: 'exact', head: true }).eq('tipo', 'alerta').eq('resultado', 'so_alerta'),
-        _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,registros,resumo:cursor->resumo,destaques:cursor->destaques').eq('recurso', 'sinais'),
-        _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,resumo:cursor->resumo').eq('recurso', 'reputacao'),
-        _sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,resumo:cursor->resumo,destaques:cursor->destaques').eq('recurso', 'qualidade'),
-        _sb.from('glr_sync_estado').select('ultimo_sucesso,cliente:cursor->cliente,semaforo:cursor->>semaforo,acoes:cursor->acoes').eq('marketplace', 'sistema').eq('recurso', 'plano'),
+        nas(_sb.from('glr_agente_log').select('id', { count: 'exact', head: true }).eq('tipo', 'alerta').eq('resultado', 'so_alerta')),
+        nas(_sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,registros,resumo:cursor->resumo,destaques:cursor->destaques').eq('recurso', 'sinais')),
+        nas(_sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,resumo:cursor->resumo').eq('recurso', 'reputacao')),
+        nas(_sb.from('glr_sync_estado').select('marketplace,conta_id,ultimo_sucesso,ultima_tentativa,ultimo_erro,resumo:cursor->resumo,destaques:cursor->destaques').eq('recurso', 'qualidade')),
+        (foco ? _sb.from('glr_sync_estado').select('conta_id,ultimo_sucesso,cliente:cursor->cliente,semaforo:cursor->>semaforo,acoes:cursor->acoes').eq('marketplace', 'sistema').eq('recurso', 'plano').eq('conta_id', `cliente:${foco.cid}`)
+          : _sb.from('glr_sync_estado').select('conta_id,ultimo_sucesso,cliente:cursor->cliente,semaforo:cursor->>semaforo,acoes:cursor->acoes').eq('marketplace', 'sistema').eq('recurso', 'plano')),
       ]);
       if (logs.error) throw logs.error;
       const vistos = new Set();
@@ -169,6 +264,7 @@ Router.register('escritorio', (params, el) => {
       state.agenda = agenda.data?.[0]?.cursor?.rodadas || {};
       state.pendentes = pend.count || 0;
       state.erro = null;
+      }
     } catch (e) { state.erro = e.message || String(e); }
     state.carregando = false; state.atualizadoEm = Date.now();
     render();
@@ -668,20 +764,29 @@ Router.register('escritorio', (params, el) => {
 
   carregar();
   GLR.quandoClientes(() => render()); // nomes das contas quando os clientes terminarem de carregar
-  // Atualiza sozinho: a cada 60 s e quando um agente grava algo novo (tempo real do Supabase)
+  // Reconcilia a cada 3 min. No meio, o Realtime só aplica a linha que mudou.
   let canal = null, espera = null;
+  const aoMudarCliente = () => { if (document.getElementById('esc-root')) carregar(); };
+  window.addEventListener('glr:cliente', aoMudarCliente);
   const timer = setInterval(() => {
-    if (!document.getElementById('esc-root')) { clearInterval(timer); try { canal && _sb.removeChannel(canal); } catch (e) {} return; }
+    if (!document.getElementById('esc-root')) { clearInterval(timer); window.removeEventListener('glr:cliente', aoMudarCliente); try { canal && _sb.removeChannel(canal); } catch (e) {} return; }
     carregar();
-  }, 60e3);
+  }, 180e3);
+  const aoVivo = (tabela) => (payload) => {
+    if (!document.getElementById('esc-root')) return;
+    if (aplicarDelta(state, tabela, payload, focoAtual())) { state.atualizadoEm = Date.now(); render(); return; }
+    clearTimeout(espera); espera = setTimeout(carregar, tabela === 'glr_agente_log' ? 1500 : 4000);
+  };
   try {
+    _sb.auth.getSession().then(({ data }) => { state.uid = data?.session?.user?.id || ''; }).catch(() => {});
     canal = _sb.channel('glr-escritorio-' + Date.now())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'glr_agente_log' }, () => { clearTimeout(espera); espera = setTimeout(carregar, 1500); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'glr_agente_log' }, aoVivo('glr_agente_log'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'glr_sync_estado' }, (payload) => {
         const rec = payload?.new?.recurso || payload?.old?.recurso;
-        if (rec === 'chat_job') return; // o progresso da fala já é lido pelo acompanhamento; não refaz as 10 consultas
-        clearTimeout(espera); espera = setTimeout(carregar, 4000);
+        if (rec === 'chat_job') return; // o progresso da fala já é lido pelo acompanhamento; não refaz o quadro
+        aoVivo('glr_sync_estado')(payload);
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'glr_agente_relatorios' }, aoVivo('glr_agente_relatorios'))
       .subscribe();
   } catch (e) { canal = null; }
 });
