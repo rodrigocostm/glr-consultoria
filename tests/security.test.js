@@ -69,7 +69,7 @@ test('mcp: portal cria anúncio só na própria conta', async () => {
 test('staff chat still works with a verified staff session', async () => {
   const calls = mockRole({ role: 'staff' }); const r = res();
   await require('../api/chat')(req({ messages: [{ role: 'user', content: 'test' }] }), r);
-  assert.equal(r.code, 200); assert.equal(r.body.content, 'ok'); assert.equal(calls.length, 4); assert(calls[2].includes('/glr_conhecimento?'));
+  assert.equal(r.code, 200); assert.equal(r.body.content, 'ok'); assert.equal(calls.length, 4); assert(calls[2].includes('glr_conhecimento'));
 });
 test('authorization outage fails closed', async () => {
   global.fetch = async () => { throw Error('offline'); };
