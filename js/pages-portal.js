@@ -852,10 +852,7 @@ window._initPortalCliente = async function(cfg) {
   } catch (e) {}
   _configurarSidebarCliente(cfg);
 
-  // Marcador LOCAL no lugar da chave: as telas que conferem "tem chave?" seguem em
-  // frente, e toda chamada vai pelo /api/mcp (a chave de verdade fica só no servidor).
-  // Não sobe pro banco (grava direto, sem o sync) e é apagado ao sair da conta.
-  try { (typeof _localSetItem === 'function' ? _localSetItem : localStorage.setItem.bind(localStorage))('glr_mc_apikey', 'portal'); } catch (e) {}
+  // A chave do Tiops fica só no servidor. As telas chamam /api/mcp com a sessão.
   // Portal sem botões de carregar: as telas buscam sozinhas (ao abrir e ao mudar filtro)
   document.body.classList.add('modo-portal');
   if (!document.getElementById('portal-sem-botoes')) {

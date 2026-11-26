@@ -636,9 +636,6 @@ Router.register('cliente-perfil', (params, el) => {
 
   // ── Carregar dados das contas marketplace ───────────────────
   window.carregarDadosContas = async (cid) => {
-    const apiKey = localStorage.getItem('glr_mc_apikey') || '';
-    if (!apiKey) { alert('Configure a API Key nas Integrações primeiro.'); return; }
-
     const btn = document.getElementById('btn-carregar-contas');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Carregando...'; }
 

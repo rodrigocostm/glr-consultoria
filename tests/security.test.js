@@ -165,3 +165,16 @@ test('mcp: notas fiscais só para acesso com o módulo Notas liberado', async ()
   await require('../api/mcp')(req({ action: 'glr_nfe_pedidos', params: { shopId: 'own' } }), r);
   assert.equal(r.code, 403); assert.match(r.body.error, /Notas não está liberada/); assert(!calls.includes('https://mcp.tiops.com.br'));
 });
+test('staff can pause a Shopee campaign through the proxy; portal cannot', async () => {
+  let calls = mockRole({ role: 'staff' }); let r = res();
+  await require('../api/mcp')(req({ action: 'shopee_ads_pause_campaign', params: { shopId: '1', campaign_id: 2 } }), r);
+  assert.equal(r.code, 200); assert(calls.includes('https://mcp.tiops.com.br'));
+  calls = mockRole({ role: 'portal', portal: { contaIds: ['1'] } }); r = res();
+  await require('../api/mcp')(req({ action: 'shopee_ads_pause_campaign', params: { shopId: '1', campaign_id: 2 } }), r);
+  assert.equal(r.code, 403); assert(!calls.includes('https://mcp.tiops.com.br'));
+});
+test('staff cannot call an action the screens do not use', async () => {
+  const calls = mockRole({ role: 'staff' }); const r = res();
+  await require('../api/mcp')(req({ action: 'billing_charge', params: {} }), r);
+  assert.equal(r.code, 403); assert(!calls.includes('https://mcp.tiops.com.br'));
+});
