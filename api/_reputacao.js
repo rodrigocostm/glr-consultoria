@@ -30,7 +30,7 @@ const corta = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); retur
 async function rascunhar(anthropicKey, pergunta, anuncio) {
   if (!anthropicKey || !anuncio) return null;
   try {
-    const client = new Anthropic({ apiKey: anthropicKey });
+    const client = require('./_ia-uso').medir(new Anthropic({ apiKey: anthropicKey }), 'reputacao');
     const r = await client.messages.create({
       model: 'claude-haiku-5-5',
       max_tokens: 300,

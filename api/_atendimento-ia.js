@@ -45,7 +45,7 @@ Regras do texto: não passe telefone, e-mail, WhatsApp, redes sociais nem links;
 Responda APENAS com JSON: {"acao":"responder|humano|nada","texto":"...","motivo":"frase curta para o lojista quando a ação não for responder"}`;
 
 async function gerar(anthropicKey, { canal, limite, dados, conversa }) {
-  const client = new Anthropic({ apiKey: anthropicKey });
+  const client = require('./_ia-uso').medir(new Anthropic({ apiKey: anthropicKey }), 'atendimento-ia');
   const r = await client.messages.create({
     model: MODELO, max_tokens: 500, system: SISTEMA,
     messages: [{ role: 'user', content: `CANAL: ${canal}\nLIMITE DO TEXTO: ${limite} caracteres\n\nDADOS:\n${dados || '—'}\n\nCONVERSA (mais antiga primeiro):\n${conversa}` }],

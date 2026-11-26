@@ -90,11 +90,11 @@ module.exports = async function handler(req, res) {
     while (mensagens.length && mensagens[0].role !== 'user') mensagens.shift();
     mensagens.push({ role: 'user', content: texto });
 
-    const client = new Anthropic();
+    const client = require('./_ia-uso').medir(new Anthropic(), 'portal-chat', { usuario: S.usuario });
     const inicio = Date.now(); let resposta = null;
     for (let rodada = 0; rodada < MAX_RODADAS + 1; rodada++) {
       const semTempo = Date.now() - inicio > ORCAMENTO_MS || rodada >= MAX_RODADAS;
-      resposta = await client.messages.create({ model: MODELO, max_tokens: 8000, system: sistema(cli), tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens });
+      resposta = await client.messages.create({ model: MODELO, max_tokens: 8000, system: sistema(cli), tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: require('./_ia-uso').cacheNaConversa(mensagens) });
       if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
       if (resposta.stop_reason !== 'tool_use') break;
       mensagens.push({ role: 'assistant', content: resposta.content });

@@ -536,7 +536,7 @@ module.exports = async function handler(req, res) {
         const plano = await planoDe(foco.id);
         if (plano) planoPronto = '\n\nPLANO DO CLIENTE EM FOCO (já carregado; chame plano_cliente só para outro cliente):\n' + JSON.stringify({ cliente: foco.nome, semaforo: plano.semaforo, diagnostico: plano.diagnostico, metricas: plano.metricas, caminho_para_meta: plano.caminho, raio_x: plano.raioX, gerado_em: plano.em || null }).slice(0, 7000);
       }
-      const client = new Anthropic();
+      const client = require('./_ia-uso').medir(new Anthropic(), 'chat-central', { usuario: S.usuario, agente: conv.agente || ag });
       S.client = client;
       const rota = await classificar(client, texto);
       const modelo = rota === 'simples' ? MODELO_RAPIDO : MODELO;
@@ -551,7 +551,7 @@ module.exports = async function handler(req, res) {
         let turno = '';
         const pedido = {
           model: modelo, max_tokens: ajuste.max_tokens,
-          system: sistemaComCache(estavel, planoPronto + conhecimento + (tela ? `\n\nTELA ABERTA PELO USUÁRIO AGORA: ${tela} (use como contexto do que ele está olhando).` : '')), tools: ferramentasComCache(TOOLS), tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+          system: sistemaComCache(estavel, planoPronto + conhecimento + (tela ? `\n\nTELA ABERTA PELO USUÁRIO AGORA: ${tela} (use como contexto do que ele está olhando).` : '')), tools: ferramentasComCache(TOOLS), tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: require('./_ia-uso').cacheNaConversa(mensagens),
         };
         if (rota !== 'simples') Object.assign(pedido, { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: ajuste.effort } });
         resposta = await pedirModelo(client, pedido, sse ? (delta) => { turno += delta; emit('texto', { delta }); } : null, rota !== 'simples');

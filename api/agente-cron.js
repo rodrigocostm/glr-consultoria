@@ -2141,7 +2141,7 @@ async function gerarRelatorio(anthropicKey, cfg, metricas, decisoes, alertas, on
   if (!anthropicKey) return base;
 
   try {
-    const client = new Anthropic({ apiKey: anthropicKey });
+    const client = require('./_ia-uso').medir(new Anthropic({ apiKey: anthropicKey }), 'agente-cron');
     const r = await client.messages.create({
       model: 'claude-haiku-5-5',
       max_tokens: 900,

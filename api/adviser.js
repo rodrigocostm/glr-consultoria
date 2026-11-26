@@ -30,7 +30,7 @@ module.exports=async(req,res)=>{
     const planos=rows.map(r=>{const p=r.cursor||{};return {cliente:p.cliente,em:r.ultimo_sucesso,semaforo:p.semaforo,metricas:p.metricas,acoes:(p.acoes||[]).slice(0,7)}});
     const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:3500,system:SYSTEM + await require('./_conhecimento').contexto('estratégia crescimento receita GLR aquisição expansão retenção margem capacidade equipe metas'),messages:[{role:'user',content:JSON.stringify({mes,receitaGLR:receita,progresso:progresso(receita.projetada),missoes:state.missoes.filter(m=>m.status!=='concluida').slice(0,30),planosClientesGMV:planos}).slice(0,120000)}]}),signal:AbortSignal.timeout(45000)});
     if(!r.ok)throw Error('Não foi possível gerar a estratégia. Tente novamente.');
-    const data=await r.json();const texto=(data.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');
+    const data=await r.json();require('./_ia-uso').registrar('adviser',data.model,data.usage,{usuario:user?.email||user?.id});const texto=(data.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');
     if(!texto)throw Error('A IA não retornou uma estratégia.');
     state.estrategia={mes,texto,em:new Date().toISOString(),receitaBase:receita.projetada};
    }else if(b.acao==='missao'){

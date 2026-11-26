@@ -59,7 +59,7 @@ module.exports = async function handler(req, res) {
     let contas = (Array.isArray(b.contas) ? b.contas : []).map(String).slice(0, 6);
     if (quem.role === 'portal') { const minhas = new Set((quem.portal?.contaIds || []).map(String)); contas = contas.filter(c => minhas.has(c)); }
     const img = imagemDe(b.foto);
-    const client = new Anthropic({ apiKey });
+    const client = require('./_ia-uso').medir(new Anthropic({ apiKey }), 'anuncio-seo', { usuario: quem.user?.email || quem.user?.id });
     const texto = r => r.content.filter(x => x.type === 'text').map(x => x.text).join('\n');
 
     // termos para achar categoria quando o nome não acha nada

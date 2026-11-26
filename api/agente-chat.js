@@ -514,8 +514,14 @@ module.exports = async function handler(req, res) {
   while (historico.length && historico[0].role !== 'user') historico.shift();
 
   const ctx = { mcKey, shopId: String(conta_id), nome: cfg.cliente_nome || null };
-  const client = new Anthropic();
-  const sistema = String(system || 'Você é o Agente Autônomo de ADS da GLR Consultoria. Responda em português.') + tiopsMarket.guide + guiaFerramentas(hojeBRT(), ctx.shopId, cfg.cliente_nome) + await require('./_conhecimento').contexto(historico.filter(m => m.role === "user").slice(-2).map(m => m.content).join(" "));
+  const client = require('./_ia-uso').medir(new Anthropic(), 'agente-chat', { usuario: usuario.email || usuario.id, conta_id: String(conta_id) });
+  // Cache de prompt: a parte fixa (instruções + guias + ferramentas) e a conversa
+  // inteira ficam no cache; em cada rodada de ferramentas o modelo relê tudo a
+  // ~10% do preço em vez de pagar a entrada cheia de novo.
+  const fixo = String(system || 'Você é o Agente Autônomo de ADS da GLR Consultoria. Responda em português.') + tiopsMarket.guide + guiaFerramentas(hojeBRT(), ctx.shopId, cfg.cliente_nome);
+  const sistema = [{ type: 'text', text: fixo, cache_control: { type: 'ephemeral' } }];
+  const conhecimento = await require('./_conhecimento').contexto(historico.filter(m => m.role === "user").slice(-2).map(m => m.content).join(" "));
+  if (conhecimento) sistema.push({ type: 'text', text: String(conhecimento) });
   const mensagens = [...historico];
   const usadas = [];
   const inicio = Date.now();
@@ -533,7 +539,7 @@ module.exports = async function handler(req, res) {
         system: sistema,
         tools: FERRAMENTAS,
         tool_choice: semTempo ? { type: 'none' } : { type: 'auto' },
-        messages: mensagens,
+        messages: require('./_ia-uso').cacheNaConversa(mensagens),
       });
 
       if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
