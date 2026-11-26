@@ -230,7 +230,7 @@ Router.register('anuncios-amazon', (params, el) => {
     const atualizado = lerJSON(`glr_amz_cache_${st.conta}`, null)?.em;
     box.innerHTML = `
       <div class="az-topo">
-        <select class="az-sel" onchange="window._azConta(this.value)">${st.contas.map(c => `<option value="${h(c.id)}" ${c.id === st.conta ? 'selected' : ''}>${h(c.nome)}</option>`).join('')}</select>
+        <select class="az-sel" onchange="window._azConta(this.value)">${(sfx => st.contas.map(c => `<option value="${h(c.id)}" ${c.id === st.conta ? 'selected' : ''}>${h(c.nome)}${h(sfx(c))}</option>`).join(''))(window.glrSufixoIdRepetido ? glrSufixoIdRepetido(st.contas, c => c.nome, c => c.id) : () => '')}</select>
         <input class="az-sel" style="min-width:240px" placeholder="Buscar produto, SKU ou ASIN…" value="${h(st.busca)}" oninput="window._azBusca(this.value)">
         <label class="az-mut">Margem mínima <input class="az-in" style="width:56px" inputmode="decimal" value="${dec(st.margemMin).replace(',00', '')}" onchange="window._azMargemMin(this.value)">%</label>
         <span style="flex:1"></span>

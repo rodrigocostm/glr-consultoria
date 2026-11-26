@@ -302,7 +302,7 @@ Router.register('plano-acao', (params, el) => {
     const resultado = p.resultados || {};
     return `<div class="pl-op-intro"><h3>Oportunidades para vender com lucro</h3>
       <p class="pl-sub">Ordenadas por urgência e peso dos sinais do plano. Estimativas podem se sobrepor e não devem ser somadas. Confira estoque e margem antes de aumentar Ads.</p>
-      <label>Conta <select class="form-control" onchange="window._plOpConta(this.value)"><option value="">Todas as contas + ações consolidadas</option>${contas.map(([id,nome]) => `<option value="${h(id)}" ${conta === id ? 'selected' : ''}>${h(nome)}</option>`).join('')}</select></label>
+      <label>Conta <select class="form-control" onchange="window._plOpConta(this.value)"><option value="">Todas as contas + ações consolidadas</option>${(sfx => contas.map(([id,nome]) => `<option value="${h(id)}" ${conta === id ? 'selected' : ''}>${h(nome)}${h(sfx([id,nome]))}</option>`).join(''))(window.glrSufixoIdRepetido ? glrSufixoIdRepetido(contas, ([, nome]) => nome, ([id]) => id) : () => '')}</select></label>
       <div class="pl-sub">${ordered.length} oportunidade(s) · plano atualizado em ${p.em ? h(new Date(p.em).toLocaleString('pt-BR')) : 'data não informada'}${!p.oportunidades ? ' · Atualize o plano para incluir todos os sinais dos agentes.' : ''}</div></div>
       <div class="pl-ops">${ordered.slice(0, st.opLimite).map(a => {
         const idx = all.findIndex(x => x.id === a.id), saved = status()[a.id], ab = st.opAberta === a.id;

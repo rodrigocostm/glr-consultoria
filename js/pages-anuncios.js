@@ -514,10 +514,10 @@
             <label class="form-label">Conta Mercado Livre</label>
             <select class="form-select" id="an-conta" ${state.carregandoContas ? 'disabled' : ''} onchange="window._anMlSelConta(this.value)">
               ${state.carregandoContas ? '<option>Carregando contas...</option>' :
-                `<option value="">— Selecione —</option>` + state.contas.map(c => {
+                `<option value="">— Selecione —</option>` + (sfx => state.contas.map(c => {
                   const id = c.param_to_use?.meliUserId || c.external_id;
-                  return `<option value="${id}" ${state.contaId === id ? 'selected' : ''}>${esc(nomeConta(c))}</option>`;
-                }).join('')}
+                  return `<option value="${id}" ${state.contaId === id ? 'selected' : ''}>${esc(nomeConta(c))}${esc(sfx(c))}</option>`;
+                }).join(''))(window.glrSufixoIdRepetido ? glrSufixoIdRepetido(state.contas, c => nomeConta(c), c => c.param_to_use?.meliUserId || c.external_id) : () => '')}
             </select>
           </div>
         </div>
@@ -1835,7 +1835,7 @@
             <label class="form-label">Loja TikTok Shop</label>
             <select class="form-select" id="an-tt-conta" ${state.carregandoContas ? 'disabled' : ''} onchange="window._anTtSelConta(this.value)">
               ${state.carregandoContas ? '<option>Carregando lojas...</option>' :
-                `<option value="">— Selecione —</option>` + state.contas.map(c => `<option value="${c.external_id}" ${state.contaId === c.external_id ? 'selected' : ''}>${esc(nomeConta(c))}</option>`).join('')}
+                `<option value="">— Selecione —</option>` + (sfx => state.contas.map(c => `<option value="${c.external_id}" ${state.contaId === c.external_id ? 'selected' : ''}>${esc(nomeConta(c))}${esc(sfx(c))}</option>`).join(''))(window.glrSufixoIdRepetido ? glrSufixoIdRepetido(state.contas, c => `${c.marketplace}:${nomeConta(c)}`, c => glrIdConta(c)) : () => '')}
             </select>
             ${state.warehouseId ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Armazém de vendas encontrado ✓</div>` : ''}
           </div>
