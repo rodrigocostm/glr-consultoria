@@ -10,9 +10,9 @@
 // - líquido: vem da API quando disponível (Shopee escrow_amount, ML
 //   net_received_amount); Magalu não devolve líquido pronto, calcula
 //   receita - comissão - frete.
-// - custo: manual por pedido (glr_vendas_custos) tem prioridade sobre o
-//   catálogo por produto (glr_vendas_custo_catalogo) — cadastro do produto
-//   é o fallback que evita relançar custo pedido a pedido.
+// - custo: vem do cadastro da tela Produtos; o catálogo por produto
+//   (glr_vendas_custo_catalogo) cobre o que o cadastro não tem. Custo
+//   digitado no pedido (glr_vendas_custos.custo) não é mais usado.
 // - imposto: da API (escrow_tax) quando > 0 (já deduzido do líquido, só
 //   exibido); senão manual por pedido ou alíquota da conta (deduzido).
 // - frete do ML: o net_received_amount do /collections JÁ vem com o frete do
@@ -38,7 +38,7 @@ window.GLR_Margem = {
     }
 
     const c = custos[p.id] || {};
-    const custoPedido = parseFloat(c.custo) || 0;
+    const custoPedido = 0; // custo digitado direto no pedido não conta mais: vale só o cadastro de produtos
     const custoCatalogo = parseFloat(catalogoCusto[produtoKey]) || 0;
     // Custo unitário × quantidade, item a item (BaseDados.custoProdutosPedido)
     const itensCusto = (p.itens && p.itens.length ? p.itens : [{ nome: p.produto, qtd: p.qtd }])

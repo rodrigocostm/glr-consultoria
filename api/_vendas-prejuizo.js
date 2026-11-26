@@ -8,13 +8,12 @@ function calcularPedido(p,ctx={}){
  const receita=n(p.valor_bruto);if(!(receita>0))return null;
  const produto=itens.map(i=>i.nome||i.item_id||'Produto').join(' + ')||String(p.pedido_id);
  const qtd=itens.reduce((s,i)=>s+(n(i.qtd)>0?n(i.qtd):1),0)||1;
- const custoManual=n(manual.custo),unit=i=>{
+ const unit=i=>{ // custo digitado no pedido (manual.custo) não conta mais: só o cadastro
   const ks=p.marketplace==='ml'?[i.item_id,i.nome]:[i.nome,i.item_id];
   for(const k of ks){if(k!=null&&n(cat[k])>0)return n(cat[k]);}return null;
  };
  let custo=null;
- if(custoManual>0)custo=custoManual*qtd;
- else if(itens.length&&itens.every(i=>unit(i)!=null))custo=itens.reduce((s,i)=>s+unit(i)*(n(i.qtd)>0?n(i.qtd):1),0);
+ if(itens.length&&itens.every(i=>unit(i)!=null))custo=itens.reduce((s,i)=>s+unit(i)*(n(i.qtd)>0?n(i.qtd):1),0);
  // Chave legada de conjunto usada pela página Vendas.
  else {const key=itens.length>1?`${itens[0].nome} (+${itens.length-1})`:null;if(key&&n(cat[key])>0)custo=n(cat[key])*qtd;}
  const tx=p.taxas||{},liquido=n(p.liquido),recarga=n(tx.detalhes?.ads_escrow_top_up_fee_or_technical_support_fee)||0;
