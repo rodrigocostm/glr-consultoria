@@ -47,7 +47,12 @@
   --radius-lg: 18px;
   --radius-pill: 999px;
 
+  /* ── Design system: use estes tokens em telas novas e nas migradas ──
+     espaço: 4 / 8 / 12 / 16 / 20 / 24 / 32
+     texto (6 tamanhos): 1 legenda/rótulo · 2 secundário · 3 texto · 4 subtítulo · 5 título · 6 número grande */
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-8: 32px;
+  --fs-1: 11px; --fs-2: 12.5px; --fs-3: 13.5px; --fs-4: 16px; --fs-5: 20px; --fs-6: 28px;
+  --blue: #60a5fa; --blue-strong: #3b82f6; --blue-bg: rgba(96,165,250,0.13);
   --font-ui: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-num: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
@@ -93,6 +98,7 @@ body.light {
   --purple-bg: rgba(124,58,237,0.08);
   --cyan: #0e8aa6;
   --cyan-bg: rgba(14,138,166,0.08);
+  --blue: #2563eb; --blue-strong: #1d4ed8; --blue-bg: rgba(37,99,235,0.10);
 
   --shadow-xs: 0 1px 2px rgba(16,19,28,0.04);
   --shadow-sm: 0 1px 3px rgba(16,19,28,0.06), 0 1px 2px rgba(16,19,28,0.04);
