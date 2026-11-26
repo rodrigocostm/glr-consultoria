@@ -1,5 +1,5 @@
 // ============================================================
-// GLR Consultoria — Tarefas, Calendário, Timeline, Score GLR
+// GLR Consultoria — Tarefas, Calendário, Timeline
 // ============================================================
 
 // ---- Persistência ----
@@ -403,115 +403,6 @@ function calcularScoreCliente(c) {
 }
 // Exposição global para outros módulos (ex: pages-clientes.js)
 window.calcularScoreCliente = calcularScoreCliente;
-
-Router.register('score', (params, el) => {
-  const criterios = [
-    { key:'Crescimento',   icon:'📈', peso:20, desc:'Taxa de crescimento mensal do faturamento', fonte:'Campo Crescimento% do cliente' },
-    { key:'Rentabilidade', icon:'📊', peso:20, desc:'ROAS (Faturamento ÷ ADS) — quanto retorna por R$ investido', fonte:'Projeção ou DRE' },
-    { key:'Precificação',  icon:'💲', peso:20, desc:'Margem de lucro líquida calculada pelo DRE', fonte:'DRE lançado' },
-    { key:'Execução',      icon:'⚡', peso:15, desc:'% de tarefas concluídas sobre o total do cliente', fonte:'Gestão de Tarefas' },
-    { key:'Conversão',     icon:'🛒', peso:15, desc:'Vendas reais vs projetadas no mês', fonte:'DRE vs Projeção' },
-    { key:'Organização',   icon:'📂', peso:10, desc:'Completude do cadastro do cliente no sistema', fonte:'Perfil do cliente' },
-  ];
-
-  const resultados = GLR.clientes.map(c => ({ c, r: calcularScoreCliente(c) }))
-                                  .sort((a,b) => b.r.total - a.r.total);
-
-  const mediaGeral = resultados.length
-    ? Math.round(resultados.reduce((s,x) => s + x.r.total, 0) / resultados.length)
-    : 0;
-
-  el.innerHTML = `<div class="page">
-
-    <!-- Metodologia -->
-    <div class="card mb-24">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
-        <div style="display:flex;align-items:center;gap:14px;">
-          <div style="font-size:28px;">🏅</div>
-          <div>
-            <div class="section-title">Score GLR — Calculado Automaticamente</div>
-            <div class="section-subtitle">Pontuação 0–100 atualizada em tempo real com base nos dados do sistema</div>
-          </div>
-        </div>
-        <div style="text-align:center;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius);padding:10px 20px;">
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Média da carteira</div>
-          <div style="font-size:26px;font-weight:700;color:${scoreColor(mediaGeral)};">${mediaGeral}</div>
-          <div style="font-size:10px;color:var(--text-muted);">/ 100</div>
-        </div>
-      </div>
-      <div class="grid-3" style="gap:10px;">
-        ${criterios.map(cr => `
-          <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-              <span style="font-size:16px;">${cr.icon}</span>
-              <span style="font-size:11px;font-weight:700;color:var(--accent-light);">${cr.peso}%</span>
-            </div>
-            <div style="font-size:13px;font-weight:700;margin-bottom:3px;">${cr.key}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${cr.desc}</div>
-            <div style="font-size:10px;color:var(--text-muted);background:var(--bg-card);padding:2px 7px;border-radius:99px;display:inline-block;">${cr.fonte}</div>
-          </div>
-        `).join('')}
-      </div>
-    </div>
-
-    <!-- Ranking -->
-    <div class="section-header mb-16">
-      <div class="section-title">Ranking da Carteira</div>
-      <div class="section-subtitle">${resultados.length} clientes · ordenados por pontuação</div>
-    </div>
-
-    <div style="display:flex;flex-direction:column;gap:12px;">
-      ${resultados.map(({c, r}, i) => {
-        const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
-        return `
-        <div class="card card-hover" onclick="Router.navigate('cliente-perfil', {id: ${c.id}})">
-          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-
-            <!-- Posição + nome -->
-            <div style="display:flex;align-items:center;gap:10px;min-width:200px;flex:1;">
-              <div style="font-size:16px;font-weight:700;color:var(--text-muted);width:28px;text-align:center;">${medal||('#'+(i+1))}</div>
-              <div>
-                <div style="font-size:14px;font-weight:700;">${c.nome}</div>
-                <div style="font-size:11px;color:var(--text-muted);">Gestor: ${c.gestor||'—'} · ${GLR.statusLabel[c.status]||c.status}</div>
-              </div>
-            </div>
-
-            <!-- Barra + score -->
-            <div style="flex:2;min-width:200px;">
-              <div style="display:flex;align-items:center;gap:10px;">
-                <div style="flex:1;background:var(--bg-base);border-radius:99px;height:10px;overflow:hidden;">
-                  <div style="width:${r.total}%;height:100%;background:${scoreColor(r.total)};border-radius:99px;transition:width .5s;"></div>
-                </div>
-                <div style="font-size:22px;font-weight:650;letter-spacing:-0.02em;color:${scoreColor(r.total)};width:40px;text-align:right;">${r.total}</div>
-              </div>
-            </div>
-
-            <!-- Detalhes por critério -->
-            <div style="display:grid;--cols:repeat(6,1fr);gap:6px;width:100%;margin-top:10px;">
-              ${criterios.map(cr => {
-                const v = r.detalhes[cr.key];
-                const meta = r.meta;
-                let info = '';
-                if (cr.key==='Crescimento')   info = meta.cresc !== null ? `${meta.cresc>0?'+':''}${meta.cresc}%` : '—';
-                if (cr.key==='Rentabilidade') info = meta.roas  !== null ? `ROAS ${meta.roas.toFixed(1)}x` : meta.pctADS!==null ? `ADS ${meta.pctADS.toFixed(0)}%` : '—';
-                if (cr.key==='Precificação')  info = meta.margemDRE !== null ? `Margem ${meta.margemDRE.toFixed(0)}%` : 'Sem DRE';
-                if (cr.key==='Execução')      info = meta.pctExecucao !== null ? `${meta.pctExecucao.toFixed(0)}% OK` : 'Sem tarefas';
-                if (cr.key==='Conversão')     info = meta.pctConversao !== null ? `${meta.pctConversao.toFixed(0)}% meta` : '—';
-                if (cr.key==='Organização')   info = `${v}%`;
-                return `
-                <div style="background:var(--bg-base);border-radius:var(--radius-sm);padding:8px;text-align:center;border:1px solid color-mix(in srgb,${scoreColor(v)} 13%,transparent);">
-                  <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">${cr.icon} ${cr.key}</div>
-                  <div style="font-size:13px;font-weight:700;color:${scoreColor(v)};">${v}</div>
-                  <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">${info}</div>
-                </div>`;
-              }).join('')}
-            </div>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>
-  </div>`;
-});
 
 // ---- Helpers compartilhados ----
 function openModalNovaTarefa(clienteId) {

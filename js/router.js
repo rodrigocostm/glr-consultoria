@@ -78,8 +78,6 @@ const Router = {
       projecao: 'Projeção de Crescimento',
       timeline: 'Timeline de Ações',
       tarefas: 'Gestão de Tarefas',
-      score: 'Score GLR',
-      performance: 'Performance Gestor',
       oportunidades: 'Central de Oportunidades',
       dre: 'DRE — Demonstração do Resultado',
       ads: 'ADS Shopee',
