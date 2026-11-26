@@ -6,11 +6,11 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 
-function carregar() {
+function carregar(portal) {
   const chamadas = [], navs = [];
   const Router = { routes: {}, currentParams: {}, embutida: null, register(p, f) { this.routes[p] = f; }, navigate: (p, q) => navs.push([p, q]) };
-  for (const id of ['integracoes', 'conexoes', 'saude-api', 'diagnostico']) Router.routes[id] = (params, el) => { chamadas.push([id, params]); el.innerHTML = 'tela ' + id; };
-  const window = {};
+  for (const id of ['integracoes', 'conexoes', 'saude-api', 'diagnostico', 'precos-ml', 'precos-shopee', 'criar-anuncio', 'anuncios-novos']) Router.routes[id] = (params, el) => { chamadas.push([id, params]); el.innerHTML = 'tela ' + id; };
+  const window = portal ? { _portalConfig: {} } : {};
   const ctx = { Router, window, console, history: { replaceState: (_, __, h) => { window.hash = h; } }, setTimeout: f => f() };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/telas-unidas.js'), 'utf8'), ctx);
   return { Router, chamadas, navs, window };
@@ -49,4 +49,17 @@ test('endereço antigo leva para a tela nova na aba certa', () => {
   assert.equal(navs.at(-1)[0], 'sistema'); assert.deepEqual({ ...navs.at(-1)[1] }, { x: '1', aba: 'conexoes' });
   assert.equal(typeof Router.embutiveis.conexoes, 'function', 'a original continua disponível para embutir');
   assert.deepEqual(Array.from(Router.unidas.sistema), ['integracoes', 'conexoes', 'saude-api', 'diagnostico']);
+});
+
+test('Preços e Anúncios também viram uma tela só', () => {
+  const { Router } = carregar();
+  assert.deepEqual(Array.from(Router.unidas.precos), ['precos-ml', 'precos-shopee']);
+  assert.deepEqual(Array.from(Router.unidas.anuncios), ['criar-anuncio', 'anuncios-novos']);
+});
+
+test('no portal do cliente o endereço antigo abre a tela solta (o menu dele lista cada uma)', () => {
+  const { Router, chamadas, navs } = carregar(true);
+  Router.routes['criar-anuncio']({}, elFalso());
+  assert.deepEqual(navs, []);
+  assert.equal(chamadas.at(-1)[0], 'criar-anuncio');
 });

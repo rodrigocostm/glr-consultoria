@@ -3,7 +3,7 @@ Router.register('vendas-prejuizo',(params,el)=>{
  const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const moeda=v=>v==null?'—':Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
  const hoje=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
- const st={inicio:new Date(Date.parse(hoje+'T12:00:00-03:00')-29*864e5).toISOString().slice(0,10),fim:hoje,conta:typeof params.conta==='string'?params.conta:'',gestor:'',status:'prejuizo',busca:'',limite:100,dados:null,erro:null,loading:false};let seq=0,controller;window._vpSt=st;const ativo=()=>window._vpSt===st&&el.isConnected&&(!Router.currentPage||Router.currentPage==='vendas-prejuizo');
+ const st={inicio:new Date(Date.parse(hoje+'T12:00:00-03:00')-29*864e5).toISOString().slice(0,10),fim:hoje,conta:typeof params.conta==='string'?params.conta:'',gestor:'',status:'prejuizo',busca:'',limite:100,dados:null,erro:null,loading:false};let seq=0,controller;window._vpSt=st;const ativo=()=>window._vpSt===st&&el.isConnected&&(!Router.currentPage||Router.currentPage==='vendas-prejuizo'||Router.embutida==='vendas-prejuizo');
  const foco=()=>(typeof GLR!=='undefined'&&GLR.ctx?.cliente?.())||''; // cliente em foco (barra de cima)
  const contas=()=> (st.opcoes?.contas||[]).filter(c=>(!st.gestor||c.gestor_id===st.gestor)&&(!foco()||c.cliente_id===foco()));
  function render(){
