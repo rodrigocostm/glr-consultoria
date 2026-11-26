@@ -10,6 +10,8 @@
 // são aplicados por aqui (ML não libera escrita; promoção é sempre manual).
 // Conversas por usuário em glr_sync_estado (marketplace 'sistema', recurso
 // 'chat', conta_id 'chat:<usuário>:<conversa>').
+// Enviar com stream:true (ou Accept: text/event-stream) responde em SSE:
+// status, ferramenta, texto, texto_limpar, fim ou erro. Sem isso, o JSON de sempre.
 // Agente "adviser" (seletor da tela): estratégia da GLR até R$ 200 mil — instruções
 // e ferramentas em api/_adviser-chat.js, mais carteira, plano e vendas daqui.
 // ============================================================
@@ -204,6 +206,42 @@ const ROTULO = { ...adviserChat.ROTULO, carteira: 'carteira', plano_cliente: 'pl
 const dm = iso => `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}`;
 const resumo = (n, i) => `${ROTULO[n] || n}${i?.cliente ? ` · ${i.cliente}` : ''}${i?.inicio && i?.fim ? ` · ${dm(i.inicio)} a ${dm(i.fim)}` : ''}${n === 'propor_acao' && i?.titulo ? ` · ${corta(i.titulo, 50)}` : ''}`;
 
+// Um evento SSE (também usado no teste). Comentário de pulso é ":\n\n".
+function eventoSSE(event, data) {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+function abrirSSE(res) {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  const canal = { aberto: true };
+  const escrever = (bloco) => {
+    if (!canal.aberto) return;
+    try { res.write(bloco); if (typeof res.flush === 'function') res.flush(); }
+    catch (e) { canal.aberto = false; }
+  };
+  return {
+    vivo: () => canal.aberto,
+    send(event, data) { escrever(eventoSSE(event, data)); },
+    ping() { escrever(':\n\n'); },
+    fechar() { if (!canal.aberto) return; canal.aberto = false; try { res.end(); } catch (e) {} },
+  };
+}
+async function pedirModelo(client, params, onText) {
+  if (!onText) return client.beta.messages.create(params);
+  const stream = client.beta.messages.stream(params);
+  stream.on('text', (delta) => { try { onText(delta); } catch (e) {} });
+  return stream.finalMessage();
+}
+function mapearErro(e) {
+  if (e instanceof Anthropic.RateLimitError) return { status: 429, error: 'Muitas perguntas ao mesmo tempo — espere alguns segundos e tente de novo.' };
+  if (e instanceof Anthropic.APIError && /credit balance is too low/i.test(e.message)) return { status: 402, error: 'Os créditos da API da Anthropic acabaram — recarregue em console.anthropic.com → Plans & Billing e o chat volta na hora.' };
+  if (e instanceof Anthropic.APIError) return { status: 502, error: `Falha no modelo (${e.status}): ${e.message}` };
+  return { status: 500, error: e.message || String(e) };
+}
+
 function sistema(S, foco) {
   return `Você é o copiloto da GLR Consultoria, uma consultoria que opera contas de clientes no Mercado Livre e na Shopee. Conversa com os analistas da GLR, em português do Brasil, direto e prático, como um analista sênior que entende o cenário completo da conta: faturamento, meta, visitas, conversão, preço, margem, estoque, ADS, reputação.
 Hoje é ${hojeBRT()} (horário de Brasília). ${foco ? `Cliente em foco na tela: ${foco.nome} (id ${foco.id}) — se a pergunta não disser outro, é sobre ele.` : 'Sem cliente em foco: a pergunta pode ser sobre a carteira inteira.'}
@@ -297,65 +335,92 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // enviar
+    // enviar — JSON de sempre, ou SSE quando o cliente pede stream
     const texto = String(mensagem || '').trim().slice(0, 6000);
     if (!texto) return res.status(400).json({ error: 'Mensagem vazia.' });
-    const id = idOk(conversa_id) ? String(conversa_id) : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-    const novoAg = agente === 'adviser' ? 'adviser' : personaDe(agente) ? String(agente) : 'copiloto';
-    const conv = (await lerConversa(uid, id)) || { titulo: corta(texto, 60), criado: new Date().toISOString(), msgs: [], agente: novoAg };
-    const persona = personaDe(conv.agente);
-    const ag = conv.agente === 'adviser' ? 'adviser' : 'copiloto', TOOLS = ferramentasDe(ag), RUN = execDe(ag);
-    const S = { carteira: await carregarCarteira(), mcKey, usuario: usuario.email || uid, criadas: 0, sbSelect, sbUpsert, persona: persona?.nome || null };
-    const foco = cliente_id ? S.carteira.find(c => c.id === String(cliente_id)) || null : null;
-    if (foco) { conv.cliente_id = foco.id; conv.cliente_nome = foco.nome; }
-
-    const mensagens = conv.msgs.slice(-20).map(m => ({ role: m.r, content: m.t })).filter(m => m.content);
-    while (mensagens.length && mensagens[0].role !== 'user') mensagens.shift();
-    mensagens.push({ role: 'user', content: texto });
-
-    const conhecimento = await require('./_conhecimento').contexto(texto + " " + (persona?.nome || conv.agente || ""));
-    const client = new Anthropic();
-    const usadas = [], inicio = Date.now();
-    let resposta = null;
-    for (let rodada = 0; rodada < MAX_RODADAS + 1; rodada++) {
-      const semTempo = Date.now() - inicio > ORCAMENTO_MS || rodada >= MAX_RODADAS;
-      resposta = await client.beta.messages.create({
-        model: MODELO, max_tokens: 16000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' },
-        system: (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + conhecimento + tiopsMarket.guide, tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
-      });
-      if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
-      if (resposta.stop_reason !== 'tool_use') break;
-      mensagens.push({ role: 'assistant', content: resposta.content });
-      const resultados = [];
-      // em sequência: o conector corrompe respostas simultâneas
-      for (const b of resposta.content.filter(x => x.type === 'tool_use')) {
-        try {
-          if (!RUN[b.name]) throw new Error(`Ferramenta desconhecida: ${b.name}`);
-          if (Date.now() - inicio > ORCAMENTO_MS) throw new Error('Tempo de consulta esgotado — responda com o que já tem.');
-          let t = JSON.stringify(await RUN[b.name](S, b.input || {}));
-          if (t.length > LIMITE_RESULTADO) t = t.slice(0, LIMITE_RESULTADO) + '… [cortado por tamanho — refine a consulta]';
-          resultados.push({ type: 'tool_result', tool_use_id: b.id, content: t });
-          usadas.push({ f: b.name, r: resumo(b.name, b.input) });
-        } catch (e) {
-          resultados.push({ type: 'tool_result', tool_use_id: b.id, content: `Erro: ${e.message || e}`, is_error: true });
-          usadas.push({ f: b.name, r: resumo(b.name, b.input), erro: true });
-        }
+    const querStream = req.body?.stream === true || String(req.headers?.accept || req.headers?.Accept || '').includes('text/event-stream');
+    let sse = null, pulso = null;
+    const emit = (event, data) => { if (sse) sse.send(event, data); };
+    try {
+      if (querStream) {
+        sse = abrirSSE(res);
+        pulso = setInterval(() => sse.ping(), 15000);
+        emit('status', { texto: 'Abrindo a conversa…' });
       }
-      mensagens.push({ role: 'user', content: resultados });
-    }
-    const final = resposta.stop_reason === 'refusal' ? 'Não consegui responder a essa pergunta. Tente reformular.'
-      : resposta.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || 'Sem resposta.';
+      const id = idOk(conversa_id) ? String(conversa_id) : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+      const novoAg = agente === 'adviser' ? 'adviser' : personaDe(agente) ? String(agente) : 'copiloto';
+      const conv = (await lerConversa(uid, id)) || { titulo: corta(texto, 60), criado: new Date().toISOString(), msgs: [], agente: novoAg };
+      const persona = personaDe(conv.agente);
+      const ag = conv.agente === 'adviser' ? 'adviser' : 'copiloto', TOOLS = ferramentasDe(ag), RUN = execDe(ag);
+      emit('status', { texto: 'Lendo a carteira…' });
+      const S = { carteira: await carregarCarteira(), mcKey, usuario: usuario.email || uid, criadas: 0, sbSelect, sbUpsert, persona: persona?.nome || null };
+      const foco = cliente_id ? S.carteira.find(c => c.id === String(cliente_id)) || null : null;
+      if (foco) { conv.cliente_id = foco.id; conv.cliente_nome = foco.nome; }
 
-    conv.msgs.push({ r: 'user', t: texto, em: new Date(inicio).toISOString() }, { r: 'assistant', t: final, em: new Date().toISOString(), ferramentas: usadas, criadas: S.criadas });
-    if (conv.msgs.length > 80) conv.msgs = conv.msgs.slice(-80);
-    await salvarConversa(uid, id, conv).catch(() => {});
-    return res.status(200).json({ conversa_id: id, titulo: conv.titulo, agente: persona ? conv.agente : ag, missoes: S.missoesCriadas || 0, resposta: final, ferramentas: usadas, criadas: S.criadas, cortada: resposta.stop_reason === 'max_tokens', segundos: Math.round((Date.now() - inicio) / 1000) });
+      const mensagens = conv.msgs.slice(-20).map(m => ({ role: m.r, content: m.t })).filter(m => m.content);
+      while (mensagens.length && mensagens[0].role !== 'user') mensagens.shift();
+      mensagens.push({ role: 'user', content: texto });
+
+      emit('status', { texto: 'Consultando o Segundo Cérebro…' });
+      const conhecimento = await require('./_conhecimento').contexto(texto + " " + (persona?.nome || conv.agente || ""));
+      const client = new Anthropic();
+      const usadas = [], inicio = Date.now();
+      const sistemaTxt = (ag === 'adviser' ? adviserChat.sistema(hojeBRT(), S.carteira.map(c => c.nome)) : persona ? sistemaPersona(S, foco, persona) : sistema(S, foco)) + conhecimento + tiopsMarket.guide;
+      let resposta = null;
+      for (let rodada = 0; rodada < MAX_RODADAS + 1; rodada++) {
+        const semTempo = Date.now() - inicio > ORCAMENTO_MS || rodada >= MAX_RODADAS;
+        emit('status', { texto: rodada === 0 ? 'Pensando…' : 'Montando a resposta…' });
+        let turno = '';
+        resposta = await pedirModelo(client, {
+          model: MODELO, max_tokens: 16000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' },
+          system: sistemaTxt, tools: TOOLS, tool_choice: semTempo ? { type: 'none' } : { type: 'auto' }, messages: mensagens,
+        }, sse ? (delta) => { turno += delta; emit('texto', { delta }); } : null);
+        if (resposta.stop_reason === 'pause_turn' || resposta.stop_reason === 'tool_use') { if (turno) emit('texto_limpar', {}); }
+        if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
+        if (resposta.stop_reason !== 'tool_use') break;
+        mensagens.push({ role: 'assistant', content: resposta.content });
+        const resultados = [];
+        // em sequência: o conector corrompe respostas simultâneas
+        for (const b of resposta.content.filter(x => x.type === 'tool_use')) {
+          const rotulo = resumo(b.name, b.input);
+          emit('ferramenta', { nome: b.name, rotulo, estado: 'consultando' });
+          try {
+            if (!RUN[b.name]) throw new Error(`Ferramenta desconhecida: ${b.name}`);
+            if (Date.now() - inicio > ORCAMENTO_MS) throw new Error('Tempo de consulta esgotado — responda com o que já tem.');
+            let t = JSON.stringify(await RUN[b.name](S, b.input || {}));
+            if (t.length > LIMITE_RESULTADO) t = t.slice(0, LIMITE_RESULTADO) + '… [cortado por tamanho — refine a consulta]';
+            resultados.push({ type: 'tool_result', tool_use_id: b.id, content: t });
+            usadas.push({ f: b.name, r: rotulo });
+            emit('ferramenta', { nome: b.name, rotulo, estado: 'pronto' });
+          } catch (e) {
+            resultados.push({ type: 'tool_result', tool_use_id: b.id, content: `Erro: ${e.message || e}`, is_error: true });
+            usadas.push({ f: b.name, r: rotulo, erro: true });
+            emit('ferramenta', { nome: b.name, rotulo, estado: 'erro' });
+          }
+        }
+        mensagens.push({ role: 'user', content: resultados });
+      }
+      const final = resposta.stop_reason === 'refusal' ? 'Não consegui responder a essa pergunta. Tente reformular.'
+        : resposta.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || 'Sem resposta.';
+
+      conv.msgs.push({ r: 'user', t: texto, em: new Date(inicio).toISOString() }, { r: 'assistant', t: final, em: new Date().toISOString(), ferramentas: usadas, criadas: S.criadas });
+      if (conv.msgs.length > 80) conv.msgs = conv.msgs.slice(-80);
+      await salvarConversa(uid, id, conv).catch(() => {});
+      const payload = { conversa_id: id, titulo: conv.titulo, agente: persona ? conv.agente : ag, missoes: S.missoesCriadas || 0, resposta: final, ferramentas: usadas, criadas: S.criadas, cortada: resposta.stop_reason === 'max_tokens', segundos: Math.round((Date.now() - inicio) / 1000) };
+      if (sse) { sse.send('fim', payload); return; }
+      return res.status(200).json(payload);
+    } catch (e) {
+      const m = mapearErro(e);
+      if (sse) { sse.send('erro', { error: m.error }); return; }
+      return res.status(m.status).json({ error: m.error });
+    } finally {
+      if (pulso) clearInterval(pulso);
+      if (sse) sse.fechar();
+    }
   } catch (e) {
-    if (e instanceof Anthropic.RateLimitError) return res.status(429).json({ error: 'Muitas perguntas ao mesmo tempo — espere alguns segundos e tente de novo.' });
-    if (e instanceof Anthropic.APIError && /credit balance is too low/i.test(e.message)) return res.status(402).json({ error: 'Os créditos da API da Anthropic acabaram — recarregue em console.anthropic.com → Plans & Billing e o chat volta na hora.' });
-    if (e instanceof Anthropic.APIError) return res.status(502).json({ error: `Falha no modelo (${e.status}): ${e.message}` });
-    return res.status(500).json({ error: e.message || String(e) });
+    const m = mapearErro(e);
+    return res.status(m.status).json({ error: m.error });
   }
 };
 // peças reaproveitadas pelo chat do portal do cliente (api/portal-chat.js)
-module.exports.interno = { carregarCarteira, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO };
+module.exports.interno = { carregarCarteira, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, eventoSSE };
