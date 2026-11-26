@@ -206,6 +206,31 @@ const ROTULO = { ...adviserChat.ROTULO, carteira: 'carteira', plano_cliente: 'pl
 const dm = iso => `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}`;
 const resumo = (n, i) => `${ROTULO[n] || n}${i?.cliente ? ` · ${i.cliente}` : ''}${i?.inicio && i?.fim ? ` · ${dm(i.inicio)} a ${dm(i.fim)}` : ''}${n === 'propor_acao' && i?.titulo ? ` · ${corta(i.titulo, 50)}` : ''}`;
 
+// Leituras no Supabase podem ir juntas. O conector Tiops (MCP_API_KEY) corrompe
+// a resposta se duas chamadas saem ao mesmo tempo — campanhas e mercado ficam
+// sozinhas, sem conviver nem com outra ferramenta. Escrita também fica em fila
+// (o contador de sugestões e a missão do Adviser não são atômicos).
+const FERRAMENTAS_PARALELAS = new Set(['carteira', 'plano_cliente', 'vendas', 'produtos', 'curva_abc', 'ads', 'estoque_margem', 'historico_agentes', 'decisoes_pendentes', 'receita_glr', 'rentabilidade', 'retencao', 'expansao', 'onboarding', 'missoes']);
+function agruparFerramentas(nomes) {
+  const grupos = [];
+  for (const nome of nomes) {
+    const paralelo = FERRAMENTAS_PARALELAS.has(nome);
+    const ultimo = grupos[grupos.length - 1];
+    if (paralelo && ultimo?.paralelo) ultimo.nomes.push(nome);
+    else grupos.push({ paralelo, nomes: [nome] });
+  }
+  return grupos;
+}
+async function executarEmGrupos(nomes, run) {
+  const saida = new Array(nomes.length);
+  let cursor = 0;
+  for (const grupo of agruparFerramentas(nomes)) {
+    const idxs = grupo.nomes.map(() => cursor++);
+    if (grupo.paralelo) await Promise.all(idxs.map(async (idx) => { saida[idx] = await run(nomes[idx], idx); }));
+    else for (const idx of idxs) saida[idx] = await run(nomes[idx], idx);
+  }
+  return saida;
+}
 // Um evento SSE (também usado no teste). Comentário de pulso é ":\n\n".
 function eventoSSE(event, data) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -379,9 +404,8 @@ module.exports = async function handler(req, res) {
         if (resposta.stop_reason === 'pause_turn') { mensagens.push({ role: 'assistant', content: resposta.content }); continue; }
         if (resposta.stop_reason !== 'tool_use') break;
         mensagens.push({ role: 'assistant', content: resposta.content });
-        const resultados = [];
-        // em sequência: o conector corrompe respostas simultâneas
-        for (const b of resposta.content.filter(x => x.type === 'tool_use')) {
+        const blocos = resposta.content.filter(x => x.type === 'tool_use');
+        const rodar = async (b) => {
           const rotulo = resumo(b.name, b.input);
           emit('ferramenta', { nome: b.name, rotulo, estado: 'consultando' });
           try {
@@ -389,16 +413,16 @@ module.exports = async function handler(req, res) {
             if (Date.now() - inicio > ORCAMENTO_MS) throw new Error('Tempo de consulta esgotado — responda com o que já tem.');
             let t = JSON.stringify(await RUN[b.name](S, b.input || {}));
             if (t.length > LIMITE_RESULTADO) t = t.slice(0, LIMITE_RESULTADO) + '… [cortado por tamanho — refine a consulta]';
-            resultados.push({ type: 'tool_result', tool_use_id: b.id, content: t });
-            usadas.push({ f: b.name, r: rotulo });
             emit('ferramenta', { nome: b.name, rotulo, estado: 'pronto' });
+            return { resultado: { type: 'tool_result', tool_use_id: b.id, content: t }, usada: { f: b.name, r: rotulo } };
           } catch (e) {
-            resultados.push({ type: 'tool_result', tool_use_id: b.id, content: `Erro: ${e.message || e}`, is_error: true });
-            usadas.push({ f: b.name, r: rotulo, erro: true });
             emit('ferramenta', { nome: b.name, rotulo, estado: 'erro' });
+            return { resultado: { type: 'tool_result', tool_use_id: b.id, content: `Erro: ${e.message || e}`, is_error: true }, usada: { f: b.name, r: rotulo, erro: true } };
           }
-        }
-        mensagens.push({ role: 'user', content: resultados });
+        };
+        const feitos = await executarEmGrupos(blocos.map(b => b.name), (_nome, idx) => rodar(blocos[idx]));
+        mensagens.push({ role: 'user', content: feitos.map(f => f.resultado) });
+        usadas.push(...feitos.map(f => f.usada));
       }
       const final = resposta.stop_reason === 'refusal' ? 'Não consegui responder a essa pergunta. Tente reformular.'
         : resposta.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || 'Sem resposta.';
@@ -423,4 +447,4 @@ module.exports = async function handler(req, res) {
   }
 };
 // peças reaproveitadas pelo chat do portal do cliente (api/portal-chat.js)
-module.exports.interno = { carregarCarteira, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, eventoSSE };
+module.exports.interno = { carregarCarteira, FERRAMENTAS, EXEC, lerConversa, salvarConversa, MODELO, eventoSSE, agruparFerramentas, executarEmGrupos, FERRAMENTAS_PARALELAS };
