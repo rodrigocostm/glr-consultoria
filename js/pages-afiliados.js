@@ -302,7 +302,7 @@ Router.register('afiliados', async (params, el) => {
 
     return `
       <!-- KPIs -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:14px;margin-bottom:24px;">
         ${kpiAfil('Receita via Afiliados', 'R$ ' + fmtBRL(totalReceita), 'var(--green)', '💰')}
         ${kpiAfil('Comissão Paga', 'R$ ' + fmtBRL(totalComissao), 'var(--orange)', '💸')}
         ${kpiAfil('Pedidos via Afiliados', fmtNum(totalPedidos), 'var(--accent)', '📦')}
@@ -330,7 +330,7 @@ Router.register('afiliados', async (params, el) => {
             ${!temDados ? `<span class="badge" style="background:rgba(245,158,11,0.15);color:var(--yellow);">Sem dados AMS</span>` : ''}
           </div>
           ${temDados ? `
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:12px;margin-bottom:16px;">
             ${metricaAfil('Receita', 'R$ ' + fmtBRL(receita), 'var(--green)')}
             ${metricaAfil('Comissão', 'R$ ' + fmtBRL(comissao), 'var(--orange)')}
             ${metricaAfil('Pedidos', fmtNum(pedidos), 'var(--accent)')}
@@ -448,7 +448,7 @@ Router.register('afiliados', async (params, el) => {
           ${!temDados ? `<span class="badge" style="background:rgba(245,158,11,0.15);color:var(--yellow);">Sem dados de afiliados</span>` : ''}
         </div>
         ${temDados ? `
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:12px;">
           ${metricaAfil('Receita', 'R$ ' + fmtBRL(receita), 'var(--green)')}
           ${metricaAfil('Comissão Paga', 'R$ ' + fmtBRL(comissao), 'var(--orange)')}
           ${metricaAfil('Pedidos', fmtNum(pedidos), 'var(--accent)')}

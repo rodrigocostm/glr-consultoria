@@ -252,7 +252,7 @@ Router.register('integracoes', (params, el) => {
       return;
     }
 
-    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">
+    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:12px;">
       ${contas.map(c => {
         const tags = contaTagsStr(c);
         const nick = nicknames[c.external_id] || '';

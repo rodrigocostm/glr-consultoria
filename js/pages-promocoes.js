@@ -581,7 +581,7 @@ function renderConteudo() {
     <div class="card" style="padding:20px;margin-bottom:20px;">
       <div class="section-title" style="font-size:15px;margin-bottom:4px;">Criar Desconto em Item</div>
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 16px;">Desconto de preço (PRICE_DISCOUNT) pontual num anúncio — até 14 dias de duração.</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="display:grid;--cols:1fr 1fr;gap:12px;">
         <div class="form-group">
           <label class="form-label">ID do Anúncio (MLB...)</label>
           <input class="form-input" id="pd-item" placeholder="MLB1234567890">
@@ -607,7 +607,7 @@ function renderConteudo() {
     <div class="card" style="padding:20px;">
       <div class="section-title" style="font-size:15px;margin-bottom:4px;">Criar Cupom de Vendedor</div>
       <p style="font-size:12.5px;color:var(--text-secondary);margin:0 0 16px;">Cupom válido pra loja inteira, com código próprio.</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="display:grid;--cols:1fr 1fr;gap:12px;">
         <div class="form-group" style="grid-column:1/-1;">
           <label class="form-label">Nome do Cupom</label>
           <input class="form-input" id="cp-nome" placeholder="Ex: Black Friday 10%">

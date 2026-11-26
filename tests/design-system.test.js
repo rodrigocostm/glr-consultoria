@@ -25,3 +25,16 @@ test('telas migradas usam só os tokens de tamanho de texto', () => {
 });
 
 module.exports = { MIGRADAS };
+
+test('sem o remendo !important de grid no celular; grids inline se ajustam sozinhos', () => {
+  const css = ler('css/styles.css');
+  assert.doesNotMatch(css, /\[style\*="grid-template-columns"\][^}]*!important/);
+  assert.match(css, /\[style\*="--cols:"\] \{ grid-template-columns: var\(--cols\); \}/);
+  const dir = path.join(__dirname, '..', 'js');
+  const PODE = /^(repeat\(auto-(fit|fill),\s*minmax\(min\(100%|48px 1fr 90px$|minmax\(90px,1fr\) minmax\(0,3fr\)$)/;
+  const fixos = [];
+  for (const f of fs.readdirSync(dir).filter(x => x.endsWith('.js'))) {
+    for (const m of fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/style="[^"]*?grid-template-columns\s*:\s*([^;"]+)/g)) if (!PODE.test(m[1].trim())) fixos.push(`${f}: ${m[1]}`);
+  }
+  assert.deepEqual(fixos, [], 'colunas fixas inline: use --cols ou auto-fit com min(100%, …)');
+});

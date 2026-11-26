@@ -282,7 +282,7 @@ Router.register('fotos', (params, el) => {
         <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${t.desc}</div>
       </div>
 
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:14px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;margin-bottom:14px;">
         ${t.campos.map(c => `
           <div class="form-group" style="margin:0;"><label class="form-label">${c.label}</label>
             <input type="text" class="form-input" id="tipo-campo-${c.key}" placeholder="${c.placeholder}" value="${(tipoState.campos[c.key] || '').replace(/"/g, '&quot;')}">
@@ -341,7 +341,7 @@ Router.register('fotos', (params, el) => {
       ${estado.errosDetalhes.length ? `<div style="font-size:11px;color:var(--red);margin-top:8px;">${estado.errosDetalhes.join(' · ')}</div>` : ''}
 
       ${estado.detalhes_imgs.length ? `
-        <div style="display:grid;grid-template-columns:repeat(${estado.detalhes_imgs.length === 1 ? 1 : 2},1fr);gap:14px;margin-top:16px;max-width:480px;margin-left:auto;margin-right:auto;">
+        <div style="display:grid;--cols:repeat(${estado.detalhes_imgs.length === 1 ? 1 : 2},1fr);gap:14px;margin-top:16px;max-width:480px;margin-left:auto;margin-right:auto;">
           ${estado.detalhes_imgs.map((im, i) => cardFoto(im, `Detalhe ${i + 1}`)).join('')}
         </div>
       ` : ''}

@@ -29,7 +29,7 @@ function renderShell() {
       <button class="btn btn-secondary btn-sm" onclick="window._leadsRecarregar()">Atualizar</button>
     </div>
 
-    <div id="leads-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;"></div>
+    <div id="leads-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:12px;margin-bottom:20px;"></div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;" id="leads-filtros"></div>
 

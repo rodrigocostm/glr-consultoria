@@ -1033,7 +1033,7 @@
     const filtrarContas = q => { const t = semAcento(q).trim().split(/\s+/).filter(Boolean); return state.contas.filter(c => { const x = textoConta(c); return t.every(p => x.includes(p)); }); };
     function renderPortfolio() {
       return `${renderSaldos()}<div class="ag-busca-port"><input id="ag-busca-port" class="form-input" type="search" placeholder="Buscar conta ou cliente…" value="${esc(state.portBusca || '')}" oninput="window._agPortBusca(this.value)" autocomplete="off" aria-label="Buscar conta ou cliente"><span id="ag-busca-port-n">${cartoesPortfolio().n}</span></div>
-        <div id="ag-port-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--space-4);">${cartoesPortfolio().html}</div>`;
+        <div id="ag-port-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:var(--space-4);">${cartoesPortfolio().html}</div>`;
     }
     function cartoesPortfolio() {
       const lista = filtrarContas(state.portBusca || '');
@@ -1198,7 +1198,7 @@
       <summary>Ajuste manual avançado (1 campanha na mão)</summary>
       <div class="ag-hud-card" style="--ag-hud-accent:var(--red);margin-top:10px;">
         <div class="ajuda">Só pra casos pontuais — pode colar o ID aqui ou usar "Ajustar à mão" no menu ⋯ da linha da campanha, que já preenche tudo. Pra aumentar investimento, prefira "Sugerir mais investimento" no mesmo menu, que já calcula o valor certo pra você aprovar.</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:10px;margin-bottom:10px;">
           <div class="form-group" style="margin:0;"><label class="form-label">ID da campanha</label><input type="text" class="form-input" id="ag-man-campanha" placeholder="Ex: 86858387"></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Nome (só pro log)</label><input type="text" class="form-input" id="ag-man-nome" placeholder="Opcional"></div>
           <div class="form-group" style="margin:0;">

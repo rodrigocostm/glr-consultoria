@@ -487,7 +487,7 @@ Router.register('score', (params, el) => {
             </div>
 
             <!-- Detalhes por critério -->
-            <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;width:100%;margin-top:10px;">
+            <div style="display:grid;--cols:repeat(6,1fr);gap:6px;width:100%;margin-top:10px;">
               ${criterios.map(cr => {
                 const v = r.detalhes[cr.key];
                 const meta = r.meta;

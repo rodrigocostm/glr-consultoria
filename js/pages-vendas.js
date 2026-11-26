@@ -1446,7 +1446,7 @@ Router.register('vendas', async (params, el) => {
     sec.innerHTML = `
     <!-- KPI Cards — grid único de 4 colunas: financeiro + ADS + visitas/pedidos, tudo no
     mesmo padrão de card pequeno (antes eram 3 grids separados com blocos grandes) -->
-    <div id="dash-kpi-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3);margin-bottom:var(--space-3);">
+    <div id="dash-kpi-grid" style="display:grid;--cols:repeat(4,1fr);gap:var(--space-3);margin-bottom:var(--space-3);">
       ${kpiCard('Faturamento',   R$(t.fat),    `${nVendas} vendas`,  'var(--blue)')}
       ${kpiCard('Líq. Marketplace', R$(t.liq!=null?t.liq:0), t.fat>0?pct(liqPct)+' do fat.':'—', 'var(--purple)')}
       ${kpiCard('✅ Lucro Bruto',    R$(t.lucro),  'Margem: '+pct(t.margem), corMargem(t.margem))}
@@ -1471,7 +1471,7 @@ Router.register('vendas', async (params, el) => {
 
     <!-- ADS, Lucro pós-ADS e Visitas/Pedidos/Faturamento — mesmo grid de 4 colunas e
     mesmo estilo de card pequeno do bloco acima (visualmente é uma continuação dele) -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3);margin-bottom:var(--space-5);">
+    <div style="display:grid;--cols:repeat(4,1fr);gap:var(--space-3);margin-bottom:var(--space-5);">
       <div class="kpi-card">
         <div class="kpi-label">Investimento em ADS</div>
         <div class="kpi-value" style="color:var(--red);font-size:var(--fs-5);" id="dashboard-ads">R$ 0,00</div>
@@ -1902,7 +1902,7 @@ Router.register('vendas', async (params, el) => {
           ${t.liq!=null?`<span style="font-size:var(--fs-2);color:var(--purple);">Líq. ${R$(t.liq)}</span>`:''}
           <span style="font-size:var(--fs-2);font-weight:700;color:${corMargem(t.margem)};">Lucro ${R$(t.lucro)} · ${pct(t.margem)}</span>
         </div>
-        <div style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px 90px 90px 80px;padding:6px 16px;background:var(--bg-card-hover);border-bottom:1px solid var(--border);">
+        <div style="display:grid;--cols:2fr 50px 105px 105px 90px 90px 90px 90px 80px;padding:6px 16px;background:var(--bg-card-hover);border-bottom:1px solid var(--border);">
           ${['ITEM','QTD','TOTAL','LÍQ. MP','CUSTO PROD.','IMPOSTO','OUTROS','LUCRO','MARGEM'].map((h,i)=>
             `<div style="font-size:var(--fs-1);color:var(--text-muted);font-weight:600;text-align:${i<=1?'left':'right'};white-space:nowrap;">${h}</div>`).join('')}
         </div>
@@ -1972,7 +1972,7 @@ Router.register('vendas', async (params, el) => {
 
     return `
     <div style="border-bottom:1px solid var(--border);">
-      <div class="row-click" data-id="${p.id}" style="display:grid;grid-template-columns:2fr 50px 105px 105px 90px 90px 90px 90px 80px;padding:10px 16px;align-items:center;cursor:pointer;transition:background .15s;"
+      <div class="row-click" data-id="${p.id}" style="display:grid;--cols:2fr 50px 105px 105px 90px 90px 90px 90px 80px;padding:10px 16px;align-items:center;cursor:pointer;transition:background .15s;"
            onmouseover="this.style.background='var(--bg-card-hover)'" onmouseout="this.style.background=''">
 
         <!-- Item -->
@@ -3016,14 +3016,14 @@ Router.register('vendas', async (params, el) => {
 
     <!-- Aba Pedidos -->
     <div id="sec-pedidos" style="display:none;">
-      <div id="vendas-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--space-3);margin-bottom:var(--space-5);"></div>
+      <div id="vendas-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:var(--space-3);margin-bottom:var(--space-5);"></div>
 
       <details id="vendas-config-custo" style="margin-bottom:var(--space-4);">
         <summary style="cursor:pointer;padding:10px 16px;background:var(--bg-card-hover);border-radius:8px;font-size:var(--fs-3);color:var(--text-secondary);font-weight:600;list-style:none;display:flex;align-items:center;gap:var(--space-2);">
           Configurações de Custo
           <span style="font-size:var(--fs-1);color:var(--text-muted);font-weight:400;">Linhas extras e aplicação em massa</span>
         </summary>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);margin-top:10px;">
+        <div style="display:grid;--cols:1fr 1fr;gap:var(--space-3);margin-top:10px;">
           <div class="card">
             <div class="section-title mb-10" style="font-size:var(--fs-3);">Linhas de Custo Extra (por pedido)</div>
             <div id="linhas-extras-lista" style="margin-bottom:var(--space-3);"></div>
@@ -3040,7 +3040,7 @@ Router.register('vendas', async (params, el) => {
           <div class="card">
             <div class="section-title mb-10" style="font-size:var(--fs-3);">Aplicar em Massa</div>
             <div style="font-size:var(--fs-1);color:var(--text-muted);margin-bottom:10px;">Aplica custo a todos os pedidos filtrados.</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-2);margin-bottom:10px;">
+            <div style="display:grid;--cols:1fr 1fr 1fr;gap:var(--space-2);margin-bottom:10px;">
               <div><div style="font-size:var(--fs-1);color:var(--text-secondary);margin-bottom:3px;">Custo Prod. (R$)</div><input id="inp-global-custo" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
               <div><div style="font-size:var(--fs-1);color:var(--text-secondary);margin-bottom:3px;">Imposto (%)</div><input id="inp-global-imposto" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="0" style="width:100%;box-sizing:border-box;"></div>
               <div><div style="font-size:var(--fs-1);color:var(--text-secondary);margin-bottom:3px;">Outros (R$)</div><input id="inp-global-outros" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>

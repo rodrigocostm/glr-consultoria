@@ -364,7 +364,7 @@ Router.register('conciliacao', async (params, el) => {
       ${!pedidos.length ? `<div style="text-align:center;padding:60px;color:var(--text-muted);">
         ${carregando ? 'Buscando...' : (contaSel ? 'Nenhum pedido no período.' : 'Selecione uma conta pra começar.')}
       </div>` : `
-      <div class="kpi-grid mb-24" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));">
+      <div class="kpi-grid mb-24" style="grid-template-columns:repeat(auto-fill,minmax(min(100%,160px),1fr));">
         <div class="kpi-card"><div class="kpi-label">Pedidos</div><div class="kpi-value">${totalPedidos}</div></div>
         <div class="kpi-card"><div class="kpi-label">✅ Batem</div><div class="kpi-value" style="color:var(--green);">${totalBatem}</div></div>
         <div class="kpi-card"><div class="kpi-label">⚠️ Divergem</div><div class="kpi-value" style="color:var(--red);">${totalDivergem}</div></div>
