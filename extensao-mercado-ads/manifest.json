@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "GLR Copiloto ADS",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Copiloto do Mercado Ads: mostra na própria tela do Product Ads o que fazer em cada campanha e anúncio (selo com o valor, destaque de onde clicar e balão com o valor a colocar) e confere sozinho depois que você salva. Não clica, não digita e não salva nada no Mercado Livre.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
-    "https://rrodqlejqyaoomutriiw.supabase.co/*"
+    "https://rrodqlejqyaoomutriiw.supabase.co/*",
+    "https://pa.mercadolivre.com.br/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -25,7 +26,6 @@
       "js": [
         "ponte.js"
       ],
-      "world": "MAIN",
       "run_at": "document_start"
     },
     {

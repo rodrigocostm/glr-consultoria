@@ -30,6 +30,32 @@ const ALLOWED_ACTIONS = new Set([
   'ml_item_promotions',           // Central de Promoções (só leitura; a conta é conferida abaixo)
 ]);
 
+// Equipe: as telas chamam o Tiops só por este proxy (a chave não vai ao navegador).
+// Inclui leitura que o portal já usa e as ações de escrita/consulta que antes
+// iam direto do navegador da equipe. O portal NÃO consulta este conjunto.
+const ACOES_EQUIPE = new Set([
+  ...ALLOWED_ACTIONS,
+  'amazon_get_order_items','amazon_list_financial_events','amazon_list_orders',
+  'category_attributes','create_item','describe_action','get_description','get_shipment',
+  'list_actions','magalu_list_orders',
+  'ml_add_promotion_items','ml_ads_accounts','ml_ads_get_ad','ml_ads_items','ml_ads_metrics','ml_ads_update_campaign',
+  'ml_affiliate_performance','ml_affiliate_report','ml_answer_question','ml_catalog_optin','ml_catalog_price_to_win',
+  'ml_category_detail','ml_create_coupon','ml_list_promotions','ml_listing_fees','ml_promotion_items',
+  'ml_shipping_options_free','ml_site_categories','ml_update_variation_stock','ml_update_variations_price',
+  'ml_user_product_stock','ml_visits_item','ml_visits_user',
+  'raw_read','search_categories',
+  'shopee_ads_edit_campaign','shopee_ads_gms_items','shopee_ads_gms_performance','shopee_ads_pause_campaign',
+  'shopee_ads_recommended_items','shopee_ads_resume_campaign','shopee_ads_roi_target',
+  'shopee_ams_affiliate_performance','shopee_ams_conversion_report','shopee_ams_open_campaign_performance','shopee_ams_shop_performance',
+  'shopee_create_item','shopee_get_attributes','shopee_get_brand_list','shopee_get_categories','shopee_get_extra_info',
+  'shopee_get_profile','shopee_get_return_list','shopee_get_shop_performance','shopee_get_wallet_transactions',
+  'shopee_init_variation','shopee_recommend_category','shopee_returns_list','shopee_sales_summary',
+  'shopee_update_price','shopee_update_stock','shopee_upload_image',
+  'tiktok_create_product','tiktok_get_brands','tiktok_get_categories','tiktok_get_warehouses',
+  'tiktok_listing_schemas','tiktok_recommend_category','tiktok_upload_image',
+  'update_item',
+]);
+
 // Portal: ações administrativas da GLR nunca; escrita livre nunca.
 const BLOQUEADAS_PORTAL = /^(credits_status|ai_credits_status|me|raw_write|marketplace_action|billing_.*|suporte_.*|agente_.*|link_.*|anuncio_.*|photo_.*|video_.*|gerar_prompt|bling_.*|olist_.*|upload_clip.*|delete_clip|get_clips)$/;
 // Consultas de catálogo (categorias/atributos) não são de conta nenhuma
@@ -63,8 +89,8 @@ async function tiops(apiKey, action, params) {
 }
 
 // params: { meliUserId | shopId, itens: [{ id, valor }] } — valor = custo total
-// do produto (0 = apaga). Chaves iguais às da tela: ML = id; Shopee = id e nome.
-async function salvarCustoPortal(apiKey, p) {
+// do produto (0 = apaga). A chave é só o id do anúncio, nunca o nome.
+async function salvarCustoPortal(apiKey, p, clienteId) {
   const itens = Array.isArray(p.itens) ? p.itens.slice(0, 100) : [];
   if (!itens.length) throw new Error('Nenhum item informado');
   const valorDe = new Map();
@@ -90,25 +116,15 @@ async function salvarCustoPortal(apiKey, p) {
       for (const d of (r?.data?.response?.item_list || r?.response?.item_list || r?.data?.item_list || [])) {
         const v = valorDe.get(String(d.item_id)); if (v == null) continue;
         chaves.push([String(d.item_id), v]);
-        if (d.item_name) chaves.push([d.item_name, v]);
       }
     }
   } else throw new Error('Informe a conta');
   if (!chaves.length) throw new Error('Nenhum anúncio desta conta encontrado');
-
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const H = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?chave=eq.glr_vendas_custo_catalogo&select=dados`, { headers: H });
-  const rows = r.ok ? await r.json() : null;
-  if (!rows) throw new Error('Não consegui ler o catálogo de custos');
-  const cat = rows[0]?.dados && typeof rows[0].dados === 'object' && !Array.isArray(rows[0].dados) ? rows[0].dados : {};
-  for (const [k, v] of chaves) { if (v > 0) cat[k] = v; else delete cat[k]; }
-  const w = await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?on_conflict=chave`, {
-    method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify({ chave: 'glr_vendas_custo_catalogo', dados: cat, atualizado_em: new Date().toISOString() }),
-  });
-  if (!w.ok) throw new Error('Não consegui salvar o custo');
-  return { ok: true, chaves: Object.fromEntries(chaves) };
+  // Só o id do anúncio. O nome do produto não é chave: dois clientes com o mesmo nome se atropelavam.
+  const custosCliente = require('./_custos-cliente');
+  const dados = await custosCliente.fundirCatalogo(chaves);
+  if (clienteId) await custosCliente.fundirColecao(clienteId, chaves);
+  return { ok: true, chaves: Object.fromEntries(chaves.filter(([id]) => Object.prototype.hasOwnProperty.call(dados, id))) };
 }
 
 // ── Login de cliente do portal pelo servidor (só a equipe, glr_staff) ──
@@ -182,7 +198,7 @@ async function loginPortal({ tipo, email, senha }) {
 const nfeMod = require('./_nfe');
 const estoqueMod = require('./_estoque');
 
-module.exports = async function handler(req, res) {
+async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -205,7 +221,7 @@ module.exports = async function handler(req, res) {
     catch (e) { return res.status(400).json({ error: e.message || String(e) }); }
   }
 
-  if (!contasPermitidas && !ALLOWED_ACTIONS.has(action)) return res.status(403).json({ error: `Ação '${action}' não permitida via proxy` });
+  if (!contasPermitidas && !ACOES_EQUIPE.has(action)) return res.status(403).json({ error: `Ação '${action}' não permitida via proxy` });
   const p = params || {};
   if (contasPermitidas) {
     // Portal: apenas consultas explicitamente permitidas e custo validado.
@@ -263,8 +279,28 @@ module.exports = async function handler(req, res) {
       if (action === 'glr_nfe_nota') return res.status(200).json(await nfeMod.consultarNota(cli, String(p.id || '')));
       if (action === 'glr_nfe_danfe') return res.status(200).json(await nfeMod.danfe(cli, String(p.id || ''), p.formato));
       if (action === 'glr_portal_ncm') {
-        const cat = await nfeMod.lerNcm(), ids = (Array.isArray(p.ids) ? p.ids : []).slice(0, 3000).map(String);
-        return res.status(200).json({ ncm: Object.fromEntries(ids.filter(id => cat[id]).map(id => [id, cat[id]])) });
+        const cat = await nfeMod.lerNcm();
+        const pedidos = (Array.isArray(p.itens) ? p.itens : []).slice(0, 3000)
+          .map(x => ({ conta: String(x.conta || ''), id: String(x.id || ''), ml: x.mkt === 'ml' }))
+          .filter(x => x.conta && x.id && contasPermitidas.has(x.conta));
+        const porConta = new Map();
+        for (const it of pedidos) {
+          const g = porConta.get(it.conta) || { ml: it.ml, ids: [] };
+          g.ids.push(it.id); porConta.set(it.conta, g);
+        }
+        const out = {};
+        for (const [conta, g] of porConta) {
+          const donos = new Set();
+          if (g.ml) for (let i = 0; i < g.ids.length; i += 20) {
+            const r = await t('get_items', { meliUserId: conta, ids: g.ids.slice(i, i + 20) });
+            for (const e of (Array.isArray(r?.data) ? r.data : (Array.isArray(r) ? r : []))) { const b = e?.body || e; if (b?.id && String(b.seller_id) === conta) donos.add(String(b.id)); }
+          } else for (let i = 0; i < g.ids.length; i += 50) {
+            const r = await t('shopee_get_items_batch', { shopId: conta, item_id_list: g.ids.slice(i, i + 50).map(Number) });
+            for (const d of (r?.data?.response?.item_list || r?.response?.item_list || [])) donos.add(String(d.item_id));
+          }
+          for (const id of donos) { const n = nfeMod.ncmDe(cat, conta, id); if (n) out[id] = n; }
+        }
+        return res.status(200).json({ ncm: out });
       }
       if (action === 'glr_portal_salvar_ncm') { // confere que cada anúncio é da conta do cliente (como o custo)
         const conta = String(p.meliUserId || p.shopId || '');
@@ -280,7 +316,7 @@ module.exports = async function handler(req, res) {
           for (const d of (r?.data?.response?.item_list || r?.response?.item_list || [])) if (pedidos.has(String(d.item_id))) ok.push({ id: String(d.item_id), ncm: pedidos.get(String(d.item_id)) });
         }
         if (!ok.length) return res.status(400).json({ error: 'Nenhum anúncio desta conta encontrado' });
-        await nfeMod.salvarNcm(ok);
+        await nfeMod.salvarNcm(ok.map(x => ({ ...x, conta })));
         return res.status(200).json({ ok: true, salvos: ok.length });
       }
       return res.status(400).json({ error: 'Ação de nota inválida' });
@@ -307,7 +343,7 @@ module.exports = async function handler(req, res) {
 
   if (action === 'glr_portal_salvar_custo') {
     if (!contasPermitidas) return res.status(403).json({ error: 'Somente para o portal do cliente' });
-    try { return res.status(200).json(await salvarCustoPortal(apiKey, p)); }
+    try { return res.status(200).json(await salvarCustoPortal(apiKey, p, String(identity.portal?.clienteId || ''))); }
     catch (e) { return res.status(400).json({ error: e.message }); }
   }
 
@@ -331,4 +367,6 @@ module.exports = async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
-};
+}
+handler.ACOES_EQUIPE = ACOES_EQUIPE;
+module.exports = handler;

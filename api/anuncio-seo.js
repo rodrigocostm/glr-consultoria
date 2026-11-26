@@ -49,6 +49,8 @@ function jsonDe(txt) {
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const quem = await require('./_auth').requireEquipeOuPortal(req, res); if (!quem) return;
+  try { await require('./_cota-ia').consumir(quem.user?.id, 'anuncio-seo'); }
+  catch (e) { return res.status(e.status || 503).json({ error: e.message || 'Cota indisponível.' }); }
   const apiKey = process.env.ANTHROPIC_API_KEY, mcpKey = process.env.MCP_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'A chave da IA não está configurada no servidor.' });
 

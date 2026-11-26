@@ -5,26 +5,30 @@
 // ============================================================
 
 const MarketplaceAPI = {
-  BASE_URL: 'https://mcp.tiops.com.br',
-
-  // Retorna a API key salva
+  // A chave do Tiops fica só no servidor (MCP_API_KEY). Equipe e portal chamam /api/mcp
+  // com a sessão do Supabase. getApiKey() só responde se a tela pode seguir — nunca devolve a chave.
   getApiKey() {
-    if (window._portalConfig) return 'portal'; // portal do cliente: a chave fica no servidor (/api/mcp)
-    return localStorage.getItem('glr_mc_apikey') || '';
+    return window._portalConfig ? 'portal' : 'server';
   },
 
-  // Portal do cliente: tudo passa pelo /api/mcp com o login do cliente — o servidor
-  // confere e só deixa agir nas contas vinculadas a ele (a chave da GLR não vai ao navegador).
+  // Portal e equipe: o servidor confere o papel. No portal, só as contas vinculadas.
   async _callPortal(action, params) {
     const { data: sess } = await _sb.auth.getSession();
+    const token = sess?.session?.access_token || '';
+    if (!token) throw new Error('Sessão expirada. Entre novamente.');
     const res = await fetch('/api/mcp', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token || ''}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ action, params }),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || json.message || `HTTP ${res.status}`);
-    if (json.status && json.status !== 200) throw new Error(json.data?.error || json.message || 'Erro na API');
+    const detalhe = j => {
+      const causas = Array.isArray(j?.cause) ? j.cause.map(c => c.message).filter(Boolean).join(' | ') : '';
+      return causas || j?.data?.error || j?.data?.message || j?.message || j?.error || '';
+    };
+    if (!res.ok) throw new Error(detalhe(json) || `HTTP ${res.status}`);
+    // raw (e outras ações "cruas") devolve HTTP 200 com o erro real só em json.error
+    if (json.status && json.status !== 200) throw new Error(detalhe(json) || 'Erro na API');
     if (json.error && String(json.error).trim()) throw new Error(json.error);
     return json;
   },
@@ -32,9 +36,9 @@ const MarketplaceAPI = {
   // Chamada genérica à API. A Tiops às vezes recusa por um instante com 403 "Você tem N contas
   // conectadas. Seu plano cobre até 100" mesmo com o plano ativo e sem limite (05/11/2026): tenta
   // de novo sozinho algumas vezes antes de mostrar o erro.
-  async call(action, params = {}, apiKey = null) {
+  async call(action, params = {}) {
     for (let t = 0; ; t++) {
-      try { return await this._call(action, params, apiKey); }
+      try { return await this._call(action, params); }
       catch (e) {
         const mensagem = String(e?.message || '');
         const limiteInstavel = /plano cobre|contas conectadas/i.test(mensagem);
@@ -46,47 +50,8 @@ const MarketplaceAPI = {
       }
     }
   },
-  async _call(action, params = {}, apiKey = null) {
-    if (window._portalConfig) return this._callPortal(action, params);
-    const key = apiKey || this.getApiKey();
-    if (!key) throw new Error('API key não configurada');
-
-    const res = await fetch(this.BASE_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-      },
-      body: JSON.stringify({ action, params }),
-    });
-
-    if (!res.ok) {
-      let detail = '';
-      // O erro real às vezes vem solto (j.message/j.error), às vezes aninhado em
-      // j.data (ex: falta de crédito de IA), e em erro de validação do ML o texto
-      // que interessa fica dentro de j.cause[] (j.message só traz o código, tipo
-      // "body.required_fields") — sem checar os três, a UI cai pro JSON inteiro ou
-      // pra um código genérico em vez da frase que explica o que realmente faltou.
-      try {
-        const j = await res.json();
-        const causas = Array.isArray(j.cause) ? j.cause.map(c => c.message).filter(Boolean).join(' | ') : '';
-        detail = causas || j.data?.error || j.data?.message || j.message || j.error || JSON.stringify(j);
-      } catch(e) {}
-      throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
-    }
-    const json = await res.json();
-    // raw_read (e outras ações "cruas") costuma devolver HTTP 200 com o erro
-    // real só no campo json.error, sem json.status — sem checar isso aqui
-    // também, a paginação de campanhas (listarTodasCampanhasShopee) tratava
-    // erro real como "acabaram as campanhas" e parava sempre em 100.
-    if (json.status && json.status !== 200) {
-      const causas = Array.isArray(json.cause) ? json.cause.map(c => c.message).filter(Boolean).join(' | ') : '';
-      throw new Error(causas || json.data?.error || json.message || 'Erro na API');
-    }
-    if (json.error && String(json.error).trim()) {
-      throw new Error(json.error);
-    }
-    return json;
+  async _call(action, params = {}) {
+    return this._callPortal(action, params);
   },
 
   // ── Contas ─────────────────────────────────────────────────

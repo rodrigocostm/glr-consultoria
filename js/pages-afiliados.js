@@ -4,18 +4,6 @@
 // ============================================================
 
 Router.register('afiliados', async (params, el) => {
-  const apiKey = localStorage.getItem('glr_mc_apikey') || '';
-
-  if (!apiKey) {
-    el.innerHTML = `<div class="page"><div style="text-align:center;padding:80px 24px;">
-      <div style="font-size:48px;margin-bottom:16px;">🔗</div>
-      <div style="font-size:20px;font-weight:700;margin-bottom:8px;">Central de Afiliados</div>
-      <div style="font-size:14px;color:var(--text-muted);margin-bottom:24px;">Configure sua API Key em Integrações para ver os dados de afiliados.</div>
-      <button class="btn btn-primary" onclick="Router.navigate('integracoes')">Configurar API</button>
-    </div></div>`;
-    return;
-  }
-
   // Carrega vinculos e clientes
   let vinculos = {};
   try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) {}

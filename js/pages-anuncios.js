@@ -6,7 +6,7 @@
 // ============================================================
 (function () {
 
-  function esc(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
+  function esc(s) { return window.glrEsc(s); }
 
   // ── Quando a busca/sugestão literal de categoria do marketplace não acha
   // nada (nome curto ou comercial, tipo "Buffet Alaska"), pede pra IA pensar

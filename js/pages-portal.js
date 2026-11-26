@@ -33,11 +33,15 @@ function _portalFinCache() {
 // precisa puxar essas chaves especificamente pra calcular o mesmo lucro que o admin vê.
 async function _portalSincronizarCustos() {
   try {
-    const { data, error } = await _sb.from('glr_storage')
-      .select('chave, dados')
-      .in('chave', ['glr_vendas_custos', 'glr_vendas_custo_catalogo', 'glr_aliquotas', 'glr_vendas_linhas']);
+    const cli = String(window._portalConfig?.clienteId ?? '');
+    if (!cli) return;
+    const { data, error } = await _sb.from('glr_cliente_colecao')
+      .select('colecao, dados')
+      .eq('cliente_id', cli);
     if (error || !data) return;
-    data.forEach(row => { if (row.dados != null) localStorage.setItem(row.chave, JSON.stringify(row.dados)); });
+    const mapa = { custos: 'glr_vendas_custos', custo_catalogo: 'glr_vendas_custo_catalogo', aliquotas: 'glr_aliquotas', vendas_linhas: 'glr_vendas_linhas' };
+    const gravar = typeof _localSetItem === 'function' ? _localSetItem : localStorage.setItem.bind(localStorage);
+    data.forEach(row => { const chave = mapa[row.colecao]; if (chave && row.dados != null) gravar(chave, JSON.stringify(row.dados)); });
   } catch(e) {}
 }
 
@@ -848,10 +852,7 @@ window._initPortalCliente = async function(cfg) {
   } catch (e) {}
   _configurarSidebarCliente(cfg);
 
-  // Marcador LOCAL no lugar da chave: as telas que conferem "tem chave?" seguem em
-  // frente, e toda chamada vai pelo /api/mcp (a chave de verdade fica só no servidor).
-  // Não sobe pro banco (grava direto, sem o sync) e é apagado ao sair da conta.
-  try { (typeof _localSetItem === 'function' ? _localSetItem : localStorage.setItem.bind(localStorage))('glr_mc_apikey', 'portal'); } catch (e) {}
+  // A chave do Tiops fica só no servidor. As telas chamam /api/mcp com a sessão.
   // Portal sem botões de carregar: as telas buscam sozinhas (ao abrir e ao mudar filtro)
   document.body.classList.add('modo-portal');
   if (!document.getElementById('portal-sem-botoes')) {

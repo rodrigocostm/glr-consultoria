@@ -654,8 +654,6 @@ const _projecaoDetalhe = (params, el) => {
     try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos')||'{}'); } catch(e) {}
     const contasVinc = vinculos[String(cidAtivo)] || [];
     if (!contasVinc.length) { if (!silencioso) alert('Nenhuma conta vinculada. Use Vincular conta primeiro.'); return; }
-    const apiKey = localStorage.getItem('glr_mc_apikey')||'';
-    if (!apiKey) { if (!silencioso) alert('Configure a API Key nas Integrações.'); return; }
 
     // Meses fechados (Maio/Abril/Março) não mudam mais depois de fechados — guarda o
     // que já foi buscado antes por conta, pra não buscar de novo toda atualização.

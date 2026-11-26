@@ -10,11 +10,15 @@
 const webpush = require('web-push');
 
 const SUPABASE_URL = 'https://rrodqlejqyaoomutriiw.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyb2RxbGVqcXlhb29tdXRyaWl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjU5NjUsImV4cCI6MjA5NjQ0MTk2NX0.JaKQHoGH8S3ZdLQInLErpC21SZ0j4FmIGtvWKcBes-A';
+const sbHeaders = (extra = {}) => {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  return { apikey: key, Authorization: `Bearer ${key}`, ...extra };
+};
 
 async function sbGet(chave) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const r = await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?chave=eq.${encodeURIComponent(chave)}&select=dados`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    headers: sbHeaders(),
   });
   if (!r.ok) return null;
   const rows = await r.json();
@@ -22,13 +26,13 @@ async function sbGet(chave) {
 }
 
 async function sbSet(chave, dados) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return;
   await fetch(`${SUPABASE_URL}/rest/v1/glr_storage?on_conflict=chave`, {
     method: 'POST',
-    headers: {
+    headers: sbHeaders({
       'Content-Type': 'application/json',
-      apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`,
       Prefer: 'resolution=merge-duplicates,return=minimal',
-    },
+    }),
     body: JSON.stringify({ chave, dados, atualizado_em: new Date().toISOString() }),
   });
 }
@@ -58,8 +62,9 @@ module.exports = async function handler(req, res) {
   if (pushDisponivel) webpush.setVapidDetails('mailto:contatoconsultoriaglr@gmail.com', VAPID_PUBLIC, VAPID_PRIVATE);
 
   try {
-    const apiKey = await sbGet('glr_mc_apikey');
-    if (!apiKey) return res.status(200).json({ ok: true, skip: 'sem API key configurada em Integrações' });
+    const apiKey = process.env.MCP_API_KEY;
+    if (!apiKey) return res.status(200).json({ ok: true, skip: 'MCP_API_KEY não configurada no servidor' });
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return res.status(200).json({ ok: true, skip: 'SUPABASE_SERVICE_ROLE_KEY não configurada no servidor' });
 
     const contasResp = await mcpCall(apiKey, 'list_accounts', {});
     const contas = contasResp.data?.accounts || contasResp.data || [];
@@ -102,7 +107,7 @@ module.exports = async function handler(req, res) {
           const detalhes = rd.data?.response?.item_list || [];
           for (const it of detalhes) {
             const chave = `shopee_${it.item_id}`;
-            const precoAtual = (it.price_info?.[0]?.current_price || 0) / 100000;
+            const precoAtual = it.has_model ? (parseFloat(it.price_min) || 0) : (parseFloat(it.price_info?.[0]?.current_price) || 0);
             const antes = snap[chave];
             if (antes && antes._conta === extId && antes.preco !== precoAtual) {
               logArr.unshift({ id: novoId(), itemId: it.item_id, apelido: (it.item_name||String(it.item_id)).slice(0,60), de: R$(antes.preco), para: R$(precoAtual), quando: new Date().toISOString() });
@@ -135,7 +140,7 @@ module.exports = async function handler(req, res) {
     if (!pushDisponivel) return res.status(200).json({ ok: true, mudancas: mudancas.length, aviso: 'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY não configuradas — mudanças salvas no histórico, mas nenhuma notificação foi enviada.' });
 
     const subsResp = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?select=*`, {
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      headers: sbHeaders(),
     });
     const subs = await subsResp.json();
 
@@ -155,7 +160,7 @@ module.exports = async function handler(req, res) {
       } catch(e) {
         if (e.statusCode === 410 || e.statusCode === 404) {
           await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(s.endpoint)}`, {
-            method: 'DELETE', headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+            method: 'DELETE', headers: sbHeaders(),
           }).catch(()=>{});
         }
       }

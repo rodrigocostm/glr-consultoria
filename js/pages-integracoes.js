@@ -3,7 +3,7 @@
 // ============================================================
 
 Router.register('integracoes', (params, el) => {
-  const apiKey   = localStorage.getItem('glr_mc_apikey') || '';
+  const esc = t => window.glrEsc(t);
   let vinc       = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); // { clienteId: [conta, ...] }
   let aliquotas  = JSON.parse(localStorage.getItem('glr_aliquotas') || '{}'); // { [extId]: pct }
   const salvarAliquota = (extId, val) => {
@@ -42,16 +42,11 @@ Router.register('integracoes', (params, el) => {
       </div>
     </div>
 
-    <!-- API Key -->
+    <!-- Conexão: a chave fica só no servidor (MCP_API_KEY) -->
     <div class="card mb-16">
-      <div class="section-title mb-12">API Key</div>
+      <div class="section-title mb-12">Conexão com o Tiops</div>
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">A chave não fica neste navegador. As consultas usam a chave configurada no servidor.</div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-        <input id="inp-apikey" class="form-input" type="password"
-          value="${apiKey}" placeholder="mc_live_xxxxxxxxxxxxxxxx"
-          style="flex:1;min-width:280px;font-family:monospace;">
-        <button onclick="const i=document.getElementById('inp-apikey');i.type=i.type==='password'?'text':'password';this.textContent=i.type==='password'?'Mostrar':'Ocultar';"
-          style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:8px 12px;cursor:pointer;font-size:12px;white-space:nowrap;">Mostrar</button>
-        <button class="btn btn-primary" onclick="salvarApiKey()">Salvar</button>
         <button class="btn btn-secondary" onclick="testarApiKey()">Testar conexão</button>
         <button class="btn btn-secondary" onclick="descobrirAcoesAmazon()">Descobrir ações Amazon</button>
         <span id="status-apikey" style="font-size:13px;"></span>
@@ -61,26 +56,25 @@ Router.register('integracoes', (params, el) => {
     </div>
 
     <!-- Contas disponíveis -->
-    <div class="card mb-16" id="card-contas" style="${apiKey ? '' : 'opacity:0.4;pointer-events:none;'}">
+    <div class="card mb-16" id="card-contas">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <div class="section-title">Contas Conectadas</div>
         <button class="btn btn-secondary btn-sm" onclick="recarregarContas()">↻ Recarregar</button>
       </div>
       <div id="lista-contas">
-        ${apiKey ? '<div style="color:var(--text-muted);font-size:13px;">Clique em "Recarregar" para buscar suas contas.</div>'
-                 : '<div style="color:var(--text-muted);font-size:13px;">Configure a API Key primeiro.</div>'}
+        <div style="color:var(--text-muted);font-size:13px;">Clique em "Recarregar" para buscar suas contas.</div>
       </div>
     </div>
 
     <!-- Vínculo conta → cliente -->
-    <div class="card mb-16" id="card-vinculos" style="${apiKey ? '' : 'opacity:0.4;pointer-events:none;'}">
+    <div class="card mb-16" id="card-vinculos">
       <div class="section-title mb-12">Vincular Conta ao Cliente</div>
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
         <div class="form-group" style="flex:1;min-width:200px;margin:0;">
           <label class="form-label">Cliente</label>
           <select id="sel-cliente-vinc" class="form-input">
             <option value="">Selecione...</option>
-            ${GLR.clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('')}
+            ${GLR.clientes.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')}
           </select>
         </div>
         <div class="form-group" style="flex:1;min-width:200px;margin:0;">
@@ -125,10 +119,10 @@ Router.register('integracoes', (params, el) => {
         <div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:12.5px;flex-wrap:wrap;">
           <div style="width:100px;flex-shrink:0;color:var(--text-muted);font-size:11px;">${fmtLogRelativo(l.data)}</div>
           <div style="flex:1;min-width:180px;">
-            <span style="font-weight:600;color:var(--text-primary);">${l.acao}</span>
-            ${l.detalhes ? `<span style="color:var(--text-secondary);"> — ${l.detalhes}</span>` : ''}
+            <span style="font-weight:600;color:var(--text-primary);">${esc(l.acao)}</span>
+            ${l.detalhes ? `<span style="color:var(--text-secondary);"> — ${esc(l.detalhes)}</span>` : ''}
           </div>
-          <div style="flex-shrink:0;font-size:11px;color:var(--accent-light);">${l.usuario}</div>
+          <div style="flex-shrink:0;font-size:11px;color:var(--accent-light);">${esc(l.usuario)}</div>
         </div>
       `).join('')}
     </div>`;
@@ -142,30 +136,13 @@ Router.register('integracoes', (params, el) => {
 
   // ── Funções ──────────────────────────────────────────────
 
-  window.salvarApiKey = () => {
-    const key = document.getElementById('inp-apikey').value.trim();
-    if (!key) return;
-    localStorage.setItem('glr_mc_apikey', key);
-    document.getElementById('card-contas').style.opacity = '1';
-    document.getElementById('card-contas').style.pointerEvents = '';
-    document.getElementById('card-vinculos').style.opacity = '1';
-    document.getElementById('card-vinculos').style.pointerEvents = '';
-    const st = document.getElementById('status-apikey');
-    st.style.color = 'var(--green)';
-    st.textContent = '✓ Chave salva';
-    setTimeout(() => st.textContent = '', 2000);
-    registrarLog('API Key atualizada', 'Chave do Marketplace Connect alterada');
-  };
-
   window.testarApiKey = async () => {
-    const key = document.getElementById('inp-apikey').value.trim();
     const st  = document.getElementById('status-apikey');
     const cr  = document.getElementById('credits-info');
-    if (!key) { st.style.color = 'var(--red)'; st.textContent = '⚠ Insira a API key'; return; }
     st.style.color = 'var(--text-muted)';
     st.textContent = '⏳ Testando...';
     try {
-      const r = await MarketplaceAPI.call('credits_status', {}, key);
+      const r = await MarketplaceAPI.call('credits_status', {});
       const d = r?.data || r || {};
       const plano   = d.plan || d.plan_name || d.subscription || d.tier || d.type || '—';
       const creditos = d.credits ?? d.credit ?? d.balance ?? d.remaining ?? '—';
@@ -175,11 +152,10 @@ Router.register('integracoes', (params, el) => {
         : null;
       st.style.color = 'var(--green)';
       st.textContent = '✓ Conectado!';
-      cr.innerHTML = `Plano: <strong>${plano}</strong> · Créditos: <strong>${creditos}</strong>`
+      cr.innerHTML = `Plano: <strong>${esc(plano)}</strong> · Créditos: <strong>${esc(creditos)}</strong>`
         + (adsAtivo === true  ? ' · <span style="color:var(--green);font-weight:700;">✅ Módulo ADS ativo</span>' : '')
         + (adsAtivo === false ? ' · <span style="color:var(--red);font-weight:700;">❌ Módulo ADS inativo</span>' : '')
-        + `<details style="margin-top:6px;font-size:11px;color:var(--text-muted);cursor:pointer;"><summary>Ver resposta bruta</summary><pre style="font-size:10px;overflow:auto;max-height:120px;">${JSON.stringify(d, null, 2)}</pre></details>`;
-      localStorage.setItem('glr_mc_apikey', key);
+        + `<details style="margin-top:6px;font-size:11px;color:var(--text-muted);cursor:pointer;"><summary>Ver resposta bruta</summary><pre style="font-size:10px;overflow:auto;max-height:120px;">${esc(JSON.stringify(d, null, 2))}</pre></details>`;
     } catch(e) {
       st.style.color = 'var(--red)';
       st.textContent = `✗ Erro: ${e.message}`;
@@ -204,7 +180,7 @@ Router.register('integracoes', (params, el) => {
         <div style="background:#0d0d14;border:1px solid var(--accent);border-radius:10px;padding:14px;font-family:monospace;font-size:12px;color:#e5e7eb;">
           <div style="color:var(--accent-light);font-weight:700;margin-bottom:8px;">Ações Amazon encontradas no catálogo (${amazonActions.length})</div>
           ${amazonActions.length
-            ? `<ul style="margin:0;padding-left:18px;">${amazonActions.map(n=>`<li>${n}</li>`).join('')}</ul><div style="margin-top:10px;color:#fbbf24;">⏳ Consultando parâmetros de amazon_list_orders, amazon_get_order_items e amazon_list_financial_events...</div>`
+            ? `<ul style="margin:0;padding-left:18px;">${amazonActions.map(n=>`<li>${esc(n)}</li>`).join('')}</ul><div style="margin-top:10px;color:#fbbf24;">⏳ Consultando parâmetros de amazon_list_orders, amazon_get_order_items e amazon_list_financial_events...</div>`
             : `<div style="color:var(--red);">Nenhuma ação com "amazon" no nome foi encontrada. Total de ações no catálogo: ${nomes.length}.<br>Isso confirma que a API do Marketplace Connect ainda não tem suporte real pra Amazon — precisa confirmar com o suporte deles (Tiops) antes de eu implementar qualquer busca de pedido.</div>`}
         </div>`;
 
@@ -225,10 +201,10 @@ Router.register('integracoes', (params, el) => {
       bloco.id = 'amazon-diag-params';
       bloco.style.cssText = 'margin-top:10px;background:#0d0d14;border:1px solid #6366f1;border-radius:10px;padding:14px;font-family:monospace;font-size:11px;color:#e5e7eb;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;';
       bloco.innerHTML = `<div style="color:var(--accent-light);font-weight:700;margin-bottom:8px;font-family:Inter,sans-serif;font-size:12px;">Parâmetros das ações-chave</div>` +
-        chave.map(a => `<div style="margin-bottom:10px;"><div style="color:#fbbf24;">${a}</div>${JSON.stringify(detalhes[a], null, 2)}</div>`).join('');
+        chave.map(a => `<div style="margin-bottom:10px;"><div style="color:#fbbf24;">${esc(a)}</div>${esc(JSON.stringify(detalhes[a], null, 2))}</div>`).join('');
       box.appendChild(bloco);
     } catch(e) {
-      box.innerHTML = `<div style="color:var(--red);font-size:12px;">Erro ao consultar catálogo: ${e.message}</div>`;
+      box.innerHTML = `<div style="color:var(--red);font-size:12px;">Erro ao consultar catálogo: ${esc(e.message)}</div>`;
     }
   };
 
@@ -239,7 +215,7 @@ Router.register('integracoes', (params, el) => {
   // nome da loja na plataforma (Shopee: vitrine; Mercado Livre: apelido do vendedor) e guarda.
   const K_NOMES = 'glr_mc_nomes_loja';
   let nomesLoja = (() => { try { return JSON.parse(localStorage.getItem(K_NOMES) || '{}') || {}; } catch (e) { return {}; } })();
-  const escNome = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const escNome = esc;
   const mktNome = c => platNome[c.marketplace] || ({ tiktok_shop: 'TikTok Shop', tiktok: 'TikTok Shop', shein: 'Shein' })[c.marketplace] || c.marketplace;
   const nomeGenerico = (n, c) => { n = String(n || '').trim(); return !n || n === String(c.external_id) || /^(mercado ?livre|meli|ml|shopee|amazon|magalu|tiktok([ _]shop)?|shein)(\s+\S*\d\S*)?$/i.test(n); };
   const nomeDaLoja = c => nomesLoja[c.external_id] || [c.label, c.nickname].find(n => !nomeGenerico(n, c)) || '';
@@ -285,10 +261,9 @@ Router.register('integracoes', (params, el) => {
           <span style="font-size:22px;margin-top:2px;">${platIcon[c.marketplace] || '🏪'}</span>
           <div style="min-width:0;flex:1;">
             <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow-wrap:anywhere;">${escNome(nomeDaLoja(c) || mktNome(c))}</div>
-            <div style="font-size:11px;color:var(--text-muted);overflow-wrap:anywhere;">${nomeDaLoja(c) ? escNome(mktNome(c)) + ' · ' : ''}ID: ${c.external_id}</div>
-            ${tags ? `<div style="font-size:10px;color:var(--accent-light);margin-top:2px;font-weight:600;">${tags}</div>` : ''}
-            <input type="text" value="${nick}" placeholder="Apelido (opcional)"
-              onchange="salvarNickname('${c.external_id}', this.value)"
+            <div style="font-size:11px;color:var(--text-muted);overflow-wrap:anywhere;">${nomeDaLoja(c) ? escNome(mktNome(c)) + ' · ' : ''}ID: ${esc(c.external_id)}</div>
+            ${tags ? `<div style="font-size:10px;color:var(--accent-light);margin-top:2px;font-weight:600;">${esc(tags)}</div>` : ''}
+            <input type="text" class="int-apelido" data-ext="${esc(c.external_id)}" value="${esc(nick)}" placeholder="Apelido (opcional)"
               style="margin-top:5px;width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--text-primary);outline:none;">
             <div style="font-size:10px;margin-top:4px;">
               <span style="background:${c.connected ? '#10b98120' : '#ef444420'};color:${c.connected ? 'var(--green)' : 'var(--red)'};padding:1px 6px;border-radius:99px;">
@@ -301,12 +276,13 @@ Router.register('integracoes', (params, el) => {
     </div>`;
 
     // Atualiza select de vínculo — mostra tag + apelido
+    window._intContasLivres = contas;
     sel.innerHTML = '<option value="">Selecione uma conta...</option>' +
-      contas.map(c => {
+      contas.map((c, i) => {
         const tags = contaTagsStr(c);
         const nick = nicknames[c.external_id];
         const label = nick || tags || nomeDaLoja(c) || c.nickname || c.external_id;
-        return `<option value='${JSON.stringify(c).replace(/'/g,"&apos;")}'>${platIcon[c.marketplace]||'🏪'} ${escNome(mktNome(c))} ${c.external_id} — ${escNome(label)}</option>`;
+        return `<option value="${i}">${platIcon[c.marketplace]||'🏪'} ${escNome(mktNome(c))} ${esc(c.external_id)} — ${escNome(label)}</option>`;
       }).join('');
     buscarNomesDasLojas(contas, contasTodas);
   }
@@ -319,25 +295,23 @@ Router.register('integracoes', (params, el) => {
       localStorage.setItem('glr_mc_contas', JSON.stringify(contas));
       renderContasNaTela(contas);
     } catch(e) {
-      el.innerHTML = `<div style="color:var(--red);font-size:13px;">✗ Erro: ${e.message}</div>`;
+      el.innerHTML = `<div style="color:var(--red);font-size:13px;">✗ Erro: ${esc(e.message)}</div>`;
     }
   };
 
   // Ao abrir a página: mostra o cache já sincronizado (sem chamada de API) —
   // "Recarregar" continua disponível pra buscar dado fresco quando quiser
-  if (apiKey) {
-    try {
-      const contasCache = JSON.parse(localStorage.getItem('glr_mc_contas')||'[]');
-      if (contasCache.length) renderContasNaTela(contasCache);
-    } catch(e) {}
-  }
+  try {
+    const contasCache = JSON.parse(localStorage.getItem('glr_mc_contas')||'[]');
+    if (contasCache.length) renderContasNaTela(contasCache);
+  } catch(e) {}
 
   window.vincularConta = () => {
     const clienteId = document.getElementById('sel-cliente-vinc').value;
     const contaStr  = document.getElementById('sel-conta-vinc').value;
     if (!clienteId || !contaStr) return alert('Selecione o cliente e a conta.');
-    let conta;
-    try { conta = JSON.parse(contaStr.replace(/&apos;/g, "'")); } catch(e) { return; }
+    const conta = (window._intContasLivres || [])[Number(contaStr)];
+    if (!conta) return;
 
     let vinc = {};
     try { vinc = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) {}
@@ -471,9 +445,9 @@ Router.register('integracoes', (params, el) => {
       res.innerHTML = dados.map(d => `
         <div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12px;">
           <span>${platIcon[d.plataforma?.toLowerCase()] || '🏪'}</span>
-          <span style="font-weight:600;">${d.plataforma}</span>
+          <span style="font-weight:600;">${esc(d.plataforma)}</span>
           ${d.erro
-            ? `<span style="color:var(--red);">✗ ${d.erro}</span>`
+            ? `<span style="color:var(--red);">✗ ${esc(d.erro)}</span>`
             : `<span style="color:var(--green);">✓ Fat: <strong>R$ ${Math.round(d.faturamento).toLocaleString('pt-BR')}</strong>${d.pedidos ? ` · <strong>${d.pedidos} pedidos</strong>` : ''}${d.investimento ? ` · ADS: R$ ${Math.round(d.investimento).toLocaleString('pt-BR')}` : ''}</span>`
           }
         </div>`).join('');
@@ -485,15 +459,32 @@ Router.register('integracoes', (params, el) => {
       registrarLog('Dados importados', `${cliente?.nome || clienteId} — ${mesesNomes[mes]}/${ano} (${importados} conta${importados !== 1 ? 's' : ''})`);
 
     } catch(e) {
-      res.innerHTML = `<div style="color:var(--red);font-size:12px;margin-top:6px;">✗ ${e.message}</div>`;
+      res.innerHTML = `<div style="color:var(--red);font-size:12px;margin-top:6px;">✗ ${esc(e.message)}</div>`;
       btn.textContent = 'Importar dados';
       btn.disabled = false;
     }
   };
+
+  if (!el.dataset.intBound) {
+    el.dataset.intBound = '1';
+    el.addEventListener('change', ev => {
+      const apelido = ev.target.closest('.int-apelido');
+      if (apelido) window.salvarNickname(apelido.dataset.ext, apelido.value);
+    });
+    el.addEventListener('input', ev => {
+      const ali = ev.target.closest('.int-aliquota');
+      if (ali) window.salvarAliquota(ali.dataset.ext, parseFloat(ali.value) || 0);
+    });
+    el.addEventListener('click', ev => {
+      const btn = ev.target.closest('.int-desvincular');
+      if (btn) window.desvincularConta(btn.dataset.cliente, btn.dataset.ext);
+    });
+  }
 });
 
 // ── Render clientes vinculados ──────────────────────────────
 function renderClientesVinculados(vinc, mesesNomes, hoje) {
+  const esc = t => window.glrEsc(t);
   const aliquotas = JSON.parse(localStorage.getItem('glr_aliquotas') || '{}');
   const platIcon = { mercadolivre:'🟡', ml:'🟡', meli:'🟡', shopee:'🟠', bling:'🔵', amazon:'⚫', magalu:'🔷' };
   const platNome = { mercadolivre:'Mercado Livre', ml:'Mercado Livre', meli:'Mercado Livre', shopee:'Shopee', bling:'Bling', amazon:'Amazon', magalu:'Magalu' };
@@ -515,7 +506,7 @@ function renderClientesVinculados(vinc, mesesNomes, hoje) {
     return `<div class="card mb-16" style="padding:0;overflow:hidden;">
       <div style="padding:14px 18px;background:var(--bg-subtle);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <div>
-          <div style="font-size:15px;font-weight:700;color:var(--text-primary);">${cliente.nome}</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text-primary);">${esc(cliente.nome)}</div>
           <div style="font-size:11px;color:var(--text-muted);">${contas.length} conta${contas.length !== 1 ? 's' : ''} vinculada${contas.length !== 1 ? 's' : ''}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -539,24 +530,22 @@ function renderClientesVinculados(vinc, mesesNomes, hoje) {
             <div style="background:var(--bg-base);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;min-width:200px;">
               <span style="font-size:18px;">${platIcon[c.marketplace] || '🏪'}</span>
               <div style="flex:1;min-width:0;">
-                <div style="font-size:12px;font-weight:700;">${platNome[c.marketplace]||c.marketplace}</div>
-                <div style="font-size:10px;color:var(--text-muted);">ID: ${c.external_id}</div>
-                ${tags ? `<div style="font-size:10px;color:var(--accent-light);font-weight:600;margin-top:2px;">${tags}</div>` : ''}
-                <input type="text" value="${nick}" placeholder="Apelido (ex: GAMA SHOPEE)"
-                  onchange="salvarNickname('${c.external_id}', this.value)"
+                <div style="font-size:12px;font-weight:700;">${esc(platNome[c.marketplace]||c.marketplace)}</div>
+                <div style="font-size:10px;color:var(--text-muted);">ID: ${esc(c.external_id)}</div>
+                ${tags ? `<div style="font-size:10px;color:var(--accent-light);font-weight:600;margin-top:2px;">${esc(tags)}</div>` : ''}
+                <input type="text" class="int-apelido" data-ext="${esc(c.external_id)}" value="${esc(nick)}" placeholder="Apelido (ex: GAMA SHOPEE)"
                   style="margin-top:5px;width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;color:var(--text-primary);outline:none;box-sizing:border-box;">
               </div>
               <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">
                 <div style="display:flex;align-items:center;gap:4px;">
                   <label style="font-size:10px;color:var(--text-muted);white-space:nowrap;">Imposto:</label>
-                  <input type="number" min="0" max="100" step="0.1"
-                    value="${aliquotas[c.external_id] || ''}"
+                  <input type="number" min="0" max="100" step="0.1" class="int-aliquota" data-ext="${esc(c.external_id)}"
+                    value="${esc(aliquotas[c.external_id] || '')}"
                     placeholder="0"
-                    oninput="salvarAliquota('${c.external_id}', parseFloat(this.value)||0)"
                     style="width:52px;background:var(--bg-input);border:1px solid var(--border-active);border-radius:5px;padding:3px 6px;color:var(--text-primary);font-size:12px;text-align:right;">
                   <span style="font-size:11px;color:var(--text-muted);">%</span>
                 </div>
-                <button onclick="desvincularConta(${clienteId},'${c.external_id}')"
+                <button type="button" class="int-desvincular" data-cliente="${esc(clienteId)}" data-ext="${esc(c.external_id)}"
                   style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:0;" title="Desvincular">remover</button>
               </div>
             </div>`;
