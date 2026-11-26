@@ -1448,19 +1448,20 @@ Router.register('vendas', async (params, el) => {
       return new Date(pa[2],pa[1]-1,pa[0]) - new Date(pb[2],pb[1]-1,pb[0]);
     });
 
-    // ── Top 15 produtos ── inclui ids de pedidos para poder salvar custo
+    // ── Top 15 produtos ── o custo vem do cadastro (tela Produtos), só exibido aqui
     const prodMap = {};
     for (const p of lista) {
       const key = produtoKey(p);
       if (!prodMap[key]) prodMap[key] = {
         nome: p.produto, imagem: p.imagem,
         sku: p.itens?.[0]?.sku || '', key,
-        fat:0, liq:0, lucro:0, qtd:0, n:0, ids:[]
+        fat:0, liq:0, lucro:0, custo:0, qtd:0, n:0, ids:[]
       };
       const l = calcLucro(p);
       prodMap[key].fat   += l.receita;
       prodMap[key].liq   += l.liquido||0;
       prodMap[key].lucro += l.lucro;
+      prodMap[key].custo += l.custo;
       prodMap[key].qtd   += p.qtd;
       prodMap[key].n     += 1;
       prodMap[key].ids.push(p.id);
@@ -1583,10 +1584,7 @@ Router.register('vendas', async (params, el) => {
             ${top15.map((p,i)=>{
               const margem = p.fat>0 ? p.lucro/p.fat*100 : 0;
               const represent = t.fat>0 ? p.fat/t.fat*100 : 0;
-              const custosDoGrupo = p.ids.map(id => parseFloat(custos[id]?.custo) || 0);
-              const todosIguais = custosDoGrupo.every(v => v === custosDoGrupo[0]);
-              const custoAtual = todosIguais ? (custosDoGrupo[0] || catalogoCusto[p.key] || '') : '';
-              const custoMisto = !todosIguais && custosDoGrupo.some(v => v > 0);
+              const custoUnit = p.qtd > 0 ? p.custo / p.qtd : 0; // custo médio por unidade, como entrou no lucro
               return `<tr style="border-bottom:1px solid var(--border);${i%2!==0?'background:var(--bg-card-hover);':''}">
                 <td style="padding:10px 16px;">
                   <div style="display:flex;align-items:center;gap:var(--space-2);">
@@ -1610,13 +1608,8 @@ Router.register('vendas', async (params, el) => {
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 90).length)()}</td>
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${(() => pedidos.filter(ped => p.ids.includes(ped.id) && Math.floor((new Date() - new Date(ped.dataTs)) / (1000*60*60*24)) <= 120).length)()}</td>
                 <td style="padding:var(--space-2) var(--space-3);text-align:right;border-left:1px solid var(--border);">
-                  <input type="number" min="0" step="0.01" placeholder="${custoMisto ? 'vários' : '0,00'}"
-                    value="${custoAtual}"
-                    data-ids="${p.ids.join(',')}"
-                    data-key="${encodeURIComponent(p.key)}"
-                    class="inp-custo-prod"
-                    style="width:90px;background:var(--bg-input);border:1px solid ${custoMisto?'rgba(96,165,250,0.5)':'rgba(245,158,11,0.4)'};border-radius:6px;padding:5px 8px;color:${custoMisto?'var(--blue)':'var(--yellow)'};font-size:var(--fs-2);text-align:right;"
-                    title="${custoMisto ? 'Os pedidos deste produto têm custos diferentes entre si — digite um valor pra sobrescrever todos com o mesmo custo' : 'Custo unitário — aplica a todos os '+p.n+' pedidos deste produto'}">
+                  ${custoUnit > 0 ? `<span style="color:var(--text-secondary);">${R$(custoUnit)}</span>`
+                    : `<a href="#" onclick="event.stopPropagation();Router.navigate('produtos');return false;" title="O custo do produto é cadastrado na tela Produtos" style="font-size:var(--fs-1);color:var(--yellow);text-decoration:none;">cadastrar</a>`}
                 </td>
                 <td style="padding:10px 12px;text-align:right;color:var(--purple);">${p.liq>0?R$(p.liq):'—'}</td>
                 <td style="padding:10px 12px;text-align:right;color:${corMargem(margem)};font-weight:600;">${R$(p.lucro)}</td>
@@ -1643,9 +1636,10 @@ Router.register('vendas', async (params, el) => {
         grupos[key].fat += parseFloat(p.valor) || 0;
         grupos[key].qtd += p.qtd || 1;
       }
-      // Filtra apenas os que NÃO têm custo (nem por pedido, nem já no catálogo do produto)
+      // Filtra apenas os que NÃO têm custo em nenhum pedido (mesma resolução do lucro: cadastro de Produtos)
+      const porId = new Map(lista.map(p => [p.id, p]));
       const semCusto = Object.values(grupos).filter(g =>
-        !(parseFloat(catalogoCusto[g.key]) > 0) && g.ids.every(id => !(custos[id]?.custo > 0))
+        g.ids.every(id => !(calcLucro(porId.get(id)).custo > 0))
       ).sort((a,b) => b.fat - a.fat);
 
       if (!semCusto.length) return `<div class="card" style="padding:var(--space-4) var(--space-5);display:flex;align-items:center;gap:10px;border:1px solid rgba(34,197,94,0.3);background:rgba(34,197,94,0.05);">
@@ -1659,7 +1653,7 @@ Router.register('vendas', async (params, el) => {
             <span style="font-size:var(--fs-3);font-weight:700;color:var(--yellow);">⚠️ Produtos sem custo</span>
             <span style="font-size:var(--fs-1);color:var(--text-muted);margin-left:var(--space-2);">${semCusto.length} produto${semCusto.length!==1?'s':''} · ${semCusto.reduce((s,g)=>s+g.ids.length,0)} pedidos sem custo preenchido</span>
           </div>
-          <span style="font-size:var(--fs-1);color:var(--text-muted);">Digite o custo e pressione Enter para aplicar a todos os pedidos daquele produto</span>
+          <span style="font-size:var(--fs-1);color:var(--text-muted);">O custo é cadastrado na tela Produtos · <a href="#" onclick="event.stopPropagation();Router.navigate('produtos');return false;" style="color:var(--accent);">abrir Produtos →</a></span>
         </div>
         <div style="overflow-x:auto;">
           <table style="width:100%;border-collapse:collapse;font-size:var(--fs-2);">
@@ -1685,12 +1679,7 @@ Router.register('vendas', async (params, el) => {
                 <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${g.ids.length}</td>
                 <td style="padding:10px 12px;text-align:right;color:var(--blue-strong);font-weight:600;">${R$(g.fat)}</td>
                 <td style="padding:var(--space-2) var(--space-3);text-align:right;border-left:1px solid var(--border);">
-                  <input type="number" min="0" step="0.01" placeholder="0,00"
-                    data-ids="${g.ids.join(',')}"
-                    data-key="${encodeURIComponent(g.key)}"
-                    class="inp-custo-prod inp-sem-custo"
-                    style="width:100px;background:var(--bg-input);border:1px solid rgba(245,158,11,0.5);border-radius:6px;padding:5px 8px;color:var(--yellow);font-size:var(--fs-2);text-align:right;"
-                    title="Aplica a ${g.ids.length} pedido${g.ids.length!==1?'s':''} deste produto">
+                  <a href="#" onclick="event.stopPropagation();Router.navigate('produtos');return false;" style="font-size:var(--fs-1);color:var(--yellow);text-decoration:none;">cadastrar em Produtos</a>
                 </td>
               </tr>`).join('')}
             </tbody>
@@ -1724,41 +1713,6 @@ Router.register('vendas', async (params, el) => {
       if (adsTok !== _adsTok) return;
       if (adEl) adEl.textContent = 'Erro';
       if (adPctEl) adPctEl.textContent = 'falha ao buscar ADS';
-    });
-
-    // Bind custo-por-produto inputs
-    sec.querySelectorAll('.inp-custo-prod').forEach(inp => {
-      inp.addEventListener('change', () => {
-        const ids = inp.dataset.ids.split(',');
-        const val = parseFloat(inp.value) || 0;
-        ids.forEach(id => {
-          if (!custos[id]) custos[id] = {};
-          custos[id].custo = val;
-        });
-        salvarCustos();
-        // Grava no catálogo por produto — assim pedidos NOVOS desse mesmo produto
-        // já nascem com custo aplicado, sem precisar relançar a cada atualização.
-        const key = inp.dataset.key ? decodeURIComponent(inp.dataset.key) : '';
-        if (key) {
-          if (val > 0) catalogoCusto[key] = val;
-          else delete catalogoCusto[key];
-          salvarCatalogoCusto();
-        }
-        const isSemCusto = inp.classList.contains('inp-sem-custo');
-        if (isSemCusto && val > 0) {
-          // Remove a linha da tabela "sem custo" e re-renderiza o dashboard para atualizar contagem
-          const row = inp.closest('tr');
-          if (row) {
-            row.style.transition = 'opacity 0.4s';
-            row.style.opacity = '0';
-            setTimeout(() => renderDashboard(), 450);
-          }
-        } else {
-          inp.style.borderColor = 'var(--green)';
-          setTimeout(() => { inp.style.borderColor = 'rgba(245,158,11,0.4)'; }, 1200);
-          atualizarKpiCards();
-        }
-      });
     });
 
     // Renderizar comparativo de marketplace
@@ -2035,9 +1989,7 @@ Router.register('vendas', async (params, el) => {
 
         <!-- Custo efetivo usado na composição do pedido -->
         <div style="text-align:right;" onclick="event.stopPropagation()">
-          ${l.custoCompleto ? `<strong>${R$(l.custo)}</strong><details><summary style="font-size:var(--fs-1);color:var(--text-muted)">Editar</summary>` : '<span style="font-size:var(--fs-1);color:var(--yellow)">Custo pendente</span>'}
-          <input aria-label="Custo unitário do pedido" type="number" min="0" step="0.01" placeholder="Custo unit." value="${c.custo||''}" data-id="${p.id}" data-campo="custo" class="inp-custo" style="width:80px;">
-          ${l.custoCompleto ? '</details>' : ''}
+          ${l.custoCompleto ? `<strong>${R$(l.custo)}</strong>` : `<a href="#" onclick="event.stopPropagation();Router.navigate('produtos');return false;" title="O custo do produto é cadastrado na tela Produtos" style="font-size:var(--fs-1);color:var(--yellow);text-decoration:underline dotted;">Custo pendente · cadastrar em Produtos</a>`}
         </div>
 
         <!-- Imposto -->
@@ -2940,13 +2892,11 @@ Router.register('vendas', async (params, el) => {
     salvarLinhas(); renderLinhasExtras(); renderPedidos();
   };
   window.aplicarCustoGlobal = () => {
-    const custo=parseFloat(document.getElementById('inp-global-custo')?.value)||0;
     const imp=parseFloat(document.getElementById('inp-global-imposto')?.value)||0;
     const out=parseFloat(document.getElementById('inp-global-outros')?.value)||0;
-    if (!custo&&!imp&&!out){ GLR.avisar('Preencha ao menos um valor.', 'info'); return; }
+    if (!imp&&!out){ GLR.avisar('Preencha ao menos um valor.', 'info'); return; }
     for (const p of pedidosFiltrados()) {
       if (!custos[p.id]) custos[p.id]={};
-      if (custo) custos[p.id].custo=custo;
       if (imp)   custos[p.id].imposto=imp;
       if (out)   custos[p.id].outros=out;
     }
@@ -3136,9 +3086,8 @@ Router.register('vendas', async (params, el) => {
           </div>
           <div class="card">
             <div class="section-title mb-10" style="font-size:var(--fs-3);">Aplicar em Massa</div>
-            <div style="font-size:var(--fs-1);color:var(--text-muted);margin-bottom:10px;">Aplica custo a todos os pedidos filtrados.</div>
-            <div style="display:grid;--cols:1fr 1fr 1fr;gap:var(--space-2);margin-bottom:10px;">
-              <div><div style="font-size:var(--fs-1);color:var(--text-secondary);margin-bottom:3px;">Custo Prod. (R$)</div><input id="inp-global-custo" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
+            <div style="font-size:var(--fs-1);color:var(--text-muted);margin-bottom:10px;">Aplica imposto e outros custos a todos os pedidos filtrados. O custo do produto é cadastrado na tela Produtos.</div>
+            <div style="display:grid;--cols:1fr 1fr;gap:var(--space-2);margin-bottom:10px;">
               <div><div style="font-size:var(--fs-1);color:var(--text-secondary);margin-bottom:3px;">Imposto (%)</div><input id="inp-global-imposto" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="0" style="width:100%;box-sizing:border-box;"></div>
               <div><div style="font-size:var(--fs-1);color:var(--text-secondary);margin-bottom:3px;">Outros (R$)</div><input id="inp-global-outros" class="form-input" type="number" min="0" step="0.01" placeholder="0,00" style="width:100%;box-sizing:border-box;"></div>
             </div>

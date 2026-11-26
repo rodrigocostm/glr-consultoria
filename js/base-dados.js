@@ -103,8 +103,7 @@ const BaseDados = (() => {
     const itens = Array.isArray(itensBrutos) ? itensBrutos : [];
     const qtdDe = i => parseInt(i?.qtd) || 1;
     const qtdTotal = itens.reduce((s, i) => s + qtdDe(i), 0) || 1;
-    const manual = parseFloat(custoManual) || 0;
-    if (manual > 0) return manual * qtdTotal;
+    // custoManual (custo digitado no pedido) não conta mais: o custo vem só do cadastro de produtos
     const cat = catalogo || {};
     const unit = keys => { for (const k of keys) { const v = parseFloat(cat[k]) || 0; if (v > 0) return v; } return 0; };
     let total = 0;
