@@ -15,8 +15,10 @@
 //   é o fallback que evita relançar custo pedido a pedido.
 // - imposto: da API (escrow_tax) quando > 0 (já deduzido do líquido, só
 //   exibido); senão manual por pedido ou alíquota da conta (deduzido).
-// - frete do ML é subtraído à parte (não vem embutido no net_received_amount
-//   como no escrow da Shopee).
+// - frete do ML: o net_received_amount do /collections JÁ vem com o frete do
+//   vendedor descontado (ex.: 579,90 − 65,65 tarifa − 116,85 frete = 397,40),
+//   igual ao escrow da Shopee. O frete é só exibido, nunca subtraído de novo.
+//   Quem estima o líquido sem recebimento precisa descontar o frete ali.
 // - linhas extras (glr_vendas_linhas) sempre deduzidas, fixas ou % da receita.
 window.GLR_Margem = {
   // pedido: { id, plataforma, valor, taxas:{comissao,taxaServico,frete,liquido,imposto}, contaId, itens[], produto }
@@ -62,12 +64,10 @@ window.GLR_Margem = {
     let extra = 0;
     for (const l of linhasExt) extra += l.tipo === 'pct' ? receita * (parseFloat(l.valor) || 0) / 100 : (parseFloat(l.valor) || 0);
 
-    const isML = p.plataforma === 'Mercado Livre';
-    const freteML = isML ? (parseFloat(tx.frete) || 0) : 0;
-    const base = (liquido != null ? liquido : receita) - freteML;
+    const base = liquido != null ? liquido : receita;
     const lucro = base - custo - impVal - outros - extra;
     const margem = receita > 0 ? (lucro / receita) * 100 : 0;
-    const liquidoExibido = liquido != null ? (isML ? liquido - freteML : liquido) : null;
+    const liquidoExibido = liquido;
 
     return {
       receita, liquido: liquidoExibido, liquidoBruto: liquido, custo, custoOrigem: custoPedido ? 'pedido' : (custo>0 ? 'cadastro' : 'nenhum'),
