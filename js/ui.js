@@ -85,6 +85,53 @@
     });
   }
 
+  // ── Acessibilidade: o que tem onclick vira botão para teclado e leitor de tela,
+  // e todo campo ganha um nome (rótulo, placeholder ou o texto ao lado) ──
+  const NATIVOS = /^(BUTTON|A|INPUT|SELECT|TEXTAREA|LABEL|SUMMARY|OPTION)$/;
+  function clicaveis(raiz) {
+    raiz.querySelectorAll('[onclick]:not([role]):not([data-a11y])').forEach(el => {
+      el.dataset.a11y = '1';
+      if (NATIVOS.test(el.tagName)) return;
+      const acao = el.getAttribute('onclick') || '';
+      // fundo de modal (fecha ao clicar fora) e "segura o clique" não são botões
+      if (/event\.target|^\s*event\.stopPropagation\(\);?\s*$/.test(acao)) return;
+      // linha de tabela mantém o papel de linha; só passa a receber foco
+      if (el.tagName === 'TR') el.dataset.clicavel = '1'; else el.setAttribute('role', 'button');
+      if (!el.hasAttribute('tabindex')) el.tabIndex = 0;
+    });
+  }
+  function nomeDoCampo(el) {
+    if (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.title) return null;
+    if (el.closest('label')) return null;
+    if (el.id) { try { if (document.querySelector('label[for="' + CSS.escape(el.id) + '"]')) return null; } catch (e) {} }
+    if (el.placeholder) return el.placeholder;
+    // rótulo logo antes do campo (padrão .form-label + campo)
+    let ant = el.previousElementSibling;
+    if (!ant && el.parentElement) ant = el.parentElement.previousElementSibling;
+    const rot = ant && (ant.matches('label, .form-label, .lbl, small, span, b, strong') ? ant : null);
+    const t = rot && rot.textContent.trim();
+    if (t && t.length <= 60) return t;
+    return el.name ? el.name.replace(/[_-]+/g, ' ') : null;
+  }
+  function campos(raiz) {
+    raiz.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]):not([data-a11y]), select:not([data-a11y]), textarea:not([data-a11y])').forEach(el => {
+      el.dataset.a11y = '1';
+      const n = nomeDoCampo(el);
+      if (n) el.setAttribute('aria-label', n);
+    });
+  }
+  function acessivel(raiz) { clicaveis(raiz); campos(raiz); }
+  // Enter/Espaço num [role=button] que não é botão de verdade = clique
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target;
+    if (!el || !el.getAttribute || NATIVOS.test(el.tagName)) return;
+    if (el.getAttribute('role') !== 'button' && !(el.dataset && el.dataset.clicavel)) return;
+    if (e.defaultPrevented) return;
+    e.preventDefault();
+    el.click();
+  });
+
   let agendado = null;
   function passar() {
     agendado = null;
@@ -93,6 +140,7 @@
     try { esqueletos(raiz); } catch (e) {}
     try { prepararAjuda(raiz); } catch (e) {}
     try { ocultarColunasVazias(raiz); } catch (e) {}
+    try { acessivel(document.body); } catch (e) {}
   }
   function iniciar() {
     const raiz = document.getElementById('page-content');
@@ -130,7 +178,7 @@
   setTimeout(verificarSaude, 4000);
   setInterval(verificarSaude, 5 * 60e3);
 
-  window.GLRUI = { atualizar: passar, verificarSaude };
+  window.GLRUI = { atualizar: passar, verificarSaude, acessivel };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
 })();
 
