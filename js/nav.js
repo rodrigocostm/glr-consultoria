@@ -12,13 +12,13 @@
   // Agrupado por tipo de trabalho, grupos curtos (2–7 telas). O grupo da tela
   // atual abre sozinho; os outros ficam abertos/fechados como o usuário deixou.
   const GRUPOS = [
-    { id: 'hoje', titulo: 'Hoje', paginas: ['dashboard', 'decisoes', 'vendometro', 'plano-acao'] },
+    { id: 'hoje', titulo: 'Hoje', paginas: ['dashboard', 'decisoes', 'vendometro', 'plano-acao', 'tarefas'] },
     { id: 'vendas', titulo: 'Vendas e metas', paginas: ['vendas', 'meu-analitico', 'projecao', 'meta-diaria', 'data-combinada', 'datas-especiais'] },
     { id: 'ads', titulo: 'ADS e promoções', paginas: ['agente', 'agente-ml', 'promocoes', 'afiliados'] },
     { id: 'precos', titulo: 'Preço e concorrência', paginas: ['precos-ml', 'precos-shopee', 'conversao-ml', 'anuncios-amazon', 'mercado-tiops'] },
     { id: 'anuncios', titulo: 'Anúncios e produtos', paginas: ['criar-anuncio', 'anuncios-novos', 'produtos', 'fotos', 'agente-fotos', 'expansao'] },
     { id: 'saude', titulo: 'Saúde das contas', paginas: ['estoque-margem', 'atendimento', 'qualidade-anuncios', 'rastreamento'] },
-    { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'gestores', 'onboarding', 'retencao', 'rentabilidade', 'portal-admin'] },
+    { id: 'clientes', titulo: 'Clientes', paginas: ['clientes', 'gestores', 'performance', 'score', 'onboarding', 'retencao', 'rentabilidade', 'portal-admin'] },
     { id: 'relatorios', titulo: 'Relatórios', paginas: ['relatorios', 'relatorio-semanal', 'timeline'] },
     { id: 'financeiro', titulo: 'Financeiro', paginas: ['financeiro', 'vendas-prejuizo', 'dre', 'conciliacao'] },
     { id: 'comercial', titulo: 'Comercial', paginas: ['leads', 'blog'] },
