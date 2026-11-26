@@ -32,11 +32,11 @@ Router.register('vendas', async (params, el) => {
   let customTo      = fmtDate(ontem); // ontem
   let expandido     = null;
   let abaAtiva      = 'dashboard'; // 'dashboard' | 'pedidos'
-  let _buscandoPedidos = false, _recarregarDepois = null, _timerFiltro = null;
+  let _buscandoPedidos = false, _buscaCompleta = false, _recarregarDepois = null, _timerFiltro = null, _geracao = 0, _adsTok = 0;
   // Filtro de empresa/conta: relê a base sozinho (leitura rápida), sem precisar clicar em Atualizar
   function _filtroMudou() {
     clearTimeout(_timerFiltro);
-    _timerFiltro = setTimeout(() => buscarPedidos({ silencioso: true, soBase: true }), 350);
+    _timerFiltro = setTimeout(() => buscarPedidos({ silencioso: true, soBase: true }), 200);
   }
 
   // Adota o período do último cache salvo (se existir) ANTES de montar a tela —
@@ -71,44 +71,59 @@ Router.register('vendas', async (params, el) => {
   }
 
   // Investimento em ADS (ML + Shopee) para as contas/período filtrados no momento —
-  // roda depois do primeiro render pra não travar a tela (mesma lógica do portal)
+  // roda depois do primeiro render pra não travar a tela (mesma lógica do portal).
+  // Guarda o valor de cada conta+período por 10 min: marcar/desmarcar contas no
+  // filtro não refaz a busca na API das contas que já foram somadas (antes refazia
+  // TODAS, uma por uma, a cada clique — com "todas as contas" eram ~180 chamadas).
+  const ADS_TTL_MS = 10 * 60 * 1000;
+  const _adsCache = window._vdAdsCache = window._vdAdsCache || new Map(); // conta|de|até → { em, p: Promise<number> }
+  async function _adsDaConta(conta, dataFrom, dataTo) {
+    const toShopeeDate = iso => iso.split('-').reverse().join('-');
+    const addDaysIso = (iso, n) => { const [y,m,d] = iso.split('-').map(Number); return new Date(Date.UTC(y,m-1,d+n)).toISOString().slice(0,10); };
+    let total = 0, falhou = false;
+    try {
+      if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
+        const meliId = conta.param_to_use?.meliUserId || conta.external_id;
+        let off = 0;
+        while (true) {
+          const ra = await MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: dataFrom, date_to: dataTo, limit: 50, offset: off });
+          const res = ra.data?.results || [];
+          total += res.reduce((s,c) => s + (parseFloat(c.metrics?.cost)||0), 0);
+          if (res.length < 50) break;
+          off += 50;
+        }
+      } else if (conta.marketplace === 'shopee') {
+        const shopId = conta.param_to_use?.shopId || conta.external_id;
+        let cur = dataFrom;
+        while (cur <= dataTo) {
+          const chunkEnd = addDaysIso(cur, 29) > dataTo ? dataTo : addDaysIso(cur, 29);
+          try {
+            const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(cur), end_date: toShopeeDate(chunkEnd) });
+            const dias = r?.data?.response || [];
+            if (Array.isArray(dias)) total += dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0);
+          } catch(e) { falhou = true; }
+          cur = addDaysIso(chunkEnd, 1);
+        }
+      }
+    } catch(e) { falhou = true; }
+    return { total, falhou };
+  }
   async function _buscarAdsTotalVendas(dataFrom, dataTo) {
     const contasParaBuscar = filtroContasSel.size > 0
       ? contas.filter(c => filtroContasSel.has(c.external_id))
       : filtroEmpresas.size > 0
         ? contas.filter(c => contaEmpresas(c).some(e => filtroEmpresas.has(e)))
         : contas;
-    const toShopeeDate = iso => iso.split('-').reverse().join('-');
-    const addDaysIso = (iso, n) => { const [y,m,d] = iso.split('-').map(Number); return new Date(Date.UTC(y,m-1,d+n)).toISOString().slice(0,10); };
-    let total = 0;
-    for (const conta of contasParaBuscar) {
-      try {
-        if (['meli','ml','mercadolivre'].includes(conta.marketplace)) {
-          const meliId = conta.param_to_use?.meliUserId || conta.external_id;
-          let off = 0;
-          while (true) {
-            const ra = await MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: meliId, date_from: dataFrom, date_to: dataTo, limit: 50, offset: off });
-            const res = ra.data?.results || [];
-            total += res.reduce((s,c) => s + (parseFloat(c.metrics?.cost)||0), 0);
-            if (res.length < 50) break;
-            off += 50;
-          }
-        } else if (conta.marketplace === 'shopee') {
-          const shopId = conta.param_to_use?.shopId || conta.external_id;
-          let cur = dataFrom;
-          while (cur <= dataTo) {
-            const chunkEnd = addDaysIso(cur, 29) > dataTo ? dataTo : addDaysIso(cur, 29);
-            try {
-              const r = await MarketplaceAPI.call('shopee_ads_daily_performance', { shopId, start_date: toShopeeDate(cur), end_date: toShopeeDate(chunkEnd) });
-              const dias = r?.data?.response || [];
-              if (Array.isArray(dias)) total += dias.reduce((s,d) => s + (parseFloat(d.expense)||0), 0);
-            } catch(e) {}
-            cur = addDaysIso(chunkEnd, 1);
-          }
-        }
-      } catch(e) {}
-    }
-    return total;
+    const valores = await _mapLimit(contasParaBuscar, 4, conta => {
+      const k = `${conta.marketplace}:${conta.external_id}|${dataFrom}|${dataTo}`;
+      const hit = _adsCache.get(k);
+      if (hit && Date.now() - hit.em < ADS_TTL_MS) return hit.p;
+      // falha parcial não fica guardada: a próxima tela tenta de novo
+      const p = _adsDaConta(conta, dataFrom, dataTo).then(r => { if (r.falhou) _adsCache.delete(k); return r.total; });
+      _adsCache.set(k, { em: Date.now(), p });
+      return p;
+    });
+    return valores.reduce((s, v) => s + (v || 0), 0);
   }
 
   const salvarCustos  = () => localStorage.setItem(STORAGE_CUSTOS, JSON.stringify(custos));
@@ -1677,7 +1692,9 @@ Router.register('vendas', async (params, el) => {
     if (adPctEl) adPctEl.textContent = 'buscando...';
 
     const { dataFrom: adsDe, dataTo: adsAte } = _periodoParaDatas();
+    const adsTok = ++_adsTok; // um clique novo no filtro descarta a soma antiga (antes ela podia chegar depois e sobrescrever)
     _buscarAdsTotalVendas(adsDe, adsAte).then(total => {
+      if (adsTok !== _adsTok) return;
       totalAds = total;
       if (adEl)    adEl.textContent = R$(totalAds);
       if (adPctEl) adPctEl.textContent = `${(t.fat>0?(totalAds/t.fat)*100:0).toFixed(1)}% do faturamento`;
@@ -1688,6 +1705,7 @@ Router.register('vendas', async (params, el) => {
         if (lpPctEl) lpPctEl.textContent = `Margem: ${(t.fat>0?(lucroPosAds/t.fat)*100:0).toFixed(1).replace('.',',')}%`;
       }
     }).catch(() => {
+      if (adsTok !== _adsTok) return;
       if (adEl) adEl.textContent = 'Erro';
       if (adPctEl) adPctEl.textContent = 'falha ao buscar ADS';
     });
@@ -2260,7 +2278,29 @@ Router.register('vendas', async (params, el) => {
     return partes.length ? ` &nbsp;<span style="font-size:var(--fs-1);color:var(--yellow);">${partes.join(' · ')}</span>` : '';
   }
 
-  async function carregarBaseVendas(contasAlvo, dataFrom, dataTo) {
+  // Pedidos da base guardados por conta+período (10 min, ou até a base avisar que
+  // sincronizou). Marcar/desmarcar contas no filtro só lê do Supabase as contas que
+  // ainda não foram lidas; desmarcar é instantâneo. Antes cada clique relia TODAS as
+  // contas marcadas, em páginas de 1000 em fila (com "todas as contas" eram ~90 mil
+  // pedidos/51 MB por clique, e o clique seguinte esperava essa leitura inteira).
+  const BASE_TTL_MS = 10 * 60 * 1000;
+  const _baseCache = window._vdBaseCache = window._vdBaseCache || new Map(); // mkt:conta|de|até → { em, pedidos }
+  const _baseEmVoo = window._vdBaseEmVoo = window._vdBaseEmVoo || new Map(); // mesma chave → Promise (duas buscas seguidas reaproveitam a mesma leitura)
+  async function _lerContaDaBase(mkt, idBase, externalId, ini, fim) {
+    const lista = [];
+    for (let off = 0; off < 200000; off += 1000) {
+      const { data, error } = await _sb.from('glr_pedidos')
+        .select('conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto,frete,liquido,taxas,itens')
+        .eq('marketplace', mkt).eq('conta_id', idBase).gte('criado_em', ini).lt('criado_em', fim)
+        .order('criado_em').order('pedido_id').range(off, off + 999);
+      if (error) throw error;
+      for (const r of (data || [])) lista.push(pedidoDaBaseVendas(mkt, r, externalId));
+      if (!data || data.length < 1000) break;
+    }
+    return lista;
+  }
+  // ainda(conta): a conta continua pedida? (o filtro pode ter mudado no meio da leitura)
+  async function carregarBaseVendas(contasAlvo, dataFrom, dataTo, { forcar = false, ainda = () => true } = {}) {
     const out = { cobertas: new Set(), pedidos: [] };
     if (!window.BaseDados || typeof _sb === 'undefined') return out;
     const base = await BaseDados.carregar();
@@ -2268,21 +2308,37 @@ Router.register('vendas', async (params, el) => {
     if (!ok.length) return out;
     const ini = new Date(`${dataFrom}T00:00:00-03:00`).toISOString();
     const fim = new Date(new Date(`${dataTo}T00:00:00-03:00`).getTime() + 86400000).toISOString();
-    await Promise.all(['shopee', 'ml', 'amazon', 'tiktok', 'magalu', 'shein'].map(async mkt => {
-      const doMkt = ok.filter(c => BaseDados.mktDe(c.marketplace) === mkt);
-      if (!doMkt.length) return;
-      const contaDe = Object.fromEntries(doMkt.map(c => [idNaBase(c), c.external_id]));
-      for (let off = 0; off < 200000; off += 1000) {
-        const { data, error } = await _sb.from('glr_pedidos')
-          .select('conta_id,pedido_id,criado_em,status_original,situacao,valor_bruto,frete,liquido,taxas,itens')
-          .eq('marketplace', mkt).in('conta_id', Object.keys(contaDe)).gte('criado_em', ini).lt('criado_em', fim)
-          .order('criado_em').order('pedido_id').range(off, off + 999);
-        if (error) throw error;
-        for (const r of (data || [])) out.pedidos.push(pedidoDaBaseVendas(mkt, r, contaDe[r.conta_id]));
-        if (!data || data.length < 1000) break;
+    const vistas = new Set(), falta = [];
+    for (const c of ok) {
+      const mkt = BaseDados.mktDe(c.marketplace), idBase = idNaBase(c), k = `${mkt}:${idBase}|${dataFrom}|${dataTo}`;
+      if (vistas.has(k)) { out.cobertas.add(c.external_id); continue; } // mesma loja duas vezes na lista
+      vistas.add(k);
+      const hit = !forcar && _baseCache.get(k);
+      if (hit && Date.now() - hit.em < BASE_TTL_MS) { for (const p of hit.pedidos) out.pedidos.push(p); out.cobertas.add(c.external_id); }
+      else falta.push({ c, mkt, idBase, k });
+    }
+    // Lê as que faltam em paralelo (6 por vez), cada conta pelo índice conta+data
+    let erro = null, i = 0;
+    const worker = async () => {
+      while (i < falta.length && !erro) {
+        const { c, mkt, idBase, k } = falta[i++];
+        if (!ainda(c)) continue;
+        try {
+          let voo = !forcar && _baseEmVoo.get(k);
+          if (!voo) {
+            voo = _lerContaDaBase(mkt, idBase, c.external_id, ini, fim)
+              .then(lista => { _baseCache.set(k, { em: Date.now(), pedidos: lista }); return lista; })
+              .finally(() => { if (_baseEmVoo.get(k) === voo) _baseEmVoo.delete(k); });
+            _baseEmVoo.set(k, voo);
+          }
+          const lista = await voo;
+          for (const p of lista) out.pedidos.push(p);
+          out.cobertas.add(c.external_id);
+        } catch (e) { erro = e; }
       }
-      doMkt.forEach(c => out.cobertas.add(c.external_id));
-    }));
+    };
+    await Promise.all(Array.from({ length: Math.min(6, falta.length) }, worker));
+    if (erro) throw erro;
     return out;
   }
 
@@ -2342,8 +2398,14 @@ Router.register('vendas', async (params, el) => {
     // e já causou bug de dados — melhor forçar a escolha explícita.
     // Sem conta escolhida = todas as contas que já estão na base (leitura rápida).
     // A busca pela API, conta a conta, continua exigindo escolha explícita.
-    if (_buscandoPedidos) { _recarregarDepois = opts; return; } // roda de novo ao terminar, com o filtro novo
+    // Busca completa (API conta a conta) em andamento, ou uma nova completa pedida
+    // enquanto outra leitura roda: espera e roda de novo ao terminar, com o filtro novo.
+    // Leitura só da base (clique no filtro): não espera — a mais nova vale e a antiga
+    // é descartada sem desenhar (o que ela já leu fica guardado e é reaproveitado).
+    if (_buscaCompleta || (_buscandoPedidos && !opts.soBase)) { _recarregarDepois = opts; return; }
+    const ger = ++_geracao;
     _buscandoPedidos = true;
+    if (!opts.soBase) _buscaCompleta = true;
     if (btnEl)    { btnEl.disabled=true; btnEl.textContent='⏳ Buscando...'; }
     if (statusEl && !opts.silencioso) statusEl.textContent='Carregando da base...';
 
@@ -2358,8 +2420,15 @@ Router.register('vendas', async (params, el) => {
       // 1º a base (Shopee/ML) — contas sem seleção = todas
       const alvoBase = filtroContasSel.size ? contas.filter(c => filtroContasSel.has(c.external_id)) : contas;
       let viaBase = { cobertas: new Set(), pedidos: [] };
-      try { viaBase = await carregarBaseVendas(alvoBase, dataFrom, dataTo); }
+      const doPeriodo = () => { const d = _periodoParaDatas(); return d.dataFrom === dataFrom && d.dataTo === dataTo; };
+      try {
+        viaBase = await carregarBaseVendas(alvoBase, dataFrom, dataTo, {
+          forcar: !!opts.forcar,
+          ainda: c => ger === _geracao || (doPeriodo() && (!filtroContasSel.size || filtroContasSel.has(c.external_id))),
+        });
+      }
       catch (e) { console.warn('[Vendas] base indisponível, seguindo pela API:', e.message); }
+      if (ger !== _geracao) return; // o filtro mudou enquanto lia: a leitura nova é que desenha
       // Pedidos de contas fora da base (Amazon/Magalu, vindos da API/cache) são mantidos
       const deFora = pedidos.filter(p => !p._base && !viaBase.cobertas.has(p.contaId));
       pedidos = viaBase.pedidos;
@@ -2819,16 +2888,21 @@ Router.register('vendas', async (params, el) => {
       const selo = viaBase.cobertas.size && !contasParaBuscar.length
         ? `<span style="font-size:var(--fs-1);background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">base automática · atualiza sozinha</span>`
         : `<span style="font-size:var(--fs-1);background:rgba(16,185,129,0.15);color:var(--green);padding:1px 7px;border-radius:8px;">salvo</span>`;
-      if (statusEl) statusEl.innerHTML=`${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;${selo}${await avisoContas(dataFrom).catch(() => '')}`;
+      // Desenha primeiro; o aviso de contas fora da seleção entra logo depois
+      const status = `${pedidos.length} pedidos · ${dataFrom} a ${dataTo} · ${nTaxas} com taxas &nbsp;${selo}`;
+      if (statusEl) statusEl.innerHTML = status;
       renderLista();
       completarImagens();
+      avisoContas(dataFrom).catch(() => '').then(av => { if (av && ger === _geracao && statusEl?.isConnected) statusEl.innerHTML = status + av; });
 
     } catch(e) {
       if (statusEl) statusEl.textContent=`Erro: ${e.message}`;
     } finally {
-      _buscandoPedidos = false;
-      if (btnEl){ btnEl.disabled=false; btnEl.textContent='Atualizar'; }
-      if (_recarregarDepois) { const o = _recarregarDepois; _recarregarDepois = null; buscarPedidos(o); }
+      if (ger === _geracao) { // uma leitura descartada não mexe no estado da mais nova
+        _buscandoPedidos = false; _buscaCompleta = false;
+        if (btnEl){ btnEl.disabled=false; btnEl.textContent='Atualizar'; }
+        if (_recarregarDepois) { const o = _recarregarDepois; _recarregarDepois = null; buscarPedidos(o); }
+      }
     }
   }
 
@@ -3093,7 +3167,7 @@ Router.register('vendas', async (params, el) => {
   const _datasMudaram = () => { if (window._portalConfig && customFrom && customTo && customFrom <= customTo) buscarPedidos({ soBase: true }); };
   document.getElementById('inp-date-from').addEventListener('change', e => { customFrom=e.target.value; _datasMudaram(); });
   document.getElementById('inp-date-to').addEventListener('change',   e => { customTo=e.target.value; _datasMudaram(); });
-  document.getElementById('btn-buscar').addEventListener('click', () => buscarPedidos());
+  document.getElementById('btn-buscar').addEventListener('click', () => buscarPedidos({ forcar: true })); // Atualizar = relê a base de verdade
   document.getElementById('tab-dashboard').addEventListener('click', () => setAba('dashboard'));
   document.getElementById('tab-pedidos').addEventListener('click',   () => setAba('pedidos'));
   document.getElementById('tab-oportunidades').addEventListener('click', () => setAba('oportunidades'));
@@ -3143,6 +3217,7 @@ Router.register('vendas', async (params, el) => {
   const _vendasAoAtualizarBase = () => {
     if (!document.getElementById('vendas-lista')) { window.removeEventListener('glr-base-atualizada', _vendasAoAtualizarBase); return; }
     semanal.chave = null; // curva semanal relê a base na próxima vez que for exibida
+    _baseCache.clear(); // pedidos guardados ficaram velhos
     buscarPedidos({ silencioso: true, soBase: true });
   };
   window.addEventListener('glr-base-atualizada', _vendasAoAtualizarBase);
