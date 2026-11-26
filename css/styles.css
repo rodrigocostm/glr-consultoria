@@ -799,7 +799,6 @@ tbody td:first-child { color: var(--text-primary); font-weight: 500; }
   #main { margin-left: 0; }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .kanban { grid-template-columns: 1fr; }
-  .search-box { display: none; }
 
   /* Header mais compacto — evita quebrar/estourar em telas estreitas */
   #header { padding: 0 14px; gap: 8px; }
@@ -1296,3 +1295,16 @@ body.sidebar-mini .nav-grupo .nav-grupo-itens { display: block !important; }
 .btn-perigo:hover { filter: brightness(1.08); }
 .glr-campo-invalido { border-color: var(--red) !important; box-shadow: 0 0 0 2px var(--red-bg) !important; }
 .glr-campo-erro { color: var(--red); font-size: 12px; margin-top: 4px; }
+
+/* ── Busca única do topo: botão que abre a paleta ⌘K (js/nav.js) ── */
+button.search-box { font: inherit; cursor: pointer; text-align: left; color: var(--text-muted); flex-shrink: 0; }
+button.search-box:hover { border-color: var(--border-strong); color: var(--text-secondary); }
+button.search-box:focus-visible { outline: none; border-color: var(--border-active); box-shadow: var(--ring, 0 0 0 3px var(--accent-glow)); }
+.search-box-txt { flex: 1; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-box-kbd { font: 600 11px/1 inherit; font-family: inherit; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-subtle); color: var(--text-muted); }
+body.modo-portal #global-search { display: none !important; }
+@media (max-width: 900px) {
+  /* no celular vira só a lupa, ao lado dos outros ícones do topo */
+  button.search-box { width: 36px !important; height: 36px; padding: 0; justify-content: center; border-radius: 10px; }
+  button.search-box .search-box-txt, button.search-box .search-box-kbd { display: none; }
+}

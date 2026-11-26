@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="/favicon.ico?v=20261115-arrow" sizes="48x48"><link rel="icon" href="/img/favicon.svg?v=20261115-arrow" type="image/svg+xml"><link rel="apple-touch-icon" href="/img/brand/glr-monogram-180.png">
   <title>GLR Consultoria — Centro de Operações</title>
-  <link rel="stylesheet" href="css/styles.css?v=24-avisos">
+  <link rel="stylesheet" href="css/styles.css?v=25-busca">
   <link rel="stylesheet" href="css/apple-interface.css?v=2">
   <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.86.0/dist/umd/supabase.js" integrity="sha384-3Sgm1bFlHa+gvzgZCHY6SyQwlKZpsgWl0qwxcwsypsSZQvo1vV1miPkn7n1lU1/L" crossorigin="anonymous"></script>
@@ -330,10 +330,11 @@
         <div class="header-crumb" id="page-crumb"></div>
         <div class="header-title" id="page-title">Dashboard Executivo</div>
       </div>
-      <div class="search-box">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" placeholder="Buscar clientes, tarefas…  ⌘K" id="global-search" aria-label="Buscar clientes e tarefas" oninput="handleSearch(this.value)">
-      </div>
+      <button type="button" class="search-box" id="global-search" aria-label="Buscar telas, clientes e tarefas" aria-keyshortcuts="Meta+K Control+K" aria-haspopup="dialog">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span class="search-box-txt">Buscar</span>
+        <kbd class="search-box-kbd" aria-hidden="true">⌘K</kbd>
+      </button>
       <div class="header-actions">
         <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema claro/escuro">
           <svg id="theme-icon-moon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
@@ -358,9 +359,6 @@
 
 </div>
 
-<!-- Search Results Overlay -->
-<div id="search-overlay" style="display:none;position:fixed;top:72px;left:calc(var(--sidebar-w) + 24px);right:24px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;z-index:200;max-height:400px;overflow-y:auto;box-shadow:var(--shadow);">
-  <div id="search-results"></div>
 </div>
 
 <!-- Scripts -->
@@ -516,7 +514,7 @@
   atualizarBadges();
 </script>
 <script src="js/router.js?v=20261124-prejuizo1"></script>
-<script src="js/nav.js?v=20261124-prejuizo1"></script>
+<script src="js/nav.js?v=20261124-prejuizo1-busca1"></script>
 <script src="js/ui.js?v=8-avisos"></script>
 <script src="js/dash-clientes.js?v=tend-proj-2"></script>
 <script src="js/pages-dashboard.js?v=comissao-composicao-2"></script>
@@ -599,7 +597,6 @@
   // ---- App Init ----
   document.addEventListener('DOMContentLoaded', () => {
     Router.init();
-    initSearch();
     handleResponsive();
     window.addEventListener('resize', handleResponsive);
   });
@@ -613,72 +610,6 @@
       toggle.style.display = 'none';
       document.getElementById('sidebar').classList.remove('open');
     }
-  }
-
-  // ---- Global Search ----
-  function initSearch() {
-    document.addEventListener('click', e => {
-      if (!e.target.closest('#search-overlay') && !e.target.closest('#global-search')) {
-        document.getElementById('search-overlay').style.display = 'none';
-      }
-    });
-  }
-
-  function handleSearch(q) {
-    const overlay = document.getElementById('search-overlay');
-    const results = document.getElementById('search-results');
-    if (!q.trim()) { overlay.style.display = 'none'; return; }
-
-    const ql = q.toLowerCase();
-    const clienteResults = GLR.clientes.filter(c =>
-      c.nome.toLowerCase().includes(ql) ||
-      c.responsavel.toLowerCase().includes(ql) ||
-      c.categoria.toLowerCase().includes(ql)
-    );
-    const tarefaResults = GLR.tarefas.filter(t =>
-      t.titulo.toLowerCase().includes(ql) ||
-      t.cliente.toLowerCase().includes(ql)
-    );
-
-    if (!clienteResults.length && !tarefaResults.length) {
-      results.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:13px;">Nenhum resultado para "${glrEsc(q)}"</div>`;
-      overlay.style.display = 'block';
-      return;
-    }
-
-    results.innerHTML = `
-      ${clienteResults.length ? `
-        <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Clientes</div>
-        ${clienteResults.map(c => `
-          <div onclick="Router.navigate('cliente-perfil',{id:${c.id}});document.getElementById('search-overlay').style.display='none';document.getElementById('global-search').value='';"
-               style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-sm);cursor:pointer;transition:background 0.15s;"
-               onmouseover="this.style.background='var(--bg-card)'" onmouseout="this.style.background='transparent'">
-            <div style="width:28px;height:28px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0;">${glrEsc(c.nome.charAt(0))}</div>
-            <div>
-              <div style="font-size:13.5px;font-weight:600;">${glrEsc(c.nome)}</div>
-              <div style="font-size:11.5px;color:var(--text-muted);">${glrEsc(c.categoria)} · ${glrEsc(c.gestor)}</div>
-            </div>
-            <span class="badge ${GLR.statusColor[c.status]}" style="margin-left:auto;">${GLR.statusLabel[c.status]}</span>
-          </div>
-        `).join('')}
-      ` : ''}
-      ${tarefaResults.length ? `
-        <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 8px;">Tarefas</div>
-        ${tarefaResults.slice(0,4).map(t => `
-          <div onclick="Router.navigate('tarefas');document.getElementById('search-overlay').style.display='none';document.getElementById('global-search').value='';"
-               style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-sm);cursor:pointer;transition:background 0.15s;"
-               onmouseover="this.style.background='var(--bg-card)'" onmouseout="this.style.background='transparent'">
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="color:var(--text-muted);flex-shrink:0;"><path d="M9 11l3 3L22 4"/></svg>
-            <div style="flex:1;">
-              <div style="font-size:13.5px;font-weight:500;">${glrEsc(t.titulo)}</div>
-              <div style="font-size:11.5px;color:var(--text-muted);">${glrEsc(t.cliente)} · ${formatDate(t.prazo)}</div>
-            </div>
-            <span class="badge ${GLR.prioridadeColor[t.prioridade]}">${t.prioridade}</span>
-          </div>
-        `).join('')}
-      ` : ''}
-    `;
-    overlay.style.display = 'block';
   }
 </script>
 </body>
