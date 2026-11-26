@@ -79,7 +79,6 @@ Router.register('diagnostico', async (params, el) => {
   }
 
   function render(testeApi) {
-    const apiKey = localStorage.getItem('glr_mc_apikey') || '';
     const vinculos = lerJSON('glr_mc_vinculos', {});
     const totalContasVinc = Object.values(vinculos).reduce((s,arr)=>s+(arr?.length||0), 0);
     const areas = montarAreas();
@@ -104,9 +103,9 @@ Router.register('diagnostico', async (params, el) => {
 
       <div class="kpi-grid mb-24" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">
         <div class="kpi-card">
-          <div class="kpi-icon" style="background:${apiKey?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.12)'};"><span style="font-size:18px;">🔑</span></div>
-          <div class="kpi-label">API Key</div>
-          <div class="kpi-value" style="color:${apiKey?'var(--green)':'var(--red)'};font-size:16px;">${apiKey ? 'Configurada' : 'Não configurada'}</div>
+          <div class="kpi-icon" style="background:rgba(16,185,129,0.12);"><span style="font-size:18px;">🔑</span></div>
+          <div class="kpi-label">Conexão Tiops</div>
+          <div class="kpi-value" style="color:var(--green);font-size:16px;">No servidor</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-icon" style="background:${totalContasVinc>0?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.12)'};"><span style="font-size:18px;">🔗</span></div>
@@ -129,7 +128,7 @@ Router.register('diagnostico', async (params, el) => {
 
       ${testeApi==='erro' ? `<div class="card mb-16" style="border-color:rgba(239,68,68,0.4);">
         <div style="color:var(--red);font-weight:700;font-size:13px;margin-bottom:4px;">Erro ao testar a API:</div>
-        <div style="font-size:12px;color:var(--text-secondary);font-family:monospace;">${window._diagErroApi||''}</div>
+        <div style="font-size:12px;color:var(--text-secondary);font-family:monospace;">${window.glrEsc(window._diagErroApi||'')}</div>
       </div>` : ''}
 
       <div class="card" style="padding:0;overflow:hidden;">
@@ -259,7 +258,7 @@ Router.register('diagnostico', async (params, el) => {
       const local = {};
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && k.startsWith('glr_') && k !== 'glr_mc_apikey') local[k] = localStorage.getItem(k);
+        if (k && k.startsWith('glr_')) local[k] = localStorage.getItem(k);
       }
       const { data: sessao } = await _sb.auth.getSession();
       const backup = { gerado_em: new Date().toISOString(), usuario: sessao?.session?.user?.email || null, versao: 1, tabelas, localStorage: local };
@@ -280,12 +279,6 @@ Router.register('diagnostico', async (params, el) => {
   }
 
   async function testarApi() {
-    const apiKey = localStorage.getItem('glr_mc_apikey') || '';
-    if (!apiKey) {
-      window._diagErroApi = 'Nenhuma API Key configurada. Configure em Integrações.';
-      render('erro');
-      return;
-    }
     render('carregando');
     try {
       await MarketplaceAPI.call('list_accounts');

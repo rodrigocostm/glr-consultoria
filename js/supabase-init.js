@@ -65,7 +65,6 @@ const GLR_KEYS = [
   'glr_plano_status',    // Plano de ação: ação feita / virou tarefa / descartada (Gerente de Conta)
   'glr_vendas_linhas',  // linhas extras de custo/desconto lançadas no admin
   'glr_fin_manual',     // lançamentos manuais do Financeiro (antes ficavam só no navegador de quem lançou)
-  'glr_mc_apikey',      // API Key do Marketplace Connect — precisa funcionar em qualquer PC do admin
   'glr_vendas_cache',   // pedidos já buscados na página Vendas — evita rebuscar em outro PC
   'glr_fin_cache',      // pedidos + ADS já buscados no Financeiro — evita rebuscar em outro PC
   'glr_mc_contas',      // lista de contas conectadas do Marketplace Connect
@@ -149,15 +148,17 @@ function _salvarMesclando(key, local) {
   return _filaSync[key];
 }
 
+try { localStorage.removeItem('glr_mc_apikey'); } catch (e) {}
+
 localStorage.setItem = function(key, value) {
+  if (key === 'glr_mc_apikey') { localStorage.removeItem(key); return; }
   _localSetItem(key, value); // salva local normalmente
   if (CHAVES_POR_ITEM.includes(key)) {
     let dados; try { dados = JSON.parse(value); } catch (e) { dados = null; }
     if (Array.isArray(dados)) { _salvarMesclando(key, dados); return; }
   }
   if (GLR_KEYS.includes(key)) {
-    // Nem todo valor salvo é JSON (ex: glr_mc_apikey é uma string simples,
-    // não "aspas-envolvida") — se JSON.parse falhar, sobe o valor cru mesmo
+    // Nem todo valor salvo é JSON — se JSON.parse falhar, sobe o valor cru mesmo
     let dados;
     try { dados = JSON.parse(value); } catch(e) { dados = value; }
     _sb.from('glr_storage')
@@ -211,6 +212,8 @@ async function sincronizarDoSupabase() {
   }
   if (data?.length) {
     data.forEach(row => {
+      // A chave do Tiops não volta para o navegador, mesmo se ainda estiver na tabela.
+      if (row.chave === 'glr_mc_apikey') return;
       // Lista com gravação item a item que ainda está sendo gravada: não atropela
       if (CHAVES_POR_ITEM.includes(row.chave)) _baseSync[row.chave] = Array.isArray(row.dados) ? row.dados : [];
       _guardarLocal(row.chave, _paraLocalStorage(row.dados));
@@ -252,6 +255,7 @@ function ativarRealtime() {
   _sb.channel('glr_changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'glr_storage' }, payload => {
       if (payload.new?.chave && payload.new?.dados != null) {
+        if (payload.new.chave === 'glr_mc_apikey') return;
         if (CHAVES_POR_ITEM.includes(payload.new.chave)) _baseSync[payload.new.chave] = Array.isArray(payload.new.dados) ? payload.new.dados : [];
         _localSetItem(payload.new.chave, _paraLocalStorage(payload.new.dados));
         if (typeof carregarDadosSalvos === 'function') carregarDadosSalvos();

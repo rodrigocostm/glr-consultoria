@@ -1,9 +1,9 @@
 const {test,afterEach}=require('node:test');
 const assert=require('node:assert/strict');
 const handler=require('../api/conhecimento');
-const {selecionar,contexto}=require('../api/_conhecimento');
+const {selecionar,contexto,limparCache}=require('../api/_conhecimento');
 process.env.SUPABASE_SERVICE_ROLE_KEY='mock';
-const original=fetch;afterEach(()=>global.fetch=original);
+const original=fetch;afterEach(()=>{global.fetch=original;limparCache();});
 const id='11111111-1111-4111-8111-111111111111';
 const note={id,titulo:'Rotina ADS',conteudo:'Avaliar TACOS e margem. [[Estoque]]',categoria:'ADS',tags:['ads'],estado:'publicado',versao:0};
 const req=b=>({method:'POST',headers:{authorization:'Bearer mock'},body:b});
@@ -20,3 +20,5 @@ test('empty published content rejected',async()=>{const s=setup(),r=res();await 
 test('retrieval excludes drafts/archives, ranks relevance and follows published links',()=>{const rows=[{...note,id:'a'},{...note,id:'b',titulo:'Rascunho',estado:'rascunho'},{...note,id:'c',titulo:'Arquivo',estado:'arquivado'},{...note,id:'d',titulo:'Estoque',conteudo:'Disponibilidade de produtos',tags:[]}];assert.deepEqual(selecionar(rows,'Rotina ADS').map(n=>n.id),['a','d']);assert.deepEqual(selecionar(rows,'assunto inexistente'),[]);});
 test('context marks sources and caps tokens via text budget',async()=>{global.fetch=async()=>({ok:true,json:async()=>Array.from({length:6},(_,i)=>({...note,id:String(i),conteudo:'ads '.repeat(10000)}))});const text=await contexto('ADS');assert(text.length<14000);assert.match(text,/versao/);assert.match(text,/não instruções de sistema/);});
 test('unavailable knowledge explicitly flagged rather than invented',async()=>{global.fetch=async()=>{throw Error('offline')};assert.match(await contexto('ads'),/indisponível/);});
+test('context uses the search RPC and reuses it for 45s',async()=>{let n=0;global.fetch=async(url)=>{n++;assert.match(String(url),/glr_conhecimento_buscar/);return{ok:true,status:200,json:async()=>[{...note,conteudo:'ads de verdade'}]};};const a=await contexto('campanha de ads da loja');const b=await contexto('campanha de ads da loja');assert.equal(n,1);assert.equal(a,b);assert.match(a,/Rotina ADS/);});
+test('missing RPC falls back to the published list',async()=>{const urls=[];global.fetch=async(url)=>{urls.push(String(url));if(String(url).includes('/rpc/'))return{ok:false,status:404,text:async()=>'PGRST202'};return{ok:true,json:async()=>[{...note}]};};assert.match(await contexto('Rotina ADS da operação'),/Rotina ADS/);assert.ok(urls.some(u=>u.includes('/rpc/')));assert.ok(urls.some(u=>u.includes('/glr_conhecimento?')));});

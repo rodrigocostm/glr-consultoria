@@ -148,7 +148,7 @@ Router.register('produtos', (params, el) => {
     finally {
       if (minha === geracao) { st.carregando = false; st.progresso = ''; associarPeloSku(); render(); }
       if (portal && minha === geracao && st.anuncios.length) {
-        MarketplaceAPI.call('glr_portal_ncm', { ids: st.anuncios.map(a => a.id) }).then(r => { st.ncmPortal = r.ncm || {}; render(); }).catch(() => {});
+        MarketplaceAPI.call('glr_portal_ncm', { itens: st.anuncios.map(a => ({ id: a.id, conta: a.conta, mkt: a.mkt })) }).then(r => { st.ncmPortal = r.ncm || {}; render(); }).catch(() => {});
       }
     }
   }
