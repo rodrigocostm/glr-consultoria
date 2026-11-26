@@ -183,7 +183,7 @@ GLR.ctx = (() => {
       if (id === ler()) return;
       try { id ? localStorage.setItem(K, id) : localStorage.removeItem(K); } catch (e) {}
       window.dispatchEvent(new CustomEvent('glr:cliente', { detail: { id } }));
-      if (!silencioso && window.Router) Router.resolve();
+      if (!silencioso && typeof Router !== 'undefined') Router.resolve(); // Router é const global (não fica em window)
     },
     definirPorConta(mkt, id) { const c = clienteDaConta(mkt, id); if (c) this.definir(c, true); },
     // entre os ids de conta da tela, o do cliente em foco (mantém o atual se já for dele; sem foco ou sem conta dele, mantém o atual)

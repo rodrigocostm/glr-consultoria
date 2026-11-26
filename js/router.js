@@ -6,6 +6,10 @@ const Router = {
   routes: {},
   currentPage: null,
   currentParams: {},
+  // tela embutida em outra (ex.: Financeiro dentro da Casa do cliente)
+  embutida: null,
+  // "estou nesta tela?" — vale também quando ela está embutida no perfil do cliente
+  estaEm(p) { return this.currentPage === p || this.embutida === p; },
 
   register(path, handler) {
     this.routes[path] = handler;
@@ -48,6 +52,7 @@ const Router = {
     }
     this.currentParams = { ...this.currentParams, ...params };
     this.currentPage = path;
+    this.embutida = null;
 
     // Update sidebar active state
     document.querySelectorAll('.nav-item').forEach(el => {

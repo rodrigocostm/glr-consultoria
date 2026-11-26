@@ -217,7 +217,7 @@ Router.register('dre', (params, el) => {
       if (carregandoBase === chave) carregandoBase = null;
     }
     // Redesenha se ainda estiver no mesmo DRE e sem digitação pendente
-    if (Router.currentPage === 'dre' && `${estado.clienteId}_${estado.mes}_${estado.ano}` === chave && !editadoManual) render();
+    if (Router.estaEm('dre') && `${estado.clienteId}_${estado.mes}_${estado.ano}` === chave && !editadoManual) render();
   }
 
   // Quais contas uma "plataforma" do DRE representa: a linha da Projeção com esse
@@ -984,6 +984,6 @@ Router.register('dre', (params, el) => {
   window._dreRecarregarBase = () => carregarBaseDRE(estado.clienteId, estado.mes, estado.ano, true);
   if (!window._dreOuvindoBase) {
     window._dreOuvindoBase = true;
-    window.addEventListener('glr-base-atualizada', () => { if (Router.currentPage === 'dre' && window._dreRecarregarBase) window._dreRecarregarBase(); });
+    window.addEventListener('glr-base-atualizada', () => { if (Router.estaEm('dre') && window._dreRecarregarBase) window._dreRecarregarBase(); });
   }
 });
