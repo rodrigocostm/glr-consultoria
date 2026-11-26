@@ -527,7 +527,7 @@
             <div class="form-label" style="margin-bottom:10px;">Foto do produto</div>
             <div id="an-dropzone" ondragover="event.preventDefault();this.style.borderColor='var(--accent)';" ondragleave="this.style.borderColor='var(--border)';"
                  ondrop="event.preventDefault();this.style.borderColor='var(--border)';window._anMlDropRef(event);"
-                 onclick="document.getElementById('an-ref-input').click()"
+                 onclick="document.getElementById('an-ref-input').click()" role="button" tabindex="0" aria-label="Enviar foto de referência (clique ou arraste)"
                  style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,var(--bg-subtle));">
               ${state.fotoRefPreview
                 ? `<img src="${state.fotoRefPreview}" style="max-width:100%;max-height:130px;border-radius:8px;object-fit:contain;">`
@@ -1191,7 +1191,7 @@
             <div class="form-label" style="margin-bottom:10px;">Foto do produto</div>
             <div id="an-sp-dropzone" ondragover="event.preventDefault();this.style.borderColor='#ee4d2d';" ondragleave="this.style.borderColor='var(--border)';"
                  ondrop="event.preventDefault();this.style.borderColor='var(--border)';window._anSpDropRef(event);"
-                 onclick="document.getElementById('an-sp-ref-input').click()"
+                 onclick="document.getElementById('an-sp-ref-input').click()" role="button" tabindex="0" aria-label="Enviar foto de referência (clique ou arraste)"
                  style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,var(--bg-subtle));">
               ${state.fotoRefPreview
                 ? `<img src="${state.fotoRefPreview}" style="max-width:100%;max-height:130px;border-radius:8px;object-fit:contain;">`
@@ -1846,7 +1846,7 @@
             <div class="form-label" style="margin-bottom:10px;">Foto do produto</div>
             <div id="an-tt-dropzone" ondragover="event.preventDefault();this.style.borderColor='#25F4EE';" ondragleave="this.style.borderColor='var(--border)';"
                  ondrop="event.preventDefault();this.style.borderColor='var(--border)';window._anTtDropRef(event);"
-                 onclick="document.getElementById('an-tt-ref-input').click()"
+                 onclick="document.getElementById('an-tt-ref-input').click()" role="button" tabindex="0" aria-label="Enviar foto de referência (clique ou arraste)"
                  style="border:2px dashed var(--border);border-radius:14px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:16px;background:var(--bg-soft,var(--bg-subtle));">
               ${state.fotoRefPreview
                 ? `<img src="${state.fotoRefPreview}" style="max-width:100%;max-height:130px;border-radius:8px;object-fit:contain;">`

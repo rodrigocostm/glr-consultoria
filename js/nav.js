@@ -175,12 +175,33 @@
   // contador da Caixa de decisões no menu (a tela avisa quando carrega/resolve)
   window.addEventListener('glr:decisoes', e => { const b = document.getElementById('badge-decisoes'); if (!b) return; const n = e.detail?.n || 0; b.textContent = n > 99 ? '99+' : n; b.style.display = n ? '' : 'none'; });
 
-  window.GLRNav = { abrirPaleta, fecharPaleta, alternar, filtrar };
+  window.GLRNav = { abrirPaleta, fecharPaleta, alternar, filtrar, fecharMenuCelular: () => fecharMenuCelular() };
 
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') { e.preventDefault(); paleta?.classList.contains('on') ? fecharPaleta() : abrirPaleta(); }
   });
-  window.addEventListener('hashchange', () => { const g = grupoDe(paginaAtual()); if (g) alternar(g, true); });
-  const iniciar = () => { montar(); montarSeletorCliente(); ligarBotaoBusca(); };
+  window.addEventListener('hashchange', () => { const g = grupoDe(paginaAtual()); if (g) alternar(g, true); fecharMenuCelular(); });
+
+  // ── Menu do celular: fecha ao navegar e com Esc; o botão diz se está aberto ──
+  const celular = () => window.innerWidth <= 900;
+  function fecharMenuCelular(voltarFoco) {
+    const sb = document.getElementById('sidebar');
+    if (!sb || !sb.classList.contains('open')) return;
+    sb.classList.remove('open');
+    if (voltarFoco) document.getElementById('sidebar-toggle')?.focus();
+  }
+  function ligarMenuCelular() {
+    const sb = document.getElementById('sidebar'), bt = document.getElementById('sidebar-toggle');
+    if (!sb || !bt || bt.dataset.menuLigado) return;
+    bt.dataset.menuLigado = '1';
+    bt.setAttribute('aria-controls', 'sidebar');
+    const marcar = () => bt.setAttribute('aria-expanded', String(sb.classList.contains('open')));
+    marcar();
+    new MutationObserver(marcar).observe(sb, { attributes: true, attributeFilter: ['class'] });
+    // tocar num item leva para a tela e já fecha o menu (mesmo se for a tela atual)
+    sb.addEventListener('click', e => { if (celular() && e.target.closest?.('.nav-item')) setTimeout(() => fecharMenuCelular(), 0); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && sb.classList.contains('open') && !paleta?.classList.contains('on')) fecharMenuCelular(true); });
+  }
+  const iniciar = () => { montar(); montarSeletorCliente(); ligarBotaoBusca(); ligarMenuCelular(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
 })();

@@ -259,7 +259,7 @@ Router.register('fotos', (params, el) => {
     return `
       <div id="foto-dropzone" ondragover="event.preventDefault();this.style.borderColor='var(--accent)';" ondragleave="this.style.borderColor='var(--border)';"
            ondrop="event.preventDefault();this.style.borderColor='var(--border)';_fotoDrop(event);"
-           onclick="document.getElementById('foto-file-input').click()"
+           onclick="document.getElementById('foto-file-input').click()" role="button" tabindex="0" aria-label="Enviar foto do produto (clique ou arraste)"
            style="border:2px dashed var(--border);border-radius:16px;min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;padding:20px;background:var(--bg-soft,var(--bg-subtle));transition:border-color .15s;">
         ${estado.refPreviewUrl
           ? `<img src="${estado.refPreviewUrl}" style="max-width:100%;max-height:150px;border-radius:10px;object-fit:contain;">

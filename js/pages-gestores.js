@@ -508,7 +508,7 @@ Router.register('gestores', (params, el) => {
       </div>
       <div class="form-group"><label class="form-label">Cor de identificação</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          ${cores.map(c=>`<div onclick="selecionarCor('${c}')" data-cor="${c}"
+          ${cores.map(c=>`<div onclick="selecionarCor('${c}')" data-cor="${c}" role="button" tabindex="0" aria-label="Cor ${c}" aria-pressed="${c===corAtual}"
             style="width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;transition:all .15s;
             border:3px solid ${c===corAtual?'white':'transparent'};box-shadow:${c===corAtual?`0 0 0 2px ${c}`:'none'};"></div>`).join('')}
         </div>
@@ -535,6 +535,7 @@ Router.register('gestores', (params, el) => {
       const c = el.dataset.cor;
       el.style.border     = `3px solid ${c===cor?'white':'transparent'}`;
       el.style.boxShadow  = c===cor?`0 0 0 2px ${c}`:'none';
+      el.setAttribute('aria-pressed', String(c===cor));
     });
     const p = document.getElementById('avatar-preview');
     if (p) { p.style.background=cor+'20'; p.style.borderColor=cor+'60'; p.style.color=cor; }
