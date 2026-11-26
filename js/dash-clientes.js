@@ -99,6 +99,7 @@ window.GLRDashClientes = (function () {
   let receitaEm = 0, receitaDados = null;
   async function receitaTopo() {
     const k = document.getElementById('dash-kpi-receita'); if (!k || typeof kpiCard !== 'function') return;
+    if (GLR.ctx?.cliente()) return; // a receita projetada da carteira não vale para um cliente só: fica a comissão real dele
     const pinta = j => { const rc = j?.receita; if (!rc || rc.projetada == null) return; k.innerHTML = kpiCard('Receita GLR', GLR.formatCurrency(rc.base || 0), `projeção ${GLR.formatCurrency(rc.projetada)} · base até ${rc.dias || 0} dia(s) encerrado(s)${rc.defasados?.length ? ` · ${rc.defasados.length} cliente(s) com dado mais antigo (${rc.defasados.map(x => x.cliente).slice(0, 3).join(", ")})` : ""}${rc.parcial ? " · cobertura parcial" : ""} · ${Math.round(rc.projetada / 2000)}% dos R$ 200 mil`, true, '', '💰', '', false, 'neutro'); };
     if (receitaDados && Date.now() - receitaEm < 120000) return pinta(receitaDados);
     try {
@@ -113,8 +114,9 @@ window.GLRDashClientes = (function () {
     if (st.erro) { el.innerHTML = `<div class="card dc-vazio" style="color:var(--red)">Não consegui carregar os clientes: ${h(st.erro)}</div>`; return; }
     if (!st.base) { el.innerHTML = '<div class="card dc-vazio">Carregando os clientes…</div>'; return; }
     const foco = GLR.ctx?.cliente();
-    const carteira = calcular(); kpisTopo(carteira);
+    const carteira = calcular();
     const todos = carteira.filter(x => !foco || x.id === String(foco));
+    kpisTopo(todos); // com cliente em foco, a projeção do topo é só dele
     const doGestor = todos.filter(x => st.gestor === 'todos' || x.gestorId === st.gestor);
     const ORD = { projecao: (a, b) => b.proj - a.proj, queda: (a, b) => (a.t7 ?? 999) - (b.t7 ?? 999), alta: (a, b) => (b.t7 ?? -999) - (a.t7 ?? -999), tacos: (a, b) => (b.tacos ?? -1) - (a.tacos ?? -1), meta: (a, b) => (a.pctMeta ?? 999) - (b.pctMeta ?? 999) };
     const ls = doGestor.filter(x => st.tend === 'todos' || x.tend === st.tend).sort(ORD[st.ordem] || ORD.projecao);

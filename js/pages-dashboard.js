@@ -88,9 +88,15 @@ async function _mapLimit(items, limit, fn) {
 // de mensalidade fixa salvo por cliente, só esse valor por venda.
 const STORAGE_VENDAS_DIA = 'glr_dashboard_vendas_dia';
 
+// Cliente em foco (seletor do topo, GLR.ctx): com ele, o Dashboard mostra só as
+// contas desse cliente (glr_mc_vinculos); sem ele, a carteira toda. Cada escopo
+// tem o próprio cache de vendas por dia.
+function _dashFoco() { try { return (GLR.ctx && GLR.ctx.cliente()) || ''; } catch (e) { return ''; } }
+function _dashChaveVD(foco) { return foco ? `${STORAGE_VENDAS_DIA}:${foco}` : STORAGE_VENDAS_DIA; }
+
 function _dashVendasDiaCache() {
   try {
-    const c = JSON.parse(localStorage.getItem(STORAGE_VENDAS_DIA) || 'null');
+    const c = JSON.parse(localStorage.getItem(_dashChaveVD(_dashFoco())) || 'null');
     const mesKey = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
     return (c && c.mesKey === mesKey) ? c : null;
   } catch(e) { return null; }
@@ -112,6 +118,7 @@ async function _dashBuscarVendasPorDia() {
 
   let vinculos = {};
   try { vinculos = JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}'); } catch(e) {}
+  const foco = _dashFoco(); // escopo desta busca: o cliente em foco ou a carteira toda
 
   const hoje = new Date();
   const pad = n => String(n).padStart(2,'0');
@@ -156,7 +163,7 @@ async function _dashBuscarVendasPorDia() {
     if (ctxCom?.com) { const x = balde(ctxCom.cli, dataStr, canal); x.n += 1; x.var += GLR.comissao.dePedido(ctxCom.cli, valorPedido, unidades); baldes[ctxCom.cli.id].n += 1; }
   };
 
-  const clientesComConta = GLR.clientes.filter(c => (vinculos[String(c.id)]||[]).length > 0);
+  const clientesComConta = GLR.clientes.filter(c => (vinculos[String(c.id)]||[]).length > 0 && (!foco || String(c.id) === foco));
   let doneN = 0;
 
   // Base sincronizada (Shopee/ML): resumo diário pronto — instantâneo, mesma
@@ -328,7 +335,7 @@ async function _dashBuscarVendasPorDia() {
 
   const atualizadoEm = Date.now();
   const mesKey = `${ano}-${pad(mesN)}`;
-  localStorage.setItem(STORAGE_VENDAS_DIA, JSON.stringify({
+  localStorage.setItem(_dashChaveVD(foco), JSON.stringify({
     mesKey, atualizadoEm, lojasBase, lojasAPI, periodoAnt: { de: iniAnt, ate: fimAnt },
     dias: dias.map(d => ({ data: d, pedidos: porDia[d].pedidos, comissao: porDia[d].comissao, comissaoVariavel: porDia[d].comissaoVariavel || 0, fixoMensalRateado: porDia[d].fixoMensalRateado || 0, faturamento: porDia[d].faturamento })),
     canais: Object.keys(porCanal).map(nome => ({ nome, pedidos: porCanal[nome].pedidos, comissao: porCanal[nome].comissao, faturamento: porCanal[nome].faturamento, cmp: cmpCanal[nome] || null })),
@@ -353,7 +360,8 @@ async function _dashAutoAtualizar(motivo) {
   const agora = Date.now();
   const vd = _dashVendasDiaCache();
   const intervaloVD = vd?.lojasAPI ? 10 * 60e3 : 60e3;
-  const precisaVD = motivo === 'base' || !vd || agora - (window._dashUltVD || 0) >= intervaloVD;
+  const ultVD = window._dashUltVDPor = window._dashUltVDPor || {}; // por escopo (cliente em foco ou carteira)
+  const precisaVD = motivo === 'base' || !vd || agora - (ultVD[_dashFoco()] || 0) >= intervaloVD;
   const precisaExec = motivo === 'base' || agora - (window._dashUltExec || 0) >= 5 * 60e3;
   if (!precisaVD && !precisaExec) return;
   window._dashAtualizando = true;
@@ -364,7 +372,7 @@ async function _dashAutoAtualizar(motivo) {
     }
   } catch(e) { console.warn('[Dashboard] atualização automática (painel):', e.message); }
   window._dashAtualizando = false;
-  if (precisaVD) { window._dashUltVD = agora; await _dashBuscarVendasPorDia(); }
+  if (precisaVD) { ultVD[_dashFoco()] = agora; await _dashBuscarVendasPorDia(); }
   else if (Router.currentPage === 'dashboard') Router.resolve();
 }
 if (!window._dashOuvindoBase) {
@@ -408,17 +416,21 @@ Router.register('dashboard', (params, el) => {
   Router.routes['analytics-conteudo'](params, contAnalises);
 
   const analyticsCache = _dashAnalyticsCache();
-  const clientesTodos  = computarClientesAPI();
+  const foco = _dashFoco();
+  const clienteFoco = foco ? GLR.clientes.find(c => String(c.id) === foco) : null;
+  const clientesTodos  = computarClientesAPI().filter(c => !clienteFoco || String(c.id) === foco);
   const clientes       = clientesTodos.filter(c => c._temAPI); // só quem tem conta vinculada e dado real
+  const tarefasEscopo  = clienteFoco ? GLR.tarefas.filter(t => String(t.clienteId) === foco || t.cliente === clienteFoco.nome) : GLR.tarefas;
+  let vincFoco = []; try { vincFoco = clienteFoco ? (JSON.parse(localStorage.getItem('glr_mc_vinculos') || '{}')[foco] || []) : []; } catch (e) {}
 
   const ativos      = clientes.filter(c => c.status === 'ativo').length;
   const crescimento = clientes.filter(c => c.status === 'crescimento').length;
   const queda       = clientes.filter(c => c.status === 'queda').length;
   const risco       = clientes.filter(c => c.status === 'risco').length;
-  const tarefasPendentes = GLR.tarefas.filter(t => t.status !== 'concluida').length;
-  const tasksConc    = GLR.tarefas.filter(t => t.status === 'concluida').length;
+  const tarefasPendentes = tarefasEscopo.filter(t => t.status !== 'concluida').length;
+  const tasksConc    = tarefasEscopo.filter(t => t.status === 'concluida').length;
   const hojeIsoDash  = new Date().toISOString().slice(0,10);
-  const tasksAtras   = GLR.tarefas.filter(t => t.status !== 'concluida' && (t.status === 'atrasada' || (t.prazo && t.prazo < hojeIsoDash))).length;
+  const tasksAtras   = tarefasEscopo.filter(t => t.status !== 'concluida' && (t.status === 'atrasada' || (t.prazo && t.prazo < hojeIsoDash))).length;
   const reunioesSemana = GLR.eventos.filter(e => e.tipo === 'reuniao').length;
 
   const faturamentoTotal = clientes.reduce((s, c) => s + (c.faturamento || 0), 0);
@@ -462,11 +474,11 @@ Router.register('dashboard', (params, el) => {
     const clientesDoGestor = clientes.filter(c => c.gestorId === g.id);
     const cg = _dashCrescGrupo(clientesDoGestor);
     const crescMedioG = cg ? cg.pct : null;
-    const tarefasG  = GLR.tarefas.filter(t=>t.responsavel===g.nome&&t.status!=='concluida').length;
+    const tarefasG  = tarefasEscopo.filter(t=>t.responsavel===g.nome&&t.status!=='concluida').length;
     const fatG      = clientesDoGestor.reduce((s,c)=>s+(c.faturamento||0),0);
     const avatar    = g.nome.split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase();
     return { ...g, avatar, qtdClientes: clientesDoGestor.length, crescMedio: crescMedioG, tarefasPend: tarefasG, fat: fatG };
-  }).filter(g => g.qtdClientes > 0 || GLR.gestores.length <= 5);
+  }).filter(g => g.qtdClientes > 0 || (!clienteFoco && GLR.gestores.length <= 5));
 
   const clientesAtencao = clientes.filter(c=>c.status==='risco'||c.status==='queda')
     .sort((a,b)=>(a.crescimento||0)-(b.crescimento||0));
@@ -481,7 +493,12 @@ Router.register('dashboard', (params, el) => {
   const stat = (rot, val, sub, tom) => `<div class="dx-stat"><span class="dx-stat-rot">${rot}</span><b class="${tom || ''}">${val}</b>${sub ? `<span class="dx-stat-sub">${sub}</span>` : ''}</div>`;
   const vazioTxt = t => `<div class="dx-vazio">${t}</div>`;
 
+  const escFoco = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   contAba.innerHTML = `
+    ${clienteFoco ? `<div class="dx-foco" role="status">
+      <span>Mostrando só <b>${escFoco(clienteFoco.nome)}</b>${vincFoco.length ? ` · ${vincFoco.length} conta${vincFoco.length !== 1 ? 's' : ''} vinculada${vincFoco.length !== 1 ? 's' : ''}` : ' · nenhuma conta de marketplace vinculada ainda'}</span>
+      <span class="dx-foco-acoes">${vincFoco.length ? '' : `<button type="button" class="btn btn-secondary btn-sm" onclick="Router.navigate('integracoes')">Vincular conta</button>`}<button type="button" class="btn btn-ghost btn-sm" onclick="GLR.ctx.definir('')">Ver a carteira toda</button></span>
+    </div>` : ''}
     <div class="dx-topo">
       <div>
         <div class="dx-sub" id="dash-status-txt">${atualizadoTxt}</div>
@@ -547,7 +564,7 @@ Router.register('dashboard', (params, el) => {
           ${clientesAtencao.length ? `<button class="btn btn-ghost btn-sm" onclick="Router.navigate('plano-acao')">Ver no plano (${clientesAtencao.length})</button>` : ''}
         </div>
         ${clientesAtencao.length === 0
-          ? vazioTxt('Nenhum cliente em risco — carteira saudável.')
+          ? vazioTxt(clienteFoco ? 'Este cliente não está em risco nem em queda.' : 'Nenhum cliente em risco — carteira saudável.')
           : `<div class="dx-lista">${clientesAtencao.slice(0, 8).map(c => `
           <div class="dx-li" onclick="Router.navigate('cliente-perfil',{id:${c.id}})">
             <div class="dx-li-txt"><b>${c.nome}</b><span>Gestor: ${nomeGestorDe(c)} · ${GLR.formatCurrency(c.faturamento || 0)}</span></div>
@@ -622,7 +639,7 @@ Router.register('dashboard', (params, el) => {
       const vd = _dashVendasDiaCache();
       const dias = vd?.dias || [];
       if (!dias.length) {
-        ctxVD.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">⏳ Carregando as vendas da carteira automaticamente…</div>';
+        ctxVD.parentElement.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:32px 0;">⏳ Carregando as vendas ' + (_dashFoco() ? 'do cliente' : 'da carteira') + ' automaticamente…</div>';
       } else {
         _dashGraficoVendasDia(ctxVD, dias);
       }
