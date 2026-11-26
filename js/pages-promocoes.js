@@ -341,13 +341,13 @@ const PM = (() => {
 
   async function aplicarLote() {
     const alvo = st.itens.filter(it => { const op = it.opcoes?.[st.escolha[it.id]]; return op && op.bate && !it.ativa && op.promo.type !== 'LIGHTNING'; });
-    if (!alvo.length) { alert('Nenhum anúncio com promoção escolhida que bata a margem (relâmpago fica de fora do lote).'); return; }
-    if (!confirm(`Aplicar a promoção escolhida em ${alvo.length} anúncio(s) que batem a margem mínima de ${margemMin()}%?\n\n${alvo.slice(0, 12).map(it => `• ${it.titulo.slice(0, 45)} → ${R(it.opcoes[st.escolha[it.id]].preco)}`).join('\n')}${alvo.length > 12 ? `\n… e mais ${alvo.length - 12}` : ''}`)) return;
+    if (!alvo.length) { GLR.avisar('Nenhum anúncio com promoção escolhida que bata a margem (relâmpago fica de fora do lote).', 'info'); return; }
+    if (!(await GLR.confirmar(`Aplicar a promoção escolhida em ${alvo.length} anúncio(s) que batem a margem mínima de ${margemMin()}%?\n\n${alvo.slice(0, 12).map(it => `• ${it.titulo.slice(0, 45)} → ${R(it.opcoes[st.escolha[it.id]].preco)}`).join('\n')}${alvo.length > 12 ? `\n… e mais ${alvo.length - 12}` : ''}`))) return;
     st.emLote = true; let ok = 0;
     for (let i = 0; i < alvo.length; i++) { st.progresso = `aplicando ${i + 1}/${alvo.length}…`; render(); if (await aplicar(alvo[i].id, true)) ok++; }
     st.emLote = false; st.progresso = '';
     render();
-    alert(`${ok} de ${alvo.length} promoção(ões) aplicada(s). Veja o resultado em cada linha.`);
+    GLR.avisar(`${ok} de ${alvo.length} promoção(ões) aplicada(s). Veja o resultado em cada linha.`, 'sucesso');
   }
 
   function salvarCusto(id, valor) {
@@ -466,16 +466,16 @@ const PM = (() => {
   window._pmFiltro = f => { st.filtro = f; render(); };
   window._pmAtualizar = () => carregar(true);
   window._pmEscolha = (id, i) => { st.escolha[id] = parseInt(i); render(); };
-  window._pmAplicar = id => {
+  window._pmAplicar = async id => {
     const it = st.itens.find(x => x.id === id), op = it?.opcoes[st.escolha[id]];
     if (!op) return;
     const aviso = op.margem == null ? '\n\n⚠️ Sem custo cadastrado: a margem não foi calculada.' : !op.bate ? `\n\n⚠️ Margem de ${op.margem.toFixed(1)}% fica ABAIXO da mínima (${margemMin()}%).` : '';
-    if (!confirm(`Aplicar ${TIPO[op.promo.type] || op.promo.type}${op.promo.name ? ' (' + op.promo.name + ')' : ''} em "${it.titulo.slice(0, 60)}" a ${R(op.preco)}?${aviso}`)) return;
+    if (!(await GLR.confirmar(`Aplicar ${TIPO[op.promo.type] || op.promo.type}${op.promo.name ? ' (' + op.promo.name + ')' : ''} em "${it.titulo.slice(0, 60)}" a ${R(op.preco)}?${aviso}`))) return;
     aplicar(id);
   };
   window._pmAplicarLote = aplicarLote;
   window._pmCusto = (id, v) => salvarCusto(id, v);
-  window._pmEditarCusto = id => { const atual = custoDe(id); const v = prompt('Custo do produto (R$) — salva também em Vendas:', atual != null ? String(atual).replace('.', ',') : ''); if (v != null) salvarCusto(id, v); };
+  window._pmEditarCusto = async id => { const atual = custoDe(id); const v = (await GLR.perguntar('Custo do produto (R$) — salva também em Vendas:', { valor: atual != null ? String(atual).replace('.', ',') : '' })); if (v != null) salvarCusto(id, v); };
   window._pmAds = v => {
     const mm = lerJSON('glr_promo_ads_pct', {}); mm[contaAtual.external_id] = Math.max(0, parseFloat(String(v).replace(',', '.')) || 0);
     localStorage.setItem('glr_promo_ads_pct', JSON.stringify(mm));
@@ -689,16 +689,16 @@ window._promoVerItens = async function(promotionId, promotionType) {
 };
 
 window._promoCriarDesconto = async function() {
-  if (!contaAtual) { alert('Selecione uma conta primeiro.'); return; }
+  if (!contaAtual) { GLR.avisar('Selecione uma conta primeiro.', 'info'); return; }
   const item = document.getElementById('pd-item').value.trim().toUpperCase();
   const preco = parseFloat(document.getElementById('pd-preco').value);
   const inicio = _promoDataML('pd-inicio');
   const fim = _promoDataML('pd-fim');
   const resDiv = document.getElementById('pd-resultado');
 
-  if (!item || !item.startsWith('MLB')) { alert('Informe o ID do anúncio (formato MLB1234567890).'); return; }
-  if (!preco || preco <= 0) { alert('Informe o preço promocional.'); return; }
-  if (!inicio || !fim) { alert('Informe início e fim do desconto.'); return; }
+  if (!item || !item.startsWith('MLB')) { GLR.avisar('Informe o ID do anúncio (formato MLB1234567890).', 'info'); return; }
+  if (!preco || preco <= 0) { GLR.avisar('Informe o preço promocional.', 'info'); return; }
+  if (!inicio || !fim) { GLR.avisar('Informe início e fim do desconto.', 'info'); return; }
 
   resDiv.innerHTML = '⏳ Aplicando desconto...';
   const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
@@ -719,7 +719,7 @@ window._promoCriarDesconto = async function() {
 };
 
 window._promoCriarCupom = async function() {
-  if (!contaAtual) { alert('Selecione uma conta primeiro.'); return; }
+  if (!contaAtual) { GLR.avisar('Selecione uma conta primeiro.', 'info'); return; }
   const nome = document.getElementById('cp-nome').value.trim();
   const tipo = document.getElementById('cp-tipo').value;
   const valor = parseFloat(document.getElementById('cp-valor').value);
@@ -730,8 +730,8 @@ window._promoCriarCupom = async function() {
   const fim = _promoDataML('cp-fim');
   const resDiv = document.getElementById('cp-resultado');
 
-  if (!nome) { alert('Informe o nome do cupom.'); return; }
-  if (!valor || valor <= 0) { alert('Informe o valor do desconto.'); return; }
+  if (!nome) { GLR.avisar('Informe o nome do cupom.', 'info'); return; }
+  if (!valor || valor <= 0) { GLR.avisar('Informe o valor do desconto.', 'info'); return; }
 
   resDiv.innerHTML = '⏳ Criando cupom...';
   const meliId = contaAtual.param_to_use?.meliUserId || contaAtual.external_id;
@@ -837,9 +837,9 @@ function renderAgentePromo() {
 window._paConta = k => { pa.conta = k; try { localStorage.setItem('glr_pa_conta', k); } catch (e) {} GLR.ctx?.definirPorConta(...k.split(':')); carregarAgentePromo(); };
 window._paAplicar = async id => {
   const d = pa.dados, x = d?.itens?.[id], o = x?.melhor; if (!o || d.mkt !== 'ml') return;
-  if (!confirm(`Aplicar "${o.rot}${o.nome ? ' — ' + o.nome : ''}" em ${x.n.slice(0, 60)} por ${paR(o.preco)} (${paP(o.desconto)} de desconto)?
+  if (!(await GLR.confirmar(`Aplicar "${o.rot}${o.nome ? ' — ' + o.nome : ''}" em ${x.n.slice(0, 60)} por ${paR(o.preco)} (${paP(o.desconto)} de desconto)?
 
-Margem estimada ${paP(o.m)}. O valor exato (tarifa e frete no preço novo) aparece na aba "Promoções por anúncio".`)) return;
+Margem estimada ${paP(o.m)}. O valor exato (tarifa e frete no preço novo) aparece na aba "Promoções por anúncio".`))) return;
   pa.aplicando[id] = true; renderAgentePromo();
   try {
     const base = { meliUserId: d.conta, promotion_type: o.tipo }; // mesmo formato da aba "Promoções por anúncio"

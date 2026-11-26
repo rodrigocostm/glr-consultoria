@@ -70,16 +70,16 @@ Router.register('atendimento-ia', (params, el) => {
   window._aiaRecarregar = () => carregar();
   window._aiaResponder = async id => {
     const texto = (document.getElementById(`aia-tx-${id}`)?.value || '').trim();
-    if (!texto) { alert('Escreva a resposta antes de enviar.'); return; }
+    if (!texto) { GLR.avisar('Escreva a resposta antes de enviar.', 'info'); return; }
     st.proc[id] = 'enviando'; render();
     try { const j = await api({ acao: 'responder', id, texto }); const k = st.itens.findIndex(x => x.id === id); if (k >= 0) st.itens[k] = j.item; if (st.resumo) { st.resumo.pendentes = Math.max(0, st.resumo.pendentes - 1); st.resumo.respondidas_cliente++; } }
-    catch (e) { alert('Não consegui enviar: ' + e.message); }
+    catch (e) { GLR.avisar('Não consegui enviar: ' + e.message, 'erro'); }
     delete st.proc[id]; render();
   };
   window._aiaResolver = async id => {
     st.proc[id] = 'resolvendo'; render();
     try { const j = await api({ acao: 'resolver', id }); const k = st.itens.findIndex(x => x.id === id); if (k >= 0) st.itens[k] = j.item; if (st.resumo) st.resumo.pendentes = Math.max(0, st.resumo.pendentes - 1); }
-    catch (e) { alert('Não consegui marcar: ' + e.message); }
+    catch (e) { GLR.avisar('Não consegui marcar: ' + e.message, 'erro'); }
     delete st.proc[id]; render();
   };
 

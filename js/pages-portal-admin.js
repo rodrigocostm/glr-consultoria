@@ -124,8 +124,8 @@ window._portalAdminLiberar = async function(id) {
   const cfg = (await _lerConfigs()).find(c => c.id === id); if (!cfg) return;
   try {
     const j = await _loginPortalServidor({ tipo: 'confirmar', email: cfg.email });
-    alert(j.ja_estava ? `O login de ${cfg.email} já estava liberado. Se não entra, a senha está errada: use Editar para definir uma nova.` : `Login de ${cfg.email} liberado. Já pode entrar.`);
-  } catch (e) { alert('Não consegui liberar: ' + e.message); }
+    GLR.avisar(j.ja_estava ? `O login de ${cfg.email} já estava liberado. Se não entra, a senha está errada: use Editar para definir uma nova.` : `Login de ${cfg.email} liberado. Já pode entrar.`, 'sucesso');
+  } catch (e) { GLR.avisar('Não consegui liberar: ' + e.message, 'erro'); }
 };
 
 // ── Modal de criação / edição ──────────────────────────────────
@@ -314,41 +314,41 @@ window._portalAdminSalvar = async function(editId) {
 window._portalAdminIA = async function(id) {
   let configs;
   try { const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave', 'glr_portal_configs').single(); if (error) throw error; configs = Array.isArray(data?.dados) ? data.dados : []; }
-  catch (e) { alert('Não consegui ler os acessos: ' + (e.message || e)); return; }
+  catch (e) { GLR.avisar('Não consegui ler os acessos: ' + (e.message || e), 'erro'); return; }
   const cfg = configs.find(c => c.id === id); if (!cfg) return;
   const ligar = !cfg.atendimentoIA;
-  if (!confirm(ligar
+  if (!(await GLR.confirmar(ligar
     ? `Liberar o Atendimento com IA para ${cfg.clienteNome || cfg.email}?\n\nA IA vai responder SOZINHA, a cada ~15 minutos, as perguntas e mensagens pós-venda do Mercado Livre e as conversas da Magalu das contas deste cliente. O que ela não puder responder com segurança fica no portal para o cliente responder. Cada resposta gasta tokens.`
-    : `Desligar o Atendimento com IA de ${cfg.clienteNome || cfg.email}? A IA para de responder em até 5 minutos.`)) return;
+    : `Desligar o Atendimento com IA de ${cfg.clienteNome || cfg.email}? A IA para de responder em até 5 minutos.`))) return;
   cfg.atendimentoIA = ligar;
   cfg.atendimentoIAEm = new Date().toISOString();
-  try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
+  try { await _salvarConfigs(configs); } catch (e) { GLR.avisar(e.message, 'erro'); return; }
   await _renderPortalAdminLista();
 };
 // Módulo Chat com IA no portal (pago à parte: cada pergunta gasta tokens)
 window._portalAdminChat = async function(id) {
   let configs;
   try { const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave', 'glr_portal_configs').single(); if (error) throw error; configs = Array.isArray(data?.dados) ? data.dados : []; }
-  catch (e) { alert('Não consegui ler os acessos: ' + (e.message || e)); return; }
+  catch (e) { GLR.avisar('Não consegui ler os acessos: ' + (e.message || e), 'erro'); return; }
   const cfg = configs.find(c => c.id === id); if (!cfg) return;
   const ligar = !cfg.chatIA;
-  if (!confirm(ligar
+  if (!(await GLR.confirmar(ligar
     ? `Liberar o Chat com IA para ${cfg.clienteNome || cfg.email}?\n\nO cliente passa a conversar no portal com a IA, que lê só as lojas dele (vendas, ADS, produtos, estoque, reembolsos). Ela não muda nada nas contas. Cada pergunta gasta tokens.`
-    : `Desligar o Chat com IA de ${cfg.clienteNome || cfg.email}?`)) return;
+    : `Desligar o Chat com IA de ${cfg.clienteNome || cfg.email}?`))) return;
   cfg.chatIA = ligar; cfg.chatIAEm = new Date().toISOString();
-  try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
+  try { await _salvarConfigs(configs); } catch (e) { GLR.avisar(e.message, 'erro'); return; }
   await _renderPortalAdminLista();
 };
 window._portalAdminChatTodos = async function() {
   let configs;
   try { const { data, error } = await _sb.from('glr_storage').select('dados').eq('chave', 'glr_portal_configs').single(); if (error) throw error; configs = Array.isArray(data?.dados) ? data.dados : []; }
-  catch (e) { alert('Não consegui ler os acessos: ' + (e.message || e)); return; }
+  catch (e) { GLR.avisar('Não consegui ler os acessos: ' + (e.message || e), 'erro'); return; }
   const faltam = configs.filter(c => !c.chatIA && (c.contaIds || []).length);
-  if (!faltam.length) { alert('O Chat com IA já está ligado em todos os acessos com lojas.'); return; }
-  if (!confirm(`Liberar o Chat com IA para ${faltam.length} acesso(s)?\n\n${faltam.slice(0, 12).map(c => '• ' + (c.clienteNome || c.email)).join('\n')}${faltam.length > 12 ? `\n… e mais ${faltam.length - 12}` : ''}\n\nCada cliente só enxerga as próprias lojas, a IA só lê (não muda nada) e cada usuário tem até 40 perguntas por dia.`)) return;
+  if (!faltam.length) { GLR.avisar('O Chat com IA já está ligado em todos os acessos com lojas.', 'info'); return; }
+  if (!(await GLR.confirmar(`Liberar o Chat com IA para ${faltam.length} acesso(s)?\n\n${faltam.slice(0, 12).map(c => '• ' + (c.clienteNome || c.email)).join('\n')}${faltam.length > 12 ? `\n… e mais ${faltam.length - 12}` : ''}\n\nCada cliente só enxerga as próprias lojas, a IA só lê (não muda nada) e cada usuário tem até 40 perguntas por dia.`))) return;
   const agora = new Date().toISOString();
   for (const c of faltam) { c.chatIA = true; c.chatIAEm = agora; }
-  try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
+  try { await _salvarConfigs(configs); } catch (e) { GLR.avisar(e.message, 'erro'); return; }
   await _renderPortalAdminLista();
 };
 // Módulos do portal liberados por acesso (Financeiro, Notas): mesma ideia do Chat IA
@@ -356,14 +356,14 @@ window._portalAdminModulo = async function(id, chave) {
   const NOMES = { financeiro: 'Financeiro', notas: 'Notas e etiquetas', projecao: 'Projeção do mês' };
   if (!NOMES[chave]) return;
   let configs;
-  try { configs = await _lerConfigs(); } catch (e) { alert(e.message); return; }
+  try { configs = await _lerConfigs(); } catch (e) { GLR.avisar(e.message, 'erro'); return; }
   const cfg = configs.find(c => c.id === id); if (!cfg) return;
   const ligar = !cfg[chave];
-  if (!confirm(`${ligar ? 'Liberar' : 'Desligar'} a tela ${NOMES[chave]} no portal de ${cfg.clienteNome || cfg.email}?`)) return;
+  if (!(await GLR.confirmar(`${ligar ? 'Liberar' : 'Desligar'} a tela ${NOMES[chave]} no portal de ${cfg.clienteNome || cfg.email}?`))) return;
   cfg[chave] = ligar; cfg[chave + 'Em'] = new Date().toISOString();
   // Projeção: a meta do mês vai no acesso (o portal não lê as metas internas da GLR)
   if (chave === 'projecao' && ligar) { try { const metas = JSON.parse(localStorage.getItem('glr_metas') || '{}') || {}; const v = parseFloat(metas[cfg.clienteId] ?? metas[String(cfg.clienteId)]) || parseFloat((GLR.clientes || []).find(c => String(c.id) === String(cfg.clienteId))?.metaMensal) || 0; if (v > 0) cfg.metaMes = v; } catch (e) {} }
-  try { await _salvarConfigs(configs); } catch (e) { alert(e.message); return; }
+  try { await _salvarConfigs(configs); } catch (e) { GLR.avisar(e.message, 'erro'); return; }
   await _renderPortalAdminLista();
 };
 // uso do mês de quem tem o módulo ligado
@@ -389,7 +389,7 @@ window._portalAdminToggle = async function(id) {
 };
 
 window._portalAdminRemover = async function(id) {
-  if (!confirm('Remover este acesso? O usuário não conseguirá mais logar.')) return;
+  if (!(await GLR.confirmar('Remover este acesso? O usuário não conseguirá mais logar.', { perigo: true }))) return;
   const configs = await _lerConfigs();
   await _salvarConfigs(configs.filter(c => c.id !== id));
   await _renderPortalAdminLista();

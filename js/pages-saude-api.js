@@ -50,7 +50,7 @@ Router.register('saude-api', (params, el) => {
       const r = await window.glrApiFetch('/api/agente-cron?rodada=saude-api&agora=1&forcar=1');
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-    } catch (e) { alert('Não consegui conferir agora: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui conferir agora: ' + (e.message || e), 'erro'); }
     st.conferindo = false;
     await carregar();
   }

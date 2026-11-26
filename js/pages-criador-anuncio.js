@@ -579,7 +579,7 @@
       if (bloq.length) { st.passo = bloq[0].passo; tudo(); aviso(bloq[0].t); return; }
       const leves = pend.filter(p => p.leve);
       const lista = st.sel.map(contaPorKey).filter(Boolean);
-      if (!confirm(`Publicar em ${lista.length} conta(s)?\n\n${lista.map(c => `• ${MKTS[MKT_DE(c.marketplace)].nome} — ${nomeConta(c)}`).join('\n')}${leves.length ? `\n\nAtenção: ${leves.map(l => l.t).join('; ')}. O marketplace pode recusar.` : ''}\n\nOs anúncios são criados de verdade nas contas.`)) return;
+      if (!(await GLR.confirmar(`Publicar em ${lista.length} conta(s)?\n\n${lista.map(c => `• ${MKTS[MKT_DE(c.marketplace)].nome} — ${nomeConta(c)}`).join('\n')}${leves.length ? `\n\nAtenção: ${leves.map(l => l.t).join('; ')}. O marketplace pode recusar.` : ''}\n\nOs anúncios são criados de verdade nas contas.`))) return;
       st.pub = { rodando: true, linhas: lista.map(c => ({ key: contaKey(c), mkt: MKT_DE(c.marketplace), nome: nomeConta(c), status: 'fila' })) };
       tudo();
       for (const l of st.pub.linhas) await rodarUma(l);
@@ -887,7 +887,7 @@
       publicar, republicar,
       limparPub() { st.pub = null; tudo(); },
       novo() { if (st.pub?.rodando) return; clearTimeout(tSalvar); try { localStorage.removeItem(K_RASC); } catch (e) {} idb('readwrite', os => os.delete('rascunho')).catch(() => {}).finally(() => { window._caSt = null; Router.resolve(); }); },
-      zerar() { if (st.pub?.rodando) return; if (!confirm('Apagar este rascunho e começar do zero?')) return; window._ca.novo(); },
+      async zerar() { if (st.pub?.rodando) return; if (!(await GLR.confirmar('Apagar este rascunho e começar do zero?', { perigo: true }))) return; window._ca.novo(); },
     };
 
     el.innerHTML = `<div class="page ca">

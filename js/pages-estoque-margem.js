@@ -122,7 +122,7 @@ Router.register('estoque-margem', (params, el) => {
     const n = parseFloat(String(v).replace(',', '.'));
     const conta = st.conta.split(':')[1]; if (!conta) return;
     const m = lerJSON('glr_margem_minima', {});
-    if (isNaN(n) || n < 0 || n > 80) { alert('Use um número entre 0 e 80.'); render(); return; }
+    if (isNaN(n) || n < 0 || n > 80) { GLR.avisar('Use um número entre 0 e 80.', 'info'); render(); return; }
     m[conta] = n; localStorage.setItem('glr_margem_minima', JSON.stringify(m)); // sincroniza (supabase-init)
     const i = document.getElementById('em-margem-min'); if (i) { i.style.borderColor = 'var(--green)'; setTimeout(() => { i.style.borderColor = ''; }, 1200); }
   };

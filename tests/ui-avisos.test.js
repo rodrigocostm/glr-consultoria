@@ -153,9 +153,10 @@ test('erroCampo sem o campo na tela cai num aviso de erro', () => {
   assert.ok(document.getElementById('glr-avisos-erro').textContent.includes('Selecione a conta.'));
 });
 
-test('anúncios e agente de ADS não usam mais alert/confirm/prompt do navegador', () => {
-  for (const f of ['pages-anuncios.js', 'pages-agente.js']) {
-    const src = fs.readFileSync(require.resolve('../js/' + f), 'utf8');
+test('nenhuma tela usa mais alert/confirm/prompt do navegador', () => {
+  const dir = require('node:path').join(__dirname, '../js');
+  for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.js') && n !== 'ui.js')) {
+    const src = fs.readFileSync(require('node:path').join(dir, f), 'utf8');
     assert.doesNotMatch(src, /(^|[^.\w])(alert|confirm|prompt)\(/m, f);
   }
 });

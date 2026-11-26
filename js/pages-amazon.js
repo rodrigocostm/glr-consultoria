@@ -261,12 +261,12 @@ Router.register('anuncios-amazon', (params, el) => {
   window._azPromoPreco = (sku, v) => { st.promo[sku] = { ...(st.promo[sku] || {}), preco: num(v) }; render(); };
   window._azPromoData = (sku, campo, v) => { st.promo[sku] = { ...(st.promo[sku] || {}), [campo]: v }; };
   window._azPreco = async (sku, preco) => {
-    const it = itemDe(sku); if (!it?.tipo) { alert('Não sei o tipo de produto deste anúncio — clique em Atualizar e tente de novo.'); return; }
+    const it = itemDe(sku); if (!it?.tipo) { GLR.avisar('Não sei o tipo de produto deste anúncio — clique em Atualizar e tente de novo.', 'info'); return; }
     const m = conta(it, preco);
-    if (!confirm(`Mudar o preço de "${it.titulo.slice(0, 60)}" de ${R$(it.preco)} para ${R$(preco)}?${m?.margem != null ? `\nMargem nesse preço: ${pct(m.margem)}` : '\n(sem custo cadastrado: margem desconhecida)'}`)) return;
+    if (!(await GLR.confirmar(`Mudar o preço de "${it.titulo.slice(0, 60)}" de ${R$(it.preco)} para ${R$(preco)}?${m?.margem != null ? `\nMargem nesse preço: ${pct(m.margem)}` : '\n(sem custo cadastrado: margem desconhecida)'}`))) return;
     st.aplicando[sku] = true; render();
-    try { await amz('amazon_update_price', { sku, product_type: it.tipo, preco }); it.preco = preco; salvarCache(); alert('Preço enviado para a Amazon. Pode levar alguns minutos para aparecer.'); }
-    catch (e) { alert('A Amazon recusou: ' + e.message); }
+    try { await amz('amazon_update_price', { sku, product_type: it.tipo, preco }); it.preco = preco; salvarCache(); GLR.avisar('Preço enviado para a Amazon. Pode levar alguns minutos para aparecer.', 'sucesso'); }
+    catch (e) { GLR.avisar('A Amazon recusou: ' + e.message, 'erro'); }
     finally { delete st.aplicando[sku]; render(); }
   };
   window._azAplicarPromo = async sku => {
@@ -274,22 +274,22 @@ Router.register('anuncios-amazon', (params, el) => {
     const sug = precoParaMargem(it, st.margemMin);
     const preco = p.preco ?? (sug && it.preco && sug < it.preco ? sug : null);
     const ini = p.ini || hojeIso(), fim = p.fim || hojeIso(7);
-    if (!it?.tipo) { alert('Não sei o tipo de produto deste anúncio — clique em Atualizar e tente de novo.'); return; }
-    if (!preco || preco >= it.preco) { alert('O preço promocional precisa ser menor que o preço atual.'); return; }
-    if (fim < ini) { alert('A data de fim é antes do início.'); return; }
+    if (!it?.tipo) { GLR.avisar('Não sei o tipo de produto deste anúncio — clique em Atualizar e tente de novo.', 'info'); return; }
+    if (!preco || preco >= it.preco) { GLR.avisar('O preço promocional precisa ser menor que o preço atual.', 'info'); return; }
+    if (fim < ini) { GLR.avisar('A data de fim é antes do início.', 'info'); return; }
     const m = conta(it, preco);
-    if (!confirm(`Colocar "${it.titulo.slice(0, 60)}" em promoção por ${R$(preco)} (hoje ${R$(it.preco)}) de ${ini.split('-').reverse().join('/')} a ${fim.split('-').reverse().join('/')}?${m?.margem != null ? `\nMargem: ${pct(m.margem)} (lucro ${R$(m.lucro)})` : '\n(sem custo cadastrado: margem desconhecida)'}${it.minimo && preco < it.minimo ? `\n\nAtenção: abaixo do mínimo permitido no anúncio (${R$(it.minimo)}) — a Amazon pode recusar.` : ''}`)) return;
+    if (!(await GLR.confirmar(`Colocar "${it.titulo.slice(0, 60)}" em promoção por ${R$(preco)} (hoje ${R$(it.preco)}) de ${ini.split('-').reverse().join('/')} a ${fim.split('-').reverse().join('/')}?${m?.margem != null ? `\nMargem: ${pct(m.margem)} (lucro ${R$(m.lucro)})` : '\n(sem custo cadastrado: margem desconhecida)'}${it.minimo && preco < it.minimo ? `\n\nAtenção: abaixo do mínimo permitido no anúncio (${R$(it.minimo)}) — a Amazon pode recusar.` : ''}`))) return;
     st.aplicando[sku] = true; render();
-    try { await amz('amazon_set_sale_price', { sku, product_type: it.tipo, preco_promocional: preco, inicio: ini, fim }); it.promo = { preco, ate: fim }; delete st.promo[sku]; salvarCache(); alert('Promoção enviada para a Amazon. Pode levar alguns minutos para aparecer no anúncio.'); }
-    catch (e) { alert('A Amazon recusou: ' + e.message); }
+    try { await amz('amazon_set_sale_price', { sku, product_type: it.tipo, preco_promocional: preco, inicio: ini, fim }); it.promo = { preco, ate: fim }; delete st.promo[sku]; salvarCache(); GLR.avisar('Promoção enviada para a Amazon. Pode levar alguns minutos para aparecer no anúncio.', 'sucesso'); }
+    catch (e) { GLR.avisar('A Amazon recusou: ' + e.message, 'erro'); }
     finally { delete st.aplicando[sku]; render(); }
   };
   window._azTirarPromo = async sku => {
     const it = itemDe(sku); if (!it?.tipo) return;
-    if (!confirm(`Tirar a promoção de "${it.titulo.slice(0, 60)}"? O preço volta para ${R$(it.preco)} na hora.`)) return;
+    if (!(await GLR.confirmar(`Tirar a promoção de "${it.titulo.slice(0, 60)}"? O preço volta para ${R$(it.preco)} na hora.`, { perigo: true }))) return;
     st.aplicando[sku] = true; render();
     try { await amz('amazon_remove_sale_price', { sku, product_type: it.tipo }); it.promo = null; salvarCache(); }
-    catch (e) { alert('A Amazon recusou: ' + e.message); }
+    catch (e) { GLR.avisar('A Amazon recusou: ' + e.message, 'erro'); }
     finally { delete st.aplicando[sku]; render(); }
   };
 

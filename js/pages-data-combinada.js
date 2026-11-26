@@ -137,10 +137,10 @@ Router.register('data-combinada', (params, el) => {
   };
   window._dcDia = d => { if (!/^\d{4}-\d\d-\d\d$/.test(d)) return; st.dia = d; guardarSel(); const i = el.querySelector('#dc-dia'); if (i) i.value = d; render(); };
   window._dcGestor = g => { st.gestor = g; guardarSel(); render(); };
-  window._dcCopiar = () => {
+  window._dcCopiar = async () => {
     const todas = lerJSON(K_METAS, {}) || {}, ant = Object.keys(todas).filter(d => d < st.dia && Object.keys(todas[d] || {}).length).sort().pop();
-    if (!ant) { alert('Não há uma data anterior com metas para copiar.'); return; }
-    if (Object.keys(todas[st.dia] || {}).length && !confirm(`Substituir as metas de ${dm(st.dia)} pelas de ${dm(ant)}?`)) return;
+    if (!ant) { GLR.avisar('Não há uma data anterior com metas para copiar.', 'info'); return; }
+    if (Object.keys(todas[st.dia] || {}).length && !(await GLR.confirmar(`Substituir as metas de ${dm(st.dia)} pelas de ${dm(ant)}?`, { perigo: true }))) return;
     todas[st.dia] = { ...todas[ant] }; gravar(K_METAS, todas); render();
   };
   window._dcRecarregar = () => { if (BaseDados.invalidar) BaseDados.invalidar(); carregar(true); };

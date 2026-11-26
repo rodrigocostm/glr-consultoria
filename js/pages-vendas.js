@@ -520,7 +520,7 @@ Router.register('vendas', async (params, el) => {
   async function buscarOportunidades() {
     if (buscandoOportunidades) return;
     if (filtroContasSel.size === 0 && filtroEmpresas.size === 0) {
-      alert('Selecione ao menos uma conta ou empresa no filtro antes de buscar oportunidades.');
+      GLR.avisar('Selecione ao menos uma conta ou empresa no filtro antes de buscar oportunidades.', 'info');
       return;
     }
     const contasAlvo = filtroContasSel.size > 0
@@ -528,7 +528,7 @@ Router.register('vendas', async (params, el) => {
       : contas.filter(c => contaEmpresas(c).some(e => filtroEmpresas.has(e)));
     const contasML     = contasAlvo.filter(c => ['meli','ml','mercadolivre'].includes((c.marketplace||'').toLowerCase()));
     const contasShopee = contasAlvo.filter(c => (c.marketplace||'').toLowerCase() === 'shopee');
-    if (!contasML.length && !contasShopee.length) { alert('Nenhuma conta ML ou Shopee selecionada no filtro.'); return; }
+    if (!contasML.length && !contasShopee.length) { GLR.avisar('Nenhuma conta ML ou Shopee selecionada no filtro.', 'info'); return; }
 
     buscandoOportunidades = true;
     const btn = document.getElementById('btn-buscar-oport');
@@ -671,7 +671,7 @@ Router.register('vendas', async (params, el) => {
   async function buscarForaDoAds() {
     if (buscandoForaDoAds) return;
     if (filtroContasSel.size === 0 && filtroEmpresas.size === 0) {
-      alert('Selecione ao menos uma conta ou empresa no filtro antes de buscar.');
+      GLR.avisar('Selecione ao menos uma conta ou empresa no filtro antes de buscar.', 'info');
       return;
     }
     const contasAlvo = filtroContasSel.size > 0
@@ -679,7 +679,7 @@ Router.register('vendas', async (params, el) => {
       : contas.filter(c => contaEmpresas(c).some(e => filtroEmpresas.has(e)));
     const contasML     = contasAlvo.filter(c => ['meli','ml','mercadolivre'].includes((c.marketplace||'').toLowerCase()));
     const contasShopee = contasAlvo.filter(c => (c.marketplace||'').toLowerCase() === 'shopee');
-    if (!contasML.length && !contasShopee.length) { alert('Nenhuma conta ML ou Shopee selecionada no filtro.'); return; }
+    if (!contasML.length && !contasShopee.length) { GLR.avisar('Nenhuma conta ML ou Shopee selecionada no filtro.', 'info'); return; }
 
     buscandoForaDoAds = true;
     const btn = document.getElementById('btn-buscar-fora-ads');
@@ -2832,7 +2832,7 @@ Router.register('vendas', async (params, el) => {
     const nome=document.getElementById('inp-linha-nome')?.value?.trim();
     const valor=document.getElementById('inp-linha-valor')?.value;
     const tipo=document.getElementById('sel-linha-tipo')?.value;
-    if (!nome||!valor){ alert('Preencha nome e valor.'); return; }
+    if (!nome||!valor){ GLR.avisar('Preencha nome e valor.', 'info'); return; }
     linhasExt.push({id:Date.now().toString(),nome,valor:parseFloat(valor),tipo});
     salvarLinhas(); renderLinhasExtras(); renderPedidos();
     document.getElementById('inp-linha-nome').value='';
@@ -2846,7 +2846,7 @@ Router.register('vendas', async (params, el) => {
     const custo=parseFloat(document.getElementById('inp-global-custo')?.value)||0;
     const imp=parseFloat(document.getElementById('inp-global-imposto')?.value)||0;
     const out=parseFloat(document.getElementById('inp-global-outros')?.value)||0;
-    if (!custo&&!imp&&!out){ alert('Preencha ao menos um valor.'); return; }
+    if (!custo&&!imp&&!out){ GLR.avisar('Preencha ao menos um valor.', 'info'); return; }
     for (const p of pedidosFiltrados()) {
       if (!custos[p.id]) custos[p.id]={};
       if (custo) custos[p.id].custo=custo;
@@ -2854,7 +2854,7 @@ Router.register('vendas', async (params, el) => {
       if (out)   custos[p.id].outros=out;
     }
     salvarCustos(); renderPedidos();
-    alert(`Aplicado a ${pedidosFiltrados().length} pedidos!`);
+    GLR.avisar(`Aplicado a ${pedidosFiltrados().length} pedidos!`, 'sucesso');
   };
 
   window.confirmarLimpezaManuais = () => {

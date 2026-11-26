@@ -422,20 +422,20 @@ Router.register('decisoes', (params, el) => {
     const it = achar(id); if (!it?.exec) return;
     st.proc[id] = 'Executando…'; render();
     try { await GLRAcoes.executar(it.log); delete st.proc[id]; await sair(id); tirar(id); aviso('Aprovada e executada'); }
-    catch (e) { alert('Não consegui executar: ' + (e.message || e)); }
+    catch (e) { GLR.avisar('Não consegui executar: ' + (e.message || e), 'erro'); }
     delete st.proc[id]; render();
   };
   window._dcAprovarSel = () => aprovarLote(visiveis().filter(it => it.exec && st.sel.has(it.id)));
   async function aprovarLote(sel) {
     if (!sel.length || st.lote) return;
-    if (!confirm(`Aprovar e executar agora ${sel.length} sugestão(ões)?\n\n${sel.slice(0, 12).map(it => `• ${it.acao || ''} — ${corta(it.titulo, 60)}`).join('\n')}${sel.length > 12 ? `\n… e mais ${sel.length - 12}` : ''}`)) return;
+    if (!(await GLR.confirmar(`Aprovar e executar agora ${sel.length} sugestão(ões)?\n\n${sel.slice(0, 12).map(it => `• ${it.acao || ''} — ${corta(it.titulo, 60)}`).join('\n')}${sel.length > 12 ? `\n… e mais ${sel.length - 12}` : ''}`))) return;
     const falhas = []; let n = 0;
     for (const it of sel) {
       st.lote = `Executando ${++n} de ${sel.length}…`; render();
       try { await GLRAcoes.executar(it.log); tirar(it.id); } catch (e) { falhas.push(`${corta(it.titulo, 50)}: ${e.message || e}`); }
     }
     st.lote = null; render();
-    if (falhas.length) alert(`Executei ${sel.length - falhas.length} de ${sel.length}. Falharam:\n${falhas.slice(0, 8).join('\n')}`);
+    if (falhas.length) GLR.avisar(`Executei ${sel.length - falhas.length} de ${sel.length}. Falharam:\n${falhas.slice(0, 8).join('\n')}`, falhas.length ? 'erro' : 'sucesso');
     else aviso(`${sel.length} aprovada(s) e executada(s)`);
   }
   async function resolver(id, resultado) {
@@ -469,7 +469,7 @@ Router.register('decisoes', (params, el) => {
       }
       delete st.proc[id]; await sair(id); tirar(id);
       aviso(resultado === 'executado' ? 'Marcada como feita' : 'Descartada');
-    } catch (e) { alert('Não consegui salvar: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui salvar: ' + (e.message || e), 'erro'); }
     delete st.proc[id]; render();
   }
   window._dcFeito = id => achar(id)?.exigeEvidencia ? window._dcIr(id) : resolver(id, 'executado');

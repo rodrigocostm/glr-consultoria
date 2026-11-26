@@ -145,7 +145,7 @@ window._leadsMudarStatus = async function(id, novoStatus) {
     if (lead) lead.status = novoStatus;
     renderKpis();
   } catch (e) {
-    alert('Não consegui salvar o status: ' + e.message);
+    GLR.avisar('Não consegui salvar o status: ' + e.message, 'erro');
   }
 };
 

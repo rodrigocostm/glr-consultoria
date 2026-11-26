@@ -27,12 +27,12 @@ const PushNotif = {
   },
   async ativar() {
     if (!this.suportado()) {
-      alert('Seu navegador não suporta notificações push. Tente pelo Chrome ou Safari (iOS 16.4+, precisa "Adicionar à Tela de Início" antes de ativar).');
+      GLR.avisar('Seu navegador não suporta notificações push. Tente pelo Chrome ou Safari (iOS 16.4+, precisa "Adicionar à Tela de Início" antes de ativar).', 'info');
       return false;
     }
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') {
-      alert('Permissão de notificação negada. Ative manualmente nas configurações do navegador se mudar de ideia.');
+      GLR.avisar('Permissão de notificação negada. Ative manualmente nas configurações do navegador se mudar de ideia.', 'info');
       return false;
     }
 
@@ -68,7 +68,7 @@ const PushNotif = {
       return true;
     } catch(e) {
       console.error('[Push] erro ao ativar:', e);
-      alert('Erro ao ativar notificações: ' + e.message);
+      GLR.avisar('Erro ao ativar notificações: ' + e.message, 'erro');
       return false;
     }
   },
@@ -95,7 +95,7 @@ const PushNotif = {
   },
   async abrir() {
     let perfil;
-    try{const r=await fetch('/api/push-subscribe',{headers:await this._headers()});perfil=await r.json();if(!r.ok)throw Error(perfil.error || 'Não foi possível verificar seu perfil');}catch(e){alert(e.message);return;}
+    try{const r=await fetch('/api/push-subscribe',{headers:await this._headers()});perfil=await r.json();if(!r.ok)throw Error(perfil.error || 'Não foi possível verificar seu perfil');}catch(e){GLR.avisar(e.message, 'erro');return;}
     const portal=perfil.perfil==='portal';
     const opcoes=portal?[['vendas','Vendas das minhas contas'],['saldo','Saldo de Ads das minhas contas'],['metas','Minhas metas'],['resumo_diario','Resumo do dia anterior · 0h'],['projecao','Minha projeção entrou em queda'],['curva_a','Produto curva A sem estoque']]:[['vendometro','Resumo geral do Vendômetro · 9h, 13h, 18h e 22h'],['saldo','Saldo de Ads baixo ou zerado · identifica a conta'],['oscilacao','Oscilação de Ads · identifica a conta (50% e R$ 100)'],['resumo_diario','Resumo do dia anterior · 0h'],['gestores','Gestor bateu a meta diária'],['projecao','Cliente entrou com projeção em queda'],['curva_a','Produto curva A sem estoque'],['prejuizo','Produto vendido com prejuízo']];
     document.getElementById('glr-push-panel')?.remove();

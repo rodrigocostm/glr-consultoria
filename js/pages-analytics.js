@@ -482,7 +482,7 @@ Router.register('analytics-conteudo', async (params, el) => {
     const canal   = document.getElementById('pa-canal').value.trim();
     const acao    = document.getElementById('pa-acao').value.trim();
     const prazo   = document.getElementById('pa-prazo').value;
-    if (!clienteId || !acao) { alert('Selecione o cliente e descreva a ação.'); return; }
+    if (!clienteId || !acao) { GLR.avisar('Selecione o cliente e descreva a ação.', 'info'); return; }
     planoAcao.unshift({ id: Date.now(), clienteId, canal, acao, prazo, concluido:false, observacao:'' });
     salvarPlano();
     render();

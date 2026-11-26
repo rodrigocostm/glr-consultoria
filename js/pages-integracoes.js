@@ -309,7 +309,7 @@ Router.register('integracoes', (params, el) => {
   window.vincularConta = () => {
     const clienteId = document.getElementById('sel-cliente-vinc').value;
     const contaStr  = document.getElementById('sel-conta-vinc').value;
-    if (!clienteId || !contaStr) return alert('Selecione o cliente e a conta.');
+    if (!clienteId || !contaStr) return GLR.avisar('Selecione o cliente e a conta.', 'info');
     const conta = (window._intContasLivres || [])[Number(contaStr)];
     if (!conta) return;
 
@@ -319,7 +319,7 @@ Router.register('integracoes', (params, el) => {
 
     // Evita duplicata
     const jaVinculado = vinc[clienteId].some(v => v.external_id === conta.external_id);
-    if (jaVinculado) return alert('Esta conta já está vinculada a este cliente.');
+    if (jaVinculado) return GLR.avisar('Esta conta já está vinculada a este cliente.', 'info');
 
     vinc[clienteId].push(conta);
     localStorage.setItem('glr_mc_vinculos', JSON.stringify(vinc));
@@ -329,7 +329,7 @@ Router.register('integracoes', (params, el) => {
     _reRenderContasConectadas();
     const clienteNomeVinc = GLR.clientes.find(c => c.id === parseInt(clienteId))?.nome || clienteId;
     registrarLog('Conta vinculada a cliente', `${nicknames[conta.external_id] || conta.nickname || conta.external_id} → ${clienteNomeVinc}`);
-    alert(`✓ ${conta.nickname} vinculada com sucesso!`);
+    GLR.avisar(`✓ ${conta.nickname} vinculada com sucesso!`, 'sucesso');
   };
 
   // Re-lê glr_mc_vinculos e glr_mc_contas do localStorage e atualiza "Contas

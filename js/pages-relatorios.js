@@ -167,7 +167,7 @@ Router.register('relatorios', (params, el) => {
     renderCorpo();
   };
   window._relNovaAcao = () => {
-    if (!GLR.clientes.length) { alert('Cadastre um cliente antes de registrar uma ação.'); return; }
+    if (!GLR.clientes.length) { GLR.avisar('Cadastre um cliente antes de registrar uma ação.', 'info'); return; }
     openModalNovaAcao(GLR.clientes[0].id);
   };
   window._relCopiar = () => {
@@ -178,7 +178,7 @@ Router.register('relatorios', (params, el) => {
       const original = btn.textContent;
       btn.textContent = '✅ Copiado!';
       setTimeout(() => { btn.textContent = original; }, 1800);
-    }).catch(() => alert('Não foi possível copiar automaticamente. Copie o texto manualmente.'));
+    }).catch(() => GLR.avisar('Não foi possível copiar automaticamente. Copie o texto manualmente.', 'erro'));
   };
 
   renderCorpo();

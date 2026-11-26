@@ -178,7 +178,7 @@ window._sugAprovar = async function(id) {
   if (!s) return;
   const precisaExecutar = ['pausar', 'retomar', 'ajustar_orcamento'].includes(s.tipo);
 
-  if (precisaExecutar && !confirm(`Confirma? Isso vai ${TIPO_LABEL[s.tipo].replace(/^\S+\s/, '').toLowerCase()} de verdade na conta ${s.conta_nome || s.conta_id}${s.campanha_nome ? ' (' + s.campanha_nome + ')' : ''}.`)) return;
+  if (precisaExecutar && !(await GLR.confirmar(`Confirma? Isso vai ${TIPO_LABEL[s.tipo].replace(/^\S+\s/, '').toLowerCase()} de verdade na conta ${s.conta_nome || s.conta_id}${s.campanha_nome ? ' (' + s.campanha_nome + ')' : ''}.`))) return;
 
   try {
     if (precisaExecutar) {
@@ -199,7 +199,7 @@ window._sugRejeitar = async function(id) {
     await _sb.from('glr_ads_sugestoes').update({ status: 'rejeitado', decidido_em: new Date().toISOString() }).eq('id', id);
     await carregarSugestoes();
   } catch (e) {
-    alert('Erro ao rejeitar: ' + e.message);
+    GLR.avisar('Erro ao rejeitar: ' + e.message, 'erro');
   }
 };
 

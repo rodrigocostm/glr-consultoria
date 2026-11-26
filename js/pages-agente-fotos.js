@@ -48,7 +48,7 @@ Router.register('agente-fotos', (params, el) => {
       const r = await window.glrApiFetch(`/api/agente-cron?rodada=fotos&conta=${encodeURIComponent(l.id)}&mkt=${l.mkt}`);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-    } catch (e) { alert('Não consegui analisar agora: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui analisar agora: ' + (e.message || e), 'erro'); }
     st.analisando = false;
     await carregar();
   }
@@ -65,7 +65,7 @@ Router.register('agente-fotos', (params, el) => {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       if (j.images?.[0]?.url) (st.geradas[itemId] = st.geradas[itemId] || []).unshift(j.images[0].url);
-    } catch (e) { alert('Não consegui gerar a foto: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui gerar a foto: ' + (e.message || e), 'erro'); }
     delete st.gerando[itemId]; render();
   }
   function ampliar(src) {

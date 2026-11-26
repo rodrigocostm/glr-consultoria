@@ -270,9 +270,9 @@ Router.register('diagnostico', async (params, el) => {
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
       const resumo = Object.entries(tabelas).map(([t, r]) => `${t}: ${r.linhas.length}${r.erro ? ` (erro: ${r.erro})` : ''}`).join('\n');
-      alert(`Backup baixado (${(blob.size / 1024 / 1024).toFixed(1)} MB).\n\n${resumo}\nChaves deste navegador: ${Object.keys(local).length}\n\nGuarde o arquivo num lugar seguro (Drive). A chave de API do conector não vai no arquivo.`);
+      GLR.avisar(`Backup baixado (${(blob.size / 1024 / 1024).toFixed(1)} MB).\n\n${resumo}\nChaves deste navegador: ${Object.keys(local).length}\n\nGuarde o arquivo num lugar seguro (Drive). A chave de API do conector não vai no arquivo.`, 'sucesso');
     } catch (e) {
-      alert('Não consegui gerar o backup: ' + (e.message || e));
+      GLR.avisar('Não consegui gerar o backup: ' + (e.message || e), 'erro');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = 'Baixar backup completo'; }
     }

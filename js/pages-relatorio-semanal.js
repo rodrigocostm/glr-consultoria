@@ -32,7 +32,7 @@ Router.register('relatorio-semanal', (params, el) => {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       if (cid) delete st.editado[cid];
-    } catch (e) { alert('Não consegui gerar o relatório: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui gerar o relatório: ' + (e.message || e), 'erro'); }
     st.gerando = null;
     await carregar();
   }

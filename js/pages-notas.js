@@ -36,10 +36,10 @@ Router.register('notas', (params, el) => {
   async function acao(p, tipo) {
     const k = `${p.mkt}:${p.pedido}`;
     const empresaId = empresaDo(p);
-    if ((tipo === 'previa' || tipo === 'emitir') && !empresaId) { alert('Escolha no topo a empresa que emite a nota.'); return; }
+    if ((tipo === 'previa' || tipo === 'emitir') && !empresaId) { GLR.avisar('Escolha no topo a empresa que emite a nota.', 'info'); return; }
     if (tipo === 'emitir') {
       const prod = st.ambiente === 'producao';
-      if (!confirm(prod ? `Emitir a NOTA FISCAL de verdade (produção) do pedido ${p.pedido}?\n\nEla vai para a SEFAZ e tem valor fiscal.` : `Emitir a nota do pedido ${p.pedido} em HOMOLOGAÇÃO (teste, sem valor fiscal)?`)) return;
+      if (!(await GLR.confirmar(prod ? `Emitir a NOTA FISCAL de verdade (produção) do pedido ${p.pedido}?\n\nEla vai para a SEFAZ e tem valor fiscal.` : `Emitir a nota do pedido ${p.pedido} em HOMOLOGAÇÃO (teste, sem valor fiscal)?`))) return;
     }
     st.ocupado[k] = tipo; render();
     try {
@@ -52,9 +52,9 @@ Router.register('notas', (params, el) => {
         if (p.nota && ['processando', 'pendente_consulta'].includes(p.nota.situacao)) setTimeout(() => atualizarNota(p), 6000);
       } else if (tipo === 'danfe' || tipo === 'a4') {
         const r = await call('glr_nfe_danfe', { id: p.nota.id, formato: tipo === 'a4' ? 'a4' : 'etiqueta' });
-        if (r.url) window.open(r.url, '_blank', 'noopener'); else alert('O emissor não devolveu o link do DANFE.');
+        if (r.url) window.open(r.url, '_blank', 'noopener'); else GLR.avisar('O emissor não devolveu o link do DANFE.', 'info');
       }
-    } catch (e) { alert(e.message || String(e)); }
+    } catch (e) { GLR.avisar(e.message || String(e), 'erro'); }
     delete st.ocupado[k]; render();
   }
   async function atualizarNota(p) {
@@ -68,8 +68,8 @@ Router.register('notas', (params, el) => {
     catch (e) { st.msg = '❌ ' + (e.message || e); render(); }
   }
   async function trocarChave() {
-    if (!confirm('Remover a chave do emissor? Para emitir de novo será preciso cadastrar outra.')) return;
-    try { await call('glr_nfe_chave', { remover: true }); st.emissor = { temChave: false }; st.pedidos = []; render(); } catch (e) { alert(e.message); }
+    if (!(await GLR.confirmar('Remover a chave do emissor? Para emitir de novo será preciso cadastrar outra.', { perigo: true }))) return;
+    try { await call('glr_nfe_chave', { remover: true }); st.emissor = { temChave: false }; st.pedidos = []; render(); } catch (e) { GLR.avisar(e.message, 'erro'); }
   }
 
   function renderSemChave() {
@@ -148,8 +148,8 @@ Router.register('notas', (params, el) => {
   window._nfTrocarChave = trocarChave;
   window._nfRecarregar = carregar;
   window._nfEmpresa = v => { st.empresa = v; render(); };
-  window._nfAmb = v => {
-    if (v === 'producao' && !confirm('Mudar para PRODUÇÃO? As próximas notas terão valor fiscal.')) return;
+  window._nfAmb = async v => {
+    if (v === 'producao' && !(await GLR.confirmar('Mudar para PRODUÇÃO? As próximas notas terão valor fiscal.'))) return;
     st.ambiente = v; try { localStorage.setItem('glr_nfe_ambiente', v); } catch (e) {} render();
   };
   window._nfAcao = (i, tipo) => { const p = st.pedidos[i]; if (p) acao(p, tipo); };

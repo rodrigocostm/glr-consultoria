@@ -114,10 +114,10 @@ Router.register('retencao', (params, el) => {
     const x = st.clientes.find(c => c.id === id); if (!x) return;
     const txt = plano(x);
     try { await navigator.clipboard.writeText(txt); st.copiado = id; render(); setTimeout(() => { if (st.copiado === id) { st.copiado = null; render(); } }, 2500); }
-    catch (e) { prompt('Copie o plano:', txt); }
+    catch (e) { (await GLR.perguntar('Copie o plano:', { valor: txt })); }
   };
-  window._rtContato = id => {
-    const nota = prompt('O que foi combinado com o cliente? (opcional)', '');
+  window._rtContato = async id => {
+    const nota = (await GLR.perguntar('O que foi combinado com o cliente? (opcional)', { valor: '' }));
     if (nota === null) return;
     const m = acomp(); m[id] = { em: new Date().toISOString(), nota: nota.trim().slice(0, 200) };
     localStorage.setItem(K_ACOMP, JSON.stringify(m)); render();
@@ -130,7 +130,7 @@ Router.register('retencao', (params, el) => {
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
       await carregar();
-    } catch (e) { alert('Não consegui avaliar: ' + (e.message || e)); }
+    } catch (e) { GLR.avisar('Não consegui avaliar: ' + (e.message || e), 'erro'); }
     st.atualizando = false; render();
   };
 

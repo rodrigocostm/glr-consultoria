@@ -348,7 +348,7 @@ function renderAdsLog() {
 // mesma conta. Manual — dispara ao selecionar a conta ou clicar no botão.
 window._trackEscanearPrecos = async function() {
   const selIdx = document.getElementById('track-preco-conta').value;
-  if (selIdx === '') { alert('Selecione a conta primeiro.'); return; }
+  if (selIdx === '') { GLR.avisar('Selecione a conta primeiro.', 'info'); return; }
   const conta = contasAds[parseInt(selIdx)];
   const btn = document.getElementById('track-btn-precos');
   const statusEl = document.getElementById('track-preco-status');
@@ -692,7 +692,7 @@ window._trackListarEstoqueML = async function() {
 window._trackInspecionarML = async function() {
   const raw = (document.getElementById('track-ml-item-id').value || '').trim();
   const resEl = document.getElementById('track-ml-resultado');
-  if (!raw) { alert('Cole o ID (MLB...) ou o link do anúncio.'); return; }
+  if (!raw) { GLR.avisar('Cole o ID (MLB...) ou o link do anúncio.', 'info'); return; }
   const m = raw.match(/MLB-?\d+/i);
   const itemId = m ? m[0].replace('-', '').toUpperCase() : raw.toUpperCase();
   resEl.innerHTML = `<span style="color:var(--text-muted);">⏳ Buscando ${itemId}...</span>`;
