@@ -1056,7 +1056,10 @@
                   return partes.length ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${partes.join(' · ')}</div>` : '';
                 })()}
               </div>
-              <span style="font-size:20px;line-height:1;" title="${saude.label}">${saude.emoji}</span>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:20px;line-height:1;" title="${saude.label}">${saude.emoji}</span>
+                <button type="button" class="btn btn-secondary btn-sm" style="padding:2px 7px;line-height:1.2;" onclick="event.stopPropagation();window._agExcluirConta('${esc(cfg.conta_id)}')" title="Excluir esta conta do agente" aria-label="Excluir ${esc(nomeExibicao(cfg))} do agente">🗑</button>
+              </div>
             </div>
             <div style="display:flex;gap:18px;margin-top:14px;">
               <div><div class="ag-hud-label" style="margin-bottom:2px;">TACOS mês</div><div class="ag-mono" style="font-size:18px;font-weight:700;color:${tacos != null && cfg.meta_acos ? (tacos <= cfg.meta_acos ? 'var(--green)' : tacos <= cfg.meta_acos * 1.3 ? 'var(--yellow)' : 'var(--red)') : 'inherit'};">${tacos != null ? fmtPct(tacos) : '—'}</div></div>
@@ -1731,6 +1734,7 @@
           <span class="ag-topbar-run">${ultima ? `Última execução: <b>${quandoCurto(ultima.criado_em)}</b>${resumoTxt ? ` · ${h(resumoTxt)}` : ''}` : 'Ainda não rodou'}${cfg.ativo ? ` · próxima: <b>${proximaExecucao()}</b>` : ' · piloto desligado, não roda sozinho'}</span>
           <button class="btn btn-primary btn-sm" onclick="window._agChatToggle()" title="Abrir o chat com o agente — peça pra reativar, otimizar ou explicar qualquer coisa desta conta">Chat com o agente</button>
           <button class="btn btn-secondary btn-sm" ${state.rodandoAgente ? 'disabled' : ''} onclick="window._agRodarAgora()" title="Dispara agora o mesmo ciclo das 07:00 nesta conta.">${state.rodandoAgente ? '⏳ Rodando...' : 'Rodar agora'}</button>
+          <button class="btn btn-secondary btn-sm" style="color:var(--red);" onclick="window._agExcluirConta('${esc(cfg.conta_id)}')" title="Tira esta conta do agente de ADS: ele para de revisar e agir nela. A loja e as campanhas na Shopee não mudam.">Excluir do agente</button>
         </div>
       </div>${renderResultadoRodada()}`;
     }
@@ -2864,6 +2868,35 @@
         });
       } catch (e) {
         alert('Não consegui alterar o piloto: ' + (e.message || e));
+      } finally {
+        render();
+      }
+    };
+    // Excluir uma conta do agente: apaga só a configuração do piloto
+    // (glr_agente_config), então o cron para de agir nela. A loja continua
+    // conectada e sincronizando; histórico (log/relatórios) fica guardado,
+    // e dá pra adicionar de novo pelo "+ Adicionar conta".
+    window._agExcluirConta = async (contaId) => {
+      const cfg = configDaConta(contaId);
+      if (!cfg) return;
+      if (!confirm(`Excluir "${nomeExibicao(cfg)}" do agente de ADS?\n\nO agente para de revisar e agir nesta conta, e as regras (guardrails) dela são apagadas. A loja e as campanhas na Shopee não mudam, e o histórico fica guardado.\n\nVocê pode adicionar a conta de novo depois.`)) return;
+      try {
+        const { data: apagadas, error } = await _sb.from('glr_agente_config').delete().eq('conta_id', cfg.conta_id).select('conta_id');
+        if (error) throw error;
+        // RLS sem permissão de DELETE não dá erro: só apaga 0 linhas
+        if (!apagadas || !apagadas.length) throw new Error('o banco não deixou apagar (falta permissão de exclusão na tabela glr_agente_config)');
+        state.contas = state.contas.filter(c => c.conta_id !== cfg.conta_id);
+        try {
+          await _sb.from('glr_agente_log').insert({
+            conta_id: cfg.conta_id, cliente_nome: cfg.cliente_nome || null, tipo: 'sistema',
+            titulo: 'Conta excluída do agente',
+            explicacao: 'Conta removida do agente pelo analista — o agente não revisa nem age mais nela. Regras anteriores: ' + JSON.stringify({ meta_acos: cfg.meta_acos ?? null, ativo: !!cfg.ativo }),
+            dados: { config_anterior: cfg }, resultado: 'executado', origem: 'analista',
+          });
+        } catch (e) { console.warn('[Agente] log da exclusão:', e.message); }
+        if (state.contaAbertaId === cfg.conta_id) { state.contaAbertaId = null; GLR.ctx?.definir('', true); }
+      } catch (e) {
+        alert('Não consegui excluir a conta do agente: ' + (e.message || e));
       } finally {
         render();
       }
