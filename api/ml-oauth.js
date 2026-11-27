@@ -189,6 +189,117 @@ async function adsDiagnosis(req, res, config) {
   return res.status(200).json({ loja: 'Expresso Móveis', resultados });
 }
 
+
+const WRITE_PILOT = Object.freeze({
+  name: 'GLR — Teste de integração', status: 'paused', budget: 50,
+  roas_target: 5, strategy: 'profitability', channel: 'marketplace',
+});
+
+async function createPilotCampaign(req, res, config) {
+  const staff = await requireStaff(req, res);
+  if (!staff) return;
+  if (!production() || config.seller !== '802228249' || req.body?.approval !== 'expresso-paused-brl-50') {
+    return res.status(403).json({ error: 'Confirme a criação da campanha piloto da Expresso Móveis.' });
+  }
+  const db = privateConfig(config.key, new URLSearchParams({ chave: 'eq.ml_oauth:' + config.seller, select: 'valor' }));
+  const stored = await fetch(db.url, { headers: db.headers, signal: db.signal });
+  if (!stored.ok) throw new Error('grant_read');
+  const row = (await stored.json())[0];
+  const grant = row && JSON.parse(row.valor);
+  if (!grant?.access_token || String(grant.user_id) !== config.seller || !(Date.parse(grant.expira_em) > Date.now())) {
+    return res.status(409).json({ error: 'Reconecte a Expresso antes de confirmar o teste.' });
+  }
+  if (!String(grant.scope || '').split(/\s+/).includes('urn:ml:mktp:ads:/read-write')) {
+    return res.status(403).json({ error: 'O grant salvo não inclui o escopo de escrita de Ads.' });
+  }
+
+  async function request(path, version, payload) {
+    const response = await fetch(MELI + path, {
+      method: payload ? 'POST' : 'GET', redirect: 'error', signal: deadline(),
+      headers: { Authorization: 'Bearer ' + grant.access_token, 'api-version': String(version), 'Content-Type': 'application/json' },
+      body: payload ? JSON.stringify(payload) : undefined,
+    });
+    return { ok: response.ok, http: response.status, data: await response.json().catch(() => null) };
+  }
+
+  const identity = await request('/users/me', 1);
+  if (!identity.ok || String(identity.data?.id) !== config.seller) {
+    return res.status(422).json({ error: 'Identidade da loja não confirmada.', http_identidade: identity.http });
+  }
+  const discovery = await request('/advertising/advertisers?product_id=PADS', 1);
+  const brazil = Array.isArray(discovery.data?.advertisers) ? discovery.data.advertisers.filter(a =>
+    a.site_id === 'MLB' && /^\d+$/.test(String(a.advertiser_id))) : [];
+  const advertiser = brazil.find(a => String(a.advertiser_id) === config.seller) || (brazil.length === 1 ? brazil[0] : null);
+  if (!discovery.ok || !advertiser) {
+    return res.status(422).json({ error: 'Anunciante brasileiro não confirmado.', http_anunciante: discovery.http });
+  }
+
+  const auditKey = 'ml_ads_pilot_create:' + config.seller;
+  const audit = {
+    seller: config.seller, advertiser: String(advertiser.advertiser_id), approved_by: staff.id,
+    started_at: new Date().toISOString(), before: null, requested: WRITE_PILOT, result: 'reserved',
+  };
+  const reservation = privateConfig(config.key);
+  const reserved = await fetch(reservation.url, {
+    method: 'POST', headers: reservation.headers, signal: reservation.signal,
+    body: JSON.stringify({ chave: auditKey, valor: JSON.stringify(audit) }),
+  });
+  if (reserved.status === 409) return res.status(409).json({ error: 'Já existe uma tentativa registrada. Consulte a auditoria antes de qualquer nova execução.' });
+  if (!reserved.ok) throw new Error('pilot_reserve');
+
+  const result = { http_criacao: null, http_verificacao: null, http_anuncios: null, verificacao: 'inconclusiva' };
+  let creationAccepted = false;
+  try {
+    const prefix = '/advertising/MLB';
+    const created = await request('/marketplace' + prefix + '/advertisers/' + advertiser.advertiser_id + '/product_ads/campaigns', 2, WRITE_PILOT);
+    result.http_criacao = created.http;
+    creationAccepted = created.ok;
+    if (!created.ok) {
+      result.verificacao = 'criacao_recusada';
+      const code = [created.data?.error, created.data?.code].find(value =>
+        ['bad_request', 'forbidden', 'unauthorized', 'not_found', 'validation_error', 'invalid_budget'].includes(value));
+      result.erro = code || 'HTTP ' + created.http;
+    } else if (/^\d+$/.test(String(created.data?.id))) {
+      const id = String(created.data.id);
+      result.campaign_id = id;
+      const detail = prefix + '/product_ads/campaigns/' + id;
+      const groups = prefix + '/advertisers/' + advertiser.advertiser_id + '/product_ads/ad_groups/search';
+      const [observed, linked] = await Promise.all([
+        request(detail, 2),
+        request(groups + '?filters%5Bcampaign_id%5D=' + id + '&limit=1', 2),
+      ]);
+      result.http_verificacao = observed.http;
+      result.http_anuncios = linked.http;
+      if (observed.ok && observed.data) {
+        const data = observed.data;
+        result.after = {
+          status: ['active', 'paused', 'deleted'].includes(data.status) ? data.status : null,
+          budget: Number.isFinite(data.budget) ? data.budget : null,
+          roas_target: Number.isFinite(data.roas_target) ? data.roas_target : null,
+          currency: data.currency_id === 'BRL' ? 'BRL' : null,
+        };
+        const count = linked.data?.paging?.total;
+        if (linked.ok && Number.isSafeInteger(count) && count >= 0) result.after.ad_groups = count;
+        if (String(data.id) === id && data.name === WRITE_PILOT.name &&
+            result.after.status === 'paused' && result.after.currency === 'BRL' &&
+            result.after.budget === WRITE_PILOT.budget &&
+            result.after.roas_target === WRITE_PILOT.roas_target && result.after.ad_groups === 0) {
+          result.verificacao = 'confirmada';
+        }
+      }
+    }
+  } catch {
+    result.erro = 'Falha de rede ou tempo limite. Não repita a criação.';
+  }
+
+  const completion = privateConfig(config.key, new URLSearchParams({ chave: 'eq.' + auditKey }));
+  const logged = await fetch(completion.url, {
+    method: 'PATCH', headers: completion.headers, signal: completion.signal,
+    body: JSON.stringify({ valor: JSON.stringify({ ...audit, result, finished_at: new Date().toISOString() }) }),
+  }).then(response => response.ok, () => false);
+  return res.status(creationAccepted ? 200 : 502).json({ ...result, auditoria_finalizada: logged });
+}
+
 function connectionPage(res) {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   return res.status(200).send(`<!doctype html>
@@ -199,11 +310,13 @@ function connectionPage(res) {
 <p><a href="/">Abrir painel GLR</a></p>
 <button id="connect" type="button">Continuar no Mercado Livre</button>
 <button id="diagnostic" type="button">Testar leitura de Product Ads</button>
+<p>Teste de escrita da Expresso Móveis: uma campanha pausada, sem anúncios, orçamento nominal de R$ 50 por dia e ROAS alvo de 5x.</p>
+<button id="write-pilot" type="button">Revisar criação da campanha piloto</button>
 <p id="status" role="status"></p><pre id="results"></pre></main>
 <script>
 const button = document.getElementById('connect');
 const status = document.getElementById('status');
-async function run(button, diagnostic) {
+async function run(button, diagnostic, write = false) {
   button.disabled = true;
   try {
     const session = JSON.parse(localStorage.getItem('sb-rrodqlejqyaoomutriiw-auth-token') || 'null');
@@ -211,11 +324,17 @@ async function run(button, diagnostic) {
       status.textContent = 'Entre no painel GLR e tente novamente.';
       return;
     }
-    const response = await fetch(diagnostic ? '/api/ml-oauth?acao=diagnostico' : '/api/ml-oauth', {
+    const response = await fetch(write ? '/api/ml-oauth?acao=criar-piloto' : diagnostic ? '/api/ml-oauth?acao=diagnostico' : '/api/ml-oauth', {
       method: 'POST',
-      headers: { Authorization: 'Bearer ' + session.access_token },
+      headers: { Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+      body: write ? JSON.stringify({ approval: 'expresso-paused-brl-50' }) : undefined,
     });
     const result = await response.json();
+    if (write) {
+      status.textContent = 'Resultado do teste de escrita';
+      document.getElementById('results').textContent = JSON.stringify(result, null, 2);
+      return;
+    }
     if (!response.ok) {
       status.textContent = result.error || 'Abra o painel GLR e tente novamente.';
       return;
@@ -235,6 +354,10 @@ async function run(button, diagnostic) {
 button.addEventListener('click', () => run(button, false));
 const diagnostic = document.getElementById('diagnostic');
 diagnostic.addEventListener('click', () => run(diagnostic, true));
+const writePilot = document.getElementById('write-pilot');
+writePilot.addEventListener('click', () => {
+  if (confirm('Criar GLR — Teste de integração na Expresso Móveis? Campanha pausada, sem anúncios, R$ 50/dia nominais e ROAS alvo 5x.')) run(writePilot, false, true);
+});
 </script></html>`);
 }
 
@@ -257,6 +380,7 @@ module.exports = async function handler(req, res) {
   }
   if (req.method === 'GET' && !Object.keys(req.query || {}).length) return connectionPage(res);
   try {
+    if (req.method === 'POST' && req.query?.acao === 'criar-piloto') return await createPilotCampaign(req, res, config);
     if (req.method === 'POST' && req.query?.acao === 'diagnostico') return await adsDiagnosis(req, res, config);
     return await (req.method === 'POST' ? start(req, res, config) : callback(req, res, config));
   } catch {
