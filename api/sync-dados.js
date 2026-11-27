@@ -42,6 +42,7 @@ const TAXAS_ESPERA_MS = 2 * 3600 * 1000;
 const GMV_RECENTE_A_CADA_MS = 2 * 3600 * 1000; // GMV Max dos últimos dias (17 mil chamadas/dia a cada 15 min)
 // Agente de Qualidade de Anúncio (1x por dia por loja, depois das 06:00)
 const qualidadeAg = require('./_qualidade');
+const statusPedido = require('../js/status-pedido'); // regra única de pedido válido (somas, comissão, vendômetro)
 
 // Dispara a rodada do Agente nos horários da agenda (o próprio agente trava
 // pelo horário, então disparo repetido não roda duas vezes).
@@ -563,11 +564,11 @@ async function atualizarResumo(mkt, conta, resumoAtual, t, extras = []) {
     const ate = new Date(new Date(`${dia}T00:00:00-03:00`).getTime() + DIA * SEG).toISOString();
     const rows = [];
     for (let off = 0; off < 20000; off += 1000) {
-      const pg = await sbSelect('glr_pedidos', `marketplace=eq.${mkt}&conta_id=eq.${conta}&criado_em=gte.${encodeURIComponent(de)}&criado_em=lt.${encodeURIComponent(ate)}&select=situacao,valor_bruto,liquido,itens&limit=1000&offset=${off}`);
+      const pg = await sbSelect('glr_pedidos', `marketplace=eq.${mkt}&conta_id=eq.${conta}&criado_em=gte.${encodeURIComponent(de)}&criado_em=lt.${encodeURIComponent(ate)}&select=situacao,status_original,valor_bruto,liquido,itens&limit=1000&offset=${off}`);
       rows.push(...pg);
       if (pg.length < 1000) break;
     }
-    const v = rows.filter(r => r.situacao === 'valido');
+    const v = rows.filter(statusPedido.valido); // sem cancelado, reembolsado/devolvido ou em aberto
     const soma = (rs, f) => r2(rs.reduce((s, r) => s + f(r), 0));
     const comLiq = v.filter(r => r.liquido != null);
     const res = {
@@ -1430,7 +1431,7 @@ async function pedidosDoDia(mkt, conta, dia) {
   const de = new Date(`${dia}T00:00:00-03:00`).toISOString(), ate = new Date((inicioDiaTs(dia) + DIA) * SEG).toISOString();
   const rows = [];
   for (let off = 0; off < 20000; off += 1000) {
-    const pg = await sbSelect('glr_pedidos', `marketplace=eq.${mkt}&conta_id=eq.${conta}&criado_em=gte.${encodeURIComponent(de)}&criado_em=lt.${encodeURIComponent(ate)}&select=pedido_id,situacao&limit=1000&offset=${off}`);
+    const pg = await sbSelect('glr_pedidos', `marketplace=eq.${mkt}&conta_id=eq.${conta}&criado_em=gte.${encodeURIComponent(de)}&criado_em=lt.${encodeURIComponent(ate)}&select=pedido_id,situacao,status_original&limit=1000&offset=${off}`);
     rows.push(...pg); if (pg.length < 1000) break;
   }
   return rows;
@@ -1463,7 +1464,7 @@ async function conferirDia(apiKey, mkt, id, dia, prazo) {
     corrigidos = faltavam - pendentes;
   } else return null;
   const depois = corrigidos ? await pedidosDoDia(mkt, id, dia) : antes;
-  return { dia, api, base: mkt === 'ml' ? api - pendentes : depois.length, validos: depois.filter(r => r.situacao === 'valido').length, corrigidos, pendentes };
+  return { dia, api, base: mkt === 'ml' ? api - pendentes : depois.length, validos: depois.filter(statusPedido.valido).length, corrigidos, pendentes };
 }
 async function saudeAPI(apiKey, { forcar = false } = {}) {
   const prazo = Date.now() + SAUDE_ORC_MS, t = agora(), hoje = dataBR(t), agoraMs = Date.now(), H = 3600e3;

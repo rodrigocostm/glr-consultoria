@@ -24,6 +24,7 @@ Router.register('vendas', async (params, el) => {
   let contas    = [];  // todas as contas da API
   let filtroPeriodo = 'custom'; // padrão: só ontem
   let filtroPlat    = 'todas';
+  let filtroStatus  = 'validos'; // lista de Pedidos: validos | todos | cancelado | reembolsado | aberto (as somas são sempre só dos válidos)
   let filtroEmpresas = new Set(); // vazio = todas
   let filtroContasSel = new Set(); // vazio = todas
   // plataformas: sigla, nome, cor do selo e ordem dos grupos (filtro de contas)
@@ -241,20 +242,34 @@ Router.register('vendas', async (params, el) => {
     return { fat, liq: nLiq>0?liq:null, custo, imp, out, lucro, margem: fat>0?(lucro/fat)*100:0 };
   }
 
-  function isCanceladoVendas(p) {
-    const st = (p.status||'').toLowerCase();
-    // devolvido = devolução aceita (marcada pela base) — também fica fora, igual ao Gestor Seller
-    return st.includes('cancel') || st === 'invalid' || st === 'cancelled_unpaid' || st === 'devolvido';
-  }
+  // Fora das somas: cancelado, reembolsado/devolvido (inclusive em andamento) e em aberto (sem pagamento).
+  // Regra única em js/status-pedido.js — a mesma do Vendômetro e da comissão.
+  const statusPedido = p => (p._st = p._st || window.GLRStatusPedido.classificar(p));
+  function isCanceladoVendas(p) { return !statusPedido(p).valido; }
 
+  const passaFiltrosConta = p => (filtroPlat === 'todas' || p.plataforma === filtroPlat) && (filtroContasSel.size === 0 || filtroContasSel.has(p.contaId));
+
+  // Pedidos que entram nas somas (KPIs, dashboard, comissão, totais do dia)
   function pedidosFiltrados() {
     if (_semSelecao) return []; // seleção vazia: nada na tela até marcar uma conta
+    return pedidos.filter(p => !isCanceladoVendas(p) && passaFiltrosConta(p));
+  }
+
+  // Pedidos mostrados na lista da aba Pedidos (o filtro de status só muda a lista, nunca as somas)
+  function pedidosDaLista() {
+    if (_semSelecao) return [];
     return pedidos.filter(p => {
-      if (isCanceladoVendas(p)) return false; // cancelados nunca entram nos totais
-      if (filtroPlat !== 'todas' && p.plataforma !== filtroPlat) return false;
-      if (filtroContasSel.size > 0 && !filtroContasSel.has(p.contaId)) return false;
-      return true;
+      if (!passaFiltrosConta(p)) return false;
+      const g = statusPedido(p).grupo;
+      return filtroStatus === 'todos' || (filtroStatus === 'validos' ? g === 'valido' : g === filtroStatus);
     });
+  }
+
+  const COR_STATUS = { valido: 'var(--green)', cancelado: 'var(--red)', reembolsado: 'var(--orange)', aberto: 'var(--yellow)' };
+  function seloStatus(p) {
+    const s = statusPedido(p), cor = COR_STATUS[s.grupo] || 'var(--text-muted)';
+    const txt = String(s.rotulo).replace(/[<>&"]/g, '');
+    return `<span title="${s.valido ? 'Entra nas somas' : 'Fora das somas (' + window.GLRStatusPedido.ROTULO_GRUPO[s.grupo].toLowerCase() + ')'}" style="background:color-mix(in srgb,${cor} 15%,transparent);color:${cor};padding:1px 6px;border-radius:8px;font-size:var(--fs-1);font-weight:600;">● ${txt}</span>`;
   }
 
   const contaNome = c => {
@@ -1862,9 +1877,24 @@ Router.register('vendas', async (params, el) => {
     else renderPedidos();
   }
 
+  // Chips de status acima da lista: contam os pedidos de cada grupo (com os filtros de plataforma/conta)
+  function renderFiltroStatus() {
+    const el = document.getElementById('vendas-filtro-status');
+    if (!el) return;
+    const base = _semSelecao ? [] : pedidos.filter(passaFiltrosConta);
+    const n = { todos: base.length, valido: 0, cancelado: 0, reembolsado: 0, aberto: 0 };
+    for (const p of base) n[statusPedido(p).grupo]++;
+    const op = [['validos', 'Válidos (somados)', n.valido], ['cancelado', 'Cancelados', n.cancelado], ['reembolsado', 'Reembolsados/devolvidos', n.reembolsado], ['aberto', 'Em aberto', n.aberto], ['todos', 'Todos', n.todos]];
+    el.innerHTML = `<span style="font-size:var(--fs-1);color:var(--text-muted);">Mostrar:</span>` + op.map(([v, r, q]) =>
+      `<button type="button" class="btn btn-sm ${filtroStatus === v ? 'btn-primary' : 'btn-secondary'}" aria-pressed="${filtroStatus === v}" data-st="${v}">${r} · ${q}</button>`).join('') +
+      `<span style="font-size:var(--fs-1);color:var(--text-muted);">Somas, comissão e vendômetro contam só os válidos.</span>`;
+    el.querySelectorAll('button[data-st]').forEach(b => b.addEventListener('click', () => { filtroStatus = b.dataset.st; renderPedidos(); }));
+  }
+
   function renderPedidos() {
     renderKPIs();
-    const lista = pedidosFiltrados();
+    renderFiltroStatus();
+    const lista = pedidosDaLista();
     const cont  = document.getElementById('vendas-lista');
     if (!cont) return;
 
@@ -1880,12 +1910,13 @@ Router.register('vendas', async (params, el) => {
     for (const p of lista) { const k=p.data||'—'; if(!grupos[k])grupos[k]=[]; grupos[k].push(p); }
 
     cont.innerHTML = Object.entries(grupos).map(([data,peds]) => {
-      const t = calcTotais(peds);
+      const validos = peds.filter(p => !isCanceladoVendas(p));
+      const t = calcTotais(validos); // total do dia: só pedidos válidos
       return `
       <div style="margin-bottom:14px;">
         <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-4);background:var(--bg-card-hover);border-radius:8px 8px 0 0;border-bottom:1px solid var(--border);">
           <span style="font-size:var(--fs-3);font-weight:700;color:var(--text-primary);">${data}</span>
-          <span style="font-size:var(--fs-1);color:var(--text-muted);">${peds.length} pedidos</span>
+          <span style="font-size:var(--fs-1);color:var(--text-muted);">${peds.length} pedidos${validos.length !== peds.length ? ` · ${validos.length} válidos somados` : ''}</span>
           <span style="margin-left:auto;font-size:var(--fs-2);color:var(--blue);font-weight:600;">${R$(t.fat)}</span>
           ${t.liq!=null?`<span style="font-size:var(--fs-2);color:var(--purple);">Líq. ${R$(t.liq)}</span>`:''}
           <span style="font-size:var(--fs-2);font-weight:700;color:${corMargem(t.margem)};">Lucro ${R$(t.lucro)} · ${pct(t.margem)}</span>
@@ -1932,7 +1963,7 @@ Router.register('vendas', async (params, el) => {
       ? `<img src="${p.imagem}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">`
       : `<div style="width:44px;height:44px;background:var(--border);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:var(--fs-5);">${p.plataforma==='Shopee'?'🟠':p.plataforma==='Amazon'?'⚫':p.plataforma==='TikTok Shop'?'🎵':p.plataforma==='Magalu'?'🔵':p.plataforma==='Shein'?'⬛':'🟡'}</div>`;
 
-    const isCancelled = ['cancelled','in_cancel','cancelled_unpaid'].includes((p.status||'').toLowerCase());
+    const isCancelled = isCanceladoVendas(p); // fora das somas: cancelado, reembolsado ou em aberto
     const resultadoPendente = !isCancelled && (!l.custoCompleto || p.taxasPendente);
     const taxasAuto = p.taxas != null; // tem dados automáticos da API
     const impVeioDeAPI = taxasAuto && (p.taxas?.imposto != null) && parseFloat(p.taxas?.imposto) > 0;
@@ -1971,7 +2002,7 @@ Router.register('vendas', async (params, el) => {
             <div style="font-size:var(--fs-1);color:var(--text-muted);margin-top:2px;display:flex;gap:6px;align-items:center;">
               <span style="color:${cor};font-weight:600;">${p.plataforma}</span>
               <span>${p.id}</span>
-              ${isCancelled ? '<span style="background:rgba(239,68,68,0.15);color:var(--red);padding:1px 6px;border-radius:8px;font-size:var(--fs-1);font-weight:600;">● Cancelado</span>' : ''}
+              ${seloStatus(p)}
               ${taxasAuto && !isCancelled ? `<span style="background:rgba(167,139,250,0.15);color:var(--purple);padding:1px 5px;border-radius:8px;font-size:var(--fs-1);">${p.taxas?.estimado ? 'taxas estimadas' : 'taxas auto'}</span>` : ''}
               ${p.taxasPendente && !isCancelled ? '<span style="background:rgba(234,179,8,0.15);color:var(--yellow);padding:1px 5px;border-radius:8px;font-size:var(--fs-1);">aguardando taxa</span>' : ''}
             </div>
@@ -2001,11 +2032,11 @@ Router.register('vendas', async (params, el) => {
         </details></div>
 
         <!-- Lucro -->
-        <div style="text-align:right;font-size:var(--fs-3);font-weight:700;color:${corMargem(l.margem)};">${resultadoPendente ? '<span style="font-size:var(--fs-1);color:var(--text-muted)">'+(!l.custoCompleto?'Custo pendente':'Taxas pendentes')+'</span>' : R$(l.lucro)}</div>
+        <div style="text-align:right;font-size:var(--fs-3);font-weight:700;color:${corMargem(l.margem)};">${isCancelled ? '<span style="font-size:var(--fs-1);color:var(--text-muted)" title="Pedido fora das somas">Fora da soma</span>' : resultadoPendente ? '<span style="font-size:var(--fs-1);color:var(--text-muted)">'+(!l.custoCompleto?'Custo pendente':'Taxas pendentes')+'</span>' : R$(l.lucro)}</div>
 
         <!-- Margem -->
         <div style="text-align:right;">
-          <span style="background:color-mix(in srgb,${corMargem(l.margem)} 13%,transparent);color:${corMargem(l.margem)};padding:3px 8px;border-radius:20px;font-size:var(--fs-1);font-weight:700;">${resultadoPendente?'—':pct(l.margem)}</span>
+          <span style="background:color-mix(in srgb,${corMargem(l.margem)} 13%,transparent);color:${corMargem(l.margem)};padding:3px 8px;border-radius:20px;font-size:var(--fs-1);font-weight:700;">${resultadoPendente||isCancelled?'—':pct(l.margem)}</span>
           <button class="btn-exp" data-id="${p.id}" style="display:none;"></button>
         </div>
       </div>
@@ -2127,7 +2158,7 @@ Router.register('vendas', async (params, el) => {
       ].filter(Boolean);
     }
 
-    const glr = comissaoGLRDoPedido(p);
+    const glr = isCanceladoVendas(p) ? null : comissaoGLRDoPedido(p); // pedido fora da soma não gera comissão
     if (glr) {
       linhasBreakdown.push({ label: glr.rotulo, v: -glr.valor, cor:'var(--accent)', sinal:'-' });
       const final = l.lucro - glr.valor;
@@ -2142,7 +2173,7 @@ Router.register('vendas', async (params, el) => {
           <div><div style="font-size:var(--fs-1);color:var(--text-muted);">ID</div><div style="font-size:var(--fs-2);color:var(--text-primary);">${p.id}</div></div>
           <div><div style="font-size:var(--fs-1);color:var(--text-muted);">Plataforma</div><div style="font-size:var(--fs-2);color:${platCor[p.plataforma]||'#fff'};font-weight:600;">${p.plataforma}</div></div>
           <div><div style="font-size:var(--fs-1);color:var(--text-muted);">Data</div><div style="font-size:var(--fs-2);color:var(--text-primary);">${p.data}</div></div>
-          <div><div style="font-size:var(--fs-1);color:var(--text-muted);">Status</div><div style="font-size:var(--fs-2);color:var(--text-primary);">${p.status||'—'}</div></div>
+          <div><div style="font-size:var(--fs-1);color:var(--text-muted);">Status</div><div style="font-size:var(--fs-2);color:var(--text-primary);">${seloStatus(p)}${!statusPedido(p).valido ? ' <span style="font-size:var(--fs-1);color:var(--text-muted);">fora das somas</span>' : ''}</div></div>
           ${tx.instalment ? `<div><div style="font-size:var(--fs-1);color:var(--text-muted);">Parcelamento</div><div style="font-size:var(--fs-2);color:var(--text-primary);">${tx.instalment}</div></div>` : ''}
         </div>
         ${p.itens && p.itens.length ? `
@@ -3105,6 +3136,7 @@ Router.register('vendas', async (params, el) => {
         </div>
       </details>
 
+      <div id="vendas-filtro-status" role="group" aria-label="Status dos pedidos" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:var(--space-3);"></div>
       <div class="card" style="padding:0;overflow:hidden;">
         <div id="vendas-lista" style="padding:var(--space-6);text-align:center;color:var(--text-muted);">Carregando pedidos...</div>
       </div>

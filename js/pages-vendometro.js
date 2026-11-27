@@ -9,7 +9,7 @@
 //  • ranking de clientes com pedidos, ADS, visitas e plataformas.
 // Fonte: base automática (glr_pedidos / glr_ads_diario, sincroniza a cada
 // 15 min) — só contas vinculadas a clientes (glr_mc_vinculos). Faturamento sem
-// cancelados e sem devolvidos. Visitas: API do Mercado Livre (a Shopee não
+// cancelados, reembolsados/devolvidos e em aberto (js/status-pedido.js). Visitas: API do Mercado Livre (a Shopee não
 // fornece visitas pela API).
 // ============================================================
 Router.register('vendometro', (params, el) => {
@@ -74,7 +74,7 @@ Router.register('vendometro', (params, el) => {
   // Cache local de datas encerradas, isolado por usuário/portal.
   // TTL de 24h permite correções tardias de pedidos sem recarregar a cada 2 minutos.
   const cacheScope = cfgPortal ? 'portal:' + cfgPortal.clienteId : 'gestor:' + (GLR?.usuario?.id || GLR?.user?.id || 'local');
-  const cachePrefix = 'glr_vm_dia_v1:' + cacheScope + ':';
+  const cachePrefix = 'glr_vm_dia_v2:' + cacheScope + ':';
   function lerCacheDia(dia) {
     if (dia >= isoDia(Date.now())) return null;
     try {
@@ -87,12 +87,13 @@ Router.register('vendometro', (params, el) => {
   // dias antigos acumulavam (2,5 MB num dia só) e enchiam o armazenamento do navegador inteiro.
   function limparCacheDias(manter = 3) {
     try {
-      const itens = Object.keys(localStorage).filter(k => k.startsWith('glr_vm_dia_v1:')).map(k => {
+      const itens = Object.keys(localStorage).filter(k => /^glr_vm_dia_v\d+:/.test(k)).map(k => {
         let em = 0; try { em = JSON.parse(localStorage.getItem(k) || 'null')?.em || 0; } catch (e) {}
         return { k, em };
       });
-      const vivos = itens.filter(x => Date.now() - x.em <= 24 * HORA).sort((a, b) => b.em - a.em);
-      for (const x of itens) if (Date.now() - x.em > 24 * HORA) localStorage.removeItem(x.k);
+      const velho = x => Date.now() - x.em > 24 * HORA || !x.k.startsWith('glr_vm_dia_v2:'); // versão antiga não tem o status do pedido
+      const vivos = itens.filter(x => !velho(x)).sort((a, b) => b.em - a.em);
+      for (const x of itens) if (velho(x)) localStorage.removeItem(x.k);
       for (const x of vivos.slice(manter)) localStorage.removeItem(x.k);
     } catch (e) {}
   }
@@ -109,7 +110,7 @@ Router.register('vendometro', (params, el) => {
   async function pedidosDaData(dia, inicio, incluirItens = false) {
     const cached = lerCacheDia(dia);
     if (cached) return cached;
-    const campos = 'marketplace,conta_id,pedido_id,criado_em,situacao,valor_bruto' + (incluirItens ? ',itens' : '');
+    const campos = 'marketplace,conta_id,pedido_id,criado_em,situacao,status_original,valor_bruto' + (incluirItens ? ',itens' : '');
     const rows = await paginar(() => _sb.from('glr_pedidos').select(campos)
       .gte('criado_em', new Date(inicio).toISOString())
       .lt('criado_em', new Date(inicio + DIA).toISOString()).order('criado_em'));
@@ -245,7 +246,7 @@ Router.register('vendometro', (params, el) => {
     const limOntem = P.aoVivo ? P.inicioComparar + (Date.now() - P.inicio) : P.inicioComparar + DIA - 1;
     for (const p of pedidosDia(st.hoje, P.dia)) {
       const k = `${p.marketplace}:${p.conta_id}`, ct = contas.get(k);
-      if (p.situacao !== 'valido' || !ct || !passa(k)) continue;
+      if (!window.GLRStatusPedido.valido(p) || !ct || !passa(k)) continue; // só válidos: sem cancelado, reembolsado ou em aberto
       const v = Number(p.valor_bruto) || 0, t = new Date(p.criado_em).getTime();
       const u = (Array.isArray(p.itens) ? p.itens : []).reduce((s, i) => s + (Number(i.qtd) || 1), 0) || 1;
       T.fat += v; T.ped++; T.un += u; T.hoje[horaBRT(t)] += v; if (ct.mkt === 'ml') T.pedML++;
@@ -253,7 +254,7 @@ Router.register('vendometro', (params, el) => {
     }
     for (const p of pedidosDia(st.ontem, P.comparar)) {
       const k = `${p.marketplace}:${p.conta_id}`;
-      if (p.situacao !== 'valido' || !contas.has(k) || !passa(k)) continue;
+      if (!window.GLRStatusPedido.valido(p) || !contas.has(k) || !passa(k)) continue;
       const v = Number(p.valor_bruto) || 0, t = new Date(p.criado_em).getTime();
       T.fatOntem += v; T.ontem[horaBRT(t)] += v; if (t <= limOntem) T.fatOntemAgora += v;
     }
