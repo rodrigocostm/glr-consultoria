@@ -396,7 +396,11 @@ summaryForm.addEventListener('submit', async event => {
         } },
       }),
     });
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
+    if (!data) {
+      summaryStatus.textContent = 'O servidor retornou uma resposta inesperada (HTTP ' + response.status + ').';
+      return;
+    }
     const result = data.result?.structuredContent;
     if (!response.ok || !result) {
       summaryStatus.textContent = data.result?.content?.[0]?.text || data.error?.message || data.error || 'Consulta indisponível.';
