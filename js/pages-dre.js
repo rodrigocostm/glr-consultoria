@@ -196,7 +196,7 @@ Router.register('dre', (params, el) => {
         const pedidos = [];
         for (let off = 0; off < 200000; off += 1000) {
           const { data, error } = await _sb.from('glr_pedidos')
-            .select('pedido_id,situacao,valor_bruto,liquido,taxas,itens')
+            .select('pedido_id,situacao,status_original,valor_bruto,liquido,taxas,itens')
             .eq('marketplace', mkt).eq('conta_id', id)
             .gte('criado_em', new Date(`${ini}T00:00:00-03:00`).toISOString())
             .lt('criado_em', new Date(new Date(`${fim}T00:00:00-03:00`).getTime() + 86400000).toISOString())
@@ -238,7 +238,7 @@ Router.register('dre', (params, el) => {
     for (const c of contasDoCliente(clienteId)) {
       const d = baseDRE?.porConta?.[String(c.external_id)]; if (!d || !GLR.contaGeraComissao(c)) continue;
       const porPed = GLR.contaPorPedido(c);
-      for (const p of d.pedidos) if (p.situacao === 'valido') out.push({ valor: parseFloat(p.valor_bruto) || 0, qtd: porPed ? 1 : ((p.itens || []).reduce((s, i) => s + (parseInt(i.qtd) || 1), 0) || 1) });
+      for (const p of d.pedidos) if (GLRStatusPedido.valido(p)) out.push({ valor: parseFloat(p.valor_bruto) || 0, qtd: porPed ? 1 : ((p.itens || []).reduce((s, i) => s + (parseInt(i.qtd) || 1), 0) || 1) });
     }
     return out;
   }
@@ -267,10 +267,10 @@ Router.register('dre', (params, el) => {
       // Cobranças da carteira Shopee fora dos pedidos (lidas pelo Financeiro do mesmo mês)
       carteiraTot += parseFloat(finCache?.carteira?.[String(c.external_id)]?.total) || 0;
       // Taxa média real da conta para os pedidos que ainda não têm a taxa do marketplace
-      const taxaMedia = BaseDados.taxaMediaPorConta(d.pedidos.filter(p => p.situacao === 'valido' && p.liquido != null)
+      const taxaMedia = BaseDados.taxaMediaPorConta(d.pedidos.filter(p => GLRStatusPedido.valido(p) && p.liquido != null)
         .map(p => ({ conta: 'c', valor: p.valor_bruto, liquido: parseFloat(p.liquido) + BaseDados.recargaAdsDoRepasse(p.taxas) }))).c;
       for (const p of d.pedidos) {
-        if (p.situacao !== 'valido') continue; // cancelado/devolvido fora (mesma regra de antes)
+        if (!GLRStatusPedido.valido(p)) continue; // cancelado/devolvido fora (mesma regra de antes)
         const valor = parseFloat(p.valor_bruto) || 0;
         fat += valor;
         // Mesma regra do Financeiro: recarga de ADS volta (já está no ADS); sem taxa real →

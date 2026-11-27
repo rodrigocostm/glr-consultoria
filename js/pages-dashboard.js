@@ -208,9 +208,10 @@ async function _dashBuscarVendasPorDia() {
         if (ctxCom.com && GLR.comissao.modelo(c).modelo === 'ticket') {
           const idB = String(conta.param_to_use?.shopId || conta.param_to_use?.meliUserId || conta.external_id);
           for (let off = 0; off < 50000; off += 1000) {
-            const { data } = await _sb.from('glr_pedidos').select('criado_em,valor_bruto').eq('marketplace', BaseDados.mktDe(mkt)).eq('conta_id', idB).eq('situacao', 'valido')
+            const { data } = await _sb.from('glr_pedidos').select('criado_em,valor_bruto,situacao,status_original').eq('marketplace', BaseDados.mktDe(mkt)).eq('conta_id', idB).eq('situacao', 'valido')
               .gte('criado_em', new Date(`${primeiroDia}T00:00:00-03:00`).toISOString()).lt('criado_em', new Date(new Date(`${dataTo}T00:00:00-03:00`).getTime() + 864e5).toISOString()).range(off, off + 999);
             for (const p of data || []) {
+              if (!GLRStatusPedido.valido(p)) continue; // reembolso/em aberto não gera comissão
               const d = new Date(new Date(p.criado_em).getTime() - 3 * 3600e3);
               balde(c, `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}`, NOME_CANAL[mkt] || mkt).var += GLR.comissao.dePedido(c, p.valor_bruto, 1);
             }
