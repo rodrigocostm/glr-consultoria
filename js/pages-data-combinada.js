@@ -12,9 +12,8 @@
 // Semáforo da coluna "% sobre meta" de cada loja: glr_dc_semaforo =
 // { limites: [20, 35, 45], cores: [vermelho, amarelo, intermediária, verde] } — editável na tela
 // (botão "Semáforo"), também sincronizado com a equipe.
-// Score de saúde de cada loja (0–100, 8 critérios — js/score-contas.js): coluna
-// "Score"; clique abre os critérios. Pesos, faixas e cores em glr_dc_score,
-// editáveis pelo botão "Score", também sincronizado com a equipe.
+// O score de saúde das lojas fica na página própria Score da operação
+// (js/pages-score-operacao.js), não aqui.
 // ============================================================
 Router.register('data-combinada', (params, el) => {
   const h = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -22,7 +21,7 @@ Router.register('data-combinada', (params, el) => {
   const pct = v => v == null || !isFinite(v) ? '—' : `${(+v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
   const lerJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch (e) { return d; } };
   const gravar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
-  const K_METAS = 'glr_metas_data_combinada', K_SEL = 'glr_dc_sel', K_SEM = 'glr_dc_semaforo', K_SCORE = 'glr_dc_score';
+  const K_METAS = 'glr_metas_data_combinada', K_SEL = 'glr_dc_sel', K_SEM = 'glr_dc_semaforo';
   // Meta sugerida do dia de campanha = faturamento médio por dia no mês (do dia 1 até a véspera) × este fator.
   // Black Friday 2026 começou com 3 e passou para 2,5 em 27/11/2026. Para mudar a regra, troque só este número.
   const FATOR_META_CAMPANHA = 2.5;
@@ -57,19 +56,12 @@ Router.register('data-combinada', (params, el) => {
   };
   const MKT = { ml: 'Mercado Livre', shopee: 'Shopee', amazon: 'Amazon', tiktok: 'TikTok', magalu: 'Magalu', shein: 'Shein' };
   const sel = lerJSON(K_SEL, {});
-  const st = { dia: sel.dia || proximaDupla(), gestor: sel.gestor || 'todos', base: null, erro: null, carregando: true, score: null, abertos: new Set() };
-  const SC = typeof GLRScoreContas !== 'undefined' ? GLRScoreContas : null;
-  const cfgScore = () => SC ? SC.config(lerJSON(K_SCORE, null)) : null;
-  // janela do ADS do score: os 30 dias completos antes de hoje
-  const ontemIso = new Date(Date.parse(hojeIso + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10);
-  const ini30Iso = new Date(Date.parse(hojeIso + 'T12:00:00Z') - 30 * 864e5).toISOString().slice(0, 10);
+  const st = { dia: sel.dia || proximaDupla(), gestor: sel.gestor || 'todos', base: null, erro: null, carregando: true };
   const guardarSel = () => gravar(K_SEL, { dia: st.dia, gestor: st.gestor });
 
   async function carregar(forcar) {
     st.carregando = true; render();
-    const sc = SC ? SC.carregar(forcar).catch(() => null) : null; // score: dados dos agentes (não trava a tela se falhar)
     try { st.base = await BaseDados.carregar(forcar); st.erro = null; } catch (e) { st.erro = e.message || String(e); }
-    st.score = sc ? await sc : null;
     st.carregando = false; render();
   }
 
@@ -81,7 +73,7 @@ Router.register('data-combinada', (params, el) => {
     const vespera = new Date(Date.parse(st.dia + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10);
     const diasAntes = vespera >= mesIni && vespera < hojeIso ? Number(vespera.slice(8)) : 0; // dias completos do mês antes da data
     const mesAte = st.dia.slice(0, 7) === hojeIso.slice(0, 7) ? hojeIso : (st.dia < hojeIso ? fimDoMes(st.dia) : null);
-    const gestores = GLR.gestores || [], cfgS = cfgScore();
+    const gestores = GLR.gestores || [];
     const out = [];
     for (const c of (GLR.clientes || [])) {
       if (/inativ|cancel|encerr/i.test(String(c.status || ''))) continue;
@@ -103,12 +95,7 @@ Router.register('data-combinada', (params, el) => {
         const cobreMes = !!(mesAte && info && BaseDados.cobre(info, mesIni));
         const fatMes = cobreMes ? BaseDados.somar(info, mesIni, mesAte).faturamento : null;
         const media = diasAntes && info && BaseDados.cobre(info, mesIni) ? BaseDados.somar(info, mesIni, vespera).faturamento / diasAntes : null;
-        let score = null;
-        if (SC && st.score) {
-          const t30 = info && BaseDados.cobre(info, ini30Iso) && BaseDados.cobreAds(info, ini30Iso) ? BaseDados.somar(info, ini30Iso, ontemIso) : null;
-          score = SC.calcular({ ...(st.score[chave] || {}), mkt, ads: t30 ? { ads: t30.ads, fat: t30.faturamento } : null }, cfgS);
-        }
-        lojas.push({ chave, mkt, nome, meta, cobre, fatMes, media, score, fat: t ? t.faturamento : null, ads: t && temAds ? t.ads : null, pedidos: t ? t.pedidos : null });
+        lojas.push({ chave, mkt, nome, meta, cobre, fatMes, media, fat: t ? t.faturamento : null, ads: t && temAds ? t.ads : null, pedidos: t ? t.pedidos : null });
       }
       if (!lojas.length) continue;
       const soma = k => lojas.reduce((s, l) => s + (l[k] || 0), 0);
@@ -116,9 +103,7 @@ Router.register('data-combinada', (params, el) => {
       const metaMes = parseFloat(metasMes[c.id] ?? metasMes[String(c.id)]) || parseFloat(c.metaMensal) || 0;
       const fatMes = lojas.every(l => l.fatMes != null) ? soma('fatMes') : null;
       const faltaMesPct = metaMes > 0 && fatMes != null ? Math.max(0, metaMes - fatMes) / metaMes * 100 : null;
-      const notas = lojas.map(l => l.score?.score).filter(v => v != null);
-      const scoreMedio = notas.length ? Math.round(notas.reduce((s, v) => s + v, 0) / notas.length) : null;
-      out.push({ id: String(c.id), nome: c.nome, gestor: g?.nome || 'Sem gestor', lojas, metaMes, scoreMedio, fatMes, faltaMesPct, meta: soma('meta'), fat: soma('fat'), ads: soma('ads'), pedidos: soma('pedidos') });
+      out.push({ id: String(c.id), nome: c.nome, gestor: g?.nome || 'Sem gestor', lojas, metaMes, fatMes, faltaMesPct, meta: soma('meta'), fat: soma('fat'), ads: soma('ads'), pedidos: soma('pedidos') });
     }
     return out.sort((a, b) => b.meta - a.meta || a.nome.localeCompare(b.nome));
   }
@@ -132,28 +117,12 @@ Router.register('data-combinada', (params, el) => {
     const n = parseFloat(t); return isFinite(n) ? n : 0;
   };
   const corMeta = p => p == null ? 'var(--text-muted)' : p >= 100 ? 'var(--green)' : p >= 80 ? 'var(--yellow)' : 'var(--red)';
-  // célula do score (clique abre/fecha os critérios da loja)
-  function celulaScore(l, cfgS) {
-    const s = l.score;
-    if (!s || s.score == null) return `<td class="num"><span class="dc-mut" title="Os agentes ainda não têm dados desta loja (Mercado Livre e Shopee)">—</span></td>`;
-    const c = SC.cor(s.score, cfgS), aberto = st.abertos.has(l.chave);
-    return `<td class="num"><button class="dc-score" style="background:${c};color:${textoSobre(c)}" aria-expanded="${aberto}" title="Score de saúde: ${s.usados} de ${s.total} critérios com dado. Clique para ver." onclick="window._dcScoreAbrir('${h(l.chave)}')">${s.score}</button></td>`;
-  }
-  const fmtCrit = it => it.valor == null ? '—' : `${it.valor.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
-  function detalheScore(l) {
-    const s = l.score; if (!s || !st.abertos.has(l.chave)) return '';
-    return `<tr class="dc-score-det"><td colspan="10"><div class="dc-crit">${s.itens.map(it => `
-      <div class="dc-crit-i${it.nota == null ? ' sem' : ''}" title="${h(it.ajuda)}"><span>${h(it.nome)}</span>
-        <b>${it.nota == null ? 'sem dado' : it.nota}</b><small>${fmtCrit(it)} · peso ${it.peso.toLocaleString('pt-BR')}</small></div>`).join('')}</div>
-      <div class="dc-mut">Nota 0–100 por critério; o score é a média ponderada dos que têm dado (${s.usados} de ${s.total}). Passe o mouse para ver como cada um é medido.</div></td></tr>`;
-  }
-  function linha(l, cli, sem, cfgS) {
+  function linha(l, cli, sem) {
     const p = l.meta > 0 && l.fat != null ? l.fat / l.meta * 100 : null, falta = l.meta > 0 && l.fat != null ? Math.max(0, l.meta - l.fat) : null;
     const pa = l.fat > 0 && l.ads != null ? l.ads / l.fat * 100 : (l.ads > 0 ? Infinity : null);
     return `<tr>
       <td>${h(MKT[l.mkt] || l.mkt)}</td>
       <td class="dc-loja" title="${h(l.nome)}">${h(l.nome)}</td>
-      ${celulaScore(l, cfgS)}
       <td class="num"><label class="dc-meta"><span>R$</span><input type="text" inputmode="decimal" value="${l.meta ? moeda(l.meta) : ''}" placeholder="0,00" onfocus="this.select()" onkeydown="if(event.key==='Enter')this.blur()" aria-label="Meta de ${h(cli)} — ${h(l.nome)} em ${dm(st.dia)}" onchange="window._dcMeta('${h(l.chave)}', this.value)"></label></td>
       <td class="num">${l.cobre ? R$(l.fat) : st.dia > hojeIso ? '—' : '<span class="dc-mut" title="A base automática ainda não tem este dia desta loja">sem dados</span>'}</td>
       ${(() => { const cor = corSemaforo(p, sem); return cor
@@ -163,7 +132,7 @@ Router.register('data-combinada', (params, el) => {
       <td class="num">${l.ads == null ? '—' : R$(l.ads)}</td>
       <td class="num">${pa === Infinity ? '∞' : pct(pa)}</td>
       <td class="num">${l.pedidos == null ? '—' : Math.round(l.pedidos).toLocaleString('pt-BR')}</td>
-    </tr>${detalheScore(l)}`;
+    </tr>`;
   }
 
   // "Falta X% da meta do mês" ao lado dos totais do cliente
@@ -180,7 +149,7 @@ Router.register('data-combinada', (params, el) => {
     const root = el.querySelector('#dc-root'); if (!root) return;
     const focado = document.activeElement?.closest?.('.dc-meta') ? document.activeElement.getAttribute('aria-label') : null;
     if (!st.base && st.carregando) { root.innerHTML = '<div class="card dc-vazio">Carregando a base automática…</div>'; return; }
-    const clientes = montar(), sem = lerSemaforo(), cfgS = cfgScore();
+    const clientes = montar(), sem = lerSemaforo();
     const T = clientes.reduce((s, c) => ({ meta: s.meta + c.meta, fat: s.fat + c.fat, ads: s.ads + c.ads, pedidos: s.pedidos + c.pedidos }), { meta: 0, fat: 0, ads: 0, pedidos: 0 });
     const pT = T.meta > 0 ? T.fat / T.meta * 100 : null;
     const datasSalvas = Object.entries(lerJSON(K_METAS, {}) || {}).filter(([, m]) => Object.values(m || {}).some(v => parseFloat(v) > 0)).map(([d]) => d).sort().slice(-8);
@@ -201,11 +170,11 @@ Router.register('data-combinada', (params, el) => {
         const p = c.meta > 0 ? c.fat / c.meta * 100 : null;
         return `<section class="card dc-cli">
           <div class="dc-cli-cab"><div><b>${h(c.nome)}</b><span>${h(c.gestor)}</span></div>
-            <div class="dc-cli-tot"><span>Meta <b>${R$(c.meta)}</b></span><span>Faturado <b>${R$(c.fat)}</b></span><span style="color:${corMeta(p)}"><b style="color:inherit">${pct(p)}</b></span><span>Pedidos <b>${Math.round(c.pedidos).toLocaleString('pt-BR')}</b></span>${c.scoreMedio != null ? `<span title="Média do score de saúde das lojas do cliente">Score <b style="color:inherit"><span class="dc-score-mini" style="background:${SC.cor(c.scoreMedio, cfgS)};color:${textoSobre(SC.cor(c.scoreMedio, cfgS))}">${c.scoreMedio}</span></b></span>` : ''}${faltaMes(c)}</div></div>
+            <div class="dc-cli-tot"><span>Meta <b>${R$(c.meta)}</b></span><span>Faturado <b>${R$(c.fat)}</b></span><span style="color:${corMeta(p)}"><b style="color:inherit">${pct(p)}</b></span><span>Pedidos <b>${Math.round(c.pedidos).toLocaleString('pt-BR')}</b></span>${faltaMes(c)}</div></div>
           <div class="dc-scroll"><table class="dc-tab" data-todas-colunas>
-            <colgroup><col style="width:10%"><col style="width:18%"><col style="width:6%"><col style="width:13%"><col style="width:11%"><col style="width:9%"><col style="width:11%"><col style="width:9%"><col style="width:6%"><col style="width:7%"></colgroup>
-            <thead><tr><th>Marketplace</th><th>Loja</th><th class="num" title="Score de saúde da loja (0–100). Clique na nota para ver os critérios.">Score</th><th class="num">Meta</th><th class="num">Faturamento ${dm(st.dia)}</th><th class="num">% sobre meta</th><th class="num">Falta para meta</th><th class="num">ADS</th><th class="num" title="ADS ÷ faturamento do dia">% ADS</th><th class="num">Pedidos</th></tr></thead>
-            <tbody>${c.lojas.map(l => linha(l, c.nome, sem, cfgS)).join('')}</tbody>
+            <colgroup><col style="width:11%"><col style="width:21%"><col style="width:14%"><col style="width:11%"><col style="width:9%"><col style="width:11%"><col style="width:9%"><col style="width:6%"><col style="width:7%"></colgroup>
+            <thead><tr><th>Marketplace</th><th>Loja</th><th class="num">Meta</th><th class="num">Faturamento ${dm(st.dia)}</th><th class="num">% sobre meta</th><th class="num">Falta para meta</th><th class="num">ADS</th><th class="num" title="ADS ÷ faturamento do dia">% ADS</th><th class="num">Pedidos</th></tr></thead>
+            <tbody>${c.lojas.map(l => linha(l, c.nome, sem)).join('')}</tbody>
           </table></div>
         </section>`;
       }).join('') : '<div class="card dc-vazio">Nenhum cliente com lojas vinculadas para este filtro.</div>'}`;
@@ -263,49 +232,6 @@ Router.register('data-combinada', (params, el) => {
     GLR.avisar('Semáforo salvo.', 'sucesso');
   };
   window._dcSemPadrao = () => { gravar(K_SEM, SEM_PADRAO); const box = el.querySelector('#dc-sem-ed'); if (box) box.hidden = true; render(); };
-  // score: abre/fecha os critérios de uma loja
-  window._dcScoreAbrir = chave => { if (st.abertos.has(chave)) st.abertos.delete(chave); else st.abertos.add(chave); render(); };
-  // editor do score: peso e faixa (nota 0 em / nota 100 em) de cada critério + limites e cores do score
-  window._dcScoreEditar = () => {
-    const box = el.querySelector('#dc-score-ed'); if (!box || !SC) return;
-    if (!box.hidden) { box.hidden = true; return; }
-    const c = cfgScore(), [a, b] = c.faixas.limites;
-    const num = (cls, id, v, rot) => `<input type="number" step="0.1" class="form-input ${cls}" data-id="${id}" value="${v}" aria-label="${h(rot)}">`;
-    const cor = (i, rot) => `<label class="dc-sem-f"><input type="color" class="dc-score-cor" data-i="${i}" value="${c.faixas.cores[i]}" aria-label="Cor: ${h(rot)}"><span>${rot}</span></label>`;
-    box.innerHTML = `<b>Score de saúde das lojas</b>
-      <table class="dc-score-tab"><thead><tr><th>Critério</th><th>Peso</th><th title="Valor do critério que dá nota 0">Nota 0 em (%)</th><th title="Valor do critério que dá nota 100">Nota 100 em (%)</th><th>Como é medido</th></tr></thead><tbody>
-      ${SC.CRITERIOS.map(k => { const f = c.criterios[k.id]; return `<tr><td>${h(k.nome)}</td>
-        <td>${num('dc-sc-peso', k.id, f.peso, `Peso: ${k.nome}`)}</td><td>${num('dc-sc-zero', k.id, f.zero, `Nota 0 em: ${k.nome}`)}</td><td>${num('dc-sc-cem', k.id, f.cem, `Nota 100 em: ${k.nome}`)}</td>
-        <td class="dc-mut">${h(k.ajuda)}</td></tr>`; }).join('')}
-      </tbody></table>
-      <div class="dc-mut">Entre os dois valores a nota sobe em linha reta. Se "nota 100" for menor que "nota 0", quanto menor o valor, melhor (ex.: TACOS). Peso 0 tira o critério do score.</div>
-      <div class="dc-sem-lin">${cor(0, 'Score abaixo de')} <input type="number" step="1" min="0" max="100" class="form-input dc-sem-lim dc-score-lim" value="${a}" aria-label="Limite 1 do score"></div>
-      <div class="dc-sem-lin">${cor(1, 'Score abaixo de')} <input type="number" step="1" min="0" max="100" class="form-input dc-sem-lim dc-score-lim" value="${b}" aria-label="Limite 2 do score"></div>
-      <div class="dc-sem-lin">${cor(2, 'A partir do último limite')}</div>
-      <div class="dc-sem-acoes"><button class="btn btn-primary btn-sm" onclick="window._dcScoreSalvar()">Salvar</button>
-        <button class="btn btn-secondary btn-sm" onclick="window._dcScorePadrao()">Voltar ao padrão</button>
-        <span class="dc-mut">Vale para a equipe toda.</span></div>`;
-    box.hidden = false;
-  };
-  window._dcScoreSalvar = () => {
-    const box = el.querySelector('#dc-score-ed'); if (!box || !SC) return;
-    const val = i => parseFloat(String(i.value).replace(',', '.'));
-    const criterios = {};
-    for (const k of SC.CRITERIOS) {
-      const pega = cls => val(box.querySelector(`.${cls}[data-id="${k.id}"]`));
-      const peso = pega('dc-sc-peso'), zero = pega('dc-sc-zero'), cem = pega('dc-sc-cem');
-      if (![peso, zero, cem].every(isFinite) || peso < 0) { GLR.avisar(`Preencha peso e faixa de "${k.nome}" com números.`, 'erro'); return; }
-      if (zero === cem) { GLR.avisar(`Em "${k.nome}", "nota 0" e "nota 100" precisam ser valores diferentes.`, 'erro'); return; }
-      criterios[k.id] = { peso, zero, cem };
-    }
-    if (!Object.values(criterios).some(x => x.peso > 0)) { GLR.avisar('Deixe pelo menos um critério com peso maior que zero.', 'erro'); return; }
-    const lim = [...box.querySelectorAll('.dc-score-lim')].map(val);
-    if (lim.some(v => !isFinite(v)) || lim[0] > lim[1]) { GLR.avisar('Os limites do score precisam ser números, do menor para o maior.', 'erro'); return; }
-    const cores = [...box.querySelectorAll('.dc-score-cor')].map(i => i.value);
-    gravar(K_SCORE, { criterios, faixas: { limites: lim, cores } }); box.hidden = true; render();
-    GLR.avisar('Score salvo.', 'sucesso');
-  };
-  window._dcScorePadrao = () => { gravar(K_SCORE, {}); const box = el.querySelector('#dc-score-ed'); if (box) box.hidden = true; render(); };
   window._dcRecarregar = () => { if (BaseDados.invalidar) BaseDados.invalidar(); carregar(true); };
 
   const gestores = (GLR.gestores || []).slice().sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
@@ -318,12 +244,10 @@ Router.register('data-combinada', (params, el) => {
         <button class="btn btn-secondary btn-sm" onclick="window._dcCopiar()" title="Usa as metas da última data anterior que tem metas">Copiar metas da data anterior</button>
         <button class="btn btn-secondary btn-sm" onclick="window._dcCalcular()" title="Meta de cada loja na tela = faturamento médio por dia do mês, do dia 1 até a véspera, × ${FATOR_META_CAMPANHA.toLocaleString('pt-BR')}">Calcular metas (média × ${FATOR_META_CAMPANHA.toLocaleString('pt-BR')})</button>
         <button class="btn btn-secondary btn-sm" onclick="window._dcSemaforo()" title="Limites e cores do fundo da coluna % sobre meta">Semáforo</button>
-        <button class="btn btn-secondary btn-sm" onclick="window._dcScoreEditar()" title="Pesos e faixas dos critérios do score de saúde das lojas">Score</button>
         <button class="btn btn-secondary btn-sm" onclick="window._dcRecarregar()">Atualizar</button>
       </div>
     </header>
     <div id="dc-sem-ed" class="card dc-sem-ed" hidden></div>
-    <div id="dc-score-ed" class="card dc-sem-ed" hidden></div>
     <div id="dc-root"></div>
   </div>
   <style>
@@ -354,16 +278,6 @@ Router.register('data-combinada', (params, el) => {
     .dc-sem-lin{display:flex;align-items:center;gap:8px} .dc-sem-f{display:flex;align-items:center;gap:8px;min-width:190px}
     .dc-sem-f input[type=color]{width:34px;height:26px;padding:0;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer}
     .dc-sem-lim{width:90px} .dc-sem-acoes{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
-    .dc-score{border:none;border-radius:8px;min-width:40px;padding:3px 8px;font:inherit;font-weight:700;font-variant-numeric:tabular-nums;cursor:pointer}
-    .dc-score:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-    .dc-score-mini{display:inline-block;border-radius:6px;padding:0 6px;font-weight:700}
-    .dc-tab tr.dc-score-det td{white-space:normal;background:color-mix(in srgb,var(--accent) 4%,var(--bg-card));padding:10px 12px}
-    .dc-crit{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin-bottom:6px}
-    .dc-crit-i{display:flex;flex-direction:column;gap:1px;border:1px solid var(--border);border-radius:8px;padding:6px 10px;background:var(--bg-card)}
-    .dc-crit-i span{font-size:12px;color:var(--text-secondary)} .dc-crit-i b{font-size:16px} .dc-crit-i small{font-size:11.5px;color:var(--text-muted)}
-    .dc-crit-i.sem b{font-size:13px;color:var(--text-muted);font-weight:600}
-    .dc-score-tab{border-collapse:collapse;font-size:13px} .dc-score-tab th{font-size:11.5px;font-weight:600;color:var(--text-secondary);text-align:left;padding:4px 8px}
-    .dc-score-tab td{padding:3px 8px} .dc-score-tab input[type=number]{width:80px}
     .dc-mut{font-size:12px;color:var(--text-muted)} .dc-vazio{padding:28px;text-align:center;color:var(--text-secondary)} .dc-aviso{padding:10px 14px;color:var(--red);margin-bottom:10px}
   </style>`;
   carregar();

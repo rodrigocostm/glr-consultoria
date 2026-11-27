@@ -12,7 +12,7 @@
   // Agrupado por tipo de trabalho, grupos curtos (2–7 telas). O grupo da tela
   // atual abre sozinho; os outros ficam abertos/fechados como o usuário deixou.
   const GRUPOS = [
-    { id: 'hoje', titulo: 'Hoje', paginas: ['dashboard', 'decisoes', 'vendometro', 'plano-acao', 'tarefas'] },
+    { id: 'hoje', titulo: 'Hoje', paginas: ['dashboard', 'decisoes', 'vendometro', 'score-operacao', 'plano-acao', 'tarefas'] },
     { id: 'vendas', titulo: 'Vendas e metas', paginas: ['vendas', 'meu-analitico', 'projecao', 'meta-diaria', 'data-combinada', 'datas-especiais'] },
     { id: 'ads', titulo: 'ADS e promoções', paginas: ['agente', 'agente-ml', 'promocoes', 'afiliados'] },
     { id: 'precos', titulo: 'Preço e concorrência', paginas: ['precos', 'conversao-ml', 'anuncios-amazon', 'mercado-tiops'] },
