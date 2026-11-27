@@ -155,6 +155,7 @@ async function adsDiagnosis(req, res, config) {
 
   const identity = await check('Identidade do vendedor', '/users/me', 1);
   if (String(identity?.id) === config.seller) {
+    await check('Pedidos do vendedor', '/orders/search', 1, { seller: config.seller, limit: '1' });
     const advertisers = await check('Anunciantes', '/advertising/advertisers', 1, { product_id: 'PADS' });
     const brazil = Array.isArray(advertisers?.advertisers) ? advertisers.advertisers.filter(a =>
       a.site_id === 'MLB' && /^\d+$/.test(String(a.advertiser_id))) : [];
@@ -173,8 +174,8 @@ async function adsDiagnosis(req, res, config) {
           check('Métricas da campanha', path, 2, metrics),
           check('Métricas dos Ad Groups', path + '/ad_groups/metrics', 2, metrics),
         ]);
-        const group = (Array.isArray(groups?.results) ? groups.results : []).find(g => /^\d+$/.test(String(g.ad_group_id)));
-        if (group) await check('Métricas por anúncio', prefix + '/product_ads/ad_groups/' + group.ad_group_id + '/ads', 2, metrics);
+        const group = (Array.isArray(groups?.results) ? groups.results : []).find(g => /^\d+$/.test(String(g.id ?? g.ad_group_id)));
+        if (group) await check('Métricas por anúncio', prefix + '/product_ads/ad_groups/' + (group.id ?? group.ad_group_id) + '/ads', 2, metrics);
         else resultados.push({ etapa: 'Métricas por anúncio', http: null, motivo: 'Nenhum Ad Group identificado na amostra.' });
       } else {
         resultados.push({ etapa: 'Anúncios e métricas', http: null, motivo: 'Nenhuma campanha identificada na amostra.' });
