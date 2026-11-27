@@ -62,6 +62,7 @@ const GLR_KEYS = [
   'glr_metas_tacos',     // teto de ADS (TACOS %) por cliente (Plano de ação) — os agentes de ADS não aceleram acima dele
   'glr_metas_data_combinada', // Data combinada: meta do dia de campanha por loja { 'AAAA-MM-DD': { 'mkt:conta': valor } }
   'glr_dc_semaforo',    // Data combinada: semáforo da % sobre meta (limites e cores) — igual para a equipe toda
+  'glr_dc_score',       // Data combinada: score de saúde das lojas (pesos, faixas e cores) — igual para a equipe toda
   'glr_contratos',       // contrato do cliente: perfil (crescer/equilíbrio/lucrar) e autonomia do agente — o agente lê no servidor
   'glr_plano_status',    // Plano de ação: ação feita / virou tarefa / descartada (Gerente de Conta)
   'glr_vendas_linhas',  // linhas extras de custo/desconto lançadas no admin
