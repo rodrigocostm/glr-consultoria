@@ -56,6 +56,7 @@ const GLR_KEYS = [
   'glr_ncm_catalogo',   // NCM por anúncio (tela Produtos) — usado na emissão da nota fiscal
   'glr_aliquotas',      // % de imposto padrão por conta
   'glr_comissao_contas', // contas que NÃO contam comissão GLR ({ id: false })
+  'glr_contas_inativas', // lojas desligadas ({ 'shopee:123': {nome, desde} }): fora da sync, alertas e listas
   'glr_margem_minima',   // margem mínima de lucro por conta (agente de Margem → ACOS alvo)
   'glr_metas',           // meta de faturamento por cliente (Gestores, Projeção, Plano de ação) — o Gerente lê no servidor
   'glr_metas_pedidos',   // meta de pedidos por cliente (Plano de ação)
