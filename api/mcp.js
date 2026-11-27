@@ -202,17 +202,21 @@ async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const apiKey = process.env.MCP_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'MCP_API_KEY não configurada no servidor' });
-
-  const { action, params } = req.body || {};
-  if (!action) return res.status(400).json({ error: 'action obrigatória' });
+  const { action, params, jsonrpc } = req.body || {};
+  const nativeMcp = jsonrpc === '2.0';
+  if (!action && !nativeMcp) return res.status(400).json({ error: 'action obrigatória' });
 
   let identity;
   try { identity = await require('./_auth').access(req); }
   catch { return res.status(503).json({ error: 'Não foi possível verificar as permissões.' }); }
   if (!identity) return res.status(401).json({ error: 'Faça login para continuar.' });
   if (!['staff', 'portal'].includes(identity.role)) return res.status(403).json({ error: 'Acesso não autorizado.' });
+  if (nativeMcp || action === 'get_ml_sales_ads_summary') {
+    return require('./_ml-sales-ads.ts').handle(req, res, identity);
+  }
+
+  const apiKey = process.env.MCP_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'MCP_API_KEY não configurada no servidor' });
   const contasPermitidas = identity.role === 'portal' ? new Set((identity.portal?.contaIds || []).map(String)) : null;
 
   if (action === 'glr_login_portal') {
