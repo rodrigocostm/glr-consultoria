@@ -26,7 +26,12 @@
 // média ponderada dos critérios que têm dado; critério sem dado fica de fora
 // (não conta como zero) e a tela mostra quantos entraram.
 // Pesos, faixas e as cores do score ficam em glr_dc_score (GLR_KEYS), editáveis
-// pelo botão "Score" da Data combinada — iguais para a equipe toda.
+// pelo botão "Pesos do score" da página Score da operação — iguais para a equipe toda.
+// Histórico: um registro por dia em glr_storage, chave glr_score_dia_AAAA-MM-DD =
+// { v: 1, em, ids: [critérios], lojas: { 'mkt:conta': [valor bruto de cada critério] } }.
+// Guarda o valor bruto (não a nota) para a evolução refazer a nota com os pesos
+// atuais. Grava o cron api/score-cron.js (23:50, horário de Brasília) e, se o
+// dia ainda não tem registro, a própria página ao abrir.
 // ============================================================
 const GLRScoreContas = (() => {
   const CRITERIOS = [
@@ -101,8 +106,10 @@ const GLRScoreContas = (() => {
   }
 
   // { score, usados, total, itens: [{ id, nome, ajuda, valor, nota, peso }] }
-  function calcular(d, cfg) {
-    const c = cfg || config(null), m = metricas(d);
+  function calcular(d, cfg) { return deMetricas(metricas(d), cfg); }
+  // mesmo cálculo a partir dos valores brutos já medidos (histórico)
+  function deMetricas(m, cfg) {
+    const c = cfg || config(null);
     let soma = 0, pesos = 0, usados = 0;
     const itens = CRITERIOS.map(k => {
       const f = c.criterios[k.id], nt = nota(m[k.id], f);
@@ -118,6 +125,60 @@ const GLRScoreContas = (() => {
     return score < a ? cores[0] : score < b ? cores[1] : cores[2];
   };
 
+  // TACOS dos 30 dias completos antes de hoje, se a base cobre o período (mesma regra
+  // de BaseDados.cobre/cobreAds). info = { dias, historicoAte, resumoEm, adsHistAte }
+  const inicioDiaBRT = iso => new Date(`${iso}T00:00:00-03:00`).getTime() / 1000;
+  const diaMenos = (iso, k) => new Date(Date.parse(iso + 'T12:00:00Z') - k * 864e5).toISOString().slice(0, 10);
+  const hojeBRT = (agora = Date.now()) => new Date(agora - 3 * 3600e3).toISOString().slice(0, 10);
+  function ads30(info, hojeIso) {
+    const ini = diaMenos(hojeIso, 30), fim = diaMenos(hojeIso, 1), t0 = inicioDiaBRT(ini);
+    if (!info || !info.resumoEm || !info.historicoAte || info.historicoAte > t0 || !info.adsHistAte || info.adsHistAte > t0) return null;
+    let ads = 0, fat = 0;
+    for (const [dia, v] of Object.entries(info.dias || {})) if (dia >= ini && dia <= fim) { ads += parseFloat(v?.ads) || 0; fat += parseFloat(v?.faturamento) || 0; }
+    return { ads, fat };
+  }
+
+  // linhas de glr_sync_estado por recurso → { 'mkt:conta': dados dos agentes }
+  //   rows = { qualidade, promocoes, sinais, conversao, reputacao, oportunidades, funil }
+  function mapaAgentes(rows, agora = Date.now()) {
+    const mapa = {}, valido = r => r.ultimo_sucesso && agora - new Date(r.ultimo_sucesso).getTime() < VALIDADE_MS;
+    const por = (lista, campo, fn) => { for (const r of lista || []) if (valido(r)) { const k = `${r.marketplace}:${r.conta_id}`; (mapa[k] = mapa[k] || { mkt: r.marketplace })[campo] = fn(r); } };
+    por(rows.qualidade, 'qualidade', r => r.resumo); por(rows.promocoes, 'promocoes', r => r.resumo); por(rows.sinais, 'sinais', r => r.resumo);
+    por(rows.conversao, 'conversao', r => r.resumo); por(rows.reputacao, 'reputacao', r => r.rep);
+    por(rows.oportunidades, 'oport', r => ({ vendidos_30d: r.vendidos_30d, vendidos_em_ads: r.vendidos_em_ads, gmv_loja: r.gmv_loja }));
+    por(rows.funil, 'funil', r => r.itens);
+    return mapa;
+  }
+  // o que cada recurso precisa ler (colunas no formato do select do Supabase/PostgREST)
+  const LEITURAS = {
+    qualidade: 'resumo:cursor->resumo', promocoes: 'resumo:cursor->resumo', sinais: 'resumo:cursor->resumo',
+    conversao: 'resumo:cursor->resumo', reputacao: 'rep:cursor->reputacao',
+    oportunidades: 'vendidos_30d:cursor->vendidos_30d,vendidos_em_ads:cursor->vendidos_em_ads,gmv_loja:cursor->gmv_loja',
+    funil: 'itens:cursor->itens',
+  };
+
+  // registro do dia: valores brutos de cada loja ML/Shopee
+  //   agentes = mapaAgentes(...), base = { 'mkt:conta': info da BaseDados }
+  function registroDoDia(agentes, base, hojeIso, agora = Date.now()) {
+    const lojas = {};
+    const chaves = new Set([...Object.keys(agentes || {}), ...Object.keys(base || {})]);
+    for (const k of chaves) {
+      const mkt = k.split(':')[0]; if (mkt !== 'ml' && mkt !== 'shopee') continue;
+      const m = metricas({ ...((agentes || {})[k] || {}), mkt, ads: ads30((base || {})[k], hojeIso) });
+      const vals = CRITERIOS.map(c => m[c.id] ?? null);
+      if (vals.some(v => v != null)) lojas[k] = vals;
+    }
+    return { v: 1, em: new Date(agora).toISOString(), ids: CRITERIOS.map(c => c.id), lojas };
+  }
+  // valores brutos de uma loja num registro → { criterio: valor }
+  function metricasDoRegistro(reg, chave) {
+    const vals = reg?.lojas?.[chave]; if (!Array.isArray(vals)) return null;
+    const ids = reg.ids || CRITERIOS.map(c => c.id), m = {};
+    ids.forEach((id, i) => { m[id] = vals[i] == null ? null : +vals[i]; });
+    return m;
+  }
+  const CHAVE_DIA = 'glr_score_dia_';
+
   // ── leitura (navegador): o que os agentes gravaram, por loja "mkt:conta" ──
   let cache = null, cacheEm = 0, emAndamento = null;
   async function carregar(forcar) {
@@ -129,25 +190,35 @@ const GLRScoreContas = (() => {
       return q.then(r => (r.error ? [] : r.data || []));
     };
     emAndamento = (async () => {
-      const [qual, promo, sin, conv, rep, op, fun] = await Promise.all([
-        ler('qualidade', 'resumo:cursor->resumo'), ler('promocoes', 'resumo:cursor->resumo'), ler('sinais', 'resumo:cursor->resumo'),
-        ler('conversao', 'resumo:cursor->resumo'), ler('reputacao', 'rep:cursor->reputacao'),
-        ler('oportunidades', 'vendidos_30d:cursor->vendidos_30d,vendidos_em_ads:cursor->vendidos_em_ads,gmv_loja:cursor->gmv_loja'),
-        ler('funil', 'itens:cursor->itens', 'shopee'),
-      ]);
-      const mapa = {}, valido = r => r.ultimo_sucesso && Date.now() - new Date(r.ultimo_sucesso).getTime() < VALIDADE_MS;
-      const por = (rows, campo, fn) => { for (const r of rows) if (valido(r)) { const k = `${r.marketplace}:${r.conta_id}`; (mapa[k] = mapa[k] || { mkt: r.marketplace })[campo] = fn(r); } };
-      por(qual, 'qualidade', r => r.resumo); por(promo, 'promocoes', r => r.resumo); por(sin, 'sinais', r => r.resumo);
-      por(conv, 'conversao', r => r.resumo); por(rep, 'reputacao', r => r.rep);
-      por(op, 'oport', r => ({ vendidos_30d: r.vendidos_30d, vendidos_em_ads: r.vendidos_em_ads, gmv_loja: r.gmv_loja }));
-      por(fun, 'funil', r => r.itens);
-      cache = mapa; cacheEm = Date.now();
-      return mapa;
+      const ids = Object.keys(LEITURAS);
+      const listas = await Promise.all(ids.map(id => ler(id, LEITURAS[id], id === 'funil' ? 'shopee' : null)));
+      const rows = {}; ids.forEach((id, i) => { rows[id] = listas[i]; });
+      cache = mapaAgentes(rows); cacheEm = Date.now();
+      return cache;
     })().finally(() => { emAndamento = null; });
     return emAndamento;
   }
 
-  return { CRITERIOS, FAIXAS_PADRAO, config, metricas, nota, calcular, cor, carregar };
+  // histórico (navegador): registros de deIso até ateIso → { 'AAAA-MM-DD': registro }
+  async function historico(deIso, ateIso) {
+    const r = await _sb.from('glr_storage').select('chave,dados').gte('chave', CHAVE_DIA + deIso).lte('chave', CHAVE_DIA + ateIso);
+    if (r.error) throw r.error;
+    const out = {};
+    for (const x of r.data || []) if (x.dados && x.dados.lojas) out[x.chave.slice(CHAVE_DIA.length)] = x.dados;
+    return out;
+  }
+  // grava o registro de hoje se ainda não existe (o cron da noite atualiza depois)
+  async function gravarHojeSeFaltar(base) {
+    const hoje = hojeBRT(), chave = CHAVE_DIA + hoje;
+    const ja = await _sb.from('glr_storage').select('chave').eq('chave', chave).maybeSingle();
+    if (ja.error || ja.data) return null;
+    const reg = registroDoDia(await carregar(), base, hoje);
+    if (!Object.keys(reg.lojas).length) return null;
+    const w = await _sb.from('glr_storage').upsert({ chave, dados: reg, atualizado_em: new Date().toISOString() }, { onConflict: 'chave', ignoreDuplicates: true });
+    return w.error ? null : reg;
+  }
+
+  return { CRITERIOS, FAIXAS_PADRAO, LEITURAS, CHAVE_DIA, config, metricas, nota, calcular, deMetricas, cor, ads30, hojeBRT, diaMenos, mapaAgentes, registroDoDia, metricasDoRegistro, carregar, historico, gravarHojeSeFaltar };
 })();
 if (typeof window !== 'undefined') window.GLRScoreContas = GLRScoreContas;
 if (typeof module !== 'undefined') module.exports = GLRScoreContas;

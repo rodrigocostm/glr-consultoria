@@ -44,3 +44,32 @@ test('config editável: pesos e faixas salvos valem; inválidos voltam ao padrã
   a.equal(r.score, 0); // peso 0 tira o ADS; só a reputação vermelha conta
   a.equal(S.cor(40), '#ef4444'); a.equal(S.cor(60), '#facc15'); a.equal(S.cor(90), '#22c55e');
 });
+
+test('histórico: registro do dia guarda o valor bruto e a nota é refeita com os pesos atuais', () => {
+  const agora = Date.parse('2026-11-27T15:00:00Z');
+  const agentes = S.mapaAgentes({
+    reputacao: [{ marketplace: 'ml', conta_id: '1', ultimo_sucesso: '2026-11-27T10:00:00Z', rep: { nota: 5 } },
+      { marketplace: 'ml', conta_id: '2', ultimo_sucesso: '2026-11-01T10:00:00Z', rep: { nota: 5 } }], // velho: fora
+  }, agora);
+  a.ok(agentes['ml:1'] && !agentes['ml:2']);
+  const dias = {}; for (let d = 1; d <= 30; d++) dias[`2026-10-${String(d).padStart(2, '0')}`] = { faturamento: 100, ads: 10 };
+  const t0 = new Date('2026-10-01T00:00:00-03:00').getTime() / 1000;
+  const base = {
+    'ml:1': { dias: { ...dias, '2026-11-26': { faturamento: 1000, ads: 100 } }, historicoAte: t0 - 10 * 864e2 * 10, resumoEm: 'x', adsHistAte: t0 - 1 },
+    'shopee:9': { dias, historicoAte: Date.now() / 1000, resumoEm: 'x', adsHistAte: 1 }, // base não cobre: sem TACOS
+    'tiktok:5': { dias, historicoAte: 1, resumoEm: 'x', adsHistAte: 1 },
+  };
+  const reg = S.registroDoDia(agentes, base, '2026-11-27', agora);
+  a.deepEqual(Object.keys(reg.lojas), ['ml:1']); // shopee sem nenhum dado e tiktok ficam de fora
+  const m = S.metricasDoRegistro(reg, 'ml:1');
+  a.equal(m.reputacao, 100); a.equal(m.ads, 10); // só 28/10–26/11 entram: 1000 + 3×100 de fat., 100 + 3×10 de ADS
+  a.equal(S.deMetricas(m).score, S.calcular({ mkt: 'ml', reputacao: { nota: 5 }, ads: { ads: 130, fat: 1300 } }).score);
+  const semAds = S.config({ criterios: { ads: { peso: 0, zero: 20, cem: 8 } } });
+  a.equal(S.deMetricas(m, semAds).score, 100);
+  a.equal(S.metricasDoRegistro(reg, 'ml:999'), null);
+});
+
+test('cron do score agendado no vercel.json', () => {
+  const v = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../vercel.json'), 'utf8'));
+  a.ok(v.crons.some(c => c.path === '/api/score-cron' && c.schedule === '50 2 * * *'));
+});
