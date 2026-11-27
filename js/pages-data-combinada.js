@@ -9,6 +9,9 @@
 // 15 min); no próprio dia, os números são parciais.
 // Metas: glr_metas_data_combinada = { 'AAAA-MM-DD': { 'mkt:conta': valor } },
 // sincronizada com a equipe (js/supabase-init.js → GLR_KEYS).
+// Semáforo da coluna "% sobre meta" de cada loja: glr_dc_semaforo =
+// { limites: [20, 35, 45], cores: [vermelho, amarelo, intermediária, verde] } — editável na tela
+// (botão "Semáforo"), também sincronizado com a equipe.
 // ============================================================
 Router.register('data-combinada', (params, el) => {
   const h = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -16,7 +19,26 @@ Router.register('data-combinada', (params, el) => {
   const pct = v => v == null || !isFinite(v) ? '—' : `${(+v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
   const lerJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch (e) { return d; } };
   const gravar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
-  const K_METAS = 'glr_metas_data_combinada', K_SEL = 'glr_dc_sel';
+  const K_METAS = 'glr_metas_data_combinada', K_SEL = 'glr_dc_sel', K_SEM = 'glr_dc_semaforo';
+  // semáforo padrão: < 20% vermelho, < 35% amarelo, 35–45% amarelo (faixa intermediária), ≥ 45% verde
+  const SEM_PADRAO = { limites: [20, 35, 45], cores: ['#ef4444', '#facc15', '#facc15', '#22c55e'] };
+  const lerSemaforo = () => {
+    const s = lerJSON(K_SEM, null) || {}, hex = c => /^#[0-9a-f]{6}$/i.test(String(c || ''));
+    const lim = Array.isArray(s.limites) && s.limites.length === 3 && s.limites.every(v => isFinite(parseFloat(v))) ? s.limites.map(Number) : SEM_PADRAO.limites;
+    const cores = Array.isArray(s.cores) && s.cores.length === 4 && s.cores.every(hex) ? s.cores : SEM_PADRAO.cores;
+    return { limites: lim, cores };
+  };
+  // cor de fundo da faixa em que a % cai (null = sem % para colorir)
+  const corSemaforo = (p, sem) => {
+    if (p == null || !isFinite(p)) return null;
+    const [l1, l2, l3] = sem.limites;
+    return p < l1 ? sem.cores[0] : p < l2 ? sem.cores[1] : p < l3 ? sem.cores[2] : sem.cores[3];
+  };
+  // texto legível sobre a cor de fundo (preto em cores claras, branco nas escuras)
+  const textoSobre = hex => {
+    const n = parseInt(hex.slice(1), 16), r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255;
+    return (r * 299 + g * 587 + b * 114) / 1000 > 128 ? '#111827' : '#ffffff';
+  };
   const hojeIso = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const dm = iso => iso.split('-').reverse().slice(0, 2).join('/');
   const fimDoMes = iso => { const [a, m] = iso.split('-').map(Number); return new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10); };
@@ -86,7 +108,7 @@ Router.register('data-combinada', (params, el) => {
     const n = parseFloat(t); return isFinite(n) ? n : 0;
   };
   const corMeta = p => p == null ? 'var(--text-muted)' : p >= 100 ? 'var(--green)' : p >= 80 ? 'var(--yellow)' : 'var(--red)';
-  function linha(l, cli) {
+  function linha(l, cli, sem) {
     const p = l.meta > 0 && l.fat != null ? l.fat / l.meta * 100 : null, falta = l.meta > 0 && l.fat != null ? Math.max(0, l.meta - l.fat) : null;
     const pa = l.fat > 0 && l.ads != null ? l.ads / l.fat * 100 : (l.ads > 0 ? Infinity : null);
     return `<tr>
@@ -94,7 +116,9 @@ Router.register('data-combinada', (params, el) => {
       <td class="dc-loja" title="${h(l.nome)}">${h(l.nome)}</td>
       <td class="num"><label class="dc-meta"><span>R$</span><input type="text" inputmode="decimal" value="${l.meta ? moeda(l.meta) : ''}" placeholder="0,00" onfocus="this.select()" onkeydown="if(event.key==='Enter')this.blur()" aria-label="Meta de ${h(cli)} — ${h(l.nome)} em ${dm(st.dia)}" onchange="window._dcMeta('${h(l.chave)}', this.value)"></label></td>
       <td class="num">${l.cobre ? R$(l.fat) : st.dia > hojeIso ? '—' : '<span class="dc-mut" title="A base automática ainda não tem este dia desta loja">sem dados</span>'}</td>
-      <td class="num" style="color:${corMeta(p)};font-weight:700">${pct(p)}</td>
+      ${(() => { const cor = corSemaforo(p, sem); return cor
+        ? `<td class="num dc-sem" style="background:${cor};color:${textoSobre(cor)}">${pct(p)}</td>`
+        : `<td class="num" style="color:${corMeta(p)};font-weight:700">${pct(p)}</td>`; })()}
       <td class="num">${falta == null ? '—' : falta === 0 ? '<span style="color:var(--green);font-weight:700">bateu</span>' : R$(falta)}</td>
       <td class="num">${l.ads == null ? '—' : R$(l.ads)}</td>
       <td class="num">${pa === Infinity ? '∞' : pct(pa)}</td>
@@ -116,7 +140,7 @@ Router.register('data-combinada', (params, el) => {
     const root = el.querySelector('#dc-root'); if (!root) return;
     const focado = document.activeElement?.closest?.('.dc-meta') ? document.activeElement.getAttribute('aria-label') : null;
     if (!st.base && st.carregando) { root.innerHTML = '<div class="card dc-vazio">Carregando a base automática…</div>'; return; }
-    const clientes = montar();
+    const clientes = montar(), sem = lerSemaforo();
     const T = clientes.reduce((s, c) => ({ meta: s.meta + c.meta, fat: s.fat + c.fat, ads: s.ads + c.ads, pedidos: s.pedidos + c.pedidos }), { meta: 0, fat: 0, ads: 0, pedidos: 0 });
     const pT = T.meta > 0 ? T.fat / T.meta * 100 : null;
     const datasSalvas = Object.entries(lerJSON(K_METAS, {}) || {}).filter(([, m]) => Object.values(m || {}).some(v => parseFloat(v) > 0)).map(([d]) => d).sort().slice(-8);
@@ -141,7 +165,7 @@ Router.register('data-combinada', (params, el) => {
           <div class="dc-scroll"><table class="dc-tab" data-todas-colunas>
             <colgroup><col style="width:11%"><col style="width:21%"><col style="width:14%"><col style="width:12%"><col style="width:9%"><col style="width:11%"><col style="width:9%"><col style="width:6%"><col style="width:7%"></colgroup>
             <thead><tr><th>Marketplace</th><th>Loja</th><th class="num">Meta</th><th class="num">Faturamento ${dm(st.dia)}</th><th class="num">% sobre meta</th><th class="num">Falta para meta</th><th class="num">ADS</th><th class="num" title="ADS ÷ faturamento do dia">% ADS</th><th class="num">Pedidos</th></tr></thead>
-            <tbody>${c.lojas.map(l => linha(l, c.nome)).join('')}</tbody>
+            <tbody>${c.lojas.map(l => linha(l, c.nome, sem)).join('')}</tbody>
           </table></div>
         </section>`;
       }).join('') : '<div class="card dc-vazio">Nenhum cliente com lojas vinculadas para este filtro.</div>'}`;
@@ -162,6 +186,32 @@ Router.register('data-combinada', (params, el) => {
     if (Object.keys(todas[st.dia] || {}).length && !(await GLR.confirmar(`Substituir as metas de ${dm(st.dia)} pelas de ${dm(ant)}?`, { perigo: true }))) return;
     todas[st.dia] = { ...todas[ant] }; gravar(K_METAS, todas); render();
   };
+  // editor do semáforo: 3 limites (%) e 4 cores, salvos para a equipe toda
+  window._dcSemaforo = () => {
+    const box = el.querySelector('#dc-sem-ed'); if (!box) return;
+    if (!box.hidden) { box.hidden = true; return; }
+    const s = lerSemaforo(), [l1, l2, l3] = s.limites;
+    const num = (i, v) => `<input type="number" step="0.1" min="0" class="form-input dc-sem-lim" data-i="${i}" value="${v}" aria-label="Limite ${i + 1} (%)">`;
+    const cor = (i, rot) => `<label class="dc-sem-f"><input type="color" class="dc-sem-cor" data-i="${i}" value="${s.cores[i]}" aria-label="Cor: ${h(rot)}"><span>${rot}</span></label>`;
+    box.innerHTML = `<div class="dc-sem-lin">${cor(0, 'Abaixo de')} ${num(0, l1)}<span>%</span></div>
+      <div class="dc-sem-lin">${cor(1, 'Abaixo de')} ${num(1, l2)}<span>%</span></div>
+      <div class="dc-sem-lin">${cor(2, 'Abaixo de')} ${num(2, l3)}<span>%</span></div>
+      <div class="dc-sem-lin">${cor(3, 'A partir do último limite')}</div>
+      <div class="dc-sem-acoes"><button class="btn btn-primary btn-sm" onclick="window._dcSemSalvar()">Salvar</button>
+        <button class="btn btn-secondary btn-sm" onclick="window._dcSemPadrao()">Voltar ao padrão</button>
+        <span class="dc-mut">Pinta o fundo da coluna "% sobre meta" de cada loja. Vale para a equipe toda.</span></div>`;
+    box.hidden = false;
+  };
+  window._dcSemSalvar = () => {
+    const box = el.querySelector('#dc-sem-ed'); if (!box) return;
+    const lim = [...box.querySelectorAll('.dc-sem-lim')].map(i => parseFloat(String(i.value).replace(',', '.')));
+    if (lim.some(v => !isFinite(v) || v < 0)) { GLR.avisar('Preencha os três limites com números.', 'erro'); return; }
+    if (!(lim[0] <= lim[1] && lim[1] <= lim[2])) { GLR.avisar('Os limites precisam ir do menor para o maior.', 'erro'); return; }
+    const cores = [...box.querySelectorAll('.dc-sem-cor')].map(i => i.value);
+    gravar(K_SEM, { limites: lim, cores }); box.hidden = true; render();
+    GLR.avisar('Semáforo salvo.', 'sucesso');
+  };
+  window._dcSemPadrao = () => { gravar(K_SEM, SEM_PADRAO); const box = el.querySelector('#dc-sem-ed'); if (box) box.hidden = true; render(); };
   window._dcRecarregar = () => { if (BaseDados.invalidar) BaseDados.invalidar(); carregar(true); };
 
   const gestores = (GLR.gestores || []).slice().sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
@@ -172,9 +222,11 @@ Router.register('data-combinada', (params, el) => {
         <label>Data<input id="dc-dia" type="date" class="form-input" value="${st.dia}" onchange="window._dcDia(this.value)"></label>
         <label>Gestor<select class="form-input" onchange="window._dcGestor(this.value)"><option value="todos">Todos</option>${gestores.map(g => `<option value="${h(g.id)}" ${String(g.id) === st.gestor ? 'selected' : ''}>${h(g.nome)}</option>`).join('')}<option value="sem" ${st.gestor === 'sem' ? 'selected' : ''}>Sem gestor</option></select></label>
         <button class="btn btn-secondary btn-sm" onclick="window._dcCopiar()" title="Usa as metas da última data anterior que tem metas">Copiar metas da data anterior</button>
+        <button class="btn btn-secondary btn-sm" onclick="window._dcSemaforo()" title="Limites e cores do fundo da coluna % sobre meta">Semáforo</button>
         <button class="btn btn-secondary btn-sm" onclick="window._dcRecarregar()">Atualizar</button>
       </div>
     </header>
+    <div id="dc-sem-ed" class="card dc-sem-ed" hidden></div>
     <div id="dc-root"></div>
   </div>
   <style>
@@ -200,6 +252,11 @@ Router.register('data-combinada', (params, el) => {
     .dc-meta{display:flex;align-items:center;gap:4px;justify-content:flex-end} .dc-meta span{font-size:12px;color:var(--text-muted)}
     .dc-meta input{width:100%;max-width:120px;min-width:0;text-align:right;font:inherit;font-variant-numeric:tabular-nums;border:1px solid var(--border);border-radius:8px;padding:4px 8px;background:var(--bg-card);color:var(--text-primary)}
     .dc-meta input:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+    .dc-tab td.dc-sem{font-weight:700}
+    .dc-sem-ed{display:flex;flex-direction:column;gap:8px;padding:12px 16px;margin-bottom:12px;font-size:13px}
+    .dc-sem-lin{display:flex;align-items:center;gap:8px} .dc-sem-f{display:flex;align-items:center;gap:8px;min-width:190px}
+    .dc-sem-f input[type=color]{width:34px;height:26px;padding:0;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer}
+    .dc-sem-lim{width:90px} .dc-sem-acoes{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
     .dc-mut{font-size:12px;color:var(--text-muted)} .dc-vazio{padding:28px;text-align:center;color:var(--text-secondary)} .dc-aviso{padding:10px 14px;color:var(--red);margin-bottom:10px}
   </style>`;
   carregar();
