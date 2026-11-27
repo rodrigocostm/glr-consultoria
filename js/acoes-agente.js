@@ -36,7 +36,7 @@ window.GLRAcoes = (function () {
       const r = await MarketplaceAPI.call('ml_add_promotion_items', params);
       const res = (r?.results || r?.data?.results || [])[0] || {};
       if (res.error || res.erro) throw new Error(res.error || res.erro);
-      if (l.id) await _sb.from('glr_agente_log').update({ resultado: 'executado' }).eq('id', l.id); // sugestão do mural (sem linha no log) só grava a decisão
+      await _sb.from('glr_agente_log').update({ resultado: 'executado' }).eq('id', l.id);
       await _sb.from('glr_agente_log').insert({ conta_id: l.conta_id, cliente_nome: clienteNome || l.cliente_nome || null, tipo: 'decisao',
         titulo: `Promoção aprovada — ${d.produto || d.item_id}`, explicacao: `Aprovada pelo analista. ${l.explicacao || ''}`, dados: { ...d, aplicado_em: new Date().toISOString() }, resultado: 'executado', origem: 'aprovacao_manual' });
       return;
@@ -95,30 +95,5 @@ window.GLRAcoes = (function () {
     if (error) throw error;
   }
 
-  // Mural do Agente de Promoções (glr_sync_estado 'promocoes', ML) → sugestões prontas para aprovar.
-  // Mesmo formato de promo_aprovar que o servidor grava em "promoção pela meta" (api/agente-cron.js).
-  // Fica de fora: cupom (não muda o preço), produto sem estoque e promoção já encerrada.
-  const PRECO_DO_ML = ['SMART', 'PRICE_MATCHING', 'PRE_NEGOTIATED', 'UNHEALTHY_STOCK'];
-  function promocoesParaAprovar(conta, itens, agora = Date.now()) {
-    const out = [];
-    for (const [id, x] of Object.entries(itens || {})) {
-      const op = x && x.melhor;
-      if (!op || !op.tipo || /COUPON/.test(op.tipo) || op.m == null || !(op.preco > 0)) continue;
-      if (x.e != null && x.e <= 0) continue;
-      if (op.fim && Date.parse(op.fim) < agora) continue;
-      if (op.tipo !== 'PRICE_DISCOUNT' && !op.id) continue; // sem a campanha não dá para entrar
-      const aprovar = op.tipo === 'PRICE_DISCOUNT' ? { promotion_type: op.tipo, deal_price: op.preco, dias: 13 }
-        : PRECO_DO_ML.includes(op.tipo) ? { promotion_type: op.tipo, promotion_id: op.id, offer_id: op.ref || null }
-        : { promotion_type: op.tipo, promotion_id: op.id, deal_price: op.preco, offer_id: op.ref || null };
-      const v = n => String(n).replace('.', ',');
-      out.push({
-        chave: op.id || op.tipo, fim: op.fim || null,
-        explicacao: `"${op.rot || op.tipo}" a R$ ${v(op.preco)}${op.desconto ? ` (−${v(op.desconto)}%)` : ''}${x.p ? `, preço cheio R$ ${v(x.p)}` : ''}: margem de ${v(op.m)}% antes do ADS com o custo cadastrado${x.parado ? ' · gira estoque parado' : ''}. Só entra no ML se você aprovar.`,
-        dados: { marketplace: 'ml', item_id: id, produto: String(x.n || '').slice(0, 90), promo: op.rot || op.tipo, preco: op.preco, preco_cheio: x.p ?? null, desconto: op.desconto ?? null, margem: op.m, promo_aprovar: aprovar, origem_analise: 'mural_promocoes' },
-      });
-    }
-    return out;
-  }
-
-  return { tipoDe, executar, marcar, promocoesParaAprovar };
+  return { tipoDe, executar, marcar };
 })();

@@ -76,7 +76,7 @@ Router.register('decisoes', (params, el) => {
         _sb.from('glr_agente_log').select('id,conta_id,cliente_nome,titulo,explicacao,dados,criado_em').eq('tipo', 'alerta').eq('resultado', 'so_alerta').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(3000),
         _sb.from('glr_sync_estado').select('conta_id,cursor').eq('marketplace', 'sistema').eq('recurso', 'plano'),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,rec:cursor->reclamacoes,al:cursor->alertas').eq('recurso', 'reputacao'),
-        _sb.from('glr_sync_estado').select('marketplace,conta_id,res:cursor->resumo,dest:cursor->destaques,itens:cursor->itens').eq('recurso', 'promocoes'),
+        _sb.from('glr_sync_estado').select('marketplace,conta_id,res:cursor->resumo,dest:cursor->destaques').eq('recurso', 'promocoes'),
         _sb.from('glr_sync_estado').select('cursor').eq('marketplace', 'sistema').eq('conta_id', 'conexoes').eq('recurso', 'todas').maybeSingle(),
         _sb.from('glr_sync_estado').select('marketplace,conta_id,em:cursor->em,al:cursor->alertas').eq('recurso', 'sinais'),
         _sb.from('glr_sync_estado').select('contas:cursor->contas').eq('marketplace', 'sistema').eq('conta_id', 'saude_api').eq('recurso', 'todas').maybeSingle(),
@@ -222,28 +222,8 @@ Router.register('decisoes', (params, el) => {
           impacto: rup.reduce((s, a) => s + a.rd, 0) * 7, impactoTipo: 'ganho', urgente: rup.some(a => (a.ne === 'zerado' || (a.d != null && a.d <= 3)) && a.rd >= 100) });
       }
       const hoje = new Date().toISOString().slice(0, 10);
-      // ML: cada promoção que o Agente de Promoções achou e cabe na margem vira uma linha "Aprovar"
-      // (entra no ML só quando o analista aprova, sozinha ou em lote) — antes era um aviso só por loja
-      // e o analista aplicava uma a uma na Central de Promoções. Shopee segue no aviso agrupado.
-      const promoJaSugerida = new Set((logs.data || []).filter(l => l.dados?.promo_aprovar).map(l => `${l.conta_id}:${l.dados.item_id}`));
-      const promoSoltas = new Set();
       for (const r of promos.data || []) {
-        if (r.marketplace !== 'ml') continue;
-        for (const s of GLRAcoes.promocoesParaAprovar(r.conta_id, r.itens)) {
-          if (promoJaSugerida.has(`${r.conta_id}:${s.dados.item_id}`)) { promoSoltas.add(r.conta_id + ':' + s.dados.item_id); continue; }
-          const id = `promoml:${r.conta_id}:${s.dados.item_id}:${s.chave}`;
-          promoSoltas.add(r.conta_id + ':' + s.dados.item_id);
-          if (locais[id]) continue;
-          const d = s.dados;
-          itens.push({ id, local: true, log: { id: null, conta_id: String(r.conta_id), cliente_nome: null, explicacao: s.explicacao, dados: d }, tipo: 'promocoes', mkt: 'ml', conta: String(r.conta_id),
-            titulo: `Entrar em promoção — ${d.produto || d.item_id}`,
-            acao: `${d.promo} a ${R$(d.preco)}${d.desconto ? ` (−${String(d.desconto).replace('.', ',')}%)` : ''} · margem ${String(d.margem).replace('.', ',')}%`,
-            porque: s.explicacao, impacto: null, exec: true, tela: 'promocoes', quando: s.fim || null });
-        }
-      }
-      for (const r of promos.data || []) {
-        // ML: o aviso agrupado só conta o que não virou linha própria (ex.: cupom)
-        const n = r.marketplace === 'ml' ? Object.entries(r.itens || {}).filter(([iid, x]) => x.melhor && !promoSoltas.has(r.conta_id + ':' + iid)).length : (r.res?.sugeridas || 0), id = `promo:${r.conta_id}:${hoje}`;
+        const n = r.res?.sugeridas || 0, id = `promo:${r.conta_id}:${hoje}`;
         if (!n || locais[id]) continue;
         const ex = r.dest?.sugeridas?.[0];
         itens.push({ id, tipo: 'promocoes', mkt: r.marketplace, conta: String(r.conta_id), titulo: `Aplicar ${n} promoção(ões) que cabem na margem`,
@@ -441,7 +421,7 @@ Router.register('decisoes', (params, el) => {
   window._dcAprovar = async id => {
     const it = achar(id); if (!it?.exec) return;
     st.proc[id] = 'Executando…'; render();
-    try { await GLRAcoes.executar(it.log); if (it.local) resolverLocal(id); delete st.proc[id]; await sair(id); tirar(id); aviso('Aprovada e executada'); }
+    try { await GLRAcoes.executar(it.log); delete st.proc[id]; await sair(id); tirar(id); aviso('Aprovada e executada'); }
     catch (e) { GLR.avisar('Não consegui executar: ' + (e.message || e), 'erro'); }
     delete st.proc[id]; render();
   };
@@ -452,7 +432,7 @@ Router.register('decisoes', (params, el) => {
     const falhas = []; let n = 0;
     for (const it of sel) {
       st.lote = `Executando ${++n} de ${sel.length}…`; render();
-      try { await GLRAcoes.executar(it.log); if (it.local) resolverLocal(it.id); tirar(it.id); } catch (e) { falhas.push(`${corta(it.titulo, 50)}: ${e.message || e}`); }
+      try { await GLRAcoes.executar(it.log); tirar(it.id); } catch (e) { falhas.push(`${corta(it.titulo, 50)}: ${e.message || e}`); }
     }
     st.lote = null; render();
     if (falhas.length) GLR.avisar(`Executei ${sel.length - falhas.length} de ${sel.length}. Falharam:\n${falhas.slice(0, 8).join('\n')}`, falhas.length ? 'erro' : 'sucesso');
@@ -462,7 +442,7 @@ Router.register('decisoes', (params, el) => {
     const it = achar(id); if (!it) return;
     st.proc[id] = resultado === 'executado' ? 'Marcando…' : 'Descartando…'; render();
     try {
-      if (it.log && !it.local) await GLRAcoes.marcar(it.log, resultado);
+      if (it.log) await GLRAcoes.marcar(it.log, resultado);
       else if (it.planoId) { const s = lerJSON('glr_plano_status', {}); s[it.planoId] = { st: resultado === 'executado' ? 'feito' : 'descartada', em: Date.now() }; localStorage.setItem('glr_plano_status', JSON.stringify(s)); }
       else {
         if (it.tipo==='playbook') {
