@@ -312,7 +312,16 @@ function connectionPage(res) {
 <button id="diagnostic" type="button">Testar leitura de Product Ads</button>
 <p>Teste de escrita da Expresso Móveis: uma campanha pausada, sem anúncios, orçamento nominal de R$ 50 por dia e ROAS alvo de 5x.</p>
 <button id="write-pilot" type="button">Revisar criação da campanha piloto</button>
-<p id="status" role="status"></p><pre id="results"></pre></main>
+<p id="status" role="status"></p><pre id="results"></pre>
+<section aria-labelledby="summary-title">
+<h2 id="summary-title">Vendas e Product Ads da Expresso Móveis</h2>
+<form id="summary-form">
+<label>Início <input required type="date" name="inicio"></label>
+<label>Fim <input required type="date" name="fim"></label>
+<button type="submit">Consultar vendas e Ads</button>
+</form>
+<p id="summary-status" role="status"></p><pre id="summary-results"></pre>
+</section></main>
 <script>
 const button = document.getElementById('connect');
 const status = document.getElementById('status');
@@ -357,6 +366,49 @@ diagnostic.addEventListener('click', () => run(diagnostic, true));
 const writePilot = document.getElementById('write-pilot');
 writePilot.addEventListener('click', () => {
   if (confirm('Criar GLR — Teste de integração na Expresso Móveis? Campanha pausada, sem anúncios, R$ 50/dia nominais e ROAS alvo 5x.')) run(writePilot, false, true);
+});
+
+const summaryForm = document.getElementById('summary-form');
+const summaryStatus = document.getElementById('summary-status');
+const summaryResults = document.getElementById('summary-results');
+const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+summaryForm.elements.inicio.value = yesterday;
+summaryForm.elements.fim.value = yesterday;
+summaryForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const submit = summaryForm.querySelector('button');
+  submit.disabled = true;
+  summaryStatus.textContent = 'Consultando o Mercado Livre…';
+  summaryResults.textContent = '';
+  try {
+    const session = JSON.parse(localStorage.getItem('sb-rrodqlejqyaoomutriiw-auth-token') || 'null');
+    if (!session?.access_token) {
+      summaryStatus.textContent = 'Entre no painel GLR e volte a esta página.';
+      return;
+    }
+    const response = await fetch('/api/mcp', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'tools/call',
+        params: { name: 'get_ml_sales_ads_summary', arguments: {
+          conta_id: '802228249', inicio: summaryForm.elements.inicio.value, fim: summaryForm.elements.fim.value,
+        } },
+      }),
+    });
+    const data = await response.json();
+    const result = data.result?.structuredContent;
+    if (!response.ok || !result) {
+      summaryStatus.textContent = data.result?.content?.[0]?.text || data.error?.message || data.error || 'Consulta indisponível.';
+      return;
+    }
+    summaryStatus.textContent = 'Consulta concluída.';
+    summaryResults.textContent = JSON.stringify(result, null, 2);
+  } catch {
+    summaryStatus.textContent = 'Não foi possível concluir a consulta.';
+  } finally {
+    submit.disabled = false;
+  }
 });
 </script></html>`);
 }
