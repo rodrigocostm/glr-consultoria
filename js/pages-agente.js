@@ -1492,8 +1492,8 @@
         const dia = diaRotulo(l.criado_em);
         if (dia !== diaAtual) { diaAtual = dia; html += `<div class="ag-log-dia">${h(dia)}</div>`; }
         const cor = TIPO_COR[l.tipo] || 'var(--text-muted)';
-        const res = l.resultado === 'so_alerta' ? { txt: 'Aguardando você', cor: 'var(--yellow)' } : l.resultado === 'executado' ? { txt: 'Executado', cor: 'var(--green)' } : l.resultado === 'erro' ? { txt: 'Erro', cor: 'var(--red)' } : l.resultado === 'descartado' ? { txt: 'Descartado', cor: 'var(--text-muted)' } : { txt: l.resultado || '', cor: 'var(--text-muted)' };
-        const orig = l.origem === 'cron' ? 'Automático' : l.origem === 'chat' ? 'Chat' : l.origem === 'aprovacao_manual' ? 'Aprovado por você' : l.origem === 'analista' ? 'Você' : '';
+        const res = l.resultado === 'so_alerta' ? { txt: 'Aguardando você', cor: 'var(--yellow)' } : l.resultado === 'executado' ? { txt: 'Executado', cor: 'var(--green)' } : l.resultado === 'erro' ? { txt: 'Erro', cor: 'var(--red)' } : l.resultado === 'descartado' ? { txt: 'Descartado', cor: 'var(--text-muted)' } : l.resultado === 'simulado' ? { txt: 'Simulação (não aplicado)', cor: 'var(--text-muted)' } : { txt: l.resultado || '', cor: 'var(--text-muted)' };
+        const orig = l.origem === 'cron' ? 'Automático' : l.origem === 'chat' ? 'Chat' : l.origem === 'aprovacao_manual' ? 'Aprovado por você' : l.origem === 'analista' ? 'Você' : l.origem === 'adman' ? 'Agente autônomo (Adman)' : '';
         html += `<details class="ag-log-item" style="--c:${cor};">
           <summary>
             <span class="ag-log-hora">${new Date(l.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>

@@ -1634,6 +1634,8 @@ module.exports = async function handler(req, res) {
   if ((hora === 5 || hora === 6) && !conta) waitUntil(dispararAgente(req, 'conversao'));
   // perguntas do ML esperando mais de 1 h: aviso de hora em hora, das 8h às 22h
   if (hora >= 8 && hora <= 22 && minuto < 15 && !conta) waitUntil(dispararAgente(req, 'perguntas'));
+  // ADS autônomo do ML pela Adman: 09:00, uma vez por dia (o agente trava pelo dia)
+  if (hora === 9 && minuto < 15 && !conta) waitUntil(dispararAgente(req, 'adman'));
   // retenção: risco de cancelar de cada cliente, às 07:00 (antes do resumo das 8h)
   if (hora === 7 && minuto < 15 && !conta) waitUntil(dispararAgente(req, 'retencao'));
   // blog: rascunhos do dia com as notícias do varejo digital, às 06:00 (publicação só com aprovação)

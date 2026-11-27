@@ -758,6 +758,33 @@ module.exports = async function handler(req, res) {
     } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
   // ?rodada=autonomia — recalcula os níveis de autonomia pelo resultado medido (não mexe em campanha)
+  // ?rodada=adman — Agente de ADS AUTÔNOMO do ML pela Adman (api/_agente-ml-adman.js), 09:00 uma vez por dia.
+  // &simular=1 nunca aplica nada (mesmo com a conta em modo execução); &conta_id=X roda só aquela conta.
+  if (req.query?.rodada === 'adman') {
+    try {
+      const adman = require('./_adman');
+      if (!adman.configurado()) return res.status(200).json({ ok: true, skip: 'ADMAN_MCP_URL / ADMAN_MCP_TOKEN não configuradas no Vercel' });
+      const simular = req.query?.simular === '1';
+      if (!simular && !req.query?.conta_id && !(await reservarRodada(`${agoraBRT().dia}-adman`))) return res.status(200).json({ ok: true, skip: 'rodada de hoje já executada' });
+      const linhas = await sbSelect('glr_ads_autonomo', `ligado=eq.true${req.query?.conta_id ? `&conta_id=eq.${encodeURIComponent(req.query.conta_id)}` : ''}`);
+      const metas = linhas.length ? await sbSelect('glr_agente_config', `marketplace=eq.ml&conta_id=in.(${linhas.map(l => encodeURIComponent(l.conta_id)).join(',')})&select=conta_id,meta_acos`).catch(() => []) : [];
+      const agenteAdman = require('./_agente-ml-adman');
+      const h = { sbSelect, sbInsert, adman: adman.criarCliente(), hoje: agoraBRT().dia };
+      const rodar = async () => {
+        const resultados = [];
+        for (const l of linhas) {
+          const cfg = { ...l, meta_acos: metas.find(m => m.conta_id === l.conta_id)?.meta_acos ?? null };
+          resultados.push(await agenteAdman.rodadaConta(cfg, h, { simular }).catch(e => ({ conta_id: l.conta_id, erro: e.message || String(e) })));
+        }
+        return resultados;
+      };
+      // a agenda responde na hora e trabalha em segundo plano; ?agora=1 ou &simular=1 devolve o resultado
+      if (simular || req.query?.agora === '1' || req.query?.conta_id) return res.status(200).json({ ok: true, rodada: 'adman', simulacao: simular || undefined, resultados: await rodar() });
+      waitUntil(rodar().then(r => console.log('[adman]', JSON.stringify(r).slice(0, 4000))).catch(e => console.error('[adman] falhou', e)));
+      return res.status(202).json({ ok: true, rodada: 'adman', contas: linhas.length });
+    } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
+  }
+
   if (req.query?.rodada === 'autonomia') {
     try { return res.status(200).json({ ok: true, ...(await avaliarAutonomia()) }); } catch (e) { return res.status(500).json({ error: e.message || String(e) }); }
   }
