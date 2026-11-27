@@ -112,6 +112,82 @@ async function callback(req, res, config) {
   return res.status(200).json({ ok: true, message: 'Loja conectada à GLR.' });
 }
 
+
+async function adsDiagnosis(req, res, config) {
+  if (!await requireStaff(req, res)) return;
+  if (config.seller !== '802228249') return res.status(403).json({ error: 'Diagnóstico restrito à Expresso Móveis.' });
+  const db = privateConfig(config.key, new URLSearchParams({ chave: 'eq.ml_oauth:' + config.seller, select: 'valor' }));
+  const stored = await fetch(db.url, { headers: db.headers, signal: db.signal });
+  if (!stored.ok) throw new Error('grant_read');
+  const row = (await stored.json())[0];
+  const grant = row && JSON.parse(row.valor);
+  if (!grant?.access_token || String(grant.user_id) !== config.seller || !(Date.parse(grant.expira_em) > Date.now())) {
+    return res.status(409).json({ error: 'A autorização da loja precisa ser renovada pela página de conexão.' });
+  }
+
+  const resultados = [];
+  async function check(etapa, path, version, params) {
+    const url = new URL(path, MELI);
+    if (params) url.search = new URLSearchParams(params);
+    try {
+      const response = await fetch(url, {
+        method: 'GET', redirect: 'error', signal: AbortSignal.timeout(5500),
+        headers: { Authorization: 'Bearer ' + grant.access_token, 'api-version': String(version) },
+      });
+      const data = await response.json().catch(() => null);
+      const entry = { etapa, http: response.status };
+      if (!response.ok) {
+        const error = [data?.error, data?.error_code, data?.code].find(value =>
+          ['unauthorized', 'invalid_token', 'forbidden', 'not_found', 'bad_request', 'TooManyRequests'].includes(value));
+        const noPermissions = response.status === 404 && [data?.message, data?.display_message].some(value =>
+          typeof value === 'string' && /^No permissions found for user_id\b/i.test(value));
+        entry.erro = noPermissions ? 'No permissions found for user_id' : error || 'HTTP ' + response.status;
+      } else if (!data) {
+        entry.erro = 'Resposta sem JSON';
+      }
+      resultados.push(entry);
+      return response.ok ? data : null;
+    } catch {
+      resultados.push({ etapa, http: null, erro: 'Falha de rede ou tempo limite' });
+      return null;
+    }
+  }
+
+  const identity = await check('Identidade do vendedor', '/users/me', 1);
+  if (String(identity?.id) === config.seller) {
+    const advertisers = await check('Anunciantes', '/advertising/advertisers', 1, { product_id: 'PADS' });
+    const brazil = Array.isArray(advertisers?.advertisers) ? advertisers.advertisers.filter(a =>
+      a.site_id === 'MLB' && /^\d+$/.test(String(a.advertiser_id))) : [];
+    const advertiser = brazil.find(a => String(a.advertiser_id) === config.seller) || (brazil.length === 1 ? brazil[0] : null);
+    if (advertiser) {
+      const prefix = '/advertising/MLB';
+      const account = prefix + '/advertisers/' + advertiser.advertiser_id + '/product_ads';
+      const campaigns = await check('Campanhas', account + '/campaigns/search', 2, { limit: '5' });
+      const campaign = (Array.isArray(campaigns?.results) ? campaigns.results : []).find(c => /^\d+$/.test(String(c.id)));
+      if (campaign) {
+        const path = prefix + '/product_ads/campaigns/' + campaign.id;
+        const date = new Date(Date.now() - 24 * 60 * 60 * 1000).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+        const metrics = { date_from: date, date_to: date, metrics: 'clicks,prints,cost,roas' };
+        const [groups] = await Promise.all([
+          check('Anúncios (Ad Groups)', account + '/ad_groups/search', 2, { 'filters[campaign_id]': String(campaign.id), limit: '5' }),
+          check('Métricas da campanha', path, 2, metrics),
+          check('Métricas dos Ad Groups', path + '/ad_groups/metrics', 2, metrics),
+        ]);
+        const group = (Array.isArray(groups?.results) ? groups.results : []).find(g => /^\d+$/.test(String(g.ad_group_id)));
+        if (group) await check('Métricas por anúncio', prefix + '/product_ads/ad_groups/' + group.ad_group_id + '/ads', 2, metrics);
+        else resultados.push({ etapa: 'Métricas por anúncio', http: null, motivo: 'Nenhum Ad Group identificado na amostra.' });
+      } else {
+        resultados.push({ etapa: 'Anúncios e métricas', http: null, motivo: 'Nenhuma campanha identificada na amostra.' });
+      }
+    } else {
+      resultados.push({ etapa: 'Campanhas, anúncios e métricas', http: null, motivo: 'Não foi possível identificar um anunciante MLB.' });
+    }
+  } else {
+    resultados.push({ etapa: 'Product Ads', http: null, motivo: 'A identidade esperada da loja não foi confirmada.' });
+  }
+  return res.status(200).json({ loja: 'Expresso Móveis', resultados });
+}
+
 function connectionPage(res) {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   return res.status(200).send(`<!doctype html>
@@ -121,11 +197,12 @@ function connectionPage(res) {
 <p>Entre no painel GLR com sua conta de equipe e volte a esta página no mesmo navegador.</p>
 <p><a href="/">Abrir painel GLR</a></p>
 <button id="connect" type="button">Continuar no Mercado Livre</button>
-<p id="status" role="status"></p></main>
+<button id="diagnostic" type="button">Testar leitura de Product Ads</button>
+<p id="status" role="status"></p><pre id="results"></pre></main>
 <script>
 const button = document.getElementById('connect');
 const status = document.getElementById('status');
-button.addEventListener('click', async () => {
+async function run(button, diagnostic) {
   button.disabled = true;
   try {
     const session = JSON.parse(localStorage.getItem('sb-rrodqlejqyaoomutriiw-auth-token') || 'null');
@@ -133,7 +210,7 @@ button.addEventListener('click', async () => {
       status.textContent = 'Entre no painel GLR e tente novamente.';
       return;
     }
-    const response = await fetch('/api/ml-oauth', {
+    const response = await fetch(diagnostic ? '/api/ml-oauth?acao=diagnostico' : '/api/ml-oauth', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + session.access_token },
     });
@@ -142,13 +219,21 @@ button.addEventListener('click', async () => {
       status.textContent = result.error || 'Abra o painel GLR e tente novamente.';
       return;
     }
-    location.assign(result.authorization_url);
+    if (diagnostic) {
+      status.textContent = 'Diagnóstico concluído.';
+      document.getElementById('results').textContent = JSON.stringify(result, null, 2);
+    } else {
+      location.assign(result.authorization_url);
+    }
   } catch {
     status.textContent = 'Não foi possível iniciar a conexão. Tente novamente.';
   } finally {
     button.disabled = false;
   }
-});
+}
+button.addEventListener('click', () => run(button, false));
+const diagnostic = document.getElementById('diagnostic');
+diagnostic.addEventListener('click', () => run(diagnostic, true));
 </script></html>`);
 }
 
@@ -171,6 +256,7 @@ module.exports = async function handler(req, res) {
   }
   if (req.method === 'GET' && !Object.keys(req.query || {}).length) return connectionPage(res);
   try {
+    if (req.method === 'POST' && req.query?.acao === 'diagnostico') return await adsDiagnosis(req, res, config);
     return await (req.method === 'POST' ? start(req, res, config) : callback(req, res, config));
   } catch {
     return res.status(502).json({ error: 'Não foi possível concluir a conexão. Inicie outra tentativa.' });
