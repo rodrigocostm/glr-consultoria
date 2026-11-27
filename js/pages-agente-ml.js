@@ -18,10 +18,16 @@ Router.register('agente-ml', (params, el) => {
   const hojeIso = `${hoje.getFullYear()}-${pad(hoje.getMonth() + 1)}-${pad(hoje.getDate())}`;
   const mesIni = hojeIso.slice(0, 8) + '01';
   const diasMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+  // Período do resumo e das campanhas ('hoje' | '7' | '15' | '30' | 'mes'), igual ao ADS Shopee.
+  // O gráfico continua mês atual × mês anterior; os cards do portfólio, o mês.
+  const PERIODOS = [['hoje', 'Hoje'], ['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['mes', 'Mês atual']];
+  const isoDiasAtras = n => { const d = new Date(hoje); d.setDate(d.getDate() - n); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  const janela = per => per === 'hoje' ? { de: hojeIso, ate: hojeIso } : per === 'mes' || !(parseInt(per, 10) > 0) ? { de: mesIni, ate: hojeIso } : { de: isoDiasAtras(parseInt(per, 10) - 1), ate: hojeIso };
+  const noPeriodo = per => per === 'mes' ? 'no mês' : per === 'hoje' ? 'hoje' : `nos últimos ${per} dias`;
 
   const state = {
     planos: {}, mapas: {}, planosErro: false, grupoEscala: 'todos',
-    carregando: true, contasML: [], configs: [], logs: [], base: null,
+    periodo: 'mes', carregando: true, contasML: [], configs: [], logs: [], base: null,
     aberta: (() => { try { return localStorage.getItem('glr_aml_conta') || null; } catch (e) { return null; } })(),
     diario: {}, metResumo: 'vendas',
     campanhas: {}, carregandoCamp: false, aberto: null, produtos: {}, vendasItem: {}, analisando: false, editando: false, salvando: false, processando: null,
@@ -70,31 +76,36 @@ Router.register('agente-ml', (params, el) => {
     if (state.aberta && !especial(state.aberta)) carregarCampanhas(state.aberta);
   }
 
-  // Mês da conta pela base automática (faturamento sem cancelados, ADS, TACOS, projeção)
-  function mesDe(id) {
+  // Período da conta pela base automática (faturamento sem cancelados, ADS, TACOS; projeção só no mês)
+  function mesDe(id, per = 'mes') {
     const info = state.base ? state.base[BaseDados.chave('ml', String(id))] : null;
-    if (!info || !BaseDados.cobre(info, mesIni)) return null;
-    const t = BaseDados.somar(info, mesIni, hojeIso);
+    const { de, ate } = janela(per);
+    if (!info || !BaseDados.cobre(info, de)) return null;
+    const t = BaseDados.somar(info, de, ate);
     const b = t.faturamento + t.valor_cancelado + t.valor_devolvido;
-    const temAds = BaseDados.cobreAds(info, mesIni);
-    return { fat: t.faturamento, proj: t.faturamento / hoje.getDate() * diasMes, ads: temAds ? t.ads : null, tacos: temAds && t.faturamento > 0 ? t.ads / t.faturamento * 100 : null, taxaCancel: b > 0 ? (t.valor_cancelado + t.valor_devolvido) / b : 0 };
+    const temAds = BaseDados.cobreAds(info, de);
+    return { fat: t.faturamento, proj: per === 'mes' ? t.faturamento / hoje.getDate() * diasMes : null, ads: temAds ? t.ads : null, tacos: temAds && t.faturamento > 0 ? t.ads / t.faturamento * 100 : null, taxaCancel: b > 0 ? (t.valor_cancelado + t.valor_devolvido) / b : 0 };
   }
 
   async function carregarCampanhas(id, forcar) {
     if (state.carregandoCamp || (!forcar && state.campanhas[id])) return;
     state.carregandoCamp = true; render();
+    const per = state.periodo, { de, ate } = janela(per);
     try {
       const todas = [];
       for (let offset = 0; offset < 500; offset += 50) {
-        const r = await MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: id, date_from: mesIni, date_to: hojeIso, limit: 50, offset, status: 'ALL' });
+        const r = await MarketplaceAPI.call('ml_ads_campaigns', { meliUserId: id, date_from: de, date_to: ate, limit: 50, offset, status: 'ALL' });
         const d = r.data || r;
         const res = d.results || [];
         todas.push(...res);
         if (res.length < 50 || offset + 50 >= (parseInt(d.paging?.total) || 0)) break;
       }
-      state.campanhas[id] = { lista: todas, em: Date.now() };
-    } catch (e) { state.campanhas[id] = { erro: e.message || String(e) }; }
-    state.carregandoCamp = false; render();
+      state.campanhas[id] = { lista: todas, em: Date.now(), per };
+    } catch (e) { state.campanhas[id] = { erro: e.message || String(e), per }; }
+    state.carregandoCamp = false;
+    // trocaram o período durante a busca: busca de novo no período atual
+    if (per !== state.periodo && String(id) === String(state.aberta)) return carregarCampanhas(id, true);
+    render();
     if (state.campanhas[id]?.lista) { carregarDiario(id); tacosCampanhas(id, forcar); }
   }
   // TACOS da campanha = investimento ÷ tudo o que os produtos DELA venderam no mês
@@ -129,30 +140,33 @@ Router.register('agente-ml', (params, el) => {
   // Faturamento do mês por anúncio (venda orgânica + ADS, sem cancelados) — base de pedidos.
   // É o denominador do TACOS do produto: investimento em ADS ÷ tudo o que o produto vendeu.
   async function carregarVendasItem(contaId) {
-    if (state.vendasItem[contaId]) return;
-    state.vendasItem[contaId] = { carregando: true };
+    const per = state.periodo;
+    if (state.vendasItem[contaId] && state.vendasItem[contaId].per === per) return;
+    state.vendasItem[contaId] = { carregando: true, per };
     try {
       const porItem = {};
       for (let off = 0; off < 30000; off += 1000) {
         const { data, error } = await _sb.from('glr_pedidos').select('itens').eq('marketplace', 'ml').eq('conta_id', String(contaId)).eq('situacao', 'valido')
-          .gte('criado_em', new Date(`${mesIni}T00:00:00-03:00`).toISOString()).range(off, off + 999);
+          .gte('criado_em', new Date(`${janela(per).de}T00:00:00-03:00`).toISOString()).range(off, off + 999);
         if (error) throw error;
         for (const r of data || []) for (const it of (r.itens || [])) { const k = String(it.item_id || ''); if (k) porItem[k] = (porItem[k] || 0) + (parseFloat(it.preco) || 0) * (parseInt(it.qtd) || 1); }
         if ((data || []).length < 1000) break;
       }
-      state.vendasItem[contaId] = { porItem };
-    } catch (e) { state.vendasItem[contaId] = { erro: e.message || String(e) }; }
+      if (state.vendasItem[contaId]?.per !== per) return; // período trocado no meio da busca
+      state.vendasItem[contaId] = { porItem, per };
+    } catch (e) { if (state.vendasItem[contaId]?.per === per) state.vendasItem[contaId] = { erro: e.message || String(e), per }; }
     render();
   }
 
   async function carregarProdutos(contaId, campId) {
     const k = `${contaId}:${campId}`;
-    if (state.produtos[k] && !state.produtos[k].erro) return;
-    state.produtos[k] = { carregando: true }; render();
+    const per = state.periodo, { de, ate } = janela(per);
+    if (state.produtos[k] && !state.produtos[k].erro && state.produtos[k].per === per) return;
+    state.produtos[k] = { carregando: true, per }; render();
     try {
       const todos = [];
       for (let offset = 0; offset < 1000; offset += 100) {
-        const r = await MarketplaceAPI.call('ml_ads_items', { meliUserId: contaId, campaign_id: String(campId), date_from: mesIni, date_to: hojeIso, limit: 100, offset });
+        const r = await MarketplaceAPI.call('ml_ads_items', { meliUserId: contaId, campaign_id: String(campId), date_from: de, date_to: ate, limit: 100, offset });
         const d = r.data || r;
         const res = d.results || [];
         todos.push(...res);
@@ -181,8 +195,9 @@ Router.register('agente-ml', (params, el) => {
         f.recomendado = f.recomendado || !!a.recommended;
         fam.set(key, f);
       }
-      state.produtos[k] = { lista: [...fam.values()].sort((a, b) => b.gasto - a.gasto) };
-    } catch (e) { state.produtos[k] = { erro: e.message || String(e) }; }
+      if (state.produtos[k]?.per !== per) return; // período trocado no meio da busca
+      state.produtos[k] = { lista: [...fam.values()].sort((a, b) => b.gasto - a.gasto), per };
+    } catch (e) { if (state.produtos[k]?.per === per) state.produtos[k] = { erro: e.message || String(e), per }; }
     render();
   }
 
@@ -308,13 +323,14 @@ Router.register('agente-ml', (params, el) => {
     // cada métrica é um botão: clicar troca a linha do gráfico (como no painel do Product Ads)
     const met = (k, rot, val, sub, cor) => `<button type="button" class="aml-met${state.metResumo === k ? ' sel' : ''}" onclick="window._amlMet('${k}')" aria-pressed="${state.metResumo === k}"><div class="aml-met-rot">${rot}</div><div class="aml-met-val"${cor ? ` style="color:${cor}"` : ''}>${val}</div><div class="aml-met-sub">${sub || '&nbsp;'}</div></button>`;
     return `<div class="card aml-resumo">
-      <div class="aml-resumo-t">Resumo de Product Ads <span class="aml-sub">${dm(mesIni)} a ${dm(hojeIso)} · vendas sem cancelados</span></div>
+      <div class="aml-resumo-t">Resumo de Product Ads <span class="aml-sub">${state.periodo === 'hoje' ? `hoje (${dm(hojeIso)}), dia em andamento` : `${dm(janela(state.periodo).de)} a ${dm(hojeIso)}`} · vendas sem cancelados</span>
+        <div class="tabs aml-per">${PERIODOS.map(([v, l]) => `<button class="tab-btn ${state.periodo === v ? 'active' : ''}" onclick="window._amlPeriodo('${v}')">${l}</button>`).join('')}</div></div>
       <div class="aml-mets">
         ${met('vendas', 'Vendas por publicidade', vendas == null ? espera : R$(vendas))}
         ${met('invest', 'Investimento', gasto == null ? espera : R$(gasto), ativas == null ? '' : `${ativas} campanha${ativas === 1 ? '' : 's'} ativa${ativas === 1 ? '' : 's'}`)}
         ${met('acos', 'ACOS', pct(acos), cfg?.meta_acos ? `meta ${pct(cfg.meta_acos)}` : '', corTacos(acos, cfg?.meta_acos))}
         ${met('roas', 'ROAS', gasto > 0 ? roasX(vendas / gasto) : '—', cfg?.meta_acos ? `objetivo ${roasX(100 / cfg.meta_acos)}` : '')}
-        ${met('fat', 'Faturamento da loja', m ? R$(m.fat) : '—', m ? `projeção ${R$(m.proj).replace(/,\d{2}$/, '')}` : 'base automática sem o mês')}
+        ${met('fat', 'Faturamento da loja', m ? R$(m.fat) : '—', m ? (m.proj != null ? `projeção ${R$(m.proj).replace(/,\d{2}$/, '')}` : '') : 'base automática sem o período')}
         ${met('tacos', 'TACOS', pct(m?.tacos), `teto ${pct(tetoConta(id))}`, corTacos(m?.tacos, tetoConta(id)))}
       </div>
       ${renderGrafico(id, m, cfg)}
@@ -682,7 +698,7 @@ Router.register('agente-ml', (params, el) => {
   }
   window._amlFiltroSug = k => { state.filtroSug = k; render(); };
   function renderCampanhas(id) {
-    const c = state.campanhas[id], m = mesDe(id), cfg = cfgDe(id);
+    const c = state.campanhas[id], m = mesDe(id, state.periodo), cfg = cfgDe(id);
     const tetoT = tetoConta(id); // TACOS tem teto independente do ACOS
     const tx = m?.taxaCancel || 0;
     let corpo;
@@ -692,7 +708,7 @@ Router.register('agente-ml', (params, el) => {
     else {
       const pend = new Set(pendentes(id).map(l => String(l.dados?.campaign_id)));
       const linhas = [...c.lista].sort((a, b) => (parseFloat(b.metrics?.cost) || 0) - (parseFloat(a.metrics?.cost) || 0));
-      corpo = `<div style="overflow-x:auto;"><table class="aml-tab"><thead><tr><th>Campanha</th><th>Status</th><th class="num">Orçamento diário</th><th class="num">ROAS objetivo</th><th class="num">Investimento</th><th class="num">Vendas por publicidade</th><th class="num">ROAS</th><th class="num">ACOS</th><th class="num" title="Investimento da campanha ÷ tudo o que os produtos dela venderam no mês (orgânico + ADS, sem cancelados)">TACOS</th></tr></thead><tbody>
+      corpo = `<div style="overflow-x:auto;"><table class="aml-tab"><thead><tr><th>Campanha</th><th>Status</th><th class="num">Orçamento diário</th><th class="num">ROAS objetivo</th><th class="num">Investimento</th><th class="num">Vendas por publicidade</th><th class="num">ROAS</th><th class="num">ACOS</th><th class="num" title="Investimento da campanha ÷ tudo o que os produtos dela venderam no período (orgânico + ADS, sem cancelados)">TACOS</th></tr></thead><tbody>
         ${linhas.map(x => {
           const mm = x.metrics || {}, g = parseFloat(mm.cost) || 0, v = (parseFloat(mm.total_amount) || 0) * (1 - tx);
           const acos = v > 0 ? g / v * 100 : (g > 0 ? Infinity : null);
@@ -708,14 +724,14 @@ Router.register('agente-ml', (params, el) => {
           return `<tr class="aml-linha${aberta ? ' aberta' : ''}" onclick="window._amlProdutos('${x.id}')"><td><div class="aml-c-nome"><span class="aml-seta">${aberta ? '▾' : '▸'}</span><div><div class="aml-c-n">${h(x.name)}${pend.has(String(x.id)) ? ' <span class="aml-chip" title="Tem sugestão pendente">sugestão</span>' : ''}</div>${estrat ? `<div class="aml-sub">${h(estrat)}</div>` : ''}</div></div></td>
             <td>${statusPill(x.status)}</td>
             <td class="num">${x.budget ? R$(x.budget) : '—'}</td><td class="num">${roasAlvo ? roasX(roasAlvo) : '—'}</td>
-            <td class="num">${R$(g)}</td><td class="num">${R$(v)}</td><td class="num">${g > 0 ? roasX(v / g) : '—'}</td><td class="num" style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td><td class="num" style="color:${tacosC === Infinity ? 'var(--red)' : corTacos(tacosC, tetoT)};font-weight:700;" title="${fatC != null ? `os produtos da campanha venderam ${R$(fatC)} no mês (orgânico + ADS)` : 'calculando pelos produtos da campanha…'}">${tacosC === undefined ? '…' : tacosC === Infinity ? '∞' : tacosC == null ? '—' : pct(tacosC)}</td></tr>
+            <td class="num">${R$(g)}</td><td class="num">${R$(v)}</td><td class="num">${g > 0 ? roasX(v / g) : '—'}</td><td class="num" style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td><td class="num" style="color:${tacosC === Infinity ? 'var(--red)' : corTacos(tacosC, tetoT)};font-weight:700;" title="${fatC != null ? `os produtos da campanha venderam ${R$(fatC)} ${noPeriodo(state.periodo)} (orgânico + ADS)` : 'calculando pelos produtos da campanha…'}">${tacosC === undefined ? '…' : tacosC === Infinity ? '∞' : tacosC == null ? '—' : pct(tacosC)}</td></tr>
             ${aberta ? `<tr><td colspan="9" style="padding:0;white-space:normal;">${renderProdutos(id, x.id, tx, cfg)}</td></tr>` : ''}`;
         }).join('')}</tbody></table></div>`;
     }
     return `<div class="card" style="padding:18px 20px;margin-bottom:18px;">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
         <div><div style="font-weight:600;font-size:16px;">Campanhas <span class="aml-sub" style="font-weight:400;">Product Ads · mês atual</span></div>
-        <div class="aml-sub">Clique numa campanha para ver os produtos dentro dela. ACOS sem cancelados${tx > 0.005 ? ` (cancelamentos/devoluções da loja no mês: ${pct(tx * 100)})` : ''}. TACOS da campanha = investimento dela ÷ tudo o que os produtos dela venderam no mês (orgânico + ADS); do produto = investimento ÷ tudo o que ele vendeu (orgânico + ADS)${tetoT ? `; verde até ${pct(tetoT)}` : ''}.</div></div>
+        <div class="aml-sub">Clique numa campanha para ver os produtos dentro dela. ACOS sem cancelados${tx > 0.005 ? ` (cancelamentos/devoluções da loja ${noPeriodo(state.periodo)}: ${pct(tx * 100)})` : ''}. TACOS da campanha = investimento dela ÷ tudo o que os produtos dela venderam ${noPeriodo(state.periodo)} (orgânico + ADS); do produto = investimento ÷ tudo o que ele vendeu (orgânico + ADS)${tetoT ? `; verde até ${pct(tetoT)}` : ''}.</div></div>
         <button class="btn btn-secondary btn-sm" title="Atualizar" ${state.carregandoCamp ? 'disabled' : ''} onclick="window._amlCampanhas()">🔄</button>
       </div>${corpo}</div>`;
   }
@@ -731,7 +747,7 @@ Router.register('agente-ml', (params, el) => {
     const vi = state.vendasItem[contaId], tetoT = tetoConta(contaId);
     const vendaTotal = f => vi?.porItem ? f.itens.reduce((s, it) => s + (vi.porItem[String(it.id)] || 0), 0) : null;
     const tacosP = f => { let vt = vendaTotal(f); if (vt == null || !(f.gasto > 0)) return null; vt = Math.max(vt, f.vendas * (1 - tx)); return vt > 0 ? f.gasto / vt * 100 : Infinity; };
-    return `<div class="aml-prods"><table class="aml-tab"><thead><tr><th>Produto (variações somadas)</th><th>Anúncios ativos</th><th class="num">Investimento</th><th class="num">% do investimento</th><th class="num">Vendas por publicidade</th><th class="num">Unidades</th><th class="num">ROAS</th><th class="num">ACOS</th><th class="num" title="Investimento do produto ÷ tudo o que ele vendeu no mês (orgânico + ADS, sem cancelados)">TACOS</th></tr></thead><tbody>
+    return `<div class="aml-prods"><table class="aml-tab"><thead><tr><th>Produto (variações somadas)</th><th>Anúncios ativos</th><th class="num">Investimento</th><th class="num">% do investimento</th><th class="num">Vendas por publicidade</th><th class="num">Unidades</th><th class="num">ROAS</th><th class="num">ACOS</th><th class="num" title="Investimento do produto ÷ tudo o que ele vendeu no período (orgânico + ADS, sem cancelados)">TACOS</th></tr></thead><tbody>
       ${p.lista.map(f => {
         const v = f.vendas * (1 - tx), acos = v > 0 ? f.gasto / v * 100 : (f.gasto > 0 ? Infinity : null);
         const cor = acos == null || !cfg?.meta_acos ? 'inherit' : acos === Infinity ? 'var(--red)' : acos > (cfg.regra_pausa_acos || cfg.meta_acos * 2) ? 'var(--red)' : acos > cfg.meta_acos ? 'var(--yellow)' : 'var(--green)';
@@ -742,7 +758,7 @@ Router.register('agente-ml', (params, el) => {
         return `<tr><td style="white-space:normal;min-width:240px;">${f.permalink ? `<a href="${h(f.permalink)}" target="_blank" rel="noopener">${h(f.nome)}</a>` : h(f.nome)}${f.recomendado ? ' <span class="aml-chip" title="O ML recomenda anunciar">recomendado ML</span>' : ''}${pend.has(f.chave) ? ' <span class="aml-chip">sugestão</span>' : ''}</td>
           <td style="white-space:normal;">${f.itens.length - nMov ? `${f.ativos}/${f.itens.length - nMov}` : '—'}${pausados ? ` <span class="aml-sub">(${pausados} fora)</span>` : ''}${movTxt ? `<div class="aml-sub" title="O gasto ao lado é o que ficou nesta campanha antes de mover">→ ${movTxt}</div>` : ''}</td><td class="num">${R$(f.gasto)}</td><td class="num">${Math.round(f.gasto / gastoCamp * 100)}%</td><td class="num">${R$(v)}</td><td class="num">${f.unidades}</td>
           <td class="num">${f.gasto > 0 ? roasX(v / f.gasto) : '—'}</td><td class="num" style="color:${cor};font-weight:700;">${acos === Infinity ? '∞' : pct(acos)}</td>
-          <td class="num" style="color:${corTacos(tacosP(f), tetoT)};font-weight:700;" title="${vendaTotal(f) != null ? `vendeu ${R$(vendaTotal(f))} no mês (orgânico + ADS)` : ''}">${vi?.carregando ? '…' : tacosP(f) === Infinity ? '∞' : tacosP(f) == null ? '—' : pct(tacosP(f))}</td></tr>`;
+          <td class="num" style="color:${corTacos(tacosP(f), tetoT)};font-weight:700;" title="${vendaTotal(f) != null ? `vendeu ${R$(vendaTotal(f))} ${noPeriodo(state.periodo)} (orgânico + ADS)` : ''}">${vi?.carregando ? '…' : tacosP(f) === Infinity ? '∞' : tacosP(f) == null ? '—' : pct(tacosP(f))}</td></tr>`;
       }).join('')}</tbody></table></div>`;
   }
   // Resultado do que foi aplicado: 7 dias antes × 7 dias depois, por campanha
@@ -826,7 +842,7 @@ Router.register('agente-ml', (params, el) => {
         <button class="btn btn-primary btn-sm" ${state.analisando ? 'disabled' : ''} onclick="window._amlAnalisar()">${state.analisando ? '⏳ Analisando…' : 'Analisar agora'}</button>
       </div>
       ${state.editando ? renderConfig(cfg) : ''}
-      ${renderResumo(id, m, cfg)}
+      ${renderResumo(id, mesDe(id, state.periodo), cfg)}
       ${renderCrescimento(id)}
       ${renderSugestoes(id)}
       ${renderResultados(id)}
@@ -850,6 +866,14 @@ Router.register('agente-ml', (params, el) => {
   window._amlMarcarGrupo = marcarGrupo;
   window._amlCampanhas = () => { state.produtos = {}; state.vendasItem = {}; state.diario[state.aberta] = null; carregarCampanhas(state.aberta, true); };
   window._amlMet = k => { state.metResumo = k; render(); };
+  // Troca o período do resumo, das campanhas e dos produtos (o gráfico segue mês × mês anterior)
+  window._amlPeriodo = per => {
+    if (state.periodo === per) return;
+    state.periodo = per; state.produtos = {}; state.vendasItem = {};
+    if (state.aberta && !especial(state.aberta)) { state.campanhas[state.aberta] = null; carregarCampanhas(state.aberta, true); }
+    render();
+    if (state.aberto && state.aberta) { carregarProdutos(state.aberta, state.aberto); carregarVendasItem(state.aberta); }
+  };
   // Passar o mouse no gráfico: linha vertical + valores do dia (sem redesenhar a tela)
   window._amlGrafMove = (ev, svgEl) => {
     const g = state.graf; if (!g) return;
@@ -963,6 +987,7 @@ Router.register('agente-ml', (params, el) => {
     .aml-ml .aml-chip{background:var(--ml-azul-bg);color:var(--ml-azul);border-radius:4px;font-weight:600;}
     /* resumo: faixa de métricas como no topo do Product Ads */
     .aml-resumo{padding:16px 20px 6px;margin-bottom:18px;}
+    .aml-per{margin:0 0 0 auto;}
     .aml-resumo-t{font-size:16px;font-weight:600;color:var(--text-primary);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px;}
     .aml-mets{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}
     .aml-met{padding:4px 16px 12px;border-left:1px solid var(--border);min-width:0;}
