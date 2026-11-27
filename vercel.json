@@ -39,6 +39,7 @@
       "maxDuration": 300
     },
     "api/mcp.js": {
+      "includeFiles": "api/_ml-sales-ads.ts",
       "maxDuration": 60
     },
     "api/blog.js": {
