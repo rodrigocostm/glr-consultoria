@@ -230,7 +230,7 @@ async function _dashBuscarVendasPorDia() {
             // fluxo separado (claims/mediations) que não muda o status do pedido —
             // verificar isso exigiria uma chamada por pedido, inviável neste loop
             // (dezenas de contas por atualização). Limitação conhecida, não corrigida.
-            if (['cancelled','invalid'].includes((o.status||'').toLowerCase())) continue;
+            if (!GLRStatusPedido.valido(o)) continue;
             const d = new Date(o.date_created||0);
             if (isNaN(d)) continue;
             const unidades = (o.order_items||[]).reduce((s,i) => s + (parseInt(i.quantity)||1), 0) || 1;
@@ -273,7 +273,7 @@ async function _dashBuscarVendasPorDia() {
                 // com volume alto (confirmado com pedido real).
                 if (ord.create_time < tsFrom || ord.create_time > tsTo) continue;
                 const orderStatus = (ord.order_status || '').toUpperCase();
-                if (['CANCELLED','IN_CANCEL'].includes(orderStatus)) continue;
+                if (!GLRStatusPedido.valido({ status: orderStatus })) continue; // cancelado, em devolução ou não pago
                 if (orderSnsReembolsados.has(ord.order_sn)) continue;
                 const d = new Date(ord.create_time*1000);
                 const itens = ord.item_list || ord.items || [];
@@ -295,7 +295,7 @@ async function _dashBuscarVendasPorDia() {
             // Mesma limitação do ML: devolução/reembolso na Magalu é rastreado via
             // tickets separados (magalu_ticket_returns), não no status do pedido —
             // checagem por pedido inviável neste loop. Só cancelamento é filtrado.
-            if (['canceled','cancelled'].includes((o.status||'').toLowerCase())) continue;
+            if (!GLRStatusPedido.valido(o)) continue;
             const d = new Date(o.purchased_at || o.created_at || 0);
             if (isNaN(d)) continue;
             const unidades = (o.deliveries||[]).reduce((s,dl) => s + (dl.items||[]).reduce((s2,it) => s2 + (parseInt(it.quantity)||1), 0), 0) || 1;

@@ -321,7 +321,7 @@ const _projecaoDetalhe = (params, el) => {
       async function fatMesFechadoML(meliId, periodo) {
         try {
           const orders = await MarketplaceAPI.mlOrders(meliId, periodo.from, periodo.to);
-          return orders.reduce((s,o) => ['cancelled','invalid'].includes((o.status||'').toLowerCase()) ? s : s+(parseFloat(o.total_amount)||0), 0);
+          return orders.reduce((s,o) => !GLRStatusPedido.valido(o) ? s : s+(parseFloat(o.total_amount)||0), 0);
         } catch(e) { return 0; }
       }
       async function fatMesFechadoShopee(shopId, periodo) {

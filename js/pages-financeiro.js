@@ -201,7 +201,8 @@ Router.register('financeiro', async (params, el) => {
 
   function isCancelado(p) {
     const st = (p.status||'').toLowerCase();
-    return st.includes('cancel') || st==='invalid' || st==='cancelled_unpaid' || st==='in_cancel';
+    // em aberto (sem pagamento) também fica fora das somas — regra única em js/status-pedido.js
+    return st.includes('cancel') || st==='invalid' || st==='cancelled_unpaid' || st==='in_cancel' || GLRStatusPedido.classificar(p).grupo === 'aberto';
   }
   function isDevolvido(p) {
     const st = (p.status||'').toLowerCase();

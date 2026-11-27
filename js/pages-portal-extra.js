@@ -313,14 +313,14 @@
         const linhas = [];
         for (const id of ids) {
           for (let off = 0; off < 60000; off += 1000) {
-            const { data, error } = await _sb.from('glr_pedidos').select('conta_id,situacao,valor_bruto,itens').eq('conta_id', id).in('situacao', ['valido', 'devolvido']).gte('criado_em', desde).range(off, off + 999);
+            const { data, error } = await _sb.from('glr_pedidos').select('conta_id,situacao,valor_bruto,itens').eq('conta_id', id).in('situacao', ['valido', 'devolvido', 'reembolsado']).gte('criado_em', desde).range(off, off + 999);
             if (error) throw error;
             linhas.push(...(data || [])); if ((data || []).length < 1000) break;
           }
         }
         const prod = new Map(); let pedDev = 0, valDev = 0, valTot = 0, pedTot = 0;
         for (const p of linhas) {
-          const dev = p.situacao === 'devolvido', vb = +p.valor_bruto || 0; pedTot++; valTot += vb; if (dev) { pedDev++; valDev += vb; }
+          const dev = p.situacao === 'devolvido' || p.situacao === 'reembolsado', vb = +p.valor_bruto || 0; pedTot++; valTot += vb; if (dev) { pedDev++; valDev += vb; }
           const itens = (p.itens || []).length ? p.itens : [{ item_id: '?', nome: 'Pedido sem item identificado', qtd: 1, preco: vb }];
           const totalItens = itens.reduce((s, it) => s + (+it.preco || 0) * (+it.qtd || 1), 0) || 1;
           for (const it of itens) {

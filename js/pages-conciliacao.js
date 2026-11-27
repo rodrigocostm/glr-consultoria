@@ -140,7 +140,7 @@ Router.register('conciliacao', async (params, el) => {
     const meliId = conta.param_to_use?.meliUserId || conta.external_id;
     const { dataFrom, dataTo } = _periodoParaDatas();
     const orders = await MarketplaceAPI.mlOrders(meliId, dataFrom, dataTo);
-    const validos = orders.filter(o => !['cancelled','invalid'].includes((o.status||'').toLowerCase()));
+    const validos = orders.filter(o => GLRStatusPedido.valido(o));
 
     return await _mapLimit(validos, 5, async o => {
       const itens = o.order_items||o.items||[];
