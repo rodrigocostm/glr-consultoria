@@ -244,6 +244,7 @@ Router.register('vendas', async (params, el) => {
 
   // Fora das somas: cancelado, reembolsado/devolvido (inclusive em andamento) e em aberto (sem pagamento).
   // Regra única em js/status-pedido.js — a mesma do Vendômetro e da comissão.
+  const _inativasLocal = () => { try { return JSON.parse(localStorage.getItem('glr_contas_inativas') || '{}'); } catch (e) { return {}; } };
   const statusPedido = p => (p._st = p._st || window.GLRStatusPedido.classificar(p));
   function isCanceladoVendas(p) { return !statusPedido(p).valido; }
 
@@ -2413,7 +2414,7 @@ Router.register('vendas', async (params, el) => {
     try {
       if (!contas.length) {
         const r = await MarketplaceAPI.call('list_accounts');
-        contas  = r.data?.accounts||[];
+        contas  = (r.data?.accounts||[]).filter(c => !window.GLRContasInativas?.contaInativa(_inativasLocal(), c)); // loja inativa fora das listas e somas
         renderFiltroEmpresaConta();
       }
       const { dataFrom, dataTo } = _periodoParaDatas();
@@ -3182,7 +3183,7 @@ Router.register('vendas', async (params, el) => {
     // Busca contas sempre para popular empresa/conta — independente de cache de pedidos
     try {
       const r = await MarketplaceAPI.call('list_accounts');
-      contas = r.data?.accounts || [];
+      contas = (r.data?.accounts || []).filter(c => !window.GLRContasInativas?.contaInativa(_inativasLocal(), c));
       // Cliente em foco (barra de cima): abre filtrada nas contas dele
       const nomeFoco = !window._portalConfig && GLR.ctx?.nome?.();
       if (nomeFoco) {

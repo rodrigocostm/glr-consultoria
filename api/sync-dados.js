@@ -42,7 +42,8 @@ const TAXAS_ESPERA_MS = 2 * 3600 * 1000;
 const GMV_RECENTE_A_CADA_MS = 2 * 3600 * 1000; // GMV Max dos últimos dias (17 mil chamadas/dia a cada 15 min)
 // Agente de Qualidade de Anúncio (1x por dia por loja, depois das 06:00)
 const qualidadeAg = require('./_qualidade');
-const statusPedido = require('../js/status-pedido'); // regra única de pedido válido (somas, comissão, vendômetro)
+const statusPedido = require('../js/status-pedido');
+const contasInativas = require('../js/contas-inativas'); // lojas desligadas pelo dono: fora da sync e dos alertas // regra única de pedido válido (somas, comissão, vendômetro)
 
 // Dispara a rodada do Agente nos horários da agenda (o próprio agente trava
 // pelo horário, então disparo repetido não roda duas vezes).
@@ -143,7 +144,9 @@ async function contasParaSincronizar(apiKey) {
   const vinc = (await sbSelect('glr_storage', 'chave=eq.glr_mc_vinculos&select=dados'))[0]?.dados || {};
   for (const lista of Object.values(vinc)) for (const c of (Array.isArray(lista) ? lista : [])) add(c.marketplace, c.external_id);
   for (const c of await sbSelect('glr_agente_config', 'select=conta_id,marketplace')) add(c.marketplace || 'shopee', c.conta_id);
-  return [...chaves.values()];
+  // lojas marcadas como inativas não sincronizam nem entram na Saúde da API (histórico fica)
+  const inativas = (await sbSelect('glr_storage', 'chave=eq.glr_contas_inativas&select=dados').catch(() => []))[0]?.dados;
+  return [...chaves.values()].filter(c => !contasInativas.inativa(inativas, c.mkt, c.id));
 }
 
 // ── Shopee: lista os order_sn de uma janela (até 15 dias por chamada) ──

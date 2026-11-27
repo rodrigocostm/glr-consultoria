@@ -450,6 +450,7 @@ async function monitorarSaldoShopee(mcApiKey, simular = false) {
 // Saúde das conexões e a Caixa de decisões leem dali.
 const MKT_TODOS = m => { m = String(m || '').toLowerCase(); return m === 'shopee' ? 'shopee' : ['meli', 'ml', 'mercadolivre'].includes(m) ? 'ml' : m === 'amazon' ? 'amazon' : ['tiktok', 'tiktok_shop', 'tiktokshop'].includes(m) ? 'tiktok' : m === 'magalu' ? 'magalu' : m === 'shein' ? 'shein' : null; };
 const NOME_MKT = { shopee: 'Shopee', ml: 'Mercado Livre', amazon: 'Amazon', tiktok: 'TikTok Shop', magalu: 'Magalu', shein: 'Shein' };
+const contasInativas = require('../js/contas-inativas');
 function problemaConexao(erro) {
   const e = String(erro || '');
   if (/refresh_token|token.*expir|expired|invalid_grant|reconect|renovar token/i.test(e)) return 'A conexão expirou. Reconecte a conta na Tiops.';
@@ -468,6 +469,9 @@ async function monitorarConexoes(mcApiKey, simular = false) {
     const mkt = MKT_TODOS(c.marketplace), p = c.param_to_use || {};
     return mkt && { mkt, id: String(p.shopId || p.meliUserId || p.amazon_account_id || p.magalu_account_id || p.shein_supplier_id || c.external_id), nome: (c.tags || []).find(t => t && t.name)?.name || c.nickname || c.label || String(c.external_id), conectada: c.connected !== false, vence: c.expires_at || null };
   }).filter(Boolean);
+  // lojas marcadas como inativas saem da Saúde das conexões e dos avisos de conta caída
+  const inativas = (await sbSelect('glr_storage', 'chave=eq.glr_contas_inativas&select=dados').catch(() => []))[0]?.dados;
+  for (let i = contas.length - 1; i >= 0; i--) if (contasInativas.inativa(inativas, contas[i].mkt, contas[i].id)) contas.splice(i, 1);
   const ped = await sbSelect('glr_sync_estado', 'recurso=eq.pedidos&select=marketplace,conta_id,ultimo_sucesso,ultimo_erro,ultima_tentativa').catch(() => []);
   const porPed = new Map(ped.map(x => [`${x.marketplace}:${x.conta_id}`, x]));
   const saldo = (await sbSelect('glr_sync_estado', 'marketplace=eq.sistema&conta_id=eq.saldo_ads&recurso=eq.shopee&select=cursor').catch(() => []))[0]?.cursor?.lojas || {};
