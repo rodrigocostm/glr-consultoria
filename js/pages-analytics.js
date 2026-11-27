@@ -195,7 +195,7 @@ Router.register('analytics-conteudo', async (params, el) => {
           if (['meli','ml','mercadolivre'].includes(mkt)) {
             canais.add('Mercado Livre');
             const meliId = conta.param_to_use?.meliUserId || conta.external_id;
-            const somaFat = os => os.reduce((s,o)=> ['cancelled','invalid'].includes((o.status||'').toLowerCase()) ? s : s+(parseFloat(o.total_amount)||0), 0);
+            const somaFat = os => os.reduce((s,o)=> !GLRStatusPedido.valido(o) ? s : s+(parseFloat(o.total_amount)||0), 0);
 
             // As 3 janelas de data (mês atual, M1, M2) e a paginação de ADS são
             // independentes entre si — rodar em paralelo em vez de uma esperar a
@@ -383,7 +383,7 @@ Router.register('analytics-conteudo', async (params, el) => {
       const mapa = {};
       const orders = await MarketplaceAPI.mlOrders(meliUserId, primeiroDia, dataTo);
       for (const o of orders) {
-        if (['cancelled','invalid'].includes((o.status||'').toLowerCase())) continue;
+        if (!GLRStatusPedido.valido(o)) continue;
         const dt = new Date(o.date_created||0);
         if (isNaN(dt)) continue;
         const sem = _semanaDoDia(dt.getDate(), semanas);

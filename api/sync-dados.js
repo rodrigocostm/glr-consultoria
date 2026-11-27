@@ -185,7 +185,7 @@ function mapearPedidoShopee(shopId, o) {
     marketplace: 'shopee', conta_id: String(shopId), pedido_id: String(o.order_sn),
     criado_em: isoDeUnix(o.create_time), atualizado_mkt: o.update_time ? isoDeUnix(o.update_time) : null,
     status_original: status,
-    situacao: /CANCEL/i.test(status) ? 'cancelado' : 'valido',
+    situacao: statusPedido.situacaoBase(/CANCEL/i.test(status) ? 'cancelado' : 'valido', status),
     valor_bruto: subtotal > 0 ? subtotal : total,
     valor_itens: subtotal, frete: r2(Math.max(0, total - subtotal)),
     itens, sincronizado_em: new Date().toISOString(),
@@ -332,7 +332,7 @@ function mapearPedidoML(contaId, o) {
     marketplace: 'ml', conta_id: String(contaId), pedido_id: String(o.id),
     criado_em: new Date(o.date_created).toISOString(), atualizado_mkt: o.last_updated ? new Date(o.last_updated).toISOString() : null,
     status_original: o.status || '',
-    situacao: status.includes('cancel') || status === 'invalid' ? 'cancelado' : 'valido',
+    situacao: statusPedido.situacaoBase(status.includes('cancel') || status === 'invalid' ? 'cancelado' : 'valido', status),
     valor_bruto: r2(Math.max(0, (parseFloat(o.total_amount) || 0) - reembolsado)),
     valor_itens: r2(itens.reduce((s, i) => s + i.preco * i.qtd, 0)),
     // líquido e frete do vendedor vêm depois, do recebimento (/collections)
@@ -575,7 +575,7 @@ async function atualizarResumo(mkt, conta, resumoAtual, t, extras = []) {
       pedidos: v.length, faturamento: soma(v, r => parseFloat(r.valor_bruto) || 0),
       unidades: v.reduce((s, r) => s + (r.itens || []).reduce((a, i) => a + (parseInt(i.qtd) || 1), 0), 0),
       cancelados: rows.filter(r => r.situacao === 'cancelado').length, valor_cancelado: soma(rows.filter(r => r.situacao === 'cancelado'), r => parseFloat(r.valor_bruto) || 0),
-      devolvidos: rows.filter(r => r.situacao === 'devolvido').length, valor_devolvido: soma(rows.filter(r => r.situacao === 'devolvido'), r => parseFloat(r.valor_bruto) || 0),
+      devolvidos: rows.filter(r => r.situacao === 'devolvido' || r.situacao === 'reembolsado').length, valor_devolvido: soma(rows.filter(r => r.situacao === 'devolvido' || r.situacao === 'reembolsado'), r => parseFloat(r.valor_bruto) || 0),
       liquido: soma(comLiq, r => parseFloat(r.liquido) || 0), com_liquido: comLiq.length,
     };
     if (rows.length) dias[dia] = { ...(dias[dia] || {}), ...res }; else if (dias[dia]) Object.assign(dias[dia], res);
@@ -705,7 +705,7 @@ function mapearPedidoTikTok(openId, o) {
   return {
     marketplace: 'tiktok', conta_id: String(openId), pedido_id: String(o.id),
     criado_em: isoDeUnix(o.create_time), atualizado_mkt: o.update_time ? isoDeUnix(o.update_time) : null,
-    status_original: o.status || '', situacao: status === 'CANCELLED' ? 'cancelado' : 'valido',
+    status_original: o.status || '', situacao: statusPedido.situacaoBase(status === 'CANCELLED' ? 'cancelado' : 'valido', o.status),
     valor_bruto: valor, valor_itens: somaItens, frete: null,
     // líquido e taxas NÃO vão aqui: vêm do acerto (enriquecerTaxasTikTok) e não podem ser apagados a cada atualização
     itens, sincronizado_em: new Date().toISOString(),
@@ -775,7 +775,7 @@ async function gravarPedidosAmazon(apiKey, accId, deUnix, ateUnix, prazo) {
           marketplace: 'amazon', conta_id: String(accId), pedido_id: String(o.amazon_order_id),
           criado_em: new Date(o.purchase_date).toISOString(), atualizado_mkt: null,
           // reembolso marcado pelos eventos financeiros continua devolvido
-          status_original: o.status || '', situacao: cancelado ? 'cancelado' : ant?.situacao === 'devolvido' ? 'devolvido' : 'valido',
+          status_original: o.status || '', situacao: statusPedido.situacaoBase(cancelado ? 'cancelado' : ant?.situacao === 'devolvido' ? 'devolvido' : 'valido', o.status),
           valor_bruto: valor, valor_itens: somaItens, frete: null,
           itens: itens || [], sincronizado_em: new Date().toISOString(),
         });
@@ -808,7 +808,7 @@ function mapearPedidoMagalu(accId, o) {
   return {
     marketplace: 'magalu', conta_id: String(accId), pedido_id: String(o.code || o.id),
     criado_em: new Date(o.purchased_at || o.created_at).toISOString(), atualizado_mkt: o.updated_at ? new Date(o.updated_at).toISOString() : null,
-    status_original: o.status || '', situacao: /cancel|unapproved/.test(st) ? 'cancelado' : devolvido ? 'devolvido' : 'valido',
+    status_original: o.status || '', situacao: statusPedido.situacaoBase(/cancel|unapproved/.test(st) ? 'cancelado' : devolvido ? 'devolvido' : 'valido', o.status),
     valor_bruto: valor, valor_itens: somaItens, frete: r2(centavos(o.amounts?.freight)),
     taxas: { tarifa_venda: comissao }, liquido: null, itens, sincronizado_em: new Date().toISOString(),
   };

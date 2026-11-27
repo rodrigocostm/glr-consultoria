@@ -239,7 +239,7 @@ async function buscarVendasTotaisPeriodo(primeiroDia, ultimoDia) {
       const orders = await MarketplaceAPI.mlOrders(meliId, primeiroDia, ultimoDia);
       let total = 0, pedidos = 0;
       (orders || []).forEach(o => {
-        if (['cancelled', 'invalid'].includes((o.status || '').toLowerCase())) return;
+        if (!GLRStatusPedido.valido(o)) return;
         total += parseFloat(o.total_amount) || 0;
         pedidos++;
       });

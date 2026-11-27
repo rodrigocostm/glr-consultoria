@@ -14,7 +14,7 @@
     paid: ['Pago', 'valido'], confirmed: ['Confirmado', 'valido'],
     payment_required: ['Aguardando pagamento', 'aberto'], payment_in_process: ['Pagamento em processamento', 'aberto'],
     partially_paid: ['Pago parcialmente', 'aberto'], pending_cancel: ['Cancelamento pendente', 'cancelado'],
-    partially_refunded: ['Reembolso parcial', 'reembolsado'], refunded: ['Reembolsado', 'reembolsado'],
+    partially_refunded: ['Reembolso parcial (soma só o que ficou)', 'valido'] /* a sincronização já desconta a parte devolvida do valor */, refunded: ['Reembolsado', 'reembolsado'],
     // Shopee
     unpaid: ['Aguardando pagamento', 'aberto'], ready_to_ship: ['Pronto para envio', 'valido'],
     processed: ['Processado', 'valido'], retry_ship: ['Reenvio', 'valido'], shipped: ['Enviado', 'valido'],
@@ -57,9 +57,11 @@
       else if (/unpaid|pending|awaiting_payment|payment_required|on_hold|incomplete/.test(k)) grupo = 'aberto';
       else grupo = 'valido';
     }
-    // a base manda: cancelado/devolvido gravado pela sincronização vale mais que o status
+    // a base manda: cancelado/devolvido/reembolsado/em aberto gravado pela sincronização vale mais que o status
     if (sit === 'cancelado' && grupo !== 'cancelado') { grupo = 'cancelado'; rotulo = rotulo ? `Cancelado (${rotulo})` : 'Cancelado'; }
     else if (sit === 'devolvido' && grupo !== 'reembolsado') { grupo = 'reembolsado'; rotulo = 'Devolvido'; }
+    else if (sit === 'reembolsado' && grupo !== 'reembolsado') { grupo = 'reembolsado'; rotulo = 'Reembolsado'; }
+    else if (sit === 'em_aberto' && grupo !== 'aberto') { grupo = 'aberto'; rotulo = 'Em aberto'; }
     if (!rotulo) rotulo = grupo === 'valido' ? 'Sem status' : ROTULO_GRUPO[grupo];
     // Shein grava só o código numérico
     if (/^\d+$/.test(k)) rotulo = grupo === 'valido' ? `Shein · código ${k}` : `${ROTULO_GRUPO[grupo]} (código ${k})`;
@@ -68,7 +70,18 @@
 
   const valido = p => classificar(p).valido;
 
-  const api = Object.freeze({ classificar, valido, ROTULO_GRUPO });
+  // Situação gravada em glr_pedidos pela sincronização. `basica` é a que cada
+  // marketplace já calculava (valido/cancelado/devolvido); aqui o status original
+  // refina o "valido": reembolso/devolução em andamento → 'reembolsado', sem
+  // pagamento → 'em_aberto'. Assim toda consulta com situacao=valido (telas,
+  // agentes, comissão, dashboard) já soma só pedido válido.
+  function situacaoBase(basica, statusOriginal) {
+    if (basica !== 'valido') return basica;
+    const g = classificar({ status_original: statusOriginal }).grupo;
+    return g === 'cancelado' ? 'cancelado' : g === 'reembolsado' ? 'reembolsado' : g === 'aberto' ? 'em_aberto' : 'valido';
+  }
+
+  const api = Object.freeze({ classificar, valido, situacaoBase, ROTULO_GRUPO });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GLRStatusPedido = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
