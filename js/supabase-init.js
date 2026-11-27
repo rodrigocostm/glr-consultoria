@@ -36,14 +36,46 @@ const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 // Sends the session only to same-origin application API routes.
+// 401 = o servidor não reconhece mais a sessão (ex.: o mesmo login saiu em outro
+// computador e o Supabase apagou a sessão, mas o token ainda não venceu aqui).
+// Renova a sessão uma vez e repete; se não der, pede para entrar de novo em vez
+// de deixar a tela aberta respondendo "Faça login para continuar." em cada botão.
+const GLR_SESSAO_ENCERRADA = 'Sua sessão foi encerrada (por exemplo, ao sair do sistema em outro computador com o mesmo login). Entre de novo.';
+let _glrRenovandoSessao = null;
+function _glrRenovarSessao() {
+  _glrRenovandoSessao = _glrRenovandoSessao || _sb.auth.refreshSession()
+    .then(({ data, error }) => (!error && data?.session?.access_token) || null)
+    .catch(() => null)
+    .finally(() => setTimeout(() => { _glrRenovandoSessao = null; }, 0));
+  return _glrRenovandoSessao;
+}
+let _glrAvisoSessao = false;
+async function _glrSessaoEncerrada() {
+  if (_glrAvisoSessao) return;
+  _glrAvisoSessao = true;
+  try { await _sb.auth.signOut({ scope: 'local' }); } catch {}
+  mostrarLogin(GLR_SESSAO_ENCERRADA);
+  setTimeout(() => { _glrAvisoSessao = false; }, 5000);
+}
 window.glrApiFetch = async function(input, init = {}) {
   const url = new URL(input, window.location.origin);
   if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) throw new Error('Destino de API inválido');
   const { data } = await _sb.auth.getSession();
   if (!data?.session?.access_token) throw new Error('Sessão expirada. Entre novamente.');
-  const headers = new Headers(init.headers || {});
-  headers.set('Authorization', `Bearer ${data.session.access_token}`);
-  return fetch(url.href, { ...init, headers });
+  const enviar = token => {
+    const headers = new Headers(init.headers || {});
+    headers.set('Authorization', `Bearer ${token}`);
+    return fetch(url.href, { ...init, headers });
+  };
+  const r = await enviar(data.session.access_token);
+  if (r.status !== 401) return r;
+  const novo = await _glrRenovarSessao();
+  if (novo) {
+    const r2 = await enviar(novo);
+    if (r2.status !== 401) return r2;
+  }
+  await _glrSessaoEncerrada();
+  throw new Error(GLR_SESSAO_ENCERRADA);
 };
 
 // Chaves gerenciadas pelo sistema
@@ -419,7 +451,10 @@ _sb.auth.onAuthStateChange(ev => { if (ev === 'PASSWORD_RECOVERY') mostrarNovaSe
 // ── Fazer Logout ──────────────────────────────────────────────
 window.fazerLogout = async function() {
   window._portalConfig = null;
-  await _sb.auth.signOut();
+  // 'local': sai só deste navegador. O padrão do Supabase ('global') derruba o mesmo
+  // login em todos os computadores, e o outro computador passa a receber
+  // "Faça login para continuar." nas leituras (ex.: saldo de ADS) sem saber por quê.
+  await _sb.auth.signOut({ scope: 'local' });
   GLR_KEYS.forEach(k => localStorage.removeItem(k));
   mostrarLogin();
 };
