@@ -20,6 +20,9 @@ Router.register('data-combinada', (params, el) => {
   const lerJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch (e) { return d; } };
   const gravar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
   const K_METAS = 'glr_metas_data_combinada', K_SEL = 'glr_dc_sel', K_SEM = 'glr_dc_semaforo';
+  // Meta sugerida do dia de campanha = faturamento médio por dia no mês (do dia 1 até a véspera) × este fator.
+  // Black Friday 2026 começou com 3 e passou para 2,5 em 27/11/2026. Para mudar a regra, troque só este número.
+  const FATOR_META_CAMPANHA = 2.5;
   // semáforo padrão: < 20% vermelho, < 35% amarelo, 35–45% amarelo (faixa intermediária), ≥ 45% verde
   const SEM_PADRAO = { limites: [20, 35, 45], cores: ['#ef4444', '#facc15', '#facc15', '#22c55e'] };
   const lerSemaforo = () => {
@@ -64,7 +67,10 @@ Router.register('data-combinada', (params, el) => {
   function montar() {
     const vinc = lerJSON('glr_mc_vinculos', {}), metas = (lerJSON(K_METAS, {}) || {})[st.dia] || {};
     const metasMes = lerJSON('glr_metas', {}) || {}; // meta do mês por cliente (a mesma da Meta diária e do Plano de ação)
-    const mesIni = st.dia.slice(0, 8) + '01', mesAte = st.dia.slice(0, 7) === hojeIso.slice(0, 7) ? hojeIso : (st.dia < hojeIso ? fimDoMes(st.dia) : null);
+    const mesIni = st.dia.slice(0, 8) + '01';
+    const vespera = new Date(Date.parse(st.dia + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10);
+    const diasAntes = vespera >= mesIni && vespera < hojeIso ? Number(vespera.slice(8)) : 0; // dias completos do mês antes da data
+    const mesAte = st.dia.slice(0, 7) === hojeIso.slice(0, 7) ? hojeIso : (st.dia < hojeIso ? fimDoMes(st.dia) : null);
     const gestores = GLR.gestores || [];
     const out = [];
     for (const c of (GLR.clientes || [])) {
@@ -86,7 +92,8 @@ Router.register('data-combinada', (params, el) => {
         const chave = `${mkt}:${id}`, meta = parseFloat(metas[chave]) || 0;
         const cobreMes = !!(mesAte && info && BaseDados.cobre(info, mesIni));
         const fatMes = cobreMes ? BaseDados.somar(info, mesIni, mesAte).faturamento : null;
-        lojas.push({ chave, mkt, nome, meta, cobre, fatMes, fat: t ? t.faturamento : null, ads: t && temAds ? t.ads : null, pedidos: t ? t.pedidos : null });
+        const media = diasAntes && info && BaseDados.cobre(info, mesIni) ? BaseDados.somar(info, mesIni, vespera).faturamento / diasAntes : null;
+        lojas.push({ chave, mkt, nome, meta, cobre, fatMes, media, fat: t ? t.faturamento : null, ads: t && temAds ? t.ads : null, pedidos: t ? t.pedidos : null });
       }
       if (!lojas.length) continue;
       const soma = k => lojas.reduce((s, l) => s + (l[k] || 0), 0);
@@ -186,6 +193,17 @@ Router.register('data-combinada', (params, el) => {
     if (Object.keys(todas[st.dia] || {}).length && !(await GLR.confirmar(`Substituir as metas de ${dm(st.dia)} pelas de ${dm(ant)}?`, { perigo: true }))) return;
     todas[st.dia] = { ...todas[ant] }; gravar(K_METAS, todas); render();
   };
+  // preenche a meta de cada loja na tela com a média diária do mês × FATOR_META_CAMPANHA
+  window._dcCalcular = async () => {
+    const lojas = montar().flatMap(c => c.lojas).filter(l => l.media > 0);
+    if (!lojas.length) { GLR.avisar('Sem faturamento do mês antes desta data para calcular a média.', 'info'); return; }
+    const fator = FATOR_META_CAMPANHA.toLocaleString('pt-BR');
+    if (!(await GLR.confirmar(`Calcular a meta de ${lojas.length} loja(s) em ${dm(st.dia)} como média diária do mês × ${fator}? As metas já digitadas dessas lojas serão substituídas.`, { perigo: true }))) return;
+    const todas = lerJSON(K_METAS, {}) || {}, m = todas[st.dia] || {};
+    for (const l of lojas) m[l.chave] = Math.round(l.media * FATOR_META_CAMPANHA * 100) / 100;
+    todas[st.dia] = m; gravar(K_METAS, todas); render();
+    GLR.avisar(`Metas de ${lojas.length} loja(s) calculadas (média × ${fator}).`, 'sucesso');
+  };
   // editor do semáforo: 3 limites (%) e 4 cores, salvos para a equipe toda
   window._dcSemaforo = () => {
     const box = el.querySelector('#dc-sem-ed'); if (!box) return;
@@ -222,6 +240,7 @@ Router.register('data-combinada', (params, el) => {
         <label>Data<input id="dc-dia" type="date" class="form-input" value="${st.dia}" onchange="window._dcDia(this.value)"></label>
         <label>Gestor<select class="form-input" onchange="window._dcGestor(this.value)"><option value="todos">Todos</option>${gestores.map(g => `<option value="${h(g.id)}" ${String(g.id) === st.gestor ? 'selected' : ''}>${h(g.nome)}</option>`).join('')}<option value="sem" ${st.gestor === 'sem' ? 'selected' : ''}>Sem gestor</option></select></label>
         <button class="btn btn-secondary btn-sm" onclick="window._dcCopiar()" title="Usa as metas da última data anterior que tem metas">Copiar metas da data anterior</button>
+        <button class="btn btn-secondary btn-sm" onclick="window._dcCalcular()" title="Meta de cada loja na tela = faturamento médio por dia do mês, do dia 1 até a véspera, × ${FATOR_META_CAMPANHA.toLocaleString('pt-BR')}">Calcular metas (média × ${FATOR_META_CAMPANHA.toLocaleString('pt-BR')})</button>
         <button class="btn btn-secondary btn-sm" onclick="window._dcSemaforo()" title="Limites e cores do fundo da coluna % sobre meta">Semáforo</button>
         <button class="btn btn-secondary btn-sm" onclick="window._dcRecarregar()">Atualizar</button>
       </div>
