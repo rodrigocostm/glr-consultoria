@@ -209,20 +209,21 @@
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     }
 
-    // ── Período único da tela (state.negocioPeriodo: '7' | '15' | '30' | 'mes') ──
+    // ── Período único da tela (state.negocioPeriodo: 'hoje' | '7' | '15' | '30' | 'mes') ──
     function isoDe(d) {
       const pad = n => String(n).padStart(2, '0');
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     }
     function isoParaBR(iso) { return iso.split('-').reverse().join('-'); }
-    function periodoLabel(p) { return p === 'mes' ? 'mês atual' : `${p} dias`; }
+    function periodoLabel(p) { return p === 'mes' ? 'mês atual' : p === 'hoje' ? 'hoje' : `${p} dias`; }
 
     // Janela do período atual + período anterior de igual tamanho, pra
     // comparação. "mes" compara o mês corrente (dia 1 até hoje) com o mesmo
     // intervalo de dias do mês anterior (comparação justa, não o mês anterior
-    // inteiro).
+    // inteiro). "hoje" compara o dia em andamento com ontem inteiro.
     function janelasNegocio(periodo) {
       const hoje = new Date();
+      if (periodo === 'hoje') return { atualDe: dataISO(0), atualAte: dataISO(0), anteriorDe: dataISO(1), anteriorAte: dataISO(1) };
       if (periodo === 'mes') {
         const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
         const inicioMesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
@@ -772,7 +773,7 @@
         : d.erro ? `\nDADOS AO VIVO: erro ao buscar (${d.erro})`
         : `\nDADOS AO VIVO DA SHOPEE (${periodoLabel(d.periodo || state.negocioPeriodo)}, atualizado ${new Date(d.atualizadoEm).toLocaleTimeString('pt-BR')}):\nFaturamento TOTAL da loja: ${R$(d.faturamentoTotal)} | Investimento ADS: ${R$(d.gastoTotal)} | TACOS da conta: ${d.tacosGeral === Infinity ? '∞' : d.tacosGeral.toFixed(1) + '%'} (esta é a métrica principal, não o ACOS isolado abaixo)\nCampanhas ativas: ${d.campanhasAtivas} | Vendas atribuídas ao ADS: ${R$(d.gmvTotal)} | Pedidos atribuídos: ${d.pedidosTotal} | ACOS médio das campanhas: ${d.acosGeral === Infinity ? '∞ (gastou sem vender nada)' : d.acosGeral.toFixed(1) + '%'}\nTop campanhas por investimento (ACOS individual, útil só pra comparar entre elas — use o ID exato ao sugerir mudança):\n${d.topCampanhas.map(c => `- ID ${c.id} — ${(c.nome || '').slice(0, 60)}: status ${c.status === 'ongoing' ? 'ATIVA' : c.status === 'paused' ? 'PAUSADA' : c.status || '—'}, orçamento ${R$(c.budget)}${c.roasTarget != null ? `, meta de ROAS atual ${c.roasTarget}x (lance automático)` : ''}, gasto ${R$(c.gasto)}, vendas (GMV) ${R$(c.gmv)}, ACOS ${c.acos === Infinity ? '∞' : c.acos.toFixed(1) + '%'}`).join('\n') || '(nenhuma campanha ativa com dados na janela)'}`;
       const neg = state.negocioPorConta[state.contaAbertaId + ':' + state.negocioPeriodo];
-      const negTexto = neg && !neg.erro ? `\nSAÚDE DO NEGÓCIO (período: ${state.negocioPeriodo === 'mes' ? 'mês atual' : state.negocioPeriodo + ' dias'}): faturamento ${R$(neg.semanaAtual)} vs período anterior equivalente ${R$(neg.semanaAnterior)} (${neg.variacaoPct === Infinity ? '∞' : (neg.variacaoPct >= 0 ? '+' : '') + neg.variacaoPct.toFixed(1) + '%'}).` : '';
+      const negTexto = neg && !neg.erro ? `\nSAÚDE DO NEGÓCIO (período: ${periodoLabel(state.negocioPeriodo)}${state.negocioPeriodo === 'hoje' ? ', dia ainda em andamento, comparado com ontem inteiro' : ''}): faturamento ${R$(neg.semanaAtual)} vs período anterior equivalente ${R$(neg.semanaAnterior)} (${neg.variacaoPct === Infinity ? '∞' : (neg.variacaoPct >= 0 ? '+' : '') + neg.variacaoPct.toFixed(1) + '%'}).` : '';
       const abc = state.abcPorConta[state.contaAbertaId];
       const abcTexto = abc && !abc.erro
         ? `\nCURVA ABC DE VENDAS (base: receita de ${abc.k1}; A = ~80% da receita, B até 95%, C o resto; ${abc.resumo.A} produtos A, ${abc.resumo.B} B, ${abc.resumo.C} C; receita do mês passado ${R$(abc.total1)}). Top produtos A (receita ${abc.k2} → ${abc.k1} → projeção ${abc.k0}):\n${abc.produtos.filter(p => p.classe === 'A').slice(0, 10).map(p => `- ${p.nome.slice(0, 60)}: ${R$(p.r2)} → ${R$(p.r1)} → ${p.proj != null && abc.projecaoOk ? R$(p.proj) + ' (' + (p.varProj >= 0 ? '+' : '') + (p.varProj * 100).toFixed(0) + '%)' : 'projeção ainda sem dados suficientes'}`).join('\n')}\n${abc.alertas.length ? 'ALERTAS ABC: ' + abc.alertas.map(p => `${p.nome.slice(0, 50)} (curva ${p.classe}, ${p.alerta === 'virada' ? 'vinha crescendo e' : ''} projeta ${(p.varProj * 100).toFixed(0)}% vs mês passado)`).join('; ') : 'Nenhum alerta ABC no momento.'}`
@@ -1938,7 +1939,7 @@
       const contaId = cfg.conta_id, p = state.negocioPeriodo;
       const n = state.negocioPorConta[contaId + ':' + p];
       const cab = `<div class="ag-sec-head">
-        <div class="ag-sec-titulo">Indicadores <span class="ag-sec-sub">${periodoLabel(p)} × período anterior</span></div>
+        <div class="ag-sec-titulo">Indicadores <span class="ag-sec-sub">${p === 'hoje' ? 'hoje × ontem' : `${periodoLabel(p)} × período anterior`}</span></div>
         <div class="ag-periodos ag-periodos-kpi">
           <button class="btn btn-secondary btn-sm" ${state.carregandoNegocio ? 'disabled' : ''} onclick="window._agAtualizarTudo()" title="Buscar de novo na Shopee">🔄</button>
         </div>
@@ -1989,6 +1990,7 @@
           cards.push(`<div class="ag-kpi" style="--ag-hud-accent:var(--red);grid-column:span 4;"><div class="ag-hud-label">Dados de ADS</div><div class="ag-hud-sub">Não consegui buscar o investimento em ADS agora${n.adsErro ? ` (${h(n.adsErro)})` : ''}. <button class="btn btn-secondary btn-sm" onclick="window._agAtualizarTudo()">Tentar de novo</button></div></div>`);
         }
         if (n.incompleto) notas += `<div class="ag-aviso ag-aviso-aten">⚠️ ${h(n.avisoIncompleto)}</div>`;
+        if (p === 'hoje') notas += `<div class="ag-nota">ℹ️ <b>Hoje</b> é o dia em andamento (até ${hojeD.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}) e é comparado com <b>ontem inteiro</b>, então as variações tendem a sair negativas até o fim do dia. Os números de ADS do dia podem chegar à Shopee com algum atraso.</div>`;
         if (n.adsJanelaReduzida) notas += '<div class="ag-nota">ℹ️ A Shopee só entrega até 30 dias de dados de ADS por consulta — o investimento e as vendas via ADS usam os últimos 30 dias, mesmo com "Mês atual" mais longo.</div>';
         corpo = `<div class="ag-kpi-grid">${cards.join('')}</div>${notas}`;
       }
@@ -2234,7 +2236,7 @@
         return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:var(--space-5);">${cab}<div class="ag-vazio">⏳ Carregando as campanhas da Shopee…</div></div>`;
       }
       if (d.erro) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--yellow);margin-bottom:var(--space-5);">${cab}<div class="ag-aviso ag-aviso-erro">⚠️ ${h(d.erro)} <button class="btn btn-secondary btn-sm" style="margin-left:var(--space-2);" onclick="window._agAtualizarDados()">Tentar de novo</button></div></div>`;
-      if (!d.todasCampanhas?.length) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:var(--space-5);">${cab}<div class="ag-vazio">Nenhuma campanha com atividade em ${periodoLabel(state.negocioPeriodo)}.</div></div>`;
+      if (!d.todasCampanhas?.length) return `<div class="ag-hud-card" style="--ag-hud-accent:var(--accent-light);margin-bottom:var(--space-5);">${cab}<div class="ag-vazio">Nenhuma campanha com atividade ${state.negocioPeriodo === 'hoje' ? 'hoje' : `em ${periodoLabel(state.negocioPeriodo)}`}.</div></div>`;
 
       const { col, dir } = state.tabOrdem;
       const acesso = ORDENACAO[col] || ORDENACAO.gasto;
@@ -2534,7 +2536,7 @@
       // Setores (abas): cada um mostra só o que precisa — mesmos blocos de antes.
       const aba = ['geral', 'acoes', 'campanhas', 'produtos', 'config', 'historico'].includes(state.aba) ? state.aba : 'geral';
       const nPend = contagemPendencias(cfg.conta_id);
-      const PER = [['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['mes', 'Mês atual']];
+      const PER = [['hoje', 'Hoje'], ['7', '7 dias'], ['15', '15 dias'], ['30', '30 dias'], ['mes', 'Mês atual']];
       const ABAS = [['geral', 'Visão geral'], ['acoes', 'Ações'], ['campanhas', 'Campanhas'], ['produtos', 'Produtos'], ['config', 'Configuração'], ['historico', 'Histórico']];
       const barra = `<div class="ag-abas">
         <div class="ag-abas-lista">${ABAS.map(([k, t]) => `<button class="ag-aba ${aba === k ? 'on' : ''}" onclick="window._agAba('${k}')">${t}${k === 'acoes' && nPend ? ` <span class="ag-aba-n">${nPend}</span>` : ''}</button>`).join('')}</div>
