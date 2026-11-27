@@ -757,7 +757,7 @@ window._promoCriarCupom = async function() {
 // ── Sugestões do Agente de Promoções (api/_promocoes.js, 1x por dia por loja) ──
 // A margem do agente é estimada pelo repasse médio do produto; o "Aplicar" do ML
 // usa a mesma chamada da aba "Promoções por anúncio". Shopee: só orienta.
-const pa = { contas: [], conta: (() => { try { return localStorage.getItem('glr_pa_conta') || ''; } catch (e) { return ''; } })(), dados: null, carregando: false, erro: null, feito: {}, aplicando: {} };
+const pa = { contas: [], conta: (() => { try { return localStorage.getItem('glr_pa_conta') || ''; } catch (e) { return ''; } })(), dados: null, carregando: false, erro: null, feito: {}, aplicando: {}, sel: new Set(), lote: null };
 const paH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const paR = v => v == null ? '—' : 'R$ ' + (parseFloat(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const paP = v => v == null ? '—' : `${String(Math.round(v * 10) / 10).replace('.', ',')}%`;
@@ -811,8 +811,11 @@ function renderAgentePromo() {
     ${!d ? '<div class="pa-sub" style="padding:20px">Sem dados desta conta.</div>' : `
     <div class="card pa-card">
       <div class="pa-tit">Promoções que cabem na margem <span class="pa-sub">${sug.length} produto(s) · estoque parado primeiro</span></div>
-      ${sug.length ? `<div style="overflow-x:auto"><table class="pa-tab"><thead><tr><th>Produto</th><th>Estoque</th><th>Promoção sugerida</th><th>Preço</th><th>Desconto</th><th>Você recebe</th><th>Margem estimada</th><th>ACOS alvo na promoção</th><th></th></tr></thead><tbody>
-        ${sug.map(x => { const o = x.melhor, f = pa.feito[x.id]; return `<tr>
+      ${sug.length && mkt === 'ml' ? `<div class="pa-lote">${(() => { const ap = sug.filter(x => paAprovavel(x)); const sel = ap.filter(x => pa.sel.has(x.id)); return `<label class="pa-sub"><input type="checkbox" ${sel.length && sel.length === ap.length ? 'checked' : ''} onchange="window._paSelTodas(this.checked)"> selecionar todas (${ap.length})</label>
+        <button class="btn btn-primary btn-sm" ${!sel.length || pa.lote ? 'disabled' : ''} onclick="window._paAplicarSel()">${pa.lote ? paH(pa.lote) : `Aplicar ${sel.length || ''} selecionada(s)`}</button>`; })()}</div>` : ''}
+      ${sug.length ? paGrupos(sug).map(([rot, lista]) => `${paGrupos(sug).length > 1 ? `<details class="pa-grupo" ${sug.length <= 10 ? 'open' : ''}><summary><b>${paH(rot)}</b> <span class="pa-sub">${lista.length} produto(s)</span>${mkt === 'ml' ? ` <button class="btn btn-secondary btn-sm" onclick="event.preventDefault();window._paSelGrupo('${paH(rot)}')">selecionar grupo</button>` : ''}</summary>` : ''}<div style="overflow-x:auto"><table class="pa-tab"><thead><tr><th></th><th>Produto</th><th>Estoque</th><th>Promoção sugerida</th><th>Preço</th><th>Desconto</th><th>Você recebe</th><th>Margem estimada</th><th>ACOS alvo na promoção</th><th></th></tr></thead><tbody>
+        ${lista.map(x => { const o = x.melhor, f = pa.feito[x.id]; return `<tr>
+          <td>${mkt === 'ml' && paAprovavel(x) && !f ? `<input type="checkbox" aria-label="Selecionar" ${pa.sel.has(x.id) ? 'checked' : ''} onchange="window._paSel('${paH(x.id)}', this.checked)">` : ''}</td>
           <td class="pa-prod"><a href="${link(x)}" target="_blank" rel="noopener">${paH(x.n)}</a><div class="pa-sub">${paH(x.id)}${x.parado ? ' · <b style="color:var(--yellow)">estoque parado</b>' : ''}</div></td>
           <td>${est(x)}</td>
           <td>${paH(o.rot)}${o.nome ? `<div class="pa-sub">${paH(o.nome)}${o.fim ? ` · até ${fim(o.fim)}` : ''}</div>` : ''}</td>
@@ -820,7 +823,7 @@ function renderAgentePromo() {
           <td>${paP(o.m)}</td><td>${paP(o.aa)}</td>
           <td>${mkt === 'ml' && o.tipo === 'SMART_LIGHTNING' ? '<span class="pa-sub">relâmpago co-participado: aplique na aba “Promoções por anúncio”</span>' : mkt === 'ml' ? (f ? `<span class="pa-sub" style="color:${f.ok ? 'var(--green)' : 'var(--red)'}">${paH(f.txt)}</span>` : `<button class="btn btn-primary btn-sm" ${pa.aplicando[x.id] ? 'disabled' : ''} onclick="window._paAplicar('${paH(x.id)}')">${pa.aplicando[x.id] ? 'Aplicando…' : 'Aplicar'}</button>`) : '<span class="pa-sub">coloque num desconto da loja na Shopee</span>'}</td>
         </tr>`; }).join('')}
-      </tbody></table></div>` : '<div class="pa-sub" style="padding:10px 0">Nenhuma promoção nova cabe na margem hoje.</div>'}
+      </tbody></table></div>${paGrupos(sug).length > 1 ? '</details>' : ''}`).join('') : '<div class="pa-sub" style="padding:10px 0">Nenhuma promoção nova cabe na margem hoje.</div>'}
       ${(d.colab || []).length ? `<div class="pa-sub" style="margin-top:10px">Com o agente de Estoque: ${(d.colab || []).slice(0, 5).map(c => paH(c.texto)).join(' · ')}</div>` : ''}
     </div>
     <div class="card pa-card">
@@ -833,15 +836,34 @@ function renderAgentePromo() {
       .pa-sub{font-size:12px;color:var(--text-muted)} .pa-topo{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin-bottom:14px}
       .pa-card{padding:14px 16px;margin-bottom:14px} .pa-tit{font-weight:650;font-size:14px;margin-bottom:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
       .pa-tab{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums} .pa-tab th,.pa-tab td{padding:8px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;vertical-align:middle}
-      .pa-prod{white-space:normal!important;min-width:220px;max-width:360px} .pa-prod a{color:var(--text-primary);text-decoration:none;font-weight:550} .pa-prod a:hover{text-decoration:underline}
+      .pa-prod{white-space:normal!important;min-width:220px;max-width:360px} .pa-prod a{color:var(--text-primary);text-decoration:none;font-weight:550} .pa-prod a:hover{text-decoration:underline} .pa-lote{display:flex;gap:12px;align-items:center;margin-bottom:10px;flex-wrap:wrap} .pa-grupo{border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px} .pa-grupo summary{cursor:pointer;display:flex;gap:10px;align-items:center}
     </style>`;
 }
 window._paConta = k => { pa.conta = k; try { localStorage.setItem('glr_pa_conta', k); } catch (e) {} GLR.ctx?.definirPorConta(...k.split(':')); carregarAgentePromo(); };
+// Muitas sugestões: agrupa pelo tipo de promoção (o grupo abre/fecha) e permite aplicar em lote.
+function paGrupos(sug) { const g = new Map(); for (const x of sug) { const k = x.melhor.rot || x.melhor.tipo; if (!g.has(k)) g.set(k, []); g.get(k).push(x); } return [...g.entries()].sort((a, b) => b[1].length - a[1].length); }
+const paAprovavel = x => x.melhor && x.melhor.tipo !== 'SMART_LIGHTNING' && !/COUPON/.test(x.melhor.tipo);
+window._paSel = (id, on) => { on ? pa.sel.add(id) : pa.sel.delete(id); renderAgentePromo(); };
+window._paSelTodas = on => { pa.sel.clear(); if (on) for (const [id, x] of Object.entries(pa.dados?.itens || {})) if (paAprovavel(x) && !pa.feito[id]) pa.sel.add(id); renderAgentePromo(); };
+window._paSelGrupo = rot => { for (const [id, x] of Object.entries(pa.dados?.itens || {})) if (paAprovavel(x) && !pa.feito[id] && (x.melhor.rot || x.melhor.tipo) === rot) pa.sel.add(id); renderAgentePromo(); };
+window._paAplicarSel = async () => {
+  const d = pa.dados, ids = [...pa.sel].filter(id => d?.itens?.[id]?.melhor && !pa.feito[id]); if (!ids.length || pa.lote) return;
+  if (!(await GLR.confirmar(`Aplicar ${ids.length} promoção(ões) no Mercado Livre agora?\n\n${ids.slice(0, 12).map(id => { const x = d.itens[id]; return `• ${x.n.slice(0, 50)} — ${x.melhor.rot} a ${paR(x.melhor.preco)} (margem ${paP(x.melhor.m)})`; }).join('\n')}${ids.length > 12 ? `\n… e mais ${ids.length - 12}` : ''}`))) return;
+  let n = 0;
+  for (const id of ids) { pa.lote = `Aplicando ${++n} de ${ids.length}…`; await paAplicar(id); pa.sel.delete(id); }
+  pa.lote = null; renderAgentePromo();
+  const falhas = ids.filter(id => pa.feito[id] && !pa.feito[id].ok).length;
+  GLR.avisar(falhas ? `Apliquei ${ids.length - falhas} de ${ids.length}. As que falharam mostram o motivo na linha.` : `${ids.length} promoção(ões) aplicada(s)`, falhas ? 'erro' : 'sucesso');
+};
 window._paAplicar = async id => {
   const d = pa.dados, x = d?.itens?.[id], o = x?.melhor; if (!o || d.mkt !== 'ml') return;
   if (!(await GLR.confirmar(`Aplicar "${o.rot}${o.nome ? ' — ' + o.nome : ''}" em ${x.n.slice(0, 60)} por ${paR(o.preco)} (${paP(o.desconto)} de desconto)?
 
 Margem estimada ${paP(o.m)}. O valor exato (tarifa e frete no preço novo) aparece na aba "Promoções por anúncio".`))) return;
+  await paAplicar(id);
+};
+async function paAplicar(id) {
+  const d = pa.dados, x = d?.itens?.[id], o = x?.melhor; if (!o || d.mkt !== 'ml') return;
   pa.aplicando[id] = true; renderAgentePromo();
   try {
     const base = { meliUserId: d.conta, promotion_type: o.tipo }; // mesmo formato da aba "Promoções por anúncio"
@@ -865,7 +887,7 @@ Margem estimada ${paP(o.m)}. O valor exato (tarifa e frete no preço novo) apare
       dados: { agente: 'promocoes', marketplace: 'ml', item_id: id, preco: aplicado, tipo_promocao: o.tipo } }).then(() => {}, () => {});
   } catch (e) { pa.feito[id] = { ok: false, txt: `Não aplicou: ${e.message || e}` }; }
   pa.aplicando[id] = false; renderAgentePromo();
-};
+}
 
 if (typeof Router !== 'undefined') {
   Router.register('promocoes', renderPage);
